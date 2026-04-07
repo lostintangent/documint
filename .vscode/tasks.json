@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install dependencies",
+      "type": "shell",
+      "command": "bun install",
+      "inAgents": true,
+      "runOptions": {
+        "runOn": "worktreeCreated"
+      }
+    },
+    {
+      "label": "Start playground",
+      "type": "shell",
+      "command": "bun run dev",
+      "inAgents": true
+    }
+  ]
+}

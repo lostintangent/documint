@@ -1,0 +1,169 @@
+{
+  "fixtures": [
+    {
+      "id": "sample",
+      "path": "test/goldens/sample.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "article",
+      "path": "test/goldens/article.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "headings",
+      "path": "test/goldens/headings.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "lists",
+      "path": "test/goldens/lists.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "task-lists",
+      "path": "test/goldens/task-lists.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "images-links",
+      "path": "test/goldens/images-links.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "tables",
+      "path": "test/goldens/tables.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "blockquotes",
+      "path": "test/goldens/blockquotes.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "code-directives",
+      "path": "test/goldens/code-directives.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "full-spectrum",
+      "path": "test/goldens/full-spectrum.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "nested-structural",
+      "path": "test/goldens/nested-structural.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "blockquote-transitions",
+      "path": "test/goldens/blockquote-transitions.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "comments-review",
+      "path": "test/goldens/comments-review.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "long-structural",
+      "path": "test/goldens/long-structural.md",
+      "kind": "markdown",
+      "size": "long"
+    },
+    {
+      "id": "rich-code",
+      "path": "test/goldens/rich-code.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "rich-images",
+      "path": "test/goldens/rich-images.md",
+      "kind": "markdown",
+      "size": "short"
+    },
+    {
+      "id": "rich-tables",
+      "path": "test/goldens/rich-tables.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "rich-mixed",
+      "path": "test/goldens/rich-mixed.md",
+      "kind": "markdown",
+      "size": "medium"
+    },
+    {
+      "id": "unsupported-html",
+      "path": "test/goldens/unsupported-html.md",
+      "kind": "markdown",
+      "size": "short"
+    }
+  ],
+  "benchmarks": {
+    "markdown": {
+      "markdown_to_document_comments": 8,
+      "markdown_to_document_short": 5,
+      "markdown_to_document_medium": 8,
+      "markdown_to_document": 160,
+      "markdown_to_document_rich": 12,
+      "document_to_markdown_comments": 8,
+      "document_to_markdown_short": 5,
+      "document_to_markdown_medium": 5,
+      "document_to_markdown": 25,
+      "document_to_markdown_rich": 8
+    },
+    "layout": {
+      "canvas": 45,
+      "canvas_xlarge": 70,
+      "canvas_huge": 110,
+      "scroll": 20,
+      "scroll_xlarge": 35,
+      "scroll_huge": 55,
+      "scroll_step": 6,
+      "scroll_step_xlarge": 8,
+      "scroll_step_huge": 12
+    },
+    "editor": {
+      "import_comments": 14,
+      "import_medium": 5,
+      "import": 120,
+      "hit_test": 1,
+      "hit_test_xlarge": 3,
+      "hit_test_huge": 4,
+      "cursor_move": 2,
+      "cursor_move_xlarge": 8,
+      "cursor_move_huge": 10,
+      "export_medium": 10,
+      "export": 180,
+      "import_rich": 10,
+      "export_rich": 14,
+      "mutation_code": 12,
+      "mutation_table": 12,
+      "comment_toggle_dense": 20,
+      "comment_repair_dense": 28,
+      "transaction_medium": 10,
+      "list_split_medium": 12,
+      "blockquote_lift_medium": 10,
+      "typing_small": 1,
+      "typing_medium": 1,
+      "typing_comments_elsewhere": 6,
+      "typing_long": 2
+    }
+  }
+}
