@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-  dispatchKey,
+  dedent,
   handleStructuralBackspace,
+  indent,
+  insertLineBreak,
 } from "@/editor/model/commands";
 import {
   createDocumentFromEditorState,
@@ -108,7 +110,7 @@ test("merges or removes blocks when backspacing at the start", () => {
     regionId: first.id,
     offset: first.text.length,
   });
-  blankParagraphState = dispatchKey(blankParagraphState, "insertLineBreak") ?? blankParagraphState;
+  blankParagraphState = insertLineBreak(blankParagraphState)?.state ?? blankParagraphState;
 
   const blankParagraph = blankParagraphState.documentEditor.regions.find((container) => container.text === "");
 
@@ -139,7 +141,7 @@ test("splits paragraphs and extends headings through enter", () => {
     regionId: paragraph.id,
     offset: "Paragraph".length,
   });
-  paragraphState = dispatchKey(paragraphState, "insertLineBreak") ?? paragraphState;
+  paragraphState = insertLineBreak(paragraphState)?.state ?? paragraphState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(paragraphState))).toBe(
     "Paragraph\n\n&#x20;body.\n",
@@ -156,7 +158,7 @@ test("splits paragraphs and extends headings through enter", () => {
     regionId: heading.id,
     offset: heading.text.length,
   });
-  headingState = dispatchKey(headingState, "insertLineBreak") ?? headingState;
+  headingState = insertLineBreak(headingState)?.state ?? headingState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe(
     "# Heading\n\n",
@@ -175,7 +177,7 @@ test("moves the caret into the newly inserted empty paragraph when pressing ente
     regionId: paragraph.id,
     offset: paragraph.text.length,
   });
-  paragraphState = dispatchKey(paragraphState, "insertLineBreak") ?? paragraphState;
+  paragraphState = insertLineBreak(paragraphState)?.state ?? paragraphState;
 
   const emptyParagraph = paragraphState.documentEditor.regions.find(
     (container) => container.blockType === "paragraph" && container.text === "",
@@ -189,7 +191,7 @@ test("moves the caret into the newly inserted empty paragraph when pressing ente
     regionId: emptyParagraph.id,
     offset: 0,
   });
-  paragraphState = dispatchKey(paragraphState, "insertLineBreak") ?? paragraphState;
+  paragraphState = insertLineBreak(paragraphState)?.state ?? paragraphState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(paragraphState))).toBe(
     "alpha\n\n\n\n",
@@ -220,7 +222,7 @@ test("preserves blockquote and code-fence context on enter", () => {
     regionId: quoted.id,
     offset: "quoted".length,
   });
-  quoteState = dispatchKey(quoteState, "insertLineBreak") ?? quoteState;
+  quoteState = insertLineBreak(quoteState)?.state ?? quoteState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe(
     "> quoted\n>\n> &#x20;text\n",
@@ -237,7 +239,7 @@ test("preserves blockquote and code-fence context on enter", () => {
     regionId: code.id,
     offset: code.text.length,
   });
-  codeState = dispatchKey(codeState, "insertLineBreak") ?? codeState;
+  codeState = insertLineBreak(codeState)?.state ?? codeState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(codeState))).toBe(
     "```ts\nconst x = 1;\n\n```\n",
@@ -256,7 +258,7 @@ test("exits empty blockquote lines through the structural enter path", () => {
     regionId: alpha.id,
     offset: alpha.text.length,
   });
-  quoteState = dispatchKey(quoteState, "insertLineBreak") ?? quoteState;
+  quoteState = insertLineBreak(quoteState)?.state ?? quoteState;
 
   const empty = quoteState.documentEditor.regions.find((container) => container.text === "");
 
@@ -268,7 +270,7 @@ test("exits empty blockquote lines through the structural enter path", () => {
     regionId: empty.id,
     offset: 0,
   });
-  quoteState = dispatchKey(quoteState, "insertLineBreak") ?? quoteState;
+  quoteState = insertLineBreak(quoteState)?.state ?? quoteState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe(
     "> alpha\n\n",
@@ -287,8 +289,8 @@ test("re-enters the preceding blockquote when backspacing from the empty paragra
     regionId: alpha.id,
     offset: alpha.text.length,
   });
-  quoteState = dispatchKey(quoteState, "insertLineBreak") ?? quoteState;
-  quoteState = dispatchKey(quoteState, "insertLineBreak") ?? quoteState;
+  quoteState = insertLineBreak(quoteState)?.state ?? quoteState;
+  quoteState = insertLineBreak(quoteState)?.state ?? quoteState;
 
   const emptyParagraph = quoteState.documentEditor.regions.find(
     (container) => container.blockType === "paragraph" && container.text === "",
@@ -323,7 +325,7 @@ test("deletes empty quoted lines with structural backspace without unwrapping th
     regionId: alpha.id,
     offset: alpha.text.length,
   });
-  quoteState = dispatchKey(quoteState, "insertLineBreak") ?? quoteState;
+  quoteState = insertLineBreak(quoteState)?.state ?? quoteState;
 
   const empty = quoteState.documentEditor.regions.find((container) => container.text === "");
 
@@ -356,14 +358,14 @@ test("changes heading depth with tab and shift-tab", () => {
     regionId: heading.id,
     offset: 3,
   });
-  headingState = dispatchKey(headingState, "indent") ?? headingState;
+  headingState = indent(headingState) ?? headingState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe(
     "### Heading\n",
   );
   expect(headingState.selection.focus.offset).toBe(3);
 
-  headingState = dispatchKey(headingState, "dedent") ?? headingState;
+  headingState = dedent(headingState) ?? headingState;
 
   expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe(
     "## Heading\n",
@@ -381,7 +383,7 @@ test("changes heading depth with tab and shift-tab", () => {
     regionId: h1.id,
     offset: 2,
   });
-  h1State = dispatchKey(h1State, "dedent") ?? h1State;
+  h1State = dedent(h1State) ?? h1State;
 
   expect(serializeMarkdown(createDocumentFromEditorState(h1State))).toBe(
     "# Heading\n",
@@ -398,7 +400,7 @@ test("changes heading depth with tab and shift-tab", () => {
     regionId: h6.id,
     offset: 2,
   });
-  h6State = dispatchKey(h6State, "indent") ?? h6State;
+  h6State = indent(h6State) ?? h6State;
 
   expect(serializeMarkdown(createDocumentFromEditorState(h6State))).toBe(
     "###### Heading\n",

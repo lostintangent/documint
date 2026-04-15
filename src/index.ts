@@ -1,5 +1,12 @@
 export {
   Documint,
+  defaultKeybindings,
+  darkTheme,
+  lightTheme,
+  midnightTheme,
+  mintTheme,
+  type EditorTheme,
+  type EditorKeybinding,
   type DocumintProps,
   type DocumintState,
 } from "./component";
@@ -11,40 +18,20 @@ export type {
   Inline,
   Link,
   Mark,
-  Text,
-  RawBlock,
   Raw,
+  RawBlock,
+  Text,
 } from "./document";
 
 export {
-  darkEditorTheme,
-  lightEditorTheme,
-  midnightEditorTheme,
-  mintEditorTheme,
-  type EditorTheme,
-} from "./editor";
-
-export {
-  COMMENT_APPENDIX_DIRECTIVE_NAME,
+  createCommentThread,
+  createComment,  
   appendThreadComment,
   deleteThreadComment,
   deleteCommentThread,
-  createCommentAnchorFromContainer,
-  createComment,
-  createCommentThread,
+  
   editThreadComment,
-  getCommentThreadUpdatedAt,
-  isResolvedCommentThread,
-  listCommentTargetContainers,
-  parseCommentAppendixPayload,
-  repairCommentThread,
-  serializeCommentAppendixPayload,
   updateCommentThreadStatus,
-  type CommentAnchor,
-  type CommentAnchorMatch,
-  type CommentAppendixPayload,
-  type Comment,
-  type CommentRepairResult,
-  type CommentTargetContainer,
   type CommentThread,
+  type Comment,
 } from "./comments";

@@ -48,6 +48,7 @@ import {
   indentListItemOperation,
   moveListItemDownOperation,
   moveListItemUpOperation,
+  type ListOperationResult,
   splitSelectionListItemOperation,
   splitStructuralListBlockOperation,
 } from "./lists";
@@ -78,16 +79,22 @@ export type EditorCommand =
   | "toggleSelectionUnderline"
   | "undo";
 
+export type EditorCommandEffect = {
+  kind: "list-item-inserted";
+  blockPath: string;
+};
+
+export type EditorCommandResult = {
+  effects: EditorCommandEffect[];
+  state: EditorState;
+};
+
 export function splitSelectionListItem(state: EditorState) {
-  return splitSelectionListItemOperation(state, listHelpers);
+  return splitSelectionListItemOperation(state, listHelpers)?.state ?? null;
 }
 
 export function splitStructuralBlock(state: EditorState) {
-  return (
-    splitStructuralListBlockOperation(state, listHelpers) ??
-    splitStructuralBlockquoteOperation(state, blockHelpers) ??
-    splitTextBlock(state)
-  );
+  return splitStructuralBlockOperationWithEffects(state)?.state ?? null;
 }
 
 export function splitTextBlock(state: EditorState) {
@@ -100,6 +107,15 @@ export function splitBlockquoteTextBlock(state: EditorState) {
 
 export function insertCodeLineBreak(state: EditorState) {
   return insertCodeLineBreakOperation(state, blockHelpers);
+}
+
+export function insertLineBreak(state: EditorState): EditorCommandResult | null {
+  return (
+    createCommandResult(insertCodeLineBreak(state)) ??
+    createCommandResult(insertTableCellLineBreakOperation(state, tableHelpers)) ??
+    splitStructuralBlockOperationWithEffects(state) ??
+    createCommandResult(splitTextBlock(state))
+  );
 }
 
 export function handleStructuralBackspace(state: EditorState) {
@@ -116,12 +132,32 @@ export function handleStructuralBackspace(state: EditorState) {
   return handleListStructuralBackspaceOperation(state, listHelpers) ?? handleBlockStructuralBackspaceOperation(state, blockHelpers);
 }
 
+export function deleteBackward(state: EditorState) {
+  return handleStructuralBackspace(state);
+}
+
 export function indentListItem(state: EditorState) {
   return indentListItemOperation(state, listHelpers);
 }
 
 export function dedentListItem(state: EditorState) {
   return dedentListItemOperation(state, listHelpers);
+}
+
+export function indent(state: EditorState) {
+  return (
+    handleTableTabOperation(state, 1, tableHelpers) ??
+    shiftHeadingDepthOperation(state, 1, blockHelpers) ??
+    indentListItem(state)
+  );
+}
+
+export function dedent(state: EditorState) {
+  return (
+    handleTableTabOperation(state, -1, tableHelpers) ??
+    shiftHeadingDepthOperation(state, -1, blockHelpers) ??
+    dedentListItem(state)
+  );
 }
 
 export function moveListItemUp(state: EditorState) {
@@ -285,6 +321,30 @@ export function toggleSelectionInlineCode(state: EditorState) {
   return toggleSelectionInlineCodeOperation(state, inlineHelpers);
 }
 
+export function toggleSelectionBold(state: EditorState) {
+  return toggleSelectionMark(state, "bold");
+}
+
+export function toggleSelectionItalic(state: EditorState) {
+  return toggleSelectionMark(state, "italic");
+}
+
+export function toggleSelectionStrikethrough(state: EditorState) {
+  return toggleSelectionMark(state, "strikethrough");
+}
+
+export function toggleSelectionUnderline(state: EditorState) {
+  return toggleSelectionMark(state, "underline");
+}
+
+export function undo(state: EditorState) {
+  return undoEditorState(state);
+}
+
+export function redo(state: EditorState) {
+  return redoEditorState(state);
+}
+
 export function updateInlineLink(
   state: EditorState,
   regionId: string,
@@ -314,52 +374,6 @@ export function removeInlineLink(
     endOffset,
     (target) => replaceExactInlineLinkTarget(target, startOffset, endOffset, null),
   );
-}
-
-export function dispatchKey(state: EditorState, key: EditorCommand) {
-  switch (key) {
-    case "insertLineBreak":
-      return (
-        insertCodeLineBreak(state) ??
-        insertTableCellLineBreakOperation(state, tableHelpers) ??
-        splitStructuralBlock(state) ??
-        splitTextBlock(state)
-      );
-    case "deleteBackward":
-      return handleStructuralBackspace(state);
-    case "indent":
-      return (
-        handleTableTabOperation(state, 1, tableHelpers) ??
-        shiftHeadingDepthOperation(state, 1, blockHelpers) ??
-        indentListItem(state)
-      );
-    case "dedent":
-      return (
-        handleTableTabOperation(state, -1, tableHelpers) ??
-        shiftHeadingDepthOperation(state, -1, blockHelpers) ??
-        dedentListItem(state)
-      );
-    case "moveListItemUp":
-      return moveListItemUp(state);
-    case "moveListItemDown":
-      return moveListItemDown(state);
-    case "toggleSelectionBold":
-      return toggleSelectionMark(state, "bold");
-    case "toggleSelectionItalic":
-      return toggleSelectionMark(state, "italic");
-    case "toggleSelectionStrikethrough":
-      return toggleSelectionMark(state, "strikethrough");
-    case "toggleSelectionUnderline":
-      return toggleSelectionMark(state, "underline");
-    case "toggleSelectionInlineCode":
-      return toggleSelectionInlineCode(state);
-    case "undo":
-      return undoEditorState(state);
-    case "redo":
-      return redoEditorState(state);
-    default:
-      return null;
-  }
 }
 
 const listHelpers = {
@@ -664,6 +678,44 @@ function resolveRootTextBlockContext(state: EditorState) {
     block,
     container,
     rootIndex,
+  };
+}
+
+function createCommandResult(
+  state: EditorState | null,
+  effects: EditorCommandEffect[] = [],
+): EditorCommandResult | null {
+  return state
+    ? {
+        effects,
+        state,
+      }
+    : null;
+}
+
+function splitStructuralBlockOperationWithEffects(state: EditorState): EditorCommandResult | null {
+  return (
+    mapListOperationResultToCommandResult(splitStructuralListBlockOperation(state, listHelpers)) ??
+    createCommandResult(splitStructuralBlockquoteOperation(state, blockHelpers)) ??
+    createCommandResult(splitTextBlock(state))
+  );
+}
+
+function mapListOperationResultToCommandResult(result: ListOperationResult | null): EditorCommandResult | null {
+  if (!result) {
+    return null;
+  }
+
+  return {
+    effects: result.insertedListItemPath
+      ? [
+          {
+            blockPath: result.insertedListItemPath,
+            kind: "list-item-inserted",
+          },
+        ]
+      : [],
+    state: result.state,
   };
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dispatchKey } from "@/editor/model/commands";
+import { dedent, indent } from "@/editor/model/commands";
 import {
   createDocumentFromEditorState,
   createEditorState,
@@ -22,8 +22,8 @@ test("moves to the next and previous table cell with tab and shift-tab", () => {
     offset: 2,
   });
 
-  const nextState = dispatchKey(state, "indent");
-  const previousState = nextState ? dispatchKey(nextState, "dedent") : null;
+  const nextState = indent(state);
+  const previousState = nextState ? dedent(nextState) : null;
 
   expect(nextState?.selection.focus.regionId).toBe(
     state.documentEditor.regions.find((container) => container.text === "beta")!.id,
@@ -44,19 +44,17 @@ test("moves across table rows with tab and shift-tab", () => {
     throw new Error("Expected table cells");
   }
 
-  const nextState = dispatchKey(
+  const nextState = indent(
     setSelection(state, {
       regionId: beta.id,
       offset: 1,
     }),
-    "indent",
   );
-  const previousState = dispatchKey(
+  const previousState = dedent(
     setSelection(state, {
       regionId: gamma.id,
       offset: 1,
     }),
-    "dedent",
   );
 
   expect(nextState?.selection.focus.regionId).toBe(gamma.id);
@@ -80,7 +78,7 @@ test("adds a new empty row when tabbing from the last table cell", () => {
     offset: beta.text.length,
   });
 
-  const nextState = dispatchKey(state, "indent");
+  const nextState = indent(state);
 
   expect(nextState).toBeDefined();
   expect(serializeMarkdown(createDocumentFromEditorState(nextState!))).toBe(
@@ -110,7 +108,7 @@ test("does not leave the table when shift-tabbing from the first cell", () => {
     offset: 0,
   });
 
-  const nextState = dispatchKey(state, "dedent");
+  const nextState = dedent(state);
 
   expect(nextState).toBe(state);
 });

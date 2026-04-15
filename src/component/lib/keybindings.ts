@@ -1,16 +1,14 @@
-// Declarative keyboard binding policy: normalized browser key data in,
-// semantic editor commands out.
-import type { EditorCommand } from "./model/commands";
+import type { EditorCommand } from "@/editor/model/commands";
 
-type EditorKeybinding = {
+export type EditorKeybinding = {
   altKey?: boolean;
+  command: EditorCommand;
   key: string;
   modKey?: boolean;
   shiftKey?: boolean | "any";
-  command: EditorCommand;
 };
 
-const keybindings: EditorKeybinding[] = [
+export const defaultKeybindings: EditorKeybinding[] = [
   { key: "Backspace", command: "deleteBackward" },
   { key: "Enter", command: "insertLineBreak" },
   { key: "Home", command: "moveToLineStart" },
@@ -30,7 +28,10 @@ const keybindings: EditorKeybinding[] = [
   { key: "z", modKey: true, shiftKey: true, command: "redo" },
 ];
 
-export function resolveEditorCommand(event: KeyboardEvent): EditorCommand | null {
+export function resolveEditorCommand(
+  event: KeyboardEvent,
+  keybindings: EditorKeybinding[] = defaultKeybindings,
+): EditorCommand | null {
   return keybindings.find((binding) => {
     const shiftMatches =
       binding.shiftKey === "any"

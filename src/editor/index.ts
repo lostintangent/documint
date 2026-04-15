@@ -9,10 +9,6 @@ export {
 } from "./editor";
 
 export {
-  darkEditorTheme,
-  lightEditorTheme,
-  midnightEditorTheme,
-  mintEditorTheme,
   type EditorTheme,
 } from "./render/theme";
 

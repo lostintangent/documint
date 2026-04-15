@@ -9,9 +9,6 @@ import {
   type CommentThread,
 } from "@/comments";
 import {
-  resolveEditorCommand,
-} from "./keybindings";
-import {
   getCanvasEditablePreviewState,
   type CanvasEditablePreviewState,
 } from "./derived-state";
@@ -45,20 +42,33 @@ import {
 } from "./model/document-editor";
 import {
   applyTextInputRule,
+  dedent as dedentCommand,
+  deleteBackward as deleteBackwardCommand,
   deleteTable as deleteTableCommand,
   deleteTableColumn as deleteTableColumnCommand,
   deleteTableRow as deleteTableRowCommand,
   deleteSelectionText,
-  dispatchKey,
+  indent as indentCommand,
+  insertLineBreak as insertLineBreakCommand,
   insertTable as insertTableCommand,
   insertTableColumn as insertTableColumnCommand,
   insertTableRow as insertTableRowCommand,
   insertSelectionText,
+  moveListItemDown as moveListItemDownCommand,
+  moveListItemUp as moveListItemUpCommand,
   removeInlineLink,
+  redo as redoCommand,
   replaceSelectionText,
+  toggleSelectionBold as toggleSelectionBoldCommand,
+  toggleSelectionInlineCode as toggleSelectionInlineCodeCommand,
+  toggleSelectionItalic as toggleSelectionItalicCommand,
+  toggleSelectionStrikethrough as toggleSelectionStrikethroughCommand,
+  toggleSelectionUnderline as toggleSelectionUnderlineCommand,
   toggleTaskItem,
+  undo as undoCommand,
   updateInlineLink,
   type EditorCommand,
+  type EditorCommandEffect,
 } from "./model/commands";
 import {
   extendSelectionToLineBoundary,
@@ -103,6 +113,7 @@ export type EditorStateChange = {
   documentChanged: boolean;
   state: EditorState;
 };
+export type { EditorCommand };
 
 export type EditorViewport = {
   height: number;
@@ -182,12 +193,23 @@ export type Editor = {
   deleteBackward(state: EditorState): EditorStateChange | null;
   deleteForward(state: EditorState): EditorStateChange | null;
   deleteSelection(state: EditorState): EditorStateChange;
+  dedent(state: EditorState): EditorStateChange | null;
+  indent(state: EditorState): EditorStateChange | null;
   replaceSelection(state: EditorState, text: string): EditorStateChange;
   setSelection(
     state: EditorState,
     selection: CanvasSelection | CanvasSelectionPoint,
   ): EditorStateChange;
+  moveListItemDown(state: EditorState): EditorStateChange | null;
+  moveListItemUp(state: EditorState): EditorStateChange | null;
+  redo(state: EditorState): EditorStateChange | null;
   toggleTaskItem(state: EditorState, listItemId: string): EditorStateChange | null;
+  toggleSelectionBold(state: EditorState): EditorStateChange | null;
+  toggleSelectionInlineCode(state: EditorState): EditorStateChange | null;
+  toggleSelectionItalic(state: EditorState): EditorStateChange | null;
+  toggleSelectionStrikethrough(state: EditorState): EditorStateChange | null;
+  toggleSelectionUnderline(state: EditorState): EditorStateChange | null;
+  undo(state: EditorState): EditorStateChange | null;
   insertTable(state: EditorState, columnCount: number): EditorStateChange | null;
   insertTableColumn(state: EditorState, direction: "left" | "right"): EditorStateChange | null;
   deleteTableColumn(state: EditorState): EditorStateChange | null;
@@ -206,12 +228,6 @@ export type Editor = {
     regionId: string,
     startOffset: number,
     endOffset: number,
-  ): EditorStateChange | null;
-  dispatchCommand(state: EditorState, command: EditorCommand): EditorStateChange | null;
-  handleKeyboardEvent(
-    state: EditorState,
-    layout: ViewportLayout,
-    event: KeyboardEvent,
   ): EditorStateChange | null;
   moveCaretByViewport(
     state: EditorState,
@@ -439,9 +455,14 @@ function createEditorWithCache(renderCache: CanvasRenderCache): Editor {
       );
     },
     insertLineBreak(state) {
+      const commandResult = insertLineBreakCommand(state);
+      const animatedState = commandResult
+        ? applyCommandEffects(commandResult.state, commandResult.effects)
+        : null;
+
       return createNullableTransitionEditorStateChange(
         state,
-        dispatchKey(state, "insertLineBreak"),
+        animatedState,
         true,
       );
     },
@@ -450,7 +471,10 @@ function createEditorWithCache(renderCache: CanvasRenderCache): Editor {
         return createTransitionEditorStateChange(state, deleteSelectionText(state), true);
       }
 
-      const nextState = deleteCharacterBackward(state) ?? dispatchKey(state, "deleteBackward");
+      const nextState =
+        deleteCharacterBackward(state) ??
+        deleteBackwardCommand(state) ??
+        null;
 
       return createNullableTransitionEditorStateChange(
         state,
@@ -553,62 +577,38 @@ function createEditorWithCache(renderCache: CanvasRenderCache): Editor {
         true,
       );
     },
-    dispatchCommand(state, command) {
-      return createNullableTransitionEditorStateChange(
-        state,
-        dispatchKey(state, command),
-        true,
-      );
+    indent(state) {
+      return createNullableTransitionEditorStateChange(state, indentCommand(state), true);
     },
-    handleKeyboardEvent(state, layout, event) {
-      if (event.key === "Delete") {
-        return editor.deleteForward(state);
-      }
-
-      const command = resolveEditorCommand(event);
-
-      if (command) {
-        if (command === "moveToLineStart" || command === "moveToLineEnd") {
-          return editor.moveCaretToLineBoundary(
-            state,
-            layout,
-            command === "moveToLineStart" ? "Home" : "End",
-            event.shiftKey,
-          );
-        }
-
-        if (command === "insertLineBreak") {
-          return editor.insertLineBreak(state);
-        }
-
-        if (command === "deleteBackward") {
-          return editor.deleteBackward(state);
-        }
-
-        return editor.dispatchCommand(state, command);
-      }
-
-      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        return editor.moveCaretHorizontally(
-          state,
-          event.key === "ArrowLeft" ? -1 : 1,
-          event.shiftKey,
-        );
-      }
-
-      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        return editor.moveCaretVertically(state, layout, event.key === "ArrowUp" ? -1 : 1);
-      }
-
-      if (event.key === "PageUp" || event.key === "PageDown") {
-        return editor.moveCaretByViewport(state, layout, event.key === "PageUp" ? -1 : 1);
-      }
-
-      if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
-        return editor.insertText(state, event.key);
-      }
-
-      return null;
+    dedent(state) {
+      return createNullableTransitionEditorStateChange(state, dedentCommand(state), true);
+    },
+    moveListItemUp(state) {
+      return createNullableTransitionEditorStateChange(state, moveListItemUpCommand(state), true);
+    },
+    moveListItemDown(state) {
+      return createNullableTransitionEditorStateChange(state, moveListItemDownCommand(state), true);
+    },
+    toggleSelectionBold(state) {
+      return createNullableTransitionEditorStateChange(state, toggleSelectionBoldCommand(state), true);
+    },
+    toggleSelectionItalic(state) {
+      return createNullableTransitionEditorStateChange(state, toggleSelectionItalicCommand(state), true);
+    },
+    toggleSelectionStrikethrough(state) {
+      return createNullableTransitionEditorStateChange(state, toggleSelectionStrikethroughCommand(state), true);
+    },
+    toggleSelectionUnderline(state) {
+      return createNullableTransitionEditorStateChange(state, toggleSelectionUnderlineCommand(state), true);
+    },
+    toggleSelectionInlineCode(state) {
+      return createNullableTransitionEditorStateChange(state, toggleSelectionInlineCodeCommand(state), true);
+    },
+    undo(state) {
+      return createNullableTransitionEditorStateChange(state, undoCommand(state), true);
+    },
+    redo(state) {
+      return createNullableTransitionEditorStateChange(state, redoCommand(state), true);
     },
     moveCaretByViewport(state, layout, direction) {
       return createTransitionEditorStateChange(
@@ -793,10 +793,6 @@ function createTransitionEditorStateChange(
 ) {
   let animatedState = maybeAnimateActiveBlockChange(previousState, nextState);
 
-  if (documentChanged) {
-    animatedState = maybeAnimateNewListItem(previousState, animatedState);
-  }
-
   return createEditorStateChange(
     animatedState,
     documentChanged,
@@ -846,21 +842,17 @@ function maybeAnimateActiveBlockChange(
     : nextState;
 }
 
-function maybeAnimateNewListItem(
-  previousState: EditorState,
-  nextState: EditorState,
+function applyCommandEffects(
+  state: EditorState,
+  effects: EditorCommandEffect[],
 ) {
-  const previousPaths = new Set(
-    [...previousState.documentEditor.listItemMarkers.keys()]
-      .map((id) => previousState.documentEditor.blockIndex.get(id)?.path)
-      .filter((path): path is string => path !== undefined),
-  );
+  let nextState = state;
 
-  for (const [id] of nextState.documentEditor.listItemMarkers) {
-    const block = nextState.documentEditor.blockIndex.get(id);
-
-    if (block && !previousPaths.has(block.path)) {
-      nextState = addListMarkerPopAnimation(nextState, block.path);
+  for (const effect of effects) {
+    switch (effect.kind) {
+      case "list-item-inserted":
+        nextState = addListMarkerPopAnimation(nextState, effect.blockPath);
+        break;
     }
   }
 

@@ -4,7 +4,7 @@ import {
   isLineBreakInputType,
   resolveDeleteDirection,
   stripInputSeed,
-} from "@/component/hooks/useNativeInput";
+} from "@/component/hooks/useInput";
 
 test("recognizes both paragraph and line-break input types", () => {
   expect(isLineBreakInputType("insertParagraph")).toBe(true);

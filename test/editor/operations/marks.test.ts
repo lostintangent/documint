@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-  dispatchKey,
+  toggleSelectionBold,
+  toggleSelectionItalic,
   toggleSelectionMark,
+  toggleSelectionUnderline,
 } from "@/editor/model/commands";
 import {
   createDocumentFromEditorState,
@@ -65,13 +67,13 @@ test("routes mod-b and mod-i through inline mark toggles", () => {
       offset: "Paragraph".length,
     },
   });
-  state = dispatchKey(state, "toggleSelectionBold") ?? state;
+  state = toggleSelectionBold(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "**Paragraph** body.\n",
   );
 
-  state = dispatchKey(state, "toggleSelectionItalic") ?? state;
+  state = toggleSelectionItalic(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "***Paragraph*** body.\n",
@@ -96,7 +98,7 @@ test("routes mod-u through inline underline toggles", () => {
       offset: "Paragraph ".length,
     },
   });
-  state = dispatchKey(state, "toggleSelectionUnderline") ?? state;
+  state = toggleSelectionUnderline(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "Paragraph <ins>body</ins>.\n",

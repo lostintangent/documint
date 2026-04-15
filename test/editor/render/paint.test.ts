@@ -4,7 +4,7 @@ import { createDocumentLayout } from "@/editor/layout";
 import { createEditorState, setCanvasSelection as setSelection } from "@/editor/model/state";
 import { emptyDocumentResources } from "@/editor/resources";
 import { paintCanvasEditorSurface } from "@/editor/render/paint";
-import { lightEditorTheme } from "@/editor/render/theme";
+import { lightTheme } from "@/component/lib/themes";
 import { parseMarkdown } from "@/markdown";
 
 test("paints active table highlights only within the active cell before text", () => {
@@ -37,7 +37,7 @@ test("paints active table highlights only within the active cell before text", (
   const rightCellBackgroundIndex = findOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "fillRect" &&
-      operation.fillStyle === lightEditorTheme.tableHeaderBackground &&
+      operation.fillStyle === lightTheme.tableHeaderBackground &&
       approximately(operation.x, rightExtent.left) &&
       approximately(operation.y, rightExtent.top)
     );
@@ -45,7 +45,7 @@ test("paints active table highlights only within the active cell before text", (
   const activeHighlightIndex = findOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "fillRect" &&
-      operation.fillStyle === lightEditorTheme.activeBlockBackground &&
+      operation.fillStyle === lightTheme.activeBlockBackground &&
       approximately(operation.x, activeExtent.left) &&
       approximately(operation.width, activeExtent.right - activeExtent.left)
     );
@@ -54,7 +54,7 @@ test("paints active table highlights only within the active cell before text", (
   const activeBorderIndex = findLastOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "strokeRect" &&
-      operation.strokeStyle === lightEditorTheme.tableBorder &&
+      operation.strokeStyle === lightTheme.tableBorder &&
       approximately(operation.x, activeExtent.left) &&
       approximately(operation.y, activeExtent.top)
     );
@@ -93,7 +93,7 @@ test("keeps non-table active block highlights full width", () => {
   const activeHighlightIndex = findOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "fillRect" &&
-      operation.fillStyle === lightEditorTheme.activeBlockBackground &&
+      operation.fillStyle === lightTheme.activeBlockBackground &&
       approximately(operation.x, 0) &&
       approximately(operation.width, 240)
     );
@@ -273,7 +273,7 @@ function renderPaintOperations(
     },
     resources: emptyDocumentResources,
     runtimeBlockMap: createRuntimeBlockMap(state.documentEditor.document.blocks),
-    theme: lightEditorTheme,
+    theme: lightTheme,
     viewportTop: 0,
     width: options.width,
   });

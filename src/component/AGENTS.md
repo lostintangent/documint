@@ -21,7 +21,7 @@ The main responsibilities in this subsystem are:
 
 - `hooks/useHover.ts` - Owns host-side hover resolution, cursor state, leaf state, and link-hover click behavior for the React host.
 
-- `hooks/useNativeInput.ts` - Owns the hidden native input that adapts browser keyboard and IME behavior onto semantic editor operations, including mobile-specific input seeding for platform quirks.
+- `hooks/useInput.ts` - Owns browser input bridging for the host: hidden-input seeding, keyboard and IME adaptation, clipboard handling, and translation of native events into semantic editor operations.
 
 - `hooks/useSelection.ts` - Owns selection-driven presentation in the host: DOM selection handles, handle dragging, and the selection leaf state that feeds the shared leaf precedence policy.
 

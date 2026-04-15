@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   applyTextInputRule,
-  dispatchKey,
   handleStructuralBackspace,
+  insertLineBreak,
   moveListItemDown,
   moveListItemUp,
   splitSelectionListItem,
@@ -46,6 +46,48 @@ test("supports canvas list splits with undo and redo", () => {
 
   state = redoEditorState(state);
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- be\n- ta\n");
+});
+
+test("reports a list-item-inserted effect when Enter splits a regular list item", () => {
+  let state = createEditorState(parseMarkdown("- alpha\n"));
+  const target = state.documentEditor.regions[0];
+
+  if (!target) {
+    throw new Error("Expected list item container");
+  }
+
+  state = setSelection(state, {
+    regionId: target.id,
+    offset: target.text.length,
+  });
+
+  const result = insertLineBreak(state);
+
+  expect(result).not.toBeNull();
+  expect(result!.effects).toEqual([
+    expect.objectContaining({
+      kind: "list-item-inserted",
+    }),
+  ]);
+});
+
+test("does not report a list-item-inserted effect when Enter splits a task list item", () => {
+  let state = createEditorState(parseMarkdown("- [ ] alpha\n"));
+  const target = state.documentEditor.regions[0];
+
+  if (!target) {
+    throw new Error("Expected task list item container");
+  }
+
+  state = setSelection(state, {
+    regionId: target.id,
+    offset: target.text.length,
+  });
+
+  const result = insertLineBreak(state);
+
+  expect(result).not.toBeNull();
+  expect(result!.effects).toEqual([]);
 });
 
 test("moves top-level list items up and down while preserving their nested subtree", () => {
@@ -126,7 +168,7 @@ test("routes list item move commands through the editor command layer", () => {
     regionId: beta.id,
     offset: 0,
   });
-  state = dispatchKey(state, "moveListItemUp") ?? state;
+  state = moveListItemUp(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- beta\n- alpha\n");
 });
@@ -263,7 +305,7 @@ test("routes list enter behavior and markdown task rules", () => {
     regionId: task.id,
     offset: "shipped b".length,
   });
-  state = dispatchKey(state, "insertLineBreak") ?? state;
+  state = insertLineBreak(state)?.state ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- [x] shipped b\n- [ ] aseline\n");
 
@@ -421,7 +463,7 @@ test("preserves nested list semantics when splitting a nested task item at the e
     regionId: task.id,
     offset: task.text.length,
   });
-  state = dispatchKey(state, "insertLineBreak") ?? state;
+  state = insertLineBreak(state)?.state ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - [x] shipped child\n  - [ ] \n  - gamma\n",

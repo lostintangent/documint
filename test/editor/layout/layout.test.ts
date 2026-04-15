@@ -10,7 +10,7 @@ import {
   createDocumentEditor,
 } from "@/editor/model/document-editor";
 import {
-  dispatchKey,
+  insertLineBreak,
   toggleSelectionMark,
 } from "@/editor/model/commands";
 import {
@@ -224,7 +224,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
 
 test("keeps an empty layout line and caret target for inserted empty blocks", () => {
   let state = createEditorState(parseMarkdown("# Heading\n"));
-  state = dispatchKey(state, "insertLineBreak") ?? state;
+  state = insertLineBreak(state)?.state ?? state;
 
   const layout = createDocumentLayout(state.documentEditor, {
     width: 420,

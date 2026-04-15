@@ -1,31 +1,33 @@
-// Owns the hidden native input used to:
+// Owns the hidden browser input bridge used to:
 // - open the software keyboard on mobile
-// - receive browser text, keyboard, and clipboard events
+// - receive browser text, keyboard, IME, and clipboard events
 // - translate those native events into semantic editor operations
 import {
   type ClipboardEvent,
   type FormEvent,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
   useEffect,
   useEffectEvent,
 } from "react";
 import type { Editor, EditorStateChange } from "@/editor";
+import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
 import { readSingleContainerSelectionText } from "../lib/selection";
 
-type UseNativeInputOptions = {
+type UseInputOptions = {
   editor: Editor;
   editorState: ReturnType<Editor["createState"]>;
   editorStateRef: RefObject<ReturnType<Editor["createState"]> | null>;
   getViewportRenderData: () => ReturnType<Editor["prepareViewport"]>;
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  keybindings?: EditorKeybinding[];
   onActivity: () => void;
   onEditorStateChange: (stateChange: EditorStateChange | null) => void;
 };
 
 type InputEventHandlers = {
   onBeforeInput: (event: FormEvent<HTMLTextAreaElement | HTMLCanvasElement>) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
+  onKeyDown: (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
 };
 
 type ClipboardHandlers = {
@@ -45,50 +47,61 @@ type CanvasHandlers = SharedInputHandlers & {
   onFocus: () => void;
 };
 
-type NativeInputController = {
-  focusInput: () => void;
+type InputController = {
   canvasHandlers: CanvasHandlers;
+  focus: () => void;
   inputHandlers: InputHandlers;
 };
 
-const nativeInputContextWindow = 64;
+const inputContextWindow = 64;
 
-export function useNativeInput({
+export function useInput({
   editor,
   editorState,
   editorStateRef,
   getViewportRenderData,
   inputRef,
+  keybindings,
   onActivity,
   onEditorStateChange,
-}: UseNativeInputOptions): NativeInputController {
-  const focusInput = useEffectEvent(() => {
+}: UseInputOptions): InputController {
+  const readCurrentState = () => editorStateRef.current ?? editorState;
+
+  const applyStateChange = useEffectEvent((stateChange: EditorStateChange | null) => {
+    if (!stateChange) {
+      return;
+    }
+
+    onActivity();
+    onEditorStateChange(stateChange);
+  });
+
+  const focus = useEffectEvent(() => {
     const input = inputRef.current;
-    const currentState = editorStateRef.current ?? editorState;
 
     if (!input) {
       return;
     }
 
-    const focusNativeInput = () => {
+    const focusHiddenInput = () => {
       input.focus({
         preventScroll: true,
       });
-      syncNativeInputContext(input, currentState);
+      syncInputContext(input, readCurrentState());
     };
     const windowObject = input.ownerDocument.defaultView;
 
-    focusNativeInput();
+    focusHiddenInput();
 
     if (windowObject) {
       windowObject.requestAnimationFrame(() => {
-        focusNativeInput();
+        focusHiddenInput();
       });
     }
   });
 
   const applyNativeText = useEffectEvent((state: typeof editorState, value: string) => {
-    const insertedText = stripSyncedNativeInputPrefix(value, resolveNativeInputPrefix(state));
+    const insertedText = stripSyncedInputPrefix(value, resolveInputPrefix(state));
     const segments = insertedText.replace(/\r\n/g, "\n").split(/(\n)/);
     let nextState = state;
     let animationStarted = false;
@@ -99,18 +112,18 @@ export function useNativeInput({
         continue;
       }
 
-      const stateUpdate =
+      const stateChange =
         segment === "\n"
           ? editor.insertLineBreak(nextState)
           : editor.insertText(nextState, segment);
 
-      if (!stateUpdate) {
+      if (!stateChange) {
         continue;
       }
 
-      nextState = stateUpdate.state;
-      animationStarted ||= stateUpdate.animationStarted;
-      documentChanged ||= stateUpdate.documentChanged;
+      nextState = stateChange.state;
+      animationStarted ||= stateChange.animationStarted;
+      documentChanged ||= stateChange.documentChanged;
     }
 
     return nextState === state
@@ -124,80 +137,73 @@ export function useNativeInput({
 
   const handleBeforeInput = useEffectEvent(
     (event: FormEvent<HTMLTextAreaElement | HTMLCanvasElement>) => {
-      const currentState = editorStateRef.current ?? editorState;
+      const state = readCurrentState();
       const nativeEvent = event.nativeEvent as InputEvent;
       const deleteDirection = resolveDeleteDirection(nativeEvent.inputType);
 
-      switch (nativeEvent.inputType) {
-        case "insertText":
-          if (!nativeEvent.data) {
-            return;
-          }
-
-          event.preventDefault();
-          onActivity();
-          onEditorStateChange(applyNativeText(currentState, nativeEvent.data));
+      if (nativeEvent.inputType === "insertText") {
+        if (!nativeEvent.data) {
           return;
+        }
+
+        event.preventDefault();
+        applyStateChange(applyNativeText(state, nativeEvent.data));
+        return;
       }
 
       if (isLineBreakInputType(nativeEvent.inputType)) {
         event.preventDefault();
-        onActivity();
-        onEditorStateChange(editor.insertLineBreak(currentState));
+        applyStateChange(editor.insertLineBreak(state));
         return;
       }
 
       if (deleteDirection === "backward") {
         event.preventDefault();
-        onActivity();
-        onEditorStateChange(editor.deleteBackward(currentState));
+        applyStateChange(editor.deleteBackward(state));
         return;
       }
 
       if (deleteDirection === "forward") {
         event.preventDefault();
-        onActivity();
-        onEditorStateChange(editor.deleteForward(currentState));
+        applyStateChange(editor.deleteForward(state));
       }
     },
   );
 
   const handleInput = useEffectEvent((event: FormEvent<HTMLTextAreaElement>) => {
-    const currentState = editorStateRef.current ?? editorState;
+    const state = readCurrentState();
     const value = event.currentTarget.value;
 
-    if (stripSyncedNativeInputPrefix(value, resolveNativeInputPrefix(currentState)).length === 0) {
-      syncNativeInputContext(event.currentTarget, currentState);
+    if (stripSyncedInputPrefix(value, resolveInputPrefix(state)).length === 0) {
+      syncInputContext(event.currentTarget, state);
       return;
     }
 
-    onActivity();
-    onEditorStateChange(applyNativeText(currentState, value));
+    applyStateChange(applyNativeText(state, value));
   });
 
   const handleKeyDown = useEffectEvent(
-    (event: KeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const currentState = editorStateRef.current ?? editorState;
-      const stateUpdate = editor.handleKeyboardEvent(
-        currentState,
-        getViewportRenderData().layout,
+    (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
+      const stateChange = applyKeyboardEvent(
+        editor,
+        readCurrentState(),
+        getViewportRenderData(),
         event.nativeEvent,
+        keybindings,
       );
 
-      if (!stateUpdate) {
+      if (!stateChange) {
         return;
       }
 
       event.preventDefault();
-      onActivity();
-      onEditorStateChange(stateUpdate);
+      applyStateChange(stateChange);
     },
   );
 
   const handleCopy = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const currentState = editorStateRef.current ?? editorState;
-      const selectedText = readSingleContainerSelectionText(currentState);
+      const selectedText = readSingleContainerSelectionText(readCurrentState());
 
       if (!selectedText) {
         return;
@@ -210,8 +216,8 @@ export function useNativeInput({
 
   const handleCut = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const currentState = editorStateRef.current ?? editorState;
-      const selectedText = readSingleContainerSelectionText(currentState);
+      const state = readCurrentState();
+      const selectedText = readSingleContainerSelectionText(state);
 
       if (!selectedText) {
         return;
@@ -219,14 +225,12 @@ export function useNativeInput({
 
       event.preventDefault();
       event.clipboardData.setData("text/plain", selectedText);
-      onActivity();
-      onEditorStateChange(editor.deleteSelection(currentState));
+      applyStateChange(editor.deleteSelection(state));
     },
   );
 
   const handlePaste = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const currentState = editorStateRef.current ?? editorState;
       const pastedText = event.clipboardData.getData("text/plain");
 
       if (pastedText.length === 0) {
@@ -234,24 +238,22 @@ export function useNativeInput({
       }
 
       event.preventDefault();
-      onActivity();
-      onEditorStateChange(editor.replaceSelection(currentState, pastedText));
+      applyStateChange(editor.replaceSelection(readCurrentState(), pastedText));
     },
   );
 
-  const handleHiddenInputFocus = useEffectEvent(() => {
+  const handleInputFocus = useEffectEvent(() => {
     onActivity();
     const input = inputRef.current;
-    const currentState = editorStateRef.current ?? editorState;
 
     if (input) {
-      syncNativeInputContext(input, currentState);
+      syncInputContext(input, readCurrentState());
     }
   });
 
   const handleCanvasFocus = useEffectEvent(() => {
     onActivity();
-    focusInput();
+    focus();
   });
 
   useEffect(() => {
@@ -261,7 +263,7 @@ export function useNativeInput({
       return;
     }
 
-    syncNativeInputContext(input, editorState);
+    syncInputContext(input, editorState);
   }, [editorState, inputRef]);
 
   const sharedHandlers = {
@@ -277,10 +279,10 @@ export function useNativeInput({
       ...sharedHandlers,
       onFocus: handleCanvasFocus,
     },
-    focusInput,
+    focus,
     inputHandlers: {
       ...sharedHandlers,
-      onFocus: handleHiddenInputFocus,
+      onFocus: handleInputFocus,
       onInput: handleInput,
     },
   };
@@ -314,9 +316,9 @@ export function stripInputSeed(value: string) {
   return value.replaceAll(INPUT_SEED, "");
 }
 
-export function resolveNativeInputPrefix(
+export function resolveInputPrefix(
   state: ReturnType<Editor["createState"]>,
-  maxLength = nativeInputContextWindow,
+  maxLength = inputContextWindow,
 ) {
   const { anchor, focus } = state.selection;
 
@@ -333,7 +335,7 @@ export function resolveNativeInputPrefix(
   return region.text.slice(Math.max(0, focus.offset - maxLength), focus.offset);
 }
 
-export function stripSyncedNativeInputPrefix(value: string, prefix: string) {
+export function stripSyncedInputPrefix(value: string, prefix: string) {
   const syncedValue = stripInputSeed(value);
 
   return syncedValue.startsWith(prefix)
@@ -341,13 +343,97 @@ export function stripSyncedNativeInputPrefix(value: string, prefix: string) {
     : syncedValue;
 }
 
-export function syncNativeInputContext(
+export function syncInputContext(
   input: HTMLTextAreaElement,
   state: ReturnType<Editor["createState"]>,
 ) {
-  const prefix = resolveNativeInputPrefix(state);
+  const prefix = resolveInputPrefix(state);
   const nextValue = `${INPUT_SEED}${prefix}`;
 
   input.value = nextValue;
   input.setSelectionRange(nextValue.length, nextValue.length);
+}
+
+function applyKeyboardEvent(
+  editor: Editor,
+  state: ReturnType<Editor["createState"]>,
+  viewport: ReturnType<Editor["prepareViewport"]>,
+  event: KeyboardEvent,
+  keybindings?: EditorKeybinding[],
+): EditorStateChange | null {
+  if (event.key === "Delete") {
+    return editor.deleteForward(state);
+  }
+
+  const command = resolveEditorCommand(event, keybindings);
+
+  if (command) {
+    if (command === "moveToLineStart" || command === "moveToLineEnd") {
+      return editor.moveCaretToLineBoundary(
+        state,
+        viewport.layout,
+        command === "moveToLineStart" ? "Home" : "End",
+        event.shiftKey,
+      );
+    }
+
+    switch (command) {
+      case "insertLineBreak":
+        return editor.insertLineBreak(state);
+      case "deleteBackward":
+        return editor.deleteBackward(state);
+      case "indent":
+        return editor.indent(state);
+      case "dedent":
+        return editor.dedent(state);
+      case "moveListItemUp":
+        return editor.moveListItemUp(state);
+      case "moveListItemDown":
+        return editor.moveListItemDown(state);
+      case "toggleSelectionBold":
+        return editor.toggleSelectionBold(state);
+      case "toggleSelectionItalic":
+        return editor.toggleSelectionItalic(state);
+      case "toggleSelectionStrikethrough":
+        return editor.toggleSelectionStrikethrough(state);
+      case "toggleSelectionUnderline":
+        return editor.toggleSelectionUnderline(state);
+      case "toggleSelectionInlineCode":
+        return editor.toggleSelectionInlineCode(state);
+      case "undo":
+        return editor.undo(state);
+      case "redo":
+        return editor.redo(state);
+    }
+  }
+
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+    return editor.moveCaretHorizontally(
+      state,
+      event.key === "ArrowLeft" ? -1 : 1,
+      event.shiftKey,
+    );
+  }
+
+  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    return editor.moveCaretVertically(
+      state,
+      viewport.layout,
+      event.key === "ArrowUp" ? -1 : 1,
+    );
+  }
+
+  if (event.key === "PageUp" || event.key === "PageDown") {
+    return editor.moveCaretByViewport(
+      state,
+      viewport.layout,
+      event.key === "PageUp" ? -1 : 1,
+    );
+  }
+
+  if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    return editor.insertText(state, event.key);
+  }
+
+  return null;
 }

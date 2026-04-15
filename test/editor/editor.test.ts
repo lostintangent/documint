@@ -29,11 +29,7 @@ test("extends the selection to the current line boundary for modified shift-arro
       offset: container!.text.length,
     },
   }).state;
-  const transaction = editor.handleKeyboardEvent(
-    nextState,
-    layout,
-    createKeyboardEvent("ArrowLeft", { metaKey: true, shiftKey: true }),
-  );
+  const transaction = editor.moveCaretToLineBoundary(nextState, layout, "Home", true);
 
   expect(transaction).not.toBeNull();
   expect(transaction!.state.selection.anchor.regionId).toBe(container!.id);
@@ -42,24 +38,6 @@ test("extends the selection to the current line boundary for modified shift-arro
   expect(transaction!.state.selection.focus.offset).toBeGreaterThan(0);
   expect(transaction!.state.selection.focus.offset).toBeLessThan(container!.text.length);
 });
-
-function createKeyboardEvent(
-  key: string,
-  options: {
-    altKey?: boolean;
-    ctrlKey?: boolean;
-    metaKey?: boolean;
-    shiftKey?: boolean;
-  } = {},
-) {
-  return {
-    altKey: options.altKey ?? false,
-    ctrlKey: options.ctrlKey ?? false,
-    key,
-    metaKey: options.metaKey ?? false,
-    shiftKey: options.shiftKey ?? false,
-  } as KeyboardEvent;
-}
 
 test("deletes adjacent images atomically", () => {
   const editor = createEditor();
@@ -339,50 +317,6 @@ test("starts an active-block flash animation when selection moves into a differe
   ]);
 });
 
-test("starts a list-marker-pop animation when a list item is created via input rule", () => {
-  const editor = createEditor();
-  const state = editor.createState(parseMarkdown("\n"));
-  const region = state.documentEditor.regions[0];
-
-  if (!region) {
-    throw new Error("Expected paragraph region");
-  }
-
-  const stateAtStart = editor.setSelection(state, {
-    regionId: region.id,
-    offset: 0,
-  }).state;
-
-  const stateUpdate = editor.insertText(stateAtStart, "- ");
-
-  expect(stateUpdate).not.toBeNull();
-  expect(stateUpdate!.animationStarted).toBe(true);
-  expect(stateUpdate!.state.animations).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        kind: "list-marker-pop",
-      }),
-    ]),
-  );
-
-  const animation = stateUpdate!.state.animations.find(
-    (candidate) => candidate.kind === "list-marker-pop",
-  );
-  const stateWithPopOnly = {
-    ...stateUpdate!.state,
-    animations: animation ? [animation] : [],
-  };
-
-  expect(animation).toBeDefined();
-  expect(editor.hasRunningAnimations(stateWithPopOnly, animation!.startedAt + 10)).toBe(true);
-  expect(
-    editor.hasRunningAnimations(
-      stateWithPopOnly,
-      animation!.startedAt + getEditorAnimationDuration(animation!) + 10,
-    ),
-  ).toBe(false);
-});
-
 test("starts a list-marker-pop animation when splitting a list item with insertLineBreak", () => {
   const editor = createEditor();
   const state = editor.createState(parseMarkdown("- alpha\n"));
@@ -423,6 +357,27 @@ test("does not re-trigger list-marker-pop animation when typing inside an existi
     offset: region.text.length,
   }).state;
   const stateUpdate = editor.insertText(stateAtEnd, "b");
+
+  expect(stateUpdate).not.toBeNull();
+  expect(
+    stateUpdate!.state.animations.some((animation) => animation.kind === "list-marker-pop"),
+  ).toBe(false);
+});
+
+test("does not start a list-marker-pop animation when splitting a task list item", () => {
+  const editor = createEditor();
+  const state = editor.createState(parseMarkdown("- [ ] task\n"));
+  const region = state.documentEditor.regions[0];
+
+  if (!region) {
+    throw new Error("Expected task list item region");
+  }
+
+  const stateAtEnd = editor.setSelection(state, {
+    regionId: region.id,
+    offset: region.text.length,
+  }).state;
+  const stateUpdate = editor.insertLineBreak(stateAtEnd);
 
   expect(stateUpdate).not.toBeNull();
   expect(

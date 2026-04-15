@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { resolveEditorCommand } from "@/editor/keybindings";
+import { resolveEditorCommand, type EditorKeybinding } from "@/component/lib/keybindings";
 
 test("maps modifier shortcuts to semantic editor commands", () => {
   expect(resolveEditorCommand(createKeyboardEvent("b", { metaKey: true }))).toBe("toggleSelectionBold");
@@ -33,6 +33,21 @@ test("maps structural editor keys", () => {
 test("ignores unsupported keyboard shortcuts", () => {
   expect(resolveEditorCommand(createKeyboardEvent("x", { metaKey: true }))).toBeNull();
   expect(resolveEditorCommand(createKeyboardEvent("b"))).toBeNull();
+});
+
+test("resolves commands against a caller-provided keybinding set", () => {
+  const keybindings: EditorKeybinding[] = [
+    {
+      command: "toggleSelectionBold",
+      key: "k",
+      modKey: true,
+    },
+  ];
+
+  expect(resolveEditorCommand(createKeyboardEvent("k", { metaKey: true }), keybindings)).toBe(
+    "toggleSelectionBold",
+  );
+  expect(resolveEditorCommand(createKeyboardEvent("b", { metaKey: true }), keybindings)).toBeNull();
 });
 
 function createKeyboardEvent(

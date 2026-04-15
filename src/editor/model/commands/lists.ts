@@ -62,6 +62,11 @@ type ListHelpers = {
   resolvePrimaryTextBlockId: (item: ListItemBlock) => string;
 };
 
+export type ListOperationResult = {
+  insertedListItemPath?: string;
+  state: EditorState;
+};
+
 export function splitSelectionListItemOperation(state: EditorState, helpers: ListHelpers) {
   const selection = helpers.normalizeSelection(state.documentEditor, state.selection);
 
@@ -90,12 +95,12 @@ export function splitSelectionListItemOperation(state: EditorState, helpers: Lis
     );
     const nextChildren = [
       ...context.list.children.slice(0, context.itemIndex),
-      insertedItem.item,
+      insertedItem,
       currentItem,
       ...context.list.children.slice(context.itemIndex + 1),
     ];
     const nextList = rebuildListBlock(context.list, nextChildren);
-    return helpers.applyBlockReplacement(
+    const nextState = helpers.applyBlockReplacement(
       state,
       context.list.id,
       nextList,
@@ -104,6 +109,13 @@ export function splitSelectionListItemOperation(state: EditorState, helpers: Lis
         context.itemIndex,
         0,
       ]),
+    );
+
+    return createInsertedListItemResult(
+      nextState,
+      insertedItem,
+      context.rootIndex,
+      [...context.listChildIndices, context.itemIndex],
     );
   }
 
@@ -115,11 +127,11 @@ export function splitSelectionListItemOperation(state: EditorState, helpers: Lis
     );
     const nextChildren = [
       ...context.list.children.slice(0, context.itemIndex + 1),
-      insertedItem.item,
+      insertedItem,
       ...context.list.children.slice(context.itemIndex + 1),
     ];
     const nextList = rebuildListBlock(context.list, nextChildren);
-    return helpers.applyBlockReplacement(
+    const nextState = helpers.applyBlockReplacement(
       state,
       context.list.id,
       nextList,
@@ -128,6 +140,13 @@ export function splitSelectionListItemOperation(state: EditorState, helpers: Lis
         context.itemIndex + 1,
         0,
       ]),
+    );
+
+    return createInsertedListItemResult(
+      nextState,
+      insertedItem,
+      context.rootIndex,
+      [...context.listChildIndices, context.itemIndex + 1],
     );
   }
 
@@ -146,11 +165,11 @@ export function splitSelectionListItemOperation(state: EditorState, helpers: Lis
   const nextChildren = [
     ...context.list.children.slice(0, context.itemIndex),
     updatedCurrentItem,
-    nextItem.item,
+    nextItem,
     ...context.list.children.slice(context.itemIndex + 1),
   ];
   const nextList = rebuildListBlock(context.list, nextChildren);
-  return helpers.applyBlockReplacement(
+  const nextState = helpers.applyBlockReplacement(
     state,
     context.list.id,
     nextList,
@@ -159,6 +178,13 @@ export function splitSelectionListItemOperation(state: EditorState, helpers: Lis
       context.itemIndex + 1,
       0,
     ]),
+  );
+
+  return createInsertedListItemResult(
+    nextState,
+    nextItem,
+    context.rootIndex,
+    [...context.listChildIndices, context.itemIndex + 1],
   );
 }
 
@@ -201,13 +227,17 @@ export function splitStructuralListBlockOperation(state: EditorState, helpers: L
     replacementBlocks.push(rebuildListBlock(context.list, afterItems));
   }
 
-  return helpers.replaceRootRange(
+  const nextState = helpers.replaceRootRange(
     state,
     context.rootIndex,
     1,
     replacementBlocks,
     helpers.focusRootPrimaryRegion(context.rootIndex + (beforeItems.length > 0 ? 1 : 0)),
   );
+
+  return {
+    state: nextState,
+  };
 }
 
 function liftEmptyNestedListItemOperation(
@@ -248,11 +278,11 @@ function liftEmptyNestedListItemOperation(
   const nextParentChildren = [
     ...context.parentList.children.slice(0, context.parentItemIndex),
     updatedParentItem,
-    insertedItem.item,
+    insertedItem,
     ...context.parentList.children.slice(context.parentItemIndex + 1),
   ];
   const nextParentList = rebuildListBlock(context.parentList, nextParentChildren);
-  return helpers.applyBlockReplacement(
+  const nextState = helpers.applyBlockReplacement(
     state,
     context.parentList.id,
     nextParentList,
@@ -261,6 +291,13 @@ function liftEmptyNestedListItemOperation(
       context.parentItemIndex + 1,
       0,
     ]),
+  );
+
+  return createInsertedListItemResult(
+    nextState,
+    insertedItem,
+    context.rootIndex,
+    [...context.parentListChildIndices, context.parentItemIndex + 1],
   );
 }
 
@@ -474,18 +511,40 @@ function createInsertedListItem(
   text: string,
   checked: boolean | null,
   spread: boolean,
-): { item: ListItemBlock } {
-  const paragraph = createParagraphTextBlock({
-    text,
+): ListItemBlock {
+  return createListItemBlock({
+    checked,
+    children: [
+      createParagraphTextBlock({
+        text,
+      }),
+    ],
+    spread,
   });
+}
 
-  return {
-    item: createListItemBlock({
-      checked,
-      children: [paragraph],
-      spread,
-    }),
-  };
+function createInsertedListItemResult(
+  state: EditorState | null,
+  item: ListItemBlock,
+  rootIndex: number,
+  childIndices: number[],
+): ListOperationResult | null {
+  return state
+    ? {
+        insertedListItemPath:
+          typeof item.checked === "boolean"
+            ? undefined
+            : resolveListItemPath(rootIndex, childIndices),
+        state,
+      }
+    : null;
+}
+
+function resolveListItemPath(rootIndex: number, childIndices: number[]) {
+  return childIndices.reduce(
+    (path, childIndex) => `${path}.children.${childIndex}`,
+    `root.${rootIndex}`,
+  );
 }
 
 function appendNestedListItem(

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test";
 import {
-  dispatchKey,
   toggleSelectionInlineCode,
 } from "@/editor/model/commands";
 import {
@@ -59,7 +58,7 @@ test("routes mod-e through inline code toggles", () => {
       offset: 7,
     },
   });
-  state = dispatchKey(state, "toggleSelectionInlineCode") ?? state;
+  state = toggleSelectionInlineCode(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "Call `fn` here.\n",

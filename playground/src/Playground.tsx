@@ -1,10 +1,10 @@
 import { useState } from "react";
 import {
-  darkEditorTheme,
   Documint,
-  lightEditorTheme,
-  midnightEditorTheme,
-  mintEditorTheme,
+  darkTheme,  
+  lightTheme,
+  midnightTheme,
+  mintTheme,
   type EditorTheme,
 } from "documint";
 
@@ -306,8 +306,8 @@ The editor width should follow the host container, not the window.
   },
 ];
 
-const sunriseEditorTheme: EditorTheme = {
-  ...lightEditorTheme,
+const sunriseTheme: EditorTheme = {
+  ...lightTheme,
   activeBlockBackground: "rgba(251, 191, 36, 0.18)",
   activeBlockFlash: "rgba(249, 115, 22, 0.3)",
   blockquoteRuleActive: "rgba(249, 115, 22, 0.34)",
@@ -349,27 +349,27 @@ const themeOptions = [
   {
     id: "light",
     label: "Light theme",
-    theme: lightEditorTheme,
+    theme: lightTheme,
   },
   {
     id: "dark",
     label: "Dark theme",
-    theme: darkEditorTheme,
+    theme: darkTheme,
   },
   {
     id: "sunrise",
     label: "Sunrise theme",
-    theme: sunriseEditorTheme,
+    theme: sunriseTheme,
   },
   {
     id: "mint",
     label: "Mint theme",
-    theme: mintEditorTheme,
+    theme: mintTheme,
   },
   {
     id: "midnight",
     label: "Midnight theme",
-    theme: midnightEditorTheme,
+    theme: midnightTheme,
   },
 ] as const;
 
@@ -378,7 +378,7 @@ export function Playground() {
   const [content, setContent] = useState(fixtureOptions[0].markdown);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
   const activeTheme =
-    themeOptions.find((option) => option.id === themeId)?.theme ?? lightEditorTheme;
+    themeOptions.find((option) => option.id === themeId)?.theme ?? lightTheme;
 
   return (
     <main className="playground-shell">

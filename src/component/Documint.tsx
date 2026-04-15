@@ -18,11 +18,11 @@ import {
 } from "@/comments";
 import type { Document } from "@/document";
 import {
+  type EditorTheme,
   type PreparedViewport,
   type EditorStateChange,
   type EditorSelectionPoint as SelectionPoint,
 } from "@/editor";
-import { darkEditorTheme, lightEditorTheme, type EditorTheme } from "@/editor";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 import { AnnotationLeaf } from "./leaves/AnnotationLeaf";
 import { InsertionLeaf } from "./leaves/InsertionLeaf";
@@ -33,15 +33,17 @@ import { useCursor } from "./hooks/useCursor";
 import { useDocumentImages } from "./hooks/useDocumentImages";
 import { useEditor } from "./hooks/useEditor";
 import { useHover } from "./hooks/useHover";
-import { useNativeInput } from "./hooks/useNativeInput";
+import { useInput } from "./hooks/useInput";
 import { useRenderScheduler } from "./hooks/useRenderScheduler";
 import { useSelection } from "./hooks/useSelection";
 import { areStatesEqual, prepareCanvasLayer } from "./lib/canvas";
+import { type EditorKeybinding } from "./lib/keybindings";
 import {
   autoScrollSelectionContainer,
   normalizeSelectionAbsolutePositions,
 } from "./lib/selection";
 import { resolvePointerPointInScrollContainer } from "./lib/pointer";
+import { darkTheme, lightTheme } from "./lib/themes";
 import { DocumintSsr } from "./Ssr";
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
@@ -65,6 +67,7 @@ export type DocumintState = {
 export type DocumintProps = {
   className?: string;
   content: string;
+  keybindings?: EditorKeybinding[];
   onContentChange?: (content: string, document: Document) => void;
   onStateChange?: (state: DocumintState) => void;
   theme?: EditorTheme;
@@ -115,6 +118,7 @@ const defaultDocumintState: DocumintState = {
 export function Documint({
   className,
   content,
+  keybindings,
   onContentChange,
   onStateChange,
   theme,
@@ -146,7 +150,7 @@ export function Documint({
   const [viewportHeight, setViewportHeight] = useState(240);
   const [viewportTop, setViewportTop] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(240);
-  const [preferredTheme, setPreferredTheme] = useState<EditorTheme>(lightEditorTheme);
+  const [preferredTheme, setPreferredTheme] = useState<EditorTheme>(lightTheme);
   const [componentState, setComponentState] = useState(defaultDocumintState);
   const ssrDocument = useMemo(() => parseMarkdown(content), [content]);
   const canonicalSsrContent = useMemo(
@@ -427,12 +431,13 @@ export function Documint({
     handleViewportScroll(scrollContainer);
   });
 
-  const input = useNativeInput({
+  const input = useInput({
     editor,
     editorState,
     editorStateRef,
     getViewportRenderData,
     inputRef,
+    keybindings,
     onActivity: cursor.markActivity,
     onEditorStateChange: applyEditorStateChange,
   });
@@ -513,7 +518,7 @@ export function Documint({
         regionId: hit.regionId,
       }),
     );
-    input.focusInput();
+    input.focus();
   });
   const handleCanvasPointerLeave = useEffectEvent(() => {
     hover.canvasHandlers.onPointerLeave();
@@ -589,7 +594,7 @@ export function Documint({
     }
 
     pendingTaskToggleRef.current = null;
-    input.focusInput();
+    input.focus();
   });
   const handleCanvasDoubleClick = useEffectEvent((event: MouseEvent<HTMLCanvasElement>) => {
     const currentState = readCurrentState();
@@ -610,7 +615,7 @@ export function Documint({
     event.stopPropagation();
     cursor.markActivity();
     applyEditorStateChange(editor.setSelection(currentState, selection));
-    input.focusInput();
+    input.focus();
   });
 
   useEffect(() => {
@@ -624,7 +629,7 @@ export function Documint({
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const updateTheme = () => {
-      setPreferredTheme(mediaQuery.matches ? darkEditorTheme : lightEditorTheme);
+      setPreferredTheme(mediaQuery.matches ? darkTheme : lightTheme);
     };
 
     updateTheme();
@@ -990,18 +995,18 @@ export function Documint({
               selection.promoteLeafToThread(threadIndex, true);
             }}
             onToggleBold={() => {
-              applyEditorStateChange(editor.dispatchCommand(readCurrentState(), "toggleSelectionBold"));
+              applyEditorStateChange(editor.toggleSelectionBold(readCurrentState()));
             }}
             onToggleItalic={() => {
-              applyEditorStateChange(editor.dispatchCommand(readCurrentState(), "toggleSelectionItalic"));
+              applyEditorStateChange(editor.toggleSelectionItalic(readCurrentState()));
             }}
             onToggleStrikethrough={() => {
               applyEditorStateChange(
-                editor.dispatchCommand(readCurrentState(), "toggleSelectionStrikethrough"),
+                editor.toggleSelectionStrikethrough(readCurrentState()),
               );
             }}
             onToggleUnderline={() => {
-              applyEditorStateChange(editor.dispatchCommand(readCurrentState(), "toggleSelectionUnderline"));
+              applyEditorStateChange(editor.toggleSelectionUnderline(readCurrentState()));
             }}
           />
         );

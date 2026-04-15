@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import {
+  dedent,
   dedentListItem,
-  dispatchKey,
+  indent,
   indentListItem,
 } from "@/editor/model/commands";
 import {
@@ -89,7 +90,7 @@ test("routes tab and shift-tab through list indentation semantics", () => {
     regionId: beta.id,
     offset: 0,
   });
-  state = dispatchKey(state, "indent") ?? state;
+  state = indent(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n  - beta\n");
 
@@ -103,7 +104,7 @@ test("routes tab and shift-tab through list indentation semantics", () => {
     regionId: nestedBeta.id,
     offset: 0,
   });
-  state = dispatchKey(state, "dedent") ?? state;
+  state = dedent(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
 });
