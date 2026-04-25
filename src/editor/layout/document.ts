@@ -2,8 +2,7 @@
 // local line, region, and block geometry without doing viewport virtualization
 // or whole-document height estimation.
 import type { Block } from "@/document";
-import type { DocumentResources } from "../resources";
-import { emptyDocumentResources } from "../resources";
+import type { DocumentResources } from "@/types";
 import type { DocumentIndex } from "../state";
 import { createCanvasRenderCache, type CanvasRenderCache } from "../canvas/cache";
 import { layoutTable } from "./table";
@@ -113,8 +112,9 @@ export function createDocumentLayout(
   documentIndex: DocumentIndex,
   options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
   cache = createCanvasRenderCache(),
-  resources: DocumentResources = emptyDocumentResources,
+  resources: DocumentResources | null = null,
 ): ViewportLayout {
+  const resolvedResources: DocumentResources = resources ?? { images: new Map() };
   const resolvedOptions: DocumentLayoutOptions = {
     ...defaultDocumentLayoutOptions,
     ...options,
@@ -159,7 +159,7 @@ export function createDocumentLayout(
         left,
         y,
         resolvedOptions,
-        resources,
+        resolvedResources,
       );
       index += tableContainers.length - 1;
       continue;
@@ -176,7 +176,7 @@ export function createDocumentLayout(
       y,
       availableWidth,
       resolvedOptions,
-      resources,
+      resolvedResources,
     );
     const gap = resolveContainerGap(
       runtimeBlocks,

@@ -4,12 +4,11 @@
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import { collectImageUrls, type Document } from "@/document";
 import {
-  emptyDocumentResources,
   type DocumentImageResource,
   type DocumentResources,
-} from "@/editor";
+} from "@/types";
 
-export function useDocumentImages(document: Document): DocumentResources {
+export function useDocumentImages(document: Document): DocumentResources | null {
   const imageUrls = useMemo(() => resolveDocumentImageUrls(document), [document]);
   const imageUrlSignature = useMemo(() => imageUrls.join("\n"), [imageUrls]);
   const [imageResources, setImageResources] = useState<Map<string, DocumentImageResource>>(
@@ -49,7 +48,7 @@ export function useDocumentImages(document: Document): DocumentResources {
   return useMemo(
     () =>
       imageResources.size === 0
-        ? emptyDocumentResources
+        ? null
         : {
             images: imageResources,
           },

@@ -13,13 +13,18 @@ import {
   addPunctuationPulseAnimation,
   normalizeSelection,
   redoEditorState,
-  resolveBlockById,
   resolveRegion,
   setSelection,
-  type EditorAction,
+  spliceEditorCommentThreads,
   type EditorState,
   undoEditorState,
 } from "./index";
+import { resolveBlockById } from "./index/context";
+import type { EditorAction } from "./index/types";
+import {
+  createCommentThreadForSelection,
+  getCommentState,
+} from "../annotations";
 import {
   type InlineCommandReplacement,
   replaceExactInlineLinkRange,
@@ -28,6 +33,13 @@ import {
   toggleInlineCodeTarget,
   toggleInlineMarkTarget,
 } from "./index/actions/inline";
+import {
+  deleteCommentFromThread,
+  editCommentInThread,
+  markCommentThreadAsResolved as markThreadResolved,
+  replyToCommentThread as replyToThread,
+  type CommentThread,
+} from "@/comments";
 import { resolveTextInputRule } from "./index/actions/input-rules";
 import {
   resolveListItemDedent,
@@ -382,6 +394,82 @@ export function undo(state: EditorState) {
 
 export function redo(state: EditorState) {
   return redoEditorState(state);
+}
+
+// --- Comments ---
+
+export function createCommentThread(
+  state: EditorState,
+  selection: { endOffset: number; regionId: string; startOffset: number },
+  body: string,
+) {
+  const thread = createCommentThreadForSelection(state.documentIndex, selection, body);
+
+  if (!thread) {
+    return null;
+  }
+
+  return spliceEditorCommentThreads(state, state.documentIndex.document.comments.length, 0, [
+    thread,
+  ]);
+}
+
+export function replyToCommentThread(state: EditorState, threadIndex: number, body: string) {
+  return updateCommentThread(state, threadIndex, (thread) =>
+    replyToThread(thread, { body: body.trim() }),
+  );
+}
+
+export function editComment(
+  state: EditorState,
+  threadIndex: number,
+  commentIndex: number,
+  body: string,
+) {
+  return updateCommentThread(state, threadIndex, (thread) =>
+    editCommentInThread(thread, commentIndex, body),
+  );
+}
+
+export function deleteComment(state: EditorState, threadIndex: number, commentIndex: number) {
+  return updateCommentThread(state, threadIndex, (thread) =>
+    deleteCommentFromThread(thread, commentIndex),
+  );
+}
+
+export function deleteCommentThread(state: EditorState, threadIndex: number) {
+  return updateCommentThread(state, threadIndex, () => null);
+}
+
+export function resolveCommentThread(
+  state: EditorState,
+  threadIndex: number,
+  resolved: boolean,
+) {
+  return updateCommentThread(state, threadIndex, (thread) =>
+    markThreadResolved(thread, resolved),
+  );
+}
+
+function updateCommentThread(
+  state: EditorState,
+  threadIndex: number,
+  updater: (thread: CommentThread) => CommentThread | null,
+) {
+  const threads = getCommentState(state.documentIndex).threads;
+  const currentThread = threads[threadIndex];
+
+  if (!currentThread) {
+    return null;
+  }
+
+  const nextThread = updater(currentThread);
+
+  if (nextThread === currentThread) {
+    return null;
+  }
+
+  return spliceEditorCommentThreads(state, threadIndex, 1, nextThread ? [nextThread] : []);
 }
 
 // --- Private helpers ---

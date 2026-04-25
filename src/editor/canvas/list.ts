@@ -9,7 +9,7 @@ import {
   resolveListMarkerPopScale,
   type ActiveListMarkerPop,
 } from "./animations";
-import type { EditorTheme } from "./theme";
+import type { EditorTheme } from "@/types";
 
 const listMarkerTextInset = 2;
 const orderedListMarkerGap = 8;
@@ -17,6 +17,7 @@ const orderedListMarkerGap = 8;
 const taskCheckboxCornerRadius = 3;
 const taskCheckboxStrokeWidth = 1.5;
 const taskCheckmarkStrokeWidth = 2;
+
 // Checkmark polyline within the 14×14 checkbox bounds: start → elbow → end.
 const taskCheckmarkPath = {
   elbow: { x: 6.5, y: 10.5 },

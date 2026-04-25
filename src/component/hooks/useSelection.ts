@@ -1,6 +1,16 @@
 import type { Mark } from "@/document";
 import type { EditorCommentState } from "@/editor/annotations";
-import type { Editor, EditorSelectionPoint, EditorViewportState } from "@/editor";
+import {
+  getSelectionMarks,
+  measureVisualCaretTarget,
+  normalizeSelection,
+  resolveDragFocus,
+  setSelection,
+  type EditorSelectionPoint,
+  type EditorState,
+  type EditorViewportState,
+  type NormalizedEditorSelection,
+} from "@/editor";
 import { isSelectionCollapsed } from "@/editor/state";
 import type { LazyRefHandle } from "./useLazyRef";
 import {
@@ -56,13 +66,12 @@ type UseSelectionOptions = {
   canShowSelectionLeaf: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   threads: EditorCommentState["threads"];
-  editor: Editor;
-  editorState: ReturnType<Editor["createState"]>;
-  editorStateRef: RefObject<ReturnType<Editor["createState"]> | null>;
+  editorState: EditorState;
+  editorStateRef: RefObject<EditorState | null>;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   onActivity: () => void;
-  onEditorStateChange: (stateChange: ReturnType<Editor["setSelection"]>) => void;
+  onEditorStateChange: (nextState: EditorState) => void;
 };
 
 type SelectionHandles = {
@@ -83,7 +92,6 @@ export function useSelection({
   canShowSelectionLeaf,
   canvasRef,
   threads,
-  editor,
   editorState,
   editorStateRef,
   scrollContainerRef,
@@ -91,15 +99,15 @@ export function useSelection({
   onActivity,
   onEditorStateChange,
 }: UseSelectionOptions): SelectionController {
-  const normalizedSelection = useMemo(
-    () => editor.normalizeSelection(editorState),
-    [editor, editorState],
+  const normalizedSel = useMemo(
+    () => normalizeSelection(editorState),
+    [editorState],
   );
   const selectionRange = useMemo(
     () => readSingleContainerSelectionRange(editorState),
     [editorState],
   );
-  const activeMarks = useMemo(() => editor.getSelectionMarks(editorState), [editor, editorState]);
+  const activeMarks = useMemo(() => getSelectionMarks(editorState), [editorState]);
   const [handles, setHandles] = useState<SelectionHandles | null>(null);
   const [selectionLeaf, setSelectionLeaf] = useState<SelectionLeaf | null>(null);
   const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
@@ -108,23 +116,21 @@ export function useSelection({
 
   useLayoutEffect(() => {
     const nextHandles = resolveSelectionHandles(
-      editor,
       editorState,
       editorViewportState.get(),
-      normalizedSelection,
+      normalizedSel,
     );
 
     setHandles((previous) =>
       areSelectionHandlesEqual(previous, nextHandles) ? previous : nextHandles,
     );
   }, [
-    editor,
     editorState,
     editorViewportState,
-    normalizedSelection.end.offset,
-    normalizedSelection.end.regionId,
-    normalizedSelection.start.offset,
-    normalizedSelection.start.regionId,
+    normalizedSel.end.offset,
+    normalizedSel.end.regionId,
+    normalizedSel.start.offset,
+    normalizedSel.start.regionId,
   ]);
 
   useLayoutEffect(() => {
@@ -187,7 +193,7 @@ export function useSelection({
     }
 
     const point = resolvePointerPointInScrollContainer(event, scrollContainer);
-    const nextFocus = editor.resolveDragFocus(
+    const nextFocus = resolveDragFocus(
       currentState,
       editorViewportState.get(),
       point,
@@ -203,7 +209,7 @@ export function useSelection({
     onActivity();
     autoScrollContainer(event);
     onEditorStateChange(
-      editor.setSelection(currentState, {
+      setSelection(currentState, {
         anchor: stationarySelectionPoint,
         focus: nextFocus,
       }),
@@ -216,9 +222,9 @@ export function useSelection({
     },
     onPointerDown: (event) => {
       const currentState = editorStateRef.current ?? editorState;
-      const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSelection, kind);
+      const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSel, kind);
       const draggedSelectionPoint =
-        kind === "start" ? normalizedSelection.start : normalizedSelection.end;
+        kind === "start" ? normalizedSel.start : normalizedSel.end;
 
       if (!handles) {
         return;
@@ -235,7 +241,7 @@ export function useSelection({
         preventScroll: true,
       });
       onEditorStateChange(
-        editor.setSelection(currentState, {
+        setSelection(currentState, {
           anchor: stationarySelectionPoint,
           focus: draggedSelectionPoint,
         }),
@@ -267,17 +273,16 @@ export function useSelection({
 }
 
 function resolveSelectionHandles(
-  editor: Editor,
-  state: ReturnType<Editor["createState"]>,
+  state: EditorState,
   viewport: EditorViewportState,
-  selection: ReturnType<Editor["normalizeSelection"]>,
+  selection: NormalizedEditorSelection,
 ): SelectionHandles | null {
   if (isSelectionCollapsed(state.selection)) {
     return null;
   }
 
-  const startCaret = editor.measureVisualCaretTarget(state, viewport, selection.start);
-  const endCaret = editor.measureVisualCaretTarget(state, viewport, selection.end);
+  const startCaret = measureVisualCaretTarget(state, viewport, selection.start);
+  const endCaret = measureVisualCaretTarget(state, viewport, selection.end);
 
   if (!startCaret || !endCaret) {
     return null;
@@ -409,7 +414,7 @@ function areSameMarks(currentMarks: Mark[], nextMarks: Mark[]) {
 }
 
 function resolveStationarySelectionPoint(
-  selection: ReturnType<Editor["normalizeSelection"]>,
+  selection: NormalizedEditorSelection,
   handleKind: SelectionHandleKind,
 ) {
   return handleKind === "start" ? selection.end : selection.start;

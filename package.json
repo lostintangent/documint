@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"

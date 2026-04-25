@@ -1,4 +1,11 @@
-import type { Editor, EditorViewportState } from "@/editor";
+import {
+  measureVisualCaretTarget,
+  normalizeSelection,
+  resolveTargetAtSelection,
+  type EditorState,
+  type EditorViewportState,
+  type NormalizedEditorSelection,
+} from "@/editor";
 import type { EditorCommentState } from "@/editor/annotations";
 import type { LazyRefHandle } from "./useLazyRef";
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -8,8 +15,7 @@ type UseCursorOptions = {
   canShowInsertionLeaf: boolean;
   canShowTableLeaf: boolean;
   commentState: EditorCommentState;
-  editor: Editor;
-  editorState: ReturnType<Editor["createState"]>;
+  editorState: EditorState;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   onVisibilityChange: () => void;
 };
@@ -48,19 +54,18 @@ export function useCursor({
   canShowInsertionLeaf,
   canShowTableLeaf,
   commentState,
-  editor,
   editorState,
   editorViewportState,
   onVisibilityChange,
 }: UseCursorOptions): CursorController {
-  const normalizedSelection = useMemo(
-    () => editor.normalizeSelection(editorState),
-    [editor, editorState],
+  const normalizedSel = useMemo(
+    () => normalizeSelection(editorState),
+    [editorState],
   );
   const [leaf, setLeaf] = useState<CursorLeaf | null>(null);
   const shouldBlinkCaret =
-    normalizedSelection.start.regionId === normalizedSelection.end.regionId &&
-    normalizedSelection.start.offset === normalizedSelection.end.offset;
+    normalizedSel.start.regionId === normalizedSel.end.regionId &&
+    normalizedSel.start.offset === normalizedSel.end.offset;
   const cursorVisibleRef = useRef(true);
   const lastActivityAtRef = useRef(0);
   const emitVisibilityChange = useEffectEvent(() => {
@@ -78,8 +83,7 @@ export function useCursor({
       canShowInsertionLeaf,
       canShowTableLeaf,
       commentState,
-      editor,
-      normalizedSelection,
+      normalizedSelection: normalizedSel,
       state: editorState,
       viewport: editorViewportState.get(),
     });
@@ -89,13 +93,12 @@ export function useCursor({
     canShowInsertionLeaf,
     canShowTableLeaf,
     commentState,
-    editor,
     editorState,
     editorViewportState,
-    normalizedSelection.end.offset,
-    normalizedSelection.end.regionId,
-    normalizedSelection.start.offset,
-    normalizedSelection.start.regionId,
+    normalizedSel.end.offset,
+    normalizedSel.end.regionId,
+    normalizedSel.start.offset,
+    normalizedSel.start.regionId,
   ]);
 
   useEffect(() => {
@@ -138,7 +141,6 @@ function resolveCursorLeaf({
   canShowInsertionLeaf,
   canShowTableLeaf,
   commentState,
-  editor,
   normalizedSelection,
   state,
   viewport,
@@ -146,9 +148,8 @@ function resolveCursorLeaf({
   canShowInsertionLeaf: boolean;
   canShowTableLeaf: boolean;
   commentState: EditorCommentState;
-  editor: Editor;
-  normalizedSelection: ReturnType<Editor["normalizeSelection"]>;
-  state: ReturnType<Editor["createState"]>;
+  normalizedSelection: NormalizedEditorSelection;
+  state: EditorState;
   viewport: EditorViewportState | null;
 }): CursorLeaf | null {
   if (!viewport) {
@@ -163,27 +164,26 @@ function resolveCursorLeaf({
     return null;
   }
 
-  const insertionLeaf = canShowInsertionLeaf ? resolveInsertionLeaf(editor, state, viewport) : null;
+  const insertionLeaf = canShowInsertionLeaf ? resolveInsertionLeaf(state, viewport) : null;
 
   if (insertionLeaf) {
     return insertionLeaf;
   }
 
-  const tableLeaf = canShowTableLeaf ? resolveTableLeaf(editor, state, viewport) : null;
+  const tableLeaf = canShowTableLeaf ? resolveTableLeaf(state, viewport) : null;
 
   if (tableLeaf) {
     return tableLeaf;
   }
 
   return resolveContextualLeaf(
-    editor.resolveTargetAtSelection(state, viewport, focus, commentState.liveRanges),
+    resolveTargetAtSelection(state, viewport, focus, commentState.liveRanges),
     commentState.threads,
   );
 }
 
 function resolveTableLeaf(
-  editor: Editor,
-  state: ReturnType<Editor["createState"]>,
+  state: EditorState,
   viewport: EditorViewportState,
 ): TableLeaf | null {
   const focus = state.selection.focus;
@@ -204,7 +204,7 @@ function resolveTableLeaf(
     return null;
   }
 
-  const caret = editor.measureVisualCaretTarget(state, viewport, focus);
+  const caret = measureVisualCaretTarget(state, viewport, focus);
   const textLeft = resolveRegionTextLeft(viewport, focusedRegion.id);
   const columnCount = Math.max(1, ...table.rows.map((row) => row.cells.length));
 
@@ -228,8 +228,7 @@ function resolveRegionTextLeft(viewport: EditorViewportState, regionId: string) 
 }
 
 function resolveInsertionLeaf(
-  editor: Editor,
-  state: ReturnType<Editor["createState"]>,
+  state: EditorState,
   viewport: EditorViewportState,
 ): InsertionLeaf | null {
   const focus = state.selection.focus;
@@ -249,7 +248,7 @@ function resolveInsertionLeaf(
     return null;
   }
 
-  const caret = editor.measureVisualCaretTarget(state, viewport, focus);
+  const caret = measureVisualCaretTarget(state, viewport, focus);
 
   return caret
     ? {

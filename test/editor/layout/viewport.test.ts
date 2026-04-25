@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { buildSyntheticLongFixture, sampleMarkdown } from "@test/utils";
-import { createEditor } from "@/editor";
+import {
+  createCanvasRenderCache,
+  createEditorState,
+  insertText,
+  prepareViewport,
+  setSelection,
+} from "@/editor";
 import { createDocumentIndex } from "@/editor/state";
 import { createDocumentLayout, createDocumentViewport } from "@/editor/layout";
 import { parseMarkdown } from "@/markdown";
@@ -54,8 +60,8 @@ test("keeps pinned regions in the viewport slice", () => {
 });
 
 test("keeps post-table content in the initial viewport after text edits warm table caches", () => {
-  const editor = createEditor();
-  let state = editor.createState(
+  const renderCache = createCanvasRenderCache();
+  let state = createEditorState(
     parseMarkdown(`# Sample Document
 
 This sample shows the core Documint editing surface in one short document.
@@ -83,10 +89,10 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, and [l
     throw new Error("Expected editable paragraph region");
   }
 
-  state = editor.setSelection(state, {
+  state = setSelection(state, {
     offset: editedRegion.text.length,
     regionId: editedRegion.id,
-  }).state;
+  });
 
   const viewportOptions = {
     height: 540,
@@ -95,17 +101,17 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, and [l
     top: 0,
     width: 312,
   };
-  const initialViewport = editor.prepareViewport(state, viewportOptions);
+  const initialViewport = prepareViewport(state, viewportOptions, renderCache);
 
   expect(initialViewport.layout.lines.some((line) => line.text === "Lists")).toBeTrue();
 
-  const stateChange = editor.insertText(state, "<");
+  const stateAfterInsert = insertText(state, "<");
 
-  if (!stateChange) {
+  if (!stateAfterInsert) {
     throw new Error("Expected text insertion to update state");
   }
 
-  const editedViewport = editor.prepareViewport(stateChange.state, viewportOptions);
+  const editedViewport = prepareViewport(stateAfterInsert, viewportOptions, renderCache);
 
   expect(editedViewport.layout.lines.some((line) => line.text === "Lists")).toBeTrue();
   expect(editedViewport.totalHeight).toBeLessThan(1000);

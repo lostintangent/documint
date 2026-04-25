@@ -1,6 +1,12 @@
 // Owns host viewport state for the canvas editor: container sizing, scroll
 // metrics, virtual scroll height, and prepared viewport caching.
-import type { Editor, EditorTheme, EditorViewportState, DocumentResources } from "@/editor";
+import {
+  createCanvasRenderCache,
+  prepareViewport,
+  type EditorState,
+  type EditorViewportState,
+} from "@/editor";
+import type { DocumentResources, EditorTheme } from "@/types";
 import {
   type CSSProperties,
   type MouseEvent,
@@ -21,10 +27,9 @@ type ViewportMetrics = {
 };
 
 type UseViewportOptions = {
-  editor: Editor;
-  editorState: ReturnType<Editor["createState"]>;
-  editorStateRef: RefObject<ReturnType<Editor["createState"]> | null>;
-  renderResources: DocumentResources;
+  editorState: EditorState;
+  editorStateRef: RefObject<EditorState | null>;
+  renderResources: DocumentResources | null;
   theme: EditorTheme;
 };
 
@@ -61,12 +66,12 @@ export type ViewportController = {
 };
 
 export function useViewport({
-  editor,
   editorState,
   editorStateRef,
   renderResources,
   theme,
 }: UseViewportOptions): ViewportController {
+  const renderCacheRef = useRef(createCanvasRenderCache());
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportMetricsRef = useRef<ViewportMetrics>({
     height: 240,
@@ -82,7 +87,7 @@ export function useViewport({
     const currentState = editorStateRef.current ?? editorState;
     const viewport = viewportMetricsRef.current;
 
-    return editor.prepareViewport(
+    return prepareViewport(
       currentState,
       {
         height: viewport.height,
@@ -91,6 +96,7 @@ export function useViewport({
         top: viewport.top,
         width: layoutWidth,
       },
+      renderCacheRef.current,
       renderResources,
     );
   });

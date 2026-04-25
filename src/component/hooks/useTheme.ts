@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { EditorTheme } from "@/editor";
+import type { EditorTheme } from "@/types";
 import type { DocumintTheme } from "../Documint";
 import { darkTheme, lightTheme } from "../lib/themes";
 

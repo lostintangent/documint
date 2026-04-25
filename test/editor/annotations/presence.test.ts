@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { createEditor } from "@/editor";
+import {
+  createCanvasRenderCache,
+  prepareViewport,
+  resolvePresenceViewport,
+} from "@/editor";
 import { resolvePresenceCursors, type EditorPresence } from "@/editor/annotations";
 import { createEditorState } from "@/editor/state";
 import type { EditorRegion } from "@/editor/state";
@@ -122,16 +126,16 @@ repeat
 });
 
 test("resolves presence viewport state", () => {
-  const editor = createEditor();
+  const renderCache = createCanvasRenderCache();
   const state = createEditorState(parseMarkdown(createPresenceViewportFixture()));
   const firstRegion = requireRegion(state.documentIndex.regions[0]);
   const lastRegion = requireRegion(state.documentIndex.regions.at(-1));
-  const topViewport = editor.prepareViewport(state, {
+  const topViewport = prepareViewport(state, {
     height: 120,
     top: 0,
     width: 420,
-  });
-  const [visiblePresence, belowPresence] = editor.resolvePresenceViewport(state, topViewport, [
+  }, renderCache);
+  const [visiblePresence, belowPresence] = resolvePresenceViewport(state, topViewport, [
     createResolvedCursor("visible", firstRegion),
     createResolvedCursor("below", lastRegion),
   ]);
@@ -140,12 +144,12 @@ test("resolves presence viewport state", () => {
   expect(belowPresence?.viewport?.status).toBe("below");
   expect(belowPresence?.viewport?.scrollTop).toBeGreaterThan(0);
 
-  const lowerViewport = editor.prepareViewport(state, {
+  const lowerViewport = prepareViewport(state, {
     height: 120,
     top: Math.max(120, topViewport.totalHeight - 180),
     width: 420,
-  });
-  const [abovePresence] = editor.resolvePresenceViewport(state, lowerViewport, [
+  }, renderCache);
+  const [abovePresence] = resolvePresenceViewport(state, lowerViewport, [
     createResolvedCursor("above", firstRegion),
   ]);
 
@@ -154,16 +158,16 @@ test("resolves presence viewport state", () => {
 });
 
 test("keeps unresolved presence visible without a scroll target", () => {
-  const editor = createEditor();
+  const renderCache = createCanvasRenderCache();
   const state = createEditorState(parseMarkdown(createPresenceViewportFixture()));
-  const viewport = editor.prepareViewport(state, {
+  const viewport = prepareViewport(state, {
     height: 120,
     top: 0,
     width: 420,
-  });
+  }, renderCache);
 
   expect(
-    editor.resolvePresenceViewport(state, viewport, [
+    resolvePresenceViewport(state, viewport, [
       {
         cursorPoint: null,
         name: "Unresolved",

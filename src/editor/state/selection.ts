@@ -2,8 +2,10 @@
 // Converts between abstract SelectionTargets and concrete EditorSelections,
 // and exposes the "what's active at the selection" view consumers render.
 
-import type { Block, Mark } from "@/document";
+import { findBlockById, type Block, type Mark } from "@/document";
 import type { DocumentIndex } from "./index/types";
+import type { EditorState } from "./state";
+import { resolveInlineCommandMarks, resolveInlineCommandTarget } from "./index/actions/inline";
 import { createTableCellRegionKey, SELECTION_ORDER_MULTIPLIER } from "./index/shared";
 
 export type EditorSelectionPoint = {
@@ -122,22 +124,31 @@ export function isSelectionCollapsed(selection: EditorSelection): boolean {
 }
 
 export function normalizeSelection(
+  state: EditorState,
+): NormalizedEditorSelection;
+export function normalizeSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
+): NormalizedEditorSelection;
+export function normalizeSelection(
+  stateOrIndex: EditorState | DocumentIndex,
+  selection?: EditorSelection,
 ): NormalizedEditorSelection {
-  const anchorOrder = resolveSelectionOrder(documentIndex, selection.anchor);
-  const focusOrder = resolveSelectionOrder(documentIndex, selection.focus);
+  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
+  const sel = "documentIndex" in stateOrIndex ? stateOrIndex.selection : selection!;
+  const anchorOrder = resolveSelectionOrder(documentIndex, sel.anchor);
+  const focusOrder = resolveSelectionOrder(documentIndex, sel.focus);
 
   if (anchorOrder <= focusOrder) {
     return {
-      end: selection.focus,
-      start: selection.anchor,
+      end: sel.focus,
+      start: sel.anchor,
     };
   }
 
   return {
-    end: selection.anchor,
-    start: selection.focus,
+    end: sel.anchor,
+    start: sel.focus,
   };
 }
 
@@ -328,13 +339,10 @@ export type SelectionContext = {
   span: SelectionSpanContext;
 };
 
-export function getSelectionContext(
-  documentIndex: DocumentIndex,
-  anchor: EditorSelectionPoint,
-): SelectionContext {
-  const container = documentIndex.regionIndex.get(anchor.regionId) ?? null;
-  const block = container ? (documentIndex.blockIndex.get(container.blockId) ?? null) : null;
-  const offset = anchor.offset;
+export function getSelectionContext(state: EditorState): SelectionContext {
+  const container = state.documentIndex.regionIndex.get(state.selection.anchor.regionId) ?? null;
+  const block = container ? (state.documentIndex.blockIndex.get(container.blockId) ?? null) : null;
+  const offset = state.selection.anchor.offset;
   const run =
     container?.inlines.find((entry) => offset > entry.start && offset < entry.end) ??
     container?.inlines.find((entry) => entry.end === offset) ??
@@ -356,4 +364,33 @@ export function getSelectionContext(
         ? { kind: "marks", marks: run.marks }
         : { kind: "none" },
   };
+}
+
+export function getSelectionMarks(state: EditorState): Mark[] {
+  const normalized = normalizeSelection(state.documentIndex, state.selection);
+
+  if (
+    normalized.start.regionId !== normalized.end.regionId ||
+    normalized.start.offset === normalized.end.offset
+  ) {
+    return [];
+  }
+
+  const region = state.documentIndex.regionIndex.get(normalized.start.regionId);
+
+  if (!region) {
+    return [];
+  }
+
+  const block = findBlockById(state.documentIndex.document.blocks, region.blockId);
+
+  if (!block) {
+    return [];
+  }
+
+  const target = resolveInlineCommandTarget(block, region.path, region.semanticRegionId);
+
+  return target
+    ? resolveInlineCommandMarks(target, normalized.start.offset, normalized.end.offset)
+    : [];
 }

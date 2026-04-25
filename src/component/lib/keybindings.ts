@@ -1,4 +1,4 @@
-import type { EditorCommand } from "@/editor/api";
+import type { EditorCommand } from "@/types";
 
 export type EditorKeybinding = {
   altKey?: boolean;

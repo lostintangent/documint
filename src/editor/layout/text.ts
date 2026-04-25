@@ -4,7 +4,7 @@
 
 import { layoutWithLines, prepareWithSegments, type PrepareOptions } from "@chenglou/pretext";
 import type { Block, Mark } from "@/document";
-import type { DocumentResources } from "../resources";
+import type { DocumentResources } from "@/types";
 import type { EditorInline, EditorRegion } from "../state";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./image";
 import {

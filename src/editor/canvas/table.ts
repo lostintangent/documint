@@ -5,7 +5,7 @@
 import type { ViewportLayout } from "../layout";
 import type { EditorState } from "../state";
 import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "./animations";
-import type { EditorTheme } from "./theme";
+import type { EditorTheme } from "@/types";
 
 const tableCellMinimumPaintWidth = 80;
 

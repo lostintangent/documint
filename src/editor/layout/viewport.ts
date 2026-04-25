@@ -5,8 +5,7 @@
 // overestimation is dangerous because it can stop the exact viewport slice
 // before content that should be visible.
 import type { Block } from "@/document";
-import type { DocumentResources } from "../resources";
-import { emptyDocumentResources } from "../resources";
+import type { DocumentResources } from "@/types";
 import type { DocumentIndex, EditorRegion } from "../state";
 import {
   cacheMeasuredContainerHeight,
@@ -51,8 +50,9 @@ export function createDocumentViewport(
   viewport: CanvasViewport,
   pinnedContainerIds: string[] = [],
   cache = createCanvasRenderCache(),
-  resources: DocumentResources = emptyDocumentResources,
+  resources: DocumentResources | null = null,
 ): DocumentViewport {
+  const resolvedResources: DocumentResources = resources ?? { images: new Map() };
   const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
   const runtimeBlocks = new Map(documentIndex.blocks.map((block) => [block.id, block]));
   const pinned = new Set(pinnedContainerIds);
@@ -64,7 +64,7 @@ export function createDocumentViewport(
     blockMap,
     runtimeBlocks,
     options,
-    resources,
+    resolvedResources,
   );
   let sliceStartIndex = findViewportPlanEntryIndexAtOrAfter(plan, expandedTop);
   let sliceEndIndex = findViewportPlanEntryIndexAtOrAfter(plan, expandedBottom);
@@ -106,7 +106,7 @@ export function createDocumentViewport(
         },
         options,
         cache,
-        resources,
+        resolvedResources,
       ),
       totalHeight: plan.totalHeight,
       viewport,
@@ -128,11 +128,11 @@ export function createDocumentViewport(
     },
     options,
     cache,
-    resources,
+    resolvedResources,
   );
   const shiftedLayout = shiftDocumentLayout(sliceLayout, sliceTop, plan.totalHeight);
 
-  updateMeasuredContainerHeights(cache, documentIndex, shiftedLayout, options, resources);
+  updateMeasuredContainerHeights(cache, documentIndex, shiftedLayout, options, resolvedResources);
 
   return {
     estimateRegionBounds: plan.estimateRegionBounds,

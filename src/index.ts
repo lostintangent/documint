@@ -5,13 +5,13 @@ export {
   lightTheme,
   midnightTheme,
   mintTheme,
-  type EditorTheme,
   type EditorKeybinding,
   type DocumintProps,
   type DocumintState,
   type DocumintTheme,
-  type Presence,
 } from "./component";
+
+export type { EditorTheme, Presence } from "./types";
 
 export type {
   Anchor,

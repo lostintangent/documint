@@ -1,6 +1,6 @@
 // Owns inline image sizing policy for document layout. Text measurement asks
 // this module for image dimensions instead of embedding resource rules inline.
-import type { DocumentResources } from "../resources";
+import type { DocumentResources } from "@/types";
 import type { EditorInline } from "../state";
 
 const IMAGE_FALLBACK_WIDTH = 240;

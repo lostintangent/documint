@@ -5,7 +5,7 @@
 import type { Block, Mark } from "@/document";
 import type { EditorCommentRange, EditorPresence } from "../annotations";
 import type { EditorState } from "../state";
-import type { DocumentResources } from "../resources";
+import type { DocumentResources } from "@/types";
 import {
   findBlockAncestor,
   findLineForRegionOffset,
@@ -44,7 +44,7 @@ import {
   paintTableCellChrome,
   type PaintRegionBounds,
 } from "./table";
-import type { EditorTheme } from "./theme";
+import type { EditorTheme } from "@/types";
 
 const activeLineVerticalBleed = 2;
 const blockquoteRuleInsetY = 3;
@@ -1097,4 +1097,77 @@ function resolveCommentHighlightColor(
 
 function getPaintTime() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+/* Viewport-level paint wrappers */
+
+import type { EditorViewportState } from "../layout";
+import type { NormalizedEditorSelection } from "../state";
+
+export function paintContent(
+  state: EditorState,
+  viewport: EditorViewportState,
+  context: CanvasRenderingContext2D,
+  options: {
+    activeBlockId: string | null;
+    activeRegionId: string | null;
+    activeThreadIndex: number | null;
+    devicePixelRatio: number;
+    height: number;
+    liveCommentRanges: EditorCommentRange[];
+    normalizedSelection: NormalizedEditorSelection;
+    now?: number;
+    resources?: DocumentResources | null;
+    theme: EditorTheme;
+    width: number;
+  },
+): void {
+  paintCanvasEditorSurface({
+    activeBlockId: options.activeBlockId,
+    activeRegionId: options.activeRegionId,
+    activeThreadIndex: options.activeThreadIndex,
+    containerLineBounds: viewport.regionBounds,
+    context,
+    devicePixelRatio: options.devicePixelRatio,
+    editorState: state,
+    height: options.height,
+    layout: viewport.layout,
+    liveCommentRanges: options.liveCommentRanges,
+    normalizedSelection: options.normalizedSelection,
+    now: options.now,
+    resources: options.resources ?? { images: new Map() },
+    runtimeBlockMap: viewport.blockMap,
+    theme: options.theme,
+    viewportTop: viewport.paintTop,
+    width: options.width,
+  });
+}
+
+export function paintOverlay(
+  state: EditorState,
+  viewport: EditorViewportState,
+  context: CanvasRenderingContext2D,
+  options: {
+    devicePixelRatio: number;
+    height: number;
+    normalizedSelection: NormalizedEditorSelection;
+    presence?: EditorPresence[];
+    showCaret: boolean;
+    theme: EditorTheme;
+    width: number;
+  },
+): void {
+  paintCanvasCaretOverlay({
+    context,
+    devicePixelRatio: options.devicePixelRatio,
+    editorState: state,
+    height: options.height,
+    layout: viewport.layout,
+    normalizedSelection: options.normalizedSelection,
+    presence: options.presence,
+    showCaret: options.showCaret,
+    theme: options.theme,
+    viewportTop: viewport.paintTop,
+    width: options.width,
+  });
 }

@@ -1,8 +1,36 @@
-/**
- * Canvas render themes for the editor surface. These tokens are intentionally
- * semantic so paint code can stay focused on structure rather than color
- * decisions.
- */
+import type { Anchor } from "@/document";
+
+export type DocumentImageResource = {
+  intrinsicHeight: number;
+  intrinsicWidth: number;
+  source: CanvasImageSource | null;
+  status: "error" | "loaded" | "loading";
+};
+
+export type DocumentResources = {
+  images: Map<string, DocumentImageResource>;
+};
+
+export type EditorCommand =
+  | "dedent"
+  | "deleteBackward"
+  | "indent"
+  | "insertLineBreak"
+  | "moveListItemDown"
+  | "moveListItemUp"
+  | "moveToDocumentEnd"
+  | "moveToDocumentStart"
+  | "moveToLineEnd"
+  | "moveToLineStart"
+  | "redo"
+  | "selectAll"
+  | "toggleBold"
+  | "toggleInlineCode"
+  | "toggleItalic"
+  | "toggleStrikethrough"
+  | "toggleUnderline"
+  | "undo";
+
 export type EditorTheme = {
   activeBlockBackground: string;
   activeBlockFlash: string;
@@ -54,4 +82,11 @@ export type EditorTheme = {
   tableBodyBackground: string;
   tableBorder: string;
   tableHeaderBackground: string;
+};
+
+export type Presence = {
+  color?: string;
+  cursor?: Anchor;
+  imageUrl?: string;
+  name: string;
 };

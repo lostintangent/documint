@@ -6,8 +6,17 @@ import {
 } from "@/comments";
 import { listAnchorContainers } from "@/document";
 import { getCommentState } from "@/editor/annotations";
-import { createEditor } from "@/editor";
-import { createEditorState } from "@/editor/state";
+import {
+  createCanvasRenderCache,
+  createCommentThread as createEditorCommentThread,
+  createEditorState,
+  getDocument,
+  insertText,
+  measureCaretTarget,
+  prepareViewport,
+  resolveHoverTarget,
+  setSelection,
+} from "@/editor";
 import { parseMarkdown } from "@/markdown";
 
 test("maps durable comment anchors to live canvas ranges", () => {
@@ -39,7 +48,7 @@ test("maps durable comment anchors to live canvas ranges", () => {
 });
 
 test("resolves link hover targets with overlapping comment metadata", () => {
-  const editor = createEditor();
+  const renderCache = createCanvasRenderCache();
   const document = parseMarkdown("Paragraph with [link](https://example.com).\n");
   const container = listAnchorContainers(document)[0];
 
@@ -53,15 +62,15 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     createdAt: "2026-04-11T12:00:00.000Z",
     quote: createCommentQuoteFromContainer(container, 15, 19),
   });
-  const state = editor.createState({
+  const state = createEditorState({
     ...document,
     comments: [thread],
   });
-  const viewport = editor.prepareViewport(state, {
+  const viewport = prepareViewport(state, {
     height: 320,
     top: 0,
     width: 520,
-  });
+  }, renderCache);
   const region = state.documentIndex.regions[0];
 
   if (!region) {
@@ -69,17 +78,17 @@ test("resolves link hover targets with overlapping comment metadata", () => {
   }
 
   const linkOffset = region.text.indexOf("link") + 1;
-  const caret = editor.measureCaretTarget(state, viewport, {
+  const caret = measureCaretTarget(state, viewport, {
     regionId: region.id,
     offset: linkOffset,
   });
-  const commentState = editor.getCommentState(state);
+  const commentState = getCommentState(state.documentIndex);
 
   if (!caret) {
     throw new Error("Expected caret target");
   }
 
-  const hover = editor.resolveHoverTarget(
+  const hover = resolveHoverTarget(
     state,
     viewport,
     {
@@ -101,48 +110,44 @@ test("resolves link hover targets with overlapping comment metadata", () => {
 });
 
 test("preserves selection when creating a comment thread", () => {
-  const editor = createEditor();
-  let state = editor.createState(parseMarkdown("Review surface\n"));
+  let state = createEditorState(parseMarkdown("Review surface\n"));
   const region = state.documentIndex.regions[0];
 
   if (!region) {
     throw new Error("Expected editor region");
   }
 
-  state = editor.setSelection(state, {
+  state = setSelection(state, {
     regionId: region.id,
     offset: 4,
-  }).state;
+  });
 
-  const change = editor.createCommentThread(
+  const nextState = createEditorCommentThread(
     state,
     { regionId: region.id, startOffset: 0, endOffset: 6 },
     "Review this heading",
   );
 
-  if (!change) {
+  if (!nextState) {
     throw new Error("Expected state change");
   }
-
-  const nextState = change.state;
 
   expect(nextState.selection.anchor.regionId).toBe(state.selection.anchor.regionId);
   expect(nextState.selection.anchor.offset).toBe(4);
   expect(nextState.selection.focus.regionId).toBe(state.selection.focus.regionId);
   expect(nextState.selection.focus.offset).toBe(4);
-  expect(editor.getDocument(nextState).comments).toHaveLength(1);
+  expect(getDocument(nextState).comments).toHaveLength(1);
 });
 
 test("creates a new comment thread from a single-region selection", () => {
-  const editor = createEditor();
-  let state = editor.createState(parseMarkdown("Review surface\n"));
+  let state = createEditorState(parseMarkdown("Review surface\n"));
   const region = state.documentIndex.regions[0];
 
   if (!region) {
     throw new Error("Expected editor region");
   }
 
-  state = editor.setSelection(state, {
+  state = setSelection(state, {
     anchor: {
       offset: 0,
       regionId: region.id,
@@ -151,9 +156,9 @@ test("creates a new comment thread from a single-region selection", () => {
       offset: 6,
       regionId: region.id,
     },
-  }).state;
+  });
 
-  const result = editor.createCommentThread(
+  const result = createEditorCommentThread(
     state,
     {
       endOffset: 6,
@@ -164,7 +169,7 @@ test("creates a new comment thread from a single-region selection", () => {
   );
 
   expect(result).not.toBeNull();
-  expect(editor.getDocument(result!.state).comments).toEqual([
+  expect(getDocument(result!).comments).toEqual([
     expect.objectContaining({
       comments: [expect.objectContaining({ body: "Review this" })],
       quote: "Review",
@@ -173,7 +178,6 @@ test("creates a new comment thread from a single-region selection", () => {
 });
 
 test("keeps same-region comments sticky while typing inside the anchored quote", () => {
-  const editor = createEditor();
   const document = parseMarkdown("abcd\n");
   const container = listAnchorContainers(document)[0];
 
@@ -187,7 +191,7 @@ test("keeps same-region comments sticky while typing inside the anchored quote",
     createdAt: "2026-04-18T12:00:00.000Z",
     quote: createCommentQuoteFromContainer(container, 1, 3),
   });
-  let state = editor.createState({
+  let state = createEditorState({
     ...document,
     comments: [thread],
   });
@@ -197,16 +201,16 @@ test("keeps same-region comments sticky while typing inside the anchored quote",
     throw new Error("Expected editor region");
   }
 
-  state = editor.setSelection(state, {
+  state = setSelection(state, {
     regionId: region.id,
     offset: 2,
-  }).state;
+  });
 
-  const result = editor.insertText(state, "X");
+  const result = insertText(state, "X");
 
   expect(result).not.toBeNull();
 
-  const nextDocument = editor.getDocument(result!.state);
+  const nextDocument = getDocument(result!);
   const nextThread = nextDocument.comments[0];
 
   expect(nextThread?.quote).toBe("bXc");

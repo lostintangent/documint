@@ -1,6 +1,4 @@
-import type { EditorTheme } from "@/editor";
-
-export type { EditorTheme };
+import type { EditorTheme } from "@/types";
 
 export const lightTheme: EditorTheme = {
   activeBlockBackground: "#fff1c7",

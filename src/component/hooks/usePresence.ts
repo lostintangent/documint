@@ -1,7 +1,14 @@
 // Owns host-side presence orchestration. The editor resolves semantic cursor
 // anchors and viewport geometry; this hook keeps those projections fresh for
 // canvas paint and for the DOM indicators that can scroll to off-screen cursors.
-import type { Editor, EditorPresence, EditorViewportState, Presence } from "@/editor";
+import {
+  resolvePresenceCursors,
+  resolvePresenceViewport,
+  type EditorPresence,
+  type EditorState,
+  type EditorViewportState,
+} from "@/editor";
+import type { Presence } from "@/types";
 import type { LazyRefHandle } from "./useLazyRef";
 import {
   type RefObject,
@@ -16,9 +23,8 @@ import {
 const emptyEditorPresence: EditorPresence[] = [];
 
 type UsePresenceOptions = {
-  editor: Editor;
-  editorState: ReturnType<Editor["createState"]>;
-  editorStateRef: RefObject<ReturnType<Editor["createState"]> | null>;
+  editorState: EditorState;
+  editorStateRef: RefObject<EditorState | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   onViewportScroll: (scrollContainer: HTMLDivElement) => void;
   presence?: Presence[];
@@ -37,7 +43,6 @@ export type PresenceController = {
 };
 
 export function usePresence({
-  editor,
   editorState,
   editorStateRef,
   editorViewportState,
@@ -51,8 +56,8 @@ export function usePresence({
       return emptyEditorPresence;
     }
 
-    return editor.resolvePresenceCursors(editorState.documentIndex, presence);
-  }, [editor, editorState.documentIndex, presence]);
+    return resolvePresenceCursors(editorState.documentIndex, presence);
+  }, [editorState.documentIndex, presence]);
   const [viewportIndicatorPresence, setViewportIndicatorPresence] = useState<EditorPresence[]>([]);
   const resolvedPresenceRef = useRef<EditorPresence[]>(resolvedPresence);
   const viewportIndicatorPresenceRef = useRef<EditorPresence[]>(viewportIndicatorPresence);
@@ -78,7 +83,7 @@ export function usePresence({
     }
 
     updateViewportIndicators(
-      editor.resolvePresenceViewport(
+      resolvePresenceViewport(
         editorStateRef.current ?? editorState,
         viewportState,
         currentPresence,

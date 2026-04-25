@@ -17,7 +17,7 @@ test("derives the active block and span from the selection anchor", () => {
     offset: container.text.indexOf("strong") + 1,
   });
 
-  const marked = getSelectionContext(state.documentIndex, state.selection.anchor);
+  const marked = getSelectionContext(state);
 
   expect(marked.block?.nodeType).toBe("paragraph");
   expect(marked.span.kind).toBe("marks");
@@ -27,7 +27,7 @@ test("derives the active block and span from the selection anchor", () => {
     offset: container.text.indexOf("link") + 1,
   });
 
-  const linked = getSelectionContext(state.documentIndex, state.selection.anchor);
+  const linked = getSelectionContext(state);
 
   expect(linked.span.kind).toBe("link");
   expect(linked.span.kind === "link" ? linked.span.url : null).toBe("https://example.com");

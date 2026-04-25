@@ -14,68 +14,47 @@ import {
 } from "./line";
 import { moveCaretVerticallyInTable } from "./table";
 
-export function moveCaretHorizontally(state: EditorState, delta: -1 | 1) {
-  return moveCaretHorizontallyInFlow(state, delta, false);
-}
-
-export function extendSelectionHorizontally(state: EditorState, delta: -1 | 1) {
-  return moveCaretHorizontallyInFlow(state, delta, true);
+export function moveCaretHorizontally(
+  state: EditorState,
+  delta: -1 | 1,
+  extendSelection = false,
+) {
+  return moveCaretHorizontallyInFlow(state, delta, extendSelection);
 }
 
 export function moveCaretVertically(
   state: EditorState,
   layout: ViewportLayout,
   direction: -1 | 1,
+  extendSelection = false,
 ) {
-  return applyVerticalMotion(state, layout, direction, false);
-}
-
-export function extendSelectionVertically(
-  state: EditorState,
-  layout: ViewportLayout,
-  direction: -1 | 1,
-) {
-  return applyVerticalMotion(state, layout, direction, true);
+  return applyVerticalMotion(state, layout, direction, extendSelection);
 }
 
 export function moveCaretByViewport(
   state: EditorState,
   layout: ViewportLayout,
   direction: -1 | 1,
+  extendSelection = false,
 ) {
-  return applyViewportMotion(state, layout, direction, false);
-}
-
-export function extendSelectionByViewport(
-  state: EditorState,
-  layout: ViewportLayout,
-  direction: -1 | 1,
-) {
-  return applyViewportMotion(state, layout, direction, true);
+  return applyViewportMotion(state, layout, direction, extendSelection);
 }
 
 export function moveCaretToLineBoundary(
   state: EditorState,
   layout: ViewportLayout,
   boundary: "Home" | "End",
+  extendSelection = false,
 ) {
-  return moveCaretToCurrentLineBoundary(state, layout, boundary, false);
+  return moveCaretToCurrentLineBoundary(state, layout, boundary, extendSelection);
 }
 
-export function extendSelectionToLineBoundary(
+export function moveCaretToDocumentBoundary(
   state: EditorState,
-  layout: ViewportLayout,
-  boundary: "Home" | "End",
+  boundary: "start" | "end",
+  extendSelection = false,
 ) {
-  return moveCaretToCurrentLineBoundary(state, layout, boundary, true);
-}
-
-export function moveCaretToDocumentBoundary(state: EditorState, boundary: "start" | "end") {
-  return applyDocumentBoundaryMotion(state, boundary, false);
-}
-
-export function extendSelectionToDocumentBoundary(state: EditorState, boundary: "start" | "end") {
-  return applyDocumentBoundaryMotion(state, boundary, true);
+  return applyDocumentBoundaryMotion(state, boundary, extendSelection);
 }
 
 function applyVerticalMotion(

@@ -1,171 +1,127 @@
-# Collapse the API facade layer
+# Eliminate the Editor Facade Object
 
 ## Context
 
-`api.ts` exists as a pass-through layer that wraps ~35 command functions 
-(`EditorState → EditorState | null`) into `EditorStateChange` results 
-(`{ state, documentChanged, animationStarted }`). The wrapping is mechanical — 
-every command method is either `createDocumentChangeHandler(command)` or a manual 
-`createTransitionEditorStateChange(state, command(state), false)`. This creates 
-~500 lines of ceremony (200-line `Editor` type + 290-line implementation) for 
-two boolean flags that can be derived from state identity comparison.
+The `Editor` facade in `src/editor/api.ts` wraps 57 methods in a factory object. 37 are pure pass-throughs (`insertText,` with zero transformation). The factory only exists because `prepareViewport` captures a `CanvasRenderCache` closure — everything else pays the tax for that one method. The barrel and the facade duplicate the public API surface.
 
-The `Editor` facade also holds query, layout, hit-testing, and paint methods 
-that are pure delegation — forwarding args with minor destructuring. The only 
-stateful reason the facade exists is to close over a `CanvasRenderCache` used 
-by a single method (`prepareViewport`).
+The goal: the barrel (`src/editor/index.ts`) becomes the sole public API. Cross-subsystem composition lives as standalone functions in `api.ts`. Commands, types, and simple functions export directly from their subsystem modules through the barrel. The `Editor` type, `createEditor()` factory, and `useEditor()` hook are eliminated. Consumers import named functions directly instead of threading an `editor` object through every hook.
 
-**Goal**: Eliminate the `Editor` facade and `EditorStateChange` type. Components 
-call state functions directly. The two flags are derived at the single consumption 
-point (`applyEditorStateChange` in `Documint.tsx`).
+## Step 1: Rewrite `src/editor/api.ts`
 
-## Why derivation works
+Delete the `Editor` type (lines 155-365) and `createEditor()` factory (lines 369-567). Keep the types (`EditorViewportState`, `EditorCommand`, `EditorPoint`, `SelectionHit`, `ContainerLineBounds`, `EditorViewport`) and private helpers (`createBlockMap`, `createContainerBounds`).
 
-- **`documentChanged`**: `setSelection()` in `state.ts` spreads the state with a 
-  new selection but keeps the same `documentIndex`. `pushHistory()` always creates 
-  a new `documentIndex`. So `prev.documentIndex !== next.documentIndex` reliably 
-  detects document mutations.
+Replace with ~20 standalone exported composition functions organized in four groups:
 
-- **`animationStarted`**: Already derived today via `startedNewAnimation()` which 
-  compares animation timestamps between prev/next state. Same logic, just moved to 
-  the consumption point.
+**Query adapters** (5) — destructure `EditorState` before calling subsystem functions. Import subsystem functions with aliases to avoid name collisions (e.g., `getCommentState as getCommentStateFromIndex`):
+- `getCommentState(state)` → `getCommentStateFromIndex(state.documentIndex)`
+- `getSelectionContext(state)` → `getSelectionContextFromIndex(state.documentIndex, state.selection.anchor)`
+- `normalizeSelection(state)` → `normalizeSelectionFromIndex(state.documentIndex, state.selection)`
+- `getSelectionMarks(state)` → `getSelectionMarksFromIndex(state.documentIndex, state.selection)`
+- `resolvePresenceViewport(state, viewport, presence)` → `resolvePresenceViewportFromIndex(state.documentIndex, viewport, presence)`
 
-## Changes
+**Navigation routing** (5) — branch between move and extend. Import raw navigation functions with aliases (already done in current api.ts):
+- `moveCaretHorizontally(state, direction, extendSelection?)`
+- `moveCaretVertically(state, layout, direction, extendSelection?)`
+- `moveCaretByViewport(state, layout, direction, extendSelection?)`
+- `moveCaretToLineBoundary(state, layout, boundary, extendSelection?)`
+- `moveCaretToDocumentBoundary(state, boundary, extendSelection?)`
 
-### 1. Push misplaced logic out of api.ts into state layer
+**Layout/hit-testing** (8) — extract `viewport.layout` and compose:
+- `prepareViewport(state, options, renderCache, resources?)` — explicit `CanvasRenderCache` param instead of closure
+- `resolveSelectionHit(state, viewport, point)` — chains `resolveEditorHitAtPoint ?? resolveHitBelowLayout`
+- `measureVisualCaretTarget(state, viewport, point)` — composes `measureCaretTarget + resolveCaretVisualLeft`
+- `resolveDragFocus`, `resolveWordSelection`, `resolveHoverTarget`, `resolveTargetAtSelection`, `measureCaretTarget` — extract `viewport.layout` before delegating
 
-**`getSelectionMarks`** (api.ts:405-431) — 25 lines of query logic over 
-document index + selection. Move to `state/selection.ts` alongside 
-`getSelectionContext` and `normalizeSelection`.
+Import layout's `measureCaretTarget` as `measureLayoutCaretTarget` to avoid collision.
 
-**Comment thread operations** (api.ts:441-478 + helper at 743-766) — 
-State mutation logic that calls `spliceEditorCommentThreads`. Move to 
-`state/commands.ts` as new command functions (`createCommentThread`, 
-`replyToCommentThread`, `editComment`, `deleteComment`, `deleteCommentThread`, 
-`markCommentThreadAsResolved`).
+**Paint** (2) — restructure args for canvas paint functions:
+- `paintContent(state, viewport, context, options)`
+- `paintOverlay(state, viewport, context, options)`
 
-Files: `src/editor/state/selection.ts`, `src/editor/state/commands.ts`
+## Step 2: Rewrite `src/editor/index.ts`
 
-### 2. Move render cache to useViewport
+The barrel becomes the full public API surface. Re-export everything consumers need:
 
-The `CanvasRenderCache` is created in `createEditor()` but only consumed by 
-`prepareViewport` → `createDocumentViewport`. Move cache creation into 
-`useViewport.ts` where it's actually used:
+**From `./api`**: all 20 composition functions + types
 
-```ts
-// useViewport.ts
-const renderCacheRef = useRef(createCanvasRenderCache());
-```
+**From `./state`**: direct command exports with consumer-friendly aliases where needed:
+- State lifecycle: `createEditorState`, `createDocumentFromEditorState` (alias as `getDocument`), `setSelection`
+- All commands: `insertText`, `insertLineBreak`, `deleteBackward`, `deleteForward`, `deleteSelectionText` (alias as `deleteSelection`), `insertSelectionText` (alias as `replaceSelection`), `toggleBold`, `toggleItalic`, `toggleStrikethrough`, `toggleUnderline`, `toggleInlineCode`, `indent`, `dedent`, `moveListItemUp`, `moveListItemDown`, `toggleTaskItem`, `undo`, `redo`, `selectAll`, `insertTable`, `insertTableColumn`, `deleteTableColumn`, `insertTableRow`, `deleteTableRow`, `deleteTable`, `updateInlineLink` (alias as `updateLink`), `removeInlineLink` (alias as `removeLink`), `createCommentThread`, `replyToCommentThread`, `editComment`, `deleteComment`, `deleteCommentThread`, `resolveCommentThread`
+- `hasNewAnimation`
+- Types: `EditorState`, `EditorSelection`, `EditorSelectionPoint`, `NormalizedEditorSelection`, `SelectionContext`
 
-Extract `prepareViewport` as a standalone function (in `layout/` or keep 
-in a slimmed api.ts) that accepts the cache as a parameter.
+**From `./annotations`**: `resolvePresenceCursors`; types: `EditorPresence`, `EditorPresenceViewport`, `EditorPresenceViewportStatus`, `Presence`, `EditorCommentState`
 
-Files: `src/component/hooks/useViewport.ts`, `src/editor/layout/viewport.ts`
+**From `./canvas`**: `createCanvasRenderCache`, type `CanvasRenderCache`, `hasRunningEditorAnimations` (alias as `hasRunningAnimations`), type `EditorTheme`
 
-### 3. Remove `EditorStateChange` and derive flags at consumption point
+**From `./resources`**: `emptyDocumentResources`, types `DocumentImageResource`, `DocumentResources`
 
-Replace `applyEditorStateChange(change: EditorStateChange | null)` in 
-`Documint.tsx` with `applyNextState(nextState: EditorState | null)`:
+**From `./layout`**: type `EditorHoverTarget`, type `ViewportLayout`
 
-```ts
-const applyNextState = useEffectEvent((nextState: EditorState | null) => {
-  if (!nextState) return;
+## Step 3: Delete `src/component/hooks/useEditor.ts`
 
-  const prevState = editorStateRef.current;
-  const documentChanged = prevState.documentIndex !== nextState.documentIndex;
-  const animationStarted = hasNewAnimation(prevState, nextState);
+No longer needed — there's no factory to call.
 
-  editorStateRef.current = nextState;
-  setEditorState(nextState);
+## Step 4: Migrate consumer hooks
 
-  // ... rest of effects using documentChanged, animationStarted
-});
-```
+For each hook: remove the `editor: Editor` prop, import functions directly from `@/editor`, replace `editor.method(...)` with `method(...)`. Replace `ReturnType<Editor["createState"]>` with `EditorState` and `ReturnType<Editor["setSelection"]>` with `EditorState`.
 
-Move `startedNewAnimation` to the state layer (e.g. `state/animations.ts` or 
-`state/state.ts`) and export it as `hasNewAnimation`.
+**`useViewport.ts`** — critical: owns the render cache now
+- Drop `editor` prop
+- Import `createCanvasRenderCache`, `prepareViewport` from `@/editor`
+- Add `const renderCacheRef = useRef(createCanvasRenderCache())`
+- `editor.prepareViewport(state, opts, resources)` → `prepareViewport(state, opts, renderCacheRef.current, resources)`
 
-Files: `src/component/Documint.tsx`, `src/editor/state/animations.ts`
+**`useInput.ts`** — largest migration (~20 call sites)
+- Drop `editor` prop, import all commands + navigation + `setSelection` + `measureVisualCaretTarget`
+- Standalone `applyKeyboardEvent` function also drops its `editor` param
+- `editor.deleteSelection()` → `deleteSelection()`, `editor.replaceSelection()` → `replaceSelection()`
 
-### 4. Update component hooks to work with `EditorState | null` directly
+**`useSelection.ts`**
+- Drop `editor` prop, import: `normalizeSelection`, `getSelectionMarks`, `setSelection`, `measureVisualCaretTarget`, `resolveDragFocus`
+- Standalone helpers also drop `editor` param
 
-**`useInput.ts`**: 
-- Remove `EditorStateChange` imports
-- `applyStateChange` callback becomes `(nextState: EditorState | null) => void`
-- The accumulation loop in `applyNativeText` simplifies — just threads state:
-  ```ts
-  for (const segment of segments) {
-    nextState = insertText(nextState, segment) ?? nextState;
-  }
-  return nextState === state ? null : nextState;
-  ```
-- `applyKeyboardEvent` returns `EditorState | null` instead of `EditorStateChange | null`
-- Import commands directly instead of going through `editor.`
+**`useHover.ts`**, **`useCursor.ts`**, **`usePresence.ts`** — same pattern, smaller scope
 
-**`useSelection.ts`**: 
-- `onEditorStateChange` callback becomes `(nextState: EditorState) => void`
-- Calls `setSelection(state, selection)` directly (already imported from state layer)
+## Step 5: Migrate `Documint.tsx`
 
-**Canvas pointer handlers in `Documint.tsx`**:
-- Call commands/state functions directly instead of `editor.methodName()`
-- All return `EditorState | null`, passed to `applyNextState`
+- Remove `useEditor` import and `const editor = useEditor()`
+- Remove `editor` from all hook option objects
+- Import ~30 functions directly from `@/editor`
+- Key renames: `editor.createState(doc)` → `createEditorState(doc)`, `editor.getDocument(state)` → `getDocument(state)`, `editor.hasRunningAnimations(state, now)` → `hasRunningAnimations(state, now)`
+- Remove `editor` from `useMemo`/`useEffect` dependency arrays (it was referentially stable from `useRef`, so removing is safe)
 
-Files: `src/component/hooks/useInput.ts`, `src/component/hooks/useSelection.ts`, 
-`src/component/Documint.tsx`
+## Step 6: Migrate test files
 
-### 5. Flatten remaining query/layout/paint calls
+4 test files use `createEditor()`:
+- `test/editor/editor.test.ts`
+- `test/editor/layout/viewport.test.ts`
+- `test/editor/annotations/comments.test.ts`
+- `test/editor/annotations/presence.test.ts`
 
-Hooks that use query methods call state functions directly:
-- `editor.normalizeSelection(state)` → `normalizeSelection(state.documentIndex, state.selection)`
-- `editor.getSelectionMarks(state)` → `getSelectionMarks(state)` (after step 1 moves it)
-- `editor.getCommentState(state)` → `getCommentState(state.documentIndex)`
-- `editor.getSelectionContext(state)` → `getSelectionContext(state.documentIndex, state.selection.anchor)`
-- `editor.hasRunningAnimations(state)` → `hasRunningEditorAnimations(state)`
+Replace `const editor = createEditor()` + `editor.method(...)` with direct function imports. Tests calling `prepareViewport` add `const renderCache = createCanvasRenderCache()`.
 
-Layout/hit-testing calls pass `viewport.layout` directly:
-- `editor.resolveSelectionHit(state, viewport, point)` → `resolveEditorHitAtPoint(viewport.layout, state, point) ?? resolveHitBelowLayout(...)`
-- Similar for `resolveDragFocus`, `resolveWordSelection`, `resolveHoverTarget`, etc.
+## Step 7: Verify
 
-Paint calls pass args directly to canvas functions.
+- `npx tsc --noEmit` — clean type check
+- `bun test` — all tests pass
+- Review for any missed `editor.` references or stale imports
 
-Files: `src/component/hooks/useCursor.ts`, `src/component/hooks/useHover.ts`, 
-`src/component/hooks/usePresence.ts` (if it exists), `src/component/Documint.tsx`
+## Files changed
 
-### 6. Remove `Editor` type, `createEditor`, and slim down api.ts
-
-- Delete the `Editor` type definition and `createEditor` factory
-- Delete `useEditor.ts` hook (no longer needed)
-- Keep `EditorCommand` type (used by keybindings) — move to `keybindings.ts` 
-  or a shared types file
-- Keep viewport-related types (`EditorViewportState`, `EditorViewport`, 
-  `EditorPoint`, `SelectionHit`, `ContainerLineBounds`) — move to layout module 
-  or keep in a slimmed `api.ts`
-- Update `src/editor/index.ts` barrel exports
-
-Files: `src/editor/api.ts`, `src/component/hooks/useEditor.ts`, 
-`src/editor/index.ts`, `src/component/lib/keybindings.ts`
-
-## Result
-
-**Before (3 layers)**:
-```
-Actions:  (DocumentIndex, Selection) → EditorAction | null
-Commands: (EditorState)              → EditorState | null  
-API:      (EditorState)              → EditorStateChange | null  ← ceremony
-```
-
-**After (2 layers)**:
-```
-Actions:  (DocumentIndex, Selection) → EditorAction | null
-Commands: (EditorState)              → EditorState | null  ← components call these directly
-```
-
-The layering becomes: actions resolve intent, commands orchestrate and apply. 
-Components call commands, derive change metadata once at the dispatch boundary.
-
-## Verification
-
-1. `npx tsc --noEmit` — type check passes
-2. `npm test` — all existing tests pass (tests already call commands directly)
-3. Manual: verify text editing, formatting, undo/redo, comments, tables, 
-   navigation, animations, and viewport scrolling all work correctly
+| File | Change |
+|------|--------|
+| `src/editor/api.ts` | Rewrite: delete facade, keep standalone compositions + types |
+| `src/editor/index.ts` | Rewrite: expanded barrel exports |
+| `src/component/hooks/useEditor.ts` | **Delete** |
+| `src/component/hooks/useViewport.ts` | Drop editor prop, own renderCache |
+| `src/component/hooks/useInput.ts` | Drop editor prop, direct function calls |
+| `src/component/hooks/useSelection.ts` | Drop editor prop, direct function calls |
+| `src/component/hooks/useHover.ts` | Drop editor prop, direct function calls |
+| `src/component/hooks/useCursor.ts` | Drop editor prop, direct function calls |
+| `src/component/hooks/usePresence.ts` | Drop editor prop, direct function calls |
+| `src/component/Documint.tsx` | Remove useEditor, direct function calls |
+| `test/editor/editor.test.ts` | Direct function imports |
+| `test/editor/layout/viewport.test.ts` | Direct function imports |
+| `test/editor/annotations/comments.test.ts` | Direct function imports |
+| `test/editor/annotations/presence.test.ts` | Direct function imports |

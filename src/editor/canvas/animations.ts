@@ -2,7 +2,7 @@
 // state; this module turns that state into render-local data and color blends
 // that the main paint orchestrator can apply while drawing text.
 
-import type { EditorTheme } from "./theme";
+import type { EditorTheme } from "@/types";
 import type {
   ActiveBlockFlashAnimation,
   DeletedTextFadeAnimation,

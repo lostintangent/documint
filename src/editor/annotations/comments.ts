@@ -8,6 +8,7 @@ import {
 } from "@/comments";
 import type { AnchorContainer } from "@/document";
 import { resolveRegionByPath, type DocumentIndex, type EditorRegion } from "../state";
+import type { EditorState } from "../state/state";
 import { projectAnchorContainersToEditor } from "./index";
 
 export type EditorCommentRange = {
@@ -53,7 +54,10 @@ export function createCommentThreadForSelection(
   });
 }
 
-export function getCommentState(documentIndex: DocumentIndex): EditorCommentState {
+export function getCommentState(state: EditorState): EditorCommentState;
+export function getCommentState(documentIndex: DocumentIndex): EditorCommentState;
+export function getCommentState(stateOrIndex: EditorState | DocumentIndex): EditorCommentState {
+  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
   const containerProjection = projectAnchorContainersToEditor(documentIndex);
   const threads = documentIndex.document.comments;
   const resolvedThreads = [...threads];

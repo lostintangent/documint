@@ -170,3 +170,12 @@ export function resolveFocusedBlockPath(state: EditorState): string {
 
   return focusedBlock?.path ?? "";
 }
+
+export function hasNewAnimation(previousState: EditorState, nextState: EditorState) {
+  const previousLatestStart = Math.max(
+    -Infinity,
+    ...previousState.animations.map((animation) => animation.startedAt),
+  );
+
+  return nextState.animations.some((animation) => animation.startedAt > previousLatestStart);
+}

@@ -1,5 +1,5 @@
 import type { Block } from "@/document";
-import type { DocumentResources } from "../resources";
+import type { DocumentResources } from "@/types";
 import type { DocumentIndex } from "../state";
 import {
   updateBlockExtent,

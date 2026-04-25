@@ -15,11 +15,45 @@ import {
 import { countResolvedCommentThreads, isResolvedCommentThread } from "@/comments";
 import type { Document } from "@/document";
 import {
-  type EditorTheme,
-  type Presence,
-  type EditorStateChange,
+  createCommentThread,
+  createEditorState,
+  deleteComment,
+  deleteCommentThread,
+  deleteTable,
+  deleteTableColumn,
+  deleteTableRow,
+  editComment,
+  getCommentState,
+  getDocument,
+  getSelectionContext,
+  hasNewAnimation,
+  hasRunningAnimations,
+  insertTable,
+  insertTableColumn,
+  insertTableRow,
+  insertText,
+  measureCaretTarget,
+  normalizeSelection,
+  paintContent,
+  paintOverlay,
+  removeLink,
+  replyToCommentThread,
+  resolveDragFocus,
+  resolveCommentThread,
+  resolveHoverTarget,
+  resolveSelectionHit,
+  resolveWordSelection,
+  setSelection,
+  toggleBold,
+  toggleItalic,
+  toggleStrikethrough,
+  toggleTaskItem,
+  toggleUnderline,
+  updateLink,
   type EditorSelectionPoint as SelectionPoint,
+  type EditorState,
 } from "@/editor";
+import type { EditorTheme, Presence } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 import { AnnotationLeaf } from "./leaves/AnnotationLeaf";
@@ -29,7 +63,6 @@ import { LinkLeaf } from "./leaves/LinkLeaf";
 import { TableLeaf } from "./leaves/TableLeaf";
 import { useCursor } from "./hooks/useCursor";
 import { useDocumentImages } from "./hooks/useDocumentImages";
-import { useEditor } from "./hooks/useEditor";
 import { useHover } from "./hooks/useHover";
 import { useInput } from "./hooks/useInput";
 import { usePresence } from "./hooks/usePresence";
@@ -44,6 +77,20 @@ import { reconcileExternalContentChange } from "./lib/reconciliation";
 import { DocumintSsr } from "./Ssr";
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
+export type DocumintProps = {
+  content: string;
+  className?: string;
+
+  theme?: DocumintTheme;
+  keybindings?: EditorKeybinding[];
+  presence?: Presence[];
+
+  onContentChange?: (content: string, document: Document) => void;
+  onStateChange?: (state: DocumintState) => void;
+};
+
+export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
+
 export type DocumintState = {
   activeBlockType: string | null;
   activeCommentThreadIndex: number | null;
@@ -51,32 +98,11 @@ export type DocumintState = {
   canonicalContent: string;
   characterCount: number;
   commentThreadCount: number;
-  docChangeCount: number;
-  lastTransactionMs: number;
   layoutWidth: number;
-  lineCount: number;
+
   resolvedCommentCount: number;
   selectionFrom: number;
   selectionTo: number;
-  transactionCount: number;
-};
-
-export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
-
-export type DocumintProps = {
-  className?: string;
-  content: string;
-  keybindings?: EditorKeybinding[];
-  onContentChange?: (content: string, document: Document) => void;
-  onStateChange?: (state: DocumintState) => void;
-  presence?: Presence[];
-  theme?: DocumintTheme;
-};
-
-type PerfMetrics = {
-  docChangeCount: number;
-  lastTransactionMs: number;
-  transactionCount: number;
 };
 
 type FocusVisibilityRequest = {
@@ -87,11 +113,6 @@ type FocusVisibilityRequest = {
   viewportHeight: number;
 };
 
-const defaultPerfMetrics: PerfMetrics = {
-  docChangeCount: 0,
-  lastTransactionMs: 0,
-  transactionCount: 0,
-};
 const selectionLeafVerticalOffset = 2;
 
 const defaultDocumintState: DocumintState = {
@@ -101,14 +122,10 @@ const defaultDocumintState: DocumintState = {
   canonicalContent: "",
   characterCount: 0,
   commentThreadCount: 0,
-  docChangeCount: 0,
-  lastTransactionMs: 0,
   layoutWidth: 0,
-  lineCount: 0,
   resolvedCommentCount: 0,
   selectionFrom: 0,
   selectionTo: 0,
-  transactionCount: 0,
 };
 
 export function Documint({
@@ -120,13 +137,11 @@ export function Documint({
   presence,
   theme,
 }: DocumintProps) {
-  const editor = useEditor();
   const hostRef = useRef<HTMLElement | null>(null);
   const contentCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const editorStateRef = useRef<ReturnType<typeof editor.createState> | null>(null);
-  const perfMetricsRef = useRef<PerfMetrics>(defaultPerfMetrics);
+  const editorStateRef = useRef<EditorState | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const dragAnchorRef = useRef<SelectionPoint | null>(null);
   const pendingTaskToggleRef = useRef<string | null>(null);
@@ -135,15 +150,19 @@ export function Documint({
   const canonicalContentRef = useRef("");
   const componentStateRef = useRef(defaultDocumintState);
   const lastFocusVisibilityRequestRef = useRef<FocusVisibilityRequest | null>(null);
+
   const [hasMountedCanvases, setHasMountedCanvases] = useState(false);
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
   const [componentState, setComponentState] = useState(defaultDocumintState);
+
   const contentDocument = useMemo(() => parseMarkdown(content), [content]);
   const canonicalContent = useMemo(() => serializeMarkdown(contentDocument), [contentDocument]);
-  const [editorState, setEditorState] = useState(() => editor.createState(contentDocument));
+
+  const [editorState, setEditorState] = useState(() => createEditorState(contentDocument));
   const renderResources = useDocumentImages(editorState.documentIndex.document);
+
   const hasLoadingImages = useMemo(
-    () => [...renderResources.images.values()].some((image) => image.status === "loading"),
+    () => [...(renderResources?.images.values() ?? [])].some((image) => image.status === "loading"),
     [renderResources],
   );
 
@@ -151,18 +170,19 @@ export function Documint({
   canonicalContentRef.current ||= canonicalContent;
 
   const viewport = useViewport({
-    editor,
     editorState,
     editorStateRef,
     renderResources,
     theme: preferredTheme,
   });
+
   const {
     actions: viewportActions,
     props: viewportProps,
     refs: viewportRefs,
     state: viewportState,
   } = viewport;
+
   const {
     getScrollTop,
     observePreparedViewport,
@@ -170,6 +190,7 @@ export function Documint({
     resolvePointerPoint,
     scrollTo,
   } = viewportActions;
+
   const {
     layoutWidth,
     preparedViewport,
@@ -178,15 +199,18 @@ export function Documint({
     viewportHeight,
     viewportTop,
   } = viewportState;
+
   const { scrollContainer: scrollContainerRef } = viewportRefs;
+  
   const selectionContext = useMemo(
-    () => editor.getSelectionContext(editorState),
-    [editor, editorState],
+    () => getSelectionContext(editorState),
+    [editorState],
   );
-  const commentState = useMemo(() => editor.getCommentState(editorState), [editor, editorState]);
-  const normalizedSelection = useMemo(
-    () => editor.normalizeSelection(editorState),
-    [editor, editorState],
+
+  const commentState = useMemo(() => getCommentState(editorState), [editorState]);
+  const normalizedSel = useMemo(
+    () => normalizeSelection(editorState),
+    [editorState],
   );
   const activeCommentThreadIndex = useMemo(
     () => resolveActiveCommentThreadIndex(editorState, commentState.liveRanges),
@@ -196,8 +220,8 @@ export function Documint({
   const readCurrentState = () => editorStateRef.current ?? editorState;
 
   const publishState = useEffectEvent((state: typeof editorState, canonicalContent: string) => {
-    const nextSelectionContext = editor.getSelectionContext(state);
-    const nextCommentState = editor.getCommentState(state);
+    const nextSelectionContext = getSelectionContext(state);
+    const nextCommentState = getCommentState(state);
     const nextAbsoluteSelection = normalizeSelectionAbsolutePositions(state);
     const nextState: DocumintState = {
       activeBlockType: nextSelectionContext.block?.nodeType ?? null,
@@ -207,14 +231,10 @@ export function Documint({
       canonicalContent,
       characterCount: canonicalContent.length,
       commentThreadCount: nextCommentState.threads.length,
-      docChangeCount: perfMetricsRef.current.docChangeCount,
-      lastTransactionMs: perfMetricsRef.current.lastTransactionMs,
       layoutWidth,
-      lineCount: countLines(canonicalContent),
       resolvedCommentCount: countResolvedCommentThreads(nextCommentState.threads),
       selectionFrom: nextAbsoluteSelection.start,
       selectionTo: nextAbsoluteSelection.end,
-      transactionCount: perfMetricsRef.current.transactionCount,
     };
 
     setComponentState((previous) => (areStatesEqual(previous, nextState) ? previous : nextState));
@@ -225,39 +245,37 @@ export function Documint({
     }
   });
 
-  const applyEditorStateChange = useEffectEvent((stateChange: EditorStateChange | null) => {
-    if (!stateChange) {
+  const applyNextState = useEffectEvent((nextState: EditorState | null) => {
+    if (!nextState) {
       return;
     }
 
-    const startedAt = performance.now();
-    editorStateRef.current = stateChange.state;
-    setEditorState(stateChange.state);
-    perfMetricsRef.current = {
-      docChangeCount: perfMetricsRef.current.docChangeCount + (stateChange.documentChanged ? 1 : 0),
-      lastTransactionMs: performance.now() - startedAt,
-      transactionCount: perfMetricsRef.current.transactionCount + 1,
-    };
+    const previousState = editorStateRef.current ?? editorState;
+    const documentChanged = previousState.documentIndex !== nextState.documentIndex;
+    const animationStarted = hasNewAnimation(previousState, nextState);
+
+    editorStateRef.current = nextState;
+    setEditorState(nextState);
 
     const cachedViewportState = preparedViewport.current;
     const canReuseEditorViewportState =
-      !stateChange.documentChanged ||
+      !documentChanged ||
       !cachedViewportState ||
-      cachedViewportState.layout.regionLineIndices.has(stateChange.state.selection.focus.regionId);
+      cachedViewportState.layout.regionLineIndices.has(nextState.selection.focus.regionId);
 
     if (!canReuseEditorViewportState) {
       preparedViewport.invalidate();
     }
 
-    if (stateChange.animationStarted) {
+    if (animationStarted) {
       scheduleRender("viewport");
     }
 
-    if (!stateChange.documentChanged) {
+    if (!documentChanged) {
       return;
     }
 
-    const nextDocument = editor.getDocument(stateChange.state);
+    const nextDocument = getDocument(nextState);
     const nextContent = serializeMarkdown(nextDocument);
 
     canonicalContentRef.current = nextContent;
@@ -282,14 +300,14 @@ export function Documint({
 
     const { context, devicePixelRatio, height, width } = preparedLayer;
 
-    editor.paintContent(editorState, viewportState, context, {
+    paintContent(editorState, viewportState, context, {
       activeBlockId: selectionContext.block?.blockId ?? null,
       activeRegionId: editorState.selection.focus.regionId,
       activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentThreadIndex,
       devicePixelRatio,
       height,
       liveCommentRanges: commentState.liveRanges,
-      normalizedSelection,
+      normalizedSelection: normalizedSel,
       now: performance.now(),
       resources: renderResources,
       theme: preferredTheme,
@@ -314,14 +332,14 @@ export function Documint({
 
     const { context, devicePixelRatio, height, width } = preparedLayer;
 
-    editor.paintOverlay(editorState, viewportState, context, {
+    paintOverlay(editorState, viewportState, context, {
       devicePixelRatio,
       height,
-      normalizedSelection,
+      normalizedSelection: normalizedSel,
       presence: presenceController.canvasPresence,
       showCaret:
-        normalizedSelection.start.regionId !== normalizedSelection.end.regionId ||
-        normalizedSelection.start.offset !== normalizedSelection.end.offset ||
+        normalizedSel.start.regionId !== normalizedSel.end.regionId ||
+        normalizedSel.start.offset !== normalizedSel.end.offset ||
         cursor.isVisible(),
       theme: preferredTheme,
       width,
@@ -340,7 +358,7 @@ export function Documint({
 
   const { scheduleRender } = useRenderScheduler({
     hasRunningAnimations: () =>
-      editor.hasRunningAnimations(editorStateRef.current ?? editorState, performance.now()),
+      hasRunningAnimations(editorStateRef.current ?? editorState, performance.now()),
     renderContent,
     renderOverlay,
     renderViewport,
@@ -354,14 +372,13 @@ export function Documint({
     canShowInsertionLeaf: Boolean(onContentChange),
     canShowTableLeaf: Boolean(onContentChange),
     commentState,
-    editor,
     editorState,
     editorViewportState: preparedViewport,
     onVisibilityChange: () => scheduleRender("overlay"),
   });
+  
   const hover = useHover({
     commentState,
-    editor,
     editorStateRef,
     editorViewportState: preparedViewport,
     resolveDocumentPoint: resolvePointerPoint,
@@ -372,8 +389,8 @@ export function Documint({
     observeScrollContainer(scrollContainer);
     scheduleRender("viewport");
   });
+
   const presenceController = usePresence({
-    editor,
     editorState,
     editorStateRef,
     editorViewportState: preparedViewport,
@@ -415,15 +432,15 @@ export function Documint({
   );
 
   const input = useInput({
-    editor,
     editorState,
     editorStateRef,
     editorViewportState: preparedViewport,
     inputRef,
     keybindings,
     onActivity: cursor.markActivity,
-    onEditorStateChange: applyEditorStateChange,
+    onEditorStateChange: applyNextState,
   });
+
   const selection = useSelection({
     autoScrollContainer: (event) => {
       autoScrollSelectionContainer(scrollContainerRef.current, event);
@@ -431,19 +448,20 @@ export function Documint({
     canShowSelectionLeaf: canEditComments,
     canvasRef: contentCanvasRef,
     threads: commentState.threads,
-    editor,
     editorState,
     editorStateRef,
     scrollContainerRef,
     editorViewportState: preparedViewport,
     onActivity: cursor.markActivity,
-    onEditorStateChange: applyEditorStateChange,
+    onEditorStateChange: applyNextState,
   });
+  
   const focusCanvas = useEffectEvent(() => {
     contentCanvasRef.current?.focus({
       preventScroll: true,
     });
   });
+  
   const releaseCanvasPointer = useEffectEvent((pointerId: number) => {
     const canvas = contentCanvasRef.current;
 
@@ -481,7 +499,7 @@ export function Documint({
       return;
     }
 
-    const hit = editor.resolveSelectionHit(currentState, preparedViewport.get(), point);
+    const hit = resolveSelectionHit(currentState, preparedViewport.get(), point);
 
     if (!canvas || !hit) {
       return;
@@ -494,8 +512,8 @@ export function Documint({
     };
     cursor.markActivity();
     canvas.setPointerCapture(event.pointerId);
-    applyEditorStateChange(
-      editor.setSelection(currentState, {
+    applyNextState(
+      setSelection(currentState, {
         offset: hit.offset,
         regionId: hit.regionId,
       }),
@@ -526,7 +544,7 @@ export function Documint({
       return;
     }
 
-    const nextFocus = editor.resolveDragFocus(currentState, preparedViewport.get(), point, anchor);
+    const nextFocus = resolveDragFocus(currentState, preparedViewport.get(), point, anchor);
 
     if (!nextFocus) {
       return;
@@ -534,8 +552,8 @@ export function Documint({
 
     cursor.markActivity();
     autoScrollSelectionContainer(scrollContainerRef.current, event);
-    applyEditorStateChange(
-      editor.setSelection(currentState, {
+    applyNextState(
+      setSelection(currentState, {
         anchor,
         focus: nextFocus,
       }),
@@ -547,7 +565,7 @@ export function Documint({
     releaseCanvasPointer(event.pointerId);
 
     if (pendingTaskToggleRef.current) {
-      const toggled = editor.toggleTaskItem(currentState, pendingTaskToggleRef.current);
+      const toggled = toggleTaskItem(currentState, pendingTaskToggleRef.current);
 
       pendingTaskToggleRef.current = null;
 
@@ -556,7 +574,7 @@ export function Documint({
         event.preventDefault();
         event.stopPropagation();
         cursor.markActivity();
-        applyEditorStateChange(toggled);
+        applyNextState(toggled);
       }
     }
 
@@ -587,16 +605,16 @@ export function Documint({
       return;
     }
 
-    const selection = editor.resolveWordSelection(currentState, preparedViewport.get(), point);
+    const wordSel = resolveWordSelection(currentState, preparedViewport.get(), point);
 
-    if (!selection) {
+    if (!wordSel) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
     cursor.markActivity();
-    applyEditorStateChange(editor.setSelection(currentState, selection));
+    applyNextState(setSelection(currentState, wordSel));
     input.focus();
   });
 
@@ -612,7 +630,7 @@ export function Documint({
     const previousState = editorStateRef.current;
     const reconciliation = reconcileExternalContentChange(
       previousState,
-      editor.createState(contentDocument),
+      createEditorState(contentDocument),
     );
     const nextState = reconciliation.state;
     const nextViewportTop = reconciliation.didReconcile ? getScrollTop() : 0;
@@ -627,7 +645,7 @@ export function Documint({
     // selection. Longer term, the viewport cache should carry enough input
     // metadata to validate itself before reuse.
     scrollTo(nextViewportTop);
-  }, [canonicalContent, content, contentDocument, editor, getScrollTop, scrollTo]);
+  }, [canonicalContent, content, contentDocument, getScrollTop, scrollTo]);
 
   useEffect(() => {
     publishState(editorState, canonicalContentRef.current || canonicalContent);
@@ -659,7 +677,7 @@ export function Documint({
     }
 
     const padding = 24;
-    const caret = editor.measureCaretTarget(editorState, preparedViewport.get(), focus);
+    const caret = measureCaretTarget(editorState, preparedViewport.get(), focus);
 
     if (!caret) {
       return;
@@ -692,7 +710,6 @@ export function Documint({
 
     lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
   }, [
-    editor,
     editorState,
     editorState.selection.focus.offset,
     editorState.selection.focus.regionId,
@@ -709,10 +726,10 @@ export function Documint({
     commentState.liveRanges,
     editorState,
     layoutWidth,
-    normalizedSelection.end.regionId,
-    normalizedSelection.end.offset,
-    normalizedSelection.start.regionId,
-    normalizedSelection.start.offset,
+    normalizedSel.end.regionId,
+    normalizedSel.end.offset,
+    normalizedSel.start.regionId,
+    normalizedSel.start.offset,
     selectionContext.block?.blockId,
     preferredTheme,
     renderResources,
@@ -842,10 +859,10 @@ export function Documint({
         return (
           <InsertionLeaf
             onInsert={(text) => {
-              applyEditorStateChange(editor.insertText(readCurrentState(), text));
+              applyNextState(insertText(readCurrentState(), text));
             }}
             onInsertTable={(columnCount) => {
-              applyEditorStateChange(editor.insertTable(readCurrentState(), columnCount));
+              applyNextState(insertTable(readCurrentState(), columnCount));
             }}
           />
         );
@@ -855,19 +872,19 @@ export function Documint({
             canDeleteColumn={visibleLeaf.columnCount > 1}
             canDeleteRow={visibleLeaf.rowCount > 1}
             onDeleteColumn={() => {
-              applyEditorStateChange(editor.deleteTableColumn(readCurrentState()));
+              applyNextState(deleteTableColumn(readCurrentState()));
             }}
             onDeleteRow={() => {
-              applyEditorStateChange(editor.deleteTableRow(readCurrentState()));
+              applyNextState(deleteTableRow(readCurrentState()));
             }}
             onDeleteTable={() => {
-              applyEditorStateChange(editor.deleteTable(readCurrentState()));
+              applyNextState(deleteTable(readCurrentState()));
             }}
             onInsertColumn={(direction) => {
-              applyEditorStateChange(editor.insertTableColumn(readCurrentState(), direction));
+              applyNextState(insertTableColumn(readCurrentState(), direction));
             }}
             onInsertRow={(direction) => {
-              applyEditorStateChange(editor.insertTableRow(readCurrentState(), direction));
+              applyNextState(insertTableRow(readCurrentState(), direction));
             }}
           />
         );
@@ -876,7 +893,7 @@ export function Documint({
           <LinkLeaf
             canEdit={canEditComments}
             onDelete={() => {
-              const stateUpdate = editor.removeLink(
+              const stateUpdate = removeLink(
                 readCurrentState(),
                 visibleLeaf.regionId,
                 visibleLeaf.startOffset,
@@ -884,11 +901,11 @@ export function Documint({
               );
 
               if (stateUpdate) {
-                applyEditorStateChange(stateUpdate);
+                applyNextState(stateUpdate);
               }
             }}
             onSave={(url) => {
-              const stateUpdate = editor.updateLink(
+              const stateUpdate = updateLink(
                 readCurrentState(),
                 visibleLeaf.regionId,
                 visibleLeaf.startOffset,
@@ -897,7 +914,7 @@ export function Documint({
               );
 
               if (stateUpdate) {
-                applyEditorStateChange(stateUpdate);
+                applyNextState(stateUpdate);
               }
             }}
             title={visibleLeaf.title}
@@ -913,8 +930,8 @@ export function Documint({
             mode="create"
             onCreateThread={(body) => {
               const currentState = readCurrentState();
-              const threadIndex = editor.getDocument(currentState).comments.length;
-              const stateUpdate = editor.createCommentThread(
+              const threadIndex = getDocument(currentState).comments.length;
+              const stateUpdate = createCommentThread(
                 currentState,
                 visibleLeaf.selection,
                 body.trim(),
@@ -924,20 +941,20 @@ export function Documint({
                 return;
               }
 
-              applyEditorStateChange(stateUpdate);
+              applyNextState(stateUpdate);
               selection.promoteLeafToThread(threadIndex, true);
             }}
             onToggleBold={() => {
-              applyEditorStateChange(editor.toggleBold(readCurrentState()));
+              applyNextState(toggleBold(readCurrentState()));
             }}
             onToggleItalic={() => {
-              applyEditorStateChange(editor.toggleItalic(readCurrentState()));
+              applyNextState(toggleItalic(readCurrentState()));
             }}
             onToggleStrikethrough={() => {
-              applyEditorStateChange(editor.toggleStrikethrough(readCurrentState()));
+              applyNextState(toggleStrikethrough(readCurrentState()));
             }}
             onToggleUnderline={() => {
-              applyEditorStateChange(editor.toggleUnderline(readCurrentState()));
+              applyNextState(toggleUnderline(readCurrentState()));
             }}
           />
         );
@@ -949,8 +966,8 @@ export function Documint({
             link={annotationThreadLeaf.link}
             mode="thread"
             onDeleteComment={(commentIndex) => {
-              applyEditorStateChange(
-                editor.deleteComment(
+              applyNextState(
+                deleteComment(
                   readCurrentState(),
                   annotationThreadLeaf.threadIndex,
                   commentIndex,
@@ -958,13 +975,13 @@ export function Documint({
               );
             }}
             onDeleteThread={() => {
-              applyEditorStateChange(
-                editor.deleteCommentThread(readCurrentState(), annotationThreadLeaf.threadIndex),
+              applyNextState(
+                deleteCommentThread(readCurrentState(), annotationThreadLeaf.threadIndex),
               );
             }}
             onEditComment={(commentIndex, body) => {
-              applyEditorStateChange(
-                editor.editComment(
+              applyNextState(
+                editComment(
                   readCurrentState(),
                   annotationThreadLeaf.threadIndex,
                   commentIndex,
@@ -973,8 +990,8 @@ export function Documint({
               );
             }}
             onReply={(body) => {
-              applyEditorStateChange(
-                editor.replyToCommentThread(
+              applyNextState(
+                replyToCommentThread(
                   readCurrentState(),
                   annotationThreadLeaf.threadIndex,
                   body,
@@ -982,8 +999,8 @@ export function Documint({
               );
             }}
             onToggleResolved={() => {
-              applyEditorStateChange(
-                editor.markCommentThreadAsResolved(
+              applyNextState(
+                resolveCommentThread(
                   readCurrentState(),
                   annotationThreadLeaf.threadIndex,
                   !isResolvedCommentThread(annotationThreadLeaf.thread),
@@ -1103,10 +1120,6 @@ export function Documint({
       </div>
     </section>
   );
-}
-
-function countLines(content: string) {
-  return content.length === 0 ? 0 : content.split("\n").length;
 }
 
 function areFocusVisibilityRequestsEqual(

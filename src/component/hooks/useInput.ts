@@ -13,25 +13,48 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  Editor,
-  EditorSelectionPoint,
-  EditorStateChange,
-  EditorViewportState,
+import {
+  deleteBackward,
+  deleteForward,
+  deleteSelection,
+  insertLineBreak,
+  insertText,
+  measureVisualCaretTarget,
+  moveCaretByViewport,
+  moveCaretHorizontally,
+  moveCaretToDocumentBoundary,
+  moveCaretToLineBoundary,
+  moveCaretVertically,
+  replaceSelection,
+  setSelection,
+  dedent,
+  indent,
+  moveListItemDown,
+  moveListItemUp,
+  redo,
+  selectAll,
+  toggleBold,
+  toggleInlineCode,
+  toggleItalic,
+  toggleStrikethrough,
+  toggleUnderline,
+  undo,
+  type EditorSelectionPoint,
+  type EditorState,
+  type EditorViewportState,
 } from "@/editor";
 import type { LazyRefHandle } from "./useLazyRef";
 import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
 import { readSingleContainerSelectionText } from "../lib/selection";
 
 type UseInputOptions = {
-  editor: Editor;
-  editorState: ReturnType<Editor["createState"]>;
-  editorStateRef: RefObject<ReturnType<Editor["createState"]> | null>;
+  editorState: EditorState;
+  editorStateRef: RefObject<EditorState | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   keybindings?: EditorKeybinding[];
   onActivity: () => void;
-  onEditorStateChange: (stateChange: EditorStateChange | null) => void;
+  onEditorStateChange: (nextState: EditorState | null) => void;
 };
 
 type ClipboardHandlers = {
@@ -75,7 +98,6 @@ type InputController = {
 const INPUT_CONTEXT_WINDOW = 64;
 
 export function useInput({
-  editor,
   editorState,
   editorStateRef,
   editorViewportState,
@@ -95,13 +117,13 @@ export function useInput({
   const primingRef = useRef(false);
   const undoStackPrimedRef = useRef(false);
 
-  const applyStateChange = useEffectEvent((stateChange: EditorStateChange | null) => {
-    if (!stateChange) {
+  const applyStateChange = useEffectEvent((nextState: EditorState | null) => {
+    if (!nextState) {
       return;
     }
 
     onActivity();
-    onEditorStateChange(stateChange);
+    onEditorStateChange(nextState);
   });
 
   const runUndoStackPrime = useEffectEvent(() => {
@@ -157,9 +179,9 @@ export function useInput({
     if (!isTouchPrimary) return;
     const input = inputRef.current;
     if (!input) return;
-    
+
     const viewport = editorViewportState.get();
-    const caret = editor.measureVisualCaretTarget(readCurrentState(), viewport, point);
+    const caret = measureVisualCaretTarget(readCurrentState(), viewport, point);
     if (!caret) return;
 
     input.style.top = `${caret.top}px`;
@@ -205,35 +227,25 @@ export function useInput({
     const insertedText = stripSyncedInputPrefix(value, resolveInputPrefix(state));
     const segments = insertedText.replace(/\r\n/g, "\n").split(/(\n)/);
     let nextState = state;
-    let animationStarted = false;
-    let documentChanged = false;
 
     for (const segment of segments) {
       if (segment.length === 0) {
         continue;
       }
 
-      const stateChange =
+      const result =
         segment === "\n"
-          ? editor.insertLineBreak(nextState)
-          : editor.insertText(nextState, segment);
+          ? insertLineBreak(nextState)
+          : insertText(nextState, segment);
 
-      if (!stateChange) {
+      if (!result) {
         continue;
       }
 
-      nextState = stateChange.state;
-      animationStarted ||= stateChange.animationStarted;
-      documentChanged ||= stateChange.documentChanged;
+      nextState = result;
     }
 
-    return nextState === state
-      ? null
-      : {
-          animationStarted,
-          documentChanged,
-          state: nextState,
-        };
+    return nextState === state ? null : nextState;
   });
 
   const applyReplacementText = useEffectEvent(
@@ -243,13 +255,13 @@ export function useInput({
       // delegate to `replaceSelection`, which dispatches a single action
       // — one undo entry, one animation tick — instead of N delete + M
       // insert operations.
-      const focus = state.selection.focus;
+      const focusPoint = state.selection.focus;
       const anchor = {
-        regionId: focus.regionId,
-        offset: Math.max(0, focus.offset - charsToDelete),
+        regionId: focusPoint.regionId,
+        offset: Math.max(0, focusPoint.offset - charsToDelete),
       };
-      const extended = editor.setSelection(state, { anchor, focus }).state;
-      return editor.replaceSelection(extended, replacement);
+      const extended = setSelection(state, { anchor, focus: focusPoint });
+      return replaceSelection(extended, replacement);
     },
   );
 
@@ -289,19 +301,19 @@ export function useInput({
 
     if (isLineBreakInputType(event.inputType)) {
       event.preventDefault();
-      applyStateChange(editor.insertLineBreak(state));
+      applyStateChange(insertLineBreak(state));
       return;
     }
 
     if (deleteDirection === "backward") {
       event.preventDefault();
-      applyStateChange(editor.deleteBackward(state));
+      applyStateChange(deleteBackward(state));
       return;
     }
 
     if (deleteDirection === "forward") {
       event.preventDefault();
-      applyStateChange(editor.deleteForward(state));
+      applyStateChange(deleteForward(state));
       return;
     }
 
@@ -313,14 +325,14 @@ export function useInput({
       // we re-prime so iOS keeps offering "Undo" on the next gesture rather
       // than flipping to "Redo".
       event.preventDefault();
-      applyStateChange(editor.undo(state));
+      applyStateChange(undo(state));
       rePrimeUndoStack();
       return;
     }
 
     if (event.inputType === "historyRedo") {
       event.preventDefault();
-      applyStateChange(editor.redo(state));
+      applyStateChange(redo(state));
       rePrimeUndoStack();
       return;
     }
@@ -342,7 +354,6 @@ export function useInput({
   const handleKeyDown = useEffectEvent(
     (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       const stateChange = applyKeyboardEvent(
-        editor,
         readCurrentState(),
         editorViewportState.get(),
         event.nativeEvent,
@@ -382,7 +393,7 @@ export function useInput({
 
       event.preventDefault();
       event.clipboardData.setData("text/plain", selectedText);
-      applyStateChange(editor.deleteSelection(state));
+      applyStateChange(deleteSelection(state));
     },
   );
 
@@ -395,7 +406,7 @@ export function useInput({
       }
 
       event.preventDefault();
-      applyStateChange(editor.replaceSelection(readCurrentState(), pastedText));
+      applyStateChange(replaceSelection(readCurrentState(), pastedText));
     },
   );
 
@@ -446,8 +457,6 @@ export function useInput({
     return () => input.removeEventListener("beforeinput", listener);
   }, [inputRef, handleBeforeInput]);
 
-  // See the `SharedInputHandlers` type for why onKeyDown is omitted on
-  // touch-primary devices, and why onBeforeInput isn't included here at all.
   const sharedHandlers: SharedInputHandlers = {
     onCopy: handleCopy,
     onCut: handleCut,
@@ -526,7 +535,7 @@ export function stripInputSeed(value: string) {
 }
 
 export function resolveInputPrefix(
-  state: ReturnType<Editor["createState"]>,
+  state: EditorState,
   maxLength = INPUT_CONTEXT_WINDOW,
 ) {
   const { anchor, focus } = state.selection;
@@ -564,7 +573,7 @@ export function stripSyncedInputPrefix(value: string, prefix: string) {
 // The caret is placed at the end so new input appends after the prefix.
 export function syncInputContext(
   input: HTMLTextAreaElement,
-  state: ReturnType<Editor["createState"]>,
+  state: EditorState,
 ) {
   const prefix = resolveInputPrefix(state);
   const nextValue = `${INPUT_SEED}${prefix}`;
@@ -574,21 +583,20 @@ export function syncInputContext(
 }
 
 function applyKeyboardEvent(
-  editor: Editor,
-  state: ReturnType<Editor["createState"]>,
+  state: EditorState,
   viewport: EditorViewportState,
   event: KeyboardEvent,
   keybindings?: EditorKeybinding[],
-): EditorStateChange | null {
+): EditorState | null {
   if (event.key === "Delete") {
-    return editor.deleteForward(state);
+    return deleteForward(state);
   }
 
   const command = resolveEditorCommand(event, keybindings);
 
   if (command) {
     if (command === "moveToLineStart" || command === "moveToLineEnd") {
-      return editor.moveCaretToLineBoundary(
+      return moveCaretToLineBoundary(
         state,
         viewport.layout,
         command === "moveToLineStart" ? "Home" : "End",
@@ -597,7 +605,7 @@ function applyKeyboardEvent(
     }
 
     if (command === "moveToDocumentStart" || command === "moveToDocumentEnd") {
-      return editor.moveCaretToDocumentBoundary(
+      return moveCaretToDocumentBoundary(
         state,
         command === "moveToDocumentStart" ? "start" : "end",
         event.shiftKey,
@@ -606,42 +614,42 @@ function applyKeyboardEvent(
 
     switch (command) {
       case "insertLineBreak":
-        return editor.insertLineBreak(state);
+        return insertLineBreak(state);
       case "deleteBackward":
-        return editor.deleteBackward(state);
+        return deleteBackward(state);
       case "indent":
-        return editor.indent(state);
+        return indent(state);
       case "dedent":
-        return editor.dedent(state);
+        return dedent(state);
       case "moveListItemUp":
-        return editor.moveListItemUp(state);
+        return moveListItemUp(state);
       case "moveListItemDown":
-        return editor.moveListItemDown(state);
+        return moveListItemDown(state);
       case "toggleBold":
-        return editor.toggleBold(state);
+        return toggleBold(state);
       case "toggleItalic":
-        return editor.toggleItalic(state);
+        return toggleItalic(state);
       case "toggleStrikethrough":
-        return editor.toggleStrikethrough(state);
+        return toggleStrikethrough(state);
       case "toggleUnderline":
-        return editor.toggleUnderline(state);
+        return toggleUnderline(state);
       case "toggleInlineCode":
-        return editor.toggleInlineCode(state);
+        return toggleInlineCode(state);
       case "undo":
-        return editor.undo(state);
+        return undo(state);
       case "redo":
-        return editor.redo(state);
+        return redo(state);
       case "selectAll":
-        return editor.selectAll(state);
+        return selectAll(state);
     }
   }
 
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-    return editor.moveCaretHorizontally(state, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
+    return moveCaretHorizontally(state, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
   }
 
   if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-    return editor.moveCaretVertically(
+    return moveCaretVertically(
       state,
       viewport.layout,
       event.key === "ArrowUp" ? -1 : 1,
@@ -650,7 +658,7 @@ function applyKeyboardEvent(
   }
 
   if (event.key === "PageUp" || event.key === "PageDown") {
-    return editor.moveCaretByViewport(
+    return moveCaretByViewport(
       state,
       viewport.layout,
       event.key === "PageUp" ? -1 : 1,
@@ -659,7 +667,7 @@ function applyKeyboardEvent(
   }
 
   if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
-    return editor.insertText(state, event.key);
+    return insertText(state, event.key);
   }
 
   return null;

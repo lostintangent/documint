@@ -16,7 +16,7 @@ import {
   resolveEditorHitAtPoint,
   resolveSelectionHit,
 } from "@/editor/layout";
-import type { DocumentResources } from "@/editor";
+import type { DocumentResources } from "@/types";
 import { parseMarkdown } from "@/markdown";
 
 test("wraps runtime text into deterministic canvas layout lines", () => {

@@ -3,7 +3,6 @@ import type { Block } from "@/document";
 import type { EditorPresence } from "@/editor/annotations";
 import { createDocumentLayout } from "@/editor/layout";
 import { createEditorState, setSelection } from "@/editor/state";
-import { emptyDocumentResources } from "@/editor/resources";
 import { paintCanvasCaretOverlay, paintCanvasEditorSurface } from "@/editor/canvas/paint";
 import { lightTheme } from "@/component/lib/themes";
 import { parseMarkdown } from "@/markdown";
@@ -408,7 +407,7 @@ function renderPaintOperations(
       end: state.selection.focus,
       start: state.selection.anchor,
     },
-    resources: emptyDocumentResources,
+    resources: { images: new Map() },
     runtimeBlockMap: createRuntimeBlockMap(state.documentIndex.document.blocks),
     theme: lightTheme,
     viewportTop: 0,

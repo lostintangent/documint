@@ -1,6 +1,7 @@
 import type { ViewportLayout } from "../layout";
 import { measureCaretTarget } from "../layout";
 import type { DocumentIndex } from "../state";
+import type { EditorState } from "../state/state";
 import type {
   EditorPresence,
   EditorPresenceViewport,
@@ -20,10 +21,21 @@ type PresenceViewport = {
 const presenceViewportScrollMargin = 48;
 
 export function resolvePresenceViewport(
+  state: EditorState,
+  viewport: PresenceViewport,
+  presence: EditorPresence[],
+): EditorPresence[];
+export function resolvePresenceViewport(
   documentIndex: DocumentIndex,
   viewport: PresenceViewport,
   presence: EditorPresence[],
+): EditorPresence[];
+export function resolvePresenceViewport(
+  stateOrIndex: EditorState | DocumentIndex,
+  viewport: PresenceViewport,
+  presence: EditorPresence[],
 ): EditorPresence[] {
+  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
   if (presence.length === 0) {
     return [];
   }

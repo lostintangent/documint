@@ -1,4 +1,9 @@
-import type { Editor, EditorHoverTarget, EditorViewportState } from "@/editor";
+import {
+  resolveHoverTarget as resolveHoverTargetAtViewport,
+  type EditorHoverTarget,
+  type EditorState,
+  type EditorViewportState,
+} from "@/editor";
 import type { EditorCommentState } from "@/editor/annotations";
 import type { LazyRefHandle } from "./useLazyRef";
 import {
@@ -14,8 +19,7 @@ import { resolveContextualLeaf, type ContextualLeaf } from "../leaves/lib/leaf-t
 
 type UseHoverOptions = {
   commentState: EditorCommentState;
-  editor: Editor;
-  editorStateRef: RefObject<ReturnType<Editor["createState"]> | null>;
+  editorStateRef: RefObject<EditorState | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   resolveDocumentPoint: (
     event: PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>,
@@ -28,7 +32,6 @@ const HOVER_HIDE_DELAY_MS = 48;
 
 export function useHover({
   commentState,
-  editor,
   editorStateRef,
   editorViewportState,
   resolveDocumentPoint,
@@ -97,7 +100,7 @@ export function useHover({
         return null;
       }
 
-      return editor.resolveHoverTarget(
+      return resolveHoverTargetAtViewport(
         currentState,
         editorViewportState.get(),
         point,

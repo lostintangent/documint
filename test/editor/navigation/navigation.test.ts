@@ -1,11 +1,8 @@
 import { expect, test } from "bun:test";
 import {
-  extendSelectionToDocumentBoundary,
-  extendSelectionToLineBoundary,
-  extendSelectionHorizontally,
-  extendSelectionVertically,
   moveCaretHorizontally,
   moveCaretToDocumentBoundary,
+  moveCaretToLineBoundary,
   moveCaretVertically,
 } from "@/editor/navigation";
 import { createEditorState, setSelection } from "@/editor/state";
@@ -56,7 +53,7 @@ test("extends the selection to the left when shift-arrow-left is used repeatedly
 
   expect(container).toBeDefined();
 
-  const once = extendSelectionHorizontally(
+  const once = moveCaretHorizontally(
     setSelection(state, {
       anchor: {
         regionId: container!.id,
@@ -68,8 +65,9 @@ test("extends the selection to the left when shift-arrow-left is used repeatedly
       },
     }),
     -1,
+    true,
   );
-  const twice = extendSelectionHorizontally(once, -1);
+  const twice = moveCaretHorizontally(once, -1, true);
 
   expect(once.selection.anchor.offset).toBe(4);
   expect(once.selection.focus.offset).toBe(3);
@@ -85,7 +83,7 @@ test("extends the selection across regions when shift-arrow-right crosses a boun
   expect(firstContainer).toBeDefined();
   expect(secondContainer).toBeDefined();
 
-  const nextState = extendSelectionHorizontally(
+  const nextState = moveCaretHorizontally(
     setSelection(state, {
       anchor: {
         regionId: firstContainer!.id,
@@ -97,6 +95,7 @@ test("extends the selection across regions when shift-arrow-right crosses a boun
       },
     }),
     1,
+    true,
   );
 
   expect(nextState.selection.anchor.regionId).toBe(firstContainer!.id);
@@ -147,7 +146,7 @@ test("extends the selection to the start of the current line", () => {
   expect(container).toBeDefined();
 
   const layout = createDocumentLayout(state.documentIndex, { width: 90 });
-  const nextState = extendSelectionToLineBoundary(
+  const nextState = moveCaretToLineBoundary(
     setSelection(state, {
       anchor: {
         regionId: container!.id,
@@ -160,6 +159,7 @@ test("extends the selection to the start of the current line", () => {
     }),
     layout,
     "Home",
+    true,
   );
 
   expect(nextState.selection.anchor.regionId).toBe(container!.id);
@@ -176,7 +176,7 @@ test("extends the selection to the end of the current line", () => {
   expect(container).toBeDefined();
 
   const layout = createDocumentLayout(state.documentIndex, { width: 90 });
-  const nextState = extendSelectionToLineBoundary(
+  const nextState = moveCaretToLineBoundary(
     setSelection(state, {
       anchor: {
         regionId: container!.id,
@@ -189,6 +189,7 @@ test("extends the selection to the end of the current line", () => {
     }),
     layout,
     "End",
+    true,
   );
 
   expect(nextState.selection.anchor.regionId).toBe(container!.id);
@@ -281,10 +282,11 @@ test("extends the selection vertically across a region boundary while keeping th
   }
 
   const layout = createDocumentLayout(state.documentIndex, { width: 320 });
-  const nextState = extendSelectionVertically(
+  const nextState = moveCaretVertically(
     setSelection(state, { regionId: first.id, offset: 2 }),
     layout,
     1,
+    true,
   );
 
   expect(nextState.selection.anchor.regionId).toBe(first.id);
@@ -340,9 +342,10 @@ test("extends the selection to the end of the document while keeping the anchor"
     throw new Error("Expected three paragraph regions");
   }
 
-  const nextState = extendSelectionToDocumentBoundary(
+  const nextState = moveCaretToDocumentBoundary(
     setSelection(state, { regionId: first.id, offset: 2 }),
     "end",
+    true,
   );
 
   expect(nextState.selection.anchor).toEqual({ offset: 2, regionId: first.id });

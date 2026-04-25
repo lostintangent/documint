@@ -59,13 +59,9 @@ export function areStatesEqual(previous: DocumintState, next: DocumintState) {
     previous.canonicalContent === next.canonicalContent &&
     previous.characterCount === next.characterCount &&
     previous.commentThreadCount === next.commentThreadCount &&
-    previous.docChangeCount === next.docChangeCount &&
-    previous.lastTransactionMs === next.lastTransactionMs &&
     previous.layoutWidth === next.layoutWidth &&
-    previous.lineCount === next.lineCount &&
     previous.resolvedCommentCount === next.resolvedCommentCount &&
     previous.selectionFrom === next.selectionFrom &&
-    previous.selectionTo === next.selectionTo &&
-    previous.transactionCount === next.transactionCount
+    previous.selectionTo === next.selectionTo
   );
 }

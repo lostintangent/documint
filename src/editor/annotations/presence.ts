@@ -4,15 +4,11 @@
  * text matching only and leaves geometric measurement to layout/paint.
  */
 import { type Anchor, type AnchorContainer } from "@/document";
+import type { Presence } from "@/types";
 import type { DocumentIndex, EditorSelectionPoint } from "../state";
 import { projectAnchorContainersToEditor } from "./index";
 
-export type Presence = {
-  color?: string;
-  cursor?: Anchor;
-  imageUrl?: string;
-  name: string;
-};
+export type { Presence };
 
 export type EditorPresenceViewport = {
   scrollTop: number | null;

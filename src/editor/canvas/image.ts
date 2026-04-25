@@ -1,7 +1,6 @@
 // Owns paint policy for inline document images. The main paint module delegates
 // image-specific draw behavior here so text and image rendering stay separate.
-import type { EditorTheme } from "./theme";
-import type { DocumentResources } from "../resources";
+import type { DocumentResources, EditorTheme } from "@/types";
 import type { EditorInline } from "../state";
 import type { ViewportLayout } from "../layout";
 
