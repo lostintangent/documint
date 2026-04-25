@@ -43,7 +43,7 @@ textarea {
 
 .playground-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 1rem;
   height: 100vh;
   padding: 1rem 1.5rem 1.5rem;
@@ -339,6 +339,42 @@ textarea {
   font-size: 0.95rem;
   line-height: 1.55;
   resize: vertical;
+}
+
+.playground-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--playground-card-border);
+  border-radius: 0.75rem;
+  background: var(--playground-card-background);
+  font-family: var(--playground-ui-font);
+  font-size: 0.78rem;
+  color: var(--playground-text-muted);
+  line-height: 1;
+  overflow: hidden;
+}
+
+.status-item {
+  white-space: nowrap;
+}
+
+.status-item.has-selection {
+  color: #0ea5e9;
+  font-weight: 500;
+}
+
+.status-mention {
+  color: #7c3aed;
+  font-weight: 500;
+}
+
+.status-separator {
+  width: 1px;
+  height: 0.75rem;
+  background: rgba(15, 23, 42, 0.12);
+  flex-shrink: 0;
 }
 
 @media (max-width: 1040px) {

@@ -1,4 +1,11 @@
-import { darkTheme, lightTheme, midnightTheme, mintTheme, type EditorTheme } from "documint";
+import {
+  darkTheme,
+  lightTheme,
+  midnightTheme,
+  mintTheme,
+  type EditorTheme,
+  type MentionSuggestion,
+} from "documint";
 
 const sampleMarkdown = `# Sample Document
 
@@ -362,3 +369,10 @@ export const themeOptions = [
 export function getThemeOption(themeId: string) {
   return themeOptions.find((option) => option.id === themeId) ?? themeOptions[0];
 }
+
+export const sampleMentionSuggestions: MentionSuggestion[] = [
+  { handle: "alice", name: "Alice Chen", color: "#e11d48" },
+  { handle: "bob", name: "Bob Martinez", color: "#2563eb" },
+  { handle: "carol", name: "Carol Wu", color: "#059669" },
+  { handle: "dave", name: "Dave Kim", color: "#7c3aed" },
+];
