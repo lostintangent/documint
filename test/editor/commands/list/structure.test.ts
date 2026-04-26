@@ -300,7 +300,9 @@ test("lifts empty nested list items one level before exiting the list entirely",
 
 test("routes list enter behavior and markdown task rules", () => {
   let state = createEditorState(parseMarkdown("- [x] shipped baseline\n"));
-  const task = state.documentIndex.regions.find((container) => container.text === "shipped baseline");
+  const task = state.documentIndex.regions.find(
+    (container) => container.text === "shipped baseline",
+  );
 
   if (!task) {
     throw new Error("Expected shipped baseline container");

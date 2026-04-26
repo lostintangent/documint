@@ -148,7 +148,12 @@ function serializeListItem(
   }
 
   const [firstChild, ...rest] = children;
-  const firstContent = serializeListItemFirstChild(firstChild, prefix, checkbox.length > 0, options);
+  const firstContent = serializeListItemFirstChild(
+    firstChild,
+    prefix,
+    checkbox.length > 0,
+    options,
+  );
   const tail = rest
     .map((child) => serializeBlock(child, childIndent, options))
     .join(block.spread ? blockSeparator : lineFeed);
@@ -398,10 +403,7 @@ function serializeCommentDirective(comments: Document["comments"]) {
   });
 }
 
-function serializeDirective(
-  block: Extract<Block, { type: "directive" }>,
-  indent: number,
-): string {
+function serializeDirective(block: Extract<Block, { type: "directive" }>, indent: number): string {
   const rendered = renderDirective(block);
   return indent === 0 ? rendered : indentBlockText(rendered, indent);
 }

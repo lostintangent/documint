@@ -6,11 +6,11 @@ type PresenceOverlayProps = {
   insetX: number;
   insetY: number;
   onSelect: (presence: EditorPresence) => void;
-  presence: EditorPresence[];
+  presence: EditorPresence[] | undefined;
 };
 
 export function PresenceOverlay({ insetX, insetY, onSelect, presence }: PresenceOverlayProps) {
-  if (presence.length === 0) {
+  if (!presence) {
     return null;
   }
 
@@ -23,11 +23,11 @@ export function PresenceOverlay({ insetX, insetY, onSelect, presence }: Presence
         top: `${insetY}px`,
       }}
     >
-      {presence.map((presenceItem, index) => (
+      {presence.map((entry) => (
         <PresenceIndicator
-          key={resolvePresenceIndicatorKey(presenceItem, index)}
-          onSelect={() => onSelect(presenceItem)}
-          presence={presenceItem}
+          key={entry.id}
+          onSelect={() => onSelect(entry)}
+          presence={entry}
         />
       ))}
     </div>
@@ -44,12 +44,12 @@ function PresenceIndicator({
   const viewport = presence.viewport;
   const initial = resolvePresenceInitial(presence);
   const DirectionIcon = viewport?.status === "above" ? ArrowUp : ArrowDown;
-  const canScrollToPresence = viewport !== null && viewport.scrollTop !== null;
+  const canScrollToPresence = viewport !== null && viewport.status !== "unresolved";
   const showDirection = viewport?.status === "above" || viewport?.status === "below";
 
   return (
     <button
-      aria-label={resolvePresenceIndicatorAriaLabel(presence)}
+      aria-label={resolvePresenceAriaLabel(presence)}
       className="documint-presence-indicator"
       data-status={viewport?.status ?? "unresolved"}
       disabled={!canScrollToPresence}
@@ -62,13 +62,13 @@ function PresenceIndicator({
       type="button"
     >
       <span className="documint-presence-indicator-avatar">
-        {presence.imageUrl ? (
+        {presence.avatarUrl ? (
           <img
             alt=""
             aria-hidden="true"
             className="documint-presence-indicator-image"
             draggable={false}
-            src={presence.imageUrl}
+            src={presence.avatarUrl}
           />
         ) : (
           initial
@@ -91,7 +91,7 @@ function resolvePresenceInitial(presence: EditorPresence) {
   return resolvePresenceName(presence).charAt(0).toLocaleUpperCase();
 }
 
-function resolvePresenceIndicatorAriaLabel(presence: EditorPresence) {
+function resolvePresenceAriaLabel(presence: EditorPresence) {
   const name = resolvePresenceName(presence);
   const status = presence.viewport?.status ?? "unresolved";
 
@@ -111,17 +111,5 @@ function resolvePresenceIndicatorAriaLabel(presence: EditorPresence) {
 }
 
 function resolvePresenceName(presence: EditorPresence) {
-  return presence.name.trim() || "Presence";
-}
-
-function resolvePresenceIndicatorKey(presence: EditorPresence, index: number) {
-  return [
-    index,
-    presence.name,
-    presence.imageUrl ?? "",
-    presence.color ?? "",
-    presence.cursor?.kind ?? "",
-    presence.cursor?.prefix ?? "",
-    presence.cursor?.suffix ?? "",
-  ].join(":");
+  return (presence.fullName ?? presence.username).trim() || "Presence";
 }

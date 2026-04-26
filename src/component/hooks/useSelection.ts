@@ -6,6 +6,7 @@ import {
   resolveDragFocus,
   setSelection,
   type EditorCommentState,
+  type EditorPoint,
   type EditorSelectionPoint,
   type EditorState,
   type EditorViewportState,
@@ -21,8 +22,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { resolvePointerPointInScrollContainer } from "../lib/pointer";
 import { readSingleContainerSelectionRange } from "../lib/selection";
+import type { FocusInput } from "./useInput";
 
 type SelectionHandlePosition = {
   left: number;
@@ -61,16 +62,19 @@ type SelectionLeaf =
 type SelectionCreateLeaf = Extract<SelectionLeaf, { kind: "create" }>;
 
 type UseSelectionOptions = {
-  autoScrollContainer: (event: PointerEvent<HTMLDivElement>) => void;
+  // Editor state and lookups the hook reads from.
   canShowSelectionLeaf: boolean;
-  canvasRef: RefObject<HTMLCanvasElement | null>;
-  threads: EditorCommentState["threads"];
   editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
-  scrollContainerRef: RefObject<HTMLDivElement | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
+  resolvePoint: (event: PointerEvent<HTMLElement>) => EditorPoint | null;
+  threads: EditorCommentState["threads"];
+
+  // Host callbacks the hook invokes.
+  applyNextState: (nextState: EditorState) => void;
+  autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
+  focusInput: FocusInput;
   onActivity: () => void;
-  onEditorStateChange: (nextState: EditorState) => void;
 };
 
 type SelectionHandles = {
@@ -86,32 +90,60 @@ type SelectionController = {
   startHandleProps: SelectionHandleProps;
 };
 
+/**
+ * Owns the selection-related UI affordances that live outside the canvas:
+ * the start/end drag handles (touch UI for extending a range) and the
+ * selection leaf (the comment-creation popover that anchors to a range).
+ *
+ * What this hook owns:
+ *   - Pixel positions for the start/end selection handles, recomputed when
+ *     selection or viewport changes.
+ *   - The selection leaf state (create-comment vs. thread), including
+ *     promotion when the host posts a new thread.
+ *   - The handle drag gesture — pointer capture, hit testing via
+ *     `resolvePoint`, autoscroll past the canvas edge during drag, and
+ *     selection extension.
+ *
+ * Contract with the host:
+ *   - The host renders `<div>`s for the start and end handles, spreading
+ *     `startHandleProps` / `endHandleProps` onto each, and positions them
+ *     using the pixel coordinates in `handles`.
+ *   - The host renders the selection `leaf` as a contextual overlay,
+ *     calling `promoteLeafToThread(threadIndex)` once a comment is posted.
+ *   - The host wires `resolvePoint` and `autoScrollDuringDrag` from
+ *     `useViewport`, and `focusInput` from `useInput`.
+ *   - The host does not own any handle-drag state — it lives entirely here.
+ */
 export function useSelection({
-  autoScrollContainer,
+  applyNextState,
+  autoScrollDuringDrag,
   canShowSelectionLeaf,
-  canvasRef,
-  threads,
   editorState,
   editorStateRef,
-  scrollContainerRef,
   editorViewportState,
+  focusInput,
   onActivity,
-  onEditorStateChange,
+  resolvePoint,
+  threads,
 }: UseSelectionOptions): SelectionController {
-  const normalizedSel = useMemo(
-    () => normalizeSelection(editorState),
-    [editorState],
-  );
+  /* Derived selection state */
+
+  const normalizedSel = useMemo(() => normalizeSelection(editorState), [editorState]);
   const selectionRange = useMemo(
     () => readSingleContainerSelectionRange(editorState),
     [editorState],
   );
   const activeMarks = useMemo(() => getSelectionMarks(editorState), [editorState]);
+
+  /* Internal state */
+
   const [handles, setHandles] = useState<SelectionHandles | null>(null);
   const [selectionLeaf, setSelectionLeaf] = useState<SelectionLeaf | null>(null);
   const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
   const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
+
+  /* Layout: keep handles + leaf positioned in sync with selection */
 
   useLayoutEffect(() => {
     const nextHandles = resolveSelectionHandles(
@@ -163,6 +195,8 @@ export function useSelection({
     },
   );
 
+  /* Handle drag */
+
   const clearDrag = useEffectEvent((event?: PointerEvent<HTMLDivElement>) => {
     if (
       event &&
@@ -178,12 +212,12 @@ export function useSelection({
   });
 
   const updateSelectionFromHandle = useEffectEvent((event: PointerEvent<HTMLDivElement>) => {
-    const scrollContainer = scrollContainerRef.current;
     const currentState = editorStateRef.current;
     const stationarySelectionPoint = stationarySelectionPointRef.current;
+    const point = resolvePoint(event);
 
     if (
-      !scrollContainer ||
+      !point ||
       !currentState ||
       !stationarySelectionPoint ||
       dragPointerIdRef.current !== event.pointerId
@@ -191,7 +225,6 @@ export function useSelection({
       return;
     }
 
-    const point = resolvePointerPointInScrollContainer(event, scrollContainer);
     const nextFocus = resolveDragFocus(
       currentState,
       editorViewportState.get(),
@@ -206,8 +239,8 @@ export function useSelection({
     event.preventDefault();
     event.stopPropagation();
     onActivity();
-    autoScrollContainer(event);
-    onEditorStateChange(
+    autoScrollDuringDrag(event);
+    applyNextState(
       setSelection(currentState, {
         anchor: stationarySelectionPoint,
         focus: nextFocus,
@@ -222,8 +255,7 @@ export function useSelection({
     onPointerDown: (event) => {
       const currentState = editorStateRef.current ?? editorState;
       const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSel, kind);
-      const draggedSelectionPoint =
-        kind === "start" ? normalizedSel.start : normalizedSel.end;
+      const draggedSelectionPoint = kind === "start" ? normalizedSel.start : normalizedSel.end;
 
       if (!handles) {
         return;
@@ -236,10 +268,11 @@ export function useSelection({
       activeHandleKindRef.current = kind;
       event.currentTarget.setPointerCapture(event.pointerId);
       onActivity();
-      canvasRef.current?.focus({
-        preventScroll: true,
-      });
-      onEditorStateChange(
+      // Refocus the input bridge so the iOS keyboard stays visible while
+      // the user drags the handle — without this, focus drifts to the
+      // handle's host element and the keyboard dismisses mid-gesture.
+      focusInput();
+      applyNextState(
         setSelection(currentState, {
           anchor: stationarySelectionPoint,
           focus: draggedSelectionPoint,
@@ -261,6 +294,8 @@ export function useSelection({
       clearDrag(event);
     },
   });
+
+  /* Public API */
 
   return {
     endHandleProps: createHandleProps("end"),

@@ -10,13 +10,13 @@ import {
   Italic,
   MessageSquarePlus,
   Pencil,
-  SendHorizontal,
   Strikethrough,
   Trash2,
   Underline,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { EditInput } from "./EditInput";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { LeafInput, type CompletionSource } from "./core/LeafInput";
+import { LeafOutput } from "./core/LeafOutput";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
 
 type AnnotationLink = {
@@ -27,6 +27,7 @@ type AnnotationLink = {
 type AnnotationLeafBaseProps = {
   canEdit: boolean;
   link: AnnotationLink | null;
+  mentionSources?: CompletionSource[];
 };
 
 type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
@@ -75,6 +76,8 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const [isExpanded, setIsExpanded] = useState(defaultCreateExpanded);
   const [isTransitioningFromCreate, setIsTransitioningFromCreate] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const mentionSources = props.mentionSources;
   const threadUpdatedAt = thread ? getCommentThreadUpdatedAt(thread) : null;
   const threadAge = threadUpdatedAt ? formatRelativeTime(threadUpdatedAt) : "";
   const canMutateThread = canEdit && !isResolved;
@@ -149,9 +152,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     }
 
     const frame = requestAnimationFrame(() => {
-      rootRef.current
-        ?.querySelector<HTMLTextAreaElement>(".documint-comment-reply-field textarea")
-        ?.focus();
+      composerRef.current?.focus();
     });
 
     return () => {
@@ -212,14 +213,15 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       canMutateThread={canMutateThread}
       canReply={canReply}
       canSaveEditedComment={canSaveEditedComment}
-      commentAgeFormatter={formatRelativeTime}
       comments={comments}
+      composerRef={composerRef}
       editDraft={editDraft}
       editingCommentIndex={editingCommentIndex}
       isComposerVisible={showComposer}
       isInitialCommentVisible={isInitialCommentVisible}
       isResolved={isResolved}
       link={link}
+      mentionSources={mentionSources}
       mode={props.mode}
       onBeginEditingComment={beginEditingComment}
       onCancelEditing={cancelEditing}
@@ -297,14 +299,15 @@ function AnnotationLeafBody({
   canMutateThread,
   canReply,
   canSaveEditedComment,
-  commentAgeFormatter,
   comments,
+  composerRef,
   editDraft,
   editingCommentIndex,
   isComposerVisible,
   isInitialCommentVisible,
   isResolved,
   link,
+  mentionSources,
   mode,
   onBeginEditingComment,
   onCancelEditing,
@@ -329,14 +332,15 @@ function AnnotationLeafBody({
   canMutateThread: boolean;
   canReply: boolean;
   canSaveEditedComment: boolean;
-  commentAgeFormatter: (value: string) => string;
   comments: CommentThread["comments"];
+  composerRef: RefObject<HTMLTextAreaElement | null>;
   editDraft: string;
   editingCommentIndex: number | null;
   isComposerVisible: boolean;
   isInitialCommentVisible: boolean;
   isResolved: boolean;
   link: AnnotationLink | null;
+  mentionSources: CompletionSource[] | undefined;
   mode: AnnotationLeafProps["mode"];
   onBeginEditingComment: (commentIndex: number, body: string) => void;
   onCancelEditing: () => void;
@@ -400,13 +404,11 @@ function AnnotationLeafBody({
           }
         >
           {rootComment ? (
-            <p
-              onDoubleClick={() => {
-                onBeginEditingComment(0, rootComment.body);
-              }}
-            >
-              {rootComment.body}
-            </p>
+            <LeafOutput
+              completionSources={mentionSources}
+              onEdit={() => onBeginEditingComment(0, rootComment.body)}
+              value={rootComment.body}
+            />
           ) : null}
         </article>
         {comments.slice(1).map((comment, commentIndex) => {
@@ -420,7 +422,7 @@ function AnnotationLeafBody({
             >
               {!isEditing ? (
                 <div className="documint-comment-message-meta">
-                  <span>{commentAgeFormatter(comment.updatedAt)}</span>
+                  <span>{formatRelativeTime(comment.updatedAt)}</span>
                   {canMutateThread ? (
                     <div className="documint-comment-leaf-actions">
                       <button
@@ -450,24 +452,25 @@ function AnnotationLeafBody({
                 </div>
               ) : null}
               {isEditing ? (
-                <EditInput
-                  className="documint-comment-input"
-                  onCancel={onCancelEditing}
+                <LeafInput
+                  actions={{
+                    kind: "edit",
+                    onCancel: onCancelEditing,
+                    onSave: () => onSubmitEditedComment(actualIndex),
+                    saveDisabled: !canSaveEditedComment,
+                  }}
+                  completionSources={mentionSources}
                   onChange={onChangeEditDraft}
-                  onSave={() => onSubmitEditedComment(actualIndex)}
                   readOnly={!canEdit}
                   rows={3}
-                  saveDisabled={!canSaveEditedComment}
                   value={editDraft}
                 />
               ) : (
-                <p
-                  onDoubleClick={() => {
-                    onBeginEditingComment(actualIndex, comment.body);
-                  }}
-                >
-                  {comment.body}
-                </p>
+                <LeafOutput
+                  completionSources={mentionSources}
+                  onEdit={() => onBeginEditingComment(actualIndex, comment.body)}
+                  value={comment.body}
+                />
               )}
             </article>
           );
@@ -476,30 +479,30 @@ function AnnotationLeafBody({
       <div
         className={`documint-comment-reply${showThreadChrome ? "" : " is-standalone"}${isComposerVisible ? " is-visible" : ""}`}
       >
-        <div className="documint-comment-reply-field">
-          <textarea
-            className="documint-comment-input"
-            onChange={(event) =>
-              mode === "create"
-                ? onChangeCreateDraft(event.currentTarget.value)
-                : onChangeReplyDraft(event.currentTarget.value)
-            }
-            placeholder={composerPlaceholder}
-            readOnly={!canEdit}
-            rows={3}
-            value={composerValue}
-          />
-          <button
-            className="documint-leaf-action documint-comment-reply-submit"
-            aria-label={mode === "create" ? "Create comment" : "Reply"}
-            disabled={mode === "create" ? !canCreate : !canReply}
-            onClick={mode === "create" ? onSubmitCreate : onSubmitReply}
-            title={mode === "create" ? "Create comment" : "Reply"}
-            type="button"
-          >
-            <SendHorizontal size={15} strokeWidth={2.2} />
-          </button>
-        </div>
+        <LeafInput
+          actions={
+            mode === "create"
+              ? {
+                  kind: "compose",
+                  onSubmit: onSubmitCreate,
+                  submitDisabled: !canCreate,
+                  submitLabel: "Create comment",
+                }
+              : {
+                  kind: "compose",
+                  onSubmit: onSubmitReply,
+                  submitDisabled: !canReply,
+                  submitLabel: "Reply",
+                }
+          }
+          completionSources={mentionSources}
+          onChange={mode === "create" ? onChangeCreateDraft : onChangeReplyDraft}
+          placeholder={composerPlaceholder}
+          readOnly={!canEdit}
+          ref={composerRef}
+          rows={3}
+          value={composerValue}
+        />
       </div>
     </>
   );

@@ -33,12 +33,12 @@ export type EditorState = {
   // denormalized for efficient lookup and mutation.
   documentIndex: DocumentIndex;
   selection: EditorSelection;
-  
+
   // Undo/redo stack, which includes a distinct
   // document and selection state.
   history: HistoryEntry[];
   future: HistoryEntry[];
-  
+
   // Transient editor animations that are actively
   // running, but aren't meant to be persisted.
   animations: EditorAnimation[];
@@ -81,10 +81,7 @@ export function createDocumentFromEditorState(state: EditorState) {
 /* Action dispatch */
 
 export function dispatch(state: EditorState, action: EditorStateAction): EditorState;
-export function dispatch(
-  state: EditorState,
-  action: EditorStateAction | null,
-): EditorState | null;
+export function dispatch(state: EditorState, action: EditorStateAction | null): EditorState | null;
 export function dispatch(state: EditorState, action: EditorStateAction | null) {
   if (!action) {
     return null;
@@ -96,7 +93,7 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
 
     case "set-selection":
       return setSelection(state, action.selection);
-      
+
     default: {
       const result = applyAction(state.documentIndex, action);
 
@@ -191,7 +188,10 @@ export function undoEditorState(state: EditorState): EditorState {
   return {
     animations: [],
     documentIndex,
-    future: [{ document: state.documentIndex.document, selection: state.selection }, ...state.future],
+    future: [
+      { document: state.documentIndex.document, selection: state.selection },
+      ...state.future,
+    ],
     history: state.history.slice(0, -1),
     selection: previous.selection,
   };

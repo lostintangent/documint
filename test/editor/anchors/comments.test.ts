@@ -66,11 +66,15 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     ...document,
     comments: [thread],
   });
-  const viewport = prepareViewport(state, {
-    height: 320,
-    top: 0,
-    width: 520,
-  }, renderCache);
+  const viewport = prepareViewport(
+    state,
+    {
+      height: 320,
+      top: 0,
+      width: 520,
+    },
+    renderCache,
+  );
   const region = state.documentIndex.regions[0];
 
   if (!region) {

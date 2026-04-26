@@ -235,4 +235,3 @@ function resolveAnchorContainerKind(
 
   return anchorKindForBlockType(region.blockType);
 }
-

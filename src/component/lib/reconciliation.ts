@@ -195,11 +195,7 @@ function resolveEquivalentOffset(
   affinity: OffsetAffinity,
 ) {
   const previousOffset = clamp(offset, 0, previousText.length);
-  const { prefix, suffix } = captureContextWindows(
-    previousText,
-    previousOffset,
-    previousOffset,
-  );
+  const { prefix, suffix } = captureContextWindows(previousText, previousOffset, previousOffset);
 
   const contextOffset = resolveOffsetBetweenContext(nextText, prefix, suffix);
 

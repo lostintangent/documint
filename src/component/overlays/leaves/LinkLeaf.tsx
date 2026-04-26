@@ -1,6 +1,10 @@
+// Link editor leaf — shows the URL with edit/delete actions in read mode
+// and swaps to a textarea (via LeafInput) when the user begins editing. The
+// shell width is driven by the inner `.documint-link-leaf` div's CSS so the
+// leaf shrink-fits to its content like every other leaf type.
 import { Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { EditInput } from "./EditInput";
+import { LeafInput } from "./core/LeafInput";
 
 type LinkLeafProps = {
   canEdit: boolean;
@@ -61,15 +65,17 @@ export function LinkLeaf({ canEdit, onDelete, onSave, title, url }: LinkLeafProp
       {title ? <div className="documint-link-leaf-title">{title}</div> : null}
       <div className={rowClassName}>
         {isEditing ? (
-          <EditInput
-            className="documint-comment-input documint-link-leaf-input"
-            onCancel={cancelEditing}
+          <LeafInput
+            actions={{
+              kind: "edit",
+              onCancel: cancelEditing,
+              onSave: saveLink,
+              saveDisabled: !canSave,
+            }}
             onChange={setDraftUrl}
-            onSave={saveLink}
             readOnly={!canEdit}
             ref={inputRef}
             rows={3}
-            saveDisabled={!canSave}
             value={draftUrl}
           />
         ) : (

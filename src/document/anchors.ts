@@ -189,11 +189,7 @@ export function createAnchorFromContainer(
 ): Anchor {
   const normalizedStart = clamp(startOffset, 0, container.text.length);
   const normalizedEnd = clamp(endOffset, normalizedStart, container.text.length);
-  const { prefix, suffix } = captureContextWindows(
-    container.text,
-    normalizedStart,
-    normalizedEnd,
-  );
+  const { prefix, suffix } = captureContextWindows(container.text, normalizedStart, normalizedEnd);
 
   return {
     kind: normalizeAnchorKind(container.containerKind),

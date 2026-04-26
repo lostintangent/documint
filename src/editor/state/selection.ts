@@ -124,9 +124,7 @@ function isSelectionCollapsed(selection: EditorSelection): boolean {
   );
 }
 
-export function normalizeSelection(
-  state: EditorState,
-): NormalizedEditorSelection;
+export function normalizeSelection(state: EditorState): NormalizedEditorSelection;
 export function normalizeSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
@@ -297,7 +295,10 @@ function resolvePrimaryRegion(
   }
 
   for (const child of children) {
-    const region: DocumentIndex["regions"][number] | null = resolvePrimaryRegion(documentIndex, child);
+    const region: DocumentIndex["regions"][number] | null = resolvePrimaryRegion(
+      documentIndex,
+      child,
+    );
 
     if (region) {
       return region;

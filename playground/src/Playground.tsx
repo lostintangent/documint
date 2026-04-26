@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { Documint, type Presence } from "documint";
+import { Documint, type DocumentPresence, type DocumentUser } from "documint";
 import { fixtureOptions, getThemeOption, themeOptions } from "./data";
-import { PresencePopover } from "./popovers/PresencePopover";
+import { UsersPopover } from "./popovers/UsersPopover";
 import { ThemePopover } from "./popovers/ThemePopover";
 
 export function Playground() {
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
-  const [presence, setPresence] = useState<Presence[]>([]);
+  const [users, setUsers] = useState<DocumentUser[]>([]);
+  const [presence, setPresence] = useState<DocumentPresence[]>([]);
 
   const activeThemeOption = getThemeOption(themeId);
   const activeTheme = activeThemeOption.theme;
@@ -54,7 +55,12 @@ export function Playground() {
 
           <ThemePopover onThemeIdChange={handleThemeChange} themeId={themeId} />
 
-          <PresencePopover content={content} onPresenceChange={setPresence} resetKey={fixtureId} />
+          <UsersPopover
+            content={content}
+            onPresenceChange={setPresence}
+            onUsersChange={setUsers}
+            resetKey={fixtureId}
+          />
         </div>
       </header>
 
@@ -66,6 +72,7 @@ export function Playground() {
               onContentChange={handleContentChange}
               presence={presence}
               theme={activeTheme ?? undefined}
+              users={users}
             />
           </div>
         </div>

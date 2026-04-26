@@ -53,7 +53,6 @@ export {
   type EditorPresence,
   type EditorPresenceViewport,
   type EditorPresenceViewportStatus,
-  type Presence,
 } from "./presence";
 
 export { resolvePresenceViewport } from "./presence-viewport";

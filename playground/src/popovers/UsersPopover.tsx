@@ -1,34 +1,70 @@
-import { useEffect, useRef } from "react";
-import { LocateFixed, Trash2 } from "lucide-react";
-import type { Presence } from "documint";
-import { describePresence, usePresence } from "../hooks/usePresence";
+import { useEffect, useRef, type CSSProperties } from "react";
+import { Trash2, Users } from "lucide-react";
+import type { DocumentPresence, DocumentUser } from "documint";
+import { describeEntry, useUsers, type UsersMode } from "../hooks/useUsers";
 import { PlaygroundPopover } from "./PlaygroundPopover";
 
-type PresencePopoverProps = {
+type UsersPopoverProps = {
   content: string;
-  onPresenceChange: (presence: Presence[]) => void;
+  onUsersChange: (users: DocumentUser[]) => void;
+  onPresenceChange: (presence: DocumentPresence[]) => void;
   resetKey: string;
 };
 
-export function PresencePopover({ content, onPresenceChange, resetKey }: PresencePopoverProps) {
+const swatchStyleByMode: Record<UsersMode, CSSProperties | undefined> = {
+  auto: {
+    background: "rgba(14, 165, 233, 0.14)",
+    borderColor: "rgba(14, 165, 233, 0.34)",
+    color: "#0284c7",
+  },
+  manual: {
+    background: "rgba(22, 163, 74, 0.14)",
+    borderColor: "rgba(22, 163, 74, 0.34)",
+    color: "#15803d",
+  },
+  empty: undefined,
+};
+
+const iconClassNameByMode: Record<UsersMode, string> = {
+  auto: "presence-toggle-icon presence-toggle is-auto",
+  manual: "presence-toggle-icon presence-toggle is-manual",
+  empty: "presence-toggle-icon presence-toggle",
+};
+
+export function UsersPopover({
+  content,
+  onUsersChange,
+  onPresenceChange,
+  resetKey,
+}: UsersPopoverProps) {
   const previousResetKeyRef = useRef(resetKey);
-  const { auto, manualPresence, manualForm, popoverProps, presence, reset } = usePresence(content);
+  const { auto, manualEntries, manualForm, mode, presence, reset, users } = useUsers(content);
 
   useEffect(() => {
     if (previousResetKeyRef.current !== resetKey) {
       previousResetKeyRef.current = resetKey;
       reset();
+      onUsersChange([]);
       onPresenceChange([]);
       return;
     }
 
+    onUsersChange(users);
     onPresenceChange(presence);
-  }, [onPresenceChange, presence, reset, resetKey]);
+  }, [onPresenceChange, onUsersChange, presence, reset, resetKey, users]);
 
   return (
-    <PlaygroundPopover icon={<LocateFixed size={16} strokeWidth={2.1} />} {...popoverProps}>
+    <PlaygroundPopover
+      ariaLabel="Configure users"
+      containerClassName="presence-controls"
+      flyoutClassName="presence-flyout"
+      icon={<Users size={16} strokeWidth={2.1} />}
+      iconClassName={iconClassNameByMode[mode]}
+      iconStyle={swatchStyleByMode[mode]}
+      showSwatch={mode !== "empty"}
+    >
       <div className="presence-header">
-        <strong>Presence</strong>
+        <strong>Users</strong>
         <label className="presence-checkbox">
           <input
             checked={auto.enabled}
@@ -53,13 +89,13 @@ export function PresencePopover({ content, onPresenceChange, resetKey }: Presenc
         </label>
 
         <label className="fixture-picker">
-          <span>Image URL</span>
+          <span>Avatar URL</span>
           <input
             disabled={auto.enabled}
-            onChange={(event) => manualForm.setImageUrl(event.target.value)}
+            onChange={(event) => manualForm.setAvatarUrl(event.target.value)}
             placeholder="Optional avatar image"
             type="url"
-            value={manualForm.imageUrl}
+            value={manualForm.avatarUrl}
           />
         </label>
 
@@ -98,8 +134,8 @@ export function PresencePopover({ content, onPresenceChange, resetKey }: Presenc
 
           <button
             className="presence-add"
-            disabled={auto.enabled || !manualForm.canAddPresence}
-            onClick={manualForm.addPresence}
+            disabled={auto.enabled || !manualForm.canAddEntry}
+            onClick={manualForm.addEntry}
             type="button"
           >
             Add
@@ -110,25 +146,25 @@ export function PresencePopover({ content, onPresenceChange, resetKey }: Presenc
       {auto.enabled ? (
         <p className="presence-status">
           {auto.presence
-            ? `Auto presence: ${describePresence(auto.presence)}`
-            : "Auto presence: waiting for a suitable text run"}
+            ? `Auto user: ${describeEntry(auto.user, auto.presence)}`
+            : "Auto user: waiting for a suitable text run"}
         </p>
-      ) : manualPresence.items.length > 0 ? (
+      ) : manualEntries.items.length > 0 ? (
         <>
           <div aria-hidden="true" className="presence-divider" />
           <div className="presence-list">
-            {manualPresence.items.map((presenceItem) => (
-              <div className="presence-chip" key={presenceItem.localId}>
+            {manualEntries.items.map((entry) => (
+              <div className="presence-chip" key={entry.user.id}>
                 <span
                   aria-hidden="true"
                   className="presence-chip-swatch"
-                  style={{ backgroundColor: presenceItem.color ?? "#0ea5e9" }}
+                  style={{ backgroundColor: entry.presence.color ?? "#0ea5e9" }}
                 />
-                <span>{describePresence(presenceItem)}</span>
+                <span>{describeEntry(entry.user, entry.presence)}</span>
                 <button
-                  aria-label={`Remove ${describePresence(presenceItem)}`}
+                  aria-label={`Remove ${describeEntry(entry.user, entry.presence)}`}
                   className="presence-remove"
-                  onClick={() => manualPresence.removePresence(presenceItem.localId)}
+                  onClick={() => manualEntries.removeEntry(entry.user.id)}
                   type="button"
                 >
                   <Trash2 aria-hidden="true" size={14} strokeWidth={2.1} />

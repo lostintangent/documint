@@ -1,0 +1,510 @@
+/* Leaf overlay styles, ordered outer → inner:
+     1. Anchor   — viewport positioning + hover bridge
+     2. Shell    — bordered container (with state and content variants)
+     3. Menu     — shared dropdown surface (toolbar menus, completion popover)
+     4. Action   — small icon buttons used throughout leaf chrome
+     5. Input    — textarea wrapper (cancel/save/submit positioning)
+     6. Comment  — comment leaf root, header, thread, replies, create chrome
+     7. Link     — link leaf layout
+     8. Mention  — inline pill rendered inside read-only leaf text
+
+   The toolbar's own styles live in `toolbar/styles.css`; both files are
+   concatenated by the editor's stylesheet assembly. */
+
+/* -- Anchor: positioned wrapper rendered by LeafAnchor (via OverlayPortal) -- */
+
+.documint-leaf-anchor {
+  --documint-leaf-anchor-bridge-height: 12px;
+  position: fixed;
+  z-index: 1000;
+  padding-top: var(--documint-leaf-anchor-bridge-height);
+  margin-top: calc(var(--documint-leaf-anchor-bridge-height) * -1);
+  pointer-events: auto;
+
+  &[data-selection="true"] {
+    --documint-leaf-anchor-bridge-height: 0px;
+    padding-top: 0;
+    margin-top: 14px;
+    pointer-events: none;
+  }
+}
+
+.documint-leaf-bridge {
+  width: 100%;
+  height: var(--documint-leaf-anchor-bridge-height);
+}
+
+/* -- Shell: bordered, themed container that holds leaf content -- */
+
+.documint-leaf-shell {
+  --documint-leaf-divider-color:
+    color-mix(in srgb, var(--documint-leaf-border) 60%, transparent);
+  padding: 0.8rem;
+  border: 1px solid var(--documint-leaf-border);
+  border-radius: 0.95rem;
+  background: var(--documint-leaf-bg);
+  box-shadow: var(--documint-leaf-shadow, var(--documint-leaf-shadow-fallback));
+  color: var(--documint-leaf-text);
+  font-family: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  pointer-events: auto;
+
+  &:has(> .documint-leaf-toolbar),
+  &:has(> .documint-comment-leaf-create) {
+    width: auto;
+    padding: 0.38rem 0.58rem;
+  }
+
+  &:has(> .documint-comment-leaf-create.is-expanded) {
+    padding: 0.8rem;
+  }
+
+  &[data-status="resolved"] {
+    border-color: var(--documint-leaf-resolved-border);
+    background: var(--documint-leaf-resolved-bg);
+  }
+
+  & p {
+    margin: 0;
+  }
+}
+
+/* -- Menu: shared dropdown surface (toolbar menus, completion popover) -- */
+
+.documint-leaf-menu {
+  --documint-leaf-menu-border-color:
+    color-mix(in srgb, var(--documint-leaf-border) 88%, transparent);
+  --documint-leaf-menu-hover-bg:
+    color-mix(in srgb, var(--documint-leaf-accent) 12%, var(--documint-leaf-bg));
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  left: 0;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 10.5rem;
+  padding: 0.35rem;
+  border: 1px solid var(--documint-leaf-menu-border-color);
+  border-radius: 0.8rem;
+  background: var(--documint-leaf-bg);
+  box-shadow: var(--documint-leaf-shadow, var(--documint-leaf-shadow-fallback));
+  color: var(--documint-leaf-text);
+  font-family: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.documint-leaf-menu-item {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--documint-leaf-button-text);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.2;
+  text-align: left;
+
+  &:hover {
+    background: var(--documint-leaf-menu-hover-bg);
+  }
+
+  &:disabled {
+    opacity: 0.42;
+    cursor: default;
+
+    &:hover {
+      background: transparent;
+    }
+  }
+}
+
+.documint-leaf-menu-divider {
+  height: 1px;
+  margin: 0.15rem 0.2rem;
+  background: color-mix(in srgb, var(--documint-leaf-border) 72%, transparent);
+}
+
+/* -- Action: icon button used throughout leaf chrome -- */
+
+.documint-leaf-action {
+  appearance: none;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--documint-leaf-button-text);
+  cursor: pointer;
+  font: inherit;
+
+  &:not(.documint-leaf-action-text) {
+    line-height: 0;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.documint-leaf-action-text {
+  padding: 0.35rem 0.62rem;
+  border: 1px solid var(--documint-leaf-button-border);
+  border-radius: 999px;
+  background: var(--documint-leaf-button-bg);
+}
+
+.documint-leaf-action-danger {
+  color: var(--documint-leaf-accent);
+}
+
+/* -- Input: textarea (leaf-input) inside a positioning field that hosts
+   the absolutely-placed action buttons (cancel, save, submit). -- */
+
+.documint-leaf-input-field {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.documint-leaf-input-cancel {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+}
+
+.documint-leaf-input-save,
+.documint-leaf-input-submit {
+  position: absolute;
+  right: 0.7rem;
+  bottom: calc(0.7rem + 3px);
+}
+
+.documint-leaf-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 4.6rem;
+  padding: 0.65rem 3.2rem 0.75rem 0.75rem;
+  border: 1px solid var(--documint-leaf-border);
+  border-radius: 0.75rem;
+  background: var(--documint-leaf-button-bg);
+  color: var(--documint-leaf-text);
+  font: inherit;
+  resize: none;
+
+  &::placeholder {
+    color: var(--documint-leaf-secondary-text);
+  }
+}
+
+.documint-leaf-shell[data-status="resolved"] .documint-leaf-input {
+  border-color: var(--documint-leaf-resolved-border);
+}
+
+/* -- Comment leaf -- */
+
+.documint-comment-leaf:not(.documint-comment-leaf-create),
+.documint-comment-leaf-create.is-expanded {
+  width: var(--documint-leaf-width, min(18rem, calc(100vw - 4rem)));
+}
+
+.documint-comment-leaf-header,
+.documint-comment-leaf-actions,
+.documint-comment-message-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.documint-comment-leaf-header {
+  margin-bottom: 0.7rem;
+}
+
+.documint-comment-leaf-link {
+  display: grid;
+  gap: 0.3rem;
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--documint-leaf-divider-color);
+}
+
+.documint-comment-leaf-age {
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.76rem;
+}
+
+.documint-comment-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.documint-comment-message-meta span {
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.74rem;
+}
+
+/* Thread (scrollable list of comment messages) */
+
+.documint-comment-thread {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 16rem;
+  margin-bottom: 0.8rem;
+  overflow: auto;
+
+  &.is-empty {
+    max-height: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+  }
+}
+
+.documint-comment-message {
+  display: grid;
+  gap: 0.55rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--documint-leaf-divider-color);
+
+  &:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+}
+
+.documint-comment-message-root {
+  transform: translateY(-8px) scaleY(0);
+  transform-origin: top left;
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    transform 180ms ease;
+
+  &.is-visible {
+    transform: translateY(0) scaleY(1);
+    opacity: 1;
+  }
+
+  &.is-hidden {
+    max-height: 0;
+    padding-bottom: 0;
+    border-bottom: 0;
+    overflow: hidden;
+  }
+}
+
+/* Reply (compose surface at the bottom of the thread) */
+
+.documint-comment-reply {
+  position: relative;
+  display: block;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--documint-leaf-divider-color);
+
+  &.is-standalone {
+    padding-top: 0;
+    border-top: 0;
+
+    &:not(.is-visible) {
+      max-height: 0;
+      overflow: hidden;
+    }
+  }
+}
+
+.documint-leaf-shell[data-status="resolved"] .documint-comment-reply {
+  border-top-color: color-mix(in srgb, var(--documint-leaf-resolved-border) 72%, transparent);
+}
+
+/* Create chrome (the animated "add comment" toolbar that expands into a composer) */
+
+.documint-comment-leaf-create {
+  --documint-comment-create-scale-duration: 180ms;
+  --documint-comment-create-fade-duration: 120ms;
+  height: auto;
+  padding: 0;
+  overflow: visible;
+
+  &.is-expanded {
+    & .documint-comment-leaf-create-shell {
+      width: 100%;
+      min-height: 5.5rem;
+
+      & > .documint-leaf-toolbar {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+      }
+    }
+
+    & .documint-comment-leaf-create-button,
+    & .documint-comment-leaf-create-mark {
+      opacity: 0;
+      transform: scale(0.72);
+      pointer-events: none;
+    }
+
+    & .documint-comment-leaf-create-divider {
+      opacity: 0;
+    }
+
+    & .documint-comment-leaf-create-content {
+      position: relative;
+      z-index: 0;
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+  }
+}
+
+.documint-comment-leaf-create-shell {
+  position: relative;
+  display: grid;
+  width: max-content;
+  height: 100%;
+
+  & > .documint-leaf-toolbar {
+    position: relative;
+    z-index: 0;
+  }
+}
+
+.documint-comment-leaf-create-button {
+  position: relative;
+  z-index: 0;
+  display: inline-flex;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  line-height: 0;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity var(--documint-comment-create-fade-duration) ease,
+    transform var(--documint-comment-create-scale-duration) ease;
+}
+
+.documint-comment-leaf-create-divider {
+  opacity: 1;
+  transition: opacity var(--documint-comment-create-fade-duration) ease;
+}
+
+.documint-comment-leaf-create-mark {
+  opacity: 1;
+  transition:
+    opacity var(--documint-comment-create-fade-duration) ease,
+    transform var(--documint-comment-create-scale-duration) ease;
+}
+
+.documint-comment-leaf-create-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  opacity: 0;
+  transform: scale(0);
+  transform-origin: top left;
+  pointer-events: none;
+  transition:
+    opacity var(--documint-comment-create-fade-duration) ease,
+    transform var(--documint-comment-create-scale-duration) ease;
+}
+
+/* -- Link leaf -- */
+
+.documint-link-leaf {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  width: min(16rem, calc(100vw - 4rem));
+}
+
+.documint-link-leaf-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: 0.6rem;
+
+  &.is-editing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  & > .documint-leaf-input-field {
+    width: 100%;
+  }
+}
+
+.documint-link-leaf-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.documint-link-leaf-divider {
+  margin: 0.2rem 0;
+  border-top: 1px solid var(--documint-leaf-divider-color);
+}
+
+.documint-link-leaf-title {
+  color: var(--documint-leaf-text);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.documint-link-leaf-url {
+  min-width: 0;
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.76rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.documint-link-leaf-hint {
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+/* -- Completion popover (uses .documint-leaf-menu for visual base) -- */
+
+.documint-completion-popover {
+  z-index: 1100;
+  min-width: 12rem;
+}
+
+.documint-completion-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  &.is-active {
+    background: var(--documint-leaf-menu-hover-bg);
+  }
+}
+
+/* -- Mention: inline pill rendered inside read-only leaf text -- */
+
+.documint-mention {
+  padding: 0.05em 0.3em;
+  border-radius: 0.4em;
+  background: var(
+    --documint-mention-bg,
+    color-mix(in srgb, var(--documint-leaf-accent) 14%, transparent)
+  );
+  color: var(--documint-mention-text, var(--documint-leaf-accent));
+  font-weight: 500;
+  white-space: nowrap;
+}

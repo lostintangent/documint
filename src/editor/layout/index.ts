@@ -2,11 +2,11 @@
 // answers where content is, which line or region a point lands in, and
 // where a caret should render within the prepared layout.
 
-import type { Block, Mark } from "@/document";
-import type { EditorCommentState, EditorPresence } from "../anchors";
+import type { Block } from "@/document";
+import type { EditorCommentState } from "../anchors";
 import type { CanvasRenderCache } from "../canvas/cache";
 import type { DocumentResources } from "@/types";
-import type { EditorSelectionPoint, EditorState, NormalizedEditorSelection } from "../state";
+import type { EditorSelectionPoint, EditorState } from "../state";
 
 export type {
   DocumentCaretTarget as CaretTarget,
@@ -62,15 +62,9 @@ export {
   resolveWordSelectionAtPoint,
 } from "./hit-test";
 
-import {
-  createDocumentViewport,
-  type CanvasViewport,
-} from "./viewport";
+import { createDocumentViewport, type CanvasViewport } from "./viewport";
 import type { DocumentLayoutOptions, ViewportLayout } from "./document";
-import {
-  measureDocumentCaretTarget,
-  buildDocumentBlockMap,
-} from "./document";
+import { measureDocumentCaretTarget, buildDocumentBlockMap } from "./document";
 import {
   resolveCaretVisualLeft,
   resolveDragFocusPoint,
@@ -197,12 +191,7 @@ export function resolveViewportTargetAtSelection(
   selectionPoint: EditorSelectionPoint,
   liveCommentRanges: EditorCommentState["liveRanges"],
 ): EditorHoverTarget | null {
-  return resolveTargetAtSelectionPoint(
-    viewport.layout,
-    state,
-    selectionPoint,
-    liveCommentRanges,
-  );
+  return resolveTargetAtSelectionPoint(viewport.layout, state, selectionPoint, liveCommentRanges);
 }
 
 export function measureViewportCaretTarget(

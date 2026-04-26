@@ -8,28 +8,24 @@
  * to layout/paint.
  */
 
-import {
-  findContextRanges,
-  findOccurrences,
-  type Anchor,
-  type AnchorContainer,
-} from "@/document";
-import type { Presence } from "@/types";
+import { findContextRanges, findOccurrences, type Anchor, type AnchorContainer } from "@/document";
+import type { DocumentUserPresence } from "@/types";
 import type { DocumentIndex, EditorSelectionPoint } from "../state";
 import { projectAnchorContainersToEditor } from "./index";
 
-export type { Presence };
-
 // --- Types ---
 
-export type EditorPresenceViewport = {
-  scrollTop: number | null;
-  status: EditorPresenceViewportStatus;
-};
+// Where a presence sits relative to the prepared viewport. `scrollTop` is the
+// y-position the host would scroll to to bring this cursor into view; it only
+// exists when the cursor was geometrically resolvable, so `unresolved` lacks
+// it by construction.
+export type EditorPresenceViewport =
+  | { status: "unresolved" }
+  | { status: "above" | "below" | "visible"; scrollTop: number };
 
-export type EditorPresenceViewportStatus = "above" | "below" | "unresolved" | "visible";
+export type EditorPresenceViewportStatus = EditorPresenceViewport["status"];
 
-export type EditorPresence = Presence & {
+export type EditorPresence = DocumentUserPresence & {
   cursorPoint: EditorSelectionPoint | null;
   viewport: EditorPresenceViewport | null;
 };
@@ -47,7 +43,7 @@ type PresenceMatch = {
 // them rather than guess.
 export function resolvePresenceCursors(
   documentIndex: DocumentIndex,
-  presence: Presence[],
+  presence: DocumentUserPresence[],
 ): EditorPresence[] {
   if (presence.length === 0) {
     return [];
@@ -66,7 +62,7 @@ export function resolvePresenceCursors(
 // --- Internal helpers ---
 
 function resolvePresenceCursorPoint(
-  presence: Presence,
+  presence: DocumentUserPresence,
   semanticContainers: AnchorContainer[],
   containerProjection: ReturnType<typeof projectAnchorContainersToEditor>,
 ) {

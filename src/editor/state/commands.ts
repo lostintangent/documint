@@ -21,10 +21,7 @@ import {
 } from "./index";
 import { resolveBlockById } from "./index/context";
 import type { EditorAction } from "./index/types";
-import {
-  createCommentThreadForSelection,
-  getCommentState,
-} from "../anchors";
+import { createCommentThreadForSelection, getCommentState } from "../anchors";
 import {
   type InlineCommandReplacement,
   replaceExactInlineLinkRange,
@@ -97,10 +94,7 @@ export function insertLineBreak(state: EditorState) {
     case "code":
       return dispatch(state, resolveCodeLineBreak(state.documentIndex, state.selection));
     case "tableCell":
-      return dispatch(
-        state,
-        resolveTableCellLineBreak(state.documentIndex, state.selection),
-      );
+      return dispatch(state, resolveTableCellLineBreak(state.documentIndex, state.selection));
     case "listItem": {
       const action = resolveStructuralListBlockSplit(state.documentIndex, state.selection);
       return maybeAnimateListItemInsertion({
@@ -112,10 +106,8 @@ export function insertLineBreak(state: EditorState) {
     }
     case "blockquoteTextBlock":
       return (
-        dispatch(
-          state,
-          resolveStructuralBlockquoteSplit(state.documentIndex, state.selection),
-        ) ?? dispatch(state, resolveTextBlockSplit(state.documentIndex, state.selection))
+        dispatch(state, resolveStructuralBlockquoteSplit(state.documentIndex, state.selection)) ??
+        dispatch(state, resolveTextBlockSplit(state.documentIndex, state.selection))
       );
     case "rootTextBlock":
       return dispatch(state, resolveTextBlockSplit(state.documentIndex, state.selection));
@@ -149,16 +141,10 @@ export function deleteBackward(state: EditorState) {
 
   switch (ctx.kind) {
     case "listItem":
-      return dispatch(
-        state,
-        resolveListStructuralBackspace(state.documentIndex, state.selection),
-      );
+      return dispatch(state, resolveListStructuralBackspace(state.documentIndex, state.selection));
     case "blockquoteTextBlock":
     case "rootTextBlock":
-      return dispatch(
-        state,
-        resolveBlockStructuralBackspace(state.documentIndex, state.selection),
-      );
+      return dispatch(state, resolveBlockStructuralBackspace(state.documentIndex, state.selection));
     default:
       return null;
   }
@@ -216,15 +202,9 @@ export function indent(state: EditorState) {
 
   switch (ctx.kind) {
     case "tableCell":
-      return dispatch(
-        state,
-        resolveTableSelectionMove(state.documentIndex, state.selection, 1),
-      );
+      return dispatch(state, resolveTableSelectionMove(state.documentIndex, state.selection, 1));
     case "rootTextBlock":
-      return dispatch(
-        state,
-        resolveHeadingDepthShift(state.documentIndex, state.selection, 1),
-      );
+      return dispatch(state, resolveHeadingDepthShift(state.documentIndex, state.selection, 1));
     case "listItem":
       return indentListItem(state);
     default:
@@ -237,15 +217,9 @@ export function dedent(state: EditorState) {
 
   switch (ctx.kind) {
     case "tableCell":
-      return dispatch(
-        state,
-        resolveTableSelectionMove(state.documentIndex, state.selection, -1),
-      );
+      return dispatch(state, resolveTableSelectionMove(state.documentIndex, state.selection, -1));
     case "rootTextBlock":
-      return dispatch(
-        state,
-        resolveHeadingDepthShift(state.documentIndex, state.selection, -1),
-      );
+      return dispatch(state, resolveHeadingDepthShift(state.documentIndex, state.selection, -1));
     case "listItem":
       return dedentListItem(state);
     default:
@@ -278,10 +252,7 @@ export function moveListItemDown(state: EditorState) {
 // --- Table operations ---
 
 export function insertTable(state: EditorState, columnCount: number) {
-  return dispatch(
-    state,
-    resolveTableInsertion(state.documentIndex, state.selection, columnCount),
-  );
+  return dispatch(state, resolveTableInsertion(state.documentIndex, state.selection, columnCount));
 }
 
 export function insertTableColumn(state: EditorState, direction: "left" | "right") {
@@ -296,10 +267,7 @@ export function deleteTableColumn(state: EditorState) {
 }
 
 export function insertTableRow(state: EditorState, direction: "above" | "below") {
-  return dispatch(
-    state,
-    resolveTableRowInsertion(state.documentIndex, state.selection, direction),
-  );
+  return dispatch(state, resolveTableRowInsertion(state.documentIndex, state.selection, direction));
 }
 
 export function deleteTableRow(state: EditorState) {
@@ -441,14 +409,8 @@ export function deleteCommentThread(state: EditorState, threadIndex: number) {
   return updateCommentThread(state, threadIndex, () => null);
 }
 
-export function resolveCommentThread(
-  state: EditorState,
-  threadIndex: number,
-  resolved: boolean,
-) {
-  return updateCommentThread(state, threadIndex, (thread) =>
-    markThreadResolved(thread, resolved),
-  );
+export function resolveCommentThread(state: EditorState, threadIndex: number, resolved: boolean) {
+  return updateCommentThread(state, threadIndex, (thread) => markThreadResolved(thread, resolved));
 }
 
 function updateCommentThread(

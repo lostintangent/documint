@@ -179,7 +179,11 @@ export function resolveBlockquoteContext(
   }
 
   const paragraphEntry = documentIndex.blockIndex.get(region.blockId);
-  const quoteEntry = findAncestorBlockEntry(documentIndex, paragraphEntry?.id ?? null, "blockquote");
+  const quoteEntry = findAncestorBlockEntry(
+    documentIndex,
+    paragraphEntry?.id ?? null,
+    "blockquote",
+  );
 
   if (!quoteEntry) {
     return null;
@@ -289,7 +293,9 @@ export function resolveListItemContext(
     ? (documentIndex.blockIndex.get(parentItemEntry.parentBlockId) ?? null)
     : null;
   const parentItem =
-    parentItemEntry?.type === "listItem" ? resolveBlockById(documentIndex, parentItemEntry.id) : null;
+    parentItemEntry?.type === "listItem"
+      ? resolveBlockById(documentIndex, parentItemEntry.id)
+      : null;
   const parentList =
     parentListEntry?.type === "list" ? resolveBlockById(documentIndex, parentListEntry.id) : null;
   const parentItemIndex =

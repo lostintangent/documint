@@ -1,12 +1,17 @@
 // Owns host-side image discovery, loading, and caching for the current
 // document. The editor consumes the resulting document resources, but the
 // browser lifecycle and async loading policy stay in the component layer.
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from "react";
-import { collectImageUrls, type Document } from "@/document";
 import {
-  type DocumentImageResource,
-  type DocumentResources,
-} from "@/types";
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { collectImageUrls, type Document } from "@/document";
+import { type DocumentImageResource, type DocumentResources } from "@/types";
 
 export function useDocumentImages(document: Document): DocumentResources | null {
   const imageUrls = useMemo(() => resolveDocumentImageUrls(document), [document]);
@@ -14,34 +19,38 @@ export function useDocumentImages(document: Document): DocumentResources | null 
   const [imageResources, setImageResources] = useState<Map<string, DocumentImageResource>>(
     new Map(),
   );
-  const imageResourcesRef = useRef(imageResources);
   const pendingLoadsRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
-  imageResourcesRef.current = imageResources;
-
-  useEffect(() => {
+  // Reconcile in-flight loads against the current URL set. Reads `imageResources`
+  // from closure so the wrapping effect can stay reactive only to URL changes —
+  // depending on resources directly would loop, since we call `setImageResources`
+  // here on every reconciliation.
+  const reconcileImageLoads = useEffectEvent((urls: string[], isActive: () => boolean) => {
     if (typeof Image === "undefined") {
       return;
     }
 
-    let isActive = true;
-    const activeImageUrls = new Set<string>(imageUrls);
+    const activeImageUrls = new Set<string>(urls);
     const pendingLoads = pendingLoadsRef.current;
 
     setImageResources((previous) =>
       pruneInactiveImageResources(previous, activeImageUrls, pendingLoads),
     );
 
-    for (const url of imageUrls) {
-      if (hasReadyImageResource(imageResourcesRef.current, pendingLoads, url)) {
+    for (const url of urls) {
+      if (hasReadyImageResource(imageResources, pendingLoads, url)) {
         continue;
       }
 
-      startImageLoad(url, pendingLoads, setImageResources, () => isActive);
+      startImageLoad(url, pendingLoads, setImageResources, isActive);
     }
+  });
 
+  useEffect(() => {
+    let active = true;
+    reconcileImageLoads(imageUrls, () => active);
     return () => {
-      isActive = false;
+      active = false;
     };
   }, [imageUrlSignature]);
 

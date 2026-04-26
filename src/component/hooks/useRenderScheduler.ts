@@ -1,19 +1,6 @@
 import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
 import { hasRunningAnimations, type EditorState } from "@/editor";
 
-/**
- * The granularity of a paint request.
- *
- * - `viewport` — layout may have changed; recompute it and repaint every
- *   layer that depends on it. Subsumes `content` and `overlay` in the same
- *   frame.
- * - `content` — document content needs repainting (selection, comments,
- *   hover) but layout is unchanged. Subsumes a same-frame `overlay`.
- * - `overlay` — only cursor and presence indicators need repainting. The
- *   cheapest mode.
- */
-export type RenderMode = "viewport" | "content" | "overlay";
-
 type UseRenderSchedulerOptions = {
   /**
    * Live ref to the editor state. Read after each frame to decide whether
@@ -30,35 +17,53 @@ type UseRenderSchedulerOptions = {
 
 type RenderScheduler = {
   /**
-   * Mark a layer dirty for the next frame. Multiple calls within the same
-   * tick coalesce into a single rAF; higher-priority modes subsume lower
-   * ones.
+   * Recompute layout, then paint content and overlay. Use for changes that
+   * affect layout structure (document, dimensions, theme). Subsumes any
+   * pending paint requests in the same frame.
    */
-  scheduleRender: (mode: RenderMode) => void;
+  scheduleFullRender: () => void;
+  /**
+   * Paint content and overlay using the cached layout — no recompute. Use
+   * when state changes affect both layers (e.g. selection moves, which
+   * change both the range highlight on content and the caret on overlay).
+   * Subsumes content-only and overlay-only paints in the same frame.
+   */
+  scheduleFullPaint: () => void;
+  /**
+   * Paint just the content layer. Use when state changes only affect content
+   * (e.g. comment-highlight changes that don't move the caret).
+   */
+  scheduleContentPaint: () => void;
+  /**
+   * Paint just the overlay layer (cursor blink, presence indicators). The
+   * cheapest mode — use when only the overlay is dirty.
+   */
+  scheduleOverlayPaint: () => void;
 };
 
 /**
  * Owns the rAF render loop for a Documint instance.
  *
- * The host component's responsibilities are narrow:
+ * The host's responsibilities are narrow:
  *   1. Provide one paint callback per layer plus a ref to the current
  *      editor state.
- *   2. Call `scheduleRender(mode)` whenever something invalidates a layer.
+ *   2. Call the schedule method that matches what changed. The verb encodes
+ *      the cost: `Render` recomputes layout; `Paint` reuses the cached
+ *      layout. The suffix names the layers: `Full` = content + overlay,
+ *      `Content` = content only, `Overlay` = overlay only.
  *
  * Everything else lives here:
- *   - **Coalescing.** Multiple `scheduleRender` calls within a tick produce
- *     one rAF. Inside that frame, layers are dispatched in priority order
- *     (viewport → content → overlay) with higher modes subsuming lower
- *     ones.
+ *   - **Coalescing.** Multiple schedule calls within a tick produce one rAF.
+ *     Heavier modes subsume lighter ones (full render > full paint > layer
+ *     paints). Independent layer paints (content-only + overlay-only) can
+ *     both fire in the same frame.
  *   - **Animation continuation.** After any layout-aware frame, the
  *     scheduler asks the editor whether animations are still running and
- *     self-schedules a follow-up content paint if so. The host does not
- *     drive its own loop for animations.
+ *     self-schedules a follow-up content paint if so. All editor animations
+ *     are content-layer effects, so the continuation never repaints overlay.
  *   - **Lifecycle.** Any in-flight rAF is cancelled on unmount.
  *
- * On the server, paint callbacks are dispatched synchronously. The canvases
- * don't exist there, so the calls are effectively no-ops — but this keeps
- * the contract ("a scheduled render always eventually runs") consistent.
+ * On the server, paint callbacks are dispatched synchronously.
  */
 export function useRenderScheduler({
   editorStateRef,
@@ -67,41 +72,51 @@ export function useRenderScheduler({
   renderViewport,
 }: UseRenderSchedulerOptions): RenderScheduler {
   const frameIdRef = useRef<number | null>(null);
-  const pendingViewportRef = useRef(false);
-  const pendingContentRef = useRef(false);
-  const pendingOverlayRef = useRef(false);
+  const pendingFullRenderRef = useRef(false);
+  const pendingFullPaintRef = useRef(false);
+  const pendingContentPaintRef = useRef(false);
+  const pendingOverlayPaintRef = useRef(false);
 
-  // The host's entry point: mark a layer dirty and ensure a frame is queued.
-  const scheduleRender = useEffectEvent((mode: RenderMode) => {
+  /* Public API */
+
+  const scheduleFullRender = useEffectEvent(() => {
     if (typeof window === "undefined") {
-      // No rAF on the server; dispatch synchronously.
-      switch (mode) {
-        case "viewport":
-          renderViewport();
-          return;
-        case "content":
-          renderContent();
-          return;
-        case "overlay":
-          renderOverlay();
-          return;
-      }
+      renderViewport();
+      return;
     }
-
-    switch (mode) {
-      case "viewport":
-        pendingViewportRef.current = true;
-        break;
-      case "content":
-        pendingContentRef.current = true;
-        break;
-      case "overlay":
-        pendingOverlayRef.current = true;
-        break;
-    }
-
+    pendingFullRenderRef.current = true;
     requestFrame();
   });
+
+  const scheduleFullPaint = useEffectEvent(() => {
+    if (typeof window === "undefined") {
+      renderContent();
+      renderOverlay();
+      return;
+    }
+    pendingFullPaintRef.current = true;
+    requestFrame();
+  });
+
+  const scheduleContentPaint = useEffectEvent(() => {
+    if (typeof window === "undefined") {
+      renderContent();
+      return;
+    }
+    pendingContentPaintRef.current = true;
+    requestFrame();
+  });
+
+  const scheduleOverlayPaint = useEffectEvent(() => {
+    if (typeof window === "undefined") {
+      renderOverlay();
+      return;
+    }
+    pendingOverlayPaintRef.current = true;
+    requestFrame();
+  });
+
+  /* Frame loop */
 
   // Ensures at most one rAF is outstanding at a time.
   const requestFrame = useEffectEvent(() => {
@@ -114,52 +129,54 @@ export function useRenderScheduler({
     });
   });
 
-  // The rAF callback. Drains pending bits and dispatches paints in priority
-  // order: viewport subsumes content+overlay; content absorbs a same-frame
-  // overlay request.
+  // The rAF callback. Drains pending bits and dispatches in priority order:
+  // full render subsumes everything; full paint subsumes both layer paints;
+  // content-only and overlay-only paints fire independently if both pending.
   const flushRenderRequests = useEffectEvent(() => {
     frameIdRef.current = null;
 
-    const shouldRenderViewport = pendingViewportRef.current;
-    const shouldRenderContent = pendingContentRef.current;
-    const shouldRenderOverlay = pendingOverlayRef.current;
+    const shouldFullRender = pendingFullRenderRef.current;
+    const shouldFullPaint = pendingFullPaintRef.current;
+    const shouldContentPaint = pendingContentPaintRef.current;
+    const shouldOverlayPaint = pendingOverlayPaintRef.current;
 
-    pendingViewportRef.current = false;
-    pendingContentRef.current = false;
-    pendingOverlayRef.current = false;
+    pendingFullRenderRef.current = false;
+    pendingFullPaintRef.current = false;
+    pendingContentPaintRef.current = false;
+    pendingOverlayPaintRef.current = false;
 
-    if (shouldRenderViewport) {
+    if (shouldFullRender) {
       renderViewport();
       scheduleAnimationContinuation();
       return;
     }
 
-    if (shouldRenderContent) {
+    if (shouldFullPaint) {
       renderContent();
-
-      if (shouldRenderOverlay) {
-        renderOverlay();
-      }
-
+      renderOverlay();
       scheduleAnimationContinuation();
       return;
     }
 
-    if (shouldRenderOverlay) {
+    if (shouldContentPaint) {
+      renderContent();
+      scheduleAnimationContinuation();
+    }
+    if (shouldOverlayPaint) {
       renderOverlay();
     }
   });
 
-  // After any layout-aware frame, keep the loop ticking while the editor has
-  // running animations. Overlay-only frames don't trigger continuation: the
-  // overlay layer isn't driven by the editor animation system.
+  // After any layout-aware or content frame, keep the loop ticking while
+  // the editor has running animations. Overlay-only frames don't trigger
+  // continuation: animations live on the content layer.
   const scheduleAnimationContinuation = useEffectEvent(() => {
     const state = editorStateRef.current;
     if (!state || !hasRunningAnimations(state, performance.now())) {
       return;
     }
 
-    pendingContentRef.current = true;
+    pendingContentPaintRef.current = true;
     requestFrame();
   });
 
@@ -177,6 +194,9 @@ export function useRenderScheduler({
   }, []);
 
   return {
-    scheduleRender,
+    scheduleContentPaint,
+    scheduleFullPaint,
+    scheduleFullRender,
+    scheduleOverlayPaint,
   };
 }

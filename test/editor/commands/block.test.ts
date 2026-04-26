@@ -19,7 +19,9 @@ test("handles structural backspace for task markers, headings, and blockquotes",
 
   expect(serializeMarkdown(createDocumentFromEditorState(taskState))).toBe("- alpha\n");
 
-  const plainAlpha = taskState.documentIndex.regions.find((container) => container.text === "alpha");
+  const plainAlpha = taskState.documentIndex.regions.find(
+    (container) => container.text === "alpha",
+  );
 
   if (!plainAlpha) {
     throw new Error("Expected plain alpha container");

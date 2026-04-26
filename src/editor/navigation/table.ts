@@ -87,7 +87,9 @@ function findTableRowSiblingContainer(
 function findTableExitContainer(state: EditorState, tableBlockId: string, direction: -1 | 1) {
   const tableEntry = state.documentIndex.blockIndex.get(tableBlockId);
   const regions = state.documentIndex.regions;
-  const range = tableEntry ? state.documentIndex.roots[tableEntry.rootIndex]?.regionRange : undefined;
+  const range = tableEntry
+    ? state.documentIndex.roots[tableEntry.rootIndex]?.regionRange
+    : undefined;
 
   if (!range) {
     return null;

@@ -85,4 +85,5 @@ export {
   resolvePresenceViewport,
   type EditorCommentState,
   type EditorPresence,
+  type EditorPresenceViewport,
 } from "./anchors";

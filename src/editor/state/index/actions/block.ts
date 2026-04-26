@@ -475,9 +475,7 @@ function mergeAdjacentListsAroundEmptyParagraph(
   return {
     kind: "replace-root-range",
     count: 3,
-    replacements: [
-      rebuildListBlock(previousRoot, [...previousRoot.items, ...nextRoot.items]),
-    ],
+    replacements: [rebuildListBlock(previousRoot, [...previousRoot.items, ...nextRoot.items])],
     rootIndex: context.rootIndex - 1,
     selection: createDescendantPrimaryRegionTarget(
       context.rootIndex - 1,

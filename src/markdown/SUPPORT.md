@@ -95,15 +95,15 @@ These are the semantic node families currently representable in `Document` and t
 
 These behaviors are intentional even when authored input has multiple valid spellings:
 
-| Policy                                                       | Status                         | Notes                                                             |
-| ------------------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------- |
-| Bullet lists serialize with `-`                              | `Canonicalized`                | We do not preserve `*` or `+`.                                    |
-| Thematic breaks serialize as `***`                           | `Canonicalized`                | Multiple valid forms normalize to one.                            |
-| Ordered lists repeat the same visible marker number          | `Canonicalized`                | Matches existing subsystem behavior.                              |
-| Ordered list start preservation is opt-in                    | `Canonicalized`                | Controlled by `preserveOrderedListStart`.                         |
+| Policy                                                       | Status                         | Notes                                                                              |
+| ------------------------------------------------------------ | ------------------------------ | ---------------------------------------------------------------------------------- |
+| Bullet lists serialize with `-`                              | `Canonicalized`                | We do not preserve `*` or `+`.                                                     |
+| Thematic breaks serialize as `***`                           | `Canonicalized`                | Multiple valid forms normalize to one.                                             |
+| Ordered lists repeat the same visible marker number          | `Canonicalized`                | Matches existing subsystem behavior.                                               |
+| Ordered list start preservation is opt-in                    | `Canonicalized`                | Controlled by `preserveOrderedListStart`.                                          |
 | Tables serialize with compact cells by default               | `Canonicalized`                | Cells emit at their natural width; opt in to column padding via `padTableColumns`. |
-| Underline serializes as `<ins>`                              | `Canonicalized`                | Semantic underline does not require alternate markdown spellings. |
-| Unsupported directives/raw content preserve authored payload | `Preserved as unsupported/raw` | Avoids destructive loss.                                          |
+| Underline serializes as `<ins>`                              | `Canonicalized`                | Semantic underline does not require alternate markdown spellings.                  |
+| Unsupported directives/raw content preserve authored payload | `Preserved as unsupported/raw` | Avoids destructive loss.                                                           |
 
 ## Translation Rules
 

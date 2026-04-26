@@ -1,0 +1,82 @@
+/* Toolbar-specific styles (button, group, divider, and the menu trigger
+   shell + chevron). The menu container/item/divider styles themselves
+   live one level up in `overlays/leaves/styles.css` as `.documint-leaf-menu*`
+   so they can be shared by the toolbar's nested menu and other surfaces
+   (e.g. the completion popover in LeafInput). */
+
+.documint-leaf-toolbar {
+  --documint-leaf-toolbar-button-active-bg:
+    color-mix(in srgb, var(--documint-leaf-accent) 16%, var(--documint-leaf-bg));
+  --documint-leaf-toolbar-divider-color:
+    color-mix(in srgb, var(--documint-leaf-border) 72%, transparent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.52rem;
+}
+
+.documint-leaf-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.documint-leaf-toolbar-divider {
+  width: 1px;
+  height: 1.15rem;
+  background: var(--documint-leaf-toolbar-divider-color);
+}
+
+.documint-leaf-toolbar-button {
+  appearance: none;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.36rem;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.12rem;
+  border: 0;
+  border-radius: 0.38rem;
+  background: transparent;
+  color: var(--documint-leaf-button-text);
+  cursor: pointer;
+  font: inherit;
+  line-height: 0;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+
+  &:hover {
+    background: var(--documint-leaf-toolbar-button-active-bg);
+  }
+
+  &.active {
+    background: var(--documint-leaf-toolbar-button-active-bg);
+    color: var(--documint-leaf-text);
+  }
+
+  &:disabled {
+    opacity: 0.42;
+    cursor: default;
+
+    &:hover {
+      background: transparent;
+    }
+  }
+}
+
+.documint-leaf-toolbar-menu-shell {
+  position: relative;
+
+  & .documint-leaf-toolbar-button {
+    gap: 0.18rem;
+  }
+}
+
+.documint-leaf-toolbar-menu-chevron {
+  transition: transform 140ms ease;
+
+  &.is-open {
+    transform: rotate(180deg);
+  }
+}

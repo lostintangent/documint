@@ -1,38 +1,33 @@
-import type { ViewportLayout } from "../layout";
-import { measureCaretTarget } from "../layout";
+/**
+ * Geometric projection of resolved presence cursors against the prepared
+ * viewport. Decides whether each cursor is above, below, or visible in the
+ * current scroll window, and computes the scroll target needed to bring an
+ * off-screen cursor into view.
+ *
+ * Sibling to `./presence`, which owns the semantic step (anchor → cursor
+ * point); this module owns the geometric step.
+ */
+
+import { measureCaretTarget, type EditorViewportState } from "../layout";
 import type { DocumentIndex } from "../state";
 import type { EditorState } from "../state/state";
-import type {
-  EditorPresence,
-  EditorPresenceViewport,
-  EditorPresenceViewportStatus,
-} from "./presence";
-
-type PresenceViewport = {
-  estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
-  layout: ViewportLayout;
-  totalHeight: number;
-  viewport: {
-    height: number;
-    top: number;
-  };
-};
+import type { EditorPresence, EditorPresenceViewport } from "./presence";
 
 const presenceViewportScrollMargin = 48;
 
 export function resolvePresenceViewport(
   state: EditorState,
-  viewport: PresenceViewport,
+  viewport: EditorViewportState,
   presence: EditorPresence[],
 ): EditorPresence[];
 export function resolvePresenceViewport(
   documentIndex: DocumentIndex,
-  viewport: PresenceViewport,
+  viewport: EditorViewportState,
   presence: EditorPresence[],
 ): EditorPresence[];
 export function resolvePresenceViewport(
   stateOrIndex: EditorState | DocumentIndex,
-  viewport: PresenceViewport,
+  viewport: EditorViewportState,
   presence: EditorPresence[],
 ): EditorPresence[] {
   const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
@@ -48,11 +43,11 @@ export function resolvePresenceViewport(
 
 function resolveEditorPresenceViewport(
   documentIndex: DocumentIndex,
-  viewport: PresenceViewport,
+  viewport: EditorViewportState,
   presence: EditorPresence,
 ): EditorPresenceViewport {
   if (!presence.cursorPoint) {
-    return createUnresolvedPresenceViewport();
+    return { status: "unresolved" };
   }
 
   const exactCaret = measureCaretTarget(viewport.layout, documentIndex, presence.cursorPoint);
@@ -64,7 +59,7 @@ function resolveEditorPresenceViewport(
     : viewport.estimateRegionBounds(presence.cursorPoint.regionId);
 
   if (!extent) {
-    return createUnresolvedPresenceViewport();
+    return { status: "unresolved" };
   }
 
   return {
@@ -74,9 +69,9 @@ function resolveEditorPresenceViewport(
 }
 
 function resolvePresenceViewportStatus(
-  viewport: PresenceViewport,
+  viewport: EditorViewportState,
   extent: { bottom: number; top: number },
-): EditorPresenceViewportStatus {
+): "above" | "below" | "visible" {
   const viewportTop = viewport.viewport.top;
   const viewportBottom = viewportTop + viewport.viewport.height;
 
@@ -91,17 +86,10 @@ function resolvePresenceViewportStatus(
   return "visible";
 }
 
-function resolvePresenceCursorScrollTop(viewport: PresenceViewport, extent: { top: number }) {
+function resolvePresenceCursorScrollTop(viewport: EditorViewportState, extent: { top: number }) {
   const maxScrollTop = Math.max(0, viewport.totalHeight - viewport.viewport.height);
   const targetTop =
     extent.top - Math.min(presenceViewportScrollMargin, viewport.viewport.height / 4);
 
   return Math.max(0, Math.min(maxScrollTop, targetTop));
-}
-
-function createUnresolvedPresenceViewport(): EditorPresenceViewport {
-  return {
-    scrollTop: null,
-    status: "unresolved",
-  };
 }

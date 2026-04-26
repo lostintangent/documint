@@ -31,7 +31,9 @@ test("moves left to the previous container when the caret is at the start", () =
 
 test("moves right to the next container when the caret is at the end", () => {
   const state = createEditorState(parseMarkdown("# Heading\n\nParagraph"));
-  const headingContainer = state.documentIndex.regions.find((entry) => entry.blockType === "heading");
+  const headingContainer = state.documentIndex.regions.find(
+    (entry) => entry.blockType === "heading",
+  );
 
   expect(headingContainer).toBeDefined();
 
@@ -269,8 +271,12 @@ test("moves out of a table when there is no row above or below", () => {
   expect(state.documentIndex.regionIndex.get(downState.selection.focus.regionId)?.blockType).toBe(
     "paragraph",
   );
-  expect(state.documentIndex.regionIndex.get(upState.selection.focus.regionId)?.text).toBe("before");
-  expect(state.documentIndex.regionIndex.get(downState.selection.focus.regionId)?.text).toBe("after");
+  expect(state.documentIndex.regionIndex.get(upState.selection.focus.regionId)?.text).toBe(
+    "before",
+  );
+  expect(state.documentIndex.regionIndex.get(downState.selection.focus.regionId)?.text).toBe(
+    "after",
+  );
 });
 
 test("extends the selection vertically across a region boundary while keeping the anchor", () => {

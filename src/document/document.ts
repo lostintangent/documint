@@ -2,13 +2,7 @@
 // shared across markdown, editor, comments, and tests.
 import type { CommentThread } from "./comments";
 import { rebuildTableBlock, rebuildTextBlock } from "./build";
-import {
-  type Block,
-  type Document,
-  type HeadingBlock,
-  type Inline,
-  type TableRow,
-} from "./types";
+import { type Block, type Document, type HeadingBlock, type Inline, type TableRow } from "./types";
 
 export function createDocument(blocks: Block[], comments: CommentThread[] = []): Document {
   return {

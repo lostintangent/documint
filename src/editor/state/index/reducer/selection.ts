@@ -371,11 +371,7 @@ function prependTextToTextLikeBlock(block: TextLikeBlock, text: string): Block {
 
 /* Block trimming */
 
-function trimBlockToPrefix(
-  block: Block,
-  targetRegion: EditorRegion,
-  offset: number,
-): Block | null {
+function trimBlockToPrefix(block: Block, targetRegion: EditorRegion, offset: number): Block | null {
   if (block.type === "table") {
     return null;
   }
@@ -389,11 +385,7 @@ function trimBlockToPrefix(
   );
 }
 
-function trimBlockToSuffix(
-  block: Block,
-  targetRegion: EditorRegion,
-  offset: number,
-): Block | null {
+function trimBlockToSuffix(block: Block, targetRegion: EditorRegion, offset: number): Block | null {
   if (block.type === "table") {
     return null;
   }
@@ -407,11 +399,7 @@ function trimBlockToSuffix(
   );
 }
 
-function trimLeafBlockToPrefix(
-  block: Block,
-  region: EditorRegion,
-  offset: number,
-): Block | null {
+function trimLeafBlockToPrefix(block: Block, region: EditorRegion, offset: number): Block | null {
   if (offset === 0) {
     return null;
   }
@@ -431,11 +419,7 @@ function trimLeafBlockToPrefix(
   }
 }
 
-function trimLeafBlockToSuffix(
-  block: Block,
-  region: EditorRegion,
-  offset: number,
-): Block | null {
+function trimLeafBlockToSuffix(block: Block, region: EditorRegion, offset: number): Block | null {
   if (offset === region.text.length) {
     return null;
   }

@@ -13,6 +13,7 @@ Delete the `Editor` type (lines 155-365) and `createEditor()` factory (lines 369
 Replace with ~20 standalone exported composition functions organized in four groups:
 
 **Query adapters** (5) — destructure `EditorState` before calling subsystem functions. Import subsystem functions with aliases to avoid name collisions (e.g., `getCommentState as getCommentStateFromIndex`):
+
 - `getCommentState(state)` → `getCommentStateFromIndex(state.documentIndex)`
 - `getSelectionContext(state)` → `getSelectionContextFromIndex(state.documentIndex, state.selection.anchor)`
 - `normalizeSelection(state)` → `normalizeSelectionFromIndex(state.documentIndex, state.selection)`
@@ -20,6 +21,7 @@ Replace with ~20 standalone exported composition functions organized in four gro
 - `resolvePresenceViewport(state, viewport, presence)` → `resolvePresenceViewportFromIndex(state.documentIndex, viewport, presence)`
 
 **Navigation routing** (5) — branch between move and extend. Import raw navigation functions with aliases (already done in current api.ts):
+
 - `moveCaretHorizontally(state, direction, extendSelection?)`
 - `moveCaretVertically(state, layout, direction, extendSelection?)`
 - `moveCaretByViewport(state, layout, direction, extendSelection?)`
@@ -27,6 +29,7 @@ Replace with ~20 standalone exported composition functions organized in four gro
 - `moveCaretToDocumentBoundary(state, boundary, extendSelection?)`
 
 **Layout/hit-testing** (8) — extract `viewport.layout` and compose:
+
 - `prepareViewport(state, options, renderCache, resources?)` — explicit `CanvasRenderCache` param instead of closure
 - `resolveSelectionHit(state, viewport, point)` — chains `resolveEditorHitAtPoint ?? resolveHitBelowLayout`
 - `measureVisualCaretTarget(state, viewport, point)` — composes `measureCaretTarget + resolveCaretVisualLeft`
@@ -35,6 +38,7 @@ Replace with ~20 standalone exported composition functions organized in four gro
 Import layout's `measureCaretTarget` as `measureLayoutCaretTarget` to avoid collision.
 
 **Paint** (2) — restructure args for canvas paint functions:
+
 - `paintContent(state, viewport, context, options)`
 - `paintOverlay(state, viewport, context, options)`
 
@@ -45,6 +49,7 @@ The barrel becomes the full public API surface. Re-export everything consumers n
 **From `./api`**: all 20 composition functions + types
 
 **From `./state`**: direct command exports with consumer-friendly aliases where needed:
+
 - State lifecycle: `createEditorState`, `createDocumentFromEditorState` (alias as `getDocument`), `setSelection`
 - All commands: `insertText`, `insertLineBreak`, `deleteBackward`, `deleteForward`, `deleteSelectionText` (alias as `deleteSelection`), `insertSelectionText` (alias as `replaceSelection`), `toggleBold`, `toggleItalic`, `toggleStrikethrough`, `toggleUnderline`, `toggleInlineCode`, `indent`, `dedent`, `moveListItemUp`, `moveListItemDown`, `toggleTaskItem`, `undo`, `redo`, `selectAll`, `insertTable`, `insertTableColumn`, `deleteTableColumn`, `insertTableRow`, `deleteTableRow`, `deleteTable`, `updateInlineLink` (alias as `updateLink`), `removeInlineLink` (alias as `removeLink`), `createCommentThread`, `replyToCommentThread`, `editComment`, `deleteComment`, `deleteCommentThread`, `resolveCommentThread`
 - `hasNewAnimation`
@@ -67,17 +72,20 @@ No longer needed — there's no factory to call.
 For each hook: remove the `editor: Editor` prop, import functions directly from `@/editor`, replace `editor.method(...)` with `method(...)`. Replace `ReturnType<Editor["createState"]>` with `EditorState` and `ReturnType<Editor["setSelection"]>` with `EditorState`.
 
 **`useViewport.ts`** — critical: owns the render cache now
+
 - Drop `editor` prop
 - Import `createCanvasRenderCache`, `prepareViewport` from `@/editor`
 - Add `const renderCacheRef = useRef(createCanvasRenderCache())`
 - `editor.prepareViewport(state, opts, resources)` → `prepareViewport(state, opts, renderCacheRef.current, resources)`
 
 **`useInput.ts`** — largest migration (~20 call sites)
+
 - Drop `editor` prop, import all commands + navigation + `setSelection` + `measureVisualCaretTarget`
 - Standalone `applyKeyboardEvent` function also drops its `editor` param
 - `editor.deleteSelection()` → `deleteSelection()`, `editor.replaceSelection()` → `replaceSelection()`
 
 **`useSelection.ts`**
+
 - Drop `editor` prop, import: `normalizeSelection`, `getSelectionMarks`, `setSelection`, `measureVisualCaretTarget`, `resolveDragFocus`
 - Standalone helpers also drop `editor` param
 
@@ -94,6 +102,7 @@ For each hook: remove the `editor: Editor` prop, import functions directly from 
 ## Step 6: Migrate test files
 
 4 test files use `createEditor()`:
+
 - `test/editor/editor.test.ts`
 - `test/editor/layout/viewport.test.ts`
 - `test/editor/annotations/comments.test.ts`
@@ -109,19 +118,19 @@ Replace `const editor = createEditor()` + `editor.method(...)` with direct funct
 
 ## Files changed
 
-| File | Change |
-|------|--------|
-| `src/editor/api.ts` | Rewrite: delete facade, keep standalone compositions + types |
-| `src/editor/index.ts` | Rewrite: expanded barrel exports |
-| `src/component/hooks/useEditor.ts` | **Delete** |
-| `src/component/hooks/useViewport.ts` | Drop editor prop, own renderCache |
-| `src/component/hooks/useInput.ts` | Drop editor prop, direct function calls |
-| `src/component/hooks/useSelection.ts` | Drop editor prop, direct function calls |
-| `src/component/hooks/useHover.ts` | Drop editor prop, direct function calls |
-| `src/component/hooks/useCursor.ts` | Drop editor prop, direct function calls |
-| `src/component/hooks/usePresence.ts` | Drop editor prop, direct function calls |
-| `src/component/Documint.tsx` | Remove useEditor, direct function calls |
-| `test/editor/editor.test.ts` | Direct function imports |
-| `test/editor/layout/viewport.test.ts` | Direct function imports |
-| `test/editor/annotations/comments.test.ts` | Direct function imports |
-| `test/editor/annotations/presence.test.ts` | Direct function imports |
+| File                                       | Change                                                       |
+| ------------------------------------------ | ------------------------------------------------------------ |
+| `src/editor/api.ts`                        | Rewrite: delete facade, keep standalone compositions + types |
+| `src/editor/index.ts`                      | Rewrite: expanded barrel exports                             |
+| `src/component/hooks/useEditor.ts`         | **Delete**                                                   |
+| `src/component/hooks/useViewport.ts`       | Drop editor prop, own renderCache                            |
+| `src/component/hooks/useInput.ts`          | Drop editor prop, direct function calls                      |
+| `src/component/hooks/useSelection.ts`      | Drop editor prop, direct function calls                      |
+| `src/component/hooks/useHover.ts`          | Drop editor prop, direct function calls                      |
+| `src/component/hooks/useCursor.ts`         | Drop editor prop, direct function calls                      |
+| `src/component/hooks/usePresence.ts`       | Drop editor prop, direct function calls                      |
+| `src/component/Documint.tsx`               | Remove useEditor, direct function calls                      |
+| `test/editor/editor.test.ts`               | Direct function imports                                      |
+| `test/editor/layout/viewport.test.ts`      | Direct function imports                                      |
+| `test/editor/annotations/comments.test.ts` | Direct function imports                                      |
+| `test/editor/annotations/presence.test.ts` | Direct function imports                                      |

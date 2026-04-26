@@ -1,45 +1,48 @@
 // Owns host-side presence orchestration. The editor resolves semantic cursor
-// anchors and viewport geometry; this hook keeps those projections fresh for
-// canvas paint and for the DOM indicators that can scroll to off-screen cursors.
+// anchors and viewport geometry; this hook keeps the resolved presence list
+// fresh for both the canvas (which paints remote carets) and the DOM overlay
+// (which renders scroll-to-cursor arrow buttons for off-screen presences).
+//
+// Two stages internally:
+//   1. Resolve each user's anchor against the document → cursor positions.
+//      Stable across scrolls; only re-runs when the user list or doc changes.
+//   2. Project those cursors against the prepared viewport → above/below/visible
+//      status + scroll target. Re-runs on every viewport render (incl. scrolls).
+//
+// Only stage 2's output (`presence`) is exposed. The canvas reads the same list
+// and ignores the `viewport` field; the DOM overlay reads both.
 import {
   resolvePresenceCursors,
   resolvePresenceViewport,
   type EditorPresence,
+  type EditorPresenceViewport,
   type EditorState,
   type EditorViewportState,
 } from "@/editor";
-import type { Presence } from "@/types";
+import type { DocumentUserPresence } from "@/types";
 import type { LazyRefHandle } from "./useLazyRef";
 import {
   type RefObject,
-  useEffect,
   useEffectEvent,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-
-const emptyEditorPresence: EditorPresence[] = [];
 
 type UsePresenceOptions = {
   editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   onViewportScroll: (scrollContainer: HTMLDivElement) => void;
-  presence?: Presence[];
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   scheduleOverlayRender: () => void;
+  userPresence?: DocumentUserPresence[];
 };
 
 export type PresenceController = {
-  // Canvas overlay input for remote/user/agent cursors.
-  canvasPresence: EditorPresence[] | undefined;
-  presenceOverlayProps: {
-    onSelect: (presence: EditorPresence) => void;
-    presence: EditorPresence[];
-  };
-  refreshViewportPresence: (viewportState: EditorViewportState) => void;
+  presence: EditorPresence[] | undefined;
+  scrollToPresence: (presence: EditorPresence) => void;
+  refreshPresence: (viewportState: EditorViewportState) => void;
 };
 
 export function usePresence({
@@ -47,65 +50,75 @@ export function usePresence({
   editorStateRef,
   editorViewportState,
   onViewportScroll,
-  presence,
   scrollContainerRef,
   scheduleOverlayRender,
+  userPresence,
 }: UsePresenceOptions): PresenceController {
-  const resolvedPresence = useMemo<EditorPresence[]>(() => {
-    if (!presence || presence.length === 0) {
-      return emptyEditorPresence;
+  // Stage 1 (private): cursor positions resolved against the document.
+  const cursors = useMemo<EditorPresence[] | undefined>(() => {
+    if (!userPresence || userPresence.length === 0) {
+      return undefined;
+    }
+    return resolvePresenceCursors(editorState.documentIndex, userPresence);
+  }, [editorState.documentIndex, userPresence]);
+
+  // Stage 2: cursors projected against the current viewport.
+  const [presence, setPresence] = useState<EditorPresence[] | undefined>(undefined);
+
+  // Cursors-changed path: derive presence unconditionally and schedule a paint.
+  // Equality-based bailout is unsafe here — cursor identity changes can carry
+  // material updates (color, anchor) that don't surface in viewport status.
+  const resyncPresence = useEffectEvent(() => {
+    if (cursors === undefined) {
+      if (presence !== undefined) {
+        setPresence(undefined);
+      }
+    } else {
+      setPresence(
+        resolvePresenceViewport(
+          editorStateRef.current ?? editorState,
+          editorViewportState.get(),
+          cursors,
+        ),
+      );
     }
 
-    return resolvePresenceCursors(editorState.documentIndex, presence);
-  }, [editorState.documentIndex, presence]);
-  const [viewportIndicatorPresence, setViewportIndicatorPresence] = useState<EditorPresence[]>([]);
-  const resolvedPresenceRef = useRef<EditorPresence[]>(resolvedPresence);
-  const viewportIndicatorPresenceRef = useRef<EditorPresence[]>(viewportIndicatorPresence);
-
-  resolvedPresenceRef.current = resolvedPresence;
-  viewportIndicatorPresenceRef.current = viewportIndicatorPresence;
-
-  const updateViewportIndicators = useEffectEvent((nextPresence: EditorPresence[]) => {
-    if (arePresenceViewportsEqual(viewportIndicatorPresenceRef.current, nextPresence)) {
-      return;
-    }
-
-    viewportIndicatorPresenceRef.current = nextPresence;
-    setViewportIndicatorPresence(nextPresence);
-  });
-
-  const refreshViewportPresence = useEffectEvent((viewportState: EditorViewportState) => {
-    const currentPresence = resolvedPresenceRef.current;
-
-    if (currentPresence.length === 0) {
-      updateViewportIndicators([]);
-      return;
-    }
-
-    updateViewportIndicators(
-      resolvePresenceViewport(
-        editorStateRef.current ?? editorState,
-        viewportState,
-        currentPresence,
-      ),
-    );
-  });
-
-  useEffect(() => {
+    // Canvas paints are imperative; React re-renders don't schedule them.
+    // Without this, host-driven prop changes wouldn't reach the overlay until
+    // the next viewport render (scroll, edit, etc.) happened to trigger one.
     scheduleOverlayRender();
-  }, [resolvedPresence, scheduleOverlayRender]);
+  });
+
+  // Per-frame path: called by the render scheduler on every viewport render.
+  // Bails out when scroll didn't flip any presence's viewport status, so
+  // steady-state scrolling doesn't trigger a Documint re-render.
+  const refreshPresence = useEffectEvent((viewportState: EditorViewportState) => {
+    if (cursors === undefined) {
+      if (presence !== undefined) {
+        setPresence(undefined);
+      }
+      return;
+    }
+
+    const next = resolvePresenceViewport(
+      editorStateRef.current ?? editorState,
+      viewportState,
+      cursors,
+    );
+
+    if (arePresenceListsEqual(presence, next)) {
+      return;
+    }
+
+    setPresence(next);
+  });
 
   useLayoutEffect(() => {
-    if (resolvedPresence.length === 0) {
-      updateViewportIndicators([]);
-      return;
-    }
+    resyncPresence();
+  }, [cursors]);
 
-    refreshViewportPresence(editorViewportState.get());
-  }, [editorViewportState, refreshViewportPresence, resolvedPresence, updateViewportIndicators]);
-
-  const scrollToPresence = useEffectEvent((presenceItem: EditorPresence) => {
-    if (!presenceItem.viewport || presenceItem.viewport.scrollTop === null) {
+  const scrollToPresence = useEffectEvent((target: EditorPresence) => {
+    if (!target.viewport || target.viewport.status === "unresolved") {
       return;
     }
 
@@ -115,35 +128,45 @@ export function usePresence({
       return;
     }
 
-    scrollContainer.scrollTop = presenceItem.viewport.scrollTop;
+    scrollContainer.scrollTop = target.viewport.scrollTop;
     onViewportScroll(scrollContainer);
   });
 
   return {
-    canvasPresence: resolvedPresence.length === 0 ? undefined : resolvedPresence,
-    presenceOverlayProps: {
-      onSelect: scrollToPresence,
-      presence: viewportIndicatorPresence,
-    },
-    refreshViewportPresence,
+    presence,
+    scrollToPresence,
+    refreshPresence,
   };
 }
 
-function arePresenceViewportsEqual(previous: EditorPresence[], next: EditorPresence[]) {
-  if (previous.length !== next.length) {
+// Per-frame bailout for the scheduler path. Identity + viewport state are the
+// only fields that can change between two scroll frames over the same cursor
+// list, so they're the only fields we compare here.
+function arePresenceListsEqual(
+  previous: EditorPresence[] | undefined,
+  next: EditorPresence[] | undefined,
+) {
+  if (previous === next) {
+    return true;
+  }
+
+  if (previous === undefined || next === undefined || previous.length !== next.length) {
     return false;
   }
 
-  return previous.every((presence, index) => {
-    const nextPresence = next[index];
-
-    return (
-      nextPresence !== undefined &&
-      presence.color === nextPresence.color &&
-      presence.imageUrl === nextPresence.imageUrl &&
-      presence.name === nextPresence.name &&
-      presence.viewport?.scrollTop === nextPresence.viewport?.scrollTop &&
-      presence.viewport?.status === nextPresence.viewport?.status
-    );
+  return previous.every((entry, index) => {
+    const nextEntry = next[index]!;
+    return entry.id === nextEntry.id && areViewportsEqual(entry.viewport, nextEntry.viewport);
   });
+}
+
+function areViewportsEqual(
+  previous: EditorPresenceViewport | null,
+  next: EditorPresenceViewport | null,
+) {
+  if (previous === next) return true;
+  if (previous === null || next === null) return false;
+  if (previous.status === "unresolved") return next.status === "unresolved";
+  if (next.status === "unresolved") return false;
+  return previous.status === next.status && previous.scrollTop === next.scrollTop;
 }

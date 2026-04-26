@@ -9,7 +9,6 @@ import {
   hasRunningAnimations,
   insertLineBreak,
   insertText,
-  measureCaretTarget,
   moveCaretToLineBoundary,
   prepareViewport,
   removeLink,
@@ -136,10 +135,7 @@ test("starts and expires inserted-text highlight animations for typed text", () 
   expect(effect).toBeDefined();
   expect(hasRunningAnimations(result!, effect!.startedAt + 10)).toBe(true);
   expect(
-    hasRunningAnimations(
-      result!,
-      effect!.startedAt + getEditorAnimationDuration(effect!) + 10,
-    ),
+    hasRunningAnimations(result!, effect!.startedAt + getEditorAnimationDuration(effect!) + 10),
   ).toBe(false);
 });
 
@@ -169,18 +165,14 @@ test("starts a punctuation pulse animation when typing a period", () => {
     ]),
   );
 
-  const pulse = stateUpdate!.animations.find(
-    (animation) => animation.kind === "punctuation-pulse",
-  );
+  const pulse = stateUpdate!.animations.find((animation) => animation.kind === "punctuation-pulse");
   const stateWithPunctuationPulseOnly = {
     ...stateUpdate!,
     animations: pulse ? [pulse] : [],
   };
 
   expect(pulse).toBeDefined();
-  expect(hasRunningAnimations(stateWithPunctuationPulseOnly, pulse!.startedAt + 10)).toBe(
-    true,
-  );
+  expect(hasRunningAnimations(stateWithPunctuationPulseOnly, pulse!.startedAt + 10)).toBe(true);
   expect(
     hasRunningAnimations(
       stateWithPunctuationPulseOnly,
@@ -204,9 +196,9 @@ test("does not start a punctuation pulse animation for ordinary text input", () 
   const stateUpdate = insertText(stateAtEnd, "a");
 
   expect(stateUpdate).not.toBeNull();
-  expect(
-    stateUpdate!.animations.some((animation) => animation.kind === "punctuation-pulse"),
-  ).toBe(false);
+  expect(stateUpdate!.animations.some((animation) => animation.kind === "punctuation-pulse")).toBe(
+    false,
+  );
 });
 
 test("starts and expires deleted-text fade animations for single-character deletes", () => {
@@ -245,9 +237,7 @@ test("starts and expires deleted-text fade animations for single-character delet
   };
 
   expect(animation).toBeDefined();
-  expect(hasRunningAnimations(stateWithDeletedTextFadeOnly, animation!.startedAt + 10)).toBe(
-    true,
-  );
+  expect(hasRunningAnimations(stateWithDeletedTextFadeOnly, animation!.startedAt + 10)).toBe(true);
   expect(
     hasRunningAnimations(
       stateWithDeletedTextFadeOnly,
@@ -353,9 +343,9 @@ test("does not re-trigger list-marker-pop animation when typing inside an existi
   const stateUpdate = insertText(stateAtEnd, "b");
 
   expect(stateUpdate).not.toBeNull();
-  expect(
-    stateUpdate!.animations.some((animation) => animation.kind === "list-marker-pop"),
-  ).toBe(false);
+  expect(stateUpdate!.animations.some((animation) => animation.kind === "list-marker-pop")).toBe(
+    false,
+  );
 });
 
 test("does not start a list-marker-pop animation when splitting a task list item", () => {
@@ -373,19 +363,23 @@ test("does not start a list-marker-pop animation when splitting a task list item
   const stateUpdate = insertLineBreak(stateAtEnd);
 
   expect(stateUpdate).not.toBeNull();
-  expect(
-    stateUpdate!.animations.some((animation) => animation.kind === "list-marker-pop"),
-  ).toBe(false);
+  expect(stateUpdate!.animations.some((animation) => animation.kind === "list-marker-pop")).toBe(
+    false,
+  );
 });
 
 test("resolves task-toggle hover targets ahead of text hits", () => {
   const renderCache = createCanvasRenderCache();
   const state = createEditorState(parseMarkdown("- [ ] Review task\n"));
-  const viewport = prepareViewport(state, {
-    height: 320,
-    top: 0,
-    width: 520,
-  }, renderCache);
+  const viewport = prepareViewport(
+    state,
+    {
+      height: 320,
+      top: 0,
+      width: 520,
+    },
+    renderCache,
+  );
   const line = viewport.layout.lines[0];
   const listItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
 
@@ -423,13 +417,7 @@ test("updates hovered link urls semantically", () => {
     throw new Error("Expected link run");
   }
 
-  const result = updateLink(
-    state,
-    region.id,
-    linkRun.start,
-    linkRun.end,
-    "https://openai.com",
-  );
+  const result = updateLink(state, region.id, linkRun.start, linkRun.end, "https://openai.com");
 
   expect(result).not.toBeNull();
   expect(serializeMarkdown(getDocument(result!))).toBe(

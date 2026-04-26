@@ -1,9 +1,6 @@
-// Owns the hidden browser input bridge used to:
-// - open the software keyboard on mobile
-// - receive browser text, keyboard, IME, and clipboard events
-// - translate those native events into semantic editor operations
 import {
   type ClipboardEvent,
+  type FocusEvent,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
@@ -48,14 +45,24 @@ import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings"
 import { readSingleContainerSelectionText } from "../lib/selection";
 
 type UseInputOptions = {
+  // DOM refs the hook reads from.
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+
+  // Editor state and lookups the hook reads from.
   editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
   editorViewportState: LazyRefHandle<EditorViewportState>;
-  inputRef: RefObject<HTMLTextAreaElement | null>;
   keybindings?: EditorKeybinding[];
+
+  // Host callbacks the hook invokes.
+  applyNextState: (nextState: EditorState | null) => void;
   onActivity: () => void;
-  onEditorStateChange: (nextState: EditorState | null) => void;
 };
+
+// Imperative focus signal exposed to other hooks (usePointer, useSelection)
+// for "open the keyboard at this caret position" intent. Defined here so all
+// consumers share a single canonical type.
+export type FocusInput = (point?: EditorSelectionPoint) => void;
 
 type ClipboardHandlers = {
   onCopy: (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
@@ -79,17 +86,17 @@ type SharedInputHandlers = ClipboardHandlers & {
 };
 
 type InputHandlers = SharedInputHandlers & {
-  onFocus: () => void;
+  onFocus: (event: FocusEvent<HTMLTextAreaElement>) => void;
   onInput: (event: FormEvent<HTMLTextAreaElement>) => void;
 };
 
 type CanvasHandlers = SharedInputHandlers & {
-  onFocus: () => void;
+  onFocus: (event: FocusEvent<HTMLCanvasElement>) => void;
 };
 
 type InputController = {
   canvasHandlers: CanvasHandlers;
-  focus: (targetPoint?: EditorSelectionPoint) => void;
+  focus: FocusInput;
   inputHandlers: InputHandlers;
 };
 
@@ -97,15 +104,52 @@ type InputController = {
 // context for IME composition and browser autocorrect.
 const INPUT_CONTEXT_WINDOW = 64;
 
+/**
+ * Owns the hidden browser input bridge — a 2x2 absolutely-positioned
+ * `<textarea>` that the editor uses to talk to the operating system.
+ *
+ * What this hook owns:
+ *   - Receiving native text input via `beforeinput` (insertions, deletions,
+ *     line breaks, autocorrect replacements) and routing it to editor
+ *     operations.
+ *   - Keyboard shortcut handling on desktop (omitted on touch — see comment
+ *     on `SharedInputHandlers`).
+ *   - Clipboard (copy / cut / paste) on both the textarea and the canvas.
+ *   - IME / autocapitalize / autocorrect compatibility (the textarea is the
+ *     OS-visible input, so it must look real to iOS Safari).
+ *   - iOS Shake-to-Undo: priming `UIUndoManager` so the gesture fires
+ *     `beforeinput` with `historyUndo`/`historyRedo`, which we route to the
+ *     editor's own undo stack.
+ *   - Imperative `focus({offset, regionId})` — positions the textarea at the
+ *     caret pixel coordinates first (so iOS scrolls the right area into view
+ *     above the keyboard) and then calls `.focus()`.
+ *   - The `:focus-visible` guard on canvas focus that bridges Tab-key focus
+ *     to the textarea while ignoring pointer-driven canvas focus (which
+ *     would otherwise open the keyboard on every tap).
+ *
+ * Contract with the host:
+ *   - The host renders a hidden `<textarea ref={inputRef}>` inside the
+ *     scroll container (positioning is owned here, but mounting is the
+ *     host's responsibility).
+ *   - The host spreads `inputHandlers` onto the textarea and `canvasHandlers`
+ *     onto the canvas. They overlap on clipboard so either DOM target works
+ *     as a paste target.
+ *   - Other hooks (usePointer, useSelection) call `focus()` directly when
+ *     they want the keyboard up; the host wires `input.focus` into them.
+ *   - The host doesn't own input state — it lives entirely in the textarea
+ *     value and the editor state, both managed here.
+ */
 export function useInput({
+  applyNextState,
   editorState,
   editorStateRef,
   editorViewportState,
   inputRef,
   keybindings,
   onActivity,
-  onEditorStateChange,
 }: UseInputOptions): InputController {
+  /* Internal state */
+
   const isTouchPrimary = useIsTouchPrimary();
   const readCurrentState = () => editorStateRef.current ?? editorState;
   // When `primingRef.current === true`, the bridge is in the middle of
@@ -123,8 +167,10 @@ export function useInput({
     }
 
     onActivity();
-    onEditorStateChange(nextState);
+    applyNextState(nextState);
   });
+
+  /* iOS UIUndoManager priming */
 
   const runUndoStackPrime = useEffectEvent(() => {
     const input = inputRef.current;
@@ -134,9 +180,11 @@ export function useInput({
     // — critically — its insert/delete operations *are* recorded in
     // UIUndoManager (whereas assigning to `input.value` is not). Do one
     // insert + delete pair so iOS has something to undo on shake.
-    const execCommand = (document as Document & {
-      execCommand?: (command: string, showUI?: boolean, value?: string) => boolean;
-    }).execCommand;
+    const execCommand = (
+      document as Document & {
+        execCommand?: (command: string, showUI?: boolean, value?: string) => boolean;
+      }
+    ).execCommand;
     if (typeof execCommand !== "function") return;
     try {
       primingRef.current = true;
@@ -169,6 +217,8 @@ export function useInput({
   const rePrimeUndoStack = useEffectEvent(() => {
     runUndoStackPrime();
   });
+
+  /* Caret positioning + focus */
 
   // Move the hidden textarea so its bounding rect overlays the visible
   // caret. Inspired by CodeMirror's model: textarea is `position: absolute`
@@ -223,6 +273,8 @@ export function useInput({
     primeUndoStack();
   });
 
+  /* Text application helpers */
+
   const applyNativeText = useEffectEvent((state: typeof editorState, value: string) => {
     const insertedText = stripSyncedInputPrefix(value, resolveInputPrefix(state));
     const segments = insertedText.replace(/\r\n/g, "\n").split(/(\n)/);
@@ -233,10 +285,7 @@ export function useInput({
         continue;
       }
 
-      const result =
-        segment === "\n"
-          ? insertLineBreak(nextState)
-          : insertText(nextState, segment);
+      const result = segment === "\n" ? insertLineBreak(nextState) : insertText(nextState, segment);
 
       if (!result) {
         continue;
@@ -264,6 +313,8 @@ export function useInput({
       return replaceSelection(extended, replacement);
     },
   );
+
+  /* Native event handlers (beforeinput / input / keydown) */
 
   const handleBeforeInput = useEffectEvent((event: InputEvent) => {
     if (primingRef.current) return;
@@ -369,6 +420,8 @@ export function useInput({
     },
   );
 
+  /* Clipboard handlers */
+
   const handleCopy = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       const selectedText = readSingleContainerSelectionText(readCurrentState());
@@ -410,6 +463,8 @@ export function useInput({
     },
   );
 
+  /* Focus handlers */
+
   const handleInputFocus = useEffectEvent(() => {
     onActivity();
     const input = inputRef.current;
@@ -419,10 +474,22 @@ export function useInput({
     }
   });
 
-  const handleCanvasFocus = useEffectEvent(() => {
+  // Bridges Tab-key focus on the canvas to the hidden textarea so keyboard
+  // navigation reaches the editor's text input. Pointer-driven focus (mouse
+  // click, touch tap) is intentionally NOT bridged here — click handlers in
+  // `usePointer` call `focus()` explicitly when a tap should open the
+  // keyboard (e.g. caret placement). Without the `:focus-visible` guard,
+  // every tap on the canvas (including on a task-toggle checkbox) would
+  // silently route focus to the textarea and open the iOS keyboard before
+  // our click handler could decide whether the keyboard was wanted.
+  const handleCanvasFocus = useEffectEvent((event: FocusEvent<HTMLCanvasElement>) => {
     onActivity();
-    focus();
+    if (event.target.matches(":focus-visible")) {
+      focus();
+    }
   });
+
+  /* Effects */
 
   useEffect(() => {
     const input = inputRef.current;
@@ -456,6 +523,8 @@ export function useInput({
     input.addEventListener("beforeinput", listener);
     return () => input.removeEventListener("beforeinput", listener);
   }, [inputRef, handleBeforeInput]);
+
+  /* Public API */
 
   const sharedHandlers: SharedInputHandlers = {
     onCopy: handleCopy,
@@ -534,10 +603,7 @@ export function stripInputSeed(value: string) {
   return value.replaceAll(INPUT_SEED, "");
 }
 
-export function resolveInputPrefix(
-  state: EditorState,
-  maxLength = INPUT_CONTEXT_WINDOW,
-) {
+export function resolveInputPrefix(state: EditorState, maxLength = INPUT_CONTEXT_WINDOW) {
   const { anchor, focus } = state.selection;
 
   if (anchor.regionId !== focus.regionId || anchor.offset !== focus.offset) {
@@ -571,10 +637,7 @@ export function stripSyncedInputPrefix(value: string, prefix: string) {
 //   accurate suggestions and completions.
 //
 // The caret is placed at the end so new input appends after the prefix.
-export function syncInputContext(
-  input: HTMLTextAreaElement,
-  state: EditorState,
-) {
+export function syncInputContext(input: HTMLTextAreaElement, state: EditorState) {
   const prefix = resolveInputPrefix(state);
   const nextValue = `${INPUT_SEED}${prefix}`;
 

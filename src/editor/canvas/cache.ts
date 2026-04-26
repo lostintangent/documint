@@ -99,7 +99,11 @@ export function getOrCreateGraphemeWidthCache(cache: CanvasRenderCache, font: st
   return next;
 }
 
-export function getViewportPlan(cache: CanvasRenderCache, documentIndex: DocumentIndex, key: string) {
+export function getViewportPlan(
+  cache: CanvasRenderCache,
+  documentIndex: DocumentIndex,
+  key: string,
+) {
   return cache.viewportPlans.get(documentIndex)?.get(key) ?? null;
 }
 

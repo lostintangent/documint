@@ -2,15 +2,18 @@ import { useMemo } from "react";
 
 /**
  * Lazily resolves an imperative value on first read and keeps it until the
- * owning component invalidates it. Child hooks can depend on LazyRefHandle when
- * they should read the value without controlling the cache policy.
+ * owning component invalidates it. Child hooks depend on `LazyRefHandle` for
+ * read access (`get` / `peek`); the owner uses the full `LazyRef` to mutate
+ * the cache via `invalidate`.
  */
 export type LazyRefHandle<T> = {
+  /** Returns the cached value, computing on first access or after invalidation. */
   get: () => T;
+  /** Returns the cached value if present, or null without computing. */
+  peek: () => T | null;
 };
 
 export type LazyRef<T> = LazyRefHandle<T> & {
-  readonly current: T | null;
   invalidate: () => void;
 };
 
@@ -20,7 +23,7 @@ export function useLazyRef<T>(resolve: () => T): LazyRef<T> {
 
 function createLazyRef<T>(ref: { current: T | null }, resolve: () => T): LazyRef<T> {
   return {
-    get current() {
+    peek() {
       return ref.current;
     },
     get() {

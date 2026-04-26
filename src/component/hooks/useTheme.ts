@@ -71,6 +71,7 @@ function resolveThemePair(theme: DocumintTheme | undefined): DocumintThemePair {
 
 function createThemeStyles(theme: EditorTheme): CSSProperties {
   return {
+    "--documint-background": theme.background,
     "--documint-leaf-button-bg": theme.leafButtonBackground,
     "--documint-leaf-button-border": theme.leafButtonBorder,
     "--documint-leaf-button-text": theme.leafButtonText,
@@ -83,6 +84,8 @@ function createThemeStyles(theme: EditorTheme): CSSProperties {
     "--documint-leaf-resolved-bg": theme.leafResolvedBackground,
     "--documint-leaf-resolved-border": theme.leafResolvedBorder,
     "--documint-leaf-text": theme.leafText,
+    "--documint-mention-bg": theme.mentionBackground ?? undefined,
+    "--documint-mention-text": theme.mentionText ?? undefined,
     "--documint-selection-handle-bg": theme.selectionHandleBackground,
     "--documint-selection-handle-border": theme.selectionHandleBorder,
   } as CSSProperties;

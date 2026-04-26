@@ -8,7 +8,7 @@ import type { Comment, CommentThread } from "./types";
 export function createCommentThread(options: {
   quote: string;
   body: string;
-  anchor: Anchor;  
+  anchor: Anchor;
   createdAt?: string;
 }): CommentThread {
   const createdAt = options.createdAt ?? new Date().toISOString();
@@ -19,7 +19,7 @@ export function createCommentThread(options: {
 
   return {
     comments: [comment],
-    quote: options.quote,    
+    quote: options.quote,
     anchor: options.anchor,
   };
 }
@@ -75,7 +75,10 @@ export function editCommentInThread(
   };
 }
 
-export function deleteCommentFromThread(thread: CommentThread, commentIndex: number): CommentThread | null {
+export function deleteCommentFromThread(
+  thread: CommentThread,
+  commentIndex: number,
+): CommentThread | null {
   const comments = thread.comments.filter((_, index) => index !== commentIndex);
 
   if (comments.length === thread.comments.length) {

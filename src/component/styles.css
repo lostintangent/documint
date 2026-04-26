@@ -1,0 +1,343 @@
+/* Base Documint host and SSR-fallback styles. */
+
+.documint {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Default elevated-surface shadow shared by leaf overlays, menus, and
+   presence indicators. Both the host section and the overlay portal
+   wrapper carry it so descendants inherit the same value whether they're
+   rendered in-tree or portaled to document.body. */
+.documint,
+.documint-overlay {
+  --documint-leaf-shadow-fallback:
+    0 14px 40px color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
+}
+
+.documint-scroll-container {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  /* Match the canvas's paint color so the iOS overscroll bounce (and any
+     other reveal of the scroll container beyond the canvas's painted area)
+     shows the themed background instead of browser white. */
+  background: var(--documint-background);
+}
+
+.documint-input {
+  /* The bridge must look like a real focused input to iOS so Safari
+     shifts the page above the virtual keyboard. Empirically:
+       - opacity must be greater than 0
+       - the bounding rect must be at least 2x2 pixels (1x1 is skipped)
+       - pointer-events must not be none
+     Any of those signals "not a real user input" and iOS won't shift.
+     We hide the element from the user via transparent colors while
+     keeping those signals correct. JS sizes/positions it at the caret
+     at focus time. */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 2px;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  outline: none;
+  resize: none;
+}
+
+.documint-scroll-content {
+  position: relative;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.documint-content-canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  display: block;
+  width: 100%;
+  outline: none;
+  /* Let the browser handle native pan (scrolling) on touch and eliminate the
+     historical 300ms tap delay. Double-tap zoom is suppressed on the canvas
+     (we want `dblclick` for word-select), but pinch-zoom and pan are kept. */
+  touch-action: manipulation;
+}
+
+.documint-overlay-canvas {
+  position: absolute;
+  inset: 0 auto auto 0;
+  display: block;
+  width: 100%;
+  pointer-events: none;
+}
+
+.documint-presence-indicators {
+  position: sticky;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+  height: 0;
+  pointer-events: none;
+}
+
+.documint-presence-indicator {
+  --documint-presence-indicator-size: 1.45rem;
+  display: inline-flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  min-width: var(--documint-presence-indicator-size);
+  height: var(--documint-presence-indicator-size);
+  padding: 0;
+  border: 1px solid var(--documint-leaf-border);
+  border-radius: 999px;
+  background: var(--documint-leaf-bg);
+  box-shadow: var(--documint-leaf-shadow, var(--documint-leaf-shadow-fallback));
+  color: var(--documint-leaf-text);
+  cursor: pointer;
+  font-family: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: auto;
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.72;
+  }
+}
+
+.documint-presence-indicator-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: var(--documint-presence-indicator-size);
+  height: var(--documint-presence-indicator-size);
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--documint-presence-color);
+  color: white;
+}
+
+.documint-presence-indicator-image {
+  display: block;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.documint-presence-indicator-direction {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 0.42rem 0 0.36rem;
+  color: var(--documint-leaf-text);
+}
+
+.documint-presence-indicator-arrow {
+  display: block;
+}
+
+.documint-selection-handle {
+  position: absolute;
+  z-index: 4;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.documint-selection-handle-start {
+  transform: translate(-70%, -82%);
+}
+
+.documint-selection-handle-end {
+  transform: translate(-30%, -39%);
+}
+
+.documint-selection-handle-knob {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border: 2px solid var(--documint-selection-handle-border);
+  border-radius: 999px;
+  background: var(--documint-selection-handle-bg);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+.documint-fallback {
+  max-width: 100%;
+  color: #0f172a;
+  line-height: 1.65;
+  white-space: normal;
+
+  & p {
+    margin: 0 0 0.9rem;
+  }
+
+  & h1,
+  & h2,
+  & h3,
+  & h4,
+  & h5,
+  & h6 {
+    margin: 0 0 0.85rem;
+    line-height: 1.15;
+  }
+
+  & h1 {
+    font-size: 2rem;
+  }
+
+  & h2 {
+    font-size: 1.55rem;
+  }
+
+  & h3 {
+    font-size: 1.25rem;
+  }
+
+  & ul,
+  & ol {
+    margin: 0 0 1rem;
+    padding-left: 1.4rem;
+  }
+
+  & li > p {
+    margin: 0;
+  }
+
+  & blockquote {
+    margin: 0 0 1rem;
+    padding-left: 1rem;
+    border-left: 3px solid rgba(14, 116, 144, 0.3);
+    color: #334155;
+  }
+
+  & pre {
+    margin: 0 0 1rem;
+    padding: 0.9rem 1rem;
+    overflow: auto;
+    border-radius: 0.85rem;
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+
+  & table {
+    width: 100%;
+    margin: 0 0 1rem;
+    border-collapse: collapse;
+  }
+
+  & td {
+    padding: 0.45rem 0.55rem;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+  }
+
+  & a {
+    color: #0369a1;
+  }
+}
+
+.preview-rich-header {
+  margin: 0 0 0.35rem;
+  color: #9fb3c8;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preview-block-code {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #132033, #0f172a);
+  color: #e2e8f0;
+
+  & pre {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    overflow: auto;
+    border-radius: 0.75rem;
+    background: rgba(15, 23, 42, 0.72);
+  }
+}
+
+.preview-block-table {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(14, 116, 144, 0.18);
+  border-radius: 0.9rem;
+  background: rgba(248, 250, 252, 0.96);
+}
+
+.preview-table-scroll {
+  overflow-x: auto;
+
+  & table {
+    min-width: max-content;
+  }
+}
+
+.preview-inline-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(100%, 34rem);
+  margin: 0 0.15rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid rgba(14, 116, 144, 0.16);
+  border-radius: 999px;
+  background: rgba(240, 249, 255, 0.95);
+  vertical-align: middle;
+
+  & img {
+    flex: none;
+    width: 2.4rem;
+    height: 2.4rem;
+    object-fit: cover;
+    border-radius: 0.65rem;
+    background: rgba(148, 163, 184, 0.18);
+  }
+
+  & > span {
+    display: grid;
+    min-width: 0;
+  }
+
+  & strong {
+    color: #0f172a;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    font-size: 0.88rem;
+  }
+
+  & small {
+    overflow: hidden;
+    color: #475569;
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

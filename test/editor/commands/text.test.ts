@@ -253,10 +253,7 @@ test("normalizes an empty document to a single empty paragraph after replacing e
     throw new Error("Expected two paragraph regions");
   }
 
-  state = setSelection(
-    state,
-    selectionBetween(first.id, 0, second.id, second.text.length),
-  );
+  state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
   state = deleteSelectionText(state);
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("\n");
@@ -332,9 +329,7 @@ test("preserves comment threads anchored before a cross-region edit", () => {
 });
 
 test("replaces the entire document with a single paragraph when every block is fully consumed", () => {
-  let state = createEditorState(
-    parseMarkdown("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"),
-  );
+  let state = createEditorState(parseMarkdown("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"));
   const firstRegion = state.documentIndex.regions[0];
   const lastRegion = state.documentIndex.regions.at(-1);
 
@@ -410,10 +405,7 @@ test("select-all + delete produces an empty paragraph even when the document sta
     throw new Error("Expected heading and paragraph regions");
   }
 
-  state = setSelection(
-    state,
-    selectionBetween(first.id, 0, second.id, second.text.length),
-  );
+  state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
   state = deleteSelectionText(state);
 
   // The heading's type must not survive — the deletion consumed it entirely.

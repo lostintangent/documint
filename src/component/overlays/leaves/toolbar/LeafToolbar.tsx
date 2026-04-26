@@ -158,7 +158,7 @@ function LeafToolbarMenuView({ children, className, icon, label, onSelect }: Lea
           onClick={() => setIsOpen((open) => !open)}
         />
         {isOpen ? (
-          <div className="documint-leaf-toolbar-menu" role="menu">
+          <div className="documint-leaf-menu" role="menu">
             {Children.map(children, (child) =>
               renderToolbarMenuChild(child, (value) => {
                 setIsOpen(false);
@@ -227,10 +227,7 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
     const { className } = child.props as LeafToolbarMenuDividerProps;
 
     return (
-      <div
-        className={resolveClassName("documint-leaf-toolbar-menu-divider", className)}
-        role="separator"
-      />
+      <div className={resolveClassName("documint-leaf-menu-divider", className)} role="separator" />
     );
   }
 
@@ -242,7 +239,7 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
 
   return (
     <button
-      className="documint-leaf-toolbar-menu-item"
+      className="documint-leaf-menu-item"
       disabled={disabled}
       onPointerDown={(event) => {
         keepSelectionActive(event);

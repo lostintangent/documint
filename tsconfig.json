@@ -14,7 +14,8 @@
       "@/*": ["./src/*"],
       "@test/*": ["./test/*"]
     },
-    "types": ["bun"]
+    "typeRoots": ["./node_modules/@types", "./types"],
+    "types": ["bun", "css"]
   },
   "include": ["playground", "src", "scripts", "test"]
 }

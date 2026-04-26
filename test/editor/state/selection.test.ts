@@ -34,9 +34,7 @@ test("derives the active block and span from the selection anchor", () => {
 });
 
 test("selectAll expands the selection from the start of the first region to the end of the last", () => {
-  const state = createEditorState(
-    parseMarkdown("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"),
-  );
+  const state = createEditorState(parseMarkdown("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"));
   const [first] = state.documentIndex.regions;
   const last = state.documentIndex.regions.at(-1);
 

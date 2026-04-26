@@ -1,13 +1,18 @@
 import { expect, test } from "bun:test";
+import { createCanvasRenderCache, prepareViewport, resolvePresenceViewport } from "@/editor";
 import {
-  createCanvasRenderCache,
-  prepareViewport,
-  resolvePresenceViewport,
-} from "@/editor";
-import { resolvePresenceCursors, type EditorPresence } from "@/editor/anchors";
+  resolvePresenceCursors,
+  type EditorPresence,
+  type EditorPresenceViewport,
+} from "@/editor/anchors";
 import { createEditorState } from "@/editor/state";
 import type { EditorRegion } from "@/editor/state";
 import { parseMarkdown } from "@/markdown";
+
+function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
+  if (!viewport || viewport.status === "unresolved") return null;
+  return viewport.scrollTop;
+}
 
 test("resolves unique prefix-only and suffix-only presence cursors", () => {
   const state = createEditorState(
@@ -23,13 +28,15 @@ Only the active region reveals source-like editing affordances.
       cursor: {
         prefix: "Markdown is the persistence boundary.",
       },
-      name: "User",
+      id: "user",
+      username: "User",
     },
     {
       cursor: {
         suffix: "Only the active region reveals source-like editing affordances.",
       },
-      name: "Agent",
+      id: "agent",
+      username: "Agent",
     },
   ]);
 
@@ -64,7 +71,8 @@ alpha beta delta
         prefix: "alpha beta",
         suffix: "delta",
       },
-      name: "Agent",
+      id: "agent",
+      username: "Agent",
     },
   ]);
 
@@ -85,13 +93,15 @@ test("preserves exact presence anchor text when matching", () => {
       cursor: {
         prefix: "alpha ",
       },
-      name: "User",
+      id: "user",
+      username: "User",
     },
     {
       cursor: {
         prefix: " alpha ",
       },
-      name: "Agent",
+      id: "agent",
+      username: "Agent",
     },
   ]);
 
@@ -111,13 +121,15 @@ repeat
       cursor: {
         prefix: "repeat",
       },
-      name: "User",
+      id: "user",
+      username: "User",
     },
     {
       cursor: {
         suffix: "absent",
       },
-      name: "Agent",
+      id: "agent",
+      username: "Agent",
     },
   ]);
 
@@ -130,11 +142,15 @@ test("resolves presence viewport state", () => {
   const state = createEditorState(parseMarkdown(createPresenceViewportFixture()));
   const firstRegion = requireRegion(state.documentIndex.regions[0]);
   const lastRegion = requireRegion(state.documentIndex.regions.at(-1));
-  const topViewport = prepareViewport(state, {
-    height: 120,
-    top: 0,
-    width: 420,
-  }, renderCache);
+  const topViewport = prepareViewport(
+    state,
+    {
+      height: 120,
+      top: 0,
+      width: 420,
+    },
+    renderCache,
+  );
   const [visiblePresence, belowPresence] = resolvePresenceViewport(state, topViewport, [
     createResolvedCursor("visible", firstRegion),
     createResolvedCursor("below", lastRegion),
@@ -142,44 +158,53 @@ test("resolves presence viewport state", () => {
 
   expect(visiblePresence?.viewport?.status).toBe("visible");
   expect(belowPresence?.viewport?.status).toBe("below");
-  expect(belowPresence?.viewport?.scrollTop).toBeGreaterThan(0);
+  expect(scrollTopOf(belowPresence?.viewport)).toBeGreaterThan(0);
 
-  const lowerViewport = prepareViewport(state, {
-    height: 120,
-    top: Math.max(120, topViewport.totalHeight - 180),
-    width: 420,
-  }, renderCache);
+  const lowerViewport = prepareViewport(
+    state,
+    {
+      height: 120,
+      top: Math.max(120, topViewport.totalHeight - 180),
+      width: 420,
+    },
+    renderCache,
+  );
   const [abovePresence] = resolvePresenceViewport(state, lowerViewport, [
     createResolvedCursor("above", firstRegion),
   ]);
 
   expect(abovePresence?.viewport?.status).toBe("above");
-  expect(abovePresence?.viewport?.scrollTop).toBe(0);
+  expect(scrollTopOf(abovePresence?.viewport)).toBe(0);
 });
 
 test("keeps unresolved presence visible without a scroll target", () => {
   const renderCache = createCanvasRenderCache();
   const state = createEditorState(parseMarkdown(createPresenceViewportFixture()));
-  const viewport = prepareViewport(state, {
-    height: 120,
-    top: 0,
-    width: 420,
-  }, renderCache);
+  const viewport = prepareViewport(
+    state,
+    {
+      height: 120,
+      top: 0,
+      width: 420,
+    },
+    renderCache,
+  );
 
   expect(
     resolvePresenceViewport(state, viewport, [
       {
         cursorPoint: null,
-        name: "Unresolved",
+        id: "unresolved",
+        username: "Unresolved",
         viewport: null,
       },
     ]),
   ).toEqual([
     {
       cursorPoint: null,
-      name: "Unresolved",
+      id: "unresolved",
+      username: "Unresolved",
       viewport: {
-        scrollTop: null,
         status: "unresolved",
       },
     },
@@ -193,13 +218,14 @@ function createPresenceViewportFixture() {
   );
 }
 
-function createResolvedCursor(name: string, region: EditorRegion): EditorPresence {
+function createResolvedCursor(username: string, region: EditorRegion): EditorPresence {
   return {
     cursorPoint: {
       offset: 0,
       regionId: region.id,
     },
-    name,
+    id: username,
+    username,
     viewport: null,
   };
 }

@@ -128,8 +128,7 @@ test("paints selection highlights across every region the selection spans", () =
 
   const selectionFills = context.operations.filter(
     (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
-      operation.kind === "fillRect" &&
-      operation.fillStyle === lightTheme.selectionBackground,
+      operation.kind === "fillRect" && operation.fillStyle === lightTheme.selectionBackground,
   );
 
   expect(selectionFills.length).toBe(3);
@@ -144,8 +143,7 @@ test("paints selection highlights across every region the selection spans", () =
 
   const fillForLine = (line: typeof firstLine) =>
     selectionFills.find(
-      (operation) =>
-        operation.y >= line.top && operation.y <= line.top + line.height,
+      (operation) => operation.y >= line.top && operation.y <= line.top + line.height,
     );
 
   const firstFill = fillForLine(firstLine);
@@ -177,8 +175,7 @@ test("does not paint a selection highlight when the selection is collapsed", () 
   const selectionFillIndex = findOperationIndex(
     context.operations,
     (operation) =>
-      operation.kind === "fillRect" &&
-      operation.fillStyle === lightTheme.selectionBackground,
+      operation.kind === "fillRect" && operation.fillStyle === lightTheme.selectionBackground,
   );
 
   expect(selectionFillIndex).toBe(-1);
@@ -247,7 +244,8 @@ test("paints resolved presence cursors on the overlay canvas", () => {
           regionId: container.id,
           offset: 5,
         },
-        name: "User",
+        id: "user",
+        username: "User",
         viewport: null,
       },
     ],
@@ -275,7 +273,8 @@ test("skips unresolved presence cursors during overlay paint", () => {
         },
         color: "#0ea5e9",
         cursorPoint: null,
-        name: "User",
+        id: "user",
+        username: "User",
         viewport: null,
       },
     ],

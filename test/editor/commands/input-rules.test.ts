@@ -125,7 +125,9 @@ test("transforms heading depth from typed markdown markers at the start of a hea
 
 test("transforms list type from typed markdown markers at the start of a list item", () => {
   let unorderedState = createEditorState(parseMarkdown("1. alpha\n2. beta\n"));
-  const alpha = unorderedState.documentIndex.regions.find((container) => container.text === "alpha");
+  const alpha = unorderedState.documentIndex.regions.find(
+    (container) => container.text === "alpha",
+  );
 
   if (!alpha) {
     throw new Error("Expected ordered list container");
