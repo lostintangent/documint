@@ -24,7 +24,6 @@ import {
   createDividerBlock,
   createRawBlock,
   createRaw,
-  collectImageUrls,
   extractPlainTextFromBlockNodes,
   extractPlainTextFromInlineNodes,
   listAnchorContainers,
@@ -293,88 +292,6 @@ test("extracts plain text from nested structural blocks and empty thematic break
     'Quote\nNested :badge[body]{tone="info"}\nconst stage = 1;\n:::callout{tone="note"}\nBody\n:::',
   );
   expect(extractPlainTextFromBlockNodes([createDividerBlock()])).toBe("");
-});
-
-test("collects unique image urls across nested semantic structures", () => {
-  const quoteUrl = "https://example.com/quote.png";
-  const linkedUrl = "https://example.com/linked.png";
-  const listUrl = "https://example.com/list.png";
-  const tableUrl = "https://example.com/table.png";
-  const document = createTestDocument([
-    createBlockquoteBlock({
-      children: [
-        createParagraphBlock({
-          children: [
-            createImage({ alt: "quote", path: "root.0.children.0.children.0", url: quoteUrl }),
-          ],
-          path: "root.0.children.0",
-        }),
-      ],
-      path: "root.0",
-    }),
-    createParagraphBlock({
-      children: [
-        createText({ path: "root.1.children.0", text: "See " }),
-        createLink({
-          children: [
-            createImage({ alt: "linked", path: "root.1.children.1.children.0", url: linkedUrl }),
-          ],
-          path: "root.1.children.1",
-          url: "https://example.com",
-        }),
-        createImage({ alt: "repeat", path: "root.1.children.2", url: quoteUrl }),
-      ],
-      path: "root.1",
-    }),
-    createListBlock({
-      items: [
-        createListItemBlock({
-          children: [
-            createParagraphBlock({
-              children: [
-                createImage({
-                  alt: "list",
-                  path: "root.2.children.0.children.0.children.0",
-                  url: listUrl,
-                }),
-              ],
-              path: "root.2.children.0.children.0",
-            }),
-          ],
-          path: "root.2.children.0",
-        }),
-      ],
-      ordered: false,
-      path: "root.2",
-    }),
-    createTableBlock({
-      path: "root.3",
-      rows: [
-        createTableRow({
-          cells: [
-            createTableCell({
-              children: [
-                createImage({
-                  alt: "table",
-                  path: "root.3.rows.0.cells.0.children.0",
-                  url: tableUrl,
-                }),
-              ],
-              path: "root.3.rows.0.cells.0",
-            }),
-          ],
-          path: "root.3.rows.0",
-        }),
-      ],
-    }),
-  ]);
-
-  expect(collectImageUrls(document).slice().sort()).toEqual([
-    linkedUrl,
-    listUrl,
-    quoteUrl,
-    tableUrl,
-  ]);
 });
 
 function createTestDocument(blocks: Block[]) {

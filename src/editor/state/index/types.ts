@@ -1,8 +1,6 @@
 // Editor model type definitions: the runtime representation of a document
-// as flattened roots, blocks, regions, editor inlines, lookup indexes, and
-// the action union that describes document reductions.
+// as flattened roots, blocks, regions, editor inlines, and lookup indexes.
 import type { Block, Document, Mark } from "@/document";
-import type { EditorSelection, SelectionTarget } from "../selection";
 
 export type RuntimeLinkAttributes = {
   title: string | null;
@@ -75,6 +73,11 @@ export type EditorRoot = {
   blockRange: EditorRootRange;
   blocks: EditorBlock[];
   end: number;
+  // URLs of image inlines reachable from this root. Collected during the
+  // existing inline walk so the per-document image-resource hook can read
+  // the set without re-walking the tree on every keystroke. Reused by
+  // reference when the root itself is reused (`canReuseEditorRoot`).
+  imageUrls: ReadonlySet<string>;
   length: number;
   regionRange: EditorRootRange | undefined;
   regions: EditorRegion[];
@@ -87,14 +90,18 @@ export type EditorRoot = {
 // blocks/regions, character-offset coordinates, and lookup tables for O(1) hot-path
 // access. Holds a reference back to the source `document`; carries no semantic
 // content of its own — every field is either a coordinate, a topology aid, an
-// index, or a runtime presentation projection. Equivalent to the "editor model"
-// concept in editor libraries like ProseMirror or CodeMirror.
+// index, or a runtime presentation projection.
 export type DocumentIndex = {
   blockIndex: Map<string, EditorBlock>;
   blocks: EditorBlock[];
   commentContainerIndex: Map<string, number[]>;
   document: Document;
   engine: "canvas";
+  // Union of image URLs across every root. Reference-stable when the URL
+  // set is unchanged (value-compared against the previous index), so
+  // consumers can use it directly as a React `useEffect` dep without
+  // having to derive a content-based signature.
+  imageUrls: ReadonlySet<string>;
   length: number;
   listItemMarkers: Map<string, EditorListItemMarker>;
   regionIndex: Map<string, EditorRegion>;
@@ -106,37 +113,3 @@ export type DocumentIndex = {
   tableCellRegionIndex: Map<string, string>;
   text: string;
 };
-
-export type ActionSelection = EditorSelection | SelectionTarget;
-
-export type EditorAction =
-  | {
-      kind: "replace-block";
-      block: Block;
-      blockId: string;
-      listItemInsertedPath?: string;
-      selection?: ActionSelection | null;
-    }
-  | {
-      kind: "replace-root";
-      block: Block;
-      rootIndex: number;
-      selection?: ActionSelection | null;
-    }
-  | {
-      kind: "replace-root-range";
-      count: number;
-      replacements: Block[];
-      rootIndex: number;
-      selection?: ActionSelection | null;
-    }
-  | {
-      kind: "replace-selection";
-      selection: EditorSelection;
-      text: string;
-    };
-
-export type EditorStateAction =
-  | EditorAction
-  | { kind: "keep-state" }
-  | { kind: "set-selection"; selection: EditorSelection };

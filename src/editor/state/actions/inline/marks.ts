@@ -1,6 +1,6 @@
 // Mark toggling: bold, italic, strikethrough, underline.
 import { type Inline, type Mark, type Text } from "@/document";
-import { compactInlineNodes } from "../../shared";
+import { compactInlineNodes } from "../../index/shared";
 import type { InlineCommandReplacement, InlineCommandTarget } from "./target";
 import { createInlineCommandReplacement } from "./target";
 import { measureInlineNodeText, createPathTextNode } from "./shared";

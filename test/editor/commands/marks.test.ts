@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { toggleBold, toggleItalic, toggleMark, toggleUnderline } from "@/editor/state";
+import { toggleBold, toggleItalic, toggleUnderline } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 
@@ -21,15 +21,15 @@ test("toggles strong and emphasis marks on a single-container selection", () => 
       offset: 10,
     },
   });
-  state = toggleMark(state, "bold") ?? state;
+  state = toggleBold(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Plain **text** here.\n");
 
-  state = toggleMark(state, "bold") ?? state;
+  state = toggleBold(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Plain text here.\n");
 
-  state = toggleMark(state, "italic") ?? state;
+  state = toggleItalic(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Plain *text* here.\n");
 });

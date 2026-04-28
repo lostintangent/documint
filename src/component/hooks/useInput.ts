@@ -15,6 +15,7 @@ import {
   deleteForward,
   deleteSelection,
   insertLineBreak,
+  insertImage,
   insertText,
   measureVisualCaretTarget,
   moveCaretByViewport,
@@ -58,6 +59,12 @@ type UseInputOptions = {
   // Host callbacks the hook invokes.
   applyNextState: (nextState: EditorState | null) => void;
   onActivity: () => void;
+  // Invoked when the clipboard contains an image and the host has agreed
+  // to persist it. Receives the pasted file (carrying blob bytes, MIME
+  // type, and the originating filename when available), returns the path
+  // (or URL) to splice into the document via a markdown image reference.
+  // Return `null` to swallow the paste.
+  onImagePaste?: (file: File) => Promise<string | null>;
 };
 
 // Imperative focus signal exposed to other hooks (usePointer, useSelection)
@@ -166,6 +173,7 @@ export function useInput({
   inputRef,
   keybindings,
   onActivity,
+  onImagePaste,
 }: UseInputOptions): InputController {
   /* Internal state */
 
@@ -565,7 +573,24 @@ export function useInput({
   );
 
   const handlePaste = useEffectEvent(
-    (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
+    async (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
+      // Image items must be extracted synchronously: `clipboardData` is
+      // invalidated as soon as the handler yields. Prefer image over text
+      // when both are present (browsers commonly include both).
+      const imageItem = onImagePaste
+        ? [...event.clipboardData.items].find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        : undefined;
+      const imageFile = imageItem?.getAsFile() ?? null;
+
+      if (imageFile && onImagePaste) {
+        event.preventDefault();
+        const path = await onImagePaste(imageFile);
+        if (path) {
+          applyStateChange(insertImage(readCurrentState(), path));
+        }
+        return;
+      }
+
       const pastedText = event.clipboardData.getData("text/plain");
 
       if (pastedText.length === 0) {

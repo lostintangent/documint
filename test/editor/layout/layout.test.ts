@@ -5,10 +5,10 @@ import {
   createDocumentIndex,
   createEditorState,
   insertLineBreak,
-  replaceSelection,
   setSelection,
-  toggleMark,
+  toggleBold,
 } from "@/editor/state";
+import { spliceText } from "@/editor/state/reducer/text";
 import {
   createDocumentLayout,
   measureCaretTarget,
@@ -206,7 +206,7 @@ test("reuses cached sibling table measurements when one cell changes", () => {
     cache,
   );
   const initialMeasuredLineCount = cache.measuredLines.size;
-  const replaced = replaceSelection(
+  const replaced = spliceText(
     runtime,
     {
       anchor: {
@@ -338,7 +338,7 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
       offset: 5,
     },
   });
-  state = toggleMark(state, "bold") ?? state;
+  state = toggleBold(state) ?? state;
 
   const markedLayout = createDocumentLayout(
     state.documentIndex,

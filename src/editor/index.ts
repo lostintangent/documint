@@ -55,6 +55,7 @@ export {
   deleteTableRow,
   editComment,
   indent,
+  insertImage,
   insertLineBreak,
   insertSelectionText as replaceSelection,
   insertTable,

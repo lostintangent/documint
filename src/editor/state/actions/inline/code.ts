@@ -1,15 +1,12 @@
-// Inline code toggling: wraps/unwraps selected text in inline code nodes.
 import { type Code, type Inline } from "@/document";
-import { compactInlineNodes } from "../../shared";
 import type { InlineCommandReplacement, InlineCommandTarget } from "./target";
 import { createInlineCommandReplacement } from "./target";
 import {
   measureInlineNodeText,
-  collectInlinePrefix,
-  collectInlineSuffix,
   extractInlineSelectionText,
   createPathTextNode,
   createPathInlineCodeNode,
+  spliceInlineNodes,
 } from "./shared";
 
 export function toggleInlineCodeTarget(
@@ -17,8 +14,11 @@ export function toggleInlineCodeTarget(
   startOffset: number,
   endOffset: number,
 ): InlineCommandReplacement | null {
-  const nextChildren = compactInlineNodes(
-    toggleInlineCodeNodes(target.children, startOffset, endOffset, `${target.path}.children`),
+  const nextChildren = toggleInlineCodeNodes(
+    target.children,
+    startOffset,
+    endOffset,
+    `${target.path}.children`,
   );
 
   return nextChildren.length > 0
@@ -35,13 +35,12 @@ function toggleInlineCodeNodes(
   const exactInlineCode = resolveExactSelectedInlineCode(nodes, startOffset, endOffset);
 
   if (exactInlineCode) {
-    return replaceSelectionWithInlineCode(
+    return spliceInlineNodes(
       nodes,
       startOffset,
       endOffset,
-      exactInlineCode.code,
       path,
-      false,
+      createPathTextNode(exactInlineCode.code, [], `${path}.selected`),
     );
   }
 
@@ -51,7 +50,13 @@ function toggleInlineCodeNodes(
     return nodes;
   }
 
-  return replaceSelectionWithInlineCode(nodes, startOffset, endOffset, selectedText, path, true);
+  return spliceInlineNodes(
+    nodes,
+    startOffset,
+    endOffset,
+    path,
+    createPathInlineCodeNode(selectedText, `${path}.selected`),
+  );
 }
 
 function resolveExactSelectedInlineCode(
@@ -87,46 +92,3 @@ function resolveExactSelectedInlineCode(
   return null;
 }
 
-function replaceSelectionWithInlineCode(
-  nodes: Inline[],
-  startOffset: number,
-  endOffset: number,
-  selectedText: string,
-  path: string,
-  wrap: boolean,
-): Inline[] {
-  const nextNodes: Inline[] = [];
-  let cursor = 0;
-  let inserted = false;
-
-  for (const [index, node] of nodes.entries()) {
-    const nodePath = `${path}.${index}`;
-    const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
-
-    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
-      nextNodes.push(node);
-      continue;
-    }
-
-    if (!inserted) {
-      nextNodes.push(...collectInlinePrefix(node, Math.max(0, startOffset - nodeStart), nodePath));
-      const selectedNode = wrap
-        ? createPathInlineCodeNode(selectedText, `${path}.selected`)
-        : createPathTextNode(selectedText, [], `${path}.selected`);
-
-      if (selectedNode) {
-        nextNodes.push(selectedNode);
-      }
-      inserted = true;
-    }
-
-    nextNodes.push(
-      ...collectInlineSuffix(node, Math.min(nodeLength, endOffset - nodeStart), nodePath),
-    );
-  }
-
-  return nextNodes;
-}

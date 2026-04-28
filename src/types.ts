@@ -3,12 +3,31 @@ import type { Anchor } from "@/document";
 export type DocumentImageResource = {
   intrinsicHeight: number;
   intrinsicWidth: number;
-  source: CanvasImageSource | null;
+  source: ImageBitmap | null;
   status: "error" | "loaded" | "loading";
 };
 
 export type DocumentResources = {
   images: Map<string, DocumentImageResource>;
+};
+
+// Host-provided storage for reading/writing resources needed by the document.
+//
+// `readFile` is invoked when the document references a non-remote URL (i.e.
+// anything that isn't `http(s):`, `data:`, or `blob:`); the host returns the
+// bytes as a Blob, or `null` to signal "not found" (rendered as an error
+// placeholder). The path is whatever string appears in the markdown — relative
+// (`./food.png`), absolute (`file:///…`), or a custom scheme — and is opaque
+// to the component.
+//
+// `writeFile` is invoked when content is pasted into the document (currently
+// images): the component hands over the pasted file and the host persists it,
+// returning a path string that will round-trip back through `readFile` on the
+// next render. The host can derive a name, MIME type, and extension from the
+// `File` directly.
+export type DocumintStorage = {
+  readFile(path: string): Promise<Blob | null>;
+  writeFile(file: File): Promise<string>;
 };
 
 export type EditorCommand =

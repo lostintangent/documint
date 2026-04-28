@@ -11,7 +11,7 @@ import {
   deleteBackward,
   deleteForward,
   deleteSelectionText,
-  replaceSelectionText,
+  insertSelectionText,
   setSelection,
   type EditorSelection,
 } from "@/editor/state";
@@ -35,7 +35,7 @@ test("replaces and deletes selected text within a single canvas container", () =
       offset: "Paragraph".length,
     },
   });
-  state = replaceSelectionText(state, "Selected");
+  state = insertSelectionText(state, "Selected");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Selected body.\n");
 
@@ -95,7 +95,7 @@ test("merges two paragraphs when a cross-region selection is replaced with text"
     state,
     selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
   );
-  state = replaceSelectionText(state, "X");
+  state = insertSelectionText(state, "X");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alpha Xdelta\n");
   expect(state.documentIndex.regions).toHaveLength(1);
@@ -111,7 +111,7 @@ test("drops middle blocks when a cross-region selection spans three paragraphs",
   }
 
   state = setSelection(state, selectionBetween(first.id, 2, third.id, 3));
-  state = replaceSelectionText(state, "-");
+  state = insertSelectionText(state, "-");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("al-ma\n");
 });
@@ -187,7 +187,7 @@ test("merges a heading with a paragraph using the start block's type", () => {
     state,
     selectionBetween(heading.id, "Headin".length, paragraph.id, "Paragraph ".length),
   );
-  state = replaceSelectionText(state, "/");
+  state = insertSelectionText(state, "/");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("# Headin/body\n");
 });
@@ -203,7 +203,7 @@ test("drops a code block between two paragraphs during cross-region replacement"
   }
 
   state = setSelection(state, selectionBetween(first.id, 2, last.id, 3));
-  state = replaceSelectionText(state, "!");
+  state = insertSelectionText(state, "!");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("al!ma\n");
 });
@@ -220,7 +220,7 @@ test("trims a code block when it is an endpoint of a cross-region selection", ()
   }
 
   state = setSelection(state, selectionBetween(codeRegion.id, 3, paragraphRegion.id, 2));
-  state = replaceSelectionText(state, "");
+  state = deleteSelectionText(state);
 
   // Code-block prefix kept; paragraph suffix kept; no inline merge (not text-like on both sides).
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("```\nabc\n```\n\npha\n");
@@ -240,7 +240,7 @@ test("drops tables entirely when a cross-region selection enters or exits them",
   }
 
   state = setSelection(state, selectionBetween(first.id, 2, second.id, 2));
-  state = replaceSelectionText(state, "X");
+  state = insertSelectionText(state, "X");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alXta\n");
 });
@@ -277,7 +277,7 @@ test("trims a list when a cross-region selection starts in one list item and end
     state,
     selectionBetween(firstListItem.id, "al".length, afterParagraph.id, "af".length),
   );
-  state = replaceSelectionText(state, "!");
+  state = insertSelectionText(state, "!");
 
   // The first list item gets trimmed ("al"); later items are dropped. The
   // trimmed list is a container (not text-like), so it doesn't inline-merge
@@ -319,7 +319,7 @@ test("preserves comment threads anchored before a cross-region edit", () => {
     state,
     selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
   );
-  state = replaceSelectionText(state, "");
+  state = deleteSelectionText(state);
 
   // Thread anchored in content before the selection start survives the
   // cross-region edit — same thread count, same quote, still resolvable.
@@ -341,7 +341,7 @@ test("replaces the entire document with a single paragraph when every block is f
     state,
     selectionBetween(firstRegion.id, 0, lastRegion.id, lastRegion.text.length),
   );
-  state = replaceSelectionText(state, "x");
+  state = insertSelectionText(state, "x");
 
   // Both the start heading and the end paragraph are fully consumed — their
   // types don't leak into the result. The replacement becomes a fresh
@@ -389,7 +389,7 @@ test("cross-region type with a trailing heading fully consumed absorbs into the 
     state,
     selectionBetween(paragraph.id, "alpha".length, heading.id, heading.text.length),
   );
-  state = replaceSelectionText(state, "X");
+  state = insertSelectionText(state, "X");
 
   // The trailing heading drops; the partial paragraph absorbs the typed
   // text at its end (start-block-wins since the start still has content).

@@ -8,20 +8,21 @@ import {
   type ListBlock,
   type ParagraphBlock,
 } from "@/document";
-import type { DocumentIndex, EditorAction, EditorStateAction } from "../types";
-import { replaceListItemLeadingParagraphText } from "../context";
+import type { DocumentIndex } from "../index/types";
+import type { EditorStateAction } from "../types";
+import { replaceListItemLeadingParagraphText } from "../index/context";
 import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
   normalizeSelection,
   type EditorSelection,
-} from "../../selection";
+} from "../selection";
 import {
   type RootTextBlockContext,
   resolveBlockquoteContext,
   resolveBlockquoteTextBlockContext,
   resolveRootTextBlockContext,
-} from "../context";
+} from "../index/context";
 
 // Block structure action resolvers: split, backspace, heading depth, and
 // blockquote operations.
@@ -29,7 +30,7 @@ import {
 export function resolveTextBlockSplit(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
@@ -54,9 +55,8 @@ export function resolveTextBlockSplit(
 
   if (context.block.type === "paragraph") {
     return {
-      kind: "replace-root-range",
-      count: 1,
-      replacements:
+      kind: "splice-blocks",
+      blocks:
         normalized.start.offset === 0
           ? [
               createParagraphTextBlock({
@@ -85,9 +85,8 @@ export function resolveTextBlockSplit(
   }
 
   return {
-    kind: "replace-root-range",
-    count: 1,
-    replacements:
+    kind: "splice-blocks",
+    blocks:
       normalized.start.offset === 0
         ? [
             createParagraphTextBlock({
@@ -119,7 +118,7 @@ export function resolveTextBlockSplit(
 export function resolveBlockquoteTextBlockSplit(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
@@ -158,14 +157,16 @@ export function resolveBlockquoteTextBlockSplit(
         );
 
   return {
-    kind: "replace-root",
-    block: createBlockquoteBlock({
-      children: [
-        ...context.quote.children.slice(0, context.childIndex),
-        ...replacement.blocks,
-        ...context.quote.children.slice(context.childIndex + 1),
-      ],
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createBlockquoteBlock({
+        children: [
+          ...context.quote.children.slice(0, context.childIndex),
+          ...replacement.blocks,
+          ...context.quote.children.slice(context.childIndex + 1),
+        ],
+      }),
+    ],
     rootIndex: context.rootIndex,
     selection: createDescendantPrimaryRegionTarget(
       context.rootIndex,
@@ -177,7 +178,7 @@ export function resolveBlockquoteTextBlockSplit(
 export function resolveStructuralBlockquoteSplit(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
@@ -196,26 +197,25 @@ export function resolveStructuralBlockquoteSplit(
 
   const beforeBlocks = context.quote.children.slice(0, context.childIndex);
   const afterBlocks = context.quote.children.slice(context.childIndex + 1);
-  const replacements: Block[] = [];
+  const blocks: Block[] = [];
 
   if (beforeBlocks.length > 0) {
-    replacements.push(createBlockquoteBlock({ children: beforeBlocks }));
+    blocks.push(createBlockquoteBlock({ children: beforeBlocks }));
   }
 
-  replacements.push(
+  blocks.push(
     createParagraphTextBlock({
       text: "",
     }),
   );
 
   if (afterBlocks.length > 0) {
-    replacements.push(createBlockquoteBlock({ children: afterBlocks }));
+    blocks.push(createBlockquoteBlock({ children: afterBlocks }));
   }
 
   return {
-    kind: "replace-root-range",
-    count: 1,
-    replacements,
+    kind: "splice-blocks",
+    blocks: blocks,
     rootIndex: context.rootIndex,
     selection: createRootPrimaryRegionTarget(context.rootIndex + (beforeBlocks.length > 0 ? 1 : 0)),
   };
@@ -224,7 +224,7 @@ export function resolveStructuralBlockquoteSplit(
 export function resolveCodeLineBreak(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
@@ -241,7 +241,7 @@ export function resolveCodeLineBreak(
   }
 
   return {
-    kind: "replace-selection",
+    kind: "splice-text",
     selection,
     text: "\n",
   };
@@ -250,7 +250,7 @@ export function resolveCodeLineBreak(
 export function resolveBlockStructuralBackspace(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
@@ -285,9 +285,8 @@ export function resolveBlockStructuralBackspace(
         }
 
         return {
-          kind: "replace-root-range",
-          count: 1,
-          replacements: [],
+          kind: "splice-blocks",
+          blocks: [],
           rootIndex: context.rootIndex,
           selection:
             previousRoot.type === "paragraph" || previousRoot.type === "heading"
@@ -310,9 +309,9 @@ export function resolveBlockStructuralBackspace(
 
       if (previousRoot.type === "paragraph") {
         return {
-          kind: "replace-root-range",
+          kind: "splice-blocks",
           count: 2,
-          replacements: [
+          blocks: [
             createParagraphTextBlock({
               text: `${previousRoot.plainText}${context.block.plainText}`,
             }),
@@ -324,9 +323,9 @@ export function resolveBlockStructuralBackspace(
 
       if (previousRoot.type === "heading") {
         return {
-          kind: "replace-root-range",
+          kind: "splice-blocks",
           count: 2,
-          replacements: [
+          blocks: [
             createHeadingTextBlock({
               depth: previousRoot.depth,
               text: `${previousRoot.plainText}${context.block.plainText}`,
@@ -349,9 +348,9 @@ export function resolveBlockStructuralBackspace(
 
           if (mergedLastItem) {
             return {
-              kind: "replace-root-range",
+              kind: "splice-blocks",
               count: 2,
-              replacements: [
+              blocks: [
                 rebuildListBlock(
                   previousRoot,
                   previousRoot.items.map((child, index) =>
@@ -387,9 +386,8 @@ export function resolveBlockStructuralBackspace(
   const blockContext = resolveBlockquoteTextBlockContext(documentIndex, selection);
 
   return {
-    kind: "replace-root-range",
-    count: 1,
-    replacements: quoteContext.quote.children,
+    kind: "splice-blocks",
+    blocks: quoteContext.quote.children,
     rootIndex: quoteContext.rootIndex,
     selection: createRootPrimaryRegionTarget(
       blockContext ? quoteContext.rootIndex + blockContext.childIndex : quoteContext.rootIndex,
@@ -418,11 +416,13 @@ export function resolveHeadingDepthShift(
   }
 
   return {
-    kind: "replace-root",
-    block: createHeadingTextBlock({
-      depth: nextDepth,
-      text: context.block.plainText,
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createHeadingTextBlock({
+        depth: nextDepth,
+        text: context.block.plainText,
+      }),
+    ],
     rootIndex: context.rootIndex,
     selection: createRootPrimaryRegionTarget(context.rootIndex, selection.focus.offset),
   };
@@ -431,7 +431,7 @@ export function resolveHeadingDepthShift(
 export function resolveBlockquoteWrap(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const region = documentIndex.regionIndex.get(selection.anchor.regionId);
 
   if (!region) {
@@ -446,11 +446,13 @@ export function resolveBlockquoteWrap(
   }
 
   return {
-    kind: "replace-root",
-    block: createBlockquoteBlock({
-      children: [block],
-      path: `root.${rootIndex}`,
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createBlockquoteBlock({
+        children: [block],
+        path: `root.${rootIndex}`,
+      }),
+    ],
     rootIndex,
   };
 }
@@ -459,7 +461,7 @@ function mergeAdjacentListsAroundEmptyParagraph(
   context: RootTextBlockContext,
   previousRoot: Block,
   nextRoot: Block | undefined,
-): EditorAction | null {
+): EditorStateAction | null {
   if (
     context.block.type !== "paragraph" ||
     context.block.plainText.length !== 0 ||
@@ -473,9 +475,9 @@ function mergeAdjacentListsAroundEmptyParagraph(
   const previousTrailingItemIndex = previousRoot.items.length - 1;
 
   return {
-    kind: "replace-root-range",
+    kind: "splice-blocks",
     count: 3,
-    replacements: [rebuildListBlock(previousRoot, [...previousRoot.items, ...nextRoot.items])],
+    blocks: [rebuildListBlock(previousRoot, [...previousRoot.items, ...nextRoot.items])],
     rootIndex: context.rootIndex - 1,
     selection: createDescendantPrimaryRegionTarget(
       context.rootIndex - 1,
@@ -489,16 +491,18 @@ function areCompatibleAdjacentLists(left: ListBlock, right: ListBlock) {
   return left.ordered === right.ordered && left.start === right.start;
 }
 
-function demoteHeadingToParagraph(context: RootTextBlockContext): EditorAction | null {
+function demoteHeadingToParagraph(context: RootTextBlockContext): EditorStateAction | null {
   if (context.block.type !== "heading") {
     return null;
   }
 
   return {
-    kind: "replace-root",
-    block: createParagraphTextBlock({
-      text: context.block.plainText,
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createParagraphTextBlock({
+        text: context.block.plainText,
+      }),
+    ],
     rootIndex: context.rootIndex,
     selection: createRootPrimaryRegionTarget(context.rootIndex),
   };
@@ -507,7 +511,7 @@ function demoteHeadingToParagraph(context: RootTextBlockContext): EditorAction |
 function deleteEmptyBlockquoteLine(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
@@ -526,9 +530,8 @@ function deleteEmptyBlockquoteLine(
 
   if (context.quote.children.length === 1) {
     return {
-      kind: "replace-root-range",
-      count: 1,
-      replacements: [
+      kind: "splice-blocks",
+      blocks: [
         createParagraphTextBlock({
           text: "",
         }),
@@ -542,10 +545,12 @@ function deleteEmptyBlockquoteLine(
   const focusOffset = context.childIndex > 0 ? "end" : 0;
 
   return {
-    kind: "replace-root",
-    block: createBlockquoteBlock({
-      children: context.quote.children.filter((_, index) => index !== context.childIndex),
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createBlockquoteBlock({
+        children: context.quote.children.filter((_, index) => index !== context.childIndex),
+      }),
+    ],
     rootIndex: context.rootIndex,
     selection: createDescendantPrimaryRegionTarget(
       context.rootIndex,

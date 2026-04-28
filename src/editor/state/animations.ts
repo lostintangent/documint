@@ -1,7 +1,7 @@
 // Editor animation types and state helpers. Separated from state.ts to
 // keep animation concerns separate from the core state machine.
 import { getEditorAnimationDuration } from "../canvas/animations";
-import type { EditorState } from "./state";
+import type { EditorState } from "./types";
 
 export type EditorAnimation =
   | ActiveBlockFlashAnimation

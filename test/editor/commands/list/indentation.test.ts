@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dedent, dedentListItem, indent, indentListItem } from "@/editor/state";
+import { dedent, indent } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 
@@ -15,7 +15,7 @@ test("indents a list item under its previous sibling", () => {
     regionId: beta.id,
     offset: 0,
   });
-  state = indentListItem(state) ?? state;
+  state = indent(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - beta\n- gamma\n",
@@ -35,7 +35,7 @@ test("does not indent the first list item without a previous sibling", () => {
     offset: 0,
   });
 
-  expect(indentListItem(state)).toBeNull();
+  expect(indent(state)).toBeNull();
 });
 
 test("dedents a nested list item one level up", () => {
@@ -50,7 +50,7 @@ test("dedents a nested list item one level up", () => {
     regionId: beta.id,
     offset: 0,
   });
-  state = dedentListItem(state) ?? state;
+  state = dedent(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - gamma\n- beta\n- tail\n",
@@ -70,7 +70,7 @@ test("does not dedent top-level list items", () => {
     offset: 0,
   });
 
-  expect(dedentListItem(state)).toBeNull();
+  expect(dedent(state)).toBeNull();
 });
 
 test("routes tab and shift-tab through list indentation semantics", () => {

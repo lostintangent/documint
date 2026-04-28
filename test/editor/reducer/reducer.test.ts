@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
-import { createParagraphTextBlock } from "@/document";
+import { createParagraphTextBlock, spliceDocument } from "@/document";
 import {
   createDocumentIndex,
   createEditorState,
   createDocumentFromEditorState,
-  replaceEditorBlock,
-  replaceEditorRootRange,
   toggleTaskItem,
 } from "@/editor/state";
+import { replaceEditorBlock } from "@/editor/state/index/build";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 
 test("replaces a nested editor block through the reducer", () => {
@@ -18,9 +17,7 @@ test("replaces a nested editor block through the reducer", () => {
     throw new Error("Expected paragraph block");
   }
 
-  const reduction = replaceEditorBlock(
-    documentIndex,
-    paragraph.id,
+  const reduction = replaceEditorBlock(documentIndex, paragraph.id, () =>
     createParagraphTextBlock({ text: "beta" }),
   );
 
@@ -28,16 +25,16 @@ test("replaces a nested editor block through the reducer", () => {
     throw new Error("Expected nested block replacement");
   }
 
-  expect(serializeMarkdown(reduction.document)).toBe("- beta\n");
+  expect(serializeMarkdown(reduction)).toBe("- beta\n");
 });
 
 test("replaces a root range through the reducer", () => {
   const documentIndex = createDocumentIndex(parseMarkdown("alpha\n\nbeta\n"));
-  const reduction = replaceEditorRootRange(documentIndex, 1, 1, [
+  const reduction = spliceDocument(documentIndex.document, 1, 1, [
     createParagraphTextBlock({ text: "omega" }),
   ]);
 
-  expect(serializeMarkdown(reduction.document)).toBe("alpha\n\nomega\n");
+  expect(serializeMarkdown(reduction)).toBe("alpha\n\nomega\n");
 });
 
 test("toggles task list state through the action dispatcher", () => {

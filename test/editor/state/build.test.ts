@@ -71,3 +71,70 @@ beta
   expect(replaced.roots[2]?.regions[0]?.id).toBe(runtime.roots[2]?.regions[0]?.id);
   expect(replaced.regions[2]?.start).toBe(runtime.regions[2]!.start + 3);
 });
+
+test("collects image URLs per root and unions them at the document level", () => {
+  const snapshot = parseMarkdown(`![one](one.png)
+
+just text
+
+![two](two.png) and ![three](three.png)
+`);
+  const index = createDocumentIndex(snapshot);
+
+  expect([...index.roots[0]!.imageUrls].sort()).toEqual(["one.png"]);
+  expect([...index.roots[1]!.imageUrls]).toEqual([]);
+  expect([...index.roots[2]!.imageUrls].sort()).toEqual(["three.png", "two.png"]);
+  expect([...index.imageUrls].sort()).toEqual(["one.png", "three.png", "two.png"]);
+});
+
+test("preserves the document-level imageUrls reference across edits that don't touch images", () => {
+  const snapshot = parseMarkdown(`![pic](pic.png)
+
+alpha
+`);
+  const index = createDocumentIndex(snapshot);
+  const nextDocument = spliceDocument(snapshot, 1, 1, [
+    createParagraphTextBlock({ text: "alphabet" }),
+  ]);
+  const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+  // The image-bearing root is reused (sibling edit), so its imageUrls
+  // reference is reused. The document-level union value-compares to the
+  // previous and reuses the reference too — so a downstream useEffect
+  // depending on `documentIndex.imageUrls` does not refire.
+  expect(next.roots[0]).toBe(index.roots[0]);
+  expect(next.roots[0]!.imageUrls).toBe(index.roots[0]!.imageUrls);
+  expect(next.imageUrls).toBe(index.imageUrls);
+});
+
+test("rebuilds the document-level imageUrls when an image is added", () => {
+  const snapshot = parseMarkdown(`alpha
+
+beta
+`);
+  const index = createDocumentIndex(snapshot);
+  const withImage = parseMarkdown(`alpha
+
+![added](added.png)
+`);
+  const grown = spliceDocumentIndex(index, withImage, 1, 1);
+
+  expect(grown.imageUrls).not.toBe(index.imageUrls);
+  expect([...grown.imageUrls]).toEqual(["added.png"]);
+});
+
+test("rebuilds the document-level imageUrls when an image is removed", () => {
+  const snapshot = parseMarkdown(`![pic](pic.png)
+
+alpha
+`);
+  const index = createDocumentIndex(snapshot);
+  const withoutImage = parseMarkdown(`beta
+
+alpha
+`);
+  const shrunk = spliceDocumentIndex(index, withoutImage, 0, 1);
+
+  expect(shrunk.imageUrls).not.toBe(index.imageUrls);
+  expect([...shrunk.imageUrls]).toEqual([]);
+});

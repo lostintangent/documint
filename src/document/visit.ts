@@ -1,4 +1,5 @@
-// Typed semantic tree walkers shared across document, comments, editor, and tests.
+// Typed semantic tree walkers and walker-based queries shared across
+// document, comments, editor, and tests.
 import type { Block, Document, Inline, TableBlock, TableCell, TableRow } from "./types";
 
 export type VisitControl = "skip" | "stop" | void;
@@ -71,6 +72,26 @@ export function visitInlineTree(nodes: Inline[], visitor: DocumentVisitor) {
     parentInline: null,
     pathPrefix: "root",
   });
+}
+
+export function findBlockById(subject: Document | Block[], blockId: string): Block | null {
+  let match: Block | null = null;
+  const visitor: DocumentVisitor = {
+    enterBlock(block) {
+      if (block.id === blockId) {
+        match = block;
+        return "stop";
+      }
+    },
+  };
+
+  if (Array.isArray(subject)) {
+    visitBlockTree(subject, visitor);
+  } else {
+    visitDocument(subject, visitor);
+  }
+
+  return match;
 }
 
 function visitBlocks(

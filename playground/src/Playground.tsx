@@ -1,14 +1,40 @@
 import { useState } from "react";
-import { Documint, type DocumentPresence, type DocumentUser } from "documint";
+import {
+  Documint,
+  type DocumentPresence,
+  type DocumentUser,
+  type DocumintStorage,
+} from "documint";
 import { fixtureOptions, getThemeOption, themeOptions } from "./data";
 import { DiagnosticsPopover } from "./popovers/DiagnosticsPopover";
 import { UsersPopover } from "./popovers/UsersPopover";
 import { ThemePopover } from "./popovers/ThemePopover";
 
+// In-memory storage for reading/writing pasted images. Hosts in the wild would write to
+// disk, S3, etc.; the playground keeps blobs in a Map so paste-to-render
+// works without leaving the browser tab.
+function createInMemoryStorage(): DocumintStorage {
+  const files = new Map<string, Blob>();
+
+  return {
+    async readFile(path) {
+      return files.get(path) ?? null;
+    },
+    async writeFile(file) {
+      files.set(file.name, file);
+      return file.name;
+    },
+  };
+}
+
+const storage = createInMemoryStorage();
+
 export function Playground() {
-  const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
+
+  const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
+
   const [users, setUsers] = useState<DocumentUser[]>([]);
   const [presence, setPresence] = useState<DocumentPresence[]>([]);
 
@@ -24,14 +50,6 @@ export function Playground() {
 
     setFixtureId(nextFixture.id);
     setContent(nextFixture.markdown);
-  };
-
-  const handleThemeChange = (nextThemeId: string) => {
-    setThemeId(nextThemeId);
-  };
-
-  const handleContentChange = (nextContent: string) => {
-    setContent(nextContent);
   };
 
   return (
@@ -54,7 +72,7 @@ export function Playground() {
             </select>
           </label>
 
-          <ThemePopover onThemeIdChange={handleThemeChange} themeId={themeId} />
+          <ThemePopover onThemeIdChange={setThemeId} themeId={themeId} />
 
           <UsersPopover
             content={content}
@@ -74,10 +92,11 @@ export function Playground() {
           <div className="host-card">
             <Documint
               content={content}
-              onContentChanged={handleContentChange}
-              presence={presence}
+              onContentChanged={setContent}
               theme={activeTheme ?? undefined}
               users={users}
+              presence={presence}
+              storage={storage}
             />
           </div>
         </div>
@@ -87,12 +106,13 @@ export function Playground() {
             <textarea
               aria-label="Markdown source"
               className="source-editor"
-              onChange={(event) => handleContentChange(event.target.value)}
+              onChange={(event) => setContent(event.target.value)}
               spellCheck={false}
               value={content}
             />
           </div>
         </div>
+        
       </section>
     </main>
   );

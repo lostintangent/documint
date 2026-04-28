@@ -8,7 +8,7 @@ import {
   type Mark,
   type Text,
 } from "@/document";
-import { compactInlineNodes, INLINE_OBJECT_REPLACEMENT_TEXT } from "../../shared";
+import { compactInlineNodes, INLINE_OBJECT_REPLACEMENT_TEXT } from "../../index/shared";
 
 export function measureInlineNodeText(node: Inline) {
   switch (node.type) {
@@ -25,6 +25,49 @@ export function measureInlineNodeText(node: Inline) {
     case "unsupported":
       return node.source.length;
   }
+}
+
+export function spliceInlineNodes(
+  nodes: Inline[],
+  startOffset: number,
+  endOffset: number,
+  path: string,
+  replacement: Inline | null,
+): Inline[] {
+  const nextNodes: Inline[] = [];
+  let cursor = 0;
+  let inserted = false;
+
+  for (const [index, node] of nodes.entries()) {
+    const nodePath = `${path}.${index}`;
+    const nodeLength = measureInlineNodeText(node);
+    const nodeStart = cursor;
+    const nodeEnd = nodeStart + nodeLength;
+    cursor = nodeEnd;
+
+    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
+      nextNodes.push(node);
+      continue;
+    }
+
+    if (!inserted) {
+      nextNodes.push(...collectInlinePrefix(node, Math.max(0, startOffset - nodeStart), nodePath));
+      if (replacement) {
+        nextNodes.push(replacement);
+      }
+      inserted = true;
+    }
+
+    nextNodes.push(
+      ...collectInlineSuffix(node, Math.min(nodeLength, endOffset - nodeStart), nodePath),
+    );
+  }
+
+  if (!inserted && replacement) {
+    nextNodes.push(replacement);
+  }
+
+  return compactInlineNodes(nextNodes);
 }
 
 export function collectInlinePrefix(node: Inline, offset: number, path: string): Inline[] {

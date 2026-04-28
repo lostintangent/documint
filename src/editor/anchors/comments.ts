@@ -23,7 +23,7 @@ import {
   type CommentThread,
 } from "@/document";
 import { resolveRegionByPath, type DocumentIndex, type EditorRegion } from "../state";
-import type { EditorState } from "../state/state";
+import type { EditorState } from "../state/types";
 import { projectAnchorContainersToEditor } from "./index";
 import { remapEditedRange } from "./remap";
 

@@ -1,4 +1,4 @@
-// Selection-based mutations. Applies edits defined by a selection range:
+// Text-based mutations. Applies edits defined by a selection range:
 // inline text splicing within a single region, or structural block
 // trimming and merging when the selection spans multiple regions.
 
@@ -23,32 +23,37 @@ import {
   type Inline,
   type TableCell,
 } from "@/document";
-import { updateCommentThreadsForRegionEdit } from "../../../anchors";
-import { replaceIndexedDocument, spliceDocumentIndex } from "../build";
-import { compactInlineNodes } from "../shared";
+import { updateCommentThreadsForRegionEdit } from "../../anchors";
+import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/build";
+import { compactInlineNodes } from "../index/shared";
 import type {
   DocumentIndex,
   EditorInline,
   EditorRegion,
   RuntimeImageAttributes,
   RuntimeLinkAttributes,
-} from "../types";
-import { updateEditorBlock } from "./block";
+} from "../index/types";
+import type { ActionSelection } from "../types";
 import {
   normalizeSelection,
   resolveRegion,
   resolveRegionByPath,
   type EditorSelection,
   type NormalizedEditorSelection,
-} from "../../selection";
+} from "../selection";
+
+export type TextEditResult = {
+  documentIndex: DocumentIndex;
+  selection: ActionSelection | null;
+};
 
 /* Entry point */
 
-export function replaceSelection(
+export function spliceText(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   text: string,
-) {
+): TextEditResult {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (normalized.start.regionId === normalized.end.regionId) {
@@ -64,38 +69,30 @@ function replaceInSingleRegion(
   documentIndex: DocumentIndex,
   normalized: NormalizedEditorSelection,
   text: string,
-) {
+): TextEditResult {
   const region = resolveRegion(documentIndex, normalized.start.regionId);
 
   if (!region) {
     throw new Error(`Unknown region: ${normalized.start.regionId}`);
   }
 
-  const reduction = updateEditorBlock(documentIndex, region.blockId, (block) =>
+  const nextDocument = replaceEditorBlock(documentIndex, region.blockId, (block) =>
     replaceBlockRegionText(block, region, normalized.start.offset, normalized.end.offset, text),
   );
 
-  if (!reduction) {
+  if (!nextDocument) {
     throw new Error(`Failed to replace block for canvas region: ${region.id}`);
   }
 
-  const nextDocumentIndex = spliceDocumentIndex(
+  const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, region.rootIndex, 1);
+  const finalizedDocumentIndex = finalizeCommentsAfterEdit(
     documentIndex,
-    reduction.document,
-    region.rootIndex,
-    1,
+    nextDocumentIndex,
+    region,
+    normalized.start.offset,
+    normalized.end.offset,
+    text,
   );
-  const finalizedDocumentIndex =
-    documentIndex.document.comments.length === 0
-      ? nextDocumentIndex
-      : finalizeCommentsAfterEdit(
-          documentIndex,
-          nextDocumentIndex,
-          region,
-          normalized.start.offset,
-          normalized.end.offset,
-          text,
-        );
 
   const nextRegion = resolveRegionByPath(finalizedDocumentIndex, region.path);
 
@@ -146,10 +143,10 @@ function replaceInlineBlockText(
   endOffset: number,
   replacementText: string,
 ): Extract<Block, { type: "heading" | "paragraph" }> {
-  const nextInlines = replaceEditorInlines(region.inlines, startOffset, endOffset, replacementText);
-  const nextChildren = editorInlinesToDocumentInlines(nextInlines);
-
-  return rebuildTextBlock(block, nextChildren);
+  return rebuildTextBlock(
+    block,
+    editRegionInlines(region, startOffset, endOffset, replacementText),
+  );
 }
 
 function replaceTableCellText(
@@ -166,8 +163,7 @@ function replaceTableCellText(
     throw new Error(`Unable to resolve table cell position for region: ${region.id}`);
   }
 
-  const nextInlines = replaceEditorInlines(region.inlines, startOffset, endOffset, replacementText);
-  const nextChildren = editorInlinesToDocumentInlines(nextInlines);
+  const nextChildren = editRegionInlines(region, startOffset, endOffset, replacementText);
   const rows = block.rows.map((row, currentRowIndex) => {
     if (currentRowIndex !== rowIndex) {
       return row;
@@ -215,7 +211,7 @@ function replaceAcrossRegions(
   documentIndex: DocumentIndex,
   normalized: NormalizedEditorSelection,
   text: string,
-) {
+): TextEditResult {
   const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
   const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
 
@@ -240,17 +236,14 @@ function replaceAcrossRegions(
   const count = endRegion.rootIndex - startRegion.rootIndex + 1;
   const nextDocument = spliceDocument(documentIndex.document, rootIndex, count, replacementBlocks);
   const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, rootIndex, count);
-  const finalizedDocumentIndex =
-    documentIndex.document.comments.length === 0
-      ? nextDocumentIndex
-      : finalizeCommentsAfterEdit(
-          documentIndex,
-          nextDocumentIndex,
-          startRegion,
-          normalized.start.offset,
-          startRegion.text.length,
-          isTextLikeBlock(prefixBlock) ? text : "",
-        );
+  const finalizedDocumentIndex = finalizeCommentsAfterEdit(
+    documentIndex,
+    nextDocumentIndex,
+    startRegion,
+    normalized.start.offset,
+    startRegion.text.length,
+    isTextLikeBlock(prefixBlock) ? text : "",
+  );
 
   const caretRegion =
     finalizedDocumentIndex.roots[rootIndex + merged.caretLocalIndex]?.regions[0] ?? null;
@@ -406,10 +399,8 @@ function trimLeafBlockToPrefix(block: Block, region: EditorRegion, offset: numbe
 
   switch (block.type) {
     case "heading":
-    case "paragraph": {
-      const nextInlines = replaceEditorInlines(region.inlines, offset, region.text.length, "");
-      return rebuildTextBlock(block, editorInlinesToDocumentInlines(nextInlines));
-    }
+    case "paragraph":
+      return rebuildTextBlock(block, editRegionInlines(region, offset, region.text.length, ""));
     case "code":
       return rebuildCodeBlock(block, region.text.slice(0, offset));
     case "unsupported":
@@ -426,10 +417,8 @@ function trimLeafBlockToSuffix(block: Block, region: EditorRegion, offset: numbe
 
   switch (block.type) {
     case "heading":
-    case "paragraph": {
-      const nextInlines = replaceEditorInlines(region.inlines, 0, offset, "");
-      return rebuildTextBlock(block, editorInlinesToDocumentInlines(nextInlines));
-    }
+    case "paragraph":
+      return rebuildTextBlock(block, editRegionInlines(region, 0, offset, ""));
     case "code":
       return rebuildCodeBlock(block, region.text.slice(offset));
     case "unsupported":
@@ -521,6 +510,10 @@ function finalizeCommentsAfterEdit(
   endOffset: number,
   insertedText: string,
 ): DocumentIndex {
+  if (previousDocumentIndex.document.comments.length === 0) {
+    return nextDocumentIndex;
+  }
+
   const nextComments = updateCommentThreadsForRegionEdit(
     previousDocumentIndex,
     nextDocumentIndex,
@@ -550,6 +543,17 @@ function collapsedSelection(regionId: string, offset: number): EditorSelection {
 /* Editor inline manipulation */
 
 type DraftEditorInline = Omit<EditorInline, "end" | "start">;
+
+function editRegionInlines(
+  region: EditorRegion,
+  startOffset: number,
+  endOffset: number,
+  replacementText: string,
+): Inline[] {
+  return editorInlinesToDocumentInlines(
+    replaceEditorInlines(region.inlines, startOffset, endOffset, replacementText),
+  );
+}
 
 export function replaceEditorInlines(
   inlines: EditorInline[],

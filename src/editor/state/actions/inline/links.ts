@@ -1,7 +1,7 @@
 // Link manipulation: create, update, and remove inline links.
 import { createLink as createDocumentLinkNode, type Inline } from "@/document";
-import { compactInlineNodes } from "../../shared";
-import type { DocumentIndex } from "../../types";
+import { compactInlineNodes } from "../../index/shared";
+import type { DocumentIndex } from "../../index/types";
 import type { InlineCommandReplacement, InlineCommandTarget } from "./target";
 import { createInlineCommandReplacement, replaceInlineRange } from "./target";
 import { measureInlineNodeText } from "./shared";

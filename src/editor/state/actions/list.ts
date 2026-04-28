@@ -7,40 +7,36 @@ import {
   type Block,
   type ListItemBlock,
 } from "@/document";
-import type { DocumentIndex, EditorAction } from "../types";
+import type { DocumentIndex } from "../index/types";
+import type { EditorStateAction } from "../types";
 import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
   normalizeSelection,
   type EditorSelection,
-} from "../../selection";
+} from "../selection";
 import {
   createInsertedListItem,
   replaceListItemLeadingParagraphText,
-  resolveListItemContext,
   resolveListItemPath,
   type ListItemContext,
-} from "../context";
+} from "../index/context";
 
 // List action resolvers: split, indent, dedent, move, and structural
-// backspace for list items.
+// backspace for list items. Each takes a pre-resolved ListItemContext
+// so commands handle "is this a list item?" once at the boundary.
 
 export function resolveListItemSplit(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+  context: ListItemContext,
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (
     normalized.start.regionId !== normalized.end.regionId ||
     normalized.start.offset !== normalized.end.offset
   ) {
-    return null;
-  }
-
-  const context = resolveListItemContext(documentIndex, selection);
-
-  if (!context) {
     return null;
   }
 
@@ -128,16 +124,16 @@ export function resolveListItemSplit(
 export function resolveStructuralListBlockSplit(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+  context: ListItemContext,
+): EditorStateAction | null {
   const normalized = normalizeSelection(documentIndex, selection);
-  const context = resolveListItemContext(documentIndex, selection);
 
-  if (!context || normalized.start.regionId !== normalized.end.regionId) {
+  if (normalized.start.regionId !== normalized.end.regionId) {
     return null;
   }
 
   if (normalized.start.offset !== 0 || context.region.text.length !== 0) {
-    return resolveListItemSplit(documentIndex, selection);
+    return resolveListItemSplit(documentIndex, selection, context);
   }
 
   if (
@@ -169,24 +165,16 @@ export function resolveStructuralListBlockSplit(
   }
 
   return {
-    kind: "replace-root-range",
-    count: 1,
-    replacements: replacementBlocks,
+    kind: "splice-blocks",
+    blocks: replacementBlocks,
     rootIndex: context.rootIndex,
     selection: createRootPrimaryRegionTarget(context.rootIndex + (beforeItems.length > 0 ? 1 : 0)),
   };
 }
 
 export function resolveListStructuralBackspace(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorAction | null {
-  const context = resolveListItemContext(documentIndex, selection);
-
-  if (!context) {
-    return null;
-  }
-
+  context: ListItemContext,
+): EditorStateAction | null {
   if (typeof context.item.checked === "boolean") {
     const updatedItem = createListItemBlock({
       checked: null,
@@ -264,9 +252,8 @@ export function resolveListStructuralBackspace(
   }
 
   return {
-    kind: "replace-root-range",
-    count: 1,
-    replacements: [
+    kind: "splice-blocks",
+    blocks: [
       createParagraphTextBlock({
         text: context.item.plainText,
       }),
@@ -276,13 +263,8 @@ export function resolveListStructuralBackspace(
   };
 }
 
-export function resolveListItemIndent(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorAction | null {
-  const context = resolveListItemContext(documentIndex, selection);
-
-  if (!context || context.itemIndex === 0) {
+export function resolveListItemIndent(context: ListItemContext): EditorStateAction | null {
+  if (context.itemIndex === 0) {
     return null;
   }
 
@@ -318,14 +300,8 @@ export function resolveListItemIndent(
   };
 }
 
-export function resolveListItemDedent(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorAction | null {
-  const context = resolveListItemContext(documentIndex, selection);
-
+export function resolveListItemDedent(context: ListItemContext): EditorStateAction | null {
   if (
-    !context ||
     !context.parentItem ||
     context.parentItemIndex === null ||
     !context.parentItemChildIndices ||
@@ -369,16 +345,9 @@ export function resolveListItemDedent(
 }
 
 export function resolveListItemMove(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
+  context: ListItemContext,
   direction: -1 | 1,
-): EditorAction | null {
-  const context = resolveListItemContext(documentIndex, selection);
-
-  if (!context) {
-    return null;
-  }
-
+): EditorStateAction | null {
   const targetIndex = context.itemIndex + direction;
 
   if (targetIndex < 0 || targetIndex >= context.list.items.length) {
@@ -406,7 +375,7 @@ export function resolveListItemMove(
   };
 }
 
-function liftEmptyNestedListItem(context: ListItemContext): EditorAction | null {
+function liftEmptyNestedListItem(context: ListItemContext): EditorStateAction | null {
   if (
     !context.parentItem ||
     context.parentItemIndex === null ||

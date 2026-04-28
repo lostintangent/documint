@@ -3,6 +3,7 @@
 import {
   createDocument,
   createParagraphTextBlock,
+  replaceDocumentBlock,
   resolveCommentThread,
   type Block,
   type Document,
@@ -43,6 +44,9 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
   const blocks: EditorBlock[] = [];
   const regions: EditorRegion[] = [];
   const textParts: string[] = [];
+  // Collected during the inline walk below, alongside the work that's
+  // already happening — no extra traversal.
+  const imageUrls = new Set<string>();
   let position = 0;
 
   function appendRegion(
@@ -63,6 +67,9 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
 
     textParts.push(text);
     position = end;
+    for (const run of inlines) {
+      if (run.image) imageUrls.add(run.image.url);
+    }
     regions.push({
       blockId: block.id,
       blockType: block.type,
@@ -190,6 +197,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
     },
     blocks,
     end: position,
+    imageUrls,
     length: position,
     regionRange:
       regions.length > 0
@@ -333,6 +341,7 @@ function appendDocumentIndexRoot(
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
     engine: "canvas",
+    imageUrls: appendDocumentImageUrls(model.imageUrls, positionedRoot.imageUrls),
     length: positionedRoot.end,
     listItemMarkers:
       nextDocument.blocks === model.document.blocks
@@ -364,6 +373,20 @@ export function replaceIndexedDocument(model: DocumentIndex, document: Document)
   return createResolvedDocumentIndex(document, model.roots, model);
 }
 
+export function replaceEditorBlock(
+  documentIndex: DocumentIndex,
+  targetBlockId: string,
+  replacer: (block: Block) => Block | null,
+): Document | null {
+  const blockEntry = documentIndex.blockIndex.get(targetBlockId);
+
+  if (!blockEntry) {
+    return null;
+  }
+
+  return replaceDocumentBlock(documentIndex.document, targetBlockId, replacer, blockEntry.rootIndex);
+}
+
 function createResolvedDocumentIndex(
   document: Document,
   roots: EditorRoot[],
@@ -383,6 +406,7 @@ function createResolvedDocumentIndex(
         : createCommentContainerIndex(document),
     document,
     engine: "canvas",
+    imageUrls: createDocumentImageUrls(roots, previousModel?.imageUrls),
     length: roots.at(-1)?.end ?? 0,
     listItemMarkers:
       document.blocks === previousModel?.document.blocks
@@ -597,6 +621,47 @@ function createDocumentIndexText(roots: EditorRoot[]) {
     .filter((root) => root.regions.length > 0)
     .map((root) => root.text)
     .join("\n");
+}
+
+// Builds the document-level union of image URLs from per-root sets,
+// reusing the previous index's reference when the URL set is unchanged so
+// downstream consumers (notably the image loader hook's effect dep) can
+// short-circuit on identity.
+function createDocumentImageUrls(
+  roots: EditorRoot[],
+  previous: ReadonlySet<string> | undefined,
+): ReadonlySet<string> {
+  const next = new Set<string>();
+  for (const root of roots) {
+    for (const url of root.imageUrls) next.add(url);
+  }
+  return previous && areUrlSetsEqual(previous, next) ? previous : next;
+}
+
+// Append-path counterpart: returns `existing` unchanged when the appended
+// root introduces no new URLs (the common case for non-image edits), and
+// only allocates a new Set when there's actually a delta.
+function appendDocumentImageUrls(
+  existing: ReadonlySet<string>,
+  rootImageUrls: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (rootImageUrls.size === 0) return existing;
+
+  let next: Set<string> | null = null;
+  for (const url of rootImageUrls) {
+    if (existing.has(url)) continue;
+    next ??= new Set(existing);
+    next.add(url);
+  }
+  return next ?? existing;
+}
+
+function areUrlSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
 }
 
 function createCommentContainerIndex(document: Document) {

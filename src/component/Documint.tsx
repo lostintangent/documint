@@ -47,7 +47,7 @@ import {
   updateLink,
   type EditorState,
 } from "@/editor";
-import type { DocumentPresence, DocumentUser, EditorTheme } from "@/types";
+import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
@@ -58,7 +58,7 @@ import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
 import { useCursor } from "./hooks/useCursor";
-import { useDocumentImages } from "./hooks/useDocumentImages";
+import { useImages } from "./hooks/useImages";
 import { usePointer } from "./hooks/usePointer";
 import { useInput } from "./hooks/useInput";
 import { usePresence } from "./hooks/usePresence";
@@ -83,6 +83,7 @@ export type DocumintProps = {
   theme?: DocumintTheme;
   keybindings?: EditorKeybinding[];
   presence?: DocumentPresence[];
+  storage?: DocumintStorage;
   users?: DocumentUser[];
 
   onContentChanged?: (content: string, document: Document) => void;
@@ -158,6 +159,7 @@ export function Documint({
   onContentChanged,
   onStateChanged,
   presence,
+  storage,
   theme,
   users,
 }: DocumintProps) {
@@ -177,7 +179,8 @@ export function Documint({
   const canonicalContent = useMemo(() => serializeMarkdown(contentDocument), [contentDocument]);
 
   const [editorState, setEditorState] = useState(() => createEditorState(contentDocument));
-  const renderResources = useDocumentImages(editorState.documentIndex.document);
+  const images = useImages(editorState.documentIndex.imageUrls, storage);
+  const renderResources = images.resources;
 
   const hasLoadingImages = useMemo(
     () => [...(renderResources?.images.values() ?? [])].some((image) => image.status === "loading"),
@@ -479,6 +482,7 @@ export function Documint({
     inputRef,
     keybindings,
     onActivity: cursor.markActivity,
+    onImagePaste: images.persistImage,
   });
 
   const pointer = usePointer({

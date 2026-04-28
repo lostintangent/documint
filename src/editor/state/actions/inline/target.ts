@@ -12,8 +12,10 @@ import {
   type TableBlock,
   type TableCell,
 } from "@/document";
-import type { DocumentIndex, EditorAction } from "../../types";
-import type { RegionRangePathSelectionTarget } from "../../../selection";
+import type { DocumentIndex } from "../../index/types";
+import type { EditorStateAction } from "../../types";
+import type { EditorSelection, RegionRangePathSelectionTarget } from "../../selection";
+import { spliceInlineNodes } from "./shared";
 
 export type InlineCommandTarget =
   | {
@@ -83,7 +85,7 @@ export function replaceInlineRange(
     startOffset: number,
     endOffset: number,
   ) => InlineCommandReplacement | null,
-): EditorAction | null {
+): EditorStateAction | null {
   const replacement = resolveInlineRangeReplacement(
     documentIndex,
     regionId,
@@ -142,6 +144,45 @@ export function resolveInlineCommandTarget(
   }
 
   return null;
+}
+
+export function insertInlineNode(
+  documentIndex: DocumentIndex,
+  selection: EditorSelection,
+  factory: (path: string) => Inline,
+): EditorStateAction | null {
+  const target = resolveInlineRegionTarget(documentIndex, selection.focus.regionId);
+
+  if (!target) {
+    return null;
+  }
+
+  const startOffset = Math.min(selection.anchor.offset, selection.focus.offset);
+  const endOffset = Math.max(selection.anchor.offset, selection.focus.offset);
+
+  return {
+    kind: "replace-block",
+    ...insertInlineNodeIntoTarget(target, startOffset, endOffset, factory),
+  };
+}
+
+export function insertInlineNodeIntoTarget(
+  target: InlineCommandTarget,
+  startOffset: number,
+  endOffset: number,
+  factory: (path: string) => Inline,
+): InlineCommandReplacement {
+  const childrenPath = `${target.path}.children`;
+  const node = factory(`${childrenPath}.selected`);
+  const nextChildren = spliceInlineNodes(
+    target.children,
+    startOffset,
+    endOffset,
+    childrenPath,
+    node,
+  );
+
+  return createInlineCommandReplacement(target, nextChildren, startOffset + 1, startOffset + 1);
 }
 
 export function createInlineCommandReplacement(

@@ -4,8 +4,8 @@
 
 import { findBlockById, type Block, type Mark } from "@/document";
 import type { DocumentIndex } from "./index/types";
-import type { EditorState } from "./state";
-import { resolveInlineCommandMarks, resolveInlineCommandTarget } from "./index/actions/inline";
+import type { EditorState } from "./types";
+import { resolveInlineCommandMarks, resolveInlineCommandTarget } from "./actions/inline";
 import { createTableCellRegionKey, SELECTION_ORDER_MULTIPLIER } from "./index/shared";
 
 export type EditorSelectionPoint = {

@@ -1,4 +1,5 @@
 import {
+  createLineBreak,
   createParagraphTextBlock,
   createTableBlock,
   createTableCell,
@@ -9,28 +10,29 @@ import {
   type TableCell,
   type TableRow,
 } from "@/document";
-import type { DocumentIndex, EditorAction, EditorStateAction } from "../types";
-import { insertInlineLineBreakTarget, resolveInlineRegionTarget } from "./inline";
+import type { DocumentIndex } from "../index/types";
+import type { EditorStateAction } from "../types";
+import { insertInlineNodeIntoTarget, resolveInlineRegionTarget } from "./inline";
 import {
   createRootPrimaryRegionTarget,
   createTableCellTarget,
   resolveTableCellRegion,
   type EditorSelection,
-} from "../../selection";
+} from "../selection";
 import {
   resolveRootTextBlockContext,
-  resolveTableCellContext,
   type TableCellContext,
-} from "../context";
+} from "../index/context";
 
 // Table action resolvers: insert/delete rows and columns, cell navigation,
-// and table deletion.
+// and table deletion. Most take a pre-resolved TableCellContext so
+// commands handle "is the selection in a table cell?" once at the boundary.
 
 export function resolveTableInsertion(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   columnCount: number,
-): EditorAction | null {
+): EditorStateAction | null {
   const context = resolveRootTextBlockContext(documentIndex, selection);
   const resolvedColumnCount = Math.max(2, columnCount);
 
@@ -46,10 +48,12 @@ export function resolveTableInsertion(
   }
 
   return {
-    kind: "replace-root",
-    block: createTableBlock({
-      rows: Array.from({ length: 2 }, () => createEmptyTableRow(resolvedColumnCount)),
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createTableBlock({
+        rows: Array.from({ length: 2 }, () => createEmptyTableRow(resolvedColumnCount)),
+      }),
+    ],
     rootIndex: context.rootIndex,
     selection: createTableCellTarget(context.rootIndex, 0, 0),
   };
@@ -58,14 +62,9 @@ export function resolveTableInsertion(
 export function resolveTableSelectionMove(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
+  context: TableCellContext,
   direction: -1 | 1,
 ): EditorStateAction | null {
-  const context = resolveTableCellContext(documentIndex, selection.focus.regionId);
-
-  if (!context) {
-    return null;
-  }
-
   const nextPosition =
     direction < 0
       ? resolvePreviousTableCell(context.table, context.rowIndex, context.cellIndex)
@@ -99,7 +98,7 @@ export function resolveTableSelectionMove(
 export function resolveTableCellLineBreak(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction | null {
+): EditorStateAction | null {
   const target = resolveInlineRegionTarget(documentIndex, selection.focus.regionId);
 
   if (!target || target.kind !== "tableCell") {
@@ -108,7 +107,9 @@ export function resolveTableCellLineBreak(
 
   const startOffset = Math.min(selection.anchor.offset, selection.focus.offset);
   const endOffset = Math.max(selection.anchor.offset, selection.focus.offset);
-  const replacement = insertInlineLineBreakTarget(target, startOffset, endOffset);
+  const replacement = insertInlineNodeIntoTarget(target, startOffset, endOffset, (path) =>
+    createLineBreak({ path }),
+  );
 
   return {
     kind: "replace-block",
@@ -119,16 +120,9 @@ export function resolveTableCellLineBreak(
 }
 
 export function resolveTableColumnInsertion(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
+  context: TableCellContext,
   direction: "left" | "right",
-): EditorAction | null {
-  const context = resolveTableCellContext(documentIndex, selection.focus.regionId);
-
-  if (!context) {
-    return null;
-  }
-
+): EditorStateAction | null {
   const insertCellIndex = direction === "left" ? context.cellIndex : context.cellIndex + 1;
 
   return replaceTableBlock(
@@ -145,16 +139,7 @@ export function resolveTableColumnInsertion(
   );
 }
 
-export function resolveTableColumnDeletion(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorAction | null {
-  const context = resolveTableCellContext(documentIndex, selection.focus.regionId);
-
-  if (!context) {
-    return null;
-  }
-
+export function resolveTableColumnDeletion(context: TableCellContext): EditorStateAction | null {
   const columnCount = Math.max(0, ...context.table.rows.map((row) => row.cells.length));
 
   if (columnCount <= 1) {
@@ -180,16 +165,9 @@ export function resolveTableColumnDeletion(
 }
 
 export function resolveTableRowInsertion(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
+  context: TableCellContext,
   direction: "above" | "below",
-): EditorAction | null {
-  const context = resolveTableCellContext(documentIndex, selection.focus.regionId);
-
-  if (!context) {
-    return null;
-  }
-
+): EditorStateAction | null {
   const insertRowIndex = direction === "above" ? context.rowIndex : context.rowIndex + 1;
   const columnCount = Math.max(1, ...context.table.rows.map((row) => row.cells.length));
 
@@ -208,13 +186,8 @@ export function resolveTableRowInsertion(
   );
 }
 
-export function resolveTableRowDeletion(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorAction | null {
-  const context = resolveTableCellContext(documentIndex, selection.focus.regionId);
-
-  if (!context || context.table.rows.length <= 1) {
+export function resolveTableRowDeletion(context: TableCellContext): EditorStateAction | null {
+  if (context.table.rows.length <= 1) {
     return null;
   }
 
@@ -233,16 +206,7 @@ export function resolveTableRowDeletion(
   );
 }
 
-export function resolveTableDeletion(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorAction | null {
-  const context = resolveTableCellContext(documentIndex, selection.focus.regionId);
-
-  if (!context) {
-    return null;
-  }
-
+export function resolveTableDeletion(context: TableCellContext): EditorStateAction | null {
   return replaceTableBlock(
     context,
     createParagraphTextBlock({
@@ -264,7 +228,7 @@ function createEmptyTableCell(): TableCell {
   });
 }
 
-function appendTableRow(context: TableCellContext): EditorAction {
+function appendTableRow(context: TableCellContext): EditorStateAction {
   const nextRowIndex = context.table.rows.length;
   const columnCount = Math.max(1, ...context.table.rows.map((row) => row.cells.length));
 
@@ -281,7 +245,7 @@ function replaceTableBlock(
   selection:
     | ReturnType<typeof createRootPrimaryRegionTarget>
     | ReturnType<typeof createTableCellTarget>,
-): EditorAction {
+): EditorStateAction {
   return {
     kind: "replace-block",
     block,

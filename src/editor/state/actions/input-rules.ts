@@ -8,15 +8,16 @@ import {
   rebuildListBlock,
   type HeadingBlock,
 } from "@/document";
-import type { DocumentIndex, EditorAction } from "../types";
+import type { DocumentIndex } from "../index/types";
+import type { EditorStateAction } from "../types";
 import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
   normalizeSelection,
   type EditorSelection,
-} from "../../selection";
-import { replaceListItemLeadingParagraphText, resolveListItemContext } from "../context";
-import { findRootIndex, resolveRootTextBlockContext } from "../context";
+} from "../selection";
+import { replaceListItemLeadingParagraphText, resolveListItemContext } from "../index/context";
+import { findRootIndex, resolveRootTextBlockContext } from "../index/context";
 
 // Text input rule detection: recognizes markdown-like patterns (headings, lists,
 // blockquotes, dividers) and produces the corresponding action.
@@ -25,7 +26,7 @@ export function resolveTextInputRule(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   text: string,
-): EditorAction | null {
+): EditorStateAction | null {
   const region = documentIndex.regionIndex.get(selection.anchor.regionId);
 
   if (!region) {
@@ -51,7 +52,7 @@ export function resolveTextInputRule(
       region.rootIndex,
       prospectiveText,
     ) ?? {
-      kind: "replace-selection",
+      kind: "splice-text",
       selection,
       text,
     }
@@ -63,7 +64,7 @@ function applyListTransformInputRule(
   selection: EditorSelection,
   regionId: string,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   const context = resolveListItemContext(documentIndex, selection);
   const transformed = parseListTransformInput(prospectiveText);
 
@@ -101,7 +102,7 @@ function applyListCreationTextInputRules(
   selection: EditorSelection,
   regionId: string,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   if (!isRootParagraphInputRuleTarget(documentIndex, selection, regionId)) {
     return null;
   }
@@ -144,7 +145,7 @@ function applyBlockTransformInputRule(
   selection: EditorSelection,
   regionId: string,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   const context = resolveRootTextBlockContext(documentIndex, selection);
   const transformed = parseHeadingTransformInput(prospectiveText);
 
@@ -158,11 +159,13 @@ function applyBlockTransformInputRule(
   }
 
   return {
-    kind: "replace-root",
-    block: createHeadingTextBlock({
-      depth: transformed.depth,
-      text: transformed.text,
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createHeadingTextBlock({
+        depth: transformed.depth,
+        text: transformed.text,
+      }),
+    ],
     rootIndex: context.rootIndex,
     selection: createRootPrimaryRegionTarget(context.rootIndex),
   };
@@ -173,7 +176,7 @@ function applyBlockCreationTextInputRules(
   selection: EditorSelection,
   regionId: string,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   return (
     applyHeadingTextInputRule(documentIndex, selection, regionId, prospectiveText) ??
     applyBlockquoteTextInputRule(documentIndex, selection, regionId, prospectiveText)
@@ -185,7 +188,7 @@ function applyHeadingTextInputRule(
   selection: EditorSelection,
   regionId: string,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   if (!isRootParagraphInputRuleTarget(documentIndex, selection, regionId)) {
     return null;
   }
@@ -208,7 +211,7 @@ function applyBlockquoteTextInputRule(
   selection: EditorSelection,
   regionId: string,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   if (
     !isRootParagraphInputRuleTarget(documentIndex, selection, regionId) ||
     !/^>\s$/.test(prospectiveText)
@@ -224,15 +227,14 @@ function applyThematicBreakTextInputRule(
   blockId: string,
   rootIndex: number,
   prospectiveText: string,
-): EditorAction | null {
+): EditorStateAction | null {
   if (!/^(?:(?:-\s?){3}|(?:\*\s?){3}|(?:_\s?){3})$/.test(prospectiveText)) {
     return null;
   }
 
   return {
-    kind: "replace-root-range",
-    count: 1,
-    replacements: [
+    kind: "splice-blocks",
+    blocks: [
       createDividerBlock(),
       createParagraphTextBlock({
         text: "",
@@ -251,30 +253,32 @@ function replaceRootParagraphWithList(
     ordered: boolean;
     start: number | null;
   },
-): EditorAction {
+): EditorStateAction {
   const rootIndex = findRootIndex(
     documentIndex,
     documentIndex.regionIndex.get(selection.anchor.regionId)!.blockId,
   );
 
   return {
-    kind: "replace-root",
-    block: createListBlock({
-      items: [
-        createListItemBlock({
-          checked: options.checked,
-          children: [
-            createParagraphTextBlock({
-              text: "",
-            }),
-          ],
-          spread: false,
-        }),
-      ],
-      ordered: options.ordered,
-      spread: false,
-      start: options.start,
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createListBlock({
+        items: [
+          createListItemBlock({
+            checked: options.checked,
+            children: [
+              createParagraphTextBlock({
+                text: "",
+              }),
+            ],
+            spread: false,
+          }),
+        ],
+        ordered: options.ordered,
+        spread: false,
+        start: options.start,
+      }),
+    ],
     rootIndex,
     selection: createDescendantPrimaryRegionTarget(rootIndex, [0, 0]),
   };
@@ -284,18 +288,20 @@ function replaceRootParagraphWithHeading(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   depth: HeadingBlock["depth"],
-): EditorAction {
+): EditorStateAction {
   const rootIndex = findRootIndex(
     documentIndex,
     documentIndex.regionIndex.get(selection.anchor.regionId)!.blockId,
   );
 
   return {
-    kind: "replace-root",
-    block: createHeadingTextBlock({
-      depth,
-      text: "",
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createHeadingTextBlock({
+        depth,
+        text: "",
+      }),
+    ],
     rootIndex,
     selection: createRootPrimaryRegionTarget(rootIndex),
   };
@@ -304,21 +310,23 @@ function replaceRootParagraphWithHeading(
 function replaceRootParagraphWithBlockquote(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): EditorAction {
+): EditorStateAction {
   const rootIndex = findRootIndex(
     documentIndex,
     documentIndex.regionIndex.get(selection.anchor.regionId)!.blockId,
   );
 
   return {
-    kind: "replace-root",
-    block: createBlockquoteBlock({
-      children: [
-        createParagraphTextBlock({
-          text: "",
-        }),
-      ],
-    }),
+    kind: "splice-blocks",
+    blocks: [
+      createBlockquoteBlock({
+        children: [
+          createParagraphTextBlock({
+            text: "",
+          }),
+        ],
+      }),
+    ],
     rootIndex,
     selection: createDescendantPrimaryRegionTarget(rootIndex, [0]),
   };

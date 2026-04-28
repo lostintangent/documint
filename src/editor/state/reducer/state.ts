@@ -4,52 +4,31 @@
 import {
   createDocument,
   spliceCommentThreads,
+  spliceDocument,
   trimTrailingWhitespace,
-  type CommentThread,
   type Document,
 } from "@/document";
-import { getCommentState } from "../anchors";
+import { getCommentState } from "../../anchors";
 import {
   addActiveBlockFlashAnimation,
-  type EditorAnimation,
   getEditorAnimationTime,
   pruneEditorAnimations,
   resolveFocusedBlockPath,
-} from "./animations";
-import { createDocumentIndex, replaceIndexedDocument } from "./index/build";
-import type { DocumentIndex, EditorStateAction } from "./index/types";
+} from "../animations";
+import {
+  createDocumentIndex,
+  replaceEditorBlock,
+  replaceIndexedDocument,
+} from "../index/build";
+import type { DocumentIndex } from "../index/types";
+import type { ActionSelection, EditorState, EditorStateAction } from "../types";
 import {
   resolveRegion,
   resolveSelectionTarget,
   type EditorSelection,
   type EditorSelectionPoint,
-} from "./selection";
-import { applyAction } from "./index/reducer";
-
-/* Types */
-
-export type EditorState = {
-  // The current document state and selection,
-  // denormalized for efficient lookup and mutation.
-  documentIndex: DocumentIndex;
-  selection: EditorSelection;
-
-  // Undo/redo stack, which includes a distinct
-  // document and selection state.
-  history: HistoryEntry[];
-  future: HistoryEntry[];
-
-  // Transient editor animations that are actively
-  // running, but aren't meant to be persisted.
-  animations: EditorAnimation[];
-};
-
-type HistoryEntry = {
-  // History stores documents vs. document indices to avoid
-  // bloating memory with potentially large indices that won't be reused.
-  document: Document;
-  selection: EditorSelection;
-};
+} from "../selection";
+import { spliceText } from "./text";
 
 /* Initialization */
 
@@ -95,21 +74,55 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
     case "set-selection":
       return setSelection(state, action.selection);
 
-    default: {
-      const result = applyAction(state.documentIndex, action);
+    case "replace-block": {
+      const document = replaceEditorBlock(
+        state.documentIndex,
+        action.blockId,
+        () => action.block,
+      );
+      return document
+        ? applyDocumentMutation(state, createDocumentIndex(document), action.selection ?? null)
+        : null;
+    }
 
-      if (!result) {
-        return null;
-      }
+    case "splice-blocks": {
+      const document = spliceDocument(
+        state.documentIndex.document,
+        action.rootIndex,
+        action.count ?? 1,
+        action.blocks,
+      );
+      return applyDocumentMutation(state, createDocumentIndex(document), action.selection ?? null);
+    }
 
-      const nextState = pushHistory(state, result.document, result.documentIndex ?? null);
-      const resolvedSelection =
-        resolveSelectionTarget(nextState.documentIndex, result.selection) ?? state.selection;
-      const blockChanged = didActiveBlockChange(state, nextState, resolvedSelection);
+    case "splice-text": {
+      const result = spliceText(state.documentIndex, action.selection, action.text);
+      return applyDocumentMutation(state, result.documentIndex, result.selection);
+    }
 
-      return setSelection(nextState, resolvedSelection, blockChanged);
+    case "splice-comments": {
+      const document = spliceCommentThreads(
+        state.documentIndex.document,
+        action.index,
+        action.count,
+        action.threads,
+      );
+      return applyDocumentMutation(state, replaceIndexedDocument(state.documentIndex, document), null);
     }
   }
+}
+
+function applyDocumentMutation(
+  state: EditorState,
+  documentIndex: DocumentIndex,
+  selection: ActionSelection | null,
+): EditorState {
+  const nextState = pushHistory(state, documentIndex);
+  const resolvedSelection =
+    resolveSelectionTarget(nextState.documentIndex, selection) ?? state.selection;
+  const blockChanged = didActiveBlockChange(state, nextState, resolvedSelection);
+
+  return setSelection(nextState, resolvedSelection, blockChanged);
 }
 
 /* Selection */
@@ -158,28 +171,21 @@ export function setSelectionPoint(
 
 /* History */
 
-export function pushHistory(
-  state: EditorState,
-  document: Document,
-  documentIndex: DocumentIndex | null = null,
-): EditorState {
-  const nextDocumentIndex = documentIndex ?? createDocumentIndex(document);
-
+export function pushHistory(state: EditorState, documentIndex: DocumentIndex): EditorState {
   return {
     animations: pruneEditorAnimations(state.animations, getEditorAnimationTime()),
-    documentIndex: nextDocumentIndex,
+    documentIndex,
     future: [],
     history: [
       ...state.history,
       { document: state.documentIndex.document, selection: state.selection },
     ],
-    selection: createCollapsedSelectionAtDefaultPoint(nextDocumentIndex),
+    selection: createCollapsedSelectionAtDefaultPoint(documentIndex),
   };
 }
 
 export function undoEditorState(state: EditorState): EditorState {
   const previous = state.history.at(-1);
-
   if (!previous) {
     return state;
   }
@@ -200,7 +206,6 @@ export function undoEditorState(state: EditorState): EditorState {
 
 export function redoEditorState(state: EditorState): EditorState {
   const next = state.future[0];
-
   if (!next) {
     return state;
   }
@@ -216,29 +221,6 @@ export function redoEditorState(state: EditorState): EditorState {
       { document: state.documentIndex.document, selection: state.selection },
     ],
     selection: next.selection,
-  };
-}
-
-/* Comments */
-
-export function spliceEditorCommentThreads(
-  state: EditorState,
-  index: number,
-  count: number,
-  threads: CommentThread[],
-): EditorState {
-  const document = spliceCommentThreads(state.documentIndex.document, index, count, threads);
-  const documentIndex: DocumentIndex = replaceIndexedDocument(state.documentIndex, document);
-
-  return {
-    animations: pruneEditorAnimations(state.animations, getEditorAnimationTime()),
-    documentIndex,
-    future: [],
-    history: [
-      ...state.history,
-      { document: state.documentIndex.document, selection: state.selection },
-    ],
-    selection: state.selection,
   };
 }
 

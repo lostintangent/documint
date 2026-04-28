@@ -1,8 +1,21 @@
 // Canonical semantic document construction plus small format-agnostic helpers
 // shared across markdown, editor, comments, and tests.
 import type { CommentThread } from "./comments";
-import { rebuildTableBlock, rebuildTextBlock } from "./build";
-import { type Block, type Document, type HeadingBlock, type Inline, type TableRow } from "./types";
+import {
+  createBlockquoteBlock,
+  rebuildListBlock,
+  rebuildListItemBlock,
+  rebuildTableBlock,
+  rebuildTextBlock,
+} from "./build";
+import {
+  type Block,
+  type Document,
+  type HeadingBlock,
+  type Inline,
+  type ListItemBlock,
+  type TableRow,
+} from "./types";
 
 export function createDocument(
   blocks: Block[],
@@ -59,6 +72,100 @@ export function spliceCommentThreads(
     ],
     frontMatter: document.frontMatter,
   };
+}
+
+// Walks the block tree to find the block with the matching id, calls
+// `replacer` with the current block, and returns a new document with the
+// containing root block rebuilt around the result. Returns null if the id
+// isn't found or the replacer returns null. Pass `rootIndex` when the
+// caller already knows which root contains the target — the search skips
+// straight to that root.
+export function replaceDocumentBlock(
+  document: Document,
+  blockId: string,
+  replacer: (block: Block) => Block | null,
+  rootIndex?: number,
+): Document | null {
+  if (rootIndex !== undefined) {
+    return replaceBlockInRoot(document, rootIndex, blockId, replacer);
+  }
+
+  for (let index = 0; index < document.blocks.length; index += 1) {
+    const next = replaceBlockInRoot(document, index, blockId, replacer);
+
+    if (next) {
+      return next;
+    }
+  }
+
+  return null;
+}
+
+function replaceBlockInRoot(
+  document: Document,
+  rootIndex: number,
+  blockId: string,
+  replacer: (block: Block) => Block | null,
+): Document | null {
+  const rootBlock = document.blocks[rootIndex];
+
+  if (!rootBlock) {
+    return null;
+  }
+
+  const nextRootBlock = replaceBlockInTree(rootBlock, blockId, replacer);
+
+  return nextRootBlock ? spliceDocument(document, rootIndex, 1, [nextRootBlock]) : null;
+}
+
+function replaceBlockInTree(
+  block: Block,
+  targetBlockId: string,
+  replacer: (block: Block) => Block | null,
+): Block | null {
+  if (block.id === targetBlockId) {
+    return replacer(block);
+  }
+
+  switch (block.type) {
+    case "blockquote": {
+      const nextChildren = replaceBlockInChildren(block.children, targetBlockId, replacer);
+      return nextChildren ? createBlockquoteBlock({ children: nextChildren }) : null;
+    }
+    case "listItem": {
+      const nextChildren = replaceBlockInChildren(block.children, targetBlockId, replacer);
+      return nextChildren ? rebuildListItemBlock(block, nextChildren) : null;
+    }
+    case "list": {
+      const nextItems = replaceBlockInChildren(block.items, targetBlockId, replacer) as
+        | ListItemBlock[]
+        | null;
+      return nextItems ? rebuildListBlock(block, nextItems) : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function replaceBlockInChildren(
+  blocks: Block[],
+  targetBlockId: string,
+  replacer: (block: Block) => Block | null,
+) {
+  let didChange = false;
+
+  const nextBlocks = blocks.map((block) => {
+    const nextBlock = replaceBlockInTree(block, targetBlockId, replacer);
+
+    if (!nextBlock) {
+      return block;
+    }
+
+    didChange = true;
+    return nextBlock;
+  });
+
+  return didChange ? nextBlocks : null;
 }
 
 export function extractPlainTextFromInlineNodes(nodes: Inline[]): string {

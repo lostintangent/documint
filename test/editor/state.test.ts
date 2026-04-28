@@ -3,8 +3,8 @@ import {
   createDocumentFromIndex,
   createDocumentIndex,
   normalizeSelection,
-  replaceSelection,
 } from "@/editor/state";
+import { spliceText } from "@/editor/state/reducer/text";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 
 test("projects semantic snapshots into a deterministic editor document", () => {
@@ -143,7 +143,7 @@ Paragraph body.
       offset: 10,
     },
   });
-  const replaced = replaceSelection(
+  const replaced = spliceText(
     runtime,
     {
       anchor: {
@@ -176,7 +176,7 @@ test("preserves inline semantic wrappers when editing inside a formatted contain
     throw new Error("Expected paragraph container");
   }
 
-  const replacedLink = replaceSelection(
+  const replacedLink = spliceText(
     runtime,
     {
       anchor: {
@@ -190,7 +190,7 @@ test("preserves inline semantic wrappers when editing inside a formatted contain
     },
     "ref",
   );
-  const replacedCode = replaceSelection(
+  const replacedCode = spliceText(
     replacedLink.documentIndex,
     {
       anchor: {
@@ -225,7 +225,7 @@ beta
     throw new Error("Expected editable paragraph container");
   }
 
-  const replaced = replaceSelection(
+  const replaced = spliceText(
     runtime,
     {
       anchor: {
@@ -263,7 +263,7 @@ beta
     throw new Error("Expected editable paragraph container");
   }
 
-  const replaced = replaceSelection(
+  const replaced = spliceText(
     runtime,
     {
       anchor: {
@@ -299,7 +299,7 @@ test("replaces a selected image atomically instead of editing its alt text", () 
     throw new Error("Expected image run");
   }
 
-  const replaced = replaceSelection(
+  const replaced = spliceText(
     runtime,
     {
       anchor: {

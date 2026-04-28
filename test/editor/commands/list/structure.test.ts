@@ -5,7 +5,6 @@ import {
   insertText,
   moveListItemDown,
   moveListItemUp,
-  splitSelectionListItem,
   toggleTaskItem,
 } from "@/editor/state";
 import {
@@ -30,7 +29,7 @@ test("supports canvas list splits with undo and redo", () => {
     offset: 2,
   });
 
-  const splitState = splitSelectionListItem(state);
+  const splitState = insertLineBreak(state);
 
   if (!splitState) {
     throw new Error("Expected split state");
@@ -188,7 +187,7 @@ test("inserts new list items above or below at list boundaries", () => {
     regionId: alpha.id,
     offset: 0,
   });
-  state = splitSelectionListItem(state) ?? state;
+  state = insertLineBreak(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n");
 
@@ -202,7 +201,7 @@ test("inserts new list items above or below at list boundaries", () => {
     regionId: beta.id,
     offset: beta.text.length,
   });
-  state = splitSelectionListItem(state) ?? state;
+  state = insertLineBreak(state) ?? state;
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n-\n");
 });
@@ -219,7 +218,7 @@ test("exits empty top-level list items through the structural enter path", () =>
     regionId: target.id,
     offset: 0,
   });
-  state = splitSelectionListItem(state) ?? state;
+  state = insertLineBreak(state) ?? state;
 
   const empty = state.documentIndex.regions.find((container) => container.text === "");
 
@@ -248,7 +247,7 @@ test("rejoins adjacent compatible lists when deleting the empty paragraph betwee
     regionId: beta.id,
     offset: 0,
   });
-  state = splitSelectionListItem(state) ?? state;
+  state = insertLineBreak(state) ?? state;
 
   const emptyItem = state.documentIndex.regions.find((container) => container.text === "");
 

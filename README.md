@@ -44,7 +44,9 @@ export function App() {
 }
 ```
 
-You can also start from one of the built-in themes and tweak just the values you care about.
+## Custom Themes
+
+By default, Documint will detect the end-user's system theme and apply either the built-in light or dark theme. You can also specify a theme explicitly by passing `"light"` or `"dark"` to the `theme` prop, or provide a custom theme object with your own colors and styles.
 
 ```tsx
 import { useState } from "react";
@@ -61,5 +63,36 @@ export function App() {
   const [content, setContent] = useState("# Themed Documint");
 
   return <Documint content={content} onContentChanged={setContent} theme={customTheme} />;
+}
+```
+
+## Custom Storage
+
+If the document includes http-based images, then the editor will automatically load and render them. However, if you want to support pasting images from the clipboard or uploading images from the user's device, you'll need to provide a `storage` prop that implements the `DocumintStorage` interface.
+
+```tsx
+import { useState } from "react";
+import { Documint, DocumintStorage } from "documint";
+
+function createInMemoryStorage(): DocumintStorage {
+  const files = new Map<string, Blob>();
+
+  return {
+    async readFile(path) {
+      return files.get(path) ?? null;
+    },
+    async writeFile(file) {
+      files.set(file.name, file);
+      return file.name;
+    },
+  };
+}
+
+const storage = createInMemoryStorage();
+
+export function App() {
+  const [content, setContent] = useState("# Documint with Custom Storage");
+
+  return <Documint content={content} onContentChanged={setContent} storage={storage} />;
 }
 ```

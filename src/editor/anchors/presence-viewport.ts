@@ -10,7 +10,7 @@
 
 import { measureCaretTarget, type EditorViewportState } from "../layout";
 import type { DocumentIndex } from "../state";
-import type { EditorState } from "../state/state";
+import type { EditorState } from "../state/types";
 import type { EditorPresence, EditorPresenceViewport } from "./presence";
 
 const presenceViewportScrollMargin = 48;

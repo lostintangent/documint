@@ -5,7 +5,6 @@ export {
   createDocumentFromIndex,
   createEditorRoot,
   rebuildEditorRoot,
-  replaceIndexedDocument,
   spliceDocumentIndex,
 } from "./index/build";
 
@@ -20,13 +19,10 @@ export type {
 
 // Selection
 export {
-  createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
-  createTableCellTarget,
   getSelectionContext,
   getSelectionMarks,
   normalizeSelection,
-  resolveRegion,
   resolveRegionByPath,
   resolveTableCellRegion,
   resolveSelectionTarget,
@@ -40,22 +36,8 @@ export type {
   SelectionTarget,
 } from "./selection";
 
-// Reducer
-export {
-  replaceEditorBlock,
-  replaceEditorRoot,
-  replaceEditorRootRange,
-  replaceSelection,
-  updateEditorBlock,
-} from "./index/reducer";
-
 // Animations
 export {
-  addActiveBlockFlashAnimation,
-  addDeletedTextFadeAnimation,
-  addInsertedTextHighlightAnimation,
-  addListMarkerPopAnimation,
-  addPunctuationPulseAnimation,
   hasNewAnimation,
 } from "./animations";
 
@@ -75,11 +57,10 @@ export {
   redoEditorState,
   setSelection,
   setSelectionPoint,
-  spliceEditorCommentThreads,
   undoEditorState,
-} from "./state";
+} from "./reducer/state";
 
-export type { EditorState } from "./state";
+export type { EditorState } from "./types";
 
 // Commands
 export * from "./commands";
