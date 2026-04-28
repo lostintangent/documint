@@ -1,0 +1,117 @@
+/* Diagnostics popover — sits next to UsersPopover in the playground header
+   and opens a flyout with the live input-event log. Reuses
+   `.presence-header` for the title bar to match UsersPopover, and inherits
+   outer padding from `.playground-popover-flyout`.
+
+   Styles live in their own CSS file (rather than `playground/src/styles.css`)
+   so they tree-shake along with the popover component when it's
+   dead-code-eliminated from production builds. The component imports this
+   file directly. */
+
+.diag-flyout {
+  width: min(28rem, calc(100vw - 1.5rem));
+  max-height: min(70vh, 36rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  font-family: "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.diag-toggle-icon {
+  color: inherit;
+}
+
+.diag-log-clear {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--playground-control-border);
+  border-radius: 0.6rem;
+  background: var(--playground-control-background);
+  font-family: var(--playground-ui-font);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.diag-log-list {
+  overflow-y: auto;
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+  min-height: 0;
+}
+
+.diag-log-empty {
+  margin: 0;
+  padding: 0.5rem;
+  color: var(--playground-text-muted);
+  font-family: var(--playground-ui-font);
+  font-size: 0.85rem;
+}
+
+.diag-log-entry {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--playground-card-border);
+  border-radius: 0.55rem;
+  background: var(--playground-control-background);
+}
+
+.diag-log-entry.diag-kind-beforeinput {
+  border-left: 3px solid #0ea5e9;
+}
+
+.diag-log-entry.diag-kind-input {
+  border-left: 3px solid #6366f1;
+}
+
+.diag-log-entry.diag-kind-compositionstart,
+.diag-log-entry.diag-kind-compositionupdate,
+.diag-log-entry.diag-kind-compositionend {
+  border-left: 3px solid #f59e0b;
+}
+
+.diag-log-entry.diag-kind-syncInputContext {
+  border-left: 3px solid #10b981;
+}
+
+.diag-log-entry.diag-kind-editorStateEffect {
+  border-left: 3px solid #14b8a6;
+}
+
+.diag-log-entry.diag-kind-selectionchange {
+  border-left: 3px solid #a855f7;
+}
+
+.diag-log-entry-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+  font-family: var(--playground-ui-font);
+  font-size: 0.78rem;
+}
+
+.diag-log-kind {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.diag-log-time {
+  color: var(--playground-text-muted);
+}
+
+.diag-log-detail {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.75rem;
+  color: #1f2937;
+}
+
+/* Phone portrait — shrink the diagnostics flyout to fit smaller widths. */
+@media (orientation: portrait) and (max-width: 700px) {
+  .diag-flyout {
+    width: min(20rem, calc(100vw - 1rem));
+    max-height: min(60vh, 30rem);
+  }
+}

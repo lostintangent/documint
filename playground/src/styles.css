@@ -1,3 +1,5 @@
+/* Tokens & resets */
+
 :root {
   --playground-card-background: rgba(255, 255, 255, 0.82);
   --playground-card-border: rgba(15, 23, 42, 0.08);
@@ -14,23 +16,25 @@
 
   color: #1f2937;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
-  background:
+  background-color: #e0f2fe;
+  background-image:
     radial-gradient(circle at top left, rgba(191, 219, 254, 0.85), transparent 38%),
     linear-gradient(180deg, #f8fafc 0%, #e0f2fe 100%);
+  background-attachment: fixed;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-}
-
 html,
 body,
 #root {
   height: 100%;
+}
+
+body {
+  margin: 0;
 }
 
 body,
@@ -41,17 +45,25 @@ textarea {
   font: inherit;
 }
 
+/* Shell */
+
 .playground-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
   height: 100vh;
-  padding: 1rem 1.5rem 1.5rem;
+  padding:
+    max(1rem, env(safe-area-inset-top))
+    max(1.5rem, env(safe-area-inset-right))
+    max(1.5rem, env(safe-area-inset-bottom))
+    max(1.5rem, env(safe-area-inset-left));
 }
+
+/* Header */
 
 .playground-header {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: start;
   justify-content: space-between;
   gap: 1rem;
@@ -70,12 +82,14 @@ textarea {
   position: relative;
 }
 
+/* Editor grid */
+
 .playground-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.5rem;
   height: 100%;
   min-height: 0;
-  gap: 1.5rem;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .host-panel,
@@ -90,15 +104,16 @@ textarea {
 .source-card {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
+  height: 100%;
   min-width: 0;
   min-height: 0;
-  height: 100%;
   overflow: hidden;
   border: 1px solid var(--playground-card-border);
   border-radius: 1rem;
   background: var(--playground-card-background);
 }
 
+/* Documint library output */
 .documint {
   height: 100%;
   min-width: 0;
@@ -110,6 +125,22 @@ textarea {
     height: 100%;
   }
 }
+
+.source-editor {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 1rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--playground-control-background);
+  font-family: "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* Form controls */
 
 .fixture-picker {
   display: grid;
@@ -131,28 +162,22 @@ textarea {
   }
 }
 
+/* Popover (used by ThemePopover and UsersPopover) */
+
 .playground-popover {
   position: relative;
-}
-
-.playground-menu-toggle,
-.presence-add {
-  border: 1px solid var(--playground-control-border);
-  border-radius: 0.75rem;
-  background: var(--playground-control-background);
-  padding: 0.5rem 0.85rem;
-  font-family: var(--playground-ui-font);
 }
 
 .playground-menu-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  border: 0;
-  background: transparent;
   padding: 0.35rem 0.2rem;
+  border: 0;
   border-radius: 0.8rem;
+  background: transparent;
   color: inherit;
+  font-family: var(--playground-ui-font);
   cursor: pointer;
   transition: background-color 140ms ease;
 
@@ -166,6 +191,22 @@ textarea {
 
   & svg.is-open {
     transform: rotate(180deg);
+  }
+}
+
+.playground-popover-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.3rem;
+  height: 1.3rem;
+  border: 1px solid var(--playground-control-border);
+  border-radius: 999px;
+
+  &.is-plain {
+    border-color: transparent;
+    background: transparent;
   }
 }
 
@@ -185,6 +226,8 @@ textarea {
   font-family: var(--playground-ui-font);
 }
 
+/* Theme popover */
+
 .theme-flyout {
   width: min(14rem, calc(100vw - 3rem));
 }
@@ -197,51 +240,36 @@ textarea {
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
-    cursor: pointer;
+    padding: 0.55rem 0.75rem;
     border: 1px solid var(--playground-popover-border);
     border-radius: 0.75rem;
     background: var(--playground-control-background);
-    padding: 0.55rem 0.75rem;
     text-align: left;
     font-family: var(--playground-ui-font);
-  }
+    cursor: pointer;
 
-  & button.is-active {
-    border-color: var(--playground-accent-border);
-    background: var(--playground-accent-background);
+    &.is-active {
+      border-color: var(--playground-accent-border);
+      background: var(--playground-accent-background);
+    }
   }
 }
 
-.playground-popover-icon,
 .theme-option-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 1.4rem;
   height: 1.4rem;
   border: 1px solid var(--playground-control-border);
   border-radius: 999px;
-  flex: none;
 }
 
-.playground-popover-icon {
-  width: 1.3rem;
-  height: 1.3rem;
-}
-
-.playground-popover-icon.is-plain {
-  border-color: transparent;
-  background: transparent;
-}
+/* Users (presence) popover */
 
 .presence-toggle-icon {
   color: inherit;
-}
-
-.presence-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
 }
 
 .presence-header {
@@ -256,6 +284,12 @@ textarea {
   }
 }
 
+.presence-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .presence-manual,
 .presence-list {
   display: grid;
@@ -265,8 +299,8 @@ textarea {
 .presence-manual-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.75rem;
   align-items: end;
+  gap: 0.75rem;
 }
 
 .presence-color-picker {
@@ -280,6 +314,11 @@ textarea {
 
 .presence-add {
   justify-self: end;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--playground-control-border);
+  border-radius: 0.75rem;
+  background: var(--playground-control-background);
+  font-family: var(--playground-ui-font);
   cursor: pointer;
 }
 
@@ -307,62 +346,49 @@ textarea {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  & .presence-chip-swatch {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--playground-popover-border);
+  }
+
+  & .presence-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    border: 0;
+    background: transparent;
+    color: #dc2626;
+    cursor: pointer;
+  }
 }
 
-.presence-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  background: transparent;
-  padding: 0.25rem;
-  color: #dc2626;
-  cursor: pointer;
-}
+/* Responsive
+ *
+ * Defaults above describe the landscape/desktop layout. Portrait viewports
+ * progressively adapt: stack the panels, then on phone widths drop the
+ * source panel and wrap the header.
+ */
 
-.presence-chip-swatch {
-  width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px var(--playground-popover-border);
-}
-
-.source-editor {
-  width: 100%;
-  height: 100%;
-  min-height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 1rem;
-  background: var(--playground-control-background);
-  font-family: "SFMono-Regular", "Consolas", monospace;
-  font-size: 0.95rem;
-  line-height: 1.55;
-  resize: vertical;
-}
-
-@media (max-width: 1040px) {
+/* Portrait (any width) — stack the editor panels */
+@media (orientation: portrait) {
   .playground-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (max-width: 980px) {
+/* Phone portrait — hide source, wrap header, shrink popovers */
+@media (orientation: portrait) and (max-width: 700px) {
   .playground-header {
-    & .playground-controls {
-      width: 100%;
-      justify-content: flex-start;
-    }
+    flex-wrap: wrap;
   }
 
-  .presence-flyout {
-    width: min(18rem, calc(100vw - 1rem));
-    gap: 0.75rem;
-    padding: 0.85rem;
-  }
-
-  .playground-grid {
-    grid-template-columns: 1fr;
+  .playground-controls {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .source-panel {
@@ -373,4 +399,11 @@ textarea {
   .source-card {
     height: auto;
   }
+
+  .presence-flyout {
+    width: min(18rem, calc(100vw - 1rem));
+    gap: 0.75rem;
+    padding: 0.85rem;
+  }
+
 }

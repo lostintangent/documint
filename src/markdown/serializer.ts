@@ -42,7 +42,11 @@ const markdownDestinationEscapePattern = /([\\)&])/g;
 const markdownTitleEscapePattern = /(["\\])/g;
 
 export function serializeMarkdown(document: Document, options: MarkdownOptions = {}) {
-  if (document.blocks.length === 0 && document.comments.length === 0) {
+  if (
+    document.blocks.length === 0 &&
+    document.comments.length === 0 &&
+    document.frontMatter === undefined
+  ) {
     return "";
   }
 
@@ -50,6 +54,10 @@ export function serializeMarkdown(document: Document, options: MarkdownOptions =
 
   if (document.comments.length > 0) {
     chunks.push(serializeCommentDirective(document.comments));
+  }
+
+  if (document.frontMatter !== undefined) {
+    chunks.unshift(document.frontMatter);
   }
 
   const result = chunks.join(blockSeparator);

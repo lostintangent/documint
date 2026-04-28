@@ -4,10 +4,15 @@ import type { CommentThread } from "./comments";
 import { rebuildTableBlock, rebuildTextBlock } from "./build";
 import { type Block, type Document, type HeadingBlock, type Inline, type TableRow } from "./types";
 
-export function createDocument(blocks: Block[], comments: CommentThread[] = []): Document {
+export function createDocument(
+  blocks: Block[],
+  comments: CommentThread[] = [],
+  frontMatter?: string,
+): Document {
   return {
     blocks: blocks.map((block, index) => normalizeRootBlock(block, index)),
     comments,
+    frontMatter,
   };
 }
 
@@ -35,6 +40,7 @@ export function spliceDocument(
       ...normalizedSuffix,
     ],
     comments: document.comments,
+    frontMatter: document.frontMatter,
   };
 }
 
@@ -51,6 +57,7 @@ export function spliceCommentThreads(
       ...threads,
       ...document.comments.slice(index + count),
     ],
+    frontMatter: document.frontMatter,
   };
 }
 

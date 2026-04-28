@@ -179,3 +179,41 @@ function summarizeRepresentativeNodes(snapshot: ReturnType<typeof parseMarkdown>
     tableText: table.plainText,
   };
 }
+
+test("captures leading yaml front matter on the document", () => {
+  const source = `---
+title: Hello
+draft: false
+---
+
+# Body
+`;
+  const snapshot = parseMarkdown(source);
+
+  expect(snapshot.frontMatter).toBe("---\ntitle: Hello\ndraft: false\n---");
+  expect(snapshot.blocks[0]?.type).toBe("heading");
+  expect(serializeMarkdown(snapshot)).toBe(source);
+});
+
+test("treats an unterminated leading fence as a thematic break", () => {
+  const snapshot = parseMarkdown("---\n\nBody\n");
+
+  expect(snapshot.blocks[0]?.type).toBe("thematicBreak");
+  expect(snapshot.blocks[1]?.type).toBe("paragraph");
+});
+
+test("does not treat mid-document fences as front matter", () => {
+  const snapshot = parseMarkdown("# Title\n\n---\nkey: value\n---\n");
+
+  expect(snapshot.blocks[0]?.type).toBe("heading");
+  expect(snapshot.blocks.some((block) => block.type === "unsupported")).toBe(false);
+});
+
+test("round-trips a document containing only front matter", () => {
+  const source = "---\ntitle: Stub\n---\n";
+  const snapshot = parseMarkdown(source);
+
+  expect(snapshot.frontMatter).toBe("---\ntitle: Stub\n---");
+  expect(snapshot.blocks).toHaveLength(0);
+  expect(serializeMarkdown(snapshot)).toBe(source);
+});

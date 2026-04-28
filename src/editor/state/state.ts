@@ -75,6 +75,7 @@ export function createDocumentFromEditorState(state: EditorState) {
   return createDocument(
     trimTrailingWhitespace(state.documentIndex.document.blocks),
     commentState.threads,
+    state.documentIndex.document.frontMatter,
   );
 }
 

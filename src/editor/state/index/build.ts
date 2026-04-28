@@ -35,6 +35,7 @@ export function createDocumentFromIndex(documentIndex: DocumentIndex): Document 
   return createDocument(
     collapseRuntimeEditableDocument(documentIndex.document).blocks,
     commentState.threads,
+    documentIndex.document.frontMatter,
   );
 }
 
@@ -673,7 +674,11 @@ function createRuntimeEditableDocument(document: Document): Document {
     return document;
   }
 
-  return createDocument([createParagraphTextBlock({ text: "" })], document.comments);
+  return createDocument(
+    [createParagraphTextBlock({ text: "" })],
+    document.comments,
+    document.frontMatter,
+  );
 }
 
 function collapseRuntimeEditableDocument(document: Document): Document {
@@ -688,7 +693,7 @@ function collapseRuntimeEditableDocument(document: Document): Document {
     return document;
   }
 
-  return createDocument([], document.comments);
+  return createDocument([], document.comments, document.frontMatter);
 }
 
 function flattenInlineNodes(

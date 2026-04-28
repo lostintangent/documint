@@ -10,7 +10,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { countResolvedCommentThreads, isResolvedCommentThread, type Document } from "@/document";
+import {
+  countResolvedCommentThreads,
+  isResolvedCommentThread,
+  type Comment,
+  type CommentThread,
+  type Document,
+} from "@/document";
 import {
   createCommentThread,
   createEditorState,
@@ -61,7 +67,9 @@ import { useSelection } from "./hooks/useSelection";
 import { useTheme } from "./hooks/useTheme";
 import { useViewport } from "./hooks/useViewport";
 import { areStatesEqual, prepareCanvasLayer } from "./lib/canvas";
+import { emitDiagnostic } from "./lib/diagnostics";
 import { type EditorKeybinding } from "./lib/keybindings";
+import { extractMentionedUserIds } from "./lib/mentions";
 import { joinUsersAndPresence } from "./lib/presence";
 import { normalizeSelectionAbsolutePositions } from "./lib/selection";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
@@ -77,9 +85,39 @@ export type DocumintProps = {
   presence?: DocumentPresence[];
   users?: DocumentUser[];
 
-  onContentChange?: (content: string, document: Document) => void;
-  onStateChange?: (state: DocumintState) => void;
+  onContentChanged?: (content: string, document: Document) => void;
+  onStateChanged?: (state: DocumintState) => void;
+  onCommentChanged?: (change: CommentChange) => void;
 };
+
+// Describes a single comment add, edit, or delete. Adds and edits carry the
+// resulting comment plus the IDs of any users it mentions (resolved against
+// the `users` roster). Deletes carry the comment as it existed just before
+// removal, and the thread it was attached to — useful when the deletion was
+// the last comment in the thread (the thread itself is gone from the
+// post-delete document).
+export type CommentChange =
+  | {
+      kind: "added";
+      comment: Comment;
+      mentionedUserIds: string[];
+      thread: CommentThread;
+      threadIndex: number;
+    }
+  | {
+      kind: "edited";
+      comment: Comment;
+      previousBody: string;
+      mentionedUserIds: string[];
+      thread: CommentThread;
+      threadIndex: number;
+    }
+  | {
+      kind: "deleted";
+      comment: Comment;
+      thread: CommentThread;
+      threadIndex: number;
+    };
 
 export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
 
@@ -116,8 +154,9 @@ export function Documint({
   className,
   content,
   keybindings,
-  onContentChange,
-  onStateChange,
+  onCommentChanged,
+  onContentChanged,
+  onStateChanged,
   presence,
   theme,
   users,
@@ -195,7 +234,7 @@ export function Documint({
     return [
       {
         trigger: "@",
-        items: users.map((user) => ({ label: user.fullName ?? user.username })),
+        items: users.map((user) => ({ label: user.fullName ?? user.username, id: user.id })),
       },
     ];
   }, [users]);
@@ -204,7 +243,7 @@ export function Documint({
     () => resolveActiveCommentThreadIndex(editorState, commentState.liveRanges),
     [commentState.liveRanges, editorState],
   );
-  const canEditComments = Boolean(onContentChange);
+  const canEditComments = Boolean(onContentChanged);
   const readCurrentState = () => editorStateRef.current ?? editorState;
 
   const publishState = useEffectEvent((state: typeof editorState, canonicalContent: string) => {
@@ -229,7 +268,7 @@ export function Documint({
 
     if (!areStatesEqual(componentStateRef.current, nextState)) {
       componentStateRef.current = nextState;
-      onStateChange?.(nextState);
+      onStateChanged?.(nextState);
     }
   });
 
@@ -263,8 +302,61 @@ export function Documint({
 
     canonicalContentRef.current = nextContent;
     lastEmittedContentRef.current = nextContent;
-    onContentChange?.(nextContent, nextDocument);
+    onContentChanged?.(nextContent, nextDocument);
   });
+
+  // Comment-changed emitters. Adds and edits read the freshly-applied state
+  // for their thread/comment payload; deletes are passed pre-state snapshots
+  // by their callers, since the comment is gone from post-state. The thread
+  // is never persisted across the call — each callsite either re-reads or
+  // captures it for the same reason. All three funnel through
+  // `emitCommentChanged` so the diagnostic and host-callback dispatch live
+  // in one place.
+  const emitCommentChanged = (change: CommentChange) => {
+    if (process.env.NODE_ENV !== "production") {
+      emitDiagnostic("commentChanged", { ...change });
+    }
+    onCommentChanged?.(change);
+  };
+
+  const emitCommentAdded = (threadIndex: number) => {
+    const thread = getDocument(readCurrentState()).comments[threadIndex];
+    const comment = thread?.comments.at(-1);
+    if (!thread || !comment) return;
+    emitCommentChanged({
+      kind: "added",
+      comment,
+      mentionedUserIds: extractMentionedUserIds(comment.body, mentionSources),
+      thread,
+      threadIndex,
+    });
+  };
+
+  const emitCommentEdited = (
+    threadIndex: number,
+    commentIndex: number,
+    previousBody: string,
+  ) => {
+    const thread = getDocument(readCurrentState()).comments[threadIndex];
+    const comment = thread?.comments[commentIndex];
+    if (!thread || !comment) return;
+    emitCommentChanged({
+      kind: "edited",
+      comment,
+      previousBody,
+      mentionedUserIds: extractMentionedUserIds(comment.body, mentionSources),
+      thread,
+      threadIndex,
+    });
+  };
+
+  const emitCommentDeleted = (
+    threadIndex: number,
+    thread: CommentThread,
+    comment: Comment,
+  ) => {
+    emitCommentChanged({ kind: "deleted", comment, thread, threadIndex });
+  };
 
   /* Paint callbacks */
   //
@@ -366,8 +458,8 @@ export function Documint({
   });
 
   const cursor = useCursor({
-    canShowInsertionLeaf: Boolean(onContentChange),
-    canShowTableLeaf: Boolean(onContentChange),
+    canShowInsertionLeaf: Boolean(onContentChanged),
+    canShowTableLeaf: Boolean(onContentChanged),
     commentState,
     editorState,
     editorViewportState: preparedViewport,
@@ -677,6 +769,7 @@ export function Documint({
 
               applyNextState(stateUpdate);
               selection.promoteLeafToThread(threadIndex, true);
+              emitCommentAdded(threadIndex);
             }}
             onToggleBold={() => {
               applyNextState(toggleBold(readCurrentState()));
@@ -701,29 +794,48 @@ export function Documint({
             mode="thread"
             mentionSources={mentionSources}
             onDeleteComment={(commentIndex) => {
-              applyNextState(
-                deleteComment(readCurrentState(), annotationThreadLeaf.threadIndex, commentIndex),
-              );
+              const { threadIndex } = annotationThreadLeaf;
+              const previousState = readCurrentState();
+              const thread = getDocument(previousState).comments[threadIndex];
+              const comment = thread?.comments[commentIndex];
+              const stateUpdate = deleteComment(previousState, threadIndex, commentIndex);
+              if (!stateUpdate) return;
+              applyNextState(stateUpdate);
+              if (thread && comment) {
+                emitCommentDeleted(threadIndex, thread, comment);
+              }
             }}
             onDeleteThread={() => {
-              applyNextState(
-                deleteCommentThread(readCurrentState(), annotationThreadLeaf.threadIndex),
-              );
+              const { threadIndex } = annotationThreadLeaf;
+              const previousState = readCurrentState();
+              const thread = getDocument(previousState).comments[threadIndex];
+              const stateUpdate = deleteCommentThread(previousState, threadIndex);
+              if (!stateUpdate) return;
+              applyNextState(stateUpdate);
+              if (thread) {
+                for (const comment of thread.comments) {
+                  emitCommentDeleted(threadIndex, thread, comment);
+                }
+              }
             }}
             onEditComment={(commentIndex, body) => {
-              applyNextState(
-                editComment(
-                  readCurrentState(),
-                  annotationThreadLeaf.threadIndex,
-                  commentIndex,
-                  body,
-                ),
-              );
+              const { threadIndex } = annotationThreadLeaf;
+              const previousState = readCurrentState();
+              const previousBody =
+                getDocument(previousState).comments[threadIndex]?.comments[commentIndex]?.body;
+              const stateUpdate = editComment(previousState, threadIndex, commentIndex, body);
+              if (!stateUpdate) return;
+              applyNextState(stateUpdate);
+              if (previousBody !== undefined) {
+                emitCommentEdited(threadIndex, commentIndex, previousBody);
+              }
             }}
             onReply={(body) => {
-              applyNextState(
-                replyToCommentThread(readCurrentState(), annotationThreadLeaf.threadIndex, body),
-              );
+              const { threadIndex } = annotationThreadLeaf;
+              const stateUpdate = replyToCommentThread(readCurrentState(), threadIndex, body);
+              if (!stateUpdate) return;
+              applyNextState(stateUpdate);
+              emitCommentAdded(threadIndex);
             }}
             onToggleResolved={() => {
               applyNextState(

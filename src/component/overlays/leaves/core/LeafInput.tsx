@@ -29,6 +29,10 @@ import { resolveTextareaAnchor } from "../lib/textarea-anchor";
 
 export type CompletionItem = {
   label: string;
+  // Opaque host-domain identifier (e.g. user ID for "@" mentions). Carried
+  // through to LeafOutput's tokenizer so consumers can map matched labels
+  // back to their source entity; ignored by the input itself.
+  id?: string;
 };
 
 export type CompletionSource = {

@@ -3,6 +3,7 @@ import type { CommentThread } from "./comments";
 export type Document = {
   blocks: Block[];
   comments: CommentThread[];
+  frontMatter?: string;
 };
 
 export type Block =

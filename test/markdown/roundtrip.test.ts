@@ -20,6 +20,7 @@ const stableFixtures = [
   "test/goldens/rich-tables.md",
   "test/goldens/rich-mixed.md",
   "test/goldens/comments-review.md",
+  "test/goldens/frontmatter.md",
 ] as const;
 
 for (const fixturePath of stableFixtures) {

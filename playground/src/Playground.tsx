@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Documint, type DocumentPresence, type DocumentUser } from "documint";
 import { fixtureOptions, getThemeOption, themeOptions } from "./data";
+import { DiagnosticsPopover } from "./popovers/DiagnosticsPopover";
 import { UsersPopover } from "./popovers/UsersPopover";
 import { ThemePopover } from "./popovers/ThemePopover";
 
@@ -61,6 +62,10 @@ export function Playground() {
             onUsersChange={setUsers}
             resetKey={fixtureId}
           />
+
+          {/* Live input-event log; gated so it ships with `bun run dev`
+              but not with the deployable demo (`bun run build:playground`). */}
+          {process.env.NODE_ENV !== "production" ? <DiagnosticsPopover /> : null}
         </div>
       </header>
 
@@ -69,7 +74,7 @@ export function Playground() {
           <div className="host-card">
             <Documint
               content={content}
-              onContentChange={handleContentChange}
+              onContentChanged={handleContentChange}
               presence={presence}
               theme={activeTheme ?? undefined}
               users={users}

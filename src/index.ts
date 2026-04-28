@@ -5,6 +5,7 @@ export {
   lightTheme,
   midnightTheme,
   mintTheme,
+  type CommentChange,
   type EditorKeybinding,
   type DocumintProps,
   type DocumintState,

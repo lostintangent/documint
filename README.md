@@ -40,7 +40,7 @@ This editor takes markdown in and gives markdown back out.
 export function App() {
   const [content, setContent] = useState(initialMarkdown);
 
-  return <Documint content={content} onContentChange={setContent} />;
+  return <Documint content={content} onContentChanged={setContent} />;
 }
 ```
 
@@ -60,6 +60,6 @@ const customTheme = {
 export function App() {
   const [content, setContent] = useState("# Themed Documint");
 
-  return <Documint content={content} onContentChange={setContent} theme={customTheme} />;
+  return <Documint content={content} onContentChanged={setContent} theme={customTheme} />;
 }
 ```

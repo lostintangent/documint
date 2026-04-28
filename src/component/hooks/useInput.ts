@@ -41,6 +41,7 @@ import {
   type EditorViewportState,
 } from "@/editor";
 import type { LazyRefHandle } from "./useLazyRef";
+import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
 import { readSingleContainerSelectionText } from "../lib/selection";
 
@@ -101,8 +102,26 @@ type InputController = {
 };
 
 // Maximum characters kept in the hidden textarea before the caret, providing
-// context for IME composition and browser autocorrect.
-const INPUT_CONTEXT_WINDOW = 64;
+// context for IME composition, browser autocorrect, and — critically — voice
+// dictation.
+//
+// Voice dictation on iOS revises previous partial transcriptions by firing
+// `insertText` with the textarea's selection extended over the previous
+// partial's range (see the doc block on `handleBeforeInput`). The selection
+// is communicated via DOM offsets, so the *entire* current partial must fit
+// inside the textarea — otherwise the OS can't extend `selectionStart`
+// backward far enough and gives up sending live updates, then dumps the full
+// transcript on session end (causing duplication, see the dictation flush
+// heuristic in `handleBeforeInput`). Sized generously to cover long
+// dictated paragraphs without truncation.
+const INPUT_CONTEXT_WINDOW = 1024;
+
+// Minimum overlap (in chars) required for the dictation flush heuristic to
+// dedupe a collapsed `insertText` against the editor's text before the
+// caret. Set high enough that plain typing and short IME commits never trip
+// it, but low enough to catch real flushes (which are typically full
+// sentences or paragraphs).
+const DICTATION_FLUSH_OVERLAP_THRESHOLD = 16;
 
 /**
  * Owns the hidden browser input bridge — a 2x2 absolutely-positioned
@@ -275,35 +294,30 @@ export function useInput({
 
   /* Text application helpers */
 
+  // Apply the textarea's full value to the editor by stripping the synced
+  // prefix (everything we've already mirrored in) and inserting whatever
+  // remains as new text — splitting on `\n` so embedded line breaks turn
+  // into editor line-break operations rather than literal characters.
   const applyNativeText = useEffectEvent((state: typeof editorState, value: string) => {
     const insertedText = stripSyncedInputPrefix(value, resolveInputPrefix(state));
     const segments = insertedText.replace(/\r\n/g, "\n").split(/(\n)/);
     let nextState = state;
 
     for (const segment of segments) {
-      if (segment.length === 0) {
-        continue;
-      }
-
+      if (segment.length === 0) continue;
       const result = segment === "\n" ? insertLineBreak(nextState) : insertText(nextState, segment);
-
-      if (!result) {
-        continue;
-      }
-
+      if (!result) continue;
       nextState = result;
     }
 
     return nextState === state ? null : nextState;
   });
 
+  // Replace the `charsToDelete` characters immediately before the caret
+  // with `replacement`, in a single editor action — one undo entry, one
+  // animation tick — instead of N delete + M insert operations.
   const applyReplacementText = useEffectEvent(
     (state: typeof editorState, charsToDelete: number, replacement: string) => {
-      // Build a selection covering the range to be replaced (the
-      // `charsToDelete` characters immediately before the caret) and
-      // delegate to `replaceSelection`, which dispatches a single action
-      // — one undo entry, one animation tick — instead of N delete + M
-      // insert operations.
       const focusPoint = state.selection.focus;
       const anchor = {
         regionId: focusPoint.regionId,
@@ -316,36 +330,113 @@ export function useInput({
 
   /* Native event handlers (beforeinput / input / keydown) */
 
+  /**
+   * Maps native `beforeinput` event types to editor operations.
+   *
+   * # Mental model: replacement vs. insertion
+   *
+   * The OS uses TWO `inputType`s to communicate "replace the last N
+   * chars before the caret with `data`", and the distinction is OS-
+   * initiated vs. user-initiated:
+   *
+   *   - `insertReplacementText` — the OS unilaterally fixed something
+   *     (iOS autocorrect, macOS Text Replacements, spellcheck).
+   *   - `insertText` with a non-collapsed textarea selection — the user
+   *     directly requested a swap (iOS suggestion-bar tap, voice
+   *     dictation revising a partial).
+   *
+   * Both ultimately call `applyReplacementText`. The replacement range
+   * is signaled by the textarea's `selectionStart` / `selectionEnd`,
+   * which the OS extends over the to-be-replaced range right before
+   * firing the event. Honoring that selection is what distinguishes a
+   * replacement from an append (the original "duplication" bug surfaced
+   * when we ignored it for the user-initiated path).
+   *
+   * # Branch taxonomy
+   *
+   *   - `insertText` non-collapsed → user-initiated replacement.
+   *   - `insertText` collapsed, `data` overlaps editor tail → voice
+   *     dictation FLUSH (session end OR partial outgrew the bridge).
+   *     iOS dumps the full transcript without remembering what was
+   *     already streamed; we insert only the non-overlapping suffix
+   *     (see `detectDictationFlushOverlap`).
+   *   - `insertText` collapsed, no overlap → plain typing / IME commit
+   *     / autocomplete. Routed through `applyNativeText` (handles
+   *     embedded `\n`).
+   *   - `insertReplacementText` → OS-initiated replacement.
+   *   - `insertLineBreak` / `insertParagraph` → `insertLineBreak`.
+   *   - `delete*` → `deleteBackward` / `deleteForward` (see
+   *     `resolveDeleteDirection`).
+   *   - `historyUndo` / `historyRedo` → editor undo stack, plus iOS
+   *     UIUndoManager re-priming so the gesture keeps offering "Undo".
+   *
+   * # Composition events
+   *
+   * `compositionstart` / `compositionupdate` / `compositionend` are NOT
+   * handled here — empirical testing confirmed iOS voice dictation
+   * doesn't use them, and IME compositions reach the editor via the
+   * `input` event path through `applyNativeText`.
+   */
   const handleBeforeInput = useEffectEvent((event: InputEvent) => {
+    if (process.env.NODE_ENV !== "production") {
+      const target = event.target as HTMLTextAreaElement | null;
+      emitDiagnostic("beforeinput", {
+        inputType: event.inputType,
+        data: event.data,
+        dataLength: event.data?.length ?? null,
+        isComposing: event.isComposing,
+        targetRanges:
+          event.getTargetRanges?.()?.map((range) => ({
+            startOffset: range.startOffset,
+            endOffset: range.endOffset,
+            collapsed: range.startOffset === range.endOffset,
+          })) ?? [],
+        selectionStart: target?.selectionStart ?? null,
+        selectionEnd: target?.selectionEnd ?? null,
+        taValue: target?.value ?? null,
+        taValueLength: target?.value.length ?? null,
+      });
+    }
+
     if (primingRef.current) return;
     const state = readCurrentState();
     const deleteDirection = resolveDeleteDirection(event.inputType);
 
     if (event.inputType === "insertText") {
-      if (!event.data) {
+      if (!event.data) return;
+      event.preventDefault();
+
+      // User-initiated replacement (suggestion-bar tap, dictation revision):
+      // textarea selection extended over the range to replace.
+      const charsToReplace = resolveReplacementLength(event.target);
+      if (charsToReplace > 0) {
+        applyStateChange(applyReplacementText(state, charsToReplace, event.data));
         return;
       }
 
-      event.preventDefault();
+      // Dictation FLUSH: collapsed selection, but `data` overlaps content
+      // already committed. Insert only the non-overlapping suffix.
+      const overlap = detectDictationFlushOverlap(state, event.data);
+      if (overlap > 0) {
+        const suffix = event.data.slice(overlap);
+        if (suffix.length > 0) {
+          applyStateChange(applyNativeText(state, suffix));
+        }
+        return;
+      }
+
+      // Plain typing / IME commit / autocomplete.
       applyStateChange(applyNativeText(state, event.data));
       return;
     }
 
     if (event.inputType === "insertReplacementText") {
-      // iOS autocorrect: replaces a range already in the textarea (typically
-      // the word immediately before the caret) with `event.data`. The range
-      // is communicated via the textarea's selectionStart/End at the time
-      // the beforeinput fires. Because our synced textarea value mirrors
-      // the editor text up to the caret, deleting the range length from the
-      // editor is equivalent to deleting the same chars before the caret.
-      if (!event.data) {
-        return;
-      }
+      // OS-initiated replacement (autocorrect, Text Replacements,
+      // spellcheck). Same selection-based mechanics as the
+      // user-initiated `insertText` path above; see JSDoc.
+      if (!event.data) return;
       event.preventDefault();
-      const target = event.target as HTMLTextAreaElement | null;
-      const selStart = target?.selectionStart ?? 0;
-      const selEnd = target?.selectionEnd ?? selStart;
-      const charsToReplace = Math.max(0, selEnd - selStart);
+      const charsToReplace = resolveReplacementLength(event.target);
       applyStateChange(applyReplacementText(state, charsToReplace, event.data));
       return;
     }
@@ -368,13 +459,12 @@ export function useInput({
       return;
     }
 
+    // iOS Shake-to-Undo, three-finger swipe-left, and external-keyboard ⌘Z
+    // all dispatch these inputTypes when the UA has undo history for the
+    // textarea. Redirect to the editor's own undo stack, then re-prime so
+    // iOS keeps offering "Undo" rather than flipping to "Redo" (its
+    // UIUndoManager pointer advances even when we preventDefault).
     if (event.inputType === "historyUndo") {
-      // iOS Shake-to-Undo (and three-finger swipe-left, and external keyboard
-      // ⌘Z) dispatches `beforeinput` with this inputType when the UA has
-      // undo history for the element. We redirect to the editor's own undo
-      // stack, which is the true source of truth for document state. Then
-      // we re-prime so iOS keeps offering "Undo" on the next gesture rather
-      // than flipping to "Redo".
       event.preventDefault();
       applyStateChange(undo(state));
       rePrimeUndoStack();
@@ -389,12 +479,36 @@ export function useInput({
     }
   });
 
+  // Fallback path for input that didn't go through `handleBeforeInput`
+  // (some IMEs, some browser quirks). We see the textarea's post-mutation
+  // value and reconcile it with the editor.
   const handleInput = useEffectEvent((event: FormEvent<HTMLTextAreaElement>) => {
-    if (primingRef.current) return;
     const state = readCurrentState();
     const value = event.currentTarget.value;
+    const prefix = resolveInputPrefix(state);
 
-    if (stripSyncedInputPrefix(value, resolveInputPrefix(state)).length === 0) {
+    if (process.env.NODE_ENV !== "production") {
+      const native = event.nativeEvent as InputEvent;
+      emitDiagnostic("input", {
+        inputType: native?.inputType ?? null,
+        data: native?.data ?? null,
+        isComposing: native?.isComposing ?? null,
+        taValue: value,
+        taValueLength: value.length,
+        selectionStart: event.currentTarget.selectionStart,
+        selectionEnd: event.currentTarget.selectionEnd,
+        resolvedPrefix: prefix,
+        stripped: stripSyncedInputPrefix(value, prefix),
+        prefixMatched: stripInputSeed(value).startsWith(prefix),
+      });
+    }
+
+    if (primingRef.current) return;
+
+    // Textarea got cleared past INPUT_SEED (e.g. backspace on an empty
+    // region). Re-seed it so further backspaces still fire `beforeinput`
+    // — browsers won't emit the event when the textarea is truly empty.
+    if (stripSyncedInputPrefix(value, prefix).length === 0) {
       syncInputContext(event.currentTarget, state);
       return;
     }
@@ -491,13 +605,24 @@ export function useInput({
 
   /* Effects */
 
+  // Mirror the editor state into the hidden textarea after every editor
+  // state change so the OS sees up-to-date context (preceding chars,
+  // caret position) for autocorrect, IME, and dictation. TODO: scope
+  // this to region transitions only (or otherwise let the OS keep the
+  // textarea as its own scratch space for the duration of an input
+  // session) — see thread on dictation flush behavior.
   useEffect(() => {
     const input = inputRef.current;
 
-    if (!input) {
-      return;
+    if (process.env.NODE_ENV !== "production") {
+      emitDiagnostic("editorStateEffect", {
+        regionId: editorState.selection.focus.regionId,
+        caretOffset: editorState.selection.focus.offset,
+        hasInput: !!input,
+      });
     }
 
+    if (!input) return;
     syncInputContext(input, editorState);
   }, [editorState, inputRef]);
 
@@ -523,6 +648,18 @@ export function useInput({
     input.addEventListener("beforeinput", listener);
     return () => input.removeEventListener("beforeinput", listener);
   }, [inputRef, handleBeforeInput]);
+
+  // Install diagnostic listeners (composition events on the input bridge,
+  // document `selectionchange`). Production strips this call and the
+  // hook's body entirely (the `useEffect` registrations included). The
+  // conditional-hooks lint rule is disabled because the gate is a
+  // build-time constant — within a single bundle's lifetime the hook is
+  // either always called or never called, preserving React's per-render
+  // hook-ordering invariant.
+  if (process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useDiagnostics(inputRef);
+  }
 
   /* Public API */
 
@@ -579,6 +716,45 @@ function useIsTouchPrimary(): boolean {
 
 export function isLineBreakInputType(inputType: string) {
   return inputType === "insertLineBreak" || inputType === "insertParagraph";
+}
+
+// Reads the textarea's selection range — how many chars before the caret
+// a `beforeinput` event is asking us to replace. iOS uses this channel to
+// signal the replacement range for both `insertReplacementText` (OS
+// autocorrect) and `insertText` (user-initiated replacements like the
+// suggestion-bar tap or a voice dictation revision). See the JSDoc on
+// `handleBeforeInput` for the full taxonomy.
+function resolveReplacementLength(target: EventTarget | null) {
+  const textarea = target as HTMLTextAreaElement | null;
+  const selStart = textarea?.selectionStart ?? 0;
+  const selEnd = textarea?.selectionEnd ?? selStart;
+  return Math.max(0, selEnd - selStart);
+}
+
+// Detects iOS voice-dictation FLUSH events: a collapsed-selection
+// `insertText` whose `data` begins with content already committed to the
+// editor (delivered earlier via the non-collapsed-selection channel).
+// iOS dumps the full transcript at session end (or when the partial
+// outgrows the textarea bridge), without remembering what was already
+// streamed. Returns the length of the leading overlap to skip, or 0 if
+// no significant overlap is found. The threshold guards against false
+// positives on plain typing and short IME commits.
+function detectDictationFlushOverlap(state: EditorState, data: string) {
+  if (data.length < DICTATION_FLUSH_OVERLAP_THRESHOLD) {
+    return 0;
+  }
+  const editorTail = resolveInputPrefix(state, data.length);
+  const maxPossibleOverlap = Math.min(editorTail.length, data.length);
+  // Walk down from the largest possible overlap; first match wins. O(n²)
+  // worst case, but n is bounded by the dictation partial length and the
+  // loop terminates as soon as a match is found — which for real flushes
+  // is on the very first iteration (overlap == prior partial length).
+  for (let len = maxPossibleOverlap; len >= DICTATION_FLUSH_OVERLAP_THRESHOLD; len--) {
+    if (editorTail.endsWith(data.slice(0, len))) {
+      return len;
+    }
+  }
+  return 0;
 }
 
 export function resolveDeleteDirection(inputType: string) {
@@ -643,6 +819,16 @@ export function syncInputContext(input: HTMLTextAreaElement, state: EditorState)
 
   input.value = nextValue;
   input.setSelectionRange(nextValue.length, nextValue.length);
+
+  if (process.env.NODE_ENV !== "production") {
+    emitDiagnostic("syncInputContext", {
+      prefix,
+      prefixLength: prefix.length,
+      taValueLength: nextValue.length,
+      regionId: state.selection.focus.regionId,
+      caretOffset: state.selection.focus.offset,
+    });
+  }
 }
 
 function applyKeyboardEvent(
