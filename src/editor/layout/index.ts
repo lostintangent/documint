@@ -19,6 +19,8 @@ export type {
 } from "./document";
 export type { CanvasViewport, DocumentViewport } from "./viewport";
 export type { CanvasCheckboxHit, CanvasLinkHit, EditorHoverTarget } from "./hit-test";
+export type { InlineBounds } from "./image";
+export { measureInlineImageBounds } from "./image";
 
 export {
   // Build and estimate document geometry.

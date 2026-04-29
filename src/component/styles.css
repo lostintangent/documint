@@ -148,7 +148,7 @@
   display: block;
 }
 
-.documint-selection-handle {
+.documint-resize-handle {
   position: absolute;
   z-index: 4;
   width: 1.2rem;
@@ -160,21 +160,14 @@
   pointer-events: auto;
   touch-action: none;
   cursor: grab;
+  transform: translate(-50%, -50%);
 
   &:active {
     cursor: grabbing;
   }
 }
 
-.documint-selection-handle-start {
-  transform: translate(-70%, -82%);
-}
-
-.documint-selection-handle-end {
-  transform: translate(-30%, -39%);
-}
-
-.documint-selection-handle-knob {
+.documint-resize-handle-knob {
   position: absolute;
   inset: 0;
   display: block;

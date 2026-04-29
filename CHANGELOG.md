@@ -1,3 +1,8 @@
+## 🗓️ v0.0.6 (04-29-26)
+
+- Images are now resizable by selecting them and them dragging the resize handles
+- You can know `SHIFT+Click` to extend a selection (in addition to the existing drag support)
+
 ## 🗓️ v0.0.5 (04-28-26)
 
 - The `Documint` component now exposes an optional `storage` prop which allows the embedder to define a virtual filesystem for reading and writing images.

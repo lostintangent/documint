@@ -23,7 +23,7 @@ export const defaultKeybindings: EditorKeybinding[] = [
   { key: "ArrowDown", altKey: true, shiftKey: true, command: "moveListItemDown" },
   { key: "a", modKey: true, command: "selectAll" },
   { key: "b", modKey: true, command: "toggleBold" },
-  { key: "e", modKey: true, command: "toggleInlineCode" },
+  { key: "e", modKey: true, command: "toggleCode" },
   { key: "i", modKey: true, command: "toggleItalic" },
   { key: "u", modKey: true, command: "toggleUnderline" },
   { key: "y", modKey: true, command: "redo" },

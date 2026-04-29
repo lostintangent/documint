@@ -1,64 +1,84 @@
-// Editor commands: composable EditorState → EditorState | null functions.
-// Each command resolves an action, dispatches it, and applies any
-// side-effects (animations). These are the public API consumed by tests,
-// benchmarks, and the Editor facade.
+// Editor commands: the public API clients use to produce a new EditorState
+// from a semantic operation (insert text, toggle bold, indent, undo, ...).
 //
-// Structural commands (insertLineBreak, deleteBackward, indent, dedent) use
-// context-first dispatch: they resolve the block command context once, then
-// switch on context.kind to call the appropriate resolver.
+// Every command honors the same contract:
+//
+//   command: (state: EditorState, ...args) => EditorState | null
+//
+// `null` means the operation was a no-op for the current state.
+//
+// The primary mechanism is a three-step pipeline: resolve any context the
+// operation needs, build an EditorStateAction describing the edit, then
+// dispatch it through the reducer to produce the next state. Some commands
+// layer presentation side-effects (animations) on top of the dispatched
+// state. A few escape hatches bypass the action pipeline entirely —
+// selection-only ops (selectAll) and history ops (undo/redo) — but still
+// honor the state-in/state-out contract.
+//
+// Commands never reach into reducer internals.
 
 import {
-  addDeletedTextFadeAnimation,
   addInsertedTextHighlightAnimation,
   addListMarkerPopAnimation,
+  addPlainTextDeletionFadeAnimation,
   addPunctuationPulseAnimation,
 } from "./animations";
 import {
   type EditorSelection,
   normalizeSelection,
-  resolveRegion,
 } from "./selection";
 import {
   dispatch,
   redoEditorState,
   setSelection,
+  setSelectionPoint,
   undoEditorState,
 } from "./reducer/state";
-import { resolveBlockById, resolveBlockCommandContext, resolveListItemContext, resolveTableCellContext } from "./index/context";
+import {
+  resolveBlockById,
+  resolveBlockCommandContext,
+  resolveListItemContext,
+  resolveTableCellContext,
+} from "./context";
 import type { DocumentIndex } from "./index/types";
 import type { EditorState, EditorStateAction } from "./types";
+import type { EditorInline } from "./index/types";
 import { createCommentThreadForSelection, getCommentState } from "../anchors";
 import {
-  type InlineCommandReplacement,
+  type InlineRegion,
+  type InlineRegionReplacement,
   insertInlineNode,
+  insertInlineIntoRegion,
   replaceExactInlineLinkRange,
   replaceInlineRange,
-  type InlineCommandTarget,
-  toggleInlineCodeTarget,
-  toggleInlineMarkTarget,
+  resolveInlineRegion,
+  toggleInlineCode,
+  toggleInlineMark,
 } from "./actions/inline";
 import {
   createImage,
   deleteCommentFromThread,
   editCommentInThread,
   markCommentThreadAsResolved as markThreadResolved,
-  replyToCommentThread as replyToThread,
+  replyToCommentThread as appendThreadReply,
   type CommentThread,
 } from "@/document";
+import { resolveCharacterDelete } from "./actions/text";
 import { resolveTextInputRule } from "./actions/input-rules";
 import {
   resolveListItemDedent,
   resolveListItemIndent,
   resolveListItemMove,
+  resolveListItemSplit,
   resolveListStructuralBackspace,
   resolveStructuralListBlockSplit,
-} from "./actions/list";
-import {
-  resolveBlockStructuralBackspace,
-  resolveCodeLineBreak,
+} from "./actions/list";import {
+  resolveBlockquoteBackspace,
+  resolveBlockquoteTextBlockSplit,
   resolveHeadingDepthShift,
+  resolveRootBlockBackspace,
+  resolveRootTextBlockSplit,
   resolveStructuralBlockquoteSplit,
-  resolveTextBlockSplit,
 } from "./actions/block";
 import {
   resolveTableCellLineBreak,
@@ -71,7 +91,7 @@ import {
   resolveTableSelectionMove,
 } from "./actions/table";
 
-// --- Core editing commands ---
+// --- Core editing ---
 
 export function insertText(state: EditorState, text: string) {
   const operation = resolveTextInputRule(state.documentIndex, state.selection, text);
@@ -94,39 +114,59 @@ export function insertText(state: EditorState, text: string) {
 
 export function insertLineBreak(state: EditorState) {
   const ctx = resolveBlockCommandContext(state.documentIndex, state.selection);
+  const offset = normalizeSelection(state.documentIndex, state.selection).start.offset;
 
   switch (ctx.kind) {
     case "code":
-      return dispatch(state, resolveCodeLineBreak(state.documentIndex, state.selection));
+      return dispatch(state, { kind: "splice-text", selection: state.selection, text: "\n" });
+
     case "tableCell":
       return dispatch(state, resolveTableCellLineBreak(state.documentIndex, state.selection));
+
     case "listItem": {
-      const action = resolveStructuralListBlockSplit(state.documentIndex, state.selection, ctx);
+      const action = resolveStructuralListBlockSplit(ctx, offset);
       return maybeAnimateListItemInsertion({
         state:
           dispatch(state, action) ??
-          dispatch(state, resolveTextBlockSplit(state.documentIndex, state.selection)),
+          dispatch(state, resolveListItemSplit(ctx, offset)),
         action,
       });
     }
+
     case "blockquoteTextBlock":
       return (
-        dispatch(state, resolveStructuralBlockquoteSplit(state.documentIndex, state.selection)) ??
-        dispatch(state, resolveTextBlockSplit(state.documentIndex, state.selection))
+        dispatch(state, resolveStructuralBlockquoteSplit(ctx, offset)) ??
+        dispatch(state, resolveBlockquoteTextBlockSplit(ctx, offset))
       );
+
     case "rootTextBlock":
-      return dispatch(state, resolveTextBlockSplit(state.documentIndex, state.selection));
+      return dispatch(state, resolveRootTextBlockSplit(ctx, offset));
+      
     case "unsupported":
       return null;
   }
 }
 
+export function replaceSelection(state: EditorState, text: string) {
+  const nextState = dispatch(state, {
+    kind: "splice-text",
+    selection: state.selection,
+    text,
+  });
+
+  return text.length > 0 ? addInsertedTextHighlightAnimation(nextState, text.length) : nextState;
+}
+
+export function deleteSelection(state: EditorState) {
+  return replaceSelection(state, "");
+}
+
 export function deleteBackward(state: EditorState) {
   if (hasExpandedSelection(state)) {
-    return deleteSelectionText(state);
+    return deleteSelection(state);
   }
 
-  const characterDelete = deleteCharacterBackward(state);
+  const characterDelete = deleteCollapsedCharacter(state, "backward");
 
   if (characterDelete) {
     return characterDelete;
@@ -148,8 +188,9 @@ export function deleteBackward(state: EditorState) {
     case "listItem":
       return dispatch(state, resolveListStructuralBackspace(ctx));
     case "blockquoteTextBlock":
+      return dispatch(state, resolveBlockquoteBackspace(ctx));
     case "rootTextBlock":
-      return dispatch(state, resolveBlockStructuralBackspace(state.documentIndex, state.selection));
+      return dispatch(state, resolveRootBlockBackspace(ctx, state.documentIndex));
     default:
       return null;
   }
@@ -157,42 +198,21 @@ export function deleteBackward(state: EditorState) {
 
 export function deleteForward(state: EditorState) {
   if (hasExpandedSelection(state)) {
-    return deleteSelectionText(state);
+    return deleteSelection(state);
   }
 
-  return deleteCharacterForward(state);
+  return deleteCollapsedCharacter(state, "forward");
 }
 
-// --- Selection text operations ---
+// --- Selection ---
 
-function replaceSelectionText(state: EditorState, text: string) {
-  return dispatch(state, {
-    kind: "splice-text",
-    selection: state.selection,
-    text,
-  });
+export function extendSelectionToPoint(
+  state: EditorState,
+  regionId: string,
+  offset: number,
+): EditorState {
+  return setSelectionPoint(state, regionId, offset, true);
 }
-
-export function insertSelectionText(state: EditorState, text: string) {
-  const nextState = replaceSelectionText(state, text);
-
-  return text.length > 0 ? addInsertedTextHighlightAnimation(nextState, text.length) : nextState;
-}
-
-export function deleteSelectionText(state: EditorState) {
-  return replaceSelectionText(state, "");
-}
-
-export function insertImage(state: EditorState, url: string, alt?: string) {
-  return dispatch(
-    state,
-    insertInlineNode(state.documentIndex, state.selection, (path) =>
-      createImage({ alt: alt ?? null, path, url }),
-    ),
-  );
-}
-
-// --- Select operations ---
 
 export function selectAll(state: EditorState): EditorState {
   const regions = state.documentIndex.regions;
@@ -209,7 +229,7 @@ export function selectAll(state: EditorState): EditorState {
   });
 }
 
-// --- Structural operations ---
+// --- Structural operations (indent / dedent) ---
 
 export function indent(state: EditorState) {
   const ctx = resolveBlockCommandContext(state.documentIndex, state.selection);
@@ -218,7 +238,7 @@ export function indent(state: EditorState) {
     case "tableCell":
       return dispatch(state, resolveTableSelectionMove(state.documentIndex, state.selection, ctx, 1));
     case "rootTextBlock":
-      return dispatch(state, resolveHeadingDepthShift(state.documentIndex, state.selection, 1));
+      return dispatch(state, resolveHeadingDepthShift(ctx, 1, state.selection.focus.offset));
     case "listItem":
       return dispatch(state, resolveListItemIndent(ctx));
     default:
@@ -233,7 +253,7 @@ export function dedent(state: EditorState) {
     case "tableCell":
       return dispatch(state, resolveTableSelectionMove(state.documentIndex, state.selection, ctx, -1));
     case "rootTextBlock":
-      return dispatch(state, resolveHeadingDepthShift(state.documentIndex, state.selection, -1));
+      return dispatch(state, resolveHeadingDepthShift(ctx, -1, state.selection.focus.offset));
     case "listItem":
       return dispatch(state, resolveListItemDedent(ctx));
     default:
@@ -241,7 +261,7 @@ export function dedent(state: EditorState) {
   }
 }
 
-// --- List operations ---
+// --- Lists & tasks ---
 
 export const moveListItemUp = makeCommand(resolveListItemContext, (_, ctx) =>
   resolveListItemMove(ctx, -1),
@@ -251,7 +271,21 @@ export const moveListItemDown = makeCommand(resolveListItemContext, (_, ctx) =>
   resolveListItemMove(ctx, 1),
 );
 
-// --- Table operations ---
+export function toggleTask(state: EditorState, listItemId: string) {
+  const block = resolveBlockById(state.documentIndex, listItemId);
+
+  if (!block || block.type !== "listItem" || typeof block.checked !== "boolean") {
+    return null;
+  }
+
+  return dispatch(state, {
+    kind: "replace-block",
+    block: { ...block, checked: !block.checked },
+    blockId: listItemId,
+  });
+}
+
+// --- Tables ---
 
 export function insertTable(state: EditorState, columnCount: number) {
   return dispatch(state, resolveTableInsertion(state.documentIndex, state.selection, columnCount));
@@ -281,21 +315,6 @@ export const deleteTable = makeCommand(resolveTableCellContextFromSelection, (_,
 
 // --- Inline formatting ---
 
-function toggleMark(
-  state: EditorState,
-  mark: "italic" | "bold" | "strikethrough" | "underline",
-) {
-  return applyInlineSelectionEdit(state, (target, startOffset, endOffset) =>
-    toggleInlineMarkTarget(target, startOffset, endOffset, mark),
-  );
-}
-
-export function toggleInlineCode(state: EditorState) {
-  return applyInlineSelectionEdit(state, (target, startOffset, endOffset) =>
-    toggleInlineCodeTarget(target, startOffset, endOffset),
-  );
-}
-
 export function toggleBold(state: EditorState) {
   return toggleMark(state, "bold");
 }
@@ -312,62 +331,69 @@ export function toggleUnderline(state: EditorState) {
   return toggleMark(state, "underline");
 }
 
+export function toggleCode(state: EditorState) {
+  return applyInlineSelectionEdit(state, toggleInlineCode);
+}
+
 // --- Links ---
 
-export function updateInlineLink(
+export function updateLink(
   state: EditorState,
   regionId: string,
   startOffset: number,
   endOffset: number,
   url: string,
 ) {
-  return dispatch(
-    state,
-    replaceExactInlineLinkRange(state.documentIndex, regionId, startOffset, endOffset, url),
-  );
+  return setLink(state, regionId, startOffset, endOffset, url);
 }
 
-export function removeInlineLink(
+export function removeLink(
   state: EditorState,
   regionId: string,
   startOffset: number,
   endOffset: number,
 ) {
+  return setLink(state, regionId, startOffset, endOffset, null);
+}
+
+// --- Images ---
+
+export function insertImage(state: EditorState, url: string, alt?: string) {
   return dispatch(
     state,
-    replaceExactInlineLinkRange(state.documentIndex, regionId, startOffset, endOffset, null),
+    insertInlineNode(state.documentIndex, state.selection, (path) =>
+      createImage({ alt: alt ?? null, path, url }),
+    ),
   );
 }
 
-// --- Task items ---
+export function resizeImage(
+  state: EditorState,
+  regionId: string,
+  run: { start: number; end: number; image: NonNullable<EditorInline["image"]> },
+  newWidth: number,
+): EditorState | null {
+  const inlineRegion = resolveInlineRegion(state.documentIndex, regionId);
 
-export function toggleTaskItem(state: EditorState, listItemId: string) {
-  const block = resolveBlockById(state.documentIndex, listItemId);
-
-  if (!block || block.type !== "listItem" || typeof block.checked !== "boolean") {
+  if (!inlineRegion) {
     return null;
   }
 
+  const { image } = run;
+  const replacement = insertInlineIntoRegion(inlineRegion, run.start, run.end, (path) =>
+    createImage({ alt: image.alt, path, title: image.title, url: image.url, width: newWidth }),
+  );
+
   return dispatch(state, {
     kind: "replace-block",
-    block: { ...block, checked: !block.checked },
-    blockId: listItemId,
+    block: replacement.block,
+    blockId: replacement.blockId,
   });
-}
-
-// --- History ---
-
-export function undo(state: EditorState) {
-  return undoEditorState(state);
-}
-
-export function redo(state: EditorState) {
-  return redoEditorState(state);
 }
 
 // --- Comments ---
 
-export function createCommentThread(
+export function addComment(
   state: EditorState,
   selection: { endOffset: number; regionId: string; startOffset: number },
   body: string,
@@ -381,9 +407,9 @@ export function createCommentThread(
   return spliceComments(state, state.documentIndex.document.comments.length, 0, [thread]);
 }
 
-export function replyToCommentThread(state: EditorState, threadIndex: number, body: string) {
+export function replyToThread(state: EditorState, threadIndex: number, body: string) {
   return updateCommentThread(state, threadIndex, (thread) =>
-    replyToThread(thread, { body: body.trim() }),
+    appendThreadReply(thread, { body: body.trim() }),
   );
 }
 
@@ -404,47 +430,22 @@ export function deleteComment(state: EditorState, threadIndex: number, commentIn
   );
 }
 
-export function deleteCommentThread(state: EditorState, threadIndex: number) {
+export function deleteThread(state: EditorState, threadIndex: number) {
   return updateCommentThread(state, threadIndex, () => null);
 }
 
-export function resolveCommentThread(state: EditorState, threadIndex: number, resolved: boolean) {
+export function resolveThread(state: EditorState, threadIndex: number, resolved: boolean) {
   return updateCommentThread(state, threadIndex, (thread) => markThreadResolved(thread, resolved));
 }
 
-function updateCommentThread(
-  state: EditorState,
-  threadIndex: number,
-  updater: (thread: CommentThread) => CommentThread | null,
-) {
-  const threads = getCommentState(state.documentIndex).threads;
-  const currentThread = threads[threadIndex];
+// --- History ---
 
-  if (!currentThread) {
-    return null;
-  }
-
-  const nextThread = updater(currentThread);
-
-  if (nextThread === currentThread) {
-    return null;
-  }
-
-  return spliceComments(state, threadIndex, 1, nextThread ? [nextThread] : []);
+export function undo(state: EditorState) {
+  return undoEditorState(state);
 }
 
-function spliceComments(
-  state: EditorState,
-  index: number,
-  count: number,
-  threads: CommentThread[],
-) {
-  return dispatch(state, {
-    kind: "splice-comments",
-    count,
-    index,
-    threads,
-  });
+export function redo(state: EditorState) {
+  return redoEditorState(state);
 }
 
 // --- Private helpers ---
@@ -483,13 +484,22 @@ function maybeAnimateListItemInsertion(result: {
   return addListMarkerPopAnimation(result.state, result.action.listItemInsertedPath);
 }
 
+function toggleMark(
+  state: EditorState,
+  mark: "italic" | "bold" | "strikethrough" | "underline",
+) {
+  return applyInlineSelectionEdit(state, (inlineRegion, startOffset, endOffset) =>
+    toggleInlineMark(inlineRegion, startOffset, endOffset, mark),
+  );
+}
+
 function applyInlineSelectionEdit(
   state: EditorState,
-  applyTargetEdit: (
-    target: InlineCommandTarget,
+  applyEdit: (
+    inlineRegion: InlineRegion,
     startOffset: number,
     endOffset: number,
-  ) => InlineCommandReplacement | null,
+  ) => InlineRegionReplacement | null,
 ) {
   const selection = normalizeSelection(state.documentIndex, state.selection);
 
@@ -507,8 +517,21 @@ function applyInlineSelectionEdit(
       selection.start.regionId,
       selection.start.offset,
       selection.end.offset,
-      applyTargetEdit,
+      applyEdit,
     ),
+  );
+}
+
+function setLink(
+  state: EditorState,
+  regionId: string,
+  startOffset: number,
+  endOffset: number,
+  url: string | null,
+) {
+  return dispatch(
+    state,
+    replaceExactInlineLinkRange(state.documentIndex, regionId, startOffset, endOffset, url),
   );
 }
 
@@ -521,122 +544,53 @@ function hasExpandedSelection(state: EditorState) {
   );
 }
 
-function deleteCharacterBackward(state: EditorState) {
-  return deleteCollapsedCharacter(state, "backward");
-}
-
-function deleteCharacterForward(state: EditorState) {
-  return deleteCollapsedCharacter(state, "forward");
-}
-
 function deleteCollapsedCharacter(state: EditorState, direction: "backward" | "forward") {
-  if (
-    state.selection.anchor.regionId !== state.selection.focus.regionId ||
-    state.selection.anchor.offset !== state.selection.focus.offset
-  ) {
+  const resolved = resolveCharacterDelete(state, direction);
+
+  if (!resolved) {
     return null;
   }
 
-  const region = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const nextState = dispatch(state, resolved.action);
 
-  if (!region) {
+  if (!nextState) {
     return null;
   }
 
-  if (direction === "forward" && state.selection.focus.offset >= region.text.length) {
-    return null;
-  }
-
-  const startOffset =
-    direction === "backward"
-      ? previousGraphemeOffset(region.text, state.selection.focus.offset)
-      : state.selection.focus.offset;
-  const endOffset =
-    direction === "backward"
-      ? state.selection.focus.offset
-      : nextGraphemeOffset(region.text, state.selection.focus.offset);
-
-  if (startOffset === endOffset) {
-    return null;
-  }
-
-  const nextState = replaceSelectionText(
-    setSelection(state, {
-      anchor: {
-        regionId: region.id,
-        offset: startOffset,
-      },
-      focus: {
-        regionId: region.id,
-        offset: endOffset,
-      },
-    }),
-    "",
-  );
-
-  return maybeAddDeletedTextFadeAnimation(state, nextState, startOffset, endOffset);
+  return addPlainTextDeletionFadeAnimation(state, nextState, resolved.startOffset, resolved.endOffset);
 }
 
-function maybeAddDeletedTextFadeAnimation(
-  previousState: EditorState,
-  nextState: EditorState,
-  startOffset: number,
-  endOffset: number,
-) {
-  const deletedTextFade = resolveDeletedTextFadeAnimation(previousState, startOffset, endOffset);
-
-  return deletedTextFade ? addDeletedTextFadeAnimation(nextState, deletedTextFade) : nextState;
-}
-
-function resolveDeletedTextFadeAnimation(
+function updateCommentThread(
   state: EditorState,
-  startOffset: number,
-  endOffset: number,
+  threadIndex: number,
+  updater: (thread: CommentThread) => CommentThread | null,
 ) {
-  const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+  const threads = getCommentState(state.documentIndex).threads;
+  const currentThread = threads[threadIndex];
 
-  if (!region) {
+  if (!currentThread) {
     return null;
   }
 
-  const deletedText = region.text.slice(startOffset, endOffset);
+  const nextThread = updater(currentThread);
 
-  if (deletedText.length === 0) {
+  if (nextThread === currentThread) {
     return null;
   }
 
-  const deletedInline = region.inlines.find(
-    (inline) =>
-      inline.start <= startOffset &&
-      inline.end >= endOffset &&
-      inline.kind === "text" &&
-      inline.link === null &&
-      inline.marks.length === 0,
-  );
-
-  if (!deletedInline) {
-    return null;
-  }
-
-  return {
-    regionPath: region.path,
-    startOffset,
-    text: deletedText,
-  };
+  return spliceComments(state, threadIndex, 1, nextThread ? [nextThread] : []);
 }
 
-function previousGraphemeOffset(text: string, offset: number) {
-  const slice = Array.from(text.slice(0, offset));
-
-  if (slice.length === 0) {
-    return 0;
-  }
-
-  return offset - slice.at(-1)!.length;
-}
-
-function nextGraphemeOffset(text: string, offset: number) {
-  const next = Array.from(text.slice(offset))[0];
-
-  return next ? offset + next.length : text.length;
+function spliceComments(
+  state: EditorState,
+  index: number,
+  count: number,
+  threads: CommentThread[],
+) {
+  return dispatch(state, {
+    kind: "splice-comments",
+    count,
+    index,
+    threads,
+  });
 }

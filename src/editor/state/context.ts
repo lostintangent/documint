@@ -8,8 +8,8 @@ import {
   type ListItemBlock,
   type TableBlock,
 } from "@/document";
-import type { DocumentIndex, EditorRegion } from "./types";
-import type { EditorSelection } from "../selection";
+import type { DocumentIndex, EditorRegion } from "./index/types";
+import type { EditorSelection } from "./selection";
 
 // Block tree context resolvers. Given an DocumentIndex and selection, resolves
 // the structural context (list item, blockquote, table cell) needed by commands.

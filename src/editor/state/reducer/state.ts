@@ -1,5 +1,13 @@
-// Editor state machine. Manages document mutations, selection, undo/redo,
-// and action dispatch. All state transitions flow through `dispatch`.
+// Editor state machine. Owns the central `dispatch` that turns an
+// EditorStateAction (built by an action resolver, dispatched by a command)
+// into the next EditorState — applying the document mutation, rebuilding
+// the document index, resolving the post-edit selection, and pushing the
+// previous state onto the history stack. Also owns the selection and
+// undo/redo primitives commands call directly.
+//
+// Text-level mutations (single-region splice, cross-region merge, inline
+// rewrites) live in ./text and ./inlines; this file handles the action
+// dispatch, document index swap, selection clamping, and history.
 
 import {
   createDocument,
@@ -21,7 +29,7 @@ import {
   replaceIndexedDocument,
 } from "../index/build";
 import type { DocumentIndex } from "../index/types";
-import type { ActionSelection, EditorState, EditorStateAction } from "../types";
+import type { ActionSelection, EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
   resolveRegion,
   resolveSelectionTarget,
@@ -172,6 +180,8 @@ export function setSelectionPoint(
 /* History */
 
 export function pushHistory(state: EditorState, documentIndex: DocumentIndex): EditorState {
+  const point = resolveDefaultSelectionPoint(documentIndex);
+
   return {
     animations: pruneEditorAnimations(state.animations, getEditorAnimationTime()),
     documentIndex,
@@ -180,60 +190,57 @@ export function pushHistory(state: EditorState, documentIndex: DocumentIndex): E
       ...state.history,
       { document: state.documentIndex.document, selection: state.selection },
     ],
-    selection: createCollapsedSelectionAtDefaultPoint(documentIndex),
+    selection: { anchor: point, focus: point },
   };
 }
 
 export function undoEditorState(state: EditorState): EditorState {
   const previous = state.history.at(-1);
+
   if (!previous) {
     return state;
   }
 
-  const documentIndex = createDocumentIndex(previous.document);
-
-  return {
-    animations: [],
-    documentIndex,
-    future: [
-      { document: state.documentIndex.document, selection: state.selection },
-      ...state.future,
-    ],
+  return restoreHistoryEntry(previous, {
+    future: [snapshotState(state), ...state.future],
     history: state.history.slice(0, -1),
-    selection: previous.selection,
-  };
+  });
 }
 
 export function redoEditorState(state: EditorState): EditorState {
   const next = state.future[0];
+
   if (!next) {
     return state;
   }
 
-  const documentIndex = createDocumentIndex(next.document);
+  return restoreHistoryEntry(next, {
+    future: state.future.slice(1),
+    history: [...state.history, snapshotState(state)],
+  });
+}
 
+function snapshotState(state: EditorState): HistoryEntry {
+  return {
+    document: state.documentIndex.document,
+    selection: state.selection,
+  };
+}
+
+function restoreHistoryEntry(
+  entry: HistoryEntry,
+  stacks: { future: HistoryEntry[]; history: HistoryEntry[] },
+): EditorState {
   return {
     animations: [],
-    documentIndex,
-    future: state.future.slice(1),
-    history: [
-      ...state.history,
-      { document: state.documentIndex.document, selection: state.selection },
-    ],
-    selection: next.selection,
+    documentIndex: createDocumentIndex(entry.document),
+    future: stacks.future,
+    history: stacks.history,
+    selection: entry.selection,
   };
 }
 
 /* Internal helpers */
-
-function createCollapsedSelectionAtDefaultPoint(documentIndex: DocumentIndex): EditorSelection {
-  const point = resolveDefaultSelectionPoint(documentIndex);
-
-  return {
-    anchor: point,
-    focus: point,
-  };
-}
 
 function resolveDefaultSelectionPoint(documentIndex: DocumentIndex): EditorSelectionPoint {
   return documentIndex.regions[0]

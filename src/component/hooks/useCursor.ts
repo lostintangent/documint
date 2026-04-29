@@ -1,18 +1,30 @@
 import {
   measureCaretTarget,
+  measureInlineImageBounds,
   measureVisualCaretTarget,
   normalizeSelection,
+  resolveImageAtSelection,
   resolveTargetAtSelection,
   type EditorCommentState,
+  type EditorInline,
   type EditorState,
   type EditorViewportState,
+  type InlineBounds,
   type NormalizedEditorSelection,
 } from "@/editor";
+import type { DocumentResources } from "@/types";
 import type { LazyRefHandle } from "./useLazyRef";
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { resolveContextualLeaf, type ContextualLeaf } from "../overlays/leaves/lib/leaf-target";
 
 /* Public types (consumed by the host to render the cursor leaf) */
+
+export type ImageAtCursor = {
+  bounds: InlineBounds;
+  maxWidth: number | null;
+  regionId: string;
+  run: EditorInline;
+};
 
 export type InsertionLeaf = {
   kind: "insertion";
@@ -42,6 +54,7 @@ type UseCursorOptions = {
   editorState: EditorState;
   editorViewportState: LazyRefHandle<EditorViewportState>;
   layoutWidth: number;
+  resources: DocumentResources | null;
   scrollContentHeight: number;
   viewportHeight: number;
 
@@ -52,6 +65,7 @@ type UseCursorOptions = {
 };
 
 type CursorController = {
+  imageAtCursor: ImageAtCursor | null;
   leaf: CursorLeaf | null;
   isVisible: () => boolean;
   markActivity: () => void;
@@ -117,6 +131,7 @@ export function useCursor({
   getScrollTop,
   layoutWidth,
   onVisibilityChange,
+  resources,
   scrollContentHeight,
   scrollTo,
   viewportHeight,
@@ -125,6 +140,7 @@ export function useCursor({
 
   const normalizedSel = useMemo(() => normalizeSelection(editorState), [editorState]);
   const [leaf, setLeaf] = useState<CursorLeaf | null>(null);
+  const [imageAtCursor, setImageAtCursor] = useState<ImageAtCursor | null>(null);
   const shouldBlinkCaret =
     normalizedSel.start.regionId === normalizedSel.end.regionId &&
     normalizedSel.start.offset === normalizedSel.end.offset;
@@ -164,6 +180,16 @@ export function useCursor({
     editorState,
     editorViewportState,
   ]);
+
+  useLayoutEffect(() => {
+    const nextImageAtCursor = resources
+      ? resolveImageAtCursor(editorState, editorViewportState.get(), normalizedSel, resources)
+      : null;
+
+    setImageAtCursor((previous) =>
+      areImageAtCursorsEqual(previous, nextImageAtCursor) ? previous : nextImageAtCursor,
+    );
+  }, [editorState, editorViewportState, normalizedSel, resources]);
 
   /* Focus visibility */
 
@@ -258,6 +284,7 @@ export function useCursor({
   /* Public API */
 
   return {
+    imageAtCursor,
     leaf,
     isVisible: () => cursorVisibleRef.current,
     markActivity,
@@ -451,5 +478,53 @@ function isCaretVisibleAtScrollTop(
   return (
     caret.top >= scrollTop + padding &&
     caret.top + caret.height <= scrollTop + visibleHeight - padding
+  );
+}
+
+function resolveImageAtCursor(
+  state: EditorState,
+  viewport: EditorViewportState | null,
+  normalizedSelection: NormalizedEditorSelection,
+  resources: DocumentResources,
+): ImageAtCursor | null {
+  if (!viewport) {
+    return null;
+  }
+
+  // Only show image handles for a collapsed selection (cursor), not a text selection.
+  if (
+    normalizedSelection.start.regionId !== normalizedSelection.end.regionId ||
+    normalizedSelection.start.offset !== normalizedSelection.end.offset
+  ) {
+    return null;
+  }
+
+  const imageRun = resolveImageAtSelection(state);
+
+  if (!imageRun) {
+    return null;
+  }
+
+  const bounds = measureInlineImageBounds(state, viewport, resources, imageRun);
+  const maxWidth = imageRun.image ? (resources.images.get(imageRun.image.url)?.intrinsicWidth ?? null) : null;
+  const regionId = state.selection.anchor.regionId;
+
+  return bounds ? { bounds, maxWidth, regionId, run: imageRun } : null;
+}
+
+function areImageAtCursorsEqual(
+  previous: ImageAtCursor | null,
+  next: ImageAtCursor | null,
+): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+
+  return (
+    previous.regionId === next.regionId &&
+    previous.maxWidth === next.maxWidth &&
+    previous.bounds.left === next.bounds.left &&
+    previous.bounds.top === next.bounds.top &&
+    previous.bounds.width === next.bounds.width &&
+    previous.bounds.height === next.bounds.height
   );
 }

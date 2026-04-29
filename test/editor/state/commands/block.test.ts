@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { dedent, deleteBackward, indent, insertLineBreak } from "@/editor/state";
+import { dedent, deleteBackward, indent, insertLineBreak, insertText } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
 
-test("handles structural backspace for task markers, headings, and blockquotes", () => {
+test("removes task markers, demotes headings, and unwraps single-line blockquotes on backspace", () => {
   let taskState = createEditorState(parseMarkdown("- [ ] alpha\n"));
   const alpha = taskState.documentIndex.regions.find((container) => container.text === "alpha");
 
@@ -235,7 +235,7 @@ test("preserves blockquote and code-fence context on enter", () => {
   );
 });
 
-test("exits empty blockquote lines through the structural enter path", () => {
+test("pressing enter on an empty blockquote line exits to a paragraph", () => {
   let quoteState = createEditorState(parseMarkdown("> alpha\n"));
   const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
 
@@ -298,7 +298,7 @@ test("re-enters the preceding blockquote when backspacing from the empty paragra
   expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
 });
 
-test("deletes empty quoted lines with structural backspace without unwrapping the whole quote", () => {
+test("backspacing on an empty quoted line removes it without unwrapping the blockquote", () => {
   let quoteState = createEditorState(parseMarkdown("> alpha\n"));
   const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
 
@@ -382,4 +382,68 @@ test("changes heading depth with tab and shift-tab", () => {
   h6State = indent(h6State) ?? h6State;
 
   expect(serializeMarkdown(createDocumentFromEditorState(h6State))).toBe("###### Heading\n");
+});
+
+test("merges a non-empty quoted line with the previous line when backspacing at its start", () => {
+  let quoteState = createEditorState(parseMarkdown("> alpha\n"));
+  const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
+
+  if (!alpha) {
+    throw new Error("Expected alpha container");
+  }
+
+  quoteState = setSelection(quoteState, { regionId: alpha.id, offset: alpha.text.length });
+  quoteState = insertLineBreak(quoteState) ?? quoteState;
+
+  const empty = quoteState.documentIndex.regions.find((container) => container.text === "");
+
+  if (!empty) {
+    throw new Error("Expected empty quoted container");
+  }
+
+  quoteState = setSelection(quoteState, { regionId: empty.id, offset: 0 });
+  quoteState = insertText(quoteState, "beta") ?? quoteState;
+
+  const beta = quoteState.documentIndex.regions.find((container) => container.text === "beta");
+
+  if (!beta) {
+    throw new Error("Expected beta container");
+  }
+
+  quoteState = setSelection(quoteState, { regionId: beta.id, offset: 0 });
+  quoteState = deleteBackward(quoteState) ?? quoteState;
+
+  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe("> alphabeta\n");
+
+  const merged = quoteState.documentIndex.regions.find((container) => container.text === "alphabeta");
+
+  if (!merged) {
+    throw new Error("Expected merged container");
+  }
+
+  expect(quoteState.selection.focus.regionId).toBe(merged.id);
+  expect(quoteState.selection.focus.offset).toBe("alpha".length);
+});
+
+test("places cursor at the merge junction when backspacing at the start of a block", () => {
+  let state = createEditorState(parseMarkdown("First\n\nSecond\n"));
+  const second = state.documentIndex.regions.find((container) => container.text === "Second");
+
+  if (!second) {
+    throw new Error("Expected second paragraph");
+  }
+
+  state = setSelection(state, { regionId: second.id, offset: 0 });
+  state = deleteBackward(state) ?? state;
+
+  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("FirstSecond\n");
+
+  const merged = state.documentIndex.regions.find((container) => container.text === "FirstSecond");
+
+  if (!merged) {
+    throw new Error("Expected merged container");
+  }
+
+  expect(state.selection.focus.regionId).toBe(merged.id);
+  expect(state.selection.focus.offset).toBe("First".length);
 });

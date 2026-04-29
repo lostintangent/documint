@@ -23,6 +23,7 @@ export {
   getSelectionContext,
   getSelectionMarks,
   normalizeSelection,
+  resolveImageAtSelection,
   resolveRegionByPath,
   resolveTableCellRegion,
   resolveSelectionTarget,

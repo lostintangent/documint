@@ -3,9 +3,9 @@
 // and exposes the "what's active at the selection" view consumers render.
 
 import { findBlockById, type Block, type Mark } from "@/document";
-import type { DocumentIndex } from "./index/types";
+import type { DocumentIndex, EditorInline } from "./index/types";
 import type { EditorState } from "./types";
-import { resolveInlineCommandMarks, resolveInlineCommandTarget } from "./actions/inline";
+import { resolveInlineMarks, resolveInlineRegionFromBlock } from "./actions/inline";
 import { createTableCellRegionKey, SELECTION_ORDER_MULTIPLIER } from "./index/shared";
 
 export type EditorSelectionPoint = {
@@ -239,7 +239,7 @@ function resolveSelectionOrder(documentIndex: DocumentIndex, point: EditorSelect
   return regionIndex * SELECTION_ORDER_MULTIPLIER + point.offset;
 }
 
-function createCollapsedSelection(regionId: string, offset: number): EditorSelection {
+export function createCollapsedSelection(regionId: string, offset: number): EditorSelection {
   const point = { offset, regionId };
 
   return {
@@ -371,6 +371,17 @@ export function getSelectionContext(state: EditorState): SelectionContext {
   };
 }
 
+export function resolveImageAtSelection(state: EditorState): EditorInline | null {
+  const container = state.documentIndex.regionIndex.get(state.selection.anchor.regionId) ?? null;
+  const offset = state.selection.anchor.offset;
+  const run =
+    container?.inlines.find((entry) => offset > entry.start && offset < entry.end) ??
+    container?.inlines.find((entry) => entry.end === offset) ??
+    container?.inlines.find((entry) => entry.start === offset) ??
+    null;
+  return run?.kind === "image" ? run : null;
+}
+
 export function getSelectionMarks(state: EditorState): Mark[] {
   const normalized = normalizeSelection(state.documentIndex, state.selection);
 
@@ -393,9 +404,9 @@ export function getSelectionMarks(state: EditorState): Mark[] {
     return [];
   }
 
-  const target = resolveInlineCommandTarget(block, region.path, region.semanticRegionId);
+  const inlineRegion = resolveInlineRegionFromBlock(block, region.path, region.semanticRegionId);
 
-  return target
-    ? resolveInlineCommandMarks(target, normalized.start.offset, normalized.end.offset)
+  return inlineRegion
+    ? resolveInlineMarks(inlineRegion, normalized.start.offset, normalized.end.offset)
     : [];
 }

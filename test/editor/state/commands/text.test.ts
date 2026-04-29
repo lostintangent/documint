@@ -10,12 +10,15 @@ import {
   createEditorState,
   deleteBackward,
   deleteForward,
-  deleteSelectionText,
-  insertSelectionText,
+  deleteSelection,
+  extendSelectionToPoint,
+  insertText,
+  replaceSelection,
   setSelection,
   type EditorSelection,
 } from "@/editor/state";
 import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { getRegion, placeAt, setup } from "../helpers";
 
 test("replaces and deletes selected text within a single canvas container", () => {
   let state = createEditorState(parseMarkdown("Paragraph body.\n"));
@@ -35,7 +38,7 @@ test("replaces and deletes selected text within a single canvas container", () =
       offset: "Paragraph".length,
     },
   });
-  state = insertSelectionText(state, "Selected");
+  state = replaceSelection(state, "Selected");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Selected body.\n");
 
@@ -55,7 +58,7 @@ test("replaces and deletes selected text within a single canvas container", () =
       offset: "Selected body".length,
     },
   });
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Selected.\n");
 });
@@ -72,7 +75,7 @@ test("deleting all text within a single heading keeps the heading block", () => 
     anchor: { regionId: heading.id, offset: 0 },
     focus: { regionId: heading.id, offset: heading.text.length },
   });
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   // Single-region deletes preserve block type — selecting the full contents
   // of a heading and deleting leaves an empty heading, not a paragraph.
@@ -95,7 +98,7 @@ test("merges two paragraphs when a cross-region selection is replaced with text"
     state,
     selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
   );
-  state = insertSelectionText(state, "X");
+  state = replaceSelection(state, "X");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alpha Xdelta\n");
   expect(state.documentIndex.regions).toHaveLength(1);
@@ -111,7 +114,7 @@ test("drops middle blocks when a cross-region selection spans three paragraphs",
   }
 
   state = setSelection(state, selectionBetween(first.id, 2, third.id, 3));
-  state = insertSelectionText(state, "-");
+  state = replaceSelection(state, "-");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("al-ma\n");
 });
@@ -170,7 +173,7 @@ test("cross-region deletion with empty text concatenates prefix and suffix witho
     state,
     selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
   );
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alpha delta\n");
 });
@@ -187,7 +190,7 @@ test("merges a heading with a paragraph using the start block's type", () => {
     state,
     selectionBetween(heading.id, "Headin".length, paragraph.id, "Paragraph ".length),
   );
-  state = insertSelectionText(state, "/");
+  state = replaceSelection(state, "/");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("# Headin/body\n");
 });
@@ -203,7 +206,7 @@ test("drops a code block between two paragraphs during cross-region replacement"
   }
 
   state = setSelection(state, selectionBetween(first.id, 2, last.id, 3));
-  state = insertSelectionText(state, "!");
+  state = replaceSelection(state, "!");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("al!ma\n");
 });
@@ -220,7 +223,7 @@ test("trims a code block when it is an endpoint of a cross-region selection", ()
   }
 
   state = setSelection(state, selectionBetween(codeRegion.id, 3, paragraphRegion.id, 2));
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   // Code-block prefix kept; paragraph suffix kept; no inline merge (not text-like on both sides).
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("```\nabc\n```\n\npha\n");
@@ -240,7 +243,7 @@ test("drops tables entirely when a cross-region selection enters or exits them",
   }
 
   state = setSelection(state, selectionBetween(first.id, 2, second.id, 2));
-  state = insertSelectionText(state, "X");
+  state = replaceSelection(state, "X");
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alXta\n");
 });
@@ -254,7 +257,7 @@ test("normalizes an empty document to a single empty paragraph after replacing e
   }
 
   state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("\n");
   expect(state.documentIndex.regions).toHaveLength(1);
@@ -277,7 +280,7 @@ test("trims a list when a cross-region selection starts in one list item and end
     state,
     selectionBetween(firstListItem.id, "al".length, afterParagraph.id, "af".length),
   );
-  state = insertSelectionText(state, "!");
+  state = replaceSelection(state, "!");
 
   // The first list item gets trimmed ("al"); later items are dropped. The
   // trimmed list is a container (not text-like), so it doesn't inline-merge
@@ -319,7 +322,7 @@ test("preserves comment threads anchored before a cross-region edit", () => {
     state,
     selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
   );
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   // Thread anchored in content before the selection start survives the
   // cross-region edit — same thread count, same quote, still resolvable.
@@ -341,7 +344,7 @@ test("replaces the entire document with a single paragraph when every block is f
     state,
     selectionBetween(firstRegion.id, 0, lastRegion.id, lastRegion.text.length),
   );
-  state = insertSelectionText(state, "x");
+  state = replaceSelection(state, "x");
 
   // Both the start heading and the end paragraph are fully consumed — their
   // types don't leak into the result. The replacement becomes a fresh
@@ -364,7 +367,7 @@ test("cross-region delete drops a trailing heading when it is fully consumed by 
     state,
     selectionBetween(paragraph.id, "alpha".length, heading.id, heading.text.length),
   );
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   // The paragraph keeps its partial prefix ("alpha"). The trailing heading
   // was fully consumed and drops — its type doesn't leak into the result.
@@ -389,7 +392,7 @@ test("cross-region type with a trailing heading fully consumed absorbs into the 
     state,
     selectionBetween(paragraph.id, "alpha".length, heading.id, heading.text.length),
   );
-  state = insertSelectionText(state, "X");
+  state = replaceSelection(state, "X");
 
   // The trailing heading drops; the partial paragraph absorbs the typed
   // text at its end (start-block-wins since the start still has content).
@@ -406,7 +409,7 @@ test("select-all + delete produces an empty paragraph even when the document sta
   }
 
   state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
-  state = deleteSelectionText(state);
+  state = deleteSelection(state);
 
   // The heading's type must not survive — the deletion consumed it entirely.
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("\n");
@@ -425,3 +428,43 @@ function selectionBetween(
     focus: { regionId: focusRegionId, offset: focusOffset },
   };
 }
+
+test("extends the selection focus to a new point while keeping the anchor fixed", () => {
+  const state = setup("Hello world\n");
+  const region = getRegion(state, "Hello world");
+  const placed = placeAt(state, region, 0);
+  const extended = extendSelectionToPoint(placed, region.id, 5);
+
+  expect(extended.selection.anchor.regionId).toBe(region.id);
+  expect(extended.selection.anchor.offset).toBe(0);
+  expect(extended.selection.focus.regionId).toBe(region.id);
+  expect(extended.selection.focus.offset).toBe(5);
+});
+
+test("deletes adjacent images atomically with deleteBackward and deleteForward", () => {
+  const state = createEditorState(parseMarkdown("before ![alt](https://example.com/image.png) after\n"));
+  const region = state.documentIndex.regions[0];
+
+  if (!region) throw new Error("Expected paragraph region");
+
+  const imageRun = region.inlines.find((run) => run.kind === "image");
+
+  if (!imageRun) throw new Error("Expected image run");
+
+  const backward = deleteBackward(setSelection(state, { regionId: region.id, offset: imageRun.end }));
+  const forward = deleteForward(setSelection(state, { regionId: region.id, offset: imageRun.start }));
+
+  expect(backward).not.toBeNull();
+  expect(forward).not.toBeNull();
+  expect(serializeMarkdown(createDocumentFromEditorState(backward!))).toBe("before  after\n");
+  expect(serializeMarkdown(createDocumentFromEditorState(forward!))).toBe("before  after\n");
+});
+
+test("does not persist a typed trailing prose space as a markdown entity", () => {
+  const state = setup("alpha\n");
+  const region = getRegion(state, "alpha");
+  const result = insertText(placeAt(state, region, "end"), " ");
+
+  expect(result).not.toBeNull();
+  expect(serializeMarkdown(createDocumentFromEditorState(result!))).toBe("alpha\n");
+});

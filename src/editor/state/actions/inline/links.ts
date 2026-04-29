@@ -1,9 +1,12 @@
 // Link manipulation: create, update, and remove inline links.
-import { createLink as createDocumentLinkNode, type Inline } from "@/document";
-import { compactInlineNodes } from "../../index/shared";
+import {
+  createLink as createDocumentLinkNode,
+  defragmentTextInlines,
+  type Inline,
+} from "@/document";
 import type { DocumentIndex } from "../../index/types";
-import type { InlineCommandReplacement, InlineCommandTarget } from "./target";
-import { createInlineCommandReplacement, replaceInlineRange } from "./target";
+import type { InlineRegion, InlineRegionReplacement } from ".";
+import { createInlineRegionReplacement, replaceInlineRange } from ".";
 import { measureInlineNodeText } from "./shared";
 
 export function replaceExactInlineLinkRange(
@@ -18,33 +21,33 @@ export function replaceExactInlineLinkRange(
     regionId,
     startOffset,
     endOffset,
-    (target, resolvedStartOffset, resolvedEndOffset) =>
-      replaceExactInlineLinkTarget(target, resolvedStartOffset, resolvedEndOffset, url),
+    (inlineRegion, resolvedStartOffset, resolvedEndOffset) =>
+      replaceExactInlineLink(inlineRegion, resolvedStartOffset, resolvedEndOffset, url),
   );
 }
 
-export function replaceExactInlineLinkTarget(
-  target: InlineCommandTarget,
+export function replaceExactInlineLink(
+  inlineRegion: InlineRegion,
   startOffset: number,
   endOffset: number,
   url: string | null,
-): InlineCommandReplacement | null {
-  const nextChildren = compactInlineNodes(
-    replaceExactInlineLink(
-      target.children,
+): InlineRegionReplacement | null {
+  const nextChildren = defragmentTextInlines(
+    replaceExactInlineLinkInNodes(
+      inlineRegion.children,
       startOffset,
       endOffset,
       url,
-      `${target.path}.children`,
+      `${inlineRegion.path}.children`,
     ) ?? [],
   );
 
   return nextChildren.length > 0
-    ? createInlineCommandReplacement(target, nextChildren, startOffset, endOffset)
+    ? createInlineRegionReplacement(inlineRegion, nextChildren, startOffset, endOffset)
     : null;
 }
 
-function replaceExactInlineLink(
+function replaceExactInlineLinkInNodes(
   nodes: Inline[],
   startOffset: number,
   endOffset: number,

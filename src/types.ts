@@ -44,7 +44,7 @@ export type EditorCommand =
   | "redo"
   | "selectAll"
   | "toggleBold"
-  | "toggleInlineCode"
+  | "toggleCode"
   | "toggleItalic"
   | "toggleStrikethrough"
   | "toggleUnderline"

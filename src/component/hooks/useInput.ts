@@ -32,7 +32,7 @@ import {
   redo,
   selectAll,
   toggleBold,
-  toggleInlineCode,
+  toggleCode,
   toggleItalic,
   toggleStrikethrough,
   toggleUnderline,
@@ -907,8 +907,8 @@ function applyKeyboardEvent(
         return toggleStrikethrough(state);
       case "toggleUnderline":
         return toggleUnderline(state);
-      case "toggleInlineCode":
-        return toggleInlineCode(state);
+      case "toggleCode":
+        return toggleCode(state);
       case "undo":
         return undo(state);
       case "redo":

@@ -6,7 +6,7 @@ test("maps modifier shortcuts to semantic editor commands", () => {
   expect(resolveEditorCommand(createKeyboardEvent("i", { metaKey: true }))).toBe("toggleItalic");
   expect(resolveEditorCommand(createKeyboardEvent("u", { metaKey: true }))).toBe("toggleUnderline");
   expect(resolveEditorCommand(createKeyboardEvent("e", { metaKey: true }))).toBe(
-    "toggleInlineCode",
+    "toggleCode",
   );
   expect(
     resolveEditorCommand(createKeyboardEvent("ArrowUp", { altKey: true, shiftKey: true })),

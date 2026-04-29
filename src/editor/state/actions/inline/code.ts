@@ -1,6 +1,6 @@
 import { type Code, type Inline } from "@/document";
-import type { InlineCommandReplacement, InlineCommandTarget } from "./target";
-import { createInlineCommandReplacement } from "./target";
+import type { InlineRegion, InlineRegionReplacement } from ".";
+import { createInlineRegionReplacement } from ".";
 import {
   measureInlineNodeText,
   extractInlineSelectionText,
@@ -9,20 +9,20 @@ import {
   spliceInlineNodes,
 } from "./shared";
 
-export function toggleInlineCodeTarget(
-  target: InlineCommandTarget,
+export function toggleInlineCode(
+  inlineRegion: InlineRegion,
   startOffset: number,
   endOffset: number,
-): InlineCommandReplacement | null {
+): InlineRegionReplacement | null {
   const nextChildren = toggleInlineCodeNodes(
-    target.children,
+    inlineRegion.children,
     startOffset,
     endOffset,
-    `${target.path}.children`,
+    `${inlineRegion.path}.children`,
   );
 
   return nextChildren.length > 0
-    ? createInlineCommandReplacement(target, nextChildren, startOffset, endOffset)
+    ? createInlineRegionReplacement(inlineRegion, nextChildren, startOffset, endOffset)
     : null;
 }
 

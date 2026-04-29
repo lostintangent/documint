@@ -8,7 +8,7 @@ import {
 import { getCommentState } from "@/editor/anchors";
 import {
   createCanvasRenderCache,
-  createCommentThread as createEditorCommentThread,
+  addComment as addEditorComment,
   createEditorState,
   getDocument,
   insertText,
@@ -126,7 +126,7 @@ test("preserves selection when creating a comment thread", () => {
     offset: 4,
   });
 
-  const nextState = createEditorCommentThread(
+  const nextState = addEditorComment(
     state,
     { regionId: region.id, startOffset: 0, endOffset: 6 },
     "Review this heading",
@@ -162,7 +162,7 @@ test("creates a new comment thread from a single-region selection", () => {
     },
   });
 
-  const result = createEditorCommentThread(
+  const result = addEditorComment(
     state,
     {
       endOffset: 6,

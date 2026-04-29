@@ -16,8 +16,8 @@ import {
   normalizeSelection,
   type EditorSelection,
 } from "../selection";
-import { replaceListItemLeadingParagraphText, resolveListItemContext } from "../index/context";
-import { findRootIndex, resolveRootTextBlockContext } from "../index/context";
+import { replaceListItemLeadingParagraphText, resolveListItemContext } from "../context";
+import { findRootIndex, resolveRootTextBlockContext } from "../context";
 
 // Text input rule detection: recognizes markdown-like patterns (headings, lists,
 // blockquotes, dividers) and produces the corresponding action.

@@ -3,7 +3,7 @@ import type { EditorInline, RuntimeLinkAttributes } from "@/editor/state";
 import {
   editorInlinesToDocumentInlines,
   replaceEditorInlines,
-} from "@/editor/state/reducer/text";
+} from "@/editor/state/reducer/inlines";
 
 test("inserting at the start of a link run stays outside the link", () => {
   const link = { title: null, url: "https://example.com" } satisfies RuntimeLinkAttributes;

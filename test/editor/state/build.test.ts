@@ -7,7 +7,8 @@ import {
   rebuildEditorRoot,
   spliceDocumentIndex,
 } from "@/editor/state";
-import { parseMarkdown } from "@/markdown";
+import { replaceEditorBlock } from "@/editor/state/index/build";
+import { parseMarkdown, serializeMarkdown } from "@/markdown";
 
 test("builds positioned editor roots directly on the unified model", () => {
   const snapshot = parseMarkdown(`# Heading
@@ -137,4 +138,32 @@ alpha
 
   expect(shrunk.imageUrls).not.toBe(index.imageUrls);
   expect([...shrunk.imageUrls]).toEqual([]);
+});
+
+test("replaces a nested editor block through the reducer", () => {
+  const documentIndex = createDocumentIndex(parseMarkdown("- alpha\n"));
+  const paragraph = documentIndex.blocks.find((block) => block.type === "paragraph");
+
+  if (!paragraph) {
+    throw new Error("Expected paragraph block");
+  }
+
+  const reduction = replaceEditorBlock(documentIndex, paragraph.id, () =>
+    createParagraphTextBlock({ text: "beta" }),
+  );
+
+  if (!reduction) {
+    throw new Error("Expected nested block replacement");
+  }
+
+  expect(serializeMarkdown(reduction)).toBe("- beta\n");
+});
+
+test("replaces a root range through the reducer", () => {
+  const documentIndex = createDocumentIndex(parseMarkdown("alpha\n\nbeta\n"));
+  const reduction = spliceDocument(documentIndex.document, 1, 1, [
+    createParagraphTextBlock({ text: "omega" }),
+  ]);
+
+  expect(serializeMarkdown(reduction)).toBe("alpha\n\nomega\n");
 });

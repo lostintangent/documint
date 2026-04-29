@@ -331,6 +331,39 @@ export function createDirectiveBlock(
   };
 }
 
+// Restore the canonical form after a mutation that fragmented adjacent
+// text inlines — e.g. removing a link spreads its children into the parent
+// (text inside + text outside become adjacent), merging two paragraphs
+// concatenates their children at the seam, and inline splices generate
+// new text runs adjacent to existing same-mark ones. Without this pass
+// the tree would carry pointless `[text("foo"), text("bar")]` runs in
+// place of `[text("foobar")]`. Only adjacent text inlines with identical
+// marks are merged; other inline kinds pass through.
+export function defragmentTextInlines(nodes: Inline[]) {
+  const defragmented: Inline[] = [];
+
+  for (const node of nodes) {
+    const previous = defragmented.at(-1);
+
+    if (
+      previous?.type === "text" &&
+      node.type === "text" &&
+      previous.marks.join(",") === node.marks.join(",")
+    ) {
+      defragmented[defragmented.length - 1] = createText({
+        marks: previous.marks,
+        path: previous.id,
+        text: previous.text + node.text,
+      });
+      continue;
+    }
+
+    defragmented.push(node);
+  }
+
+  return defragmented;
+}
+
 export function rebuildTextBlock(block: HeadingBlock | ParagraphBlock, children: Inline[]) {
   return block.type === "heading"
     ? createHeadingBlock({

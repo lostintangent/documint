@@ -1,7 +1,22 @@
-// Editor animation types and state helpers. Separated from state.ts to
-// keep animation concerns separate from the core state machine.
+// Editor animations: presentation side-effects layered on top of state
+// mutations. The action/reducer pipeline stays pure; animations live here
+// so they can be added at the boundary where the operation's intent is
+// known.
+//
+// Most animations are triggered at the command layer — the command knows
+// what semantic operation just happened (typed a character, deleted plain
+// text, split a list item) and decides whether the result deserves visual
+// feedback. The exception is `active-block-flash`, which fires from
+// `setSelection` itself so every selection change can trigger it without
+// each command having to remember.
+//
+// This module owns the animation type shapes, the "add" helpers commands
+// call, and the lifecycle primitives (prune, time, has-new).
+
 import { getEditorAnimationDuration } from "../canvas/animations";
 import type { EditorState } from "./types";
+
+// --- Animation types ---
 
 export type EditorAnimation =
   | ActiveBlockFlashAnimation
@@ -45,6 +60,8 @@ export type PunctuationPulseAnimation = {
   startedAt: number;
 };
 
+// --- Trigger helpers (called from the command layer or setSelection) ---
+
 export function addInsertedTextHighlightAnimation(
   state: EditorState,
   insertedTextLength: number,
@@ -54,7 +71,7 @@ export function addInsertedTextHighlightAnimation(
     return state;
   }
 
-  const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+  const region = resolveFocusedRegion(state);
 
   if (!region) {
     return state;
@@ -76,37 +93,46 @@ export function addInsertedTextHighlightAnimation(
   });
 }
 
-export function addDeletedTextFadeAnimation(
-  state: EditorState,
-  input: {
-    regionPath: string;
-    startOffset: number;
-    text: string;
-  },
-  startedAt = getEditorAnimationTime(),
+// Adds a fade animation when the deleted range was a "plain" inline (no
+// marks, no link, no image). Used by character-delete commands so that
+// removing styled or linked text doesn't visually "ghost" the formatting.
+export function addPlainTextDeletionFadeAnimation(
+  previousState: EditorState,
+  nextState: EditorState,
+  startOffset: number,
+  endOffset: number,
 ): EditorState {
-  if (input.text.length === 0) {
-    return state;
+  const region = resolveFocusedRegion(previousState);
+
+  if (!region) {
+    return nextState;
   }
 
-  return addEditorAnimation(state, {
-    kind: "deleted-text-fade",
-    regionPath: input.regionPath,
-    startOffset: input.startOffset,
-    startedAt,
-    text: input.text,
-  });
-}
+  const text = region.text.slice(startOffset, endOffset);
 
-export function addActiveBlockFlashAnimation(
-  state: EditorState,
-  blockPath: string,
-  startedAt = getEditorAnimationTime(),
-): EditorState {
-  return addEditorAnimation(state, {
-    blockPath,
-    kind: "active-block-flash",
-    startedAt,
+  if (text.length === 0) {
+    return nextState;
+  }
+
+  const isPlainText = region.inlines.some(
+    (entry) =>
+      entry.start <= startOffset &&
+      entry.end >= endOffset &&
+      entry.kind === "text" &&
+      entry.link === null &&
+      entry.marks.length === 0,
+  );
+
+  if (!isPlainText) {
+    return nextState;
+  }
+
+  return addEditorAnimation(nextState, {
+    kind: "deleted-text-fade",
+    regionPath: region.path,
+    startOffset,
+    startedAt: getEditorAnimationTime(),
+    text,
   });
 }
 
@@ -114,7 +140,7 @@ export function addPunctuationPulseAnimation(
   state: EditorState,
   startedAt = getEditorAnimationTime(),
 ): EditorState {
-  const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+  const region = resolveFocusedRegion(state);
   const offset = state.selection.focus.offset - 1;
 
   if (!region || offset < 0 || region.text[offset] !== ".") {
@@ -141,14 +167,19 @@ export function addListMarkerPopAnimation(
   });
 }
 
-function addEditorAnimation(state: EditorState, animation: EditorAnimation): EditorState {
-  const activeAnimations = pruneEditorAnimations(state.animations, animation.startedAt);
-
-  return {
-    ...state,
-    animations: [...activeAnimations, animation],
-  };
+export function addActiveBlockFlashAnimation(
+  state: EditorState,
+  blockPath: string,
+  startedAt = getEditorAnimationTime(),
+): EditorState {
+  return addEditorAnimation(state, {
+    blockPath,
+    kind: "active-block-flash",
+    startedAt,
+  });
 }
+
+// --- Lifecycle ---
 
 export function pruneEditorAnimations(animations: EditorAnimation[], now: number) {
   return animations.filter(
@@ -160,17 +191,6 @@ export function getEditorAnimationTime() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
-// Resolves the block path for the currently focused block, used as the
-// target for the active block flash animation.
-export function resolveFocusedBlockPath(state: EditorState): string {
-  const focusedRegion = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
-  const focusedBlock = focusedRegion
-    ? (state.documentIndex.blockIndex.get(focusedRegion.blockId) ?? null)
-    : null;
-
-  return focusedBlock?.path ?? "";
-}
-
 export function hasNewAnimation(previousState: EditorState, nextState: EditorState) {
   const previousLatestStart = Math.max(
     -Infinity,
@@ -178,4 +198,30 @@ export function hasNewAnimation(previousState: EditorState, nextState: EditorSta
   );
 
   return nextState.animations.some((animation) => animation.startedAt > previousLatestStart);
+}
+
+// --- Selection helpers ---
+
+// Resolves the block path for the currently focused block, used as the
+// target for the active block flash animation.
+export function resolveFocusedBlockPath(state: EditorState): string {
+  const region = resolveFocusedRegion(state);
+  const block = region ? (state.documentIndex.blockIndex.get(region.blockId) ?? null) : null;
+
+  return block?.path ?? "";
+}
+
+// --- Internal ---
+
+function resolveFocusedRegion(state: EditorState) {
+  return state.documentIndex.regionIndex.get(state.selection.focus.regionId) ?? null;
+}
+
+function addEditorAnimation(state: EditorState, animation: EditorAnimation): EditorState {
+  const activeAnimations = pruneEditorAnimations(state.animations, animation.startedAt);
+
+  return {
+    ...state,
+    animations: [...activeAnimations, animation],
+  };
 }

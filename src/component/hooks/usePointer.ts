@@ -1,10 +1,11 @@
 import {
+  extendSelectionToPoint,
   resolveDragFocus,
   resolveHoverTarget as resolveHoverTargetAtViewport,
   resolveSelectionHit,
   resolveWordSelection,
   setSelection,
-  toggleTaskItem,
+  toggleTask,
   type EditorCommentState,
   type EditorHoverTarget,
   type EditorSelectionPoint,
@@ -289,10 +290,18 @@ export function usePointer({
     if (!canvas || !hit) return;
 
     dragPointerIdRef.current = event.pointerId;
-    dragAnchorRef.current = { offset: hit.offset, regionId: hit.regionId };
     onActivity();
     canvas.setPointerCapture(event.pointerId);
-    applyNextState(setSelection(currentState, { offset: hit.offset, regionId: hit.regionId }));
+
+    if (event.shiftKey) {
+      // Preserve the existing anchor so a subsequent drag continues extending from the same origin.
+      dragAnchorRef.current = currentState.selection.anchor;
+      applyNextState(extendSelectionToPoint(currentState, hit.regionId, hit.offset));
+    } else {
+      dragAnchorRef.current = { offset: hit.offset, regionId: hit.regionId };
+      applyNextState(setSelection(currentState, { offset: hit.offset, regionId: hit.regionId }));
+    }
+
     // Pass the tapped caret to `focus` so it positions the hidden textarea
     // synchronously before invoking the native `focus()`. Without this, the
     // textarea's position only updates on the next React render via the
@@ -342,7 +351,7 @@ export function usePointer({
 
     if (target?.kind === "task-toggle") {
       const currentState = readCurrentState();
-      const toggled = toggleTaskItem(currentState, target.listItemId);
+      const toggled = toggleTask(currentState, target.listItemId);
       if (toggled) {
         event.preventDefault();
         event.stopPropagation();

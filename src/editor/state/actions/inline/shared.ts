@@ -2,13 +2,14 @@
 import {
   createCode as createDocumentInlineCodeNode,
   createText as createDocumentTextNode,
+  defragmentTextInlines,
   extractPlainTextFromInlineNodes,
   type Code,
   type Inline,
   type Mark,
   type Text,
 } from "@/document";
-import { compactInlineNodes, INLINE_OBJECT_REPLACEMENT_TEXT } from "../../index/shared";
+import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../../index/shared";
 
 export function measureInlineNodeText(node: Inline) {
   switch (node.type) {
@@ -67,7 +68,7 @@ export function spliceInlineNodes(
     nextNodes.push(replacement);
   }
 
-  return compactInlineNodes(nextNodes);
+  return defragmentTextInlines(nextNodes);
 }
 
 export function collectInlinePrefix(node: Inline, offset: number, path: string): Inline[] {
@@ -100,7 +101,7 @@ export function sliceInlineNode(
 
   switch (node.type) {
     case "text":
-      return compactInlineNodes(
+      return defragmentTextInlines(
         [createPathTextNode(node.text.slice(startOffset, endOffset), node.marks, path)].filter(
           Boolean,
         ) as Text[],
@@ -108,7 +109,7 @@ export function sliceInlineNode(
     case "inlineCode":
       return [createPathInlineCodeNode(node.code.slice(startOffset, endOffset), path)];
     case "link": {
-      const children = compactInlineNodes(
+      const children = defragmentTextInlines(
         sliceInlineChildren(node.children, startOffset, endOffset, `${path}.children`),
       );
       return children.length > 0 ? [{ ...node, children }] : [];

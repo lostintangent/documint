@@ -1,40 +1,39 @@
 // Mark toggling: bold, italic, strikethrough, underline.
-import { type Inline, type Mark, type Text } from "@/document";
-import { compactInlineNodes } from "../../index/shared";
-import type { InlineCommandReplacement, InlineCommandTarget } from "./target";
-import { createInlineCommandReplacement } from "./target";
+import { defragmentTextInlines, type Inline, type Mark, type Text } from "@/document";
+import type { InlineRegion, InlineRegionReplacement } from ".";
+import { createInlineRegionReplacement } from ".";
 import { measureInlineNodeText, createPathTextNode } from "./shared";
 
-export function toggleInlineMarkTarget(
-  target: InlineCommandTarget,
+export function toggleInlineMark(
+  inlineRegion: InlineRegion,
   startOffset: number,
   endOffset: number,
   mark: Extract<Mark, "italic" | "bold" | "strikethrough" | "underline">,
-): InlineCommandReplacement | null {
-  const removeMark = shouldRemoveInlineMark(target.children, startOffset, endOffset, mark);
+): InlineRegionReplacement | null {
+  const removeMark = shouldRemoveInlineMark(inlineRegion.children, startOffset, endOffset, mark);
 
   if (removeMark === null) {
     return null;
   }
 
-  const nextChildren = compactInlineNodes(
+  const nextChildren = defragmentTextInlines(
     toggleInlineNodesMark(
-      target.children,
+      inlineRegion.children,
       startOffset,
       endOffset,
       mark,
       removeMark,
-      `${target.path}.children`,
+      `${inlineRegion.path}.children`,
     ),
   );
 
   return nextChildren.length > 0
-    ? createInlineCommandReplacement(target, nextChildren, startOffset, endOffset)
+    ? createInlineRegionReplacement(inlineRegion, nextChildren, startOffset, endOffset)
     : null;
 }
 
-export function resolveInlineCommandMarks(
-  target: InlineCommandTarget,
+export function resolveInlineMarks(
+  inlineRegion: InlineRegion,
   startOffset: number,
   endOffset: number,
 ): Mark[] {
@@ -75,7 +74,7 @@ export function resolveInlineCommandMarks(
     }
   };
 
-  visit(target.children);
+  visit(inlineRegion.children);
 
   return commonMarks ? [...commonMarks] : [];
 }
@@ -165,7 +164,7 @@ function toggleInlineNodesMark(
     }
 
     if (node.type === "link") {
-      const children = compactInlineNodes(
+      const children = defragmentTextInlines(
         toggleInlineNodesMark(
           node.children,
           Math.max(0, startOffset - nodeStart),

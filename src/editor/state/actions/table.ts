@@ -12,7 +12,7 @@ import {
 } from "@/document";
 import type { DocumentIndex } from "../index/types";
 import type { EditorStateAction } from "../types";
-import { insertInlineNodeIntoTarget, resolveInlineRegionTarget } from "./inline";
+import { insertInlineIntoRegion, resolveInlineRegion } from "./inline";
 import {
   createRootPrimaryRegionTarget,
   createTableCellTarget,
@@ -22,7 +22,7 @@ import {
 import {
   resolveRootTextBlockContext,
   type TableCellContext,
-} from "../index/context";
+} from "../context";
 
 // Table action resolvers: insert/delete rows and columns, cell navigation,
 // and table deletion. Most take a pre-resolved TableCellContext so
@@ -99,15 +99,15 @@ export function resolveTableCellLineBreak(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
 ): EditorStateAction | null {
-  const target = resolveInlineRegionTarget(documentIndex, selection.focus.regionId);
+  const inlineRegion = resolveInlineRegion(documentIndex, selection.focus.regionId);
 
-  if (!target || target.kind !== "tableCell") {
+  if (!inlineRegion || inlineRegion.kind !== "tableCell") {
     return null;
   }
 
   const startOffset = Math.min(selection.anchor.offset, selection.focus.offset);
   const endOffset = Math.max(selection.anchor.offset, selection.focus.offset);
-  const replacement = insertInlineNodeIntoTarget(target, startOffset, endOffset, (path) =>
+  const replacement = insertInlineIntoRegion(inlineRegion, startOffset, endOffset, (path) =>
     createLineBreak({ path }),
   );
 

@@ -18,13 +18,13 @@ import {
   type Document,
 } from "@/document";
 import {
-  createCommentThread,
+  addComment,
   createEditorState,
   deleteComment,
-  deleteCommentThread,
   deleteTable,
   deleteTableColumn,
   deleteTableRow,
+  deleteThread,
   editComment,
   getCommentState,
   getDocument,
@@ -38,8 +38,8 @@ import {
   paintContent,
   paintOverlay,
   removeLink,
-  replyToCommentThread,
-  resolveCommentThread,
+  replyToThread,
+  resolveThread,
   toggleBold,
   toggleItalic,
   toggleStrikethrough,
@@ -58,6 +58,7 @@ import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
 import { useCursor } from "./hooks/useCursor";
+import { useImageHandles } from "./hooks/useImageHandles";
 import { useImages } from "./hooks/useImages";
 import { usePointer } from "./hooks/usePointer";
 import { useInput } from "./hooks/useInput";
@@ -469,10 +470,13 @@ export function Documint({
     getScrollTop,
     layoutWidth,
     onVisibilityChange: scheduleOverlayPaint,
+    resources: renderResources,
     scrollContentHeight,
     scrollTo,
     viewportHeight,
   });
+
+  const imageHandle = useImageHandles(cursor.imageAtCursor, editorState, applyNextState);
 
   const input = useInput({
     applyNextState,
@@ -529,6 +533,8 @@ export function Documint({
   });
 
   /* Render loop */
+
+  const activeHandle = selection.handle ?? imageHandle;
 
   // State changes are translated into render or paint requests on the
   // scheduler, which coalesces them into per-frame work. The four intents
@@ -761,7 +767,7 @@ export function Documint({
             onCreateThread={(body) => {
               const currentState = readCurrentState();
               const threadIndex = getDocument(currentState).comments.length;
-              const stateUpdate = createCommentThread(
+              const stateUpdate = addComment(
                 currentState,
                 visibleLeaf.selection,
                 body.trim(),
@@ -813,7 +819,7 @@ export function Documint({
               const { threadIndex } = annotationThreadLeaf;
               const previousState = readCurrentState();
               const thread = getDocument(previousState).comments[threadIndex];
-              const stateUpdate = deleteCommentThread(previousState, threadIndex);
+              const stateUpdate = deleteThread(previousState, threadIndex);
               if (!stateUpdate) return;
               applyNextState(stateUpdate);
               if (thread) {
@@ -836,14 +842,14 @@ export function Documint({
             }}
             onReply={(body) => {
               const { threadIndex } = annotationThreadLeaf;
-              const stateUpdate = replyToCommentThread(readCurrentState(), threadIndex, body);
+              const stateUpdate = replyToThread(readCurrentState(), threadIndex, body);
               if (!stateUpdate) return;
               applyNextState(stateUpdate);
               emitCommentAdded(threadIndex);
             }}
             onToggleResolved={() => {
               applyNextState(
-                resolveCommentThread(
+                resolveThread(
                   readCurrentState(),
                   annotationThreadLeaf.threadIndex,
                   !isResolvedCommentThread(annotationThreadLeaf.thread),
@@ -958,33 +964,11 @@ export function Documint({
             {/* Overlay canvas (urrently used for rendering the blinking cursor) */}
             <canvas aria-hidden="true" className="documint-overlay-canvas" ref={overlayCanvasRef} />
 
-            {/* Selection handles (which we render as DOM rather than in-canvas) */}
-            {selection.handles ? (
-              <>
-                <div
-                  aria-hidden="true"
-                  className="documint-selection-handle documint-selection-handle-start"
-                  style={{
-                    left: `${selection.handles.start.left}px`,
-                    top: `${selection.handles.start.top}px`,
-                  }}
-                  {...selection.startHandleProps}
-                >
-                  <span className="documint-selection-handle-knob" />
-                </div>
-                <div
-                  aria-hidden="true"
-                  className="documint-selection-handle documint-selection-handle-end"
-                  style={{
-                    left: `${selection.handles.end.left}px`,
-                    top: `${selection.handles.end.top}px`,
-                  }}
-                  {...selection.endHandleProps}
-                >
-                  <span className="documint-selection-handle-knob" />
-                </div>
-              </>
-            ) : null}
+            {/* Resize handles — selection and image handles via a unified declarative system */}
+            {activeHandle && <>
+              <div aria-hidden="true" className="documint-resize-handle" style={{ left: `${activeHandle.start.left}px`, top: `${activeHandle.start.top}px` }} {...activeHandle.start.props}><span className="documint-resize-handle-knob" /></div>
+              <div aria-hidden="true" className="documint-resize-handle" style={{ left: `${activeHandle.end.left}px`, top: `${activeHandle.end.top}px` }} {...activeHandle.end.props}><span className="documint-resize-handle-knob" /></div>
+            </>}
 
             {/* Leaf overlay */}
             {visibleLeaf && visibleLeafAnchor ? (

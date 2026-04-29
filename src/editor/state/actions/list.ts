@@ -7,44 +7,41 @@ import {
   type Block,
   type ListItemBlock,
 } from "@/document";
-import type { DocumentIndex } from "../index/types";
 import type { EditorStateAction } from "../types";
 import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
-  normalizeSelection,
-  type EditorSelection,
 } from "../selection";
 import {
   createInsertedListItem,
   replaceListItemLeadingParagraphText,
   resolveListItemPath,
   type ListItemContext,
-} from "../index/context";
+} from "../context";
 
 // List action resolvers: split, indent, dedent, move, and structural
 // backspace for list items. Each takes a pre-resolved ListItemContext
 // so commands handle "is this a list item?" once at the boundary.
 
+// Selects the primary region of item at `itemIndex` within `parentIndices`.
+function selectItem(
+  rootIndex: number,
+  parentIndices: number[],
+  itemIndex: number,
+  offset: number | "end" = 0,
+) {
+  return createDescendantPrimaryRegionTarget(rootIndex, [...parentIndices, itemIndex, 0], offset);
+}
+
 export function resolveListItemSplit(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
   context: ListItemContext,
+  offset: number,
 ): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== normalized.end.offset
-  ) {
-    return null;
-  }
-
   const text = context.region.text;
   const currentItem = context.item;
   const nextChecked = typeof currentItem.checked === "boolean" ? false : currentItem.checked;
 
-  if (normalized.start.offset === 0) {
+  if (offset === 0) {
     const insertedItem = createInsertedListItem("", nextChecked, currentItem.spread);
 
     return {
@@ -60,15 +57,11 @@ export function resolveListItemSplit(
         ...context.listChildIndices,
         context.itemIndex,
       ]),
-      selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-        ...context.listChildIndices,
-        context.itemIndex,
-        0,
-      ]),
+      selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex),
     };
   }
 
-  if (normalized.start.offset === text.length) {
+  if (offset === text.length) {
     const insertedItem = createInsertedListItem("", nextChecked, currentItem.spread);
 
     return {
@@ -83,16 +76,12 @@ export function resolveListItemSplit(
         ...context.listChildIndices,
         context.itemIndex + 1,
       ]),
-      selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-        ...context.listChildIndices,
-        context.itemIndex + 1,
-        0,
-      ]),
+      selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex + 1),
     };
   }
 
-  const beforeText = text.slice(0, normalized.start.offset);
-  const afterText = text.slice(normalized.start.offset);
+  const beforeText = text.slice(0, offset);
+  const afterText = text.slice(offset);
   const nextItem = createInsertedListItem(afterText, nextChecked, currentItem.spread);
   const updatedCurrentItem = rebuildListItemBlock(currentItem, [
     createParagraphTextBlock({
@@ -113,27 +102,16 @@ export function resolveListItemSplit(
       ...context.listChildIndices,
       context.itemIndex + 1,
     ]),
-    selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-      ...context.listChildIndices,
-      context.itemIndex + 1,
-      0,
-    ]),
+    selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex + 1),
   };
 }
 
 export function resolveStructuralListBlockSplit(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
   context: ListItemContext,
+  offset: number,
 ): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-
-  if (normalized.start.regionId !== normalized.end.regionId) {
-    return null;
-  }
-
-  if (normalized.start.offset !== 0 || context.region.text.length !== 0) {
-    return resolveListItemSplit(documentIndex, selection, context);
+  if (offset !== 0 || context.region.text.length !== 0) {
+    return resolveListItemSplit(context, offset);
   }
 
   if (
@@ -209,11 +187,7 @@ export function resolveListStructuralBackspace(
           context.list.items.filter((_, index) => index !== context.itemIndex),
         ),
         blockId: context.list.id,
-        selection: createDescendantPrimaryRegionTarget(
-          context.rootIndex,
-          [...context.listChildIndices, context.itemIndex - 1, 0],
-          "end",
-        ),
+        selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex - 1, "end"),
       };
     }
 
@@ -243,11 +217,7 @@ export function resolveListStructuralBackspace(
         }),
       ),
       blockId: context.list.id,
-      selection: createDescendantPrimaryRegionTarget(
-        context.rootIndex,
-        [...context.listChildIndices, context.itemIndex - 1, 0],
-        "end",
-      ),
+      selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex - 1, previousItem.plainText.length),
     };
   }
 
@@ -336,11 +306,7 @@ export function resolveListItemDedent(context: ListItemContext): EditorStateActi
       ...context.parentList.items.slice(context.parentItemIndex + 1),
     ]),
     blockId: context.parentList.id,
-    selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-      ...context.parentListChildIndices,
-      context.parentItemIndex + 1,
-      0,
-    ]),
+    selection: selectItem(context.rootIndex, context.parentListChildIndices, context.parentItemIndex + 1),
   };
 }
 
@@ -367,11 +333,7 @@ export function resolveListItemMove(
     kind: "replace-block",
     block: rebuildListBlock(context.list, nextChildren),
     blockId: context.list.id,
-    selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-      ...context.listChildIndices,
-      targetIndex,
-      0,
-    ]),
+    selection: selectItem(context.rootIndex, context.listChildIndices, targetIndex),
   };
 }
 
@@ -418,11 +380,7 @@ function liftEmptyNestedListItem(context: ListItemContext): EditorStateAction | 
       ...context.parentListChildIndices,
       context.parentItemIndex + 1,
     ]),
-    selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-      ...context.parentListChildIndices,
-      context.parentItemIndex + 1,
-      0,
-    ]),
+    selection: selectItem(context.rootIndex, context.parentListChildIndices, context.parentItemIndex + 1),
   };
 }
 

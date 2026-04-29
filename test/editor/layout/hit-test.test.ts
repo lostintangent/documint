@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createEditorState } from "@/editor/state";
+import { createCanvasRenderCache, createEditorState, prepareViewport, resolveHoverTarget } from "@/editor";
 import {
   createDocumentLayout,
   resolveDragFocusPoint,
@@ -122,4 +122,18 @@ test("resolves drag focus to the anchor end below the prepared layout", () => {
     offset: region.text.length,
     regionId: region.id,
   });
+});
+
+test("resolves task-toggle hover targets ahead of text hits", () => {
+  const renderCache = createCanvasRenderCache();
+  const state = createEditorState(parseMarkdown("- [ ] Review task\n"));
+  const viewport = prepareViewport(state, { height: 320, top: 0, width: 520 }, renderCache);
+  const line = viewport.layout.lines[0];
+  const listItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
+
+  if (!line || !listItem) throw new Error("Expected task list line");
+
+  const hover = resolveHoverTarget(state, viewport, { x: line.left + 6, y: line.top + line.height / 2 }, []);
+
+  expect(hover).toEqual({ kind: "task-toggle", listItemId: listItem.id });
 });

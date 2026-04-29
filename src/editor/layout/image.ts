@@ -1,7 +1,13 @@
 // Owns inline image sizing policy for document layout. Text measurement asks
 // this module for image dimensions instead of embedding resource rules inline.
 import type { DocumentResources } from "@/types";
-import type { EditorInline } from "../state";
+import type { EditorInline, EditorState } from "../state";
+import type { EditorViewportState } from "./index";
+import {
+  findLineForRegionOffset,
+  measureLineOffsetLeft,
+  resolveLineContentInset,
+} from "./index";
 
 const IMAGE_FALLBACK_WIDTH = 240;
 const IMAGE_FALLBACK_ASPECT_RATIO = 9 / 16;
@@ -40,6 +46,40 @@ export function resolveInlineImageDimensions(
     height: Math.max(IMAGE_MIN_DIMENSION, Math.round(resource.intrinsicHeight * scale)),
     width: Math.max(IMAGE_MIN_DIMENSION, Math.round(resource.intrinsicWidth * scale)),
   };
+}
+
+export type InlineBounds = {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+};
+
+export function measureInlineImageBounds(
+  state: EditorState,
+  viewport: EditorViewportState,
+  resources: DocumentResources,
+  run: EditorInline,
+): InlineBounds | null {
+  const region = state.documentIndex.regionIndex.get(state.selection.anchor.regionId);
+
+  if (!run.image || !region) {
+    return null;
+  }
+
+  const line = findLineForRegionOffset(viewport.layout, region.id, run.start);
+
+  if (!line) {
+    return null;
+  }
+
+  const textLeft = line.left + resolveLineContentInset(state, line);
+  const left = textLeft + measureLineOffsetLeft(line, run.start - line.start) - line.left;
+  const right = textLeft + measureLineOffsetLeft(line, run.end - line.start) - line.left;
+  const { height } = resolveInlineImageDimensions(run, resources, line.width);
+  const top = line.top + Math.max(0, Math.floor((line.height - height) / 2));
+
+  return { left, top, width: right - left, height };
 }
 
 export function resolveInlineImageSignature(run: EditorInline, resources: DocumentResources) {

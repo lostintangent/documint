@@ -14,6 +14,7 @@ import {
 } from "@/editor";
 import type { LazyRefHandle } from "./useLazyRef";
 import {
+  type HTMLAttributes,
   type PointerEvent,
   type RefObject,
   useEffectEvent,
@@ -25,9 +26,9 @@ import {
 import { readSingleContainerSelectionRange } from "../lib/selection";
 import type { FocusInput } from "./useInput";
 
-type SelectionHandlePosition = {
-  left: number;
-  top: number;
+export type ResizeHandle = {
+  start: { left: number; top: number; props: HTMLAttributes<HTMLDivElement> };
+  end: { left: number; top: number; props: HTMLAttributes<HTMLDivElement> };
 };
 
 type SelectionHandleKind = "start" | "end";
@@ -78,16 +79,14 @@ type UseSelectionOptions = {
 };
 
 type SelectionHandles = {
-  end: SelectionHandlePosition;
-  start: SelectionHandlePosition;
+  end: { left: number; top: number };
+  start: { left: number; top: number };
 };
 
 type SelectionController = {
-  endHandleProps: SelectionHandleProps;
-  handles: SelectionHandles | null;
+  handle: ResizeHandle | null;
   leaf: SelectionLeaf | null;
   promoteLeafToThread: (threadIndex: number, animateInitialComment?: boolean) => void;
-  startHandleProps: SelectionHandleProps;
 };
 
 /**
@@ -137,7 +136,7 @@ export function useSelection({
 
   /* Internal state */
 
-  const [handles, setHandles] = useState<SelectionHandles | null>(null);
+  const [rawHandles, setRawHandles] = useState<SelectionHandles | null>(null);
   const [selectionLeaf, setSelectionLeaf] = useState<SelectionLeaf | null>(null);
   const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
   const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
@@ -152,7 +151,7 @@ export function useSelection({
       normalizedSel,
     );
 
-    setHandles((previous) =>
+    setRawHandles((previous) =>
       areSelectionHandlesEqual(previous, nextHandles) ? previous : nextHandles,
     );
   }, [
@@ -169,7 +168,7 @@ export function useSelection({
       canShowSelectionLeaf,
       currentLeaf: selectionLeaf,
       activeMarks,
-      handles,
+      handles: rawHandles,
       selectionRange,
       threads,
     });
@@ -177,7 +176,7 @@ export function useSelection({
     setSelectionLeaf((previous) =>
       areSelectionLeavesEqual(previous, nextLeaf) ? previous : nextLeaf,
     );
-  }, [activeMarks, canShowSelectionLeaf, handles, selectionLeaf, selectionRange, threads]);
+  }, [activeMarks, canShowSelectionLeaf, rawHandles, selectionLeaf, selectionRange, threads]);
 
   const promoteLeafToThread = useEffectEvent(
     (threadIndex: number, animateInitialComment = true) => {
@@ -257,7 +256,7 @@ export function useSelection({
       const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSel, kind);
       const draggedSelectionPoint = kind === "start" ? normalizedSel.start : normalizedSel.end;
 
-      if (!handles) {
+      if (!rawHandles) {
         return;
       }
 
@@ -297,12 +296,17 @@ export function useSelection({
 
   /* Public API */
 
+  const handle: ResizeHandle | null = rawHandles
+    ? {
+        start: { ...rawHandles.start, props: createHandleProps("start") },
+        end: { ...rawHandles.end, props: createHandleProps("end") },
+      }
+    : null;
+
   return {
-    endHandleProps: createHandleProps("end"),
-    handles,
+    handle,
     leaf: selectionLeaf,
     promoteLeafToThread,
-    startHandleProps: createHandleProps("start"),
   };
 }
 

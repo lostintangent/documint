@@ -10,76 +10,42 @@ import {
 } from "@/document";
 import type { DocumentIndex } from "../index/types";
 import type { EditorStateAction } from "../types";
-import { replaceListItemLeadingParagraphText } from "../index/context";
+import { replaceListItemLeadingParagraphText } from "../context";
 import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
-  normalizeSelection,
   type EditorSelection,
 } from "../selection";
 import {
+  type BlockquoteTextBlockContext,
   type RootTextBlockContext,
-  resolveBlockquoteContext,
-  resolveBlockquoteTextBlockContext,
-  resolveRootTextBlockContext,
-} from "../index/context";
+} from "../context";
 
 // Block structure action resolvers: split, backspace, heading depth, and
 // blockquote operations.
+//
+// Every exported function takes a pre-resolved context object — context
+// resolution and selection normalization happen once in commands.ts.
 
-export function resolveTextBlockSplit(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
+export function resolveRootTextBlockSplit(
+  ctx: RootTextBlockContext,
+  offset: number,
+): EditorStateAction {
+  const textLength = ctx.region.text.length;
+  const beforeText = ctx.region.text.slice(0, offset);
+  const afterText = ctx.region.text.slice(offset);
+  const focusRootIndex = offset === 0 && textLength > 0 ? ctx.rootIndex : ctx.rootIndex + 1;
 
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== normalized.end.offset
-  ) {
-    return null;
-  }
-
-  const context = resolveRootTextBlockContext(documentIndex, selection);
-
-  if (!context) {
-    return resolveBlockquoteTextBlockSplit(documentIndex, selection);
-  }
-
-  const beforeText = context.region.text.slice(0, normalized.start.offset);
-  const afterText = context.region.text.slice(normalized.start.offset);
-  const focusRootIndex =
-    normalized.start.offset === 0 && context.region.text.length > 0
-      ? context.rootIndex
-      : context.rootIndex + 1;
-
-  if (context.block.type === "paragraph") {
+  if (ctx.block.type === "paragraph") {
     return {
       kind: "splice-blocks",
       blocks:
-        normalized.start.offset === 0
-          ? [
-              createParagraphTextBlock({
-                text: "",
-              }),
-              context.block,
-            ]
-          : normalized.start.offset === context.region.text.length
-            ? [
-                context.block,
-                createParagraphTextBlock({
-                  text: "",
-                }),
-              ]
-            : [
-                createParagraphTextBlock({
-                  text: beforeText,
-                }),
-                createParagraphTextBlock({
-                  text: afterText,
-                }),
-              ],
-      rootIndex: context.rootIndex,
+        offset === 0
+          ? [createParagraphTextBlock({ text: "" }), ctx.block]
+          : offset === textLength
+            ? [ctx.block, createParagraphTextBlock({ text: "" })]
+            : [createParagraphTextBlock({ text: beforeText }), createParagraphTextBlock({ text: afterText })],
+      rootIndex: ctx.rootIndex,
       selection: createRootPrimaryRegionTarget(focusRootIndex),
     };
   }
@@ -87,127 +53,61 @@ export function resolveTextBlockSplit(
   return {
     kind: "splice-blocks",
     blocks:
-      normalized.start.offset === 0
-        ? [
-            createParagraphTextBlock({
-              text: "",
-            }),
-            context.block,
-          ]
-        : normalized.start.offset === context.region.text.length
-          ? [
-              context.block,
-              createParagraphTextBlock({
-                text: "",
-              }),
-            ]
-          : [
-              createHeadingTextBlock({
-                depth: context.block.depth,
-                text: beforeText,
-              }),
-              createParagraphTextBlock({
-                text: afterText,
-              }),
-            ],
-    rootIndex: context.rootIndex,
+      offset === 0
+        ? [createParagraphTextBlock({ text: "" }), ctx.block]
+        : offset === textLength
+          ? [ctx.block, createParagraphTextBlock({ text: "" })]
+          : [createHeadingTextBlock({ depth: ctx.block.depth, text: beforeText }), createParagraphTextBlock({ text: afterText })],
+    rootIndex: ctx.rootIndex,
     selection: createRootPrimaryRegionTarget(focusRootIndex),
   };
 }
 
 export function resolveBlockquoteTextBlockSplit(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== normalized.end.offset
-  ) {
-    return null;
-  }
-
-  const context = resolveBlockquoteTextBlockContext(documentIndex, selection);
-
-  if (!context) {
-    return null;
-  }
-
-  const text = context.region.text;
-  const beforeText = text.slice(0, normalized.start.offset);
-  const afterText = text.slice(normalized.start.offset);
+  ctx: BlockquoteTextBlockContext,
+  offset: number,
+): EditorStateAction {
+  const text = ctx.region.text;
+  const beforeText = text.slice(0, offset);
+  const afterText = text.slice(offset);
   const replacement =
-    context.block.type === "heading"
-      ? buildHeadingSplitReplacement(
-          context.block,
-          beforeText,
-          afterText,
-          context.blockChildIndices,
-          normalized.start.offset,
-          text.length,
-        )
-      : buildParagraphSplitReplacement(
-          context.block,
-          beforeText,
-          afterText,
-          context.blockChildIndices,
-          normalized.start.offset,
-          text.length,
-        );
+    ctx.block.type === "heading"
+      ? buildHeadingSplitReplacement(ctx.block, beforeText, afterText, ctx.blockChildIndices, offset, text.length)
+      : buildParagraphSplitReplacement(ctx.block, beforeText, afterText, ctx.blockChildIndices, offset, text.length);
 
   return {
     kind: "splice-blocks",
     blocks: [
       createBlockquoteBlock({
         children: [
-          ...context.quote.children.slice(0, context.childIndex),
+          ...ctx.quote.children.slice(0, ctx.childIndex),
           ...replacement.blocks,
-          ...context.quote.children.slice(context.childIndex + 1),
+          ...ctx.quote.children.slice(ctx.childIndex + 1),
         ],
       }),
     ],
-    rootIndex: context.rootIndex,
-    selection: createDescendantPrimaryRegionTarget(
-      context.rootIndex,
-      replacement.focusChildIndices,
-    ),
+    rootIndex: ctx.rootIndex,
+    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, replacement.focusChildIndices),
   };
 }
 
 export function resolveStructuralBlockquoteSplit(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
+  ctx: BlockquoteTextBlockContext,
+  offset: number,
 ): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== 0 ||
-    normalized.end.offset !== 0
-  ) {
+  if (offset !== 0 || ctx.region.text.length !== 0 || ctx.block.type !== "paragraph") {
     return null;
   }
 
-  const context = resolveBlockquoteTextBlockContext(documentIndex, selection);
-
-  if (!context || context.region.text.length !== 0 || context.block.type !== "paragraph") {
-    return null;
-  }
-
-  const beforeBlocks = context.quote.children.slice(0, context.childIndex);
-  const afterBlocks = context.quote.children.slice(context.childIndex + 1);
+  const beforeBlocks = ctx.quote.children.slice(0, ctx.childIndex);
+  const afterBlocks = ctx.quote.children.slice(ctx.childIndex + 1);
   const blocks: Block[] = [];
 
   if (beforeBlocks.length > 0) {
     blocks.push(createBlockquoteBlock({ children: beforeBlocks }));
   }
 
-  blocks.push(
-    createParagraphTextBlock({
-      text: "",
-    }),
-  );
+  blocks.push(createParagraphTextBlock({ text: "" }));
 
   if (afterBlocks.length > 0) {
     blocks.push(createBlockquoteBlock({ children: afterBlocks }));
@@ -215,216 +115,142 @@ export function resolveStructuralBlockquoteSplit(
 
   return {
     kind: "splice-blocks",
-    blocks: blocks,
-    rootIndex: context.rootIndex,
-    selection: createRootPrimaryRegionTarget(context.rootIndex + (beforeBlocks.length > 0 ? 1 : 0)),
+    blocks,
+    rootIndex: ctx.rootIndex,
+    selection: createRootPrimaryRegionTarget(ctx.rootIndex + (beforeBlocks.length > 0 ? 1 : 0)),
   };
 }
 
-export function resolveCodeLineBreak(
+export function resolveRootBlockBackspace(
+  ctx: RootTextBlockContext,
   documentIndex: DocumentIndex,
-  selection: EditorSelection,
 ): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.regionId !== selection.anchor.regionId
-  ) {
-    return null;
-  }
-
-  const region = documentIndex.regionIndex.get(normalized.start.regionId);
-
-  if (!region || region.blockType !== "code") {
-    return null;
-  }
-
-  return {
-    kind: "splice-text",
-    selection,
-    text: "\n",
-  };
-}
-
-export function resolveBlockStructuralBackspace(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== 0 ||
-    normalized.end.offset !== 0
-  ) {
-    return null;
-  }
-
-  const context = resolveRootTextBlockContext(documentIndex, selection);
-  const demotedHeading = context ? demoteHeadingToParagraph(context) : null;
+  const demotedHeading = demoteHeadingToParagraph(ctx);
 
   if (demotedHeading) {
     return demotedHeading;
   }
 
-  if (context && context.rootIndex > 0) {
-    const previousRoot = documentIndex.document.blocks[context.rootIndex - 1];
-    const nextRoot = documentIndex.document.blocks[context.rootIndex + 1];
+  if (ctx.rootIndex === 0) {
+    return null;
+  }
 
-    if (previousRoot) {
-      if (context.block.plainText.length === 0) {
-        const mergedAdjacentLists = mergeAdjacentListsAroundEmptyParagraph(
-          context,
-          previousRoot,
-          nextRoot,
-        );
+  const previousRoot = documentIndex.document.blocks[ctx.rootIndex - 1];
+  const nextRoot = documentIndex.document.blocks[ctx.rootIndex + 1];
 
-        if (mergedAdjacentLists) {
-          return mergedAdjacentLists;
-        }
+  if (!previousRoot) {
+    return null;
+  }
 
-        return {
-          kind: "splice-blocks",
-          blocks: [],
-          rootIndex: context.rootIndex,
-          selection:
-            previousRoot.type === "paragraph" || previousRoot.type === "heading"
-              ? createRootPrimaryRegionTarget(context.rootIndex - 1, "end")
-              : previousRoot.type === "list"
-                ? createDescendantPrimaryRegionTarget(
-                    context.rootIndex - 1,
-                    [previousRoot.items.length - 1, 0],
-                    "end",
-                  )
-                : previousRoot.type === "blockquote"
-                  ? createDescendantPrimaryRegionTarget(
-                      context.rootIndex - 1,
-                      [previousRoot.children.length - 1],
-                      "end",
-                    )
-                  : createRootPrimaryRegionTarget(context.rootIndex - 1, "end"),
-        };
-      }
+  if (ctx.block.plainText.length === 0) {
+    const mergedAdjacentLists = mergeAdjacentListsAroundEmptyParagraph(ctx, previousRoot, nextRoot);
 
-      if (previousRoot.type === "paragraph") {
+    if (mergedAdjacentLists) {
+      return mergedAdjacentLists;
+    }
+
+    return {
+      kind: "splice-blocks",
+      blocks: [],
+      rootIndex: ctx.rootIndex,
+      selection:
+        previousRoot.type === "paragraph" || previousRoot.type === "heading"
+          ? createRootPrimaryRegionTarget(ctx.rootIndex - 1, "end")
+          : previousRoot.type === "list"
+            ? createDescendantPrimaryRegionTarget(ctx.rootIndex - 1, [previousRoot.items.length - 1, 0], "end")
+            : previousRoot.type === "blockquote"
+              ? createDescendantPrimaryRegionTarget(ctx.rootIndex - 1, [previousRoot.children.length - 1], "end")
+              : createRootPrimaryRegionTarget(ctx.rootIndex - 1, "end"),
+    };
+  }
+
+  if (previousRoot.type === "paragraph") {
+    return {
+      kind: "splice-blocks",
+      count: 2,
+      blocks: [createParagraphTextBlock({ text: `${previousRoot.plainText}${ctx.block.plainText}` })],
+      rootIndex: ctx.rootIndex - 1,
+      selection: createRootPrimaryRegionTarget(ctx.rootIndex - 1, previousRoot.plainText.length),
+    };
+  }
+
+  if (previousRoot.type === "heading") {
+    return {
+      kind: "splice-blocks",
+      count: 2,
+      blocks: [createHeadingTextBlock({ depth: previousRoot.depth, text: `${previousRoot.plainText}${ctx.block.plainText}` })],
+      rootIndex: ctx.rootIndex - 1,
+      selection: createRootPrimaryRegionTarget(ctx.rootIndex - 1, previousRoot.plainText.length),
+    };
+  }
+
+  if (previousRoot.type === "list") {
+    const lastIndex = previousRoot.items.length - 1;
+    const lastItem = previousRoot.items[lastIndex];
+
+    if (lastItem) {
+      const mergedLastItem = replaceListItemLeadingParagraphText(
+        lastItem,
+        `${lastItem.plainText}${ctx.block.plainText}`,
+      );
+
+      if (mergedLastItem) {
         return {
           kind: "splice-blocks",
           count: 2,
           blocks: [
-            createParagraphTextBlock({
-              text: `${previousRoot.plainText}${context.block.plainText}`,
-            }),
+            rebuildListBlock(
+              previousRoot,
+              previousRoot.items.map((child, index) => (index === lastIndex ? mergedLastItem : child)),
+            ),
           ],
-          rootIndex: context.rootIndex - 1,
-          selection: createRootPrimaryRegionTarget(context.rootIndex - 1, "end"),
+          rootIndex: ctx.rootIndex - 1,
+          selection: createDescendantPrimaryRegionTarget(ctx.rootIndex - 1, [lastIndex, 0], lastItem.plainText.length),
         };
-      }
-
-      if (previousRoot.type === "heading") {
-        return {
-          kind: "splice-blocks",
-          count: 2,
-          blocks: [
-            createHeadingTextBlock({
-              depth: previousRoot.depth,
-              text: `${previousRoot.plainText}${context.block.plainText}`,
-            }),
-          ],
-          rootIndex: context.rootIndex - 1,
-          selection: createRootPrimaryRegionTarget(context.rootIndex - 1, "end"),
-        };
-      }
-
-      if (previousRoot.type === "list") {
-        const lastIndex = previousRoot.items.length - 1;
-        const lastItem = previousRoot.items[lastIndex];
-
-        if (lastItem) {
-          const mergedLastItem = replaceListItemLeadingParagraphText(
-            lastItem,
-            `${lastItem.plainText}${context.block.plainText}`,
-          );
-
-          if (mergedLastItem) {
-            return {
-              kind: "splice-blocks",
-              count: 2,
-              blocks: [
-                rebuildListBlock(
-                  previousRoot,
-                  previousRoot.items.map((child, index) =>
-                    index === lastIndex ? mergedLastItem : child,
-                  ),
-                ),
-              ],
-              rootIndex: context.rootIndex - 1,
-              selection: createDescendantPrimaryRegionTarget(
-                context.rootIndex - 1,
-                [lastIndex, 0],
-                "end",
-              ),
-            };
-          }
-        }
       }
     }
   }
 
-  const emptyQuoteLine = deleteEmptyBlockquoteLine(documentIndex, selection);
+  return null;
+}
 
-  if (emptyQuoteLine) {
-    return emptyQuoteLine;
+export function resolveBlockquoteBackspace(ctx: BlockquoteTextBlockContext): EditorStateAction | null {
+  if (ctx.region.text.length === 0) {
+    return deleteEmptyBlockquoteLine(ctx);
   }
 
-  const quoteContext = resolveBlockquoteContext(documentIndex, selection);
-
-  if (!quoteContext) {
-    return null;
+  if (ctx.childIndex > 0) {
+    return mergeBlockquoteLine(ctx);
   }
-
-  const blockContext = resolveBlockquoteTextBlockContext(documentIndex, selection);
 
   return {
     kind: "splice-blocks",
-    blocks: quoteContext.quote.children,
-    rootIndex: quoteContext.rootIndex,
-    selection: createRootPrimaryRegionTarget(
-      blockContext ? quoteContext.rootIndex + blockContext.childIndex : quoteContext.rootIndex,
-    ),
+    blocks: ctx.quote.children,
+    rootIndex: ctx.rootIndex,
+    selection: createRootPrimaryRegionTarget(ctx.rootIndex),
   };
 }
 
 export function resolveHeadingDepthShift(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
+  ctx: RootTextBlockContext,
   direction: -1 | 1,
+  cursorOffset: number,
 ): EditorStateAction | null {
-  const context = resolveRootTextBlockContext(documentIndex, selection);
-
-  if (!context || context.block.type !== "heading") {
+  if (ctx.block.type !== "heading") {
     return null;
   }
 
-  const nextDepth = Math.max(
-    1,
-    Math.min(6, context.block.depth + direction),
-  ) as HeadingBlock["depth"];
+  const nextDepth = Math.max(1, Math.min(6, ctx.block.depth + direction)) as HeadingBlock["depth"];
 
-  if (nextDepth === context.block.depth) {
+  if (nextDepth === ctx.block.depth) {
     return { kind: "keep-state" };
   }
 
   return {
     kind: "splice-blocks",
-    blocks: [
-      createHeadingTextBlock({
-        depth: nextDepth,
-        text: context.block.plainText,
-      }),
-    ],
-    rootIndex: context.rootIndex,
-    selection: createRootPrimaryRegionTarget(context.rootIndex, selection.focus.offset),
+    blocks: [createHeadingTextBlock({ depth: nextDepth, text: ctx.block.plainText })],
+    rootIndex: ctx.rootIndex,
+    selection: createRootPrimaryRegionTarget(ctx.rootIndex, cursorOffset),
   };
 }
 
@@ -447,24 +273,19 @@ export function resolveBlockquoteWrap(
 
   return {
     kind: "splice-blocks",
-    blocks: [
-      createBlockquoteBlock({
-        children: [block],
-        path: `root.${rootIndex}`,
-      }),
-    ],
+    blocks: [createBlockquoteBlock({ children: [block], path: `root.${rootIndex}` })],
     rootIndex,
   };
 }
 
 function mergeAdjacentListsAroundEmptyParagraph(
-  context: RootTextBlockContext,
+  ctx: RootTextBlockContext,
   previousRoot: Block,
   nextRoot: Block | undefined,
 ): EditorStateAction | null {
   if (
-    context.block.type !== "paragraph" ||
-    context.block.plainText.length !== 0 ||
+    ctx.block.type !== "paragraph" ||
+    ctx.block.plainText.length !== 0 ||
     previousRoot.type !== "list" ||
     nextRoot?.type !== "list" ||
     !areCompatibleAdjacentLists(previousRoot, nextRoot)
@@ -478,12 +299,8 @@ function mergeAdjacentListsAroundEmptyParagraph(
     kind: "splice-blocks",
     count: 3,
     blocks: [rebuildListBlock(previousRoot, [...previousRoot.items, ...nextRoot.items])],
-    rootIndex: context.rootIndex - 1,
-    selection: createDescendantPrimaryRegionTarget(
-      context.rootIndex - 1,
-      [previousTrailingItemIndex, 0],
-      "end",
-    ),
+    rootIndex: ctx.rootIndex - 1,
+    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex - 1, [previousTrailingItemIndex, 0], "end"),
   };
 }
 
@@ -491,72 +308,62 @@ function areCompatibleAdjacentLists(left: ListBlock, right: ListBlock) {
   return left.ordered === right.ordered && left.start === right.start;
 }
 
-function demoteHeadingToParagraph(context: RootTextBlockContext): EditorStateAction | null {
-  if (context.block.type !== "heading") {
+function demoteHeadingToParagraph(ctx: RootTextBlockContext): EditorStateAction | null {
+  if (ctx.block.type !== "heading") {
     return null;
   }
 
   return {
     kind: "splice-blocks",
-    blocks: [
-      createParagraphTextBlock({
-        text: context.block.plainText,
-      }),
-    ],
-    rootIndex: context.rootIndex,
-    selection: createRootPrimaryRegionTarget(context.rootIndex),
+    blocks: [createParagraphTextBlock({ text: ctx.block.plainText })],
+    rootIndex: ctx.rootIndex,
+    selection: createRootPrimaryRegionTarget(ctx.rootIndex),
   };
 }
 
-function deleteEmptyBlockquoteLine(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorStateAction | null {
-  const normalized = normalizeSelection(documentIndex, selection);
+function mergeBlockquoteLine(ctx: BlockquoteTextBlockContext): EditorStateAction {
+  const previousChild = ctx.quote.children[ctx.childIndex - 1] as Extract<typeof ctx.block, { type: "paragraph" }>;
+  const previousText = previousChild.plainText;
+  const currentText = ctx.block.plainText;
 
-  if (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== 0 ||
-    normalized.end.offset !== 0
-  ) {
-    return null;
-  }
+  const mergedChildren = ctx.quote.children
+    .filter((_, index) => index !== ctx.childIndex)
+    .map((child, index) =>
+      index === ctx.childIndex - 1
+        ? createParagraphTextBlock({ text: `${previousText}${currentText}` })
+        : child,
+    );
 
-  const context = resolveBlockquoteTextBlockContext(documentIndex, selection);
+  return {
+    kind: "splice-blocks",
+    blocks: [createBlockquoteBlock({ children: mergedChildren })],
+    rootIndex: ctx.rootIndex,
+    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, [ctx.childIndex - 1], previousText.length),
+  };
+}
 
-  if (!context || context.block.type !== "paragraph" || context.region.text.length !== 0) {
-    return null;
-  }
-
-  if (context.quote.children.length === 1) {
+function deleteEmptyBlockquoteLine(ctx: BlockquoteTextBlockContext): EditorStateAction {
+  if (ctx.quote.children.length === 1) {
     return {
       kind: "splice-blocks",
-      blocks: [
-        createParagraphTextBlock({
-          text: "",
-        }),
-      ],
-      rootIndex: context.rootIndex,
-      selection: createRootPrimaryRegionTarget(context.rootIndex),
+      blocks: [createParagraphTextBlock({ text: "" })],
+      rootIndex: ctx.rootIndex,
+      selection: createRootPrimaryRegionTarget(ctx.rootIndex),
     };
   }
 
-  const focusChildIndex = Math.max(0, context.childIndex - 1);
-  const focusOffset = context.childIndex > 0 ? "end" : 0;
+  const focusChildIndex = Math.max(0, ctx.childIndex - 1);
+  const focusOffset = ctx.childIndex > 0 ? "end" : 0;
 
   return {
     kind: "splice-blocks",
     blocks: [
       createBlockquoteBlock({
-        children: context.quote.children.filter((_, index) => index !== context.childIndex),
+        children: ctx.quote.children.filter((_, index) => index !== ctx.childIndex),
       }),
     ],
-    rootIndex: context.rootIndex,
-    selection: createDescendantPrimaryRegionTarget(
-      context.rootIndex,
-      [focusChildIndex],
-      focusOffset,
-    ),
+    rootIndex: ctx.rootIndex,
+    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, [focusChildIndex], focusOffset),
   };
 }
 
@@ -571,27 +378,10 @@ function buildParagraphSplitReplacement(
   return {
     blocks:
       offset === 0
-        ? [
-            createParagraphTextBlock({
-              text: "",
-            }),
-            block,
-          ]
+        ? [createParagraphTextBlock({ text: "" }), block]
         : offset === textLength
-          ? [
-              block,
-              createParagraphTextBlock({
-                text: "",
-              }),
-            ]
-          : [
-              createParagraphTextBlock({
-                text: beforeText,
-              }),
-              createParagraphTextBlock({
-                text: afterText,
-              }),
-            ],
+          ? [block, createParagraphTextBlock({ text: "" })]
+          : [createParagraphTextBlock({ text: beforeText }), createParagraphTextBlock({ text: afterText })],
     focusChildIndices:
       offset === 0
         ? blockChildIndices
@@ -610,28 +400,10 @@ function buildHeadingSplitReplacement(
   return {
     blocks:
       offset === 0
-        ? [
-            createParagraphTextBlock({
-              text: "",
-            }),
-            block,
-          ]
+        ? [createParagraphTextBlock({ text: "" }), block]
         : offset === textLength
-          ? [
-              block,
-              createParagraphTextBlock({
-                text: "",
-              }),
-            ]
-          : [
-              createHeadingTextBlock({
-                depth: block.depth,
-                text: beforeText,
-              }),
-              createParagraphTextBlock({
-                text: afterText,
-              }),
-            ],
+          ? [block, createParagraphTextBlock({ text: "" })]
+          : [createHeadingTextBlock({ depth: block.depth, text: beforeText }), createParagraphTextBlock({ text: afterText })],
     focusChildIndices:
       offset === 0
         ? blockChildIndices

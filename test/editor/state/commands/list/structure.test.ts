@@ -5,7 +5,7 @@ import {
   insertText,
   moveListItemDown,
   moveListItemUp,
-  toggleTaskItem,
+  toggleTask,
 } from "@/editor/state";
 import {
   createDocumentFromEditorState,
@@ -206,7 +206,7 @@ test("inserts new list items above or below at list boundaries", () => {
   expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n-\n");
 });
 
-test("exits empty top-level list items through the structural enter path", () => {
+test("pressing enter on an empty list item exits it as a paragraph", () => {
   let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
   const target = state.documentIndex.regions.find((container) => container.text === "beta");
 
@@ -498,7 +498,7 @@ test("toggles semantic task-list state for rendered task items", () => {
     throw new Error("Expected task list item");
   }
 
-  const toggled = toggleTaskItem(state, listItem.id);
+  const toggled = toggleTask(state, listItem.id);
 
   if (!toggled) {
     throw new Error("Expected toggled task state");
@@ -528,7 +528,7 @@ test("toggles nested semantic task-list state for rendered task items", () => {
     throw new Error("Expected nested task list item");
   }
 
-  const toggled = toggleTaskItem(state, nestedItem.id);
+  const toggled = toggleTask(state, nestedItem.id);
 
   if (!toggled) {
     throw new Error("Expected toggled nested task state");
@@ -537,4 +537,38 @@ test("toggles nested semantic task-list state for rendered task items", () => {
   expect(serializeMarkdown(createDocumentFromEditorState(toggled))).toBe(
     "- parent\n  - [x] ship nested\n",
   );
+});
+
+test("toggles task list state through the action dispatcher", () => {
+  const state = createEditorState(parseMarkdown("- [ ] task\n"));
+  const taskItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
+
+  if (!taskItem) {
+    throw new Error("Expected task list item");
+  }
+
+  const nextState = toggleTask(state, taskItem.id);
+
+  if (!nextState) {
+    throw new Error("Expected task toggle state");
+  }
+
+  expect(serializeMarkdown(createDocumentFromEditorState(nextState))).toBe("- [x] task\n");
+});
+
+test("places the cursor at the merge junction when backspacing a non-empty list item", () => {
+  let state = createEditorState(parseMarkdown("- one\n- two\n"));
+  const two = state.documentIndex.regions.find((r) => r.text === "two");
+
+  if (!two) throw new Error("Expected second list item");
+
+  state = setSelection(state, { regionId: two.id, offset: 0 });
+  state = deleteBackward(state) ?? state;
+
+  const merged = state.documentIndex.regions.find((r) => r.text === "onetwo");
+
+  if (!merged) throw new Error("Expected merged region");
+
+  expect(state.selection.focus.regionId).toBe(merged.id);
+  expect(state.selection.focus.offset).toBe("one".length);
 });

@@ -11,6 +11,7 @@ export {
 export {
   measureViewportCaretTarget as measureCaretTarget,
   measureViewportVisualCaretTarget as measureVisualCaretTarget,
+  measureInlineImageBounds,
   prepareViewport,
   resolveViewportDragFocus as resolveDragFocus,
   resolveViewportHoverTarget as resolveHoverTarget,
@@ -20,6 +21,7 @@ export {
   type EditorHoverTarget,
   type EditorPoint,
   type EditorViewportState,
+  type InlineBounds,
 } from "./layout";
 
 // Canvas
@@ -35,49 +37,16 @@ export {
   getSelectionMarks,
   hasNewAnimation,
   normalizeSelection,
+  resolveImageAtSelection,
   setSelection,
+  type EditorInline,
   type EditorSelection,
   type EditorSelectionPoint,
   type EditorState,
   type NormalizedEditorSelection,
 } from "./state";
 
-export {
-  createCommentThread,
-  dedent,
-  deleteBackward,
-  deleteComment,
-  deleteCommentThread,
-  deleteForward,
-  deleteSelectionText as deleteSelection,
-  deleteTable,
-  deleteTableColumn,
-  deleteTableRow,
-  editComment,
-  indent,
-  insertImage,
-  insertLineBreak,
-  insertSelectionText as replaceSelection,
-  insertTable,
-  insertTableColumn,
-  insertTableRow,
-  insertText,
-  moveListItemDown,
-  moveListItemUp,
-  redo,
-  removeInlineLink as removeLink,
-  replyToCommentThread,
-  resolveCommentThread,
-  selectAll,
-  toggleBold,
-  toggleInlineCode,
-  toggleItalic,
-  toggleStrikethrough,
-  toggleTaskItem,
-  toggleUnderline,
-  undo,
-  updateInlineLink as updateLink,
-} from "./state/commands";
+export * from "./state/commands";
 
 // Annotations
 export {
