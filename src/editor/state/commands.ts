@@ -65,6 +65,13 @@ import {
 } from "@/document";
 import { resolveCharacterDelete } from "./actions/text";
 import { resolveTextInputRule } from "./actions/input-rules";
+import { applyFragment, extractFragment } from "./fragment";
+import { resolveFragmentDestinationContext } from "./fragment/context";
+import {
+  extractPlainTextFromFragment,
+  extractPlainTextFromInlineNodes,
+  type Fragment,
+} from "@/document";
 import {
   resolveListItemDedent,
   resolveListItemIndent,
@@ -159,6 +166,103 @@ export function replaceSelection(state: EditorState, text: string) {
 
 export function deleteSelection(state: EditorState) {
   return replaceSelection(state, "");
+}
+
+// --- Clipboard ---
+
+// Capture the current selection as a `Fragment`. The fragment carries the
+// structural shape of every wholly-covered block — bullets for whole list
+// items, fences for whole code blocks, etc. — and a bare text slice for a
+// partial inline range. Returns null when the selection is collapsed
+// (nothing to copy). The component layer is responsible for serializing
+// the fragment to whatever clipboard format it uses.
+export function copySelection(state: EditorState): Fragment | null {
+  return extractFragment(state.documentIndex, state.selection);
+}
+
+// Replace the current selection with a `Fragment`. Routing happens inside
+// `applyFragment`, dispatching at the lowest altitude the fragment kind
+// allows (text → inline replace, inlines → in-leaf splice, blocks →
+// structural seam-merge).
+//
+// `verbatimFallback` is consulted only when `applyFragment` declines on
+// an opaque destination (code block, table cell). For code blocks the
+// fallback text inserts as literal source so markdown markers are
+// preserved; table cells get the fragment's plain-text projection. The
+// caller (component layer) supplies the original clipboard text as
+// `verbatimFallback` — the editor doesn't parse it, just inserts it.
+//
+// Inline-shaped pastes (text, inlines, single-paragraph blocks) flash an
+// inserted-text highlight so the visual feedback matches typing.
+// Multi-block pastes lean on the active-block flash that `setSelection`
+// fires when the caret lands in a new block.
+export function pasteFragment(
+  state: EditorState,
+  fragment: Fragment,
+  verbatimFallback?: string,
+): EditorState | null {
+  const result = applyFragment(state, fragment);
+
+  if (result) {
+    return animateAfterPaste(result, fragment);
+  }
+
+  // applyFragment refused. Empty `text` payloads silently no-op; opaque
+  // destinations (code block / table cell) get a flatten fallback.
+  if (fragment.kind === "text") {
+    return null;
+  }
+
+  return pasteIntoOpaqueRoot(state, fragment, verbatimFallback);
+}
+
+function animateAfterPaste(state: EditorState, fragment: Fragment): EditorState {
+  const insertedLength = inlineInsertionLength(fragment);
+  return insertedLength > 0
+    ? addInsertedTextHighlightAnimation(state, insertedLength)
+    : state;
+}
+
+// The number of characters the paste landed inline in the destination
+// region. For `text` and `inlines`, that's the whole payload. For a
+// single-paragraph block fragment, it's the paragraph's text — the seam
+// merge absorbs it into the destination block's run. Multi-block
+// fragments cross block boundaries (the active-block flash takes over)
+// so they report 0 — no inline highlight.
+function inlineInsertionLength(fragment: Fragment): number {
+  switch (fragment.kind) {
+    case "text":
+      return fragment.text.length;
+    case "inlines":
+      return extractPlainTextFromInlineNodes(fragment.inlines).length;
+    case "blocks":
+      return fragment.blocks.length === 1 && fragment.blocks[0]!.type === "paragraph"
+        ? fragment.blocks[0]!.plainText.length
+        : 0;
+  }
+}
+
+function pasteIntoOpaqueRoot(
+  state: EditorState,
+  fragment: Extract<Fragment, { kind: "inlines" } | { kind: "blocks" }>,
+  verbatimFallback: string | undefined,
+): EditorState | null {
+  // Code blocks store source text — preserve every character of the
+  // original clipboard payload. Table cells (or code blocks without a
+  // verbatim source) take the fragment's plain-text projection so
+  // newlines / markdown markers don't bleed into the inline content.
+  const destination = resolveFragmentDestinationContext(state.documentIndex, state.selection);
+
+  if (!destination) {
+    return null;
+  }
+
+  const fallbackText =
+    destination.prefersVerbatimFallback && verbatimFallback && verbatimFallback.length > 0
+      ? verbatimFallback
+      : extractPlainTextFromFragment(fragment);
+
+  return fallbackText.length > 0 ? replaceSelection(state, fallbackText) : null;
 }
 
 export function deleteBackward(state: EditorState) {

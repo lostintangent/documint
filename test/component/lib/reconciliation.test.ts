@@ -13,7 +13,7 @@ import {
   type EditorState,
 } from "@/editor/state";
 import { createParagraphTextBlock, spliceDocument } from "@/document";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 describe("selection reconciliation", () => {
   test("preserves a collapsed cursor when the equivalent region survives", () => {
@@ -223,7 +223,7 @@ describe("external content reconciliation", () => {
 });
 
 function createState(markdown: string) {
-  return createEditorState(parseMarkdown(markdown));
+  return createEditorState(parseDocument(markdown));
 }
 
 function insertTransientEmptyRootParagraph(markdown: string, rootIndex: number) {

@@ -5,10 +5,10 @@ import {
   resolveDragFocusPoint,
   resolveLinkHitAtPoint,
 } from "@/editor/layout";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("resolves link hits from document-space coordinates over linked text", () => {
-  const state = createEditorState(parseMarkdown("[alpha](https://example.com) tail\n"));
+  const state = createEditorState(parseDocument("[alpha](https://example.com) tail\n"));
   const layout = createDocumentLayout(state.documentIndex, {
     width: 320,
   });
@@ -27,7 +27,7 @@ test("resolves link hits from document-space coordinates over linked text", () =
 });
 
 test("resolves drag focus to the anchor start above the prepared layout", () => {
-  const state = createEditorState(parseMarkdown("alpha beta\n"));
+  const state = createEditorState(parseDocument("alpha beta\n"));
   const layout = createDocumentLayout(state.documentIndex, {
     width: 320,
   });
@@ -58,7 +58,7 @@ test("resolves drag focus to the anchor start above the prepared layout", () => 
 });
 
 test("resolves drag focus into a different region instead of clamping to the anchor", () => {
-  const state = createEditorState(parseMarkdown("alpha\n\nbeta\n"));
+  const state = createEditorState(parseDocument("alpha\n\nbeta\n"));
   const layout = createDocumentLayout(state.documentIndex, {
     width: 320,
   });
@@ -94,7 +94,7 @@ test("resolves drag focus into a different region instead of clamping to the anc
 });
 
 test("resolves drag focus to the anchor end below the prepared layout", () => {
-  const state = createEditorState(parseMarkdown("alpha beta\n"));
+  const state = createEditorState(parseDocument("alpha beta\n"));
   const layout = createDocumentLayout(state.documentIndex, {
     width: 320,
   });
@@ -126,7 +126,7 @@ test("resolves drag focus to the anchor end below the prepared layout", () => {
 
 test("resolves task-toggle hover targets ahead of text hits", () => {
   const renderCache = createCanvasRenderCache();
-  const state = createEditorState(parseMarkdown("- [ ] Review task\n"));
+  const state = createEditorState(parseDocument("- [ ] Review task\n"));
   const viewport = prepareViewport(state, { height: 320, top: 0, width: 520 }, renderCache);
   const line = viewport.layout.lines[0];
   const listItem = state.documentIndex.blocks.find((block) => block.type === "listItem");

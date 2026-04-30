@@ -10,11 +10,11 @@ import {
   insertTableRow,
 } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 import { getRegion, placeAt, setup, toMarkdown } from "../helpers";
 
 test("moves to the next and previous table cell with tab and shift-tab", () => {
-  let state = createEditorState(parseMarkdown("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
+  let state = createEditorState(parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
   const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -39,7 +39,7 @@ test("moves to the next and previous table cell with tab and shift-tab", () => {
 
 test("moves across table rows with tab and shift-tab", () => {
   let state = createEditorState(
-    parseMarkdown("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |\n"),
+    parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |\n"),
   );
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
   const gamma = state.documentIndex.regions.find((container) => container.text === "gamma");
@@ -68,7 +68,7 @@ test("moves across table rows with tab and shift-tab", () => {
 });
 
 test("adds a new empty row when tabbing from the last table cell", () => {
-  let state = createEditorState(parseMarkdown("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
+  let state = createEditorState(parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -83,7 +83,7 @@ test("adds a new empty row when tabbing from the last table cell", () => {
   const nextState = indent(state);
 
   expect(nextState).toBeDefined();
-  expect(serializeMarkdown(createDocumentFromEditorState(nextState!))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(nextState!))).toBe(
     "| A | B |\n| --- | --- |\n| alpha | beta |\n|  |  |\n",
   );
 
@@ -96,7 +96,7 @@ test("adds a new empty row when tabbing from the last table cell", () => {
 });
 
 test("does not leave the table when shift-tabbing from the first cell", () => {
-  let state = createEditorState(parseMarkdown("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
+  let state = createEditorState(parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
   const headerA = state.documentIndex.regions.find((container) => container.text === "A");
 
   if (!headerA) {

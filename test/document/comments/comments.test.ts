@@ -11,10 +11,10 @@ import {
   markCommentThreadAsResolved,
   resolveCommentThread,
 } from "@/document";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("creates durable anchors from semantic text containers", () => {
-  const snapshot = parseMarkdown("# Title\n\nReview surface anchors survive.\n");
+  const snapshot = parseDocument("# Title\n\nReview surface anchors survive.\n");
   const container = listAnchorContainers(snapshot)[1];
 
   if (!container) {
@@ -29,7 +29,7 @@ test("creates durable anchors from semantic text containers", () => {
 });
 
 test("repairs anchors against changed semantic content", () => {
-  const original = parseMarkdown("Review surface anchors survive markdown reloads.\n");
+  const original = parseDocument("Review surface anchors survive markdown reloads.\n");
   const container = listAnchorContainers(original)[0];
 
   if (!container) {
@@ -42,7 +42,7 @@ test("repairs anchors against changed semantic content", () => {
     createdAt: "2026-04-05T12:00:00.000Z",
     quote: extractQuoteFromContainer(container, 15, 30),
   });
-  const edited = parseMarkdown("Review surface editing keeps anchors survive markdown reloads.\n");
+  const edited = parseDocument("Review surface editing keeps anchors survive markdown reloads.\n");
   const resolution = resolveCommentThread(thread, edited);
 
   expect(resolution.status).toBe("repaired");
@@ -51,7 +51,7 @@ test("repairs anchors against changed semantic content", () => {
 });
 
 test("repairs anchors when the quoted text is edited in place", () => {
-  const original = parseMarkdown("Typpoed person name appears here.\n");
+  const original = parseDocument("Typpoed person name appears here.\n");
   const container = listAnchorContainers(original)[0];
 
   if (!container) {
@@ -64,7 +64,7 @@ test("repairs anchors when the quoted text is edited in place", () => {
     createdAt: "2026-04-05T12:00:00.000Z",
     quote: extractQuoteFromContainer(container, 0, 12),
   });
-  const edited = parseMarkdown("Typoed person name appears here.\n");
+  const edited = parseDocument("Typoed person name appears here.\n");
   const resolution = resolveCommentThread(thread, edited);
 
   expect(resolution.status).toBe("repaired");
@@ -72,7 +72,7 @@ test("repairs anchors when the quoted text is edited in place", () => {
 });
 
 test("keeps comments sticky when the containing block moves in the document", () => {
-  const original = parseMarkdown(
+  const original = parseDocument(
     "Alpha intro.\n\nUnique quoted phrase lives here.\n\nOmega tail.\n",
   );
   const container = listAnchorContainers(original)[1];
@@ -87,7 +87,7 @@ test("keeps comments sticky when the containing block moves in the document", ()
     createdAt: "2026-04-05T12:00:00.000Z",
     quote: extractQuoteFromContainer(container, 0, 20),
   });
-  const moved = parseMarkdown("Omega tail.\n\nUnique quoted phrase lives here.\n\nAlpha intro.\n");
+  const moved = parseDocument("Omega tail.\n\nUnique quoted phrase lives here.\n\nAlpha intro.\n");
   const resolution = resolveCommentThread(thread, moved);
 
   expect(resolution.status).toBe("matched");
@@ -96,7 +96,7 @@ test("keeps comments sticky when the containing block moves in the document", ()
 });
 
 test("keeps comments sticky when a paragraph becomes a heading", () => {
-  const original = parseMarkdown("Promote this line.\n");
+  const original = parseDocument("Promote this line.\n");
   const container = listAnchorContainers(original)[0];
 
   if (!container) {
@@ -109,7 +109,7 @@ test("keeps comments sticky when a paragraph becomes a heading", () => {
     createdAt: "2026-04-05T12:00:00.000Z",
     quote: extractQuoteFromContainer(container, 0, 12),
   });
-  const promoted = parseMarkdown("# Promote this line.\n");
+  const promoted = parseDocument("# Promote this line.\n");
   const resolution = resolveCommentThread(thread, promoted);
 
   expect(resolution.status).toBe("matched");
@@ -118,7 +118,7 @@ test("keeps comments sticky when a paragraph becomes a heading", () => {
 });
 
 test("lists nested anchor containers in visible order", () => {
-  const snapshot = parseMarkdown(`# Title
+  const snapshot = parseDocument(`# Title
 
 > Quote body
 
@@ -165,7 +165,7 @@ console.log("hi");
 });
 
 test("serializes thread payloads deterministically and tracks status transitions", () => {
-  const snapshot = parseMarkdown("Review surface anchors survive.\n");
+  const snapshot = parseDocument("Review surface anchors survive.\n");
   const container = listAnchorContainers(snapshot)[0];
 
   if (!container) {
@@ -186,7 +186,7 @@ test("serializes thread payloads deterministically and tracks status transitions
 });
 
 test("edits and deletes thread comments without moving thread ownership into the UI", () => {
-  const snapshot = parseMarkdown("Review surface anchors survive.\n");
+  const snapshot = parseDocument("Review surface anchors survive.\n");
   const container = listAnchorContainers(snapshot)[0];
 
   if (!container) {

@@ -5,16 +5,16 @@ import {
   type EditorRegion,
   type EditorState,
 } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 /** Create an editor state from a markdown string. */
 export function setup(markdown: string): EditorState {
-  return createEditorState(parseMarkdown(markdown));
+  return createEditorState(parseDocument(markdown));
 }
 
 /** Serialize an editor state back to a markdown string. */
 export function toMarkdown(state: EditorState): string {
-  return serializeMarkdown(createDocumentFromEditorState(state));
+  return serializeDocument(createDocumentFromEditorState(state));
 }
 
 /**

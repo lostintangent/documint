@@ -5,11 +5,11 @@ import { createDocumentLayout } from "@/editor/layout";
 import { createEditorState, setSelection } from "@/editor/state";
 import { paintCanvasCaretOverlay, paintCanvasEditorSurface } from "@/editor/canvas/paint";
 import { lightTheme } from "@/component/lib/themes";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("paints active table highlights only within the active cell before text", () => {
   let state = createEditorState(
-    parseMarkdown(`| Left | Active | Right |
+    parseDocument(`| Left | Active | Right |
 | --- | --- | --- |
 | one | two | three |
 `),
@@ -76,7 +76,7 @@ test("paints active table highlights only within the active cell before text", (
 });
 
 test("keeps non-table active block highlights full width", () => {
-  let state = createEditorState(parseMarkdown("alpha beta gamma\n"));
+  let state = createEditorState(parseDocument("alpha beta gamma\n"));
   const container = state.documentIndex.regions[0];
 
   if (!container) {
@@ -112,7 +112,7 @@ test("keeps non-table active block highlights full width", () => {
 });
 
 test("paints selection highlights across every region the selection spans", () => {
-  let state = createEditorState(parseMarkdown("alpha\n\nbeta\n\ngamma\n"));
+  let state = createEditorState(parseDocument("alpha\n\nbeta\n\ngamma\n"));
   const [first, second, third] = state.documentIndex.regions;
 
   if (!first || !second || !third) {
@@ -161,7 +161,7 @@ test("paints selection highlights across every region the selection spans", () =
 });
 
 test("does not paint a selection highlight when the selection is collapsed", () => {
-  let state = createEditorState(parseMarkdown("alpha\n\nbeta\n"));
+  let state = createEditorState(parseDocument("alpha\n\nbeta\n"));
   const container = state.documentIndex.regions[0];
 
   if (!container) {
@@ -184,7 +184,7 @@ test("does not paint a selection highlight when the selection is collapsed", () 
 test("right-aligns ordered list markers without moving list text", () => {
   const orderedListMarkerGap = 8;
   const state = createEditorState(
-    parseMarkdown(`
+    parseDocument(`
 1. one
 2. two
 3. three
@@ -220,7 +220,7 @@ test("right-aligns ordered list markers without moving list text", () => {
 });
 
 test("paints resolved presence cursors on the overlay canvas", () => {
-  let state = createEditorState(parseMarkdown("alpha beta gamma\n"));
+  let state = createEditorState(parseDocument("alpha beta gamma\n"));
   const container = state.documentIndex.regions[0];
 
   if (!container) {
@@ -263,7 +263,7 @@ test("paints resolved presence cursors on the overlay canvas", () => {
 });
 
 test("skips unresolved presence cursors during overlay paint", () => {
-  const state = createEditorState(parseMarkdown("alpha beta gamma\n"));
+  const state = createEditorState(parseDocument("alpha beta gamma\n"));
   const { context } = renderOverlayOperations(state, {
     height: 180,
     presence: [

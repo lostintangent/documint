@@ -1,3 +1,7 @@
+## 🗓️ v0.0.7 (04-30-26)
+
+- Added support for copying and pasting content in a semantic/structural way.
+
 ## 🗓️ v0.0.6 (04-29-26)
 
 - Images are now resizable by selecting them and them dragging the resize handles

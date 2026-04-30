@@ -7,10 +7,10 @@ import {
 } from "@/editor/navigation";
 import { createEditorState, setSelection } from "@/editor/state";
 import { createDocumentLayout } from "@/editor/layout";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("moves left to the previous container when the caret is at the start", () => {
-  const state = createEditorState(parseMarkdown("# Heading\n\nParagraph"));
+  const state = createEditorState(parseDocument("# Heading\n\nParagraph"));
   const paragraphContainer = state.documentIndex.regions.find(
     (entry) => entry.blockType === "paragraph",
   );
@@ -30,7 +30,7 @@ test("moves left to the previous container when the caret is at the start", () =
 });
 
 test("moves right to the next container when the caret is at the end", () => {
-  const state = createEditorState(parseMarkdown("# Heading\n\nParagraph"));
+  const state = createEditorState(parseDocument("# Heading\n\nParagraph"));
   const headingContainer = state.documentIndex.regions.find(
     (entry) => entry.blockType === "heading",
   );
@@ -50,7 +50,7 @@ test("moves right to the next container when the caret is at the end", () => {
 });
 
 test("extends the selection to the left when shift-arrow-left is used repeatedly", () => {
-  const state = createEditorState(parseMarkdown("alpha"));
+  const state = createEditorState(parseDocument("alpha"));
   const container = state.documentIndex.regions[0];
 
   expect(container).toBeDefined();
@@ -78,7 +78,7 @@ test("extends the selection to the left when shift-arrow-left is used repeatedly
 });
 
 test("extends the selection across regions when shift-arrow-right crosses a boundary", () => {
-  const state = createEditorState(parseMarkdown("alpha\n\nbeta"));
+  const state = createEditorState(parseDocument("alpha\n\nbeta"));
   const firstContainer = state.documentIndex.regions[0];
   const secondContainer = state.documentIndex.regions[1];
 
@@ -108,7 +108,7 @@ test("extends the selection across regions when shift-arrow-right crosses a boun
 
 test("moves horizontally across images as atomic inline objects", () => {
   const state = createEditorState(
-    parseMarkdown("before ![alt](https://example.com/image.png) after\n"),
+    parseDocument("before ![alt](https://example.com/image.png) after\n"),
   );
   const container = state.documentIndex.regions[0];
 
@@ -142,7 +142,7 @@ test("moves horizontally across images as atomic inline objects", () => {
 });
 
 test("extends the selection to the start of the current line", () => {
-  const state = createEditorState(parseMarkdown("alpha beta gamma"));
+  const state = createEditorState(parseDocument("alpha beta gamma"));
   const container = state.documentIndex.regions[0];
 
   expect(container).toBeDefined();
@@ -172,7 +172,7 @@ test("extends the selection to the start of the current line", () => {
 });
 
 test("extends the selection to the end of the current line", () => {
-  const state = createEditorState(parseMarkdown("alpha beta gamma"));
+  const state = createEditorState(parseDocument("alpha beta gamma"));
   const container = state.documentIndex.regions[0];
 
   expect(container).toBeDefined();
@@ -203,7 +203,7 @@ test("extends the selection to the end of the current line", () => {
 
 test("moves vertically between table cells in the same column", () => {
   const state = createEditorState(
-    parseMarkdown("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |"),
+    parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |"),
   );
   const beta = state.documentIndex.regions.find((entry) => entry.text === "beta");
 
@@ -239,7 +239,7 @@ test("moves vertically between table cells in the same column", () => {
 
 test("moves out of a table when there is no row above or below", () => {
   const state = createEditorState(
-    parseMarkdown("before\n\n| A | B |\n| --- | --- |\n| alpha | beta |\n\nafter"),
+    parseDocument("before\n\n| A | B |\n| --- | --- |\n| alpha | beta |\n\nafter"),
   );
   const headerB = state.documentIndex.regions.find((entry) => entry.text === "B");
   const beta = state.documentIndex.regions.find((entry) => entry.text === "beta");
@@ -280,7 +280,7 @@ test("moves out of a table when there is no row above or below", () => {
 });
 
 test("extends the selection vertically across a region boundary while keeping the anchor", () => {
-  const state = createEditorState(parseMarkdown("alpha\n\nbeta\n\ngamma"));
+  const state = createEditorState(parseDocument("alpha\n\nbeta\n\ngamma"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -301,7 +301,7 @@ test("extends the selection vertically across a region boundary while keeping th
 });
 
 test("jumps to the start of the document when moveCaretToDocumentBoundary is invoked with start", () => {
-  const state = createEditorState(parseMarkdown("alpha\n\nbeta\n\ngamma"));
+  const state = createEditorState(parseDocument("alpha\n\nbeta\n\ngamma"));
   const [first, , third] = state.documentIndex.regions;
 
   if (!first || !third) {
@@ -318,7 +318,7 @@ test("jumps to the start of the document when moveCaretToDocumentBoundary is inv
 });
 
 test("jumps to the end of the document when moveCaretToDocumentBoundary is invoked with end", () => {
-  const state = createEditorState(parseMarkdown("alpha\n\nbeta\n\ngamma"));
+  const state = createEditorState(parseDocument("alpha\n\nbeta\n\ngamma"));
   const [first, , third] = state.documentIndex.regions;
 
   if (!first || !third) {
@@ -341,7 +341,7 @@ test("jumps to the end of the document when moveCaretToDocumentBoundary is invok
 });
 
 test("extends the selection to the end of the document while keeping the anchor", () => {
-  const state = createEditorState(parseMarkdown("alpha\n\nbeta\n\ngamma"));
+  const state = createEditorState(parseDocument("alpha\n\nbeta\n\ngamma"));
   const [first, , third] = state.documentIndex.regions;
 
   if (!first || !third) {

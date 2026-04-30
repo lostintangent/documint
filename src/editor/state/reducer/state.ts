@@ -36,7 +36,7 @@ import {
   type EditorSelection,
   type EditorSelectionPoint,
 } from "../selection";
-import { spliceText } from "./text";
+import { replaceWithBlocks, spliceText } from "./text";
 
 /* Initialization */
 
@@ -105,6 +105,11 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
 
     case "splice-text": {
       const result = spliceText(state.documentIndex, action.selection, action.text);
+      return applyDocumentMutation(state, result.documentIndex, result.selection);
+    }
+
+    case "splice-fragment": {
+      const result = replaceWithBlocks(state.documentIndex, action.selection, action.fragment);
       return applyDocumentMutation(state, result.documentIndex, result.selection);
     }
 

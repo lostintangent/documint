@@ -14,10 +14,10 @@ import {
   setSelection,
   undoEditorState,
 } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 test("supports canvas list splits with undo and redo", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const target = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!target) {
@@ -37,17 +37,17 @@ test("supports canvas list splits with undo and redo", () => {
 
   state = splitState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- be\n- ta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n- be\n- ta\n");
 
   state = undoEditorState(state);
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
 
   state = redoEditorState(state);
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- be\n- ta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n- be\n- ta\n");
 });
 
 test("reports a list-item-inserted effect when Enter splits a regular list item", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n"));
+  let state = createEditorState(parseDocument("- alpha\n"));
   const target = state.documentIndex.regions[0];
 
   if (!target) {
@@ -66,7 +66,7 @@ test("reports a list-item-inserted effect when Enter splits a regular list item"
 });
 
 test("does not trigger a list marker animation when Enter splits a task list item", () => {
-  let state = createEditorState(parseMarkdown("- [ ] alpha\n"));
+  let state = createEditorState(parseDocument("- [ ] alpha\n"));
   const target = state.documentIndex.regions[0];
 
   if (!target) {
@@ -85,7 +85,7 @@ test("does not trigger a list marker animation when Enter splits a task list ite
 });
 
 test("moves top-level list items up and down while preserving their nested subtree", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n  - child\n- beta\n- gamma\n"));
+  let state = createEditorState(parseDocument("- alpha\n  - child\n- beta\n- gamma\n"));
   const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -98,19 +98,19 @@ test("moves top-level list items up and down while preserving their nested subtr
   });
   state = moveListItemDown(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- beta\n- alpha\n  - child\n- gamma\n",
   );
 
   state = moveListItemUp(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - child\n- beta\n- gamma\n",
   );
 });
 
 test("moves nested list items only within their current parent list", () => {
-  let state = createEditorState(parseMarkdown("- parent\n  - first\n  - second\n  - third\n"));
+  let state = createEditorState(parseDocument("- parent\n  - first\n  - second\n  - third\n"));
   const second = state.documentIndex.regions.find((container) => container.text === "second");
 
   if (!second) {
@@ -123,19 +123,19 @@ test("moves nested list items only within their current parent list", () => {
   });
   state = moveListItemUp(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- parent\n  - second\n  - first\n  - third\n",
   );
 
   state = moveListItemDown(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- parent\n  - first\n  - second\n  - third\n",
   );
 });
 
 test("does not move list items past the boundaries of their current parent list", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
@@ -159,7 +159,7 @@ test("does not move list items past the boundaries of their current parent list"
 });
 
 test("routes list item move commands through the editor command layer", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -172,11 +172,11 @@ test("routes list item move commands through the editor command layer", () => {
   });
   state = moveListItemUp(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- beta\n- alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- beta\n- alpha\n");
 });
 
 test("inserts new list items above or below at list boundaries", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -189,7 +189,7 @@ test("inserts new list items above or below at list boundaries", () => {
   });
   state = insertLineBreak(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n");
 
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
@@ -203,11 +203,11 @@ test("inserts new list items above or below at list boundaries", () => {
   });
   state = insertLineBreak(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n-\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("-\n- alpha\n- beta\n-\n");
 });
 
 test("pressing enter on an empty list item exits it as a paragraph", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const target = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!target) {
@@ -232,11 +232,11 @@ test("pressing enter on an empty list item exits it as a paragraph", () => {
   });
   state = insertLineBreak(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n\n\n\n- beta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n\n\n\n- beta\n");
 });
 
 test("rejoins adjacent compatible lists when deleting the empty paragraph between them", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -273,11 +273,11 @@ test("rejoins adjacent compatible lists when deleting the empty paragraph betwee
   });
   state = deleteBackward(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
 });
 
 test("lifts empty nested list items one level before exiting the list entirely", () => {
-  let state = createEditorState(parseMarkdown("- parent\n  - child\n  - \n- sibling\n"));
+  let state = createEditorState(parseDocument("- parent\n  - child\n  - \n- sibling\n"));
   const empty = state.documentIndex.regions.find(
     (container) => container.text === "" && container.path.includes(".children.0.children."),
   );
@@ -292,13 +292,13 @@ test("lifts empty nested list items one level before exiting the list entirely",
   });
   state = insertLineBreak(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- parent\n  - child\n-\n- sibling\n",
   );
 });
 
 test("routes list enter behavior and markdown task rules", () => {
-  let state = createEditorState(parseMarkdown("- [x] shipped baseline\n"));
+  let state = createEditorState(parseDocument("- [x] shipped baseline\n"));
   const task = state.documentIndex.regions.find(
     (container) => container.text === "shipped baseline",
   );
@@ -313,11 +313,11 @@ test("routes list enter behavior and markdown task rules", () => {
   });
   state = insertLineBreak(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- [x] shipped b\n- [ ] aseline\n",
   );
 
-  let inputState = createEditorState(parseMarkdown("x\n"));
+  let inputState = createEditorState(parseDocument("x\n"));
   const placeholder = inputState.documentIndex.regions[0];
 
   if (!placeholder) {
@@ -341,11 +341,11 @@ test("routes list enter behavior and markdown task rules", () => {
     throw new Error("Expected canvas state from task rule");
   }
 
-  expect(serializeMarkdown(createDocumentFromEditorState(taskRuleState))).toBe("- [ ] \n");
+  expect(serializeDocument(createDocumentFromEditorState(taskRuleState))).toBe("- [ ] \n");
 });
 
 test("creates unordered, ordered, and task lists from lightweight markdown triggers", () => {
-  let unorderedState = createEditorState(parseMarkdown("x\n"));
+  let unorderedState = createEditorState(parseDocument("x\n"));
   const unorderedContainer = unorderedState.documentIndex.regions[0];
 
   if (!unorderedContainer) {
@@ -365,14 +365,14 @@ test("creates unordered, ordered, and task lists from lightweight markdown trigg
   unorderedState = insertText(unorderedState, "-") ?? unorderedState;
   unorderedState = insertText(unorderedState, " ") ?? unorderedState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(unorderedState))).toBe("-\n");
+  expect(serializeDocument(createDocumentFromEditorState(unorderedState))).toBe("-\n");
   expect(
     unorderedState.documentIndex.regions.some(
       (container) => container.id === unorderedState.selection.focus.regionId,
     ),
   ).toBe(true);
 
-  let orderedState = createEditorState(parseMarkdown("x\n"));
+  let orderedState = createEditorState(parseDocument("x\n"));
   const orderedContainer = orderedState.documentIndex.regions[0];
 
   if (!orderedContainer) {
@@ -393,14 +393,14 @@ test("creates unordered, ordered, and task lists from lightweight markdown trigg
   orderedState = insertText(orderedState, ".") ?? orderedState;
   orderedState = insertText(orderedState, " ") ?? orderedState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(orderedState))).toBe("1.\n");
+  expect(serializeDocument(createDocumentFromEditorState(orderedState))).toBe("1.\n");
   expect(
     orderedState.documentIndex.regions.some(
       (container) => container.id === orderedState.selection.focus.regionId,
     ),
   ).toBe(true);
 
-  let taskState = createEditorState(parseMarkdown("x\n"));
+  let taskState = createEditorState(parseDocument("x\n"));
   const taskContainer = taskState.documentIndex.regions[0];
 
   if (!taskContainer) {
@@ -419,7 +419,7 @@ test("creates unordered, ordered, and task lists from lightweight markdown trigg
   });
   taskState = insertText(taskState, "- [ ] ") ?? taskState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(taskState))).toBe("- [ ] \n");
+  expect(serializeDocument(createDocumentFromEditorState(taskState))).toBe("- [ ] \n");
   expect(
     taskState.documentIndex.regions.some(
       (container) => container.id === taskState.selection.focus.regionId,
@@ -428,7 +428,7 @@ test("creates unordered, ordered, and task lists from lightweight markdown trigg
 });
 
 test("merges or removes list items when backspacing at the start", () => {
-  let listState = createEditorState(parseMarkdown("- one\n- two\n"));
+  let listState = createEditorState(parseDocument("- one\n- two\n"));
   const two = listState.documentIndex.regions.find((container) => container.text === "two");
 
   if (!two) {
@@ -441,9 +441,9 @@ test("merges or removes list items when backspacing at the start", () => {
   });
   listState = deleteBackward(listState) ?? listState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(listState))).toBe("- onetwo\n");
+  expect(serializeDocument(createDocumentFromEditorState(listState))).toBe("- onetwo\n");
 
-  let blankListState = createEditorState(parseMarkdown("- one\n-\n- two\n"));
+  let blankListState = createEditorState(parseDocument("- one\n-\n- two\n"));
   const emptyItem = blankListState.documentIndex.regions.find((container) => container.text === "");
 
   if (!emptyItem) {
@@ -456,11 +456,11 @@ test("merges or removes list items when backspacing at the start", () => {
   });
   blankListState = deleteBackward(blankListState) ?? blankListState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(blankListState))).toBe("- one\n- two\n");
+  expect(serializeDocument(createDocumentFromEditorState(blankListState))).toBe("- one\n- two\n");
 });
 
 test("preserves nested list semantics when splitting a nested task item at the end", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n  - [x] shipped child\n  - gamma\n"));
+  let state = createEditorState(parseDocument("- alpha\n  - [x] shipped child\n  - gamma\n"));
   const task = state.documentIndex.regions.find((container) => container.text === "shipped child");
 
   if (!task) {
@@ -473,19 +473,19 @@ test("preserves nested list semantics when splitting a nested task item at the e
   });
   state = insertLineBreak(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - [x] shipped child\n  - [ ] \n  - gamma\n",
   );
 
   state = insertText(state, "z") ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - [x] shipped child\n  - [ ] z\n  - gamma\n",
   );
 });
 
 test("toggles semantic task-list state for rendered task items", () => {
-  const state = createEditorState(parseMarkdown("- [ ] ship it\n"));
+  const state = createEditorState(parseDocument("- [ ] ship it\n"));
   const list = state.documentIndex.document.blocks[0];
 
   if (!list || list.type !== "list") {
@@ -504,11 +504,11 @@ test("toggles semantic task-list state for rendered task items", () => {
     throw new Error("Expected toggled task state");
   }
 
-  expect(serializeMarkdown(createDocumentFromEditorState(toggled))).toBe("- [x] ship it\n");
+  expect(serializeDocument(createDocumentFromEditorState(toggled))).toBe("- [x] ship it\n");
 });
 
 test("toggles nested semantic task-list state for rendered task items", () => {
-  const state = createEditorState(parseMarkdown("- parent\n  - [ ] ship nested\n"));
+  const state = createEditorState(parseDocument("- parent\n  - [ ] ship nested\n"));
   const rootList = state.documentIndex.document.blocks[0];
 
   if (!rootList || rootList.type !== "list") {
@@ -534,13 +534,13 @@ test("toggles nested semantic task-list state for rendered task items", () => {
     throw new Error("Expected toggled nested task state");
   }
 
-  expect(serializeMarkdown(createDocumentFromEditorState(toggled))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(toggled))).toBe(
     "- parent\n  - [x] ship nested\n",
   );
 });
 
 test("toggles task list state through the action dispatcher", () => {
-  const state = createEditorState(parseMarkdown("- [ ] task\n"));
+  const state = createEditorState(parseDocument("- [ ] task\n"));
   const taskItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
 
   if (!taskItem) {
@@ -553,11 +553,11 @@ test("toggles task list state through the action dispatcher", () => {
     throw new Error("Expected task toggle state");
   }
 
-  expect(serializeMarkdown(createDocumentFromEditorState(nextState))).toBe("- [x] task\n");
+  expect(serializeDocument(createDocumentFromEditorState(nextState))).toBe("- [x] task\n");
 });
 
 test("places the cursor at the merge junction when backspacing a non-empty list item", () => {
-  let state = createEditorState(parseMarkdown("- one\n- two\n"));
+  let state = createEditorState(parseDocument("- one\n- two\n"));
   const two = state.documentIndex.regions.find((r) => r.text === "two");
 
   if (!two) throw new Error("Expected second list item");

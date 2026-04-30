@@ -5,10 +5,10 @@ import {
   normalizeSelection,
 } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 test("projects semantic snapshots into a deterministic editor document", () => {
-  const snapshot = parseMarkdown(`# Runtime
+  const snapshot = parseDocument(`# Runtime
 
 Paragraph with [link](https://example.com), \`code\`, and ![alt text](https://example.com/image.png).
 
@@ -50,7 +50,7 @@ Paragraph with [link](https://example.com), \`code\`, and ![alt text](https://ex
 });
 
 test("preserves inline emphasis and strong marks in runtime text runs", () => {
-  const runtime = createDocumentIndex(parseMarkdown("Plain *italic* and **bold** text.\n"));
+  const runtime = createDocumentIndex(parseDocument("Plain *italic* and **bold** text.\n"));
   const paragraph = runtime.regions[0];
 
   if (!paragraph) {
@@ -65,7 +65,7 @@ test("preserves inline emphasis and strong marks in runtime text runs", () => {
 });
 
 test("preserves inline underline marks in runtime text runs", () => {
-  const runtime = createDocumentIndex(parseMarkdown("Plain <ins>underlined</ins> text.\n"));
+  const runtime = createDocumentIndex(parseDocument("Plain <ins>underlined</ins> text.\n"));
   const paragraph = runtime.regions[0];
 
   if (!paragraph) {
@@ -84,26 +84,26 @@ test("round-trips through editor model materialization without changing markdown
 
 - [ ] task
 `;
-  const snapshot = parseMarkdown(markdown);
+  const snapshot = parseDocument(markdown);
   const runtime = createDocumentIndex(snapshot);
   const roundTrip = createDocumentFromIndex(runtime);
 
-  expect(serializeMarkdown(roundTrip)).toBe(markdown);
+  expect(serializeDocument(roundTrip)).toBe(markdown);
 });
 
 test("creates a runtime paragraph for an empty document without changing markdown persistence", () => {
-  const snapshot = parseMarkdown("");
+  const snapshot = parseDocument("");
   const runtime = createDocumentIndex(snapshot);
 
   expect(runtime.regions).toHaveLength(1);
   expect(runtime.regions[0]?.text).toBe("");
   expect(runtime.document.blocks[0]?.type).toBe("paragraph");
-  expect(serializeMarkdown(createDocumentFromIndex(runtime))).toBe("");
+  expect(serializeDocument(createDocumentFromIndex(runtime))).toBe("");
 });
 
 test("stores positioned root ranges directly on the unified editor model", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`# Heading
+    parseDocument(`# Heading
 
 alpha
 
@@ -122,7 +122,7 @@ beta
 
 test("normalizes canvas selections and replaces plain text within one container", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`# Selection
+    parseDocument(`# Selection
 
 Paragraph body.
 `),
@@ -161,12 +161,12 @@ Paragraph body.
   expect(normalized.start.offset).toBe(10);
   expect(normalized.end.offset).toBe(12);
   expect(replaced.documentIndex.regions[1]?.text).toBe("Paragraph text.");
-  expect(serializeMarkdown(replaced.documentIndex.document)).toContain("Paragraph text.");
+  expect(serializeDocument(replaced.documentIndex.document)).toContain("Paragraph text.");
 });
 
 test("preserves inline semantic wrappers when editing inside a formatted container", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(
+    parseDocument(
       "Paragraph with [link](https://example.com), `code`, and ![alt](https://example.com/image.png).\n",
     ),
   );
@@ -205,14 +205,14 @@ test("preserves inline semantic wrappers when editing inside a formatted contain
     "snippet",
   );
 
-  expect(serializeMarkdown(replacedCode.documentIndex.document)).toBe(
+  expect(serializeDocument(replacedCode.documentIndex.document)).toBe(
     "Paragraph with [ref](https://example.com), `snippet`, and ![alt](https://example.com/image.png).\n",
   );
 });
 
 test("reuses untouched runtime regions for same-length single-root edits", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`# Heading
+    parseDocument(`# Heading
 
 alpha
 
@@ -250,7 +250,7 @@ beta
 
 test("preserves sibling root content when a preceding root shifts in document space", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`# Heading
+    parseDocument(`# Heading
 
 alpha
 
@@ -285,7 +285,7 @@ beta
 
 test("replaces a selected image atomically instead of editing its alt text", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown("before ![alt](https://example.com/image.png) after\n"),
+    parseDocument("before ![alt](https://example.com/image.png) after\n"),
   );
   const paragraph = runtime.regions[0];
 
@@ -314,5 +314,5 @@ test("replaces a selected image atomically instead of editing its alt text", () 
     "media",
   );
 
-  expect(serializeMarkdown(replaced.documentIndex.document)).toBe("before media after\n");
+  expect(serializeDocument(replaced.documentIndex.document)).toBe("before media after\n");
 });

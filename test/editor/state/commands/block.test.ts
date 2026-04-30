@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { dedent, deleteBackward, indent, insertLineBreak, insertText } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 test("removes task markers, demotes headings, and unwraps single-line blockquotes on backspace", () => {
-  let taskState = createEditorState(parseMarkdown("- [ ] alpha\n"));
+  let taskState = createEditorState(parseDocument("- [ ] alpha\n"));
   const alpha = taskState.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -17,7 +17,7 @@ test("removes task markers, demotes headings, and unwraps single-line blockquote
   });
   taskState = deleteBackward(taskState) ?? taskState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(taskState))).toBe("- alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(taskState))).toBe("- alpha\n");
 
   const plainAlpha = taskState.documentIndex.regions.find(
     (container) => container.text === "alpha",
@@ -33,9 +33,9 @@ test("removes task markers, demotes headings, and unwraps single-line blockquote
   });
   taskState = deleteBackward(taskState) ?? taskState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(taskState))).toBe("alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(taskState))).toBe("alpha\n");
 
-  let headingState = createEditorState(parseMarkdown("# Heading\n"));
+  let headingState = createEditorState(parseDocument("# Heading\n"));
   const heading = headingState.documentIndex.regions.find(
     (container) => container.text === "Heading",
   );
@@ -50,9 +50,9 @@ test("removes task markers, demotes headings, and unwraps single-line blockquote
   });
   headingState = deleteBackward(headingState) ?? headingState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe("Heading\n");
+  expect(serializeDocument(createDocumentFromEditorState(headingState))).toBe("Heading\n");
 
-  let quoteState = createEditorState(parseMarkdown("> quoted line\n"));
+  let quoteState = createEditorState(parseDocument("> quoted line\n"));
   const quoted = quoteState.documentIndex.regions.find(
     (container) => container.text === "quoted line",
   );
@@ -67,11 +67,11 @@ test("removes task markers, demotes headings, and unwraps single-line blockquote
   });
   quoteState = deleteBackward(quoteState) ?? quoteState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe("quoted line\n");
+  expect(serializeDocument(createDocumentFromEditorState(quoteState))).toBe("quoted line\n");
 });
 
 test("merges or removes blocks when backspacing at the start", () => {
-  let paragraphState = createEditorState(parseMarkdown("First\n\nSecond\n"));
+  let paragraphState = createEditorState(parseDocument("First\n\nSecond\n"));
   const second = paragraphState.documentIndex.regions.find(
     (container) => container.text === "Second",
   );
@@ -86,9 +86,9 @@ test("merges or removes blocks when backspacing at the start", () => {
   });
   paragraphState = deleteBackward(paragraphState) ?? paragraphState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(paragraphState))).toBe("FirstSecond\n");
+  expect(serializeDocument(createDocumentFromEditorState(paragraphState))).toBe("FirstSecond\n");
 
-  let blankParagraphState = createEditorState(parseMarkdown("First\n"));
+  let blankParagraphState = createEditorState(parseDocument("First\n"));
   const first = blankParagraphState.documentIndex.regions.find(
     (container) => container.text === "First",
   );
@@ -117,11 +117,11 @@ test("merges or removes blocks when backspacing at the start", () => {
   });
   blankParagraphState = deleteBackward(blankParagraphState) ?? blankParagraphState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(blankParagraphState))).toBe("First\n");
+  expect(serializeDocument(createDocumentFromEditorState(blankParagraphState))).toBe("First\n");
 });
 
 test("splits paragraphs and extends headings through enter", () => {
-  let paragraphState = createEditorState(parseMarkdown("Paragraph body.\n"));
+  let paragraphState = createEditorState(parseDocument("Paragraph body.\n"));
   const paragraph = paragraphState.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -134,11 +134,11 @@ test("splits paragraphs and extends headings through enter", () => {
   });
   paragraphState = insertLineBreak(paragraphState) ?? paragraphState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(paragraphState))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(paragraphState))).toBe(
     "Paragraph\n\n&#x20;body.\n",
   );
 
-  let headingState = createEditorState(parseMarkdown("# Heading\n"));
+  let headingState = createEditorState(parseDocument("# Heading\n"));
   const heading = headingState.documentIndex.regions[0];
 
   if (!heading) {
@@ -151,11 +151,11 @@ test("splits paragraphs and extends headings through enter", () => {
   });
   headingState = insertLineBreak(headingState) ?? headingState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe("# Heading\n\n");
+  expect(serializeDocument(createDocumentFromEditorState(headingState))).toBe("# Heading\n\n");
 });
 
 test("moves the caret into the newly inserted empty paragraph when pressing enter on an empty paragraph", () => {
-  let paragraphState = createEditorState(parseMarkdown("alpha\n"));
+  let paragraphState = createEditorState(parseDocument("alpha\n"));
   const paragraph = paragraphState.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -182,7 +182,7 @@ test("moves the caret into the newly inserted empty paragraph when pressing ente
   });
   paragraphState = insertLineBreak(paragraphState) ?? paragraphState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(paragraphState))).toBe("alpha\n\n\n\n");
+  expect(serializeDocument(createDocumentFromEditorState(paragraphState))).toBe("alpha\n\n\n\n");
 
   const nextParagraphs = paragraphState.documentIndex.regions.filter(
     (container) => container.blockType === "paragraph",
@@ -198,7 +198,7 @@ test("moves the caret into the newly inserted empty paragraph when pressing ente
 });
 
 test("preserves blockquote and code-fence context on enter", () => {
-  let quoteState = createEditorState(parseMarkdown("> quoted text\n"));
+  let quoteState = createEditorState(parseDocument("> quoted text\n"));
   const quoted = quoteState.documentIndex.regions.find(
     (container) => container.text === "quoted text",
   );
@@ -213,11 +213,11 @@ test("preserves blockquote and code-fence context on enter", () => {
   });
   quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(quoteState))).toBe(
     "> quoted\n>\n> &#x20;text\n",
   );
 
-  let codeState = createEditorState(parseMarkdown("```ts\nconst x = 1;\n```\n"));
+  let codeState = createEditorState(parseDocument("```ts\nconst x = 1;\n```\n"));
   const code = codeState.documentIndex.regions.find((container) => container.blockType === "code");
 
   if (!code) {
@@ -230,13 +230,13 @@ test("preserves blockquote and code-fence context on enter", () => {
   });
   codeState = insertLineBreak(codeState) ?? codeState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(codeState))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(codeState))).toBe(
     "```ts\nconst x = 1;\n\n```\n",
   );
 });
 
 test("pressing enter on an empty blockquote line exits to a paragraph", () => {
-  let quoteState = createEditorState(parseMarkdown("> alpha\n"));
+  let quoteState = createEditorState(parseDocument("> alpha\n"));
   const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -261,11 +261,11 @@ test("pressing enter on an empty blockquote line exits to a paragraph", () => {
   });
   quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe("> alpha\n\n");
+  expect(serializeDocument(createDocumentFromEditorState(quoteState))).toBe("> alpha\n\n");
 });
 
 test("re-enters the preceding blockquote when backspacing from the empty paragraph after exit", () => {
-  let quoteState = createEditorState(parseMarkdown("> alpha\n"));
+  let quoteState = createEditorState(parseDocument("> alpha\n"));
   const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -293,13 +293,13 @@ test("re-enters the preceding blockquote when backspacing from the empty paragra
   });
   quoteState = deleteBackward(quoteState) ?? quoteState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe("> alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(quoteState))).toBe("> alpha\n");
   expect(quoteState.selection.focus.regionId).toBe(alpha.id);
   expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
 });
 
 test("backspacing on an empty quoted line removes it without unwrapping the blockquote", () => {
-  let quoteState = createEditorState(parseMarkdown("> alpha\n"));
+  let quoteState = createEditorState(parseDocument("> alpha\n"));
   const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -324,13 +324,13 @@ test("backspacing on an empty quoted line removes it without unwrapping the bloc
   });
   quoteState = deleteBackward(quoteState) ?? quoteState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe("> alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(quoteState))).toBe("> alpha\n");
   expect(quoteState.selection.focus.regionId).toBe(alpha.id);
   expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
 });
 
 test("changes heading depth with tab and shift-tab", () => {
-  let headingState = createEditorState(parseMarkdown("## Heading\n"));
+  let headingState = createEditorState(parseDocument("## Heading\n"));
   const heading = headingState.documentIndex.regions.find(
     (container) => container.blockType === "heading",
   );
@@ -345,15 +345,15 @@ test("changes heading depth with tab and shift-tab", () => {
   });
   headingState = indent(headingState) ?? headingState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe("### Heading\n");
+  expect(serializeDocument(createDocumentFromEditorState(headingState))).toBe("### Heading\n");
   expect(headingState.selection.focus.offset).toBe(3);
 
   headingState = dedent(headingState) ?? headingState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(headingState))).toBe("## Heading\n");
+  expect(serializeDocument(createDocumentFromEditorState(headingState))).toBe("## Heading\n");
   expect(headingState.selection.focus.offset).toBe(3);
 
-  let h1State = createEditorState(parseMarkdown("# Heading\n"));
+  let h1State = createEditorState(parseDocument("# Heading\n"));
   const h1 = h1State.documentIndex.regions.find((container) => container.blockType === "heading");
 
   if (!h1) {
@@ -366,9 +366,9 @@ test("changes heading depth with tab and shift-tab", () => {
   });
   h1State = dedent(h1State) ?? h1State;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(h1State))).toBe("# Heading\n");
+  expect(serializeDocument(createDocumentFromEditorState(h1State))).toBe("# Heading\n");
 
-  let h6State = createEditorState(parseMarkdown("###### Heading\n"));
+  let h6State = createEditorState(parseDocument("###### Heading\n"));
   const h6 = h6State.documentIndex.regions.find((container) => container.blockType === "heading");
 
   if (!h6) {
@@ -381,11 +381,11 @@ test("changes heading depth with tab and shift-tab", () => {
   });
   h6State = indent(h6State) ?? h6State;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(h6State))).toBe("###### Heading\n");
+  expect(serializeDocument(createDocumentFromEditorState(h6State))).toBe("###### Heading\n");
 });
 
 test("merges a non-empty quoted line with the previous line when backspacing at its start", () => {
-  let quoteState = createEditorState(parseMarkdown("> alpha\n"));
+  let quoteState = createEditorState(parseDocument("> alpha\n"));
   const alpha = quoteState.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -413,7 +413,7 @@ test("merges a non-empty quoted line with the previous line when backspacing at 
   quoteState = setSelection(quoteState, { regionId: beta.id, offset: 0 });
   quoteState = deleteBackward(quoteState) ?? quoteState;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(quoteState))).toBe("> alphabeta\n");
+  expect(serializeDocument(createDocumentFromEditorState(quoteState))).toBe("> alphabeta\n");
 
   const merged = quoteState.documentIndex.regions.find((container) => container.text === "alphabeta");
 
@@ -426,7 +426,7 @@ test("merges a non-empty quoted line with the previous line when backspacing at 
 });
 
 test("places cursor at the merge junction when backspacing at the start of a block", () => {
-  let state = createEditorState(parseMarkdown("First\n\nSecond\n"));
+  let state = createEditorState(parseDocument("First\n\nSecond\n"));
   const second = state.documentIndex.regions.find((container) => container.text === "Second");
 
   if (!second) {
@@ -436,7 +436,7 @@ test("places cursor at the merge junction when backspacing at the start of a blo
   state = setSelection(state, { regionId: second.id, offset: 0 });
   state = deleteBackward(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("FirstSecond\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("FirstSecond\n");
 
   const merged = state.documentIndex.regions.find((container) => container.text === "FirstSecond");
 

@@ -28,12 +28,17 @@ export function measureInlineNodeText(node: Inline) {
   }
 }
 
+// Splices a sequence of inline nodes into `nodes` over the offset range
+// `[startOffset, endOffset]`. The range is dropped from the source, the
+// `replacement` nodes are inserted at the start of that range, and the
+// surrounding prefix/suffix slices are preserved with their marks/links/
+// images intact. An empty `replacement` array is the pure-delete case.
 export function spliceInlineNodes(
   nodes: Inline[],
   startOffset: number,
   endOffset: number,
   path: string,
-  replacement: Inline | null,
+  replacement: Inline[],
 ): Inline[] {
   const nextNodes: Inline[] = [];
   let cursor = 0;
@@ -53,9 +58,7 @@ export function spliceInlineNodes(
 
     if (!inserted) {
       nextNodes.push(...collectInlinePrefix(node, Math.max(0, startOffset - nodeStart), nodePath));
-      if (replacement) {
-        nextNodes.push(replacement);
-      }
+      nextNodes.push(...replacement);
       inserted = true;
     }
 
@@ -64,8 +67,8 @@ export function spliceInlineNodes(
     );
   }
 
-  if (!inserted && replacement) {
-    nextNodes.push(replacement);
+  if (!inserted) {
+    nextNodes.push(...replacement);
   }
 
   return defragmentTextInlines(nextNodes);

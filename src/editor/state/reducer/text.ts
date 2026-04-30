@@ -1,33 +1,38 @@
-// Text-based mutations. Applies edits defined by a selection range:
-// inline text splicing within a single region, or structural block
-// trimming and merging when the selection spans multiple regions.
+// Block-level mutations driven by a selection range.
 //
-// Low-level EditorInline manipulation lives in ./inlines — this file
-// orchestrates text edits at the block/region level and delegates inline
-// rewrites there.
+// Two entry points:
+//   - `spliceText` — the hot path for typing, paste-as-text, and cross-region
+//     deletes. Inline edits inside a single region stay in `editRegionInlines`;
+//     anything that crosses a region boundary is reframed as a structural
+//     splice with a synthesized one-paragraph fragment.
+//   - `replaceWithBlocks` — the structural path. Replaces the selection with
+//     an arbitrary `Block[]` fragment, taking care of trimming the boundary
+//     roots, joining the fragment to them at the seams, and re-targeting the
+//     caret. Used by markdown paste; `spliceText` reuses it for the cross-
+//     region text case so seam logic stays single-sourced.
+//
+// Low-level inline rewrites live in ./inlines — this file owns the
+// block/region-level orchestration.
 
 import {
-  createBlockquoteBlock,
   createParagraphTextBlock,
   createTableCell as createDocumentTableCell,
-  createText as createDocumentTextNode,
-  defragmentTextInlines,
   rebuildCodeBlock,
-  rebuildListBlock,
-  rebuildListItemBlock,
+  rebuildRawBlock,
   rebuildTableBlock,
   rebuildTextBlock,
-  rebuildRawBlock,
   spliceDocument,
   type Block,
   type TableCell,
 } from "@/document";
 import { updateCommentThreadsForRegionEdit } from "../../anchors";
+import { mergeTrimmedBlocks, trimBlockToPrefix, trimBlockToSuffix } from "../fragment/blocks";
 import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/build";
 import type { DocumentIndex, EditorRegion } from "../index/types";
 import type { ActionSelection } from "../types";
 import {
   createCollapsedSelection,
+  createDescendantPrimaryRegionTarget,
   normalizeSelection,
   resolveRegion,
   resolveRegionByPath,
@@ -41,7 +46,7 @@ export type TextEditResult = {
   selection: ActionSelection | null;
 };
 
-/* Entry point */
+/* Entry points */
 
 export function spliceText(
   documentIndex: DocumentIndex,
@@ -54,10 +59,83 @@ export function spliceText(
     return replaceInSingleRegion(documentIndex, normalized, text);
   }
 
-  return replaceAcrossRegions(documentIndex, normalized, text);
+  // Cross-region text edits reuse the structural path — model the inserted
+  // text as a single-paragraph fragment so seam logic (text-like absorb,
+  // bridge-merge) lives in one place. The merge itself reports what got
+  // absorbed into the start-region, so comment repair stays accurate
+  // without the caller threading the text through.
+  const fragment = text.length > 0 ? [createParagraphTextBlock({ text })] : [];
+
+  return replaceWithBlocks(documentIndex, selection, fragment);
 }
 
-/* Single-region replacement */
+// Replaces the selection with a structural fragment. The merge result
+// tells `finalizeCommentsAfterEdit` how many characters from the fragment
+// landed inside the start region (via front-seam absorb), so threads
+// anchored before the edit point stay correctly offset.
+export function replaceWithBlocks(
+  documentIndex: DocumentIndex,
+  selection: EditorSelection,
+  fragment: Block[],
+): TextEditResult {
+  const normalized = normalizeSelection(documentIndex, selection);
+
+  const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
+  const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
+
+  if (!startRegion || !endRegion) {
+    throw new Error("Unknown selection endpoints.");
+  }
+
+  const startRoot = documentIndex.document.blocks[startRegion.rootIndex];
+  const endRoot = documentIndex.document.blocks[endRegion.rootIndex];
+
+  if (!startRoot || !endRoot) {
+    throw new Error("Unknown root blocks for selection.");
+  }
+
+  const prefix = trimBlockToPrefix(startRoot, startRegion, normalized.start.offset);
+  const suffix = trimBlockToSuffix(endRoot, endRegion, normalized.end.offset);
+  const merged = mergeTrimmedBlocks(prefix, fragment, suffix);
+  const replacementBlocks =
+    merged.blocks.length > 0 ? merged.blocks : [createParagraphTextBlock({ text: "" })];
+
+  const rootIndex = startRegion.rootIndex;
+  const count = endRegion.rootIndex - startRegion.rootIndex + 1;
+  const nextDocument = spliceDocument(documentIndex.document, rootIndex, count, replacementBlocks);
+  const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, rootIndex, count);
+  // For cross-region selections the rest of the start region is consumed by
+  // the splice — comment-repair sees a deletion through end-of-region. For
+  // single-region selections only the selected slice is gone.
+  // Only run the offset-based optimistic comment repair when the merge
+  // result keeps the start region's content at the new root[0]. When it
+  // doesn't, anchor offsets in the start region are no longer meaningful
+  // — the full content-addressable resolver in `getCommentState` will
+  // re-anchor the threads on the next read.
+  const startRegionEditEnd =
+    startRegion === endRegion ? normalized.end.offset : startRegion.text.length;
+  const finalizedDocumentIndex = merged.startRegionPreservedAtRoot0
+    ? finalizeCommentsAfterEdit(
+        documentIndex,
+        nextDocumentIndex,
+        startRegion,
+        normalized.start.offset,
+        startRegionEditEnd,
+        merged.startRegionInsertedText,
+      )
+    : nextDocumentIndex;
+
+  return {
+    documentIndex: finalizedDocumentIndex,
+    selection: createDescendantPrimaryRegionTarget(
+      rootIndex + merged.caretLocalIndex,
+      merged.caretChildIndices,
+      merged.caretOffset,
+    ),
+  };
+}
+
+/* Single-region replacement (typing hot path) */
 
 function replaceInSingleRegion(
   documentIndex: DocumentIndex,
@@ -75,7 +153,7 @@ function replaceInSingleRegion(
   );
 
   if (!nextDocument) {
-    throw new Error(`Failed to replace block for canvas region: ${region.id}`);
+    throw new Error(`Failed to replace block for region: ${region.id}`);
   }
 
   const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, region.rootIndex, 1);
@@ -94,11 +172,9 @@ function replaceInSingleRegion(
     throw new Error(`Failed to remap region after replacement: ${region.path}`);
   }
 
-  const nextOffset = normalized.start.offset + text.length;
-
   return {
     documentIndex: finalizedDocumentIndex,
-    selection: createCollapsedSelection(nextRegion.id, nextOffset),
+    selection: createCollapsedSelection(nextRegion.id, normalized.start.offset + text.length),
   };
 }
 
@@ -112,7 +188,10 @@ function replaceBlockRegionText(
   switch (block.type) {
     case "heading":
     case "paragraph":
-      return replaceInlineBlockText(block, region, startOffset, endOffset, replacementText);
+      return rebuildTextBlock(
+        block,
+        editRegionInlines(region, startOffset, endOffset, replacementText),
+      );
     case "code":
       return rebuildCodeBlock(
         block,
@@ -126,21 +205,8 @@ function replaceBlockRegionText(
         replaceRegionSourceText(region, startOffset, endOffset, replacementText),
       );
     default:
-      throw new Error(`Canvas text replacement is not supported for block type: ${block.type}`);
+      throw new Error(`Region text replacement is not supported for block type: ${block.type}`);
   }
-}
-
-function replaceInlineBlockText(
-  block: Extract<Block, { type: "heading" | "paragraph" }>,
-  region: EditorRegion,
-  startOffset: number,
-  endOffset: number,
-  replacementText: string,
-): Extract<Block, { type: "heading" | "paragraph" }> {
-  return rebuildTextBlock(
-    block,
-    editRegionInlines(region, startOffset, endOffset, replacementText),
-  );
 }
 
 function replaceTableCellText(
@@ -163,20 +229,13 @@ function replaceTableCellText(
       return row;
     }
 
-    const cells = row.cells.map<TableCell>((cell, currentCellIndex) => {
-      if (currentCellIndex !== cellIndex) {
-        return cell;
-      }
+    const cells = row.cells.map<TableCell>((cell, currentCellIndex) =>
+      currentCellIndex === cellIndex
+        ? createDocumentTableCell({ children: nextChildren })
+        : cell,
+    );
 
-      return createDocumentTableCell({
-        children: nextChildren,
-      });
-    });
-
-    return {
-      ...row,
-      cells,
-    };
+    return { ...row, cells };
   });
 
   return rebuildTableBlock(block, rows);
@@ -193,308 +252,7 @@ function replaceRegionSourceText(
     .join("");
 }
 
-/* Cross-region replacement */
-
-type TextLikeBlock = Extract<Block, { type: "heading" | "paragraph" }>;
-
-function isTextLikeBlock(block: Block | null): block is TextLikeBlock {
-  return block !== null && (block.type === "heading" || block.type === "paragraph");
-}
-
-function replaceAcrossRegions(
-  documentIndex: DocumentIndex,
-  normalized: NormalizedEditorSelection,
-  text: string,
-): TextEditResult {
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
-
-  if (!startRegion || !endRegion) {
-    throw new Error("Unknown cross-region selection endpoints.");
-  }
-
-  const startRootBlock = documentIndex.document.blocks[startRegion.rootIndex];
-  const endRootBlock = documentIndex.document.blocks[endRegion.rootIndex];
-
-  if (!startRootBlock || !endRootBlock) {
-    throw new Error("Unknown root blocks for cross-region selection.");
-  }
-
-  const prefixBlock = trimBlockToPrefix(startRootBlock, startRegion, normalized.start.offset);
-  const suffixBlock = trimBlockToSuffix(endRootBlock, endRegion, normalized.end.offset);
-  const merged = mergeTrimmedBlocks(prefixBlock, suffixBlock, text);
-  const replacementBlocks =
-    merged.blocks.length > 0 ? merged.blocks : [createParagraphTextBlock({ text: "" })];
-
-  const rootIndex = startRegion.rootIndex;
-  const count = endRegion.rootIndex - startRegion.rootIndex + 1;
-  const nextDocument = spliceDocument(documentIndex.document, rootIndex, count, replacementBlocks);
-  const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, rootIndex, count);
-  const finalizedDocumentIndex = finalizeCommentsAfterEdit(
-    documentIndex,
-    nextDocumentIndex,
-    startRegion,
-    normalized.start.offset,
-    startRegion.text.length,
-    isTextLikeBlock(prefixBlock) ? text : "",
-  );
-
-  const caretRegion =
-    finalizedDocumentIndex.roots[rootIndex + merged.caretLocalIndex]?.regions[0] ?? null;
-
-  return {
-    documentIndex: finalizedDocumentIndex,
-    selection: createCollapsedSelection(
-      caretRegion?.id ?? startRegion.id,
-      caretRegion ? merged.caretOffset : 0,
-    ),
-  };
-}
-
-type MergeResult = {
-  blocks: Block[];
-  caretLocalIndex: number;
-  caretOffset: number;
-};
-
-function mergeTrimmedBlocks(
-  prefix: Block | null,
-  suffix: Block | null,
-  insertedText: string,
-): MergeResult {
-  if (isTextLikeBlock(prefix) && isTextLikeBlock(suffix)) {
-    return {
-      blocks: [concatenateTextLikeBlocks(prefix, suffix, insertedText)],
-      caretLocalIndex: 0,
-      caretOffset: prefix.plainText.length + insertedText.length,
-    };
-  }
-
-  if (isTextLikeBlock(prefix)) {
-    const absorbedPrefix =
-      insertedText.length > 0 ? appendTextToTextLikeBlock(prefix, insertedText) : prefix;
-    const blocks: Block[] = [absorbedPrefix];
-
-    if (suffix) {
-      blocks.push(suffix);
-    }
-
-    return {
-      blocks,
-      caretLocalIndex: 0,
-      caretOffset: prefix.plainText.length + insertedText.length,
-    };
-  }
-
-  if (isTextLikeBlock(suffix)) {
-    const absorbedSuffix =
-      insertedText.length > 0 ? prependTextToTextLikeBlock(suffix, insertedText) : suffix;
-    const blocks: Block[] = [];
-
-    if (prefix) {
-      blocks.push(prefix);
-    }
-
-    const caretLocalIndex = blocks.length;
-    blocks.push(absorbedSuffix);
-
-    return { blocks, caretLocalIndex, caretOffset: insertedText.length };
-  }
-
-  const blocks: Block[] = [];
-
-  if (prefix) {
-    blocks.push(prefix);
-  }
-
-  if (insertedText.length > 0) {
-    const caretLocalIndex = blocks.length;
-    blocks.push(createParagraphTextBlock({ text: insertedText }));
-
-    if (suffix) {
-      blocks.push(suffix);
-    }
-
-    return { blocks, caretLocalIndex, caretOffset: insertedText.length };
-  }
-
-  if (suffix) {
-    const caretLocalIndex = blocks.length;
-    blocks.push(suffix);
-
-    return { blocks, caretLocalIndex, caretOffset: 0 };
-  }
-
-  return { blocks, caretLocalIndex: 0, caretOffset: 0 };
-}
-
-function concatenateTextLikeBlocks(
-  prefix: TextLikeBlock,
-  suffix: TextLikeBlock,
-  insertedText: string,
-): Block {
-  const insertedNodes =
-    insertedText.length > 0 ? [createDocumentTextNode({ text: insertedText })] : [];
-
-  return rebuildTextBlock(
-    prefix,
-    defragmentTextInlines([...prefix.children, ...insertedNodes, ...suffix.children]),
-  );
-}
-
-function appendTextToTextLikeBlock(block: TextLikeBlock, text: string): Block {
-  return rebuildTextBlock(
-    block,
-    defragmentTextInlines([...block.children, createDocumentTextNode({ text })]),
-  );
-}
-
-function prependTextToTextLikeBlock(block: TextLikeBlock, text: string): Block {
-  return rebuildTextBlock(
-    block,
-    defragmentTextInlines([createDocumentTextNode({ text }), ...block.children]),
-  );
-}
-
-/* Block trimming */
-
-function trimBlockToPrefix(block: Block, targetRegion: EditorRegion, offset: number): Block | null {
-  if (block.type === "table") {
-    return null;
-  }
-
-  if (block.id === targetRegion.blockId) {
-    return trimLeafBlockToPrefix(block, targetRegion, offset);
-  }
-
-  return trimContainerBlock(block, (children) =>
-    trimContainerChildrenToPrefix(children, targetRegion, offset),
-  );
-}
-
-function trimBlockToSuffix(block: Block, targetRegion: EditorRegion, offset: number): Block | null {
-  if (block.type === "table") {
-    return null;
-  }
-
-  if (block.id === targetRegion.blockId) {
-    return trimLeafBlockToSuffix(block, targetRegion, offset);
-  }
-
-  return trimContainerBlock(block, (children) =>
-    trimContainerChildrenToSuffix(children, targetRegion, offset),
-  );
-}
-
-function trimLeafBlockToPrefix(block: Block, region: EditorRegion, offset: number): Block | null {
-  if (offset === 0) {
-    return null;
-  }
-
-  switch (block.type) {
-    case "heading":
-    case "paragraph":
-      return rebuildTextBlock(block, editRegionInlines(region, offset, region.text.length, ""));
-    case "code":
-      return rebuildCodeBlock(block, region.text.slice(0, offset));
-    case "unsupported":
-      return rebuildRawBlock(block, region.text.slice(0, offset));
-    default:
-      return null;
-  }
-}
-
-function trimLeafBlockToSuffix(block: Block, region: EditorRegion, offset: number): Block | null {
-  if (offset === region.text.length) {
-    return null;
-  }
-
-  switch (block.type) {
-    case "heading":
-    case "paragraph":
-      return rebuildTextBlock(block, editRegionInlines(region, 0, offset, ""));
-    case "code":
-      return rebuildCodeBlock(block, region.text.slice(offset));
-    case "unsupported":
-      return rebuildRawBlock(block, region.text.slice(offset));
-    default:
-      return null;
-  }
-}
-
-function trimContainerBlock(
-  block: Block,
-  trimChildren: <T extends Block>(children: T[]) => T[],
-): Block | null {
-  switch (block.type) {
-    case "blockquote": {
-      const nextChildren = trimChildren(block.children);
-      return nextChildren.length === 0 ? null : createBlockquoteBlock({ children: nextChildren });
-    }
-    case "list": {
-      const nextItems = trimChildren(block.items);
-      return nextItems.length === 0 ? null : rebuildListBlock(block, nextItems);
-    }
-    case "listItem": {
-      const nextChildren = trimChildren(block.children);
-      return nextChildren.length === 0 ? null : rebuildListItemBlock(block, nextChildren);
-    }
-    default:
-      return null;
-  }
-}
-
-function trimContainerChildrenToPrefix<T extends Block>(
-  children: T[],
-  targetRegion: EditorRegion,
-  offset: number,
-): T[] {
-  const targetIndex = children.findIndex((child) => blockContainsRegion(child, targetRegion));
-
-  if (targetIndex === -1) {
-    return [];
-  }
-
-  const preservedSiblings = children.slice(0, targetIndex);
-  const trimmedTarget = trimBlockToPrefix(children[targetIndex]!, targetRegion, offset);
-
-  return trimmedTarget ? [...preservedSiblings, trimmedTarget as T] : preservedSiblings;
-}
-
-function trimContainerChildrenToSuffix<T extends Block>(
-  children: T[],
-  targetRegion: EditorRegion,
-  offset: number,
-): T[] {
-  const targetIndex = children.findIndex((child) => blockContainsRegion(child, targetRegion));
-
-  if (targetIndex === -1) {
-    return [];
-  }
-
-  const preservedSiblings = children.slice(targetIndex + 1);
-  const trimmedTarget = trimBlockToSuffix(children[targetIndex]!, targetRegion, offset);
-
-  return trimmedTarget ? [trimmedTarget as T, ...preservedSiblings] : preservedSiblings;
-}
-
-function blockContainsRegion(block: Block, region: EditorRegion): boolean {
-  if (block.id === region.blockId) {
-    return true;
-  }
-
-  switch (block.type) {
-    case "blockquote":
-    case "listItem":
-      return block.children.some((child) => blockContainsRegion(child, region));
-    case "list":
-      return block.items.some((item) => blockContainsRegion(item, region));
-    default:
-      return false;
-  }
-}
-
-/* Comments */
+/* Comment thread repair */
 
 function finalizeCommentsAfterEdit(
   previousDocumentIndex: DocumentIndex,

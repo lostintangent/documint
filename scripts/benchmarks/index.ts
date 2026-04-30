@@ -1,5 +1,5 @@
 import { buildSyntheticLongFixture, readBenchmarkFixtureMarkdown } from "@test/utils";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 import { createComponentBenchmarks } from "./component";
 import { createEditorBenchmarks } from "./editor";
 import { createLayoutBenchmarks } from "./layout";
@@ -32,17 +32,17 @@ const longMarkdown = buildSyntheticLongFixture(mediumMarkdown, 90);
 const xlargeMarkdown = buildSyntheticLongFixture(mediumMarkdown, 180);
 const hugeMarkdown = buildSyntheticLongFixture(mediumMarkdown, 360);
 
-const sampleSnapshot = parseMarkdown(sampleMarkdown);
-const mediumSnapshot = parseMarkdown(mediumMarkdown);
-const nestedStructuralSnapshot = parseMarkdown(nestedStructuralMarkdown);
-const blockquoteTransitionSnapshot = parseMarkdown(blockquoteTransitionMarkdown);
-const richCodeSnapshot = parseMarkdown(richCodeMarkdown);
-const richMixedSnapshot = parseMarkdown(richMixedMarkdown);
-const richTablesSnapshot = parseMarkdown(richTablesMarkdown);
-const commentsSnapshot = parseMarkdown(commentsMarkdown);
-const longSnapshot = parseMarkdown(longMarkdown);
-const xlargeSnapshot = parseMarkdown(xlargeMarkdown);
-const hugeSnapshot = parseMarkdown(hugeMarkdown);
+const sampleSnapshot = parseDocument(sampleMarkdown);
+const mediumSnapshot = parseDocument(mediumMarkdown);
+const nestedStructuralSnapshot = parseDocument(nestedStructuralMarkdown);
+const blockquoteTransitionSnapshot = parseDocument(blockquoteTransitionMarkdown);
+const richCodeSnapshot = parseDocument(richCodeMarkdown);
+const richMixedSnapshot = parseDocument(richMixedMarkdown);
+const richTablesSnapshot = parseDocument(richTablesMarkdown);
+const commentsSnapshot = parseDocument(commentsMarkdown);
+const longSnapshot = parseDocument(longMarkdown);
+const xlargeSnapshot = parseDocument(xlargeMarkdown);
+const hugeSnapshot = parseDocument(hugeMarkdown);
 
 const benchmarkRuns = runBenchmarkSuite();
 
@@ -88,6 +88,7 @@ function createBenchmarks() {
       blockquoteTransitionSnapshot,
       hugeSnapshot,
       longSnapshot,
+      mediumMarkdown,
       mediumSnapshot,
       nestedStructuralSnapshot,
       commentsSnapshot,

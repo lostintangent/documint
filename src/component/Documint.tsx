@@ -49,7 +49,7 @@ import {
 } from "@/editor";
 import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
 import type { CompletionSource } from "./overlays/leaves/core/LeafInput";
@@ -176,8 +176,8 @@ export function Documint({
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
   const [componentState, setComponentState] = useState(defaultDocumintState);
 
-  const contentDocument = useMemo(() => parseMarkdown(content), [content]);
-  const canonicalContent = useMemo(() => serializeMarkdown(contentDocument), [contentDocument]);
+  const contentDocument = useMemo(() => parseDocument(content), [content]);
+  const canonicalContent = useMemo(() => serializeDocument(contentDocument), [contentDocument]);
 
   const [editorState, setEditorState] = useState(() => createEditorState(contentDocument));
   const images = useImages(editorState.documentIndex.imageUrls, storage);
@@ -302,7 +302,7 @@ export function Documint({
     }
 
     const nextDocument = getDocument(nextState);
-    const nextContent = serializeMarkdown(nextDocument);
+    const nextContent = serializeDocument(nextDocument);
 
     canonicalContentRef.current = nextContent;
     lastEmittedContentRef.current = nextContent;

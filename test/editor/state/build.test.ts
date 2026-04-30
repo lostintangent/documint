@@ -8,10 +8,10 @@ import {
   spliceDocumentIndex,
 } from "@/editor/state";
 import { replaceEditorBlock } from "@/editor/state/index/build";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 test("builds positioned editor roots directly on the unified model", () => {
-  const snapshot = parseMarkdown(`# Heading
+  const snapshot = parseDocument(`# Heading
 
   alpha
 
@@ -31,7 +31,7 @@ beta
 });
 
 test("rebuilds a root model against a normalized replacement root", () => {
-  const snapshot = parseMarkdown(`# Heading
+  const snapshot = parseDocument(`# Heading
 
 alpha
 `);
@@ -47,7 +47,7 @@ alpha
 });
 
 test("splices one editor model root while preserving unchanged sibling content", () => {
-  const snapshot = parseMarkdown(`# Heading
+  const snapshot = parseDocument(`# Heading
 
 alpha
 
@@ -74,7 +74,7 @@ beta
 });
 
 test("collects image URLs per root and unions them at the document level", () => {
-  const snapshot = parseMarkdown(`![one](one.png)
+  const snapshot = parseDocument(`![one](one.png)
 
 just text
 
@@ -89,7 +89,7 @@ just text
 });
 
 test("preserves the document-level imageUrls reference across edits that don't touch images", () => {
-  const snapshot = parseMarkdown(`![pic](pic.png)
+  const snapshot = parseDocument(`![pic](pic.png)
 
 alpha
 `);
@@ -109,12 +109,12 @@ alpha
 });
 
 test("rebuilds the document-level imageUrls when an image is added", () => {
-  const snapshot = parseMarkdown(`alpha
+  const snapshot = parseDocument(`alpha
 
 beta
 `);
   const index = createDocumentIndex(snapshot);
-  const withImage = parseMarkdown(`alpha
+  const withImage = parseDocument(`alpha
 
 ![added](added.png)
 `);
@@ -125,12 +125,12 @@ beta
 });
 
 test("rebuilds the document-level imageUrls when an image is removed", () => {
-  const snapshot = parseMarkdown(`![pic](pic.png)
+  const snapshot = parseDocument(`![pic](pic.png)
 
 alpha
 `);
   const index = createDocumentIndex(snapshot);
-  const withoutImage = parseMarkdown(`beta
+  const withoutImage = parseDocument(`beta
 
 alpha
 `);
@@ -141,7 +141,7 @@ alpha
 });
 
 test("replaces a nested editor block through the reducer", () => {
-  const documentIndex = createDocumentIndex(parseMarkdown("- alpha\n"));
+  const documentIndex = createDocumentIndex(parseDocument("- alpha\n"));
   const paragraph = documentIndex.blocks.find((block) => block.type === "paragraph");
 
   if (!paragraph) {
@@ -156,14 +156,14 @@ test("replaces a nested editor block through the reducer", () => {
     throw new Error("Expected nested block replacement");
   }
 
-  expect(serializeMarkdown(reduction)).toBe("- beta\n");
+  expect(serializeDocument(reduction)).toBe("- beta\n");
 });
 
 test("replaces a root range through the reducer", () => {
-  const documentIndex = createDocumentIndex(parseMarkdown("alpha\n\nbeta\n"));
+  const documentIndex = createDocumentIndex(parseDocument("alpha\n\nbeta\n"));
   const reduction = spliceDocument(documentIndex.document, 1, 1, [
     createParagraphTextBlock({ text: "omega" }),
   ]);
 
-  expect(serializeMarkdown(reduction)).toBe("alpha\n\nomega\n");
+  expect(serializeDocument(reduction)).toBe("alpha\n\nomega\n");
 });

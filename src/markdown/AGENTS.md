@@ -1,10 +1,10 @@
 # Markdown
 
-This sub-system owns the markdown persistence boundary. It parses authored markdown directly into `Document` via `parseMarkdown(source)` and serializes semantic `Document` snapshots back to canonical markdown via `serializeMarkdown(document)`. The parser is bespoke and document-oriented: it recognizes the Documint markdown dialect directly instead of routing through mdast or a plugin pipeline. Generic unsupported markdown constructs are preserved as semantic `unsupported` nodes, while the trailing `documint-comments` directive is promoted into first-class `Document.comments`.
+This sub-system owns the markdown persistence boundary. It parses authored markdown directly into `Document` via `parseDocument(source)` and serializes semantic `Document` snapshots back to canonical markdown via `serializeDocument(document)`. The parser is bespoke and document-oriented: it recognizes the Documint markdown dialect directly instead of routing through mdast or a plugin pipeline. Generic unsupported markdown constructs are preserved as semantic `unsupported` nodes, while the trailing `documint-comments` directive is promoted into first-class `Document.comments`.
 
 ### Key Files
 
-- `index.ts` - Owns the public markdown API. `parseMarkdown(...)` delegates to the bespoke parser and returns `Document`; `serializeMarkdown(...)` delegates to the bespoke serializer and returns canonical markdown.
+- `index.ts` - Owns the public markdown API. `parseDocument(...)` / `serializeDocument(...)` are the file persistence pair; `parseFragment(...)` / `serializeFragment(...)` are the clipboard fragment pair.
 
 - `parser/index.ts` - Owns the public parser entrypoint and orchestrates block parsing plus trailing metadata extraction.
 

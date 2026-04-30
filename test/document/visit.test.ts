@@ -7,10 +7,10 @@ import {
   findBlockById,
   visitDocument,
 } from "@/document";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("visits blocks, inline links, and table cells in semantic document order", () => {
-  const snapshot = parseMarkdown(`# Title
+  const snapshot = parseDocument(`# Title
 
 Paragraph with [alpha](https://example.com) inline.
 
@@ -49,7 +49,7 @@ Paragraph with [alpha](https://example.com) inline.
 });
 
 test("supports skipping table-cell descendants during traversal", () => {
-  const snapshot = parseMarkdown(`| A |
+  const snapshot = parseDocument(`| A |
 | - |
 | one |
 `);
@@ -71,7 +71,7 @@ test("supports skipping table-cell descendants during traversal", () => {
 });
 
 test("supports stopping traversal once a semantic target has been found", () => {
-  const snapshot = parseMarkdown(`| A | B |
+  const snapshot = parseDocument(`| A | B |
 | - | - |
 | one | two |
 `);

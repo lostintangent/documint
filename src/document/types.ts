@@ -6,6 +6,26 @@ export type Document = {
   frontMatter?: string;
 };
 
+// A `Fragment` is a clipboard-shaped sub-document. Three shapes capture
+// every clipboard payload at the right altitude:
+//
+//   - `text`: pure characters with no marks or structure. Pastes via the
+//     inline replace fast path — same as typing.
+//   - `inlines`: a sequence of inline nodes (text with marks, links,
+//     images, code spans, breaks). Pastes inside the destination's
+//     leaf without disturbing surrounding block structure — so pasting
+//     `*italic*` mid-list-item stays inline in the item.
+//   - `blocks`: full block-level content. Pastes structurally with
+//     seam-merge.
+//
+// Comments and front matter never travel through any variant. Format
+// conversion (markdown ↔ Fragment) lives in the markdown subsystem; the
+// editor consumes Fragments without knowing how they were produced.
+export type Fragment =
+  | { kind: "text"; text: string }
+  | { kind: "inlines"; inlines: Inline[] }
+  | { kind: "blocks"; blocks: Block[] };
+
 export type Block =
   | ParagraphBlock
   | HeadingBlock

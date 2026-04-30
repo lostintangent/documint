@@ -35,13 +35,8 @@ function toggleInlineCodeNodes(
   const exactInlineCode = resolveExactSelectedInlineCode(nodes, startOffset, endOffset);
 
   if (exactInlineCode) {
-    return spliceInlineNodes(
-      nodes,
-      startOffset,
-      endOffset,
-      path,
-      createPathTextNode(exactInlineCode.code, [], `${path}.selected`),
-    );
+    const replacement = createPathTextNode(exactInlineCode.code, [], `${path}.selected`);
+    return spliceInlineNodes(nodes, startOffset, endOffset, path, replacement ? [replacement] : []);
   }
 
   const selectedText = extractInlineSelectionText(nodes, startOffset, endOffset);
@@ -50,13 +45,9 @@ function toggleInlineCodeNodes(
     return nodes;
   }
 
-  return spliceInlineNodes(
-    nodes,
-    startOffset,
-    endOffset,
-    path,
+  return spliceInlineNodes(nodes, startOffset, endOffset, path, [
     createPathInlineCodeNode(selectedText, `${path}.selected`),
-  );
+  ]);
 }
 
 function resolveExactSelectedInlineCode(

@@ -6,7 +6,7 @@ import {
   resolveSelectionTarget,
   setSelection,
 } from "@/editor/state";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
 
@@ -33,8 +33,8 @@ export function createComponentBenchmarks(
 function createLongReconciliationFixture(regionCount: number) {
   const markdown = createNumberedParagraphMarkdown(regionCount);
   const shiftedMarkdown = `External intro paragraph.\n\n${markdown}`;
-  const baseState = createEditorState(parseMarkdown(markdown));
-  const shiftedState = createEditorState(parseMarkdown(shiftedMarkdown));
+  const baseState = createEditorState(parseDocument(markdown));
+  const shiftedState = createEditorState(parseDocument(shiftedMarkdown));
   const selectedState = selectRegion(baseState, Math.floor(regionCount / 2));
   const transientState = insertTransientEmptyRootParagraph(baseState, regionCount);
 

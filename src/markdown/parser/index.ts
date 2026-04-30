@@ -11,7 +11,7 @@ export type MarkdownLineCursor = {
 
 const frontMatterFence = "---";
 
-export function parseMarkdown(source: string, options: MarkdownOptions = {}): Document {
+export function parseDocument(source: string, options: MarkdownOptions = {}): Document {
   const lines = source.replace(/\r\n/g, lineFeed).split(lineFeed);
   const cursor: MarkdownLineCursor = {
     index: 0,

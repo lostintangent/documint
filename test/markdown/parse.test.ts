@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 test("preserves markdown directives as unsupported semantic content", () => {
   const source = `::badge{disabled}
@@ -10,7 +10,7 @@ Body
 
 Paragraph with :badge[alpha]{disabled} inline.
 `;
-  const snapshot = parseMarkdown(source);
+  const snapshot = parseDocument(source);
   const leafDirective = snapshot.blocks[0];
   const containerDirective = snapshot.blocks[1];
   const paragraph = snapshot.blocks[2];
@@ -41,11 +41,11 @@ Paragraph with :badge[alpha]{disabled} inline.
   expect(paragraph.plainText).toBe("Paragraph with :badge[alpha]{disabled} inline.");
   expect(textDirective.originalType).toBe("textDirective");
   expect(textDirective.source).toBe(":badge[alpha]{disabled}");
-  expect(serializeMarkdown(snapshot)).toBe(source);
+  expect(serializeDocument(snapshot)).toBe(source);
 });
 
 test("normalizes blank task items into empty semantic paragraphs", () => {
-  const snapshot = parseMarkdown("- [ ] \n");
+  const snapshot = parseDocument("- [ ] \n");
   const list = snapshot.blocks[0];
 
   if (!list || list.type !== "list") {
@@ -69,7 +69,7 @@ test("normalizes blank task items into empty semantic paragraphs", () => {
   expect(item.plainText).toBe("");
   expect(paragraph.plainText).toBe("");
   expect(paragraph.children).toEqual([]);
-  expect(serializeMarkdown(snapshot)).toBe("- [ ] \n");
+  expect(serializeDocument(snapshot)).toBe("- [ ] \n");
 });
 
 test("repeated parse produces stable ids for representative semantic node kinds", () => {
@@ -89,8 +89,8 @@ Paragraph with :badge[alpha]{status="experimental"} inline.
 Body
 :::
 `;
-  const first = summarizeRepresentativeNodes(parseMarkdown(source));
-  const second = summarizeRepresentativeNodes(parseMarkdown(source));
+  const first = summarizeRepresentativeNodes(parseDocument(source));
+  const second = summarizeRepresentativeNodes(parseDocument(source));
 
   expect(first).toEqual(second);
   expect(first.headingText).toBe("Heading");
@@ -105,7 +105,7 @@ Body
   expect(first.containerDirectiveBody).toBe("Body");
 });
 
-function summarizeRepresentativeNodes(snapshot: ReturnType<typeof parseMarkdown>) {
+function summarizeRepresentativeNodes(snapshot: ReturnType<typeof parseDocument>) {
   const heading = snapshot.blocks[0];
   const leafDirective = snapshot.blocks[1];
   const paragraph = snapshot.blocks[2];
@@ -188,22 +188,22 @@ draft: false
 
 # Body
 `;
-  const snapshot = parseMarkdown(source);
+  const snapshot = parseDocument(source);
 
   expect(snapshot.frontMatter).toBe("---\ntitle: Hello\ndraft: false\n---");
   expect(snapshot.blocks[0]?.type).toBe("heading");
-  expect(serializeMarkdown(snapshot)).toBe(source);
+  expect(serializeDocument(snapshot)).toBe(source);
 });
 
 test("treats an unterminated leading fence as a thematic break", () => {
-  const snapshot = parseMarkdown("---\n\nBody\n");
+  const snapshot = parseDocument("---\n\nBody\n");
 
   expect(snapshot.blocks[0]?.type).toBe("thematicBreak");
   expect(snapshot.blocks[1]?.type).toBe("paragraph");
 });
 
 test("does not treat mid-document fences as front matter", () => {
-  const snapshot = parseMarkdown("# Title\n\n---\nkey: value\n---\n");
+  const snapshot = parseDocument("# Title\n\n---\nkey: value\n---\n");
 
   expect(snapshot.blocks[0]?.type).toBe("heading");
   expect(snapshot.blocks.some((block) => block.type === "unsupported")).toBe(false);
@@ -211,9 +211,9 @@ test("does not treat mid-document fences as front matter", () => {
 
 test("round-trips a document containing only front matter", () => {
   const source = "---\ntitle: Stub\n---\n";
-  const snapshot = parseMarkdown(source);
+  const snapshot = parseDocument(source);
 
   expect(snapshot.frontMatter).toBe("---\ntitle: Stub\n---");
   expect(snapshot.blocks).toHaveLength(0);
-  expect(serializeMarkdown(snapshot)).toBe(source);
+  expect(serializeDocument(snapshot)).toBe(source);
 });

@@ -168,7 +168,10 @@
       "linebreak_medium": 0.25,
       "linebreak_list": 0.25,
       "comment_toggle_dense": 20,
-      "comment_repair_dense": 28
+      "comment_repair_dense": 28,
+      "copy_long": 1.5,
+      "paste_blocks_long": 5,
+      "paste_inlines_dense": 4.5
     }
   }
 }

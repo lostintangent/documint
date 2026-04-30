@@ -17,11 +17,11 @@ import {
   resolveSelectionHit,
 } from "@/editor/layout";
 import type { DocumentResources } from "@/types";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("wraps runtime text into deterministic canvas layout lines", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`# Layout
+    parseDocument(`# Layout
 
 Paragraph text that wraps across multiple visual lines in the canvas layout.
 `),
@@ -41,7 +41,7 @@ Paragraph text that wraps across multiple visual lines in the canvas layout.
 });
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
-  const runtime = createDocumentIndex(parseMarkdown(`Paragraph with semantic offsets.\n`));
+  const runtime = createDocumentIndex(parseDocument(`Paragraph with semantic offsets.\n`));
   const layout = createDocumentLayout(runtime, {
     width: 320,
   });
@@ -65,7 +65,7 @@ test("hit-tests canvas layout coordinates back to semantic offsets", () => {
 
 test("hit-tests the second line of a multi-line wrapped paragraph", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(
+    parseDocument(
       `This is a long paragraph that will wrap to multiple lines when laid out at a narrow width for testing.\n`,
     ),
   );
@@ -100,7 +100,7 @@ test("hit-tests the second line of a multi-line wrapped paragraph", () => {
 
 test("measures caret geometry for a container offset", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`# Caret
+    parseDocument(`# Caret
 
 Paragraph for caret metrics.
 `),
@@ -162,7 +162,7 @@ test("advances the active caret across collapsed trailing spaces", () => {
 
 test("lays out table cells side by side within the same row", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`| Name | Value |
+    parseDocument(`| Name | Value |
 | ---- | ----- |
 | One  | Two   |
 `),
@@ -187,7 +187,7 @@ test("lays out table cells side by side within the same row", () => {
 test("reuses cached sibling table measurements when one cell changes", () => {
   const cache = createCanvasRenderCache();
   const runtime = createDocumentIndex(
-    parseMarkdown(`| Name | Value |
+    parseDocument(`| Name | Value |
 | ---- | ----- |
 | One  | Two   |
 `),
@@ -234,7 +234,7 @@ test("reuses cached sibling table measurements when one cell changes", () => {
 
 test("hit-tests the correct table column within the same row band", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`| Layer | Narrow host | Wide host |
+    parseDocument(`| Layer | Narrow host | Wide host |
 | :---- | :---------- | --------: |
 | Editor | stable | 640 |
 `),
@@ -264,7 +264,7 @@ test("hit-tests the correct table column within the same row band", () => {
 
 test("hit-tests the clicked table cell even below its text content", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown(`| Short | Much wider content that wraps |
+    parseDocument(`| Short | Much wider content that wraps |
 | :---- | :---------------------------- |
 | One | Two three four five six seven |
 `),
@@ -294,7 +294,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
 });
 
 test("keeps an empty layout line and caret target for inserted empty blocks", () => {
-  let state = createEditorState(parseMarkdown("# Heading\n"));
+  let state = createEditorState(parseDocument("# Heading\n"));
   state = insertLineBreak(state) ?? state;
 
   const layout = createDocumentLayout(state.documentIndex, {
@@ -312,7 +312,7 @@ test("keeps an empty layout line and caret target for inserted empty blocks", ()
 
 test("recomputes cached line boundaries when inline mark state changes", () => {
   const cache = createCanvasRenderCache();
-  let state = createEditorState(parseMarkdown("WWWWW WWWWW WWWWW"));
+  let state = createEditorState(parseDocument("WWWWW WWWWW WWWWW"));
   const container = state.documentIndex.regions[0];
 
   if (!container) {
@@ -355,7 +355,7 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
 
 test("uses authored image width when laying out image runs", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown("![Preview](https://example.com/preview.png){width=120}\n"),
+    parseDocument("![Preview](https://example.com/preview.png){width=120}\n"),
   );
   const resources: DocumentResources = {
     images: new Map([
@@ -385,7 +385,7 @@ test("uses authored image width when laying out image runs", () => {
 
 test("hit-tests image runs as atomic before-or-after caret stops", () => {
   const runtime = createDocumentIndex(
-    parseMarkdown("before ![alt](https://example.com/image.png) after\n"),
+    parseDocument("before ![alt](https://example.com/image.png) after\n"),
   );
   const resources: DocumentResources = {
     images: new Map([

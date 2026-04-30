@@ -1,7 +1,7 @@
 import { createDocumentIndex } from "@/editor/state";
 import { createCanvasRenderCache } from "@/editor/canvas/cache";
 import { createDocumentViewport } from "@/editor/layout";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
 
@@ -14,9 +14,9 @@ export function createLayoutBenchmarks(
     xlargeMarkdown: string;
   },
 ): BenchmarkRecord[] {
-  const longRuntime = createDocumentIndex(parseMarkdown(fixtures.longMarkdown));
-  const xlargeRuntime = createDocumentIndex(parseMarkdown(fixtures.xlargeMarkdown));
-  const hugeRuntime = createDocumentIndex(parseMarkdown(fixtures.hugeMarkdown));
+  const longRuntime = createDocumentIndex(parseDocument(fixtures.longMarkdown));
+  const xlargeRuntime = createDocumentIndex(parseDocument(fixtures.xlargeMarkdown));
+  const hugeRuntime = createDocumentIndex(parseDocument(fixtures.hugeMarkdown));
   const renderCache = createCanvasRenderCache();
   const scrollViewport = {
     height: 720,

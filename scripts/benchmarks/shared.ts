@@ -17,6 +17,7 @@ export type BenchmarkBudgetTree = {
     backspace_medium: number;
     comment_repair_dense: number;
     comment_toggle_dense: number;
+    copy_long: number;
     cursor_move: number;
     cursor_move_huge: number;
     cursor_move_xlarge: number;
@@ -32,6 +33,8 @@ export type BenchmarkBudgetTree = {
     import_rich: number;
     linebreak_list: number;
     linebreak_medium: number;
+    paste_blocks_long: number;
+    paste_inlines_dense: number;
     typing_code: number;
     typing_comments_elsewhere: number;
     typing_long: number;

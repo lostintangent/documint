@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import {
+  copySelection,
   deleteBackward,
   deleteForward,
   deleteSelection,
@@ -23,6 +24,7 @@ import {
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
   moveCaretVertically,
+  pasteFragment,
   replaceSelection,
   setSelection,
   dedent,
@@ -41,10 +43,10 @@ import {
   type EditorState,
   type EditorViewportState,
 } from "@/editor";
+import { parseFragment, serializeFragment } from "@/markdown";
 import type { LazyRefHandle } from "./useLazyRef";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
-import { readSingleContainerSelectionText } from "../lib/selection";
 
 type UseInputOptions = {
   // DOM refs the hook reads from.
@@ -544,30 +546,35 @@ export function useInput({
 
   /* Clipboard handlers */
 
+  // The editor speaks `Fragment`; the clipboard speaks markdown text. This
+  // hook is the only place where the two cross paths — `parseFragment` /
+  // `serializeFragment` adapt one to the other so the editor stays
+  // format-agnostic.
+
   const handleCopy = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const selectedText = readSingleContainerSelectionText(readCurrentState());
+      const fragment = copySelection(readCurrentState());
 
-      if (!selectedText) {
+      if (!fragment) {
         return;
       }
 
       event.preventDefault();
-      event.clipboardData.setData("text/plain", selectedText);
+      event.clipboardData.setData("text/plain", serializeFragment(fragment));
     },
   );
 
   const handleCut = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       const state = readCurrentState();
-      const selectedText = readSingleContainerSelectionText(state);
+      const fragment = copySelection(state);
 
-      if (!selectedText) {
+      if (!fragment) {
         return;
       }
 
       event.preventDefault();
-      event.clipboardData.setData("text/plain", selectedText);
+      event.clipboardData.setData("text/plain", serializeFragment(fragment));
       applyStateChange(deleteSelection(state));
     },
   );
@@ -598,7 +605,8 @@ export function useInput({
       }
 
       event.preventDefault();
-      applyStateChange(replaceSelection(readCurrentState(), pastedText));
+      const fragment = parseFragment(pastedText);
+      applyStateChange(pasteFragment(readCurrentState(), fragment, pastedText));
     },
   );
 

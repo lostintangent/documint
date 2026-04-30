@@ -20,7 +20,7 @@ import {
 import type { DocumentIndex } from "../../index/types";
 import type { EditorStateAction } from "../../types";
 import type { EditorSelection, RegionRangePathSelectionTarget } from "../../selection";
-import { spliceInlineNodes } from "./shared";
+import { measureInlineNodeText, spliceInlineNodes } from "./shared";
 
 export { toggleInlineMark, resolveInlineMarks } from "./marks";
 export { toggleInlineCode } from "./code";
@@ -168,48 +168,95 @@ export function resolveInlineRegionFromBlock(
   return null;
 }
 
+// Inserts a single inline node at the selection. The node is built by
+// `factory` so the caller can stamp it with a path-aware id. Returns null
+// when the selection isn't inside an `InlineRegion` (e.g., a code block,
+// whose content is source text rather than inline nodes).
 export function insertInlineNode(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   factory: (path: string) => Inline,
 ): EditorStateAction | null {
-  const inlineRegion = resolveInlineRegion(documentIndex, selection.focus.regionId);
+  const range = resolveSelectionInlineRange(documentIndex, selection);
 
-  if (!inlineRegion) {
+  if (!range) {
     return null;
   }
 
-  const startOffset = Math.min(selection.anchor.offset, selection.focus.offset);
-  const endOffset = Math.max(selection.anchor.offset, selection.focus.offset);
-
   return {
     kind: "replace-block",
-    ...insertInlineIntoRegion(inlineRegion, startOffset, endOffset, factory),
+    ...insertInlineIntoRegion(range.inlineRegion, range.startOffset, range.endOffset, factory),
   };
 }
 
+// Splices a sequence of inline nodes into the selection's region at
+// `[startOffset, endOffset]`, with caret landing at the end of the
+// inserted content. Mirror of `insertInlineNode` for multi-node payloads
+// (the inline paste path uses this).
+export function insertInlines(
+  documentIndex: DocumentIndex,
+  selection: EditorSelection,
+  inlines: Inline[],
+): EditorStateAction | null {
+  const range = resolveSelectionInlineRange(documentIndex, selection);
+
+  if (!range) {
+    return null;
+  }
+
+  return {
+    kind: "replace-block",
+    ...insertInlinesIntoRegion(range.inlineRegion, range.startOffset, range.endOffset, inlines),
+  };
+}
+
+export function insertInlinesIntoRegion(
+  inlineRegion: InlineRegion,
+  startOffset: number,
+  endOffset: number,
+  inlines: Inline[],
+): InlineRegionReplacement {
+  const childrenPath = `${inlineRegion.path}.children`;
+  const nextChildren = spliceInlineNodes(
+    inlineRegion.children,
+    startOffset,
+    endOffset,
+    childrenPath,
+    inlines,
+  );
+  const insertedLength = inlines.reduce((total, node) => total + measureInlineNodeText(node), 0);
+  const caretOffset = startOffset + insertedLength;
+
+  return createInlineRegionReplacement(inlineRegion, nextChildren, caretOffset, caretOffset);
+}
+
+// Single-node convenience wrapper — used by callers (image insertion,
+// table cell insert) that build one node via a path-aware factory.
 export function insertInlineIntoRegion(
   inlineRegion: InlineRegion,
   startOffset: number,
   endOffset: number,
   factory: (path: string) => Inline,
 ): InlineRegionReplacement {
-  const childrenPath = `${inlineRegion.path}.children`;
-  const node = factory(`${childrenPath}.selected`);
-  const nextChildren = spliceInlineNodes(
-    inlineRegion.children,
-    startOffset,
-    endOffset,
-    childrenPath,
-    node,
-  );
+  const node = factory(`${inlineRegion.path}.children.selected`);
+  return insertInlinesIntoRegion(inlineRegion, startOffset, endOffset, [node]);
+}
 
-  return createInlineRegionReplacement(
+// Resolves the focus region's `InlineRegion` plus the canonical
+// `[startOffset, endOffset]` range from a selection. Shared by every
+// command that splices inline content at the selection point.
+function resolveSelectionInlineRange(documentIndex: DocumentIndex, selection: EditorSelection) {
+  const inlineRegion = resolveInlineRegion(documentIndex, selection.focus.regionId);
+
+  if (!inlineRegion) {
+    return null;
+  }
+
+  return {
     inlineRegion,
-    nextChildren,
-    startOffset + 1,
-    startOffset + 1,
-  );
+    startOffset: Math.min(selection.anchor.offset, selection.focus.offset),
+    endOffset: Math.max(selection.anchor.offset, selection.focus.offset),
+  };
 }
 
 export function createInlineRegionReplacement(

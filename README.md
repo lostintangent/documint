@@ -8,11 +8,11 @@ A canvas-based, batteries-included markdown editor for React.
 
 - **Markdown in, markdown out** — Documents are parsed from markdown and serialized back to markdown. Full support for CommonMark, GFM tables, task lists, strikethrough, and fenced code blocks with language hints.
 
+- **Rich semantic editing** — Context-sensitive behavior that adapts to what you're editing. Enter splits a paragraph but adds a new row in a table. Backspace at the start of a list item dedents it. Tab indents a list but inserts a column in a table. The editor understands the structure of your document, so every gesture does the right thing.
+
 - **Subtle, delightful animations** — A typing trail highlights newly inserted text. Deleted text fades out before disappearing. List markers pop into place. Punctuation pulses with a soft ring on keystroke. Small details that make editing feel fun.
 
 - **Mobile-native editing** — Responsive layout with full support for iOS and Android gestures: auto-capitalization, auto-correct, auto-scroll on keyboard appearance, shake-to-undo, and selection handles all work as expected.
-
-- **Rich semantic editing** — Context-sensitive behavior that adapts to what you're editing. Enter splits a paragraph but adds a new row in a table. Backspace at the start of a list item dedents it. Tab indents a list but inserts a column in a table. The editor understands the structure of your document, so every gesture does the right thing.
 
 - **Context-aware toolbars ("leaves")** — Floating toolbars that appear based on what you're interacting with: text formatting options on selection, link editing on links, column/row controls on tables, and block insertion (headings, lists, quotes, tables) on empty lines.
 

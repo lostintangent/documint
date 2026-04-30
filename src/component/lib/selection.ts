@@ -41,22 +41,6 @@ export function normalizeSelectionAbsolutePositions(state: EditorSelectionState)
   };
 }
 
-export function readSingleContainerSelectionText(state: EditorSelectionState) {
-  const range = readSingleContainerSelectionRange(state);
-
-  if (!range) {
-    return "";
-  }
-
-  const container = state.documentIndex.regions.find((entry) => entry.id === range.regionId);
-
-  if (!container) {
-    return "";
-  }
-
-  return container.text.slice(range.startOffset, range.endOffset);
-}
-
 export function readSingleContainerSelectionRange(state: EditorSelectionState) {
   const normalized = normalizeSelectionPoints(state);
 

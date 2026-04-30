@@ -13,7 +13,7 @@ The important boundary is that `src/editor` owns the capabilities in that pipeli
 
 - **Barrel** (`index.ts`) - The public API surface. Re-exports from all subsystems and defines cross-subsystem query adapters (`getCommentState`, `getSelectionContext`, `normalizeSelection`, `getSelectionMarks`, `resolvePresenceViewport`) that destructure `EditorState` before delegating.
 
-- **State** (`state/`) - Owns the `Document` -> `EditorState` projection, editor state with undo/redo, and all semantic editing operations: text replacement, inline formatting, block-level edits, list operations, table mutations, input rules, and structural rewrites. Commands are in `state/commands.ts`. Internally, `EditorState` wraps a `DocumentIndex` that denormalizes the document for efficient lookup, but consumers interact with `EditorState` directly.
+- **State** ([`state/`](state/AGENTS.md)) - Owns the `Document` -> `EditorState` projection, editor state with undo/redo, and all semantic editing operations: text replacement, inline formatting, block-level edits, list operations, table mutations, input rules, and structural rewrites. Commands are in `state/commands.ts`. Internally, `EditorState` wraps a `DocumentIndex` that denormalizes the document for efficient lookup, but consumers interact with `EditorState` directly.
 
 - **Navigation** (`navigation/`) - Owns caret and range movement. Each function takes an `extendSelection` parameter to unify move and extend behavior. Vertical movement dispatches through a table-first, flow-fallback chain — the table handler returns null when the caret isn't in a table, and the flow handler takes over. Horizontal movement crosses region boundaries naturally.
 

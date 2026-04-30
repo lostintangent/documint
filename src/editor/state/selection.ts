@@ -2,7 +2,7 @@
 // Converts between abstract SelectionTargets and concrete EditorSelections,
 // and exposes the "what's active at the selection" view consumers render.
 
-import { findBlockById, type Block, type Mark } from "@/document";
+import { findBlockById, getBlockChildren, type Block, type Mark } from "@/document";
 import type { DocumentIndex, EditorInline } from "./index/types";
 import type { EditorState } from "./types";
 import { resolveInlineMarks, resolveInlineRegionFromBlock } from "./actions/inline";
@@ -260,7 +260,7 @@ function resolveDescendantBlock(rootBlock: Block, childIndices: number[]) {
       return null;
     }
 
-    const children = resolveBlockChildren(current);
+    const children = getBlockChildren(current);
 
     if (!children) {
       return null;
@@ -288,7 +288,7 @@ function resolvePrimaryRegion(
     return documentIndex.regionIndex.get(regionId) ?? null;
   }
 
-  const children = resolveBlockChildren(block);
+  const children = getBlockChildren(block);
 
   if (!children) {
     return null;
@@ -306,18 +306,6 @@ function resolvePrimaryRegion(
   }
 
   return null;
-}
-
-function resolveBlockChildren(block: Block) {
-  switch (block.type) {
-    case "list":
-      return block.items;
-    case "blockquote":
-    case "listItem":
-      return block.children;
-    default:
-      return null;
-  }
 }
 
 // --- Selection context (derived view from the selection anchor) ----------

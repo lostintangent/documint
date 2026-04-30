@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { dedent, indent } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 
 test("indents a list item under its previous sibling", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n- gamma\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n- gamma\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -17,13 +17,13 @@ test("indents a list item under its previous sibling", () => {
   });
   state = indent(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - beta\n- gamma\n",
   );
 });
 
 test("does not indent the first list item without a previous sibling", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
 
   if (!alpha) {
@@ -39,7 +39,7 @@ test("does not indent the first list item without a previous sibling", () => {
 });
 
 test("dedents a nested list item one level up", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n  - beta\n  - gamma\n- tail\n"));
+  let state = createEditorState(parseDocument("- alpha\n  - beta\n  - gamma\n- tail\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -52,13 +52,13 @@ test("dedents a nested list item one level up", () => {
   });
   state = dedent(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "- alpha\n  - gamma\n- beta\n- tail\n",
   );
 });
 
 test("does not dedent top-level list items", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -74,7 +74,7 @@ test("does not dedent top-level list items", () => {
 });
 
 test("routes tab and shift-tab through list indentation semantics", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n"));
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
 
   if (!beta) {
@@ -87,7 +87,7 @@ test("routes tab and shift-tab through list indentation semantics", () => {
   });
   state = indent(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n  - beta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n  - beta\n");
 
   const nestedBeta = state.documentIndex.regions.find((container) => container.text === "beta");
 
@@ -101,5 +101,5 @@ test("routes tab and shift-tab through list indentation semantics", () => {
   });
   state = dedent(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- alpha\n- beta\n");
 });

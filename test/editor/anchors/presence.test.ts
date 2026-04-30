@@ -7,7 +7,7 @@ import {
 } from "@/editor/anchors";
 import { createEditorState } from "@/editor/state";
 import type { EditorRegion } from "@/editor/state";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
   if (!viewport || viewport.status === "unresolved") return null;
@@ -16,7 +16,7 @@ function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
 
 test("resolves unique prefix-only and suffix-only presence cursors", () => {
   const state = createEditorState(
-    parseMarkdown(`# Sample
+    parseDocument(`# Sample
 
 Markdown is the persistence boundary.
 
@@ -60,7 +60,7 @@ Only the active region reveals source-like editing affordances.
 
 test("uses prefix and suffix together to disambiguate repeated text", () => {
   const state = createEditorState(
-    parseMarkdown(`alpha beta gamma
+    parseDocument(`alpha beta gamma
 
 alpha beta delta
 `),
@@ -87,7 +87,7 @@ alpha beta delta
 });
 
 test("preserves exact presence anchor text when matching", () => {
-  const state = createEditorState(parseMarkdown("alpha beta\n"));
+  const state = createEditorState(parseDocument("alpha beta\n"));
   const [exactCursor, trimmedCursor] = resolvePresenceCursors(state.documentIndex, [
     {
       cursor: {
@@ -111,7 +111,7 @@ test("preserves exact presence anchor text when matching", () => {
 
 test("leaves ambiguous or missing targets unresolved", () => {
   const state = createEditorState(
-    parseMarkdown(`repeat
+    parseDocument(`repeat
 
 repeat
 `),
@@ -139,7 +139,7 @@ repeat
 
 test("resolves presence viewport state", () => {
   const renderCache = createCanvasRenderCache();
-  const state = createEditorState(parseMarkdown(createPresenceViewportFixture()));
+  const state = createEditorState(parseDocument(createPresenceViewportFixture()));
   const firstRegion = requireRegion(state.documentIndex.regions[0]);
   const lastRegion = requireRegion(state.documentIndex.regions.at(-1));
   const topViewport = prepareViewport(
@@ -179,7 +179,7 @@ test("resolves presence viewport state", () => {
 
 test("keeps unresolved presence visible without a scroll target", () => {
   const renderCache = createCanvasRenderCache();
-  const state = createEditorState(parseMarkdown(createPresenceViewportFixture()));
+  const state = createEditorState(parseDocument(createPresenceViewportFixture()));
   const viewport = prepareViewport(
     state,
     {

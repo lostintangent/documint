@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { insertImage, resizeImage, toggleBold, toggleCode, toggleItalic, toggleStrikethrough, toggleUnderline } from "@/editor/state";
 import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 import { getRegion, placeAt, selectSubstring, setup, toMarkdown } from "../helpers";
 
 test("toggles strong and emphasis marks on a single-container selection", () => {
-  let state = createEditorState(parseMarkdown("Plain text here.\n"));
+  let state = createEditorState(parseDocument("Plain text here.\n"));
   const paragraph = state.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -24,19 +24,19 @@ test("toggles strong and emphasis marks on a single-container selection", () => 
   });
   state = toggleBold(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Plain **text** here.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Plain **text** here.\n");
 
   state = toggleBold(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Plain text here.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Plain text here.\n");
 
   state = toggleItalic(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Plain *text* here.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Plain *text* here.\n");
 });
 
 test("routes mod-b and mod-i through inline mark toggles", () => {
-  let state = createEditorState(parseMarkdown("Paragraph body.\n"));
+  let state = createEditorState(parseDocument("Paragraph body.\n"));
   const paragraph = state.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -55,15 +55,15 @@ test("routes mod-b and mod-i through inline mark toggles", () => {
   });
   state = toggleBold(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("**Paragraph** body.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("**Paragraph** body.\n");
 
   state = toggleItalic(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("***Paragraph*** body.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("***Paragraph*** body.\n");
 });
 
 test("routes mod-u through inline underline toggles", () => {
-  let state = createEditorState(parseMarkdown("Paragraph body.\n"));
+  let state = createEditorState(parseDocument("Paragraph body.\n"));
   const paragraph = state.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -82,13 +82,13 @@ test("routes mod-u through inline underline toggles", () => {
   });
   state = toggleUnderline(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe(
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe(
     "Paragraph <ins>body</ins>.\n",
   );
 });
 
 test("toggles inline code on and off for a single-container selection", () => {
-  let state = createEditorState(parseMarkdown("Paragraph body.\n"));
+  let state = createEditorState(parseDocument("Paragraph body.\n"));
   const paragraph = state.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -107,15 +107,15 @@ test("toggles inline code on and off for a single-container selection", () => {
   });
   state = toggleCode(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Paragraph `body`.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Paragraph `body`.\n");
 
   state = toggleCode(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Paragraph body.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Paragraph body.\n");
 });
 
 test("routes mod-e through inline code toggles", () => {
-  let state = createEditorState(parseMarkdown("Call fn here.\n"));
+  let state = createEditorState(parseDocument("Call fn here.\n"));
   const paragraph = state.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -134,7 +134,7 @@ test("routes mod-e through inline code toggles", () => {
   });
   state = toggleCode(state) ?? state;
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Call `fn` here.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Call `fn` here.\n");
 });
 
 test("toggles strikethrough on and off", () => {

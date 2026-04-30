@@ -51,6 +51,11 @@ export type EditorStateAction =
       text: string;
     }
   | {
+      kind: "splice-fragment";
+      fragment: Block[];
+      selection: EditorSelection;
+    }
+  | {
       kind: "splice-comments";
       count: number;
       index: number;

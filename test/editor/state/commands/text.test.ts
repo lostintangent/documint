@@ -17,11 +17,11 @@ import {
   setSelection,
   type EditorSelection,
 } from "@/editor/state";
-import { parseMarkdown, serializeMarkdown } from "@/markdown";
+import { parseDocument, serializeDocument } from "@/markdown";
 import { getRegion, placeAt, setup } from "../helpers";
 
 test("replaces and deletes selected text within a single canvas container", () => {
-  let state = createEditorState(parseMarkdown("Paragraph body.\n"));
+  let state = createEditorState(parseDocument("Paragraph body.\n"));
   const paragraph = state.documentIndex.regions[0];
 
   if (!paragraph) {
@@ -40,7 +40,7 @@ test("replaces and deletes selected text within a single canvas container", () =
   });
   state = replaceSelection(state, "Selected");
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Selected body.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Selected body.\n");
 
   const selectedBody = state.documentIndex.regions[0];
 
@@ -60,11 +60,11 @@ test("replaces and deletes selected text within a single canvas container", () =
   });
   state = deleteSelection(state);
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("Selected.\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("Selected.\n");
 });
 
 test("deleting all text within a single heading keeps the heading block", () => {
-  let state = createEditorState(parseMarkdown("# Heading\n"));
+  let state = createEditorState(parseDocument("# Heading\n"));
   const heading = state.documentIndex.regions[0];
 
   if (!heading) {
@@ -81,13 +81,13 @@ test("deleting all text within a single heading keeps the heading block", () => 
   // of a heading and deleting leaves an empty heading, not a paragraph.
   // This is the opposite of the cross-region case where a fully-consumed
   // boundary block drops.
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("#\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("#\n");
   expect(state.documentIndex.regions).toHaveLength(1);
   expect(state.documentIndex.regions[0]?.blockType).toBe("heading");
 });
 
 test("merges two paragraphs when a cross-region selection is replaced with text", () => {
-  let state = createEditorState(parseMarkdown("alpha beta\n\ngamma delta\n"));
+  let state = createEditorState(parseDocument("alpha beta\n\ngamma delta\n"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -100,13 +100,13 @@ test("merges two paragraphs when a cross-region selection is replaced with text"
   );
   state = replaceSelection(state, "X");
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alpha Xdelta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("alpha Xdelta\n");
   expect(state.documentIndex.regions).toHaveLength(1);
   expect(state.selection.anchor.offset).toBe("alpha X".length);
 });
 
 test("drops middle blocks when a cross-region selection spans three paragraphs", () => {
-  let state = createEditorState(parseMarkdown("alpha\n\nbeta\n\ngamma\n"));
+  let state = createEditorState(parseDocument("alpha\n\nbeta\n\ngamma\n"));
   const [first, , third] = state.documentIndex.regions;
 
   if (!first || !third) {
@@ -116,11 +116,11 @@ test("drops middle blocks when a cross-region selection spans three paragraphs",
   state = setSelection(state, selectionBetween(first.id, 2, third.id, 3));
   state = replaceSelection(state, "-");
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("al-ma\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("al-ma\n");
 });
 
 test("deleteBackward collapses a cross-region selection instead of deleting a single character", () => {
-  let state = createEditorState(parseMarkdown("alpha beta\n\ngamma delta\n"));
+  let state = createEditorState(parseDocument("alpha beta\n\ngamma delta\n"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -137,11 +137,11 @@ test("deleteBackward collapses a cross-region selection instead of deleting a si
     throw new Error("Expected deleteBackward to produce a new state for a cross-region selection");
   }
 
-  expect(serializeMarkdown(createDocumentFromEditorState(nextState))).toBe("alpha delta\n");
+  expect(serializeDocument(createDocumentFromEditorState(nextState))).toBe("alpha delta\n");
 });
 
 test("deleteForward collapses a cross-region selection instead of deleting a single character", () => {
-  let state = createEditorState(parseMarkdown("alpha beta\n\ngamma delta\n"));
+  let state = createEditorState(parseDocument("alpha beta\n\ngamma delta\n"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -158,11 +158,11 @@ test("deleteForward collapses a cross-region selection instead of deleting a sin
     throw new Error("Expected deleteForward to produce a new state for a cross-region selection");
   }
 
-  expect(serializeMarkdown(createDocumentFromEditorState(nextState))).toBe("alpha delta\n");
+  expect(serializeDocument(createDocumentFromEditorState(nextState))).toBe("alpha delta\n");
 });
 
 test("cross-region deletion with empty text concatenates prefix and suffix without a separator", () => {
-  let state = createEditorState(parseMarkdown("alpha beta\n\ngamma delta\n"));
+  let state = createEditorState(parseDocument("alpha beta\n\ngamma delta\n"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -175,11 +175,11 @@ test("cross-region deletion with empty text concatenates prefix and suffix witho
   );
   state = deleteSelection(state);
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alpha delta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("alpha delta\n");
 });
 
 test("merges a heading with a paragraph using the start block's type", () => {
-  let state = createEditorState(parseMarkdown("# Heading\n\nParagraph body\n"));
+  let state = createEditorState(parseDocument("# Heading\n\nParagraph body\n"));
   const [heading, paragraph] = state.documentIndex.regions;
 
   if (!heading || !paragraph) {
@@ -192,11 +192,11 @@ test("merges a heading with a paragraph using the start block's type", () => {
   );
   state = replaceSelection(state, "/");
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("# Headin/body\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("# Headin/body\n");
 });
 
 test("drops a code block between two paragraphs during cross-region replacement", () => {
-  let state = createEditorState(parseMarkdown("alpha\n\n```\ncode\n```\n\ngamma\n"));
+  let state = createEditorState(parseDocument("alpha\n\n```\ncode\n```\n\ngamma\n"));
   const regions = state.documentIndex.regions;
   const first = regions[0];
   const last = regions.at(-1);
@@ -208,11 +208,11 @@ test("drops a code block between two paragraphs during cross-region replacement"
   state = setSelection(state, selectionBetween(first.id, 2, last.id, 3));
   state = replaceSelection(state, "!");
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("al!ma\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("al!ma\n");
 });
 
 test("trims a code block when it is an endpoint of a cross-region selection", () => {
-  let state = createEditorState(parseMarkdown("```\nabcdef\n```\n\nalpha\n"));
+  let state = createEditorState(parseDocument("```\nabcdef\n```\n\nalpha\n"));
   const codeRegion = state.documentIndex.regions.find((region) => region.blockType === "code");
   const paragraphRegion = state.documentIndex.regions.find(
     (region) => region.blockType === "paragraph",
@@ -226,12 +226,12 @@ test("trims a code block when it is an endpoint of a cross-region selection", ()
   state = deleteSelection(state);
 
   // Code-block prefix kept; paragraph suffix kept; no inline merge (not text-like on both sides).
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("```\nabc\n```\n\npha\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("```\nabc\n```\n\npha\n");
 });
 
 test("drops tables entirely when a cross-region selection enters or exits them", () => {
   let state = createEditorState(
-    parseMarkdown("alpha\n\n| A | B |\n| --- | --- |\n| one | two |\n\nbeta\n"),
+    parseDocument("alpha\n\n| A | B |\n| --- | --- |\n| one | two |\n\nbeta\n"),
   );
   const paragraphs = state.documentIndex.regions.filter(
     (region) => region.blockType === "paragraph",
@@ -245,11 +245,11 @@ test("drops tables entirely when a cross-region selection enters or exits them",
   state = setSelection(state, selectionBetween(first.id, 2, second.id, 2));
   state = replaceSelection(state, "X");
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alXta\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("alXta\n");
 });
 
 test("normalizes an empty document to a single empty paragraph after replacing everything", () => {
-  let state = createEditorState(parseMarkdown("alpha\n\nbeta\n"));
+  let state = createEditorState(parseDocument("alpha\n\nbeta\n"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -259,13 +259,13 @@ test("normalizes an empty document to a single empty paragraph after replacing e
   state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
   state = deleteSelection(state);
 
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("\n");
   expect(state.documentIndex.regions).toHaveLength(1);
   expect(state.documentIndex.regions[0]?.text).toBe("");
 });
 
 test("trims a list when a cross-region selection starts in one list item and ends in a later paragraph", () => {
-  let state = createEditorState(parseMarkdown("- alpha\n- beta\n- gamma\n\nafter\n"));
+  let state = createEditorState(parseDocument("- alpha\n- beta\n- gamma\n\nafter\n"));
   const listRegions = state.documentIndex.regions.filter(
     (region) => region.blockType === "listItem" || region.blockType === "paragraph",
   );
@@ -288,7 +288,7 @@ test("trims a list when a cross-region selection starts in one list item and end
   // text-like, the inserted text prepends into it rather than becoming a
   // standalone block. Result: list sibling + paragraph with typed text
   // prefixed onto the preserved tail.
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("- al\n\n!ter\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("- al\n\n!ter\n");
 
   // Caret lands inside the merged "!ter" paragraph, just after the typed
   // text — not at the start of the trimmed list.
@@ -298,7 +298,7 @@ test("trims a list when a cross-region selection starts in one list item and end
 });
 
 test("preserves comment threads anchored before a cross-region edit", () => {
-  const snapshot = parseMarkdown("alpha beta\n\ngamma delta\n");
+  const snapshot = parseDocument("alpha beta\n\ngamma delta\n");
   const firstContainer = listAnchorContainers(snapshot)[0];
 
   if (!firstContainer) {
@@ -332,7 +332,7 @@ test("preserves comment threads anchored before a cross-region edit", () => {
 });
 
 test("replaces the entire document with a single paragraph when every block is fully consumed", () => {
-  let state = createEditorState(parseMarkdown("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"));
+  let state = createEditorState(parseDocument("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"));
   const firstRegion = state.documentIndex.regions[0];
   const lastRegion = state.documentIndex.regions.at(-1);
 
@@ -349,13 +349,13 @@ test("replaces the entire document with a single paragraph when every block is f
   // Both the start heading and the end paragraph are fully consumed — their
   // types don't leak into the result. The replacement becomes a fresh
   // paragraph rather than inheriting the first block's heading type.
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("x\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("x\n");
   expect(state.documentIndex.regions).toHaveLength(1);
   expect(state.documentIndex.regions[0]?.blockType).toBe("paragraph");
 });
 
 test("cross-region delete drops a trailing heading when it is fully consumed by the selection", () => {
-  let state = createEditorState(parseMarkdown("alpha paragraph\n\n# Trailing Heading\n"));
+  let state = createEditorState(parseDocument("alpha paragraph\n\n# Trailing Heading\n"));
   const [paragraph, heading] = state.documentIndex.regions;
 
   if (!paragraph || !heading) {
@@ -371,7 +371,7 @@ test("cross-region delete drops a trailing heading when it is fully consumed by 
 
   // The paragraph keeps its partial prefix ("alpha"). The trailing heading
   // was fully consumed and drops — its type doesn't leak into the result.
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("alpha\n");
   expect(state.documentIndex.regions).toHaveLength(1);
   expect(state.documentIndex.regions[0]?.blockType).toBe("paragraph");
 
@@ -381,7 +381,7 @@ test("cross-region delete drops a trailing heading when it is fully consumed by 
 });
 
 test("cross-region type with a trailing heading fully consumed absorbs into the preserved prefix", () => {
-  let state = createEditorState(parseMarkdown("alpha paragraph\n\n# Trailing Heading\n"));
+  let state = createEditorState(parseDocument("alpha paragraph\n\n# Trailing Heading\n"));
   const [paragraph, heading] = state.documentIndex.regions;
 
   if (!paragraph || !heading) {
@@ -396,12 +396,12 @@ test("cross-region type with a trailing heading fully consumed absorbs into the 
 
   // The trailing heading drops; the partial paragraph absorbs the typed
   // text at its end (start-block-wins since the start still has content).
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("alphaX\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("alphaX\n");
   expect(state.selection.focus.offset).toBe("alphaX".length);
 });
 
 test("select-all + delete produces an empty paragraph even when the document starts with a heading", () => {
-  let state = createEditorState(parseMarkdown("# Heading\n\nalpha\n"));
+  let state = createEditorState(parseDocument("# Heading\n\nalpha\n"));
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) {
@@ -412,7 +412,7 @@ test("select-all + delete produces an empty paragraph even when the document sta
   state = deleteSelection(state);
 
   // The heading's type must not survive — the deletion consumed it entirely.
-  expect(serializeMarkdown(createDocumentFromEditorState(state))).toBe("\n");
+  expect(serializeDocument(createDocumentFromEditorState(state))).toBe("\n");
   expect(state.documentIndex.regions).toHaveLength(1);
   expect(state.documentIndex.regions[0]?.blockType).toBe("paragraph");
 });
@@ -442,7 +442,7 @@ test("extends the selection focus to a new point while keeping the anchor fixed"
 });
 
 test("deletes adjacent images atomically with deleteBackward and deleteForward", () => {
-  const state = createEditorState(parseMarkdown("before ![alt](https://example.com/image.png) after\n"));
+  const state = createEditorState(parseDocument("before ![alt](https://example.com/image.png) after\n"));
   const region = state.documentIndex.regions[0];
 
   if (!region) throw new Error("Expected paragraph region");
@@ -456,8 +456,8 @@ test("deletes adjacent images atomically with deleteBackward and deleteForward",
 
   expect(backward).not.toBeNull();
   expect(forward).not.toBeNull();
-  expect(serializeMarkdown(createDocumentFromEditorState(backward!))).toBe("before  after\n");
-  expect(serializeMarkdown(createDocumentFromEditorState(forward!))).toBe("before  after\n");
+  expect(serializeDocument(createDocumentFromEditorState(backward!))).toBe("before  after\n");
+  expect(serializeDocument(createDocumentFromEditorState(forward!))).toBe("before  after\n");
 });
 
 test("does not persist a typed trailing prose space as a markdown entity", () => {
@@ -466,5 +466,5 @@ test("does not persist a typed trailing prose space as a markdown entity", () =>
   const result = insertText(placeAt(state, region, "end"), " ");
 
   expect(result).not.toBeNull();
-  expect(serializeMarkdown(createDocumentFromEditorState(result!))).toBe("alpha\n");
+  expect(serializeDocument(createDocumentFromEditorState(result!))).toBe("alpha\n");
 });

@@ -9,10 +9,10 @@ import {
 } from "@/editor";
 import { createDocumentIndex } from "@/editor/state";
 import { createDocumentLayout, createDocumentViewport } from "@/editor/layout";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("creates a viewport layout slice smaller than the full long-document layout", () => {
-  const snapshot = parseMarkdown(buildSyntheticLongFixture(sampleMarkdown, 80));
+  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 80));
   const runtime = createDocumentIndex(snapshot);
   const fullLayout = createDocumentLayout(runtime, {
     width: 420,
@@ -34,7 +34,7 @@ test("creates a viewport layout slice smaller than the full long-document layout
 });
 
 test("keeps pinned regions in the viewport slice", () => {
-  const snapshot = parseMarkdown(buildSyntheticLongFixture(sampleMarkdown, 40));
+  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 40));
   const runtime = createDocumentIndex(snapshot);
   const pinnedContainer = runtime.regions.at(-1);
 
@@ -62,7 +62,7 @@ test("keeps pinned regions in the viewport slice", () => {
 test("keeps post-table content in the initial viewport after text edits warm table caches", () => {
   const renderCache = createCanvasRenderCache();
   let state = createEditorState(
-    parseMarkdown(`# Sample Document
+    parseDocument(`# Sample Document
 
 This sample shows the core Documint editing surface in one short document.
 

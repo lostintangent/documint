@@ -41,7 +41,7 @@ const markdownTextEscapePattern = /([\\`*_[\]])/g;
 const markdownDestinationEscapePattern = /([\\)&])/g;
 const markdownTitleEscapePattern = /(["\\])/g;
 
-export function serializeMarkdown(document: Document, options: MarkdownOptions = {}) {
+export function serializeDocument(document: Document, options: MarkdownOptions = {}) {
   if (
     document.blocks.length === 0 &&
     document.comments.length === 0 &&
@@ -50,19 +50,31 @@ export function serializeMarkdown(document: Document, options: MarkdownOptions =
     return "";
   }
 
-  const chunks = document.blocks.map((block) => serializeBlock(block, 0, options));
+  const chunks: string[] = [];
+
+  if (document.frontMatter !== undefined) {
+    chunks.push(document.frontMatter);
+  }
+
+  if (document.blocks.length > 0) {
+    chunks.push(serializeBlocks(document.blocks, options));
+  }
 
   if (document.comments.length > 0) {
     chunks.push(serializeCommentDirective(document.comments));
   }
 
-  if (document.frontMatter !== undefined) {
-    chunks.unshift(document.frontMatter);
-  }
-
   const result = chunks.join(blockSeparator);
 
   return result.endsWith(lineFeed) ? result : `${result}${lineFeed}`;
+}
+
+// Serializes a sequence of top-level blocks using the canonical block
+// separator. No front matter, comments, or trailing newline — caller-owned
+// concerns. Used by `serializeDocument` and by clipboard-fragment
+// serialization, which wants the bare block payload.
+export function serializeBlocks(blocks: Block[], options: MarkdownOptions = {}): string {
+  return blocks.map((block) => serializeBlock(block, 0, options)).join(blockSeparator);
 }
 
 function serializeBlock(block: Block, indent: number, options: MarkdownOptions): string {
@@ -82,7 +94,7 @@ function serializeBlock(block: Block, indent: number, options: MarkdownOptions):
     case "listItem":
       return serializeListItem(block, indent, false, 1, options);
     case "paragraph":
-      return `${indentPrefix}${protectLeadingWhitespace(serializeInlineNodes(block.children))}`;
+      return `${indentPrefix}${protectLeadingWhitespace(serializeInlines(block.children))}`;
     case "table":
       return serializeTable(block, indent, options);
     case "thematicBreak":
@@ -124,7 +136,7 @@ function serializeCodeBlock(block: Extract<Block, { type: "code" }>, indent: num
 }
 
 function serializeHeading(block: Extract<Block, { type: "heading" }>, indent: number) {
-  const content = protectLeadingWhitespace(serializeInlineNodes(block.children));
+  const content = protectLeadingWhitespace(serializeInlines(block.children));
   const marker = `${indentText(indent)}${"#".repeat(block.depth)}`;
 
   return content.length > 0 ? `${marker} ${content}` : marker;
@@ -181,7 +193,7 @@ function serializeListItemFirstChild(
 ) {
   switch (block.type) {
     case "paragraph": {
-      const content = protectLeadingWhitespace(serializeInlineNodes(block.children));
+      const content = protectLeadingWhitespace(serializeInlines(block.children));
 
       if (content.length === 0) {
         return hasCheckbox ? prefix : prefix.trimEnd();
@@ -209,7 +221,7 @@ function serializeListItemFirstChild(
 
 function serializeTable(block: TableBlock, indent: number, options: MarkdownOptions) {
   const rowValues = block.rows.map((row) =>
-    row.cells.map((cell) => serializeInlineNodes(cell.children)),
+    row.cells.map((cell) => serializeInlines(cell.children)),
   );
   const columnCount = Math.max(1, ...rowValues.map((row) => row.length));
   const headerRow = rowValues[0] ?? [];
@@ -297,7 +309,11 @@ function padTableCell(value: string, width: number, align: TableBlock["align"][n
   return value.padEnd(width, " ");
 }
 
-function serializeInlineNodes(nodes: Inline[]) {
+// Serializes a sequence of inline nodes to markdown source. Handles
+// marks, links, images, code spans, and breaks. Used by `serializeBlock`
+// for every text-bearing block, by table-cell serialization, and by the
+// fragment bridge when the clipboard payload is inline content.
+export function serializeInlines(nodes: Inline[]): string {
   return mergeInlineText(nodes)
     .map((node) => serializeInline(node))
     .join("");
@@ -430,7 +446,7 @@ function serializeImage(node: Extract<Inline, { type: "image" }>) {
 }
 
 function serializeLink(node: Extract<Inline, { type: "link" }>) {
-  return `[${serializeInlineNodes(node.children)}]${serializeLinkDestination(node.url, node.title)}`;
+  return `[${serializeInlines(node.children)}]${serializeLinkDestination(node.url, node.title)}`;
 }
 
 function serializeLinkDestination(url: string, title: string | null) {

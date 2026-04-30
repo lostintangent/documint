@@ -7,13 +7,16 @@ import {
 } from "@/document";
 import { getCommentState } from "@/editor/anchors";
 import {
+  copySelection,
   createDocumentFromEditorState,
   createEditorState,
   deleteBackward,
   insertLineBreak,
   insertText,
+  pasteFragment,
   setSelection,
 } from "@/editor/state";
+import { parseFragment, serializeFragment } from "@/markdown";
 import {
   createDocumentLayout,
   findLineEntryForRegionOffset,
@@ -34,6 +37,7 @@ export function createEditorBenchmarks(
     commentsSnapshot: Parameters<typeof createEditorState>[0];
     hugeSnapshot: Parameters<typeof createEditorState>[0];
     longSnapshot: Parameters<typeof createEditorState>[0];
+    mediumMarkdown: string;
     mediumSnapshot: Parameters<typeof createEditorState>[0];
     nestedStructuralSnapshot: Parameters<typeof createEditorState>[0];
     richCodeSnapshot: Parameters<typeof createEditorState>[0];
@@ -54,6 +58,9 @@ export function createEditorBenchmarks(
   const longInteractionFixture = createLongInteractionFixture(fixtures.longSnapshot);
   const xlargeInteractionFixture = createLongInteractionFixture(fixtures.xlargeSnapshot);
   const hugeInteractionFixture = createLongInteractionFixture(fixtures.hugeSnapshot);
+  const longSelectAllState = selectEntireDocument(fixtures.longSnapshot);
+  const longCaretState = selectMiddleTextRegion(fixtures.longSnapshot);
+  const denseInlinesSource = buildDenseInlinesSource();
 
   return [
     // --- Import / export lifecycle ---
@@ -233,6 +240,34 @@ export function createEditorBenchmarks(
         state = nextState;
       }
     }),
+
+    // --- Clipboard ---
+
+    // Copy on a long doc: select-all → extractFragment + serializeFragment.
+    // Stresses the cross-root trim + serialize walk over every block.
+    runBenchmark("editor_copy_long", 20, budgets.copy_long, () => {
+      const fragment = copySelection(longSelectAllState);
+
+      if (fragment) {
+        void serializeFragment(fragment);
+      }
+    }),
+
+    // Paste a multi-block fragment (the medium fixture, ≈100 blocks) into
+    // a long doc. Stresses parseFragment, the structural seam-merge over a
+    // long doc, and the comment finalize after the splice.
+    runBenchmark("editor_paste_blocks_long", 20, budgets.paste_blocks_long, () => {
+      const fragment = parseFragment(fixtures.mediumMarkdown);
+      void pasteFragment(longCaretState, fragment, fixtures.mediumMarkdown);
+    }),
+
+    // Paste a single paragraph with many marked runs (≈100 inline nodes
+    // interleaving bold / italic / code / link). Stresses spliceInlineNodes
+    // and the inline-defragment pass that runs at the seams.
+    runBenchmark("editor_paste_inlines_dense", 50, budgets.paste_inlines_dense, () => {
+      const fragment = parseFragment(denseInlinesSource);
+      void pasteFragment(longCaretState, fragment, denseInlinesSource);
+    }),
   ];
 }
 
@@ -370,4 +405,38 @@ function findCurrentLine(state: ReturnType<typeof createEditorState>, layout: Vi
     state.selection.focus.regionId,
     state.selection.focus.offset,
   );
+}
+
+function selectEntireDocument(snapshot: Parameters<typeof createEditorState>[0]) {
+  const state = createEditorState(snapshot);
+  const first = state.documentIndex.regions[0];
+  const last = state.documentIndex.regions.at(-1);
+
+  if (!first || !last) {
+    throw new Error("Expected a non-empty document for select-all benchmark");
+  }
+
+  return setSelection(state, {
+    anchor: { regionId: first.id, offset: 0 },
+    focus: { regionId: last.id, offset: last.text.length },
+  });
+}
+
+// A single paragraph alternating across every inline kind (text, bold,
+// italic, code, link, image) so the inline-splice path has to walk and
+// merge a dense, heterogeneous run list.
+function buildDenseInlinesSource() {
+  const segments: string[] = [];
+
+  for (let index = 0; index < 25; index += 1) {
+    segments.push(
+      `lorem-${index}`,
+      `**bold-${index}**`,
+      `*italic-${index}*`,
+      `\`code-${index}\``,
+      `[link-${index}](https://example.com/${index})`,
+    );
+  }
+
+  return segments.join(" ");
 }

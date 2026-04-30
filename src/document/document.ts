@@ -11,6 +11,7 @@ import {
 import {
   type Block,
   type Document,
+  type Fragment,
   type HeadingBlock,
   type Inline,
   type ListItemBlock,
@@ -217,6 +218,78 @@ export function extractPlainTextFromBlockNodes(nodes: Block[]): string {
     })
     .join("\n")
     .trim();
+}
+
+// Whether an inline list could be losslessly represented as a plain string
+// — every node is an unmarked text node. Used by the fragment extractor
+// and the markdown bridge to take the `Fragment.text` fast path when the
+// slice carries no marks, links, images, or breaks.
+export function isPlainTextInlines(inlines: Inline[]): boolean {
+  return inlines.every((node) => node.type === "text" && node.marks.length === 0);
+}
+
+// Whether a block list could be losslessly represented as a plain string —
+// a single paragraph whose children are themselves plain text. Composes
+// `isPlainTextInlines` for the inline-level check.
+export function isPlainTextBlocks(blocks: Block[]): boolean {
+  if (blocks.length !== 1) {
+    return false;
+  }
+
+  const block = blocks[0]!;
+
+  return block.type === "paragraph" && isPlainTextInlines(block.children);
+}
+
+// Plain-text projection of a `Fragment`, regardless of variant. Used as a
+// fallback when a destination can't accept the fragment structurally
+// (table cell paste, code block paste) and the editor wants to drop the
+// content in as bare characters.
+export function extractPlainTextFromFragment(fragment: Fragment): string {
+  switch (fragment.kind) {
+    case "text":
+      return fragment.text;
+    case "inlines":
+      return extractPlainTextFromInlineNodes(fragment.inlines);
+    case "blocks":
+      return extractPlainTextFromBlockNodes(fragment.blocks);
+  }
+}
+
+// Polymorphic block-tree helpers. The semantic block union stores container
+// children under different field names (`list.items`, `blockquote.children`,
+// `listItem.children`); these accessors close that leak for callers that want
+// to traverse or rebuild the tree without re-deriving the dispatch each time.
+export function getBlockChildren(block: Block): Block[] | null {
+  switch (block.type) {
+    case "blockquote":
+    case "listItem":
+      return block.children;
+    case "list":
+      return block.items;
+    default:
+      return null;
+  }
+}
+
+// Rebuilds a container block with a replacement child list. Returns null when
+// the block is not a container or when the replacement would be empty; empty
+// structural containers carry no visible content and collapse out of the model.
+export function replaceBlockChildren(block: Block, children: Block[]): Block | null {
+  if (children.length === 0) {
+    return null;
+  }
+
+  switch (block.type) {
+    case "blockquote":
+      return createBlockquoteBlock({ children });
+    case "list":
+      return rebuildListBlock(block, children as ListItemBlock[]);
+    case "listItem":
+      return rebuildListItemBlock(block, children);
+    default:
+      return null;
+  }
 }
 
 function normalizeRootBlock(block: Block, rootIndex: number) {

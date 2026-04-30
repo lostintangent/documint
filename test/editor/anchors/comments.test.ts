@@ -17,10 +17,10 @@ import {
   resolveHoverTarget,
   setSelection,
 } from "@/editor";
-import { parseMarkdown } from "@/markdown";
+import { parseDocument } from "@/markdown";
 
 test("maps durable comment anchors to live canvas ranges", () => {
-  const snapshot = parseMarkdown("Review surface anchors survive.\n");
+  const snapshot = parseDocument("Review surface anchors survive.\n");
   const container = listAnchorContainers(snapshot)[0];
 
   if (!container) {
@@ -49,7 +49,7 @@ test("maps durable comment anchors to live canvas ranges", () => {
 
 test("resolves link hover targets with overlapping comment metadata", () => {
   const renderCache = createCanvasRenderCache();
-  const document = parseMarkdown("Paragraph with [link](https://example.com).\n");
+  const document = parseDocument("Paragraph with [link](https://example.com).\n");
   const container = listAnchorContainers(document)[0];
 
   if (!container) {
@@ -114,7 +114,7 @@ test("resolves link hover targets with overlapping comment metadata", () => {
 });
 
 test("preserves selection when creating a comment thread", () => {
-  let state = createEditorState(parseMarkdown("Review surface\n"));
+  let state = createEditorState(parseDocument("Review surface\n"));
   const region = state.documentIndex.regions[0];
 
   if (!region) {
@@ -144,7 +144,7 @@ test("preserves selection when creating a comment thread", () => {
 });
 
 test("creates a new comment thread from a single-region selection", () => {
-  let state = createEditorState(parseMarkdown("Review surface\n"));
+  let state = createEditorState(parseDocument("Review surface\n"));
   const region = state.documentIndex.regions[0];
 
   if (!region) {
@@ -182,7 +182,7 @@ test("creates a new comment thread from a single-region selection", () => {
 });
 
 test("keeps same-region comments sticky while typing inside the anchored quote", () => {
-  const document = parseMarkdown("abcd\n");
+  const document = parseDocument("abcd\n");
   const container = listAnchorContainers(document)[0];
 
   if (!container) {
