@@ -8,6 +8,8 @@ It stays rendered like a document, then turns locally editable when you activate
 
 Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, and [links](https://example.com) inside the active span.
 
+Hit Shift+Enter to insert a soft line break<br>that wraps to a new line without starting a new block.
+
 | Block | Status | Width | Notes |
 | :---- | :----- | ----: | :---- |
 | Heading | stable | 640 | stays semantic |
@@ -28,6 +30,8 @@ It also supports ordered lists when sequence matters.
 
 1. First ordered step
 2. Second ordered step
+
+---
 
 And it even supports task lists with clickable checkboxes.
 

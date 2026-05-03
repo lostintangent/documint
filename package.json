@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -23,8 +23,7 @@
     "lint": "oxlint .",
     "format": "oxfmt . '!test/goldens/**/*.md'",
     "typecheck": "tsc --noEmit",
-    "benchmark": "bun run scripts/benchmarks/index.ts",
-    "test:goldens": "bun test test/markdown/golden.test.ts"
+    "benchmark": "bun run scripts/benchmarks/index.ts"
   },
   "devDependencies": {
     "@chenglou/pretext": "^0.0.4",

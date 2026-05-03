@@ -1,9 +1,9 @@
 import {
   createCanvasRenderCache,
-  prepareViewport,
+  prepareLayout,
   type EditorPoint,
   type EditorState,
-  type EditorViewportState,
+  type EditorLayoutState,
 } from "@/editor";
 import type { DocumentResources, EditorTheme } from "@/types";
 import {
@@ -38,7 +38,7 @@ export type ViewportController = {
   actions: {
     autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
     getScrollTop: () => number;
-    observePreparedViewport: (viewportState: EditorViewportState) => void;
+    observePreparedViewport: (viewportState: EditorLayoutState) => void;
     observeScrollContainer: (scrollContainer: HTMLDivElement) => void;
     /**
      * Notify the viewport that the editor state has transitioned. The viewport
@@ -51,7 +51,7 @@ export type ViewportController = {
      * viewport-render path; lighter paint paths (content-only, overlay-only)
      * should peek the cached state via `state.preparedViewport.peek()`.
      */
-    prepareNextPaint: () => EditorViewportState;
+    prepareNextPaint: () => EditorLayoutState;
     resolvePoint: (
       event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>,
     ) => EditorPoint | null;
@@ -71,7 +71,7 @@ export type ViewportController = {
   };
   state: {
     layoutWidth: number;
-    preparedViewport: LazyRefHandle<EditorViewportState>;
+    preparedViewport: LazyRefHandle<EditorLayoutState>;
     scrollContentHeight: number;
     surfaceWidth: number;
     viewportHeight: number;
@@ -137,11 +137,11 @@ export function useViewport({
 
   /* Prepared viewport (lazy cache) */
 
-  const createEditorViewportState = useEffectEvent((): EditorViewportState => {
+  const createEditorLayoutState = useEffectEvent((): EditorLayoutState => {
     const currentState = editorStateRef.current ?? editorState;
     const viewport = viewportMetricsRef.current;
 
-    return prepareViewport(
+    return prepareLayout(
       currentState,
       {
         height: viewport.height,
@@ -155,9 +155,9 @@ export function useViewport({
     );
   });
 
-  const preparedViewport = useLazyRef(createEditorViewportState);
+  const preparedViewport = useLazyRef(createEditorLayoutState);
 
-  const observePreparedViewport = useEffectEvent((viewportState: EditorViewportState) => {
+  const observePreparedViewport = useEffectEvent((viewportState: EditorLayoutState) => {
     setScrollContentHeight((previous) => {
       const nextHeight = resolveScrollContentHeight(
         viewportState,
@@ -233,7 +233,7 @@ export function useViewport({
 
   // Force a fresh layout for the next paint. Used by the viewport-render
   // path; lighter paths (content / overlay) peek the cached layout instead.
-  const prepareNextPaint = useEffectEvent((): EditorViewportState => {
+  const prepareNextPaint = useEffectEvent((): EditorLayoutState => {
     preparedViewport.invalidate();
     return preparedViewport.get();
   });
@@ -345,6 +345,6 @@ function readViewportMetrics(scrollContainer: HTMLDivElement): ViewportMetrics {
   };
 }
 
-function resolveScrollContentHeight(viewportState: EditorViewportState, viewportHeight: number) {
+function resolveScrollContentHeight(viewportState: EditorLayoutState, viewportHeight: number) {
   return Math.max(viewportHeight, Math.ceil(viewportState.totalHeight + 24));
 }

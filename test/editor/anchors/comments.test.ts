@@ -11,13 +11,15 @@ import {
   addComment as addEditorComment,
   createEditorState,
   getDocument,
+  insertSoftLineBreak,
   insertText,
   measureCaretTarget,
-  prepareViewport,
+  prepareLayout,
   resolveHoverTarget,
   setSelection,
 } from "@/editor";
 import { parseDocument } from "@/markdown";
+import { setup } from "../helpers";
 
 test("maps durable comment anchors to live canvas ranges", () => {
   const snapshot = parseDocument("Review surface anchors survive.\n");
@@ -66,7 +68,7 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     ...document,
     comments: [thread],
   });
-  const viewport = prepareViewport(
+  const viewport = prepareLayout(
     state,
     {
       height: 320,
@@ -114,7 +116,7 @@ test("resolves link hover targets with overlapping comment metadata", () => {
 });
 
 test("preserves selection when creating a comment thread", () => {
-  let state = createEditorState(parseDocument("Review surface\n"));
+  let state = setup("Review surface\n");
   const region = state.documentIndex.regions[0];
 
   if (!region) {
@@ -144,7 +146,7 @@ test("preserves selection when creating a comment thread", () => {
 });
 
 test("creates a new comment thread from a single-region selection", () => {
-  let state = createEditorState(parseDocument("Review surface\n"));
+  let state = setup("Review surface\n");
   const region = state.documentIndex.regions[0];
 
   if (!region) {
@@ -179,6 +181,54 @@ test("creates a new comment thread from a single-region selection", () => {
       quote: "Review",
     }),
   ]);
+});
+
+test("preserves an anchored quote when a soft line break is inserted before it", () => {
+  // Comment anchors are content-addressable (prefix/suffix matching), so
+  // inserting a soft line break adjacent to the anchored span must not
+  // perturb the quote text or break resolution. The `\n` introduced by
+  // the `LineBreak` inline is treated by the comment-repair logic as a
+  // single-character insertion in `region.text`, the same as any other
+  // typed character.
+  const document = parseDocument("abcd\n");
+  const container = listAnchorContainers(document)[0];
+
+  if (!container) {
+    throw new Error("Expected anchor container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 1, 3),
+    body: "Track this span",
+    createdAt: "2026-04-18T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, 1, 3),
+  });
+  let state = createEditorState({
+    ...document,
+    comments: [thread],
+  });
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected editor region");
+  }
+
+  // Caret at the very start of the paragraph, before the anchored "bc".
+  state = setSelection(state, {
+    regionId: region.id,
+    offset: 0,
+  });
+
+  const result = insertSoftLineBreak(state);
+
+  expect(result).not.toBeNull();
+
+  const nextDocument = getDocument(result!);
+  const nextThread = nextDocument.comments[0];
+
+  // Quote text is unchanged — the soft break shifted the anchor's start
+  // forward by one character without altering what it points at.
+  expect(nextThread?.quote).toBe("bc");
 });
 
 test("keeps same-region comments sticky while typing inside the anchored quote", () => {

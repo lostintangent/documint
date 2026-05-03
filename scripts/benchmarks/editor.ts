@@ -19,14 +19,15 @@ import {
 import { parseFragment, serializeFragment } from "@/markdown";
 import {
   createDocumentLayout,
+  createViewportLayout,
   findLineEntryForRegionOffset,
   findLineForRegionOffset,
   measureCaretTarget,
   resolveCaretVisualLeft,
   resolveEditorHitAtPoint,
-  type ViewportLayout,
+  type DocumentLayout,
 } from "@/editor/layout";
-import { createCanvasRenderCache } from "@/editor/canvas/cache";
+import { createCanvasRenderCache } from "@/editor/canvas/lib/cache";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
 
@@ -62,34 +63,41 @@ export function createEditorBenchmarks(
   const longCaretState = selectMiddleTextRegion(fixtures.longSnapshot);
   const denseInlinesSource = buildDenseInlinesSource();
 
+  // Full-frame fixtures: a viewport + render cache shared by the
+  // typing/backspace-with-layout benchmarks below. The viewport matches
+  // the layout-only benchmarks so the layout slice is comparable.
+  const fullFrameViewport = { height: 720, overscan: 720, top: 0 };
+  const fullFrameLayoutOptions = { width: 420 };
+  const fullFrameRenderCache = createCanvasRenderCache();
+
   return [
     // --- Import / export lifecycle ---
 
-    runBenchmark("editor_import_medium", 50, budgets.import_medium, () => {
+    runBenchmark("editor_import_medium", 200, budgets.import_medium, () => {
       void createEditorState(fixtures.mediumSnapshot);
     }),
-    runBenchmark("editor_import", 20, budgets.import, () => {
+    runBenchmark("editor_import", 100, budgets.import, () => {
       void createEditorState(fixtures.longSnapshot);
     }),
-    runBenchmark("editor_import_rich", 50, budgets.import_rich, () => {
+    runBenchmark("editor_import_rich", 200, budgets.import_rich, () => {
       void createEditorState(fixtures.richTablesSnapshot);
     }),
-    runBenchmark("editor_import_comments", 50, budgets.import_comments, () => {
+    runBenchmark("editor_import_comments", 200, budgets.import_comments, () => {
       void createEditorState(fixtures.commentsSnapshot);
     }),
-    runBenchmark("editor_export_medium", 50, budgets.export_medium, () => {
+    runBenchmark("editor_export_medium", 200, budgets.export_medium, () => {
       void createDocumentFromEditorState(mediumState);
     }),
-    runBenchmark("editor_export", 20, budgets.export, () => {
+    runBenchmark("editor_export", 100, budgets.export, () => {
       void createDocumentFromEditorState(longState);
     }),
-    runBenchmark("editor_export_rich", 50, budgets.export_rich, () => {
+    runBenchmark("editor_export_rich", 200, budgets.export_rich, () => {
       void createDocumentFromEditorState(richCodeState);
     }),
 
     // --- Typing (insertText) ---
 
-    runBenchmark("editor_typing_small", 50, budgets.typing_small, () => {
+    runBenchmark("editor_typing_small", 200, budgets.typing_small, () => {
       const editorState = selectCanvasText(
         fixtures.sampleSnapshot,
         "bootstrap",
@@ -97,7 +105,7 @@ export function createEditorBenchmarks(
       );
       void insertText(editorState, " editor");
     }),
-    runBenchmark("editor_typing_medium", 50, budgets.typing_medium, () => {
+    runBenchmark("editor_typing_medium", 200, budgets.typing_medium, () => {
       const editorState = selectCanvasText(
         fixtures.mediumSnapshot,
         "Bullet item",
@@ -105,10 +113,24 @@ export function createEditorBenchmarks(
       );
       void insertText(editorState, " updated");
     }),
-    runBenchmark("editor_typing_long", 20, budgets.typing_long, () => {
+    runBenchmark("editor_typing_long", 100, budgets.typing_long, () => {
       void insertText(longEditingState, " updated");
     }),
-    runBenchmark("editor_typing_code", 50, budgets.typing_code, () => {
+    // Full-frame: insertText + viewport layout. Approximates the actual
+    // user-felt keystroke latency (state mutation + layout) on a long doc.
+    // Excludes paint, which would require a real canvas context.
+    runBenchmark("editor_typing_long_full_frame", 100, budgets.typing_long_full_frame, () => {
+      const nextState = insertText(longEditingState, " updated");
+      if (!nextState) throw new Error("insertText returned null");
+      void createViewportLayout(
+        nextState.documentIndex,
+        fullFrameLayoutOptions,
+        fullFrameViewport,
+        [],
+        fullFrameRenderCache,
+      );
+    }),
+    runBenchmark("editor_typing_code", 200, budgets.typing_code, () => {
       const editorState = selectCanvasText(
         fixtures.richCodeSnapshot,
         'return "stable";',
@@ -116,17 +138,17 @@ export function createEditorBenchmarks(
       );
       void insertText(editorState, " // stage-5");
     }),
-    runBenchmark("editor_typing_table", 50, budgets.typing_table, () => {
+    runBenchmark("editor_typing_table", 200, budgets.typing_table, () => {
       const editorState = selectCanvasText(fixtures.richTablesSnapshot, "scrolls", 0);
       void insertText(editorState, "host-");
     }),
-    runBenchmark("editor_typing_comments_elsewhere", 50, budgets.typing_comments_elsewhere, () => {
+    runBenchmark("editor_typing_comments_elsewhere", 200, budgets.typing_comments_elsewhere, () => {
       void insertText(commentIrrelevantTypingState, " updated");
     }),
 
     // --- Backspace (deleteBackward) ---
 
-    runBenchmark("editor_backspace_medium", 50, budgets.backspace_medium, () => {
+    runBenchmark("editor_backspace_medium", 200, budgets.backspace_medium, () => {
       const editorState = selectCanvasText(
         fixtures.blockquoteTransitionSnapshot,
         "closing line",
@@ -134,24 +156,36 @@ export function createEditorBenchmarks(
       );
       void deleteBackward(editorState);
     }),
-    runBenchmark("editor_backspace_long", 20, budgets.backspace_long, () => {
+    runBenchmark("editor_backspace_long", 100, budgets.backspace_long, () => {
       void deleteBackward(longEditingState);
+    }),
+    // Full-frame counterpart to editor_backspace_long. See typing_long_full_frame.
+    runBenchmark("editor_backspace_long_full_frame", 100, budgets.backspace_long_full_frame, () => {
+      const nextState = deleteBackward(longEditingState);
+      if (!nextState) return;
+      void createViewportLayout(
+        nextState.documentIndex,
+        fullFrameLayoutOptions,
+        fullFrameViewport,
+        [],
+        fullFrameRenderCache,
+      );
     }),
 
     // --- Enter (insertLineBreak) ---
 
-    runBenchmark("editor_linebreak_medium", 50, budgets.linebreak_medium, () => {
+    runBenchmark("editor_linebreak_medium", 200, budgets.linebreak_medium, () => {
       const editorState = selectCanvasText(fixtures.mediumSnapshot, "Bullet item", 3);
       void insertLineBreak(editorState);
     }),
-    runBenchmark("editor_linebreak_list", 50, budgets.linebreak_list, () => {
+    runBenchmark("editor_linebreak_list", 200, budgets.linebreak_list, () => {
       const editorState = selectCanvasText(fixtures.nestedStructuralSnapshot, "gamma", 2);
       void insertLineBreak(editorState);
     }),
 
     // --- Comments ---
 
-    runBenchmark("editor_comment_toggle_dense", 50, budgets.comment_toggle_dense, () => {
+    runBenchmark("editor_comment_toggle_dense", 200, budgets.comment_toggle_dense, () => {
       const denseSnapshot = createDenseCommentSnapshot(fixtures.mediumSnapshot, 18);
       const editorState = createEditorState({
         ...denseSnapshot,
@@ -163,7 +197,7 @@ export function createEditorBenchmarks(
 
       void getCommentState(editorState.documentIndex);
     }),
-    runBenchmark("editor_comment_repair_dense", 20, budgets.comment_repair_dense, () => {
+    runBenchmark("editor_comment_repair_dense", 100, budgets.comment_repair_dense, () => {
       const editorState = selectCanvasText(
         createDenseCommentSnapshot(fixtures.mediumSnapshot, 18),
         "Bullet item",
@@ -180,17 +214,17 @@ export function createEditorBenchmarks(
 
     // --- Hit testing ---
 
-    runBenchmark("editor_hit_test", 50, budgets.hit_test, () => {
+    runBenchmark("editor_hit_test", 200, budgets.hit_test, () => {
       const { layout, point, state } = longInteractionFixture;
 
       void resolveEditorHitAtPoint(layout, state, point);
     }),
-    runBenchmark("editor_hit_test_xlarge", 20, budgets.hit_test_xlarge, () => {
+    runBenchmark("editor_hit_test_xlarge", 100, budgets.hit_test_xlarge, () => {
       const { layout, point, state } = xlargeInteractionFixture;
 
       void resolveEditorHitAtPoint(layout, state, point);
     }),
-    runBenchmark("editor_hit_test_huge", 10, budgets.hit_test_huge, () => {
+    runBenchmark("editor_hit_test_huge", 50, budgets.hit_test_huge, () => {
       const { layout, point, state } = hugeInteractionFixture;
 
       void resolveEditorHitAtPoint(layout, state, point);
@@ -198,7 +232,7 @@ export function createEditorBenchmarks(
 
     // --- Cursor navigation ---
 
-    runBenchmark("editor_cursor_move", 20, budgets.cursor_move, () => {
+    runBenchmark("editor_cursor_move", 100, budgets.cursor_move, () => {
       const { layout } = longInteractionFixture;
       let state = longInteractionFixture.state;
 
@@ -212,7 +246,7 @@ export function createEditorBenchmarks(
         state = nextState;
       }
     }),
-    runBenchmark("editor_cursor_move_xlarge", 10, budgets.cursor_move_xlarge, () => {
+    runBenchmark("editor_cursor_move_xlarge", 50, budgets.cursor_move_xlarge, () => {
       const { layout } = xlargeInteractionFixture;
       let state = xlargeInteractionFixture.state;
 
@@ -226,7 +260,7 @@ export function createEditorBenchmarks(
         state = nextState;
       }
     }),
-    runBenchmark("editor_cursor_move_huge", 6, budgets.cursor_move_huge, () => {
+    runBenchmark("editor_cursor_move_huge", 30, budgets.cursor_move_huge, () => {
       const { layout } = hugeInteractionFixture;
       let state = hugeInteractionFixture.state;
 
@@ -245,7 +279,7 @@ export function createEditorBenchmarks(
 
     // Copy on a long doc: select-all → extractFragment + serializeFragment.
     // Stresses the cross-root trim + serialize walk over every block.
-    runBenchmark("editor_copy_long", 20, budgets.copy_long, () => {
+    runBenchmark("editor_copy_long", 100, budgets.copy_long, () => {
       const fragment = copySelection(longSelectAllState);
 
       if (fragment) {
@@ -256,7 +290,7 @@ export function createEditorBenchmarks(
     // Paste a multi-block fragment (the medium fixture, ≈100 blocks) into
     // a long doc. Stresses parseFragment, the structural seam-merge over a
     // long doc, and the comment finalize after the splice.
-    runBenchmark("editor_paste_blocks_long", 20, budgets.paste_blocks_long, () => {
+    runBenchmark("editor_paste_blocks_long", 100, budgets.paste_blocks_long, () => {
       const fragment = parseFragment(fixtures.mediumMarkdown);
       void pasteFragment(longCaretState, fragment, fixtures.mediumMarkdown);
     }),
@@ -264,7 +298,7 @@ export function createEditorBenchmarks(
     // Paste a single paragraph with many marked runs (≈100 inline nodes
     // interleaving bold / italic / code / link). Stresses spliceInlineNodes
     // and the inline-defragment pass that runs at the seams.
-    runBenchmark("editor_paste_inlines_dense", 50, budgets.paste_inlines_dense, () => {
+    runBenchmark("editor_paste_inlines_dense", 200, budgets.paste_inlines_dense, () => {
       const fragment = parseFragment(denseInlinesSource);
       void pasteFragment(longCaretState, fragment, denseInlinesSource);
     }),
@@ -363,7 +397,7 @@ function createLongInteractionFixture(snapshot: Parameters<typeof createEditorSt
 
 function moveSelectionToNextLine(
   state: ReturnType<typeof createEditorState>,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
 ) {
   const caret = measureCaretTarget(layout, state.documentIndex, {
     regionId: state.selection.focus.regionId,
@@ -399,7 +433,7 @@ function moveSelectionToNextLine(
     : null;
 }
 
-function findCurrentLine(state: ReturnType<typeof createEditorState>, layout: ViewportLayout) {
+function findCurrentLine(state: ReturnType<typeof createEditorState>, layout: DocumentLayout) {
   return findLineForRegionOffset(
     layout,
     state.selection.focus.regionId,

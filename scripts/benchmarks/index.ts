@@ -110,7 +110,7 @@ function collectRepeatedBudgetFailures(runs: BenchmarkRecord[][]): RepeatedBudge
       return [];
     }
 
-    const failureCount = records.filter((record) => record.p95Ms > budgetMs).length;
+    const failureCount = records.filter((record) => record.p99Ms > budgetMs).length;
 
     return failureCount > allowedBudgetFailureCount
       ? [
@@ -147,9 +147,9 @@ function resolveBenchmarkBudget(records: BenchmarkRecord[]) {
 function formatBudgetFailureMessage(failures: RepeatedBudgetFailure[]) {
   return failures
     .map((failure) => {
-      const p95Values = failure.records.map((record) => record.p95Ms.toFixed(3)).join(", ");
+      const p99Values = failure.records.map((record) => record.p99Ms.toFixed(3)).join(", ");
 
-      return `${failure.name} exceeded budget in ${failure.failureCount}/${benchmarkRunCount} runs: p95=[${p95Values}] budget=${failure.budgetMs.toFixed(3)}ms`;
+      return `${failure.name} exceeded budget in ${failure.failureCount}/${benchmarkRunCount} runs: p99=[${p99Values}] budget=${failure.budgetMs.toFixed(3)}ms`;
     })
     .join("\n");
 }

@@ -13,7 +13,7 @@
 // This module owns the animation type shapes, the "add" helpers commands
 // call, and the lifecycle primitives (prune, time, has-new).
 
-import { getEditorAnimationDuration } from "../canvas/animations";
+import { getEditorAnimationDuration } from "../canvas/lib/animations";
 import type { EditorState } from "./types";
 
 // --- Animation types ---

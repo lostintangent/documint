@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { updateLink, removeLink } from "@/editor/state";
-import { setup, getRegion, toMarkdown } from "../helpers";
+import { setup, getRegion, toMarkdown } from "../../helpers";
 
 test("updates the url of an existing link", () => {
   const state = setup("See [docs](https://old.example.com) here.\n");

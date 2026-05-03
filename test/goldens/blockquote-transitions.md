@@ -9,7 +9,7 @@
 
 After the quote, keep writing in a paragraph.
 
-***
+---
 
 - start in a list
 - backspace at block start to lift out

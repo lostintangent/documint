@@ -103,16 +103,16 @@ export function createText(
 
 export function createLineBreak(options: PathOptions = {}): LineBreak {
   return {
-    id: resolveNodeId(options.path, "break", "break"),
-    type: "break",
+    id: resolveNodeId(options.path, "lineBreak", "lineBreak"),
+    type: "lineBreak",
   };
 }
 
 export function createCode(options: { code: string } & PathOptions): Code {
   return {
     code: options.code,
-    id: resolveNodeId(options.path, "inlineCode", options.code),
-    type: "inlineCode",
+    id: resolveNodeId(options.path, "code", options.code),
+    type: "code",
   };
 }
 
@@ -164,10 +164,10 @@ export function createRaw(
   } & PathOptions,
 ): Raw {
   return {
-    id: resolveNodeId(options.path, "unsupported", options.source),
+    id: resolveNodeId(options.path, "raw", options.source),
     originalType: options.originalType,
     source: options.source,
-    type: "unsupported",
+    type: "raw",
   };
 }
 
@@ -291,7 +291,7 @@ export function createDividerBlock(): DividerBlock {
   return {
     id: "",
     plainText: "",
-    type: "thematicBreak",
+    type: "divider",
   };
 }
 
@@ -302,11 +302,11 @@ export function createRawBlock(
   } & PathOptions,
 ): RawBlock {
   return {
-    id: resolveNodeId(options.path, "unsupported", options.source),
+    id: resolveNodeId(options.path, "raw", options.source),
     originalType: options.originalType,
     plainText: options.source,
     source: options.source,
-    type: "unsupported",
+    type: "raw",
   };
 }
 

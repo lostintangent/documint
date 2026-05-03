@@ -6,7 +6,12 @@ import {
   stripInputSeed,
 } from "@/component/hooks/useInput";
 
-test("recognizes both paragraph and line-break input types", () => {
+test("treats both paragraph and line-break input types as structural Enter", () => {
+  // iOS Safari emits `insertLineBreak` for the virtual keyboard's Return
+  // key regardless of modifier state, so the inputType cannot tell us
+  // whether the user wanted a soft break here. Both must collapse to the
+  // same structural-Enter route; soft breaks are reachable only via the
+  // Shift+Enter keybinding on physical keyboards (handled by `keydown`).
   expect(isLineBreakInputType("insertParagraph")).toBe(true);
   expect(isLineBreakInputType("insertLineBreak")).toBe(true);
   expect(isLineBreakInputType("insertText")).toBe(false);

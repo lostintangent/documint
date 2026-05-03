@@ -10,6 +10,7 @@ export type EditorKeybinding = {
 
 export const defaultKeybindings: EditorKeybinding[] = [
   { key: "Backspace", command: "deleteBackward" },
+  { key: "Enter", shiftKey: true, command: "insertSoftLineBreak" },
   { key: "Enter", command: "insertLineBreak" },
   { key: "Home", command: "moveToLineStart" },
   { key: "End", command: "moveToLineEnd" },

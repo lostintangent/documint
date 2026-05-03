@@ -5,6 +5,15 @@
 // don't mutate editor state directly. They define how a selection carves block
 // structure (`trimBlockToPrefix` / `trimBlockToSuffix`) and how a structural
 // replacement rejoins the preserved ends with pasted blocks (`mergeTrimmedBlocks`).
+//
+// This is the seam-merge policy for *range-selection* operations (paste, range
+// delete, fragment apply). Caret-driven boundary delete (backspace at start of
+// a block / forward-delete at end) lives in `actions/boundary.ts` and uses a
+// different shape — it knows the surviving block's identity and merges into
+// the deepest text-like region in flow rather than peeling shallow container
+// pairs. Both paths share the in-flow neighbor primitives in `selection.ts`,
+// which is also what arrow-key navigation uses, so any future change to
+// "where does the caret go in flow?" propagates everywhere it should.
 
 import {
   defragmentTextInlines,
@@ -234,7 +243,7 @@ function trimLeafBlockToPrefix(block: Block, region: EditorRegion, offset: numbe
       return rebuildTextBlock(block, editRegionInlines(region, offset, region.text.length, ""));
     case "code":
       return rebuildCodeBlock(block, region.text.slice(0, offset));
-    case "unsupported":
+    case "raw":
       return rebuildRawBlock(block, region.text.slice(0, offset));
     default:
       return null;
@@ -252,7 +261,7 @@ function trimLeafBlockToSuffix(block: Block, region: EditorRegion, offset: numbe
       return rebuildTextBlock(block, editRegionInlines(region, 0, offset, ""));
     case "code":
       return rebuildCodeBlock(block, region.text.slice(offset));
-    case "unsupported":
+    case "raw":
       return rebuildRawBlock(block, region.text.slice(offset));
     default:
       return null;

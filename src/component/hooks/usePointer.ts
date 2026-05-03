@@ -10,7 +10,7 @@ import {
   type EditorHoverTarget,
   type EditorSelectionPoint,
   type EditorState,
-  type EditorViewportState,
+  type EditorLayoutState,
 } from "@/editor";
 import type { LazyRefHandle } from "./useLazyRef";
 import {
@@ -32,7 +32,7 @@ type UsePointerOptions = {
   // Editor state and lookups the hook reads from.
   commentState: EditorCommentState;
   editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorViewportState>;
+  editorViewportState: LazyRefHandle<EditorLayoutState>;
   readCurrentState: () => EditorState;
   resolvePoint: (
     event: PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>,

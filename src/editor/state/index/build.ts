@@ -157,21 +157,31 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
           }
         }
         break;
-      case "thematicBreak":
+      case "divider":
+        // Inert leaf block: contributes no region. Inertness is structural
+        // — a leaf block (not a container) with no regions. The property
+        // falls out of skipping `appendRegion` here, so future inert types
+        // (image-as-block, embed, display-math) qualify automatically.
+        // Layout and planner reserve a fixed-height geometry slot for
+        // inert leaves; the canvas paints chrome via `paintInertBlock`.
+        // Deletion of an inert neighbor is handled by a dedicated branch
+        // in `boundary-collapse.ts`. Caret navigation, hit testing, and
+        // the universal merge-collapse rule treat inert blocks correctly
+        // by virtue of their absence from the region-flow.
         break;
       case "directive":
         break;
-      case "unsupported":
+      case "raw":
         appendRegion(
           block,
           `${path}.source`,
           [
             {
               end: block.source.length,
-              id: `${block.id}:unsupported`,
+              id: `${block.id}:raw`,
               image: null,
               inlineCode: false,
-              kind: "unsupported",
+              kind: "raw",
               link: null,
               marks: [],
               originalType: block.originalType,
@@ -782,12 +792,12 @@ function flattenInlineNodes(
 
   for (const node of nodes) {
     switch (node.type) {
-      case "break":
+      case "lineBreak":
         pushRun({
           id: node.id,
           image: null,
           inlineCode: false,
-          kind: "break",
+          kind: "lineBreak",
           link,
           marks: [],
           originalType: null,
@@ -811,12 +821,12 @@ function flattenInlineNodes(
           text: resolveImageRunText(node.alt),
         });
         break;
-      case "inlineCode":
+      case "code":
         pushRun({
           id: node.id,
           image: null,
           inlineCode: true,
-          kind: "inlineCode",
+          kind: "code",
           link,
           marks: [],
           originalType: null,
@@ -843,12 +853,12 @@ function flattenInlineNodes(
           text: node.text,
         });
         break;
-      case "unsupported":
+      case "raw":
         pushRun({
           id: node.id,
           image: null,
           inlineCode: false,
-          kind: "unsupported",
+          kind: "raw",
           link,
           marks: [],
           originalType: node.originalType,

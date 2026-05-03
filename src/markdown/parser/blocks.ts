@@ -18,40 +18,43 @@ import {
 import {
   blockquoteMarker,
   containerDirectiveClosingMarker,
-  containerDirectiveOpening,
   fencedCodeMarker,
   lineFeed,
   type MarkdownOptions,
 } from "../shared";
-import type { MarkdownLineCursor } from "./index";
-import { parseInlineMarkdown } from "./inline";
+import {
+  currentLine,
+  isBlankLine,
+  sliceIndentedContent,
+  type MarkdownLineCursor,
+} from "./index";
+import { parseInlineMarkdown } from "./inlines";
 import { looksLikeAlignmentRow, readTable } from "./tables";
 
+// A line indented more than this many spaces past the enclosing container's
+// indent terminates the current parse pass — that lets nested containers stop
+// slurping when the user has clearly fallen out of them.
 const maxContainerIndentSlack = 3;
 
+// --- Block-kind matchers, grouped by reader ---
+
+// Headings
+const atxHeading = /^(#{1,6})\s+(.*)$/;
+const headingClosingSequence = /\s+#+\s*$/u;
+
+// Lists
+const listMarker = /^(\s*)([-+*]|\d+\.)(?:\s+(.*)|\s*)$/;
 const orderedListMarker = /^\d+\.$/;
 const taskListMarker = /^\[( |x|X)\](?:\s|$)/;
 
+// Fenced code
 const fencedCodeOpening = /^```([^\s`]*)?(?:\s+(.*))?$/;
 
-const leafDirectiveOpening = /^::(?!:)[A-Za-z][-\w]*/;
+// Container directives
+const containerDirectiveOpening = /^:::([A-Za-z][-\w]*)(.*)$/;
 
-const atxHeading = /^(#{1,6})\s+(.*)$/;
-const atxHeadingClosingSequence = /\s+#+\s*$/u;
-
-const listMarker = /^(\s*)([-+*]|\d+\.)(?:\s+(.*)|\s*)$/;
-
-const thematicBreakAsterisk = /^(\*\s*){3,}$/;
-const thematicBreakHyphen = /^(-\s*){3,}$/;
-const thematicBreakUnderscore = /^(_\s*){3,}$/;
-
-type ParsedListMarker = {
-  checked: boolean | null;
-  content: string;
-  contentIndent: number;
-  ordered: boolean;
-  start: number | null;
-};
+// Dividers (thematic breaks)
+const dividerPatterns = [/^(\*\s*){3,}$/, /^(-\s*){3,}$/, /^(_\s*){3,}$/];
 
 export function parseBlocks(
   cursor: MarkdownLineCursor,
@@ -62,6 +65,9 @@ export function parseBlocks(
 
   while (cursor.index < cursor.lines.length) {
     const line = currentLine(cursor);
+
+    // Skip the phantom trailing element produced by `source.split("\n")` when
+    // the source ends with a newline.
     if (cursor.index === cursor.lines.length - 1 && line === "") {
       break;
     }
@@ -71,8 +77,9 @@ export function parseBlocks(
       continue;
     }
 
-    const indent = countIndent(line);
-    if (indent > baseIndent + maxContainerIndentSlack) {
+    // Line is indented past the budget for this nesting level — break so the
+    // caller can decide what to do with it.
+    if (countIndent(line) > baseIndent + maxContainerIndentSlack) {
       break;
     }
 
@@ -92,9 +99,8 @@ function readNextBlock(cursor: MarkdownLineCursor, baseIndent: number, options: 
     readBlockquote(cursor, baseIndent, options) ??
     readFencedCode(cursor, baseIndent) ??
     readContainerDirective(cursor, baseIndent) ??
-    readLeafDirective(cursor, baseIndent) ??
     readHeading(cursor, baseIndent) ??
-    readThematicBreak(cursor, baseIndent) ??
+    readDivider(cursor, baseIndent) ??
     readTable(cursor, baseIndent) ??
     readList(cursor, baseIndent, options) ??
     readRawHtmlBlock(cursor, baseIndent) ??
@@ -102,9 +108,17 @@ function readNextBlock(cursor: MarkdownLineCursor, baseIndent: number, options: 
   );
 }
 
+// --- Block readers, in dispatcher order ---
+// Each returns a parsed Block on a successful match (advancing the cursor past
+// every consumed line) or `null` to let the dispatcher try the next reader.
+// `readParagraph` is the catch-all and never returns null. Per-reader helpers
+// live immediately below their reader; helpers shared with other readers (and
+// with `shouldParagraphStop`) live in the low-level utilities section.
+
 function readBlockquote(cursor: MarkdownLineCursor, baseIndent: number, options: MarkdownOptions) {
   const firstLine = currentLine(cursor);
-  if (!hasBlockquoteMarker(firstLine, baseIndent)) {
+
+  if (!sliceIndentedContent(firstLine, baseIndent).startsWith(blockquoteMarker)) {
     return null;
   }
 
@@ -193,13 +207,14 @@ function readContainerDirective(cursor: MarkdownLineCursor, baseIndent: number) 
   while (cursor.index < cursor.lines.length) {
     const line = currentLine(cursor);
     const content = sliceIndentedContent(line, baseIndent);
-    cursor.index += 1;
 
     if (content.trim() === containerDirectiveClosingMarker) {
+      cursor.index += 1;
       break;
     }
 
     bodyLines.push(content);
+    cursor.index += 1;
   }
 
   return createDirectiveBlock({
@@ -219,21 +234,6 @@ function parseDirectiveAttributes(suffix: string) {
   return trimmed;
 }
 
-function readLeafDirective(cursor: MarkdownLineCursor, baseIndent: number) {
-  const line = currentLine(cursor);
-  const trimmed = sliceIndentedContent(line, baseIndent);
-
-  if (!leafDirectiveOpening.test(trimmed)) {
-    return null;
-  }
-
-  cursor.index += 1;
-  return createRawBlock({
-    originalType: "leafDirective",
-    source: trimmed,
-  });
-}
-
 function readHeading(cursor: MarkdownLineCursor, baseIndent: number) {
   const line = currentLine(cursor);
   const match = atxHeading.exec(sliceIndentedContent(line, baseIndent));
@@ -244,15 +244,15 @@ function readHeading(cursor: MarkdownLineCursor, baseIndent: number) {
 
   cursor.index += 1;
   return createHeadingBlock({
-    children: parseInlineMarkdown(match[2].replace(atxHeadingClosingSequence, "")),
+    children: parseInlineMarkdown(match[2].replace(headingClosingSequence, "")),
     depth: match[1].length as 1 | 2 | 3 | 4 | 5 | 6,
   });
 }
 
-function readThematicBreak(cursor: MarkdownLineCursor, baseIndent: number) {
+function readDivider(cursor: MarkdownLineCursor, baseIndent: number) {
   const trimmed = sliceIndentedContent(currentLine(cursor), baseIndent).trim();
 
-  if (!isThematicBreak(trimmed)) {
+  if (!isDivider(trimmed)) {
     return null;
   }
 
@@ -287,6 +287,8 @@ function readList(cursor: MarkdownLineCursor, baseIndent: number, options: Markd
       const candidateIndent = countIndent(candidate);
 
       if (isBlankLine(candidate)) {
+        // Stay inside the item only if the next non-blank line is still
+        // nested past `baseIndent` — otherwise the blank line ends the item.
         const nextIndex = findNextNonEmptyLineIndex(cursor.lines, cursor.index + 1);
 
         if (nextIndex < 0 || countIndent(cursor.lines[nextIndex] ?? "") <= baseIndent) {
@@ -303,6 +305,8 @@ function readList(cursor: MarkdownLineCursor, baseIndent: number, options: Markd
         break;
       }
 
+      // Sibling list marker at the list's base indent — yield to the outer
+      // loop so it can start the next item.
       if (candidateIndent === baseIndent && readListMarker(candidate, baseIndent)) {
         break;
       }
@@ -323,12 +327,65 @@ function readList(cursor: MarkdownLineCursor, baseIndent: number, options: Markd
   }
 
   return createListBlock({
-    items: items,
+    items,
     ordered: firstMarker.ordered,
     spread,
     start:
       firstMarker.ordered && options.preserveOrderedListStart ? (firstMarker.start ?? 1) : null,
   });
+}
+
+type ParsedListMarker = {
+  checked: boolean | null;
+  content: string;
+  contentIndent: number;
+  ordered: boolean;
+  start: number | null;
+};
+
+function readListMarker(line: string, baseIndent: number): ParsedListMarker | null {
+  const match = listMarker.exec(line);
+
+  if (!match || match[1].length !== baseIndent) {
+    return null;
+  }
+
+  const marker = match[2];
+  const ordered = orderedListMarker.test(marker);
+  const start = ordered ? Number(marker.slice(0, -1)) : null;
+  let content = match[3] ?? "";
+  let checked: boolean | null = null;
+
+  if (taskListMarker.test(content)) {
+    checked = content[1] === "x" || content[1] === "X";
+    content = content.slice(3);
+
+    if (content.startsWith(" ")) {
+      content = content.slice(1);
+    }
+  }
+
+  const separatorWidth = match[0].length - match[1].length - match[2].length - content.length;
+
+  return {
+    checked,
+    content,
+    contentIndent: baseIndent + match[2].length + separatorWidth,
+    ordered,
+    start,
+  };
+}
+
+function parseListItemChildren(lines: string[], options: MarkdownOptions) {
+  const blocks = parseBlocks({ index: 0, lines }, 0, options);
+
+  // An empty list item still gets one empty paragraph child so downstream
+  // consumers can treat every list item uniformly as a block container.
+  if (blocks.length > 0) {
+    return blocks;
+  }
+
+  return [createParagraphBlock({ children: [] })];
 }
 
 function readRawHtmlBlock(cursor: MarkdownLineCursor, baseIndent: number) {
@@ -375,81 +432,30 @@ function readParagraph(cursor: MarkdownLineCursor, baseIndent: number) {
   });
 }
 
-function parseListItemChildren(lines: string[], options: MarkdownOptions) {
-  const blocks = parseBlocks({ index: 0, lines }, 0, options);
-
-  if (blocks.length > 0) {
-    return blocks;
-  }
-
-  return [createParagraphBlock({ children: [] })];
-}
-
-function readListMarker(line: string, baseIndent: number): ParsedListMarker | null {
-  const match = listMarker.exec(line);
-
-  if (!match || match[1].length !== baseIndent) {
-    return null;
-  }
-
-  const marker = match[2];
-  const ordered = orderedListMarker.test(marker);
-  const start = ordered ? Number(marker.slice(0, -1)) : null;
-  let content = match[3] ?? "";
-  let checked: boolean | null = null;
-
-  if (taskListMarker.test(content)) {
-    checked = content[1] === "x" || content[1] === "X";
-    content = content.slice(3);
-
-    if (content.startsWith(" ")) {
-      content = content.slice(1);
-    }
-  }
-
-  const separatorWidth =
-    content.length > 0
-      ? match[0].length - match[1].length - match[2].length - content.length
-      : match[0].length - match[1].length - match[2].length;
-
-  return {
-    checked,
-    content,
-    contentIndent: baseIndent + match[2].length + separatorWidth,
-    ordered,
-    start,
-  };
-}
-
-function hasBlockquoteMarker(line: string, baseIndent: number) {
-  return sliceIndentedContent(line, baseIndent).startsWith(blockquoteMarker);
-}
-
-function sliceIndentedContent(line: string, indent: number) {
-  return line.slice(indent);
-}
-
-function sliceIndentedLine(line: string, contentIndent: number) {
-  const indent = countIndent(line);
-
-  if (indent >= contentIndent) {
-    return line.slice(contentIndent);
-  }
-
-  return line.trim() === "" ? "" : line.slice(Math.min(indent, contentIndent));
-}
-
-function isThematicBreak(line: string) {
+function shouldParagraphStop(line: string, content: string, baseIndent: number) {
+  // Paragraphs slurp lines until the next line could start any other block
+  // kind — keep this list aligned with the readers in `readNextBlock`.
+  const trimmed = content.trim();
   return (
-    thematicBreakAsterisk.test(line) ||
-    thematicBreakHyphen.test(line) ||
-    thematicBreakUnderscore.test(line)
+    content.startsWith(blockquoteMarker) ||
+    fencedCodeOpening.test(content) ||
+    containerDirectiveOpening.test(content) ||
+    atxHeading.test(content) ||
+    isDivider(trimmed) ||
+    looksLikeAlignmentRow(content) ||
+    readListMarker(line, baseIndent) !== null ||
+    looksLikeSimpleHtmlBlock(trimmed)
   );
 }
 
-function looksLikeSimpleHtmlBlock(line: string) {
-  return line.startsWith("<") && line.endsWith(">");
-}
+// --- Low-level line utilities ---
+// Block-specific line helpers for indent measurement, slicing, and line-shape
+// recognition. The recognition helpers (`isDivider`,
+// `looksLikeSimpleHtmlBlock`) are shared between their reader and the
+// paragraph-stop predicate, which is why they live here rather than adjacent
+// to a single reader. Cursor-bound helpers (`currentLine`, `isBlankLine`,
+// `sliceIndentedContent`) live in `./index` since they're shared with the
+// table parser.
 
 function countIndent(line: string) {
   let indent = 0;
@@ -461,26 +467,17 @@ function countIndent(line: string) {
   return indent;
 }
 
-function shouldParagraphStop(line: string, content: string, baseIndent: number) {
-  return (
-    content.startsWith(blockquoteMarker) ||
-    fencedCodeOpening.test(content) ||
-    containerDirectiveOpening.test(content) ||
-    leafDirectiveOpening.test(content) ||
-    atxHeading.test(content) ||
-    isThematicBreak(content.trim()) ||
-    looksLikeAlignmentRow(content) ||
-    readListMarker(line, baseIndent) !== null ||
-    looksLikeSimpleHtmlBlock(content.trim())
-  );
-}
+function sliceIndentedLine(line: string, contentIndent: number) {
+  // Continuation lines for list items may be less indented than the item's
+  // declared content column — accept them anyway, treating an under-indented
+  // non-blank line as if it were aligned at the column it actually has.
+  const indent = countIndent(line);
 
-function currentLine(cursor: MarkdownLineCursor) {
-  return cursor.lines[cursor.index] ?? "";
-}
+  if (indent >= contentIndent) {
+    return line.slice(contentIndent);
+  }
 
-function isBlankLine(line: string) {
-  return line.trim() === "";
+  return line.trim() === "" ? "" : line.slice(Math.min(indent, contentIndent));
 }
 
 function findNextNonEmptyLineIndex(lines: string[], start: number) {
@@ -491,4 +488,12 @@ function findNextNonEmptyLineIndex(lines: string[], start: number) {
   }
 
   return -1;
+}
+
+function isDivider(line: string) {
+  return dividerPatterns.some((pattern) => pattern.test(line));
+}
+
+function looksLikeSimpleHtmlBlock(line: string) {
+  return line.startsWith("<") && line.endsWith(">");
 }

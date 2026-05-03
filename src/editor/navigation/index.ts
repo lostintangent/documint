@@ -3,7 +3,7 @@
  * boundary keeps call sites semantic while splitting core line-based movement
  * from table-specific vertical overrides.
  */
-import type { CaretTarget, ViewportLayout } from "../layout";
+import type { CaretTarget, DocumentLayout } from "../layout";
 import { measureCaretTarget } from "../layout";
 import { setSelectionPoint, type EditorState } from "../state";
 import {
@@ -20,7 +20,7 @@ export function moveCaretHorizontally(state: EditorState, delta: -1 | 1, extendS
 
 export function moveCaretVertically(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   direction: -1 | 1,
   extendSelection = false,
 ) {
@@ -29,7 +29,7 @@ export function moveCaretVertically(
 
 export function moveCaretByViewport(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   direction: -1 | 1,
   extendSelection = false,
 ) {
@@ -38,7 +38,7 @@ export function moveCaretByViewport(
 
 export function moveCaretToLineBoundary(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   boundary: "Home" | "End",
   extendSelection = false,
 ) {
@@ -55,7 +55,7 @@ export function moveCaretToDocumentBoundary(
 
 function applyVerticalMotion(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
@@ -73,7 +73,7 @@ function applyVerticalMotion(
 
 function applyViewportMotion(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
@@ -106,7 +106,7 @@ function applyDocumentBoundaryMotion(
   );
 }
 
-function measureSelectionCaret(state: EditorState, layout: ViewportLayout) {
+function measureSelectionCaret(state: EditorState, layout: DocumentLayout) {
   return measureCaretTarget(layout, state.documentIndex, {
     regionId: state.selection.focus.regionId,
     offset: state.selection.focus.offset,

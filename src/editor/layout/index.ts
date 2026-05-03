@@ -4,34 +4,40 @@
 
 import type { Block } from "@/document";
 import type { EditorCommentState } from "../anchors";
-import type { CanvasRenderCache } from "../canvas/cache";
+import type { CanvasRenderCache } from "../canvas/lib/cache";
 import type { DocumentResources } from "@/types";
 import type { EditorSelectionPoint, EditorState } from "../state";
 
 export type {
-  DocumentCaretTarget as CaretTarget,
-  ViewportLayout,
-  DocumentHitTestResult as LayoutSelectionHit,
-  ViewportLayoutLine as LayoutLine,
+  DocumentLayout,
+  DocumentLayoutLine as LayoutLine,
   DocumentLayoutOptions as LayoutOptions,
   DocumentLineBoundary as LineBoundary,
   LayoutEstimate,
-} from "./document";
-export type { CanvasViewport, DocumentViewport } from "./viewport";
-export type { CanvasCheckboxHit, CanvasLinkHit, EditorHoverTarget } from "./hit-test";
-export type { InlineBounds } from "./image";
-export { measureInlineImageBounds } from "./image";
+} from "./measure";
+export type { CanvasViewport, ViewportLayout } from "./plan";
+export type {
+  CanvasCheckboxHit,
+  CanvasLinkHit,
+  DocumentCaretTarget as CaretTarget,
+  DocumentHitTestResult as LayoutSelectionHit,
+  EditorHoverTarget,
+  InlineBounds,
+} from "./query";
 
 export {
   // Build and estimate document geometry.
   createDocumentLayout,
   estimateLayout,
+} from "./measure";
 
+export {
   // Resolve lines within the prepared layout.
   findDocumentLayoutLineAtPoint as findLineAtPoint,
   findDocumentLayoutLineAtY as findLineAtY,
   findDocumentLayoutLineEntryForRegionOffset as findLineEntryForRegionOffset,
   findDocumentLayoutLineForRegionOffset as findLineForRegionOffset,
+  findDocumentLayoutBlockRange as findVisibleBlockRange,
   findDocumentLayoutLineRange as findVisibleLineRange,
   findNearestDocumentLayoutLineForRegion as findNearestLineInRegion,
 
@@ -39,16 +45,10 @@ export {
   hitTestDocumentLayout as resolveSelectionHit,
   measureDocumentCaretTarget as measureCaretTarget,
   measureCanvasLineOffsetLeft as measureLineOffsetLeft,
-} from "./document";
 
-export {
-  // Build the viewport-oriented document layout wrapper.
-  createDocumentViewport,
-} from "./viewport";
-
-export {
   // Resolve pointer and hover interactions against prepared layout.
   findBlockAncestor,
+  measureInlineImageBounds,
   resolveCaretVisualLeft,
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
@@ -62,40 +62,46 @@ export {
   resolveTaskCheckboxBounds,
   resolveTaskCheckboxHitAtPoint,
   resolveWordSelectionAtPoint,
-} from "./hit-test";
+} from "./query";
 
-import { createDocumentViewport, type CanvasViewport } from "./viewport";
-import type { DocumentLayoutOptions, ViewportLayout } from "./document";
-import { measureDocumentCaretTarget, buildDocumentBlockMap } from "./document";
+export {
+  // Build the viewport-oriented document layout wrapper.
+  createViewportLayout,
+} from "./plan";
+
+import { createViewportLayout, type CanvasViewport } from "./plan";
+import type { DocumentLayoutOptions, DocumentLayout } from "./measure";
+import { buildDocumentBlockMap } from "./measure";
 import {
+  measureDocumentCaretTarget,
   resolveCaretVisualLeft,
-  resolveDragFocusPoint,
+} from "./query/caret";
+import {
   resolveEditorHitAtPoint,
   resolveHitBelowLayout,
+  resolveDragFocusPoint,
+  resolveWordSelectionAtPoint,
+} from "./query/hit-test";
+import {
   resolveHoverTargetAtPoint,
   resolveTargetAtSelectionPoint,
-  resolveWordSelectionAtPoint,
   type EditorHoverTarget,
-} from "./hit-test";
+} from "./query/targets";
 
 /* Viewport types */
 
-export type ContainerLineBounds = {
-  bottom: number;
-  left: number;
-  right: number;
-  top: number;
-};
+export type { ContainerLineBounds } from "./lib/geometry";
+import type { ContainerLineBounds } from "./lib/geometry";
 
 export type EditorViewport = {
   height: number;
   top: number;
 };
 
-export type EditorViewportState = {
+export type EditorLayoutState = {
   estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
   regionBounds: Map<string, ContainerLineBounds>;
-  layout: ViewportLayout;
+  layout: DocumentLayout;
   paintHeight: number;
   paintTop: number;
   totalHeight: number;
@@ -115,18 +121,18 @@ export type SelectionHit = {
 
 /* Viewport composition */
 
-export function prepareViewport(
+export function prepareLayout(
   state: EditorState,
   options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width"> & EditorViewport,
   renderCache: CanvasRenderCache,
   resources: DocumentResources | null = null,
-): EditorViewportState {
+): EditorLayoutState {
   const viewport: CanvasViewport = {
     height: options.height,
     overscan: Math.max(160, options.height),
     top: options.top,
   };
-  const viewportLayout = createDocumentViewport(
+  const viewportLayout = createViewportLayout(
     state.documentIndex,
     options,
     viewport,
@@ -150,9 +156,9 @@ export function prepareViewport(
   };
 }
 
-export function resolveViewportSelectionHit(
+export function resolveLayoutSelectionHit(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   point: EditorPoint,
 ): SelectionHit | null {
   return (
@@ -161,52 +167,52 @@ export function resolveViewportSelectionHit(
   );
 }
 
-export function resolveViewportDragFocus(
+export function resolveLayoutDragFocus(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   point: EditorPoint,
   anchor: EditorSelectionPoint,
 ): SelectionHit | null {
   return resolveDragFocusPoint(viewport.layout, state, point, anchor);
 }
 
-export function resolveViewportWordSelection(
+export function resolveLayoutWordSelection(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   point: EditorPoint,
 ) {
   return resolveWordSelectionAtPoint(viewport.layout, state, point);
 }
 
-export function resolveViewportHoverTarget(
+export function resolveLayoutHoverTarget(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   point: EditorPoint,
   liveCommentRanges: EditorCommentState["liveRanges"],
 ): EditorHoverTarget | null {
   return resolveHoverTargetAtPoint(viewport.layout, state, point, liveCommentRanges);
 }
 
-export function resolveViewportTargetAtSelection(
+export function resolveLayoutTargetAtSelection(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   selectionPoint: EditorSelectionPoint,
   liveCommentRanges: EditorCommentState["liveRanges"],
 ): EditorHoverTarget | null {
   return resolveTargetAtSelectionPoint(viewport.layout, state, selectionPoint, liveCommentRanges);
 }
 
-export function measureViewportCaretTarget(
+export function measureLayoutCaretTarget(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ) {
   return measureDocumentCaretTarget(viewport.layout, state.documentIndex, point);
 }
 
-export function measureViewportVisualCaretTarget(
+export function measureLayoutVisualCaretTarget(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ) {
   const caret = measureDocumentCaretTarget(viewport.layout, state.documentIndex, point);

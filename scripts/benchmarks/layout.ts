@@ -1,6 +1,6 @@
 import { createDocumentIndex } from "@/editor/state";
-import { createCanvasRenderCache } from "@/editor/canvas/cache";
-import { createDocumentViewport } from "@/editor/layout";
+import { createCanvasRenderCache } from "@/editor/canvas/lib/cache";
+import { createDocumentLayout, createViewportLayout } from "@/editor/layout";
 import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
@@ -28,10 +28,10 @@ export function createLayoutBenchmarks(
   return [
     runBenchmark(
       "layout_canvas",
-      20,
+      100,
       budgets.canvas,
       () =>
-        void createDocumentViewport(
+        void createViewportLayout(
           longRuntime,
           {
             width: 420,
@@ -47,10 +47,10 @@ export function createLayoutBenchmarks(
     ),
     runBenchmark(
       "layout_canvas_xlarge",
-      10,
+      50,
       budgets.canvas_xlarge,
       () =>
-        void createDocumentViewport(
+        void createViewportLayout(
           xlargeRuntime,
           {
             width: 420,
@@ -66,10 +66,10 @@ export function createLayoutBenchmarks(
     ),
     runBenchmark(
       "layout_canvas_huge",
-      6,
+      30,
       budgets.canvas_huge,
       () =>
-        void createDocumentViewport(
+        void createViewportLayout(
           hugeRuntime,
           {
             width: 420,
@@ -83,9 +83,9 @@ export function createLayoutBenchmarks(
           renderCache,
         ),
     ),
-    runBenchmark("layout_scroll", 20, budgets.scroll, () => {
+    runBenchmark("layout_scroll", 100, budgets.scroll, () => {
       for (const top of scrollOffsets) {
-        void createDocumentViewport(
+        void createViewportLayout(
           longRuntime,
           {
             width: 420,
@@ -101,10 +101,10 @@ export function createLayoutBenchmarks(
     }),
     runBenchmark(
       "layout_scroll_step",
-      50,
+      200,
       budgets.scroll_step,
       () =>
-        void createDocumentViewport(
+        void createViewportLayout(
           longRuntime,
           {
             width: 420,
@@ -117,9 +117,9 @@ export function createLayoutBenchmarks(
           renderCache,
         ),
     ),
-    runBenchmark("layout_scroll_xlarge", 10, budgets.scroll_xlarge, () => {
+    runBenchmark("layout_scroll_xlarge", 50, budgets.scroll_xlarge, () => {
       for (const top of scrollOffsets) {
-        void createDocumentViewport(
+        void createViewportLayout(
           xlargeRuntime,
           {
             width: 420,
@@ -135,10 +135,10 @@ export function createLayoutBenchmarks(
     }),
     runBenchmark(
       "layout_scroll_step_xlarge",
-      20,
+      100,
       budgets.scroll_step_xlarge,
       () =>
-        void createDocumentViewport(
+        void createViewportLayout(
           xlargeRuntime,
           {
             width: 420,
@@ -151,9 +151,9 @@ export function createLayoutBenchmarks(
           renderCache,
         ),
     ),
-    runBenchmark("layout_scroll_huge", 6, budgets.scroll_huge, () => {
+    runBenchmark("layout_scroll_huge", 30, budgets.scroll_huge, () => {
       for (const top of scrollOffsets) {
-        void createDocumentViewport(
+        void createViewportLayout(
           hugeRuntime,
           {
             width: 420,
@@ -169,10 +169,10 @@ export function createLayoutBenchmarks(
     }),
     runBenchmark(
       "layout_scroll_step_huge",
-      10,
+      50,
       budgets.scroll_step_huge,
       () =>
-        void createDocumentViewport(
+        void createViewportLayout(
           hugeRuntime,
           {
             width: 420,
@@ -184,6 +184,37 @@ export function createLayoutBenchmarks(
           [],
           renderCache,
         ),
+    ),
+    // Unsliced full-document layout. Exercises the per-region bounds
+    // bookkeeping at full-doc scale so we can spot regressions in that
+    // path; the viewport benchmarks above only ever build the visible
+    // slice and won't expose O(N) → O(N²) drift in region bookkeeping.
+    runBenchmark(
+      "layout_full_document_long",
+      30,
+      budgets.full_document_long,
+      () =>
+        void createDocumentLayout(longRuntime, {
+          width: 420,
+        }),
+    ),
+    runBenchmark(
+      "layout_full_document_xlarge",
+      20,
+      budgets.full_document_xlarge,
+      () =>
+        void createDocumentLayout(xlargeRuntime, {
+          width: 420,
+        }),
+    ),
+    runBenchmark(
+      "layout_full_document_huge",
+      10,
+      budgets.full_document_huge,
+      () =>
+        void createDocumentLayout(hugeRuntime, {
+          width: 420,
+        }),
     ),
   ];
 }

@@ -8,7 +8,7 @@ import {
   type EditorCommentState,
   type EditorInline,
   type EditorState,
-  type EditorViewportState,
+  type EditorLayoutState,
   type InlineBounds,
   type NormalizedEditorSelection,
 } from "@/editor";
@@ -52,7 +52,7 @@ type UseCursorOptions = {
   canShowTableLeaf: boolean;
   commentState: EditorCommentState;
   editorState: EditorState;
-  editorViewportState: LazyRefHandle<EditorViewportState>;
+  editorViewportState: LazyRefHandle<EditorLayoutState>;
   layoutWidth: number;
   resources: DocumentResources | null;
   scrollContentHeight: number;
@@ -304,7 +304,7 @@ function resolveCursorLeaf({
   commentState: EditorCommentState;
   normalizedSelection: NormalizedEditorSelection;
   state: EditorState;
-  viewport: EditorViewportState | null;
+  viewport: EditorLayoutState | null;
 }): CursorLeaf | null {
   if (!viewport) {
     return null;
@@ -336,7 +336,7 @@ function resolveCursorLeaf({
   );
 }
 
-function resolveTableLeaf(state: EditorState, viewport: EditorViewportState): TableLeaf | null {
+function resolveTableLeaf(state: EditorState, viewport: EditorLayoutState): TableLeaf | null {
   const focus = state.selection.focus;
   const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
   const tableCellPosition = focusedRegion
@@ -372,7 +372,7 @@ function resolveTableLeaf(state: EditorState, viewport: EditorViewportState): Ta
     : null;
 }
 
-function resolveRegionTextLeft(viewport: EditorViewportState, regionId: string) {
+function resolveRegionTextLeft(viewport: EditorLayoutState, regionId: string) {
   const firstLine = viewport.layout.lines.find((line) => line.regionId === regionId);
 
   return firstLine ? firstLine.left : null;
@@ -380,7 +380,7 @@ function resolveRegionTextLeft(viewport: EditorViewportState, regionId: string) 
 
 function resolveInsertionLeaf(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
 ): InsertionLeaf | null {
   const focus = state.selection.focus;
   const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
@@ -483,7 +483,7 @@ function isCaretVisibleAtScrollTop(
 
 function resolveImageAtCursor(
   state: EditorState,
-  viewport: EditorViewportState | null,
+  viewport: EditorLayoutState | null,
   normalizedSelection: NormalizedEditorSelection,
   resources: DocumentResources,
 ): ImageAtCursor | null {

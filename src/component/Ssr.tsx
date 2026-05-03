@@ -84,7 +84,7 @@ function renderSsrBlock(block: Block): ReactNode {
           </div>
         </div>
       );
-    case "thematicBreak":
+    case "divider":
       return <hr className="preview-block preview-block-rule" key={block.id} />;
     case "directive":
       return (
@@ -95,7 +95,7 @@ function renderSsrBlock(block: Block): ReactNode {
           {block.body}
         </pre>
       );
-    case "unsupported":
+    case "raw":
       return (
         <pre className="preview-block preview-block-unsupported" key={block.id}>
           {block.source}
@@ -115,7 +115,7 @@ function renderSsrListItem(block: Extract<Block, { type: "listItem" }>) {
 function renderSsrInlineNodes(nodes: Inline[]): ReactNode {
   return nodes.map((node) => {
     switch (node.type) {
-      case "break":
+      case "lineBreak":
         return <br key={node.id} />;
       case "image":
         return (
@@ -127,7 +127,7 @@ function renderSsrInlineNodes(nodes: Inline[]): ReactNode {
             </span>
           </span>
         );
-      case "inlineCode":
+      case "code":
         return (
           <code className="preview-inline preview-inline-code" key={node.id}>
             {node.code}
@@ -141,7 +141,7 @@ function renderSsrInlineNodes(nodes: Inline[]): ReactNode {
             {renderMarkedText(node.text, node.marks)}
           </span>
         );
-      case "unsupported":
+      case "raw":
         return (
           <span className="preview-inline preview-inline-unsupported" key={node.id}>
             {node.source}

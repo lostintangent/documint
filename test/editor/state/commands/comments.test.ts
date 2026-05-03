@@ -7,7 +7,7 @@ import {
   replyToThread,
   resolveThread,
 } from "@/editor/state";
-import { setup, getRegion } from "../helpers";
+import { setup, getRegion } from "../../helpers";
 
 function stateWithThread() {
   const state = setup("Hello world\n");

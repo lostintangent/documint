@@ -1,3 +1,8 @@
+## 🗓️ v0.0.8 (05-03-26)
+
+- Added support for document dividers (`---`)
+- Added support for pressing `SHIFT+ENTER` in order to create "soft breaks" within a paragraph/heading/list item.
+
 ## 🗓️ v0.0.7 (04-30-26)
 
 - Added support for copying and pasting content in a semantic/structural way.

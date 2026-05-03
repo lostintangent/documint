@@ -1,19 +1,27 @@
 # Layout
 
-This sub-system owns editor geometry. It turns `EditorModel` into exact line, region, and block positions for the visible viewport slice, while using cheap whole-document estimation for scrolling and viewport planning. The core invariant is that visible content always uses exact layout — estimation exists to avoid full-document layout cost, not to weaken on-screen correctness. When changing spacing, typography, or block geometry, both the exact path (`document.ts`) and the estimation path (`viewport.ts`) must stay in sync. Measurement results are cached at multiple layers with cache keys that include text hashes, image resource signatures, and layout options — so any change to measurement inputs must also update the relevant cache key.
+This sub-system owns editor geometry. It turns `DocumentIndex` into pixel-positioned line, region, and block geometry for what's on screen, while using cheap whole-document estimation for scrolling and viewport planning.
 
-### Key Files
+The core invariant is that visible content always uses exact layout — estimation exists to avoid full-document layout cost, not to weaken on-screen correctness. The estimate path and the exact path walk blocks the same way and apply the same gap policy; they must stay in sync. Measurement results are cached at multiple layers with cache keys that include text hashes, image resource signatures, and layout options, so any change to measurement inputs must also update the relevant cache key.
 
-- `index.ts` - Owns the public layout API. Renames internal types for a cleaner surface (e.g. `DocumentCaretTarget` → `CaretTarget`).
+The pipeline is: `DocumentIndex` → `plan/` decides what to build → `measure/` builds it → `query/` answers questions about the result.
 
-- `document.ts` - Owns exact local layout for a concrete region set: line positions, region extents, block extents, caret targets, and the shared spacing policy.
+The three main types layer in the same direction. `measure/` produces `DocumentLayout` — bare positioned geometry. `plan/` wraps it as `ViewportLayout` — geometry plus viewport-aware metadata (total height, off-screen region estimation). `index.ts` packages that as `EditorLayoutState` — the type the editor consumes, carrying paint-ready metadata on top.
 
-- `viewport.ts` - Owns viewport-aware layout orchestration: cheap whole-document height estimation, visible slice selection with overscan, exact layout for that slice, and coordinate shifting between viewport and document space.
+### Caching
 
-- `text.ts` - Owns text typography and measurement: heading font scale, block-specific font rules, line wrapping, and canvas-based text measurement.
+Layout is the most expensive thing the editor does per keystroke, so the work is heavily cached in a per-editor `CanvasRenderCache` (defined in `canvas/lib/cache.ts`). The cache holds prepared text segments, measured lines, line boundaries, container heights, and viewport plans — keyed so that unchanged regions skip rehashing on edits. Region identity is reference-stable through the `{...region, start, end}` shifts the indexer makes, which is what keeps cache hit rates high during typing. Any change to measurement inputs must update the relevant cache key, or stale geometry will leak across frames.
 
-- `image.ts` - Owns inline image sizing policy: fallback dimensions during loading, aspect-ratio-preserving scaling, and image signatures for cache invalidation.
+Above the cache, the `EditorLayoutState` itself is reused across cheap paint frames. The layout pipeline runs only when invalidated — document edits, scroll, or surface resize. Selection moves, animation ticks, and caret blinks skip it entirely. See [`src/component`](../../component/AGENTS.md) for the scheduler.
 
-- `table.ts` - Owns exact table geometry: uniform column widths, row height harmonization across cells, and cell-level measurement delegation.
+### Key Areas
 
-- `hit-test.ts` - Owns pointer and caret targeting against prepared layout geometry, including link and task checkbox hit detection and comment range integration for hover targets.
+- `index.ts` - Owns the public layout API and `prepareLayout`, the top-level orchestrator that packages a planner result into the `EditorLayoutState` the rest of the editor consumes.
+
+- `lib/` - Owns cross-cutting building blocks: layout options and defaults, the spacing/gap policy that both build paths share, and the small set of rect/extent types every folder reuses. No subsystem logic — just shapes and constants.
+
+- `measure/` - Owns the exact-layout pass: given a `DocumentIndex` slice, walks blocks in document order and produces a positioned `DocumentLayout` with line, region, and block geometry. Per-block-type measurement primitives (text typography and wrapping, image sizing, table cell measurement) sit alongside the composer that orchestrates them.
+
+- `plan/` - Owns viewport-aware orchestration: cheap whole-document height estimation, visible slice selection with overscan and pinned regions, exact composition for that slice, and coordinate shifting into document space. This is the planner the editor drives each frame.
+
+- `query/` - Owns read operations against a prepared `DocumentLayout`: pointer hit-testing, caret target measurement, visible-range lookups, link/hover/checkbox targeting, and the visual geometry helpers shared with paint and navigation.

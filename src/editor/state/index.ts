@@ -10,6 +10,7 @@ export {
 
 // Types
 export type {
+  EditorBlock,
   EditorInline,
   EditorListItemMarker,
   DocumentIndex,
@@ -19,14 +20,25 @@ export type {
 
 // Selection
 export {
+  createBlockPrimaryRegionTarget,
+  createRegionTarget,
   createRootPrimaryRegionTarget,
+  firstInFlowRegionOfRoot,
   getSelectionContext,
   getSelectionMarks,
+  isContainerBlock,
+  isInertBlock,
+  nextBlockInFlow,
+  nextRegionInFlow,
   normalizeSelection,
+  previousBlockInFlow,
+  previousRegionInFlow,
   resolveImageAtSelection,
   resolveRegionByPath,
   resolveTableCellRegion,
   resolveSelectionTarget,
+  targetNextRegionInFlow,
+  targetPreviousRegionInFlow,
 } from "./selection";
 
 export type {

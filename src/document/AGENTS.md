@@ -4,7 +4,7 @@ This sub-system owns the closed, immutable, format-agnostic semantic document mo
 
 The document layer also owns the **anchor algebra**: the content-addressable position vocabulary and primitives that comments, presence cursors, and selection rebase compose into their own policies.
 
-### Key Files
+### Key Areas
 
 - `types.ts` - Owns the semantic vocabulary: `Document`, block nodes, inline nodes, marks, and related model types.
 
@@ -12,9 +12,7 @@ The document layer also owns the **anchor algebra**: the content-addressable pos
 
 - `build.ts` - Owns semantic node builders and rebuild helpers that keep semantic node shape and derived fields such as `plainText` correct for core node families.
 
-- `visit.ts` - Owns typed semantic tree traversal for blocks, inline nodes, and table-cell text containers.
-
-- `query.ts` - Owns small semantic queries built on the shared walker, such as image discovery and block lookup.
+- `visit.ts` - Owns typed semantic tree traversal: visitor types and walkers for blocks, inline nodes, and table cells, plus small queries built on the shared walker (`findBlockById`, `mapBlockTree`).
 
 - `anchors.ts` - Owns the anchor algebra: the content-addressable position vocabulary, container discovery, and fingerprint capture/search/verification primitives consumed by comments, presence, and selection rebase.
 

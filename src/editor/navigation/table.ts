@@ -7,7 +7,7 @@ import {
   resolveCaretVisualLeft,
   resolveEditorHitAtPoint,
   type CaretTarget,
-  type ViewportLayout,
+  type DocumentLayout,
 } from "../layout";
 import { resolveTableCellRegion, setSelectionPoint, type EditorState } from "../state";
 
@@ -17,7 +17,7 @@ const HIT_TEST_X_NUDGE = 1;
 
 export function moveCaretVerticallyInTable(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   caret: CaretTarget,
   direction: -1 | 1,
   extendSelection: boolean,

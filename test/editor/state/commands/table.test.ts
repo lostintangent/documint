@@ -9,22 +9,13 @@ import {
   insertTableColumn,
   insertTableRow,
 } from "@/editor/state";
-import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
-import { parseDocument, serializeDocument } from "@/markdown";
-import { getRegion, placeAt, setup, toMarkdown } from "../helpers";
+import { getRegion, placeAt, setup, toMarkdown } from "../../helpers";
 
 test("moves to the next and previous table cell with tab and shift-tab", () => {
-  let state = createEditorState(parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
-  const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
+  let state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n");
+  const alpha = getRegion(state, "alpha");
 
-  if (!alpha) {
-    throw new Error("Expected alpha table cell");
-  }
-
-  state = setSelection(state, {
-    regionId: alpha.id,
-    offset: 2,
-  });
+  state = placeAt(state, alpha, 2);
 
   const nextState = indent(state);
   const previousState = nextState ? dedent(nextState) : null;
@@ -38,9 +29,7 @@ test("moves to the next and previous table cell with tab and shift-tab", () => {
 });
 
 test("moves across table rows with tab and shift-tab", () => {
-  let state = createEditorState(
-    parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |\n"),
-  );
+  let state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |\n");
   const beta = state.documentIndex.regions.find((container) => container.text === "beta");
   const gamma = state.documentIndex.regions.find((container) => container.text === "gamma");
 
@@ -49,16 +38,10 @@ test("moves across table rows with tab and shift-tab", () => {
   }
 
   const nextState = indent(
-    setSelection(state, {
-      regionId: beta.id,
-      offset: 1,
-    }),
+    placeAt(state, beta, 1),
   );
   const previousState = dedent(
-    setSelection(state, {
-      regionId: gamma.id,
-      offset: 1,
-    }),
+    placeAt(state, gamma, 1),
   );
 
   expect(nextState?.selection.focus.regionId).toBe(gamma.id);
@@ -68,22 +51,15 @@ test("moves across table rows with tab and shift-tab", () => {
 });
 
 test("adds a new empty row when tabbing from the last table cell", () => {
-  let state = createEditorState(parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
-  const beta = state.documentIndex.regions.find((container) => container.text === "beta");
+  let state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n");
+  const beta = getRegion(state, "beta");
 
-  if (!beta) {
-    throw new Error("Expected last table cell");
-  }
-
-  state = setSelection(state, {
-    regionId: beta.id,
-    offset: beta.text.length,
-  });
+  state = placeAt(state, beta, beta.text.length);
 
   const nextState = indent(state);
 
   expect(nextState).toBeDefined();
-  expect(serializeDocument(createDocumentFromEditorState(nextState!))).toBe(
+  expect(toMarkdown(nextState!)).toBe(
     "| A | B |\n| --- | --- |\n| alpha | beta |\n|  |  |\n",
   );
 
@@ -96,17 +72,10 @@ test("adds a new empty row when tabbing from the last table cell", () => {
 });
 
 test("does not leave the table when shift-tabbing from the first cell", () => {
-  let state = createEditorState(parseDocument("| A | B |\n| --- | --- |\n| alpha | beta |\n"));
-  const headerA = state.documentIndex.regions.find((container) => container.text === "A");
+  let state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n");
+  const headerA = getRegion(state, "A");
 
-  if (!headerA) {
-    throw new Error("Expected first table cell");
-  }
-
-  state = setSelection(state, {
-    regionId: headerA.id,
-    offset: 0,
-  });
+  state = placeAt(state, headerA, 0);
 
   const nextState = dedent(state);
 

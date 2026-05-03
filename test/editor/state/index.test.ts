@@ -37,7 +37,7 @@ Paragraph with [link](https://example.com), \`code\`, and ![alt text](https://ex
     "text",
     "text",
     "text",
-    "inlineCode",
+    "code",
     "text",
     "image",
     "text",

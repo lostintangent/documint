@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
-import { createCanvasRenderCache, prepareViewport, resolvePresenceViewport } from "@/editor";
+import { createCanvasRenderCache, prepareLayout, resolvePresenceViewport } from "@/editor";
 import {
   resolvePresenceCursors,
   type EditorPresence,
   type EditorPresenceViewport,
 } from "@/editor/anchors";
-import { createEditorState } from "@/editor/state";
 import type { EditorRegion } from "@/editor/state";
-import { parseDocument } from "@/markdown";
+import { setup } from "../helpers";
 
 function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
   if (!viewport || viewport.status === "unresolved") return null;
@@ -15,14 +14,12 @@ function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
 }
 
 test("resolves unique prefix-only and suffix-only presence cursors", () => {
-  const state = createEditorState(
-    parseDocument(`# Sample
+  const state = setup(`# Sample
 
 Markdown is the persistence boundary.
 
 Only the active region reveals source-like editing affordances.
-`),
-  );
+`);
   const [afterCursor, beforeCursor] = resolvePresenceCursors(state.documentIndex, [
     {
       cursor: {
@@ -59,12 +56,10 @@ Only the active region reveals source-like editing affordances.
 });
 
 test("uses prefix and suffix together to disambiguate repeated text", () => {
-  const state = createEditorState(
-    parseDocument(`alpha beta gamma
+  const state = setup(`alpha beta gamma
 
 alpha beta delta
-`),
-  );
+`);
   const [cursor] = resolvePresenceCursors(state.documentIndex, [
     {
       cursor: {
@@ -87,7 +82,7 @@ alpha beta delta
 });
 
 test("preserves exact presence anchor text when matching", () => {
-  const state = createEditorState(parseDocument("alpha beta\n"));
+  const state = setup("alpha beta\n");
   const [exactCursor, trimmedCursor] = resolvePresenceCursors(state.documentIndex, [
     {
       cursor: {
@@ -110,12 +105,10 @@ test("preserves exact presence anchor text when matching", () => {
 });
 
 test("leaves ambiguous or missing targets unresolved", () => {
-  const state = createEditorState(
-    parseDocument(`repeat
+  const state = setup(`repeat
 
 repeat
-`),
-  );
+`);
   const [ambiguousCursor, missingCursor] = resolvePresenceCursors(state.documentIndex, [
     {
       cursor: {
@@ -139,10 +132,10 @@ repeat
 
 test("resolves presence viewport state", () => {
   const renderCache = createCanvasRenderCache();
-  const state = createEditorState(parseDocument(createPresenceViewportFixture()));
+  const state = setup(createPresenceViewportFixture());
   const firstRegion = requireRegion(state.documentIndex.regions[0]);
   const lastRegion = requireRegion(state.documentIndex.regions.at(-1));
-  const topViewport = prepareViewport(
+  const topViewport = prepareLayout(
     state,
     {
       height: 120,
@@ -160,7 +153,7 @@ test("resolves presence viewport state", () => {
   expect(belowPresence?.viewport?.status).toBe("below");
   expect(scrollTopOf(belowPresence?.viewport)).toBeGreaterThan(0);
 
-  const lowerViewport = prepareViewport(
+  const lowerViewport = prepareLayout(
     state,
     {
       height: 120,
@@ -179,8 +172,8 @@ test("resolves presence viewport state", () => {
 
 test("keeps unresolved presence visible without a scroll target", () => {
   const renderCache = createCanvasRenderCache();
-  const state = createEditorState(parseDocument(createPresenceViewportFixture()));
-  const viewport = prepareViewport(
+  const state = setup(createPresenceViewportFixture());
+  const viewport = prepareLayout(
     state,
     {
       height: 120,

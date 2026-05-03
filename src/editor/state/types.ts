@@ -28,22 +28,20 @@ export type HistoryEntry = {
   selection: EditorSelection;
 };
 
-export type ActionSelection = EditorSelection | SelectionTarget;
-
 export type EditorStateAction =
   | {
       kind: "replace-block";
       block: Block;
       blockId: string;
       listItemInsertedPath?: string;
-      selection?: ActionSelection | null;
+      selection?: SelectionTarget | null;
     }
   | {
       kind: "splice-blocks";
       blocks: Block[];
       count?: number;
       rootIndex: number;
-      selection?: ActionSelection | null;
+      selection?: SelectionTarget | null;
     }
   | {
       kind: "splice-text";
@@ -52,7 +50,7 @@ export type EditorStateAction =
     }
   | {
       kind: "splice-fragment";
-      fragment: Block[];
+      blocks: Block[];
       selection: EditorSelection;
     }
   | {

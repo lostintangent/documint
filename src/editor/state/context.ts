@@ -9,23 +9,27 @@ import {
   type TableBlock,
 } from "@/document";
 import type { DocumentIndex, EditorRegion } from "./index/types";
-import type { EditorSelection } from "./selection";
+import { normalizeSelection, type EditorSelection } from "./selection";
 
-// Block tree context resolvers. Given an DocumentIndex and selection, resolves
-// the structural context (list item, blockquote, table cell) needed by commands.
+// Semantic command context resolution. This module answers "what structural
+// editing context is active at the current selection?" so commands can stay
+// thin and route policy into the action layer. It also owns a small set of
+// shared structural lookup/build helpers that multiple action modules reuse.
 
-export type RootTextBlockContext = {
+export type CommandTextContextFacts = {
+  atEnd: boolean;
+  atStart: boolean;
+  empty: boolean;
+  offset: number;
+};
+
+export type RootTextBlockContext = CommandTextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
   region: DocumentIndex["regions"][number];
   rootIndex: number;
 };
 
-export type BlockquoteContext = {
-  quote: Extract<Block, { type: "blockquote" }>;
-  rootIndex: number;
-};
-
-export type BlockquoteTextBlockContext = {
+export type BlockquoteTextBlockContext = CommandTextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
   blockChildIndices: number[];
   childIndex: number;
@@ -34,18 +38,49 @@ export type BlockquoteTextBlockContext = {
   rootIndex: number;
 };
 
-export type CodeBlockCommandContext = {
+export type CodeBlockCommandContext = CommandTextContextFacts & {
   region: EditorRegion;
   rootIndex: number;
 };
 
+export type TableCellCommandContext = CommandTextContextFacts & TableCellContext;
+
 export type BlockCommandContext =
   | ({ kind: "code" } & CodeBlockCommandContext)
-  | ({ kind: "tableCell" } & TableCellContext)
+  | ({ kind: "tableCell" } & TableCellCommandContext)
   | ({ kind: "listItem" } & ListItemContext)
   | ({ kind: "blockquoteTextBlock" } & BlockquoteTextBlockContext)
   | ({ kind: "rootTextBlock" } & RootTextBlockContext)
   | { kind: "unsupported" };
+
+export type DeleteDirection = "backward" | "forward";
+
+export type DeleteCommandContext =
+  | ({
+      atBoundary: boolean;
+      direction: DeleteDirection;
+      nextRoot: Block | null;
+      previousRoot: Block | null;
+    } & RootTextBlockContext & { kind: "rootTextBlock" })
+  | ({
+      atBoundary: boolean;
+      direction: DeleteDirection;
+      nextItem: ListItemBlock | null;
+      nextRoot: Block | null;
+      previousItem: ListItemBlock | null;
+      previousRoot: Block | null;
+    } & ListItemContext & { kind: "listItem" })
+  | ({
+      atBoundary: boolean;
+      direction: DeleteDirection;
+      nextSibling: Block | null;
+      previousSibling: Block | null;
+    } & BlockquoteTextBlockContext & { kind: "blockquoteTextBlock" })
+  | {
+      atBoundary: false;
+      direction: DeleteDirection;
+      kind: "unsupported";
+    };
 
 export function resolveBlockCommandContext(
   documentIndex: DocumentIndex,
@@ -60,14 +95,23 @@ export function resolveBlockCommandContext(
   if (region.blockType === "code") {
     const blockEntry = documentIndex.blockIndex.get(region.blockId);
     return blockEntry
-      ? { kind: "code", region, rootIndex: blockEntry.rootIndex }
+      ? {
+          kind: "code",
+          region,
+          rootIndex: blockEntry.rootIndex,
+          ...resolveCommandTextContextFacts(documentIndex, region, selection),
+        }
       : { kind: "unsupported" };
   }
 
   const tableCellContext = resolveTableCellContext(documentIndex, region.id);
 
   if (tableCellContext) {
-    return { kind: "tableCell", ...tableCellContext };
+    return {
+      kind: "tableCell",
+      ...tableCellContext,
+      ...resolveCommandTextContextFacts(documentIndex, region, selection),
+    };
   }
 
   const listItemContext = resolveListItemContext(documentIndex, selection);
@@ -90,6 +134,56 @@ export function resolveBlockCommandContext(
 
   return { kind: "unsupported" };
 }
+
+export function resolveDeleteCommandContext(
+  documentIndex: DocumentIndex,
+  selection: EditorSelection,
+  direction: DeleteDirection,
+): DeleteCommandContext {
+  const ctx = resolveBlockCommandContext(documentIndex, selection);
+  const atBoundary =
+    ctx.kind === "unsupported"
+      ? false
+      : direction === "backward"
+        ? ctx.atStart
+        : ctx.atEnd;
+
+  switch (ctx.kind) {
+    case "rootTextBlock":
+      return {
+        ...ctx,
+        kind: "rootTextBlock",
+        direction,
+        atBoundary,
+        previousRoot: documentIndex.document.blocks[ctx.rootIndex - 1] ?? null,
+        nextRoot: documentIndex.document.blocks[ctx.rootIndex + 1] ?? null,
+      };
+    case "listItem":
+      return {
+        ...ctx,
+        kind: "listItem",
+        direction,
+        atBoundary,
+        previousItem: ctx.list.items[ctx.itemIndex - 1] ?? null,
+        nextItem: ctx.list.items[ctx.itemIndex + 1] ?? null,
+        previousRoot: documentIndex.document.blocks[ctx.rootIndex - 1] ?? null,
+        nextRoot: documentIndex.document.blocks[ctx.rootIndex + 1] ?? null,
+      };
+    case "blockquoteTextBlock":
+      return {
+        ...ctx,
+        kind: "blockquoteTextBlock",
+        direction,
+        atBoundary,
+        previousSibling: ctx.quote.children[ctx.childIndex - 1] ?? null,
+        nextSibling: ctx.quote.children[ctx.childIndex + 1] ?? null,
+      };
+    default:
+      return { kind: "unsupported", direction, atBoundary: false };
+  }
+}
+
+// --- Shared structural lookups ---
 
 export function findRootIndex(documentIndex: DocumentIndex, blockId: string) {
   const blockEntry = documentIndex.blockIndex.get(blockId);
@@ -162,37 +256,11 @@ export function resolveRootTextBlockContext(
   }
 
   return {
+    ...resolveCommandTextContextFacts(documentIndex, region, selection),
     block,
     region,
     rootIndex,
   };
-}
-
-export function resolveBlockquoteContext(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): BlockquoteContext | null {
-  const region = documentIndex.regionIndex.get(selection.anchor.regionId);
-
-  if (!region) {
-    return null;
-  }
-
-  const paragraphEntry = documentIndex.blockIndex.get(region.blockId);
-  const quoteEntry = findAncestorBlockEntry(
-    documentIndex,
-    paragraphEntry?.id ?? null,
-    "blockquote",
-  );
-
-  if (!quoteEntry) {
-    return null;
-  }
-
-  const rootIndex = quoteEntry.rootIndex;
-  const rootBlock = documentIndex.document.blocks[rootIndex];
-
-  return rootBlock?.type === "blockquote" ? { quote: rootBlock, rootIndex } : null;
 }
 
 export function resolveBlockquoteTextBlockContext(
@@ -227,6 +295,7 @@ export function resolveBlockquoteTextBlockContext(
   }
 
   return {
+    ...resolveCommandTextContextFacts(documentIndex, region, selection),
     block,
     blockChildIndices: parseBlockChildIndices(blockEntry.path),
     childIndex,
@@ -240,7 +309,7 @@ export function resolveBlockById(documentIndex: DocumentIndex, blockId: string) 
   return findBlockById(documentIndex.document.blocks, blockId);
 }
 
-export type ListItemContext = {
+export type ListItemContext = CommandTextContextFacts & {
   region: DocumentIndex["regions"][number];
   item: ListItemBlock;
   itemChildIndices: number[];
@@ -304,6 +373,7 @@ export function resolveListItemContext(
       : -1;
 
   return {
+    ...resolveCommandTextContextFacts(documentIndex, region, selection),
     region,
     item,
     itemChildIndices: parseBlockChildIndices(itemEntry.path),
@@ -323,6 +393,7 @@ export function resolveListItemContext(
 
 export type TableCellContext = {
   cellIndex: number;
+  region: DocumentIndex["regions"][number];
   rootIndex: number;
   rowIndex: number;
   table: TableBlock;
@@ -349,11 +420,31 @@ export function resolveTableCellContext(
 
   return {
     cellIndex: tableCellPosition.cellIndex,
+    region,
     rootIndex: tableEntry.rootIndex,
     rowIndex: tableCellPosition.rowIndex,
     table,
   };
 }
+
+function resolveCommandTextContextFacts(
+  documentIndex: DocumentIndex,
+  region: DocumentIndex["regions"][number],
+  selection: EditorSelection,
+) {
+  const normalized = normalizeSelection(documentIndex, selection);
+  const offset =
+    normalized.start.regionId === region.id ? normalized.start.offset : selection.anchor.offset;
+
+  return {
+    atEnd: offset === region.text.length,
+    atStart: offset === 0,
+    empty: region.text.length === 0,
+    offset,
+  };
+}
+
+// --- Shared action support ---
 
 export function createInsertedListItem(
   text: string,

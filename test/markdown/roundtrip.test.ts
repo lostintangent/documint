@@ -1,5 +1,8 @@
-import { expect, test } from "bun:test";
-import { parseDocument, serializeDocument } from "@/markdown";
+// Asserts that every golden fixture in `test/goldens/` round-trips through
+// `serialize(parse(source))` cleanly and stays stable on a second pass.
+
+import { describe, test } from "bun:test";
+import { expectStableRoundTrip } from "./helpers";
 
 const stableFixtures = [
   "test/goldens/sample.md",
@@ -21,53 +24,15 @@ const stableFixtures = [
   "test/goldens/rich-mixed.md",
   "test/goldens/comments-review.md",
   "test/goldens/frontmatter.md",
+  "test/goldens/line-breaks.md",
 ] as const;
 
-for (const fixturePath of stableFixtures) {
-  test(`round-trips canonically for ${fixturePath}`, async () => {
-    const source = await Bun.file(fixturePath).text();
-    const firstPass = serializeDocument(parseDocument(source));
-    const secondPass = serializeDocument(parseDocument(firstPass));
+describe("Goldens", () => {
+  for (const fixturePath of stableFixtures) {
+    test(`round-trips canonically for ${fixturePath}`, async () => {
+      const source = await Bun.file(fixturePath).text();
 
-    expect(firstPass).toBe(source);
-    expect(secondPass).toBe(firstPass);
-  });
-}
-
-test("round-trips underline marks through ins html", () => {
-  const source = "Paragraph with <ins>underline</ins> text.\n";
-
-  expect(serializeDocument(parseDocument(source))).toBe(source);
-});
-
-test("preserves unmatched underline html as authored markdown", () => {
-  const source = "Paragraph with <ins>unfinished underline text.\n";
-
-  expect(serializeDocument(parseDocument(source))).toBe(source);
-});
-
-test("serializes rich markdown blocks deterministically", () => {
-  const source = `| Package | Width |
-| :------ | ----: |
-| table | responsive |
-
-\`\`\`ts title=demo.ts
-export const rich = true;
-\`\`\`
-
-See ![Preview shell](https://example.com/preview.png "Host fit").
-`;
-
-  expect(serializeDocument(parseDocument(source))).toBe(source);
-});
-
-test("round-trips comment appendices deterministically", async () => {
-  const source = await Bun.file("test/goldens/comments-review.md").text();
-  const snapshot = parseDocument(source);
-
-  expect(snapshot.comments).toHaveLength(3);
-  expect(snapshot.comments[0]?.quote).toBe("review surface");
-  expect(snapshot.comments[1]?.quote).toBe("List feedback");
-  expect(snapshot.comments[2]?.quote).toBe("Table cell anchors");
-  expect(serializeDocument(snapshot)).toBe(source);
+      expectStableRoundTrip(source);
+    });
+  }
 });

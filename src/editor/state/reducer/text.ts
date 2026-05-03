@@ -29,21 +29,21 @@ import { updateCommentThreadsForRegionEdit } from "../../anchors";
 import { mergeTrimmedBlocks, trimBlockToPrefix, trimBlockToSuffix } from "../fragment/blocks";
 import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/build";
 import type { DocumentIndex, EditorRegion } from "../index/types";
-import type { ActionSelection } from "../types";
 import {
-  createCollapsedSelection,
   createDescendantPrimaryRegionTarget,
+  createRegionTarget,
   normalizeSelection,
   resolveRegion,
   resolveRegionByPath,
   type EditorSelection,
   type NormalizedEditorSelection,
+  type SelectionTarget,
 } from "../selection";
 import { editRegionInlines, replaceEditorInlines } from "./inlines";
 
 export type TextEditResult = {
   documentIndex: DocumentIndex;
-  selection: ActionSelection | null;
+  selection: SelectionTarget | null;
 };
 
 /* Entry points */
@@ -174,7 +174,7 @@ function replaceInSingleRegion(
 
   return {
     documentIndex: finalizedDocumentIndex,
-    selection: createCollapsedSelection(nextRegion.id, normalized.start.offset + text.length),
+    selection: createRegionTarget(nextRegion.id, normalized.start.offset + text.length),
   };
 }
 
@@ -199,7 +199,7 @@ function replaceBlockRegionText(
       );
     case "table":
       return replaceTableCellText(block, region, startOffset, endOffset, replacementText);
-    case "unsupported":
+    case "raw":
       return rebuildRawBlock(
         block,
         replaceRegionSourceText(region, startOffset, endOffset, replacementText),

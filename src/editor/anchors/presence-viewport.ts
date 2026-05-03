@@ -8,7 +8,7 @@
  * point); this module owns the geometric step.
  */
 
-import { measureCaretTarget, type EditorViewportState } from "../layout";
+import { measureCaretTarget, type EditorLayoutState } from "../layout";
 import type { DocumentIndex } from "../state";
 import type { EditorState } from "../state/types";
 import type { EditorPresence, EditorPresenceViewport } from "./presence";
@@ -17,17 +17,17 @@ const presenceViewportScrollMargin = 48;
 
 export function resolvePresenceViewport(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   presence: EditorPresence[],
 ): EditorPresence[];
 export function resolvePresenceViewport(
   documentIndex: DocumentIndex,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   presence: EditorPresence[],
 ): EditorPresence[];
 export function resolvePresenceViewport(
   stateOrIndex: EditorState | DocumentIndex,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   presence: EditorPresence[],
 ): EditorPresence[] {
   const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
@@ -43,7 +43,7 @@ export function resolvePresenceViewport(
 
 function resolveEditorPresenceViewport(
   documentIndex: DocumentIndex,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   presence: EditorPresence,
 ): EditorPresenceViewport {
   if (!presence.cursorPoint) {
@@ -69,7 +69,7 @@ function resolveEditorPresenceViewport(
 }
 
 function resolvePresenceViewportStatus(
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   extent: { bottom: number; top: number },
 ): "above" | "below" | "visible" {
   const viewportTop = viewport.viewport.top;
@@ -86,7 +86,7 @@ function resolvePresenceViewportStatus(
   return "visible";
 }
 
-function resolvePresenceCursorScrollTop(viewport: EditorViewportState, extent: { top: number }) {
+function resolvePresenceCursorScrollTop(viewport: EditorLayoutState, extent: { top: number }) {
   const maxScrollTop = Math.max(0, viewport.totalHeight - viewport.viewport.height);
   const targetTop =
     extent.top - Math.min(presenceViewportScrollMargin, viewport.viewport.height / 4);

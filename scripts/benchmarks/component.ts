@@ -16,12 +16,12 @@ export function createComponentBenchmarks(
   const fixture = createLongReconciliationFixture(1200);
 
   return [
-    runBenchmark("component_reconcile_selection_long", 50, budgets.reconcile_selection_long, () => {
+    runBenchmark("component_reconcile_selection_long", 200, budgets.reconcile_selection_long, () => {
       void reconcileExternalContentChange(fixture.selectedState, fixture.shiftedState);
     }),
     runBenchmark(
       "component_reconcile_transient_empty_paragraph_long",
-      20,
+      100,
       budgets.reconcile_transient_empty_paragraph_long,
       () => {
         void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);

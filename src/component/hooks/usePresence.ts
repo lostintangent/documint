@@ -17,7 +17,7 @@ import {
   type EditorPresence,
   type EditorPresenceViewport,
   type EditorState,
-  type EditorViewportState,
+  type EditorLayoutState,
 } from "@/editor";
 import type { DocumentUserPresence } from "@/types";
 import type { LazyRefHandle } from "./useLazyRef";
@@ -32,7 +32,7 @@ import {
 type UsePresenceOptions = {
   editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorViewportState>;
+  editorViewportState: LazyRefHandle<EditorLayoutState>;
   onViewportScroll: (scrollContainer: HTMLDivElement) => void;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   scheduleOverlayRender: () => void;
@@ -42,7 +42,7 @@ type UsePresenceOptions = {
 export type PresenceController = {
   presence: EditorPresence[] | undefined;
   scrollToPresence: (presence: EditorPresence) => void;
-  refreshPresence: (viewportState: EditorViewportState) => void;
+  refreshPresence: (viewportState: EditorLayoutState) => void;
 };
 
 export function usePresence({
@@ -92,7 +92,7 @@ export function usePresence({
   // Per-frame path: called by the render scheduler on every viewport render.
   // Bails out when scroll didn't flip any presence's viewport status, so
   // steady-state scrolling doesn't trigger a Documint re-render.
-  const refreshPresence = useEffectEvent((viewportState: EditorViewportState) => {
+  const refreshPresence = useEffectEvent((viewportState: EditorLayoutState) => {
     if (cursors === undefined) {
       if (presence !== undefined) {
         setPresence(undefined);

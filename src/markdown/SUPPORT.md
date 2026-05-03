@@ -64,7 +64,7 @@ These are the semantic node families currently representable in `Document` and t
 | Flexible table forms               | edge-valid GFM table syntax                | `Gap`                          | Current parser handles the canonical table shape, not the full GFM acceptance surface. |
 | HTML blocks, simple single-line    | `<aside>...</aside>`                       | `Preserved as unsupported/raw` | Preserved as unsupported semantic blocks.                                              |
 | HTML blocks, full CommonMark forms | multi-line HTML block start/end conditions | `Gap`                          | Spec coverage is broader than current implementation.                                  |
-| Directives                         | `:::callout`, `::badge`                    | `Preserved as unsupported/raw` | Intentionally preserved rather than modeled semantically.                              |
+| Container directives               | `:::callout`                               | `Supported semantically`       | Modeled as `DirectiveBlock` with name, attributes, and raw body.                       |
 | Comment appendix directive         | `:::documint-comments`                     | `Supported semantically`       | Special markdown-only translation into `Document.comments`.                            |
 
 ## Inline Features
@@ -123,10 +123,13 @@ The current support claims are backed by these files:
 - [index.ts](./index.ts): public markdown boundary
 - [parser/index.ts](./parser/index.ts): parser entrypoint and orchestration
 - [parser/blocks.ts](./parser/blocks.ts): block-level markdown parsing into `Document`
-- [parser/inline.ts](./parser/inline.ts): inline markdown parsing into semantic inline nodes
+- [parser/inlines.ts](./parser/inlines.ts): inline markdown parsing into semantic inline nodes
 - [parser/tables.ts](./parser/tables.ts): canonical table recognition helpers
 - [parser/comments.ts](./parser/comments.ts): trailing comment-directive extraction
-- [serializer.ts](./serializer.ts): canonical markdown emission from `Document`
+- [serializer/index.ts](./serializer/index.ts): document-level serialization orchestration and comment-directive emission
+- [serializer/blocks.ts](./serializer/blocks.ts): block-level markdown emission from `Document`
+- [serializer/inlines.ts](./serializer/inlines.ts): inline markdown emission
+- [serializer/tables.ts](./serializer/tables.ts): canonical pipe-table emission
 - [../../test/markdown/parse.test.ts](../../test/markdown/parse.test.ts): focused parse behavior
 - [../../test/markdown/policy.test.ts](../../test/markdown/policy.test.ts): markdown-specific policy behavior
 - [../../test/markdown/roundtrip.test.ts](../../test/markdown/roundtrip.test.ts): canonical round-tripping over goldens

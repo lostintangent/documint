@@ -29,7 +29,7 @@ import {
 } from "@/editor/state";
 import { getCommentState } from "@/editor";
 import { parseFragment, serializeFragment } from "@/markdown";
-import { getRegion, placeAt, selectIn, selectSubstring, setup, toMarkdown } from "../helpers";
+import { getRegion, placeAt, selectIn, selectSubstring, setup, toMarkdown } from "../../helpers";
 
 describe("Paragraphs", () => {
   test("copy: collapsed selection returns null", () => {
@@ -448,16 +448,16 @@ describe("Thematic breaks", () => {
   test("copy: cross-block selection through one round-trips", () => {
     expect(
       copyAcross(
-        "alpha\n\n***\n\nbeta\n",
+        "alpha\n\n---\n\nbeta\n",
         { region: "alpha", offset: "start" },
         { region: "beta", offset: "end" },
       ),
-    ).toBe("alpha\n\n***\n\nbeta");
+    ).toBe("alpha\n\n---\n\nbeta");
   });
 
   test("paste: thematic break splits the paragraph cleanly", () => {
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "***\n"))
-      .toBe("alpha\n\n***\n\nbeta\n");
+    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "---\n"))
+      .toBe("alpha\n\n---\n\nbeta\n");
   });
 });
 

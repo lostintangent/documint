@@ -17,6 +17,7 @@ import {
   type ListItemBlock,
   type TableRow,
 } from "./types";
+import { mapBlockTree } from "./visit";
 
 export function createDocument(
   blocks: Block[],
@@ -173,17 +174,17 @@ export function extractPlainTextFromInlineNodes(nodes: Inline[]): string {
   return nodes
     .map((node) => {
       switch (node.type) {
-        case "break":
+        case "lineBreak":
           return "\n";
         case "image":
           return node.alt ?? "";
-        case "inlineCode":
+        case "code":
           return node.code;
         case "link":
           return extractPlainTextFromInlineNodes(node.children);
         case "text":
           return node.text;
-        case "unsupported":
+        case "raw":
           return node.source;
       }
     })
@@ -210,9 +211,9 @@ export function extractPlainTextFromBlockNodes(nodes: Block[]): string {
           return node.rows
             .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
             .join("\n");
-        case "thematicBreak":
+        case "divider":
           return "";
-        case "unsupported":
+        case "raw":
           return node.source;
       }
     })
@@ -403,19 +404,19 @@ function normalizeBlockNode(node: Block, path: string): Block {
         type: "table",
       };
     }
-    case "thematicBreak":
+    case "divider":
       return {
-        id: nodeId("thematicBreak", path, "thematic-break"),
+        id: nodeId("divider", path, "divider"),
         plainText: "",
-        type: "thematicBreak",
+        type: "divider",
       };
-    case "unsupported":
+    case "raw":
       return {
-        id: nodeId("unsupported", path, node.source),
+        id: nodeId("raw", path, node.source),
         originalType: node.originalType,
         plainText: node.source,
         source: node.source,
-        type: "unsupported",
+        type: "raw",
       };
   }
 }
@@ -440,10 +441,10 @@ function normalizeTableRowNode(row: TableRow, path: string): TableRow {
 
 function normalizeInlineNode(node: Inline, path: string): Inline {
   switch (node.type) {
-    case "break":
+    case "lineBreak":
       return {
-        id: nodeId("break", path, "break"),
-        type: "break",
+        id: nodeId("lineBreak", path, "lineBreak"),
+        type: "lineBreak",
       };
     case "image":
       return {
@@ -454,11 +455,11 @@ function normalizeInlineNode(node: Inline, path: string): Inline {
         url: node.url,
         width: node.width,
       };
-    case "inlineCode":
+    case "code":
       return {
         code: node.code,
-        id: nodeId("inlineCode", path, node.code),
-        type: "inlineCode",
+        id: nodeId("code", path, node.code),
+        type: "code",
       };
     case "link": {
       const children = node.children.map((child, index) =>
@@ -481,40 +482,26 @@ function normalizeInlineNode(node: Inline, path: string): Inline {
         text: node.text,
         type: "text",
       };
-    case "unsupported":
+    case "raw":
       return {
-        id: nodeId("unsupported", path, node.source),
+        id: nodeId("raw", path, node.source),
         originalType: node.originalType,
         source: node.source,
-        type: "unsupported",
+        type: "raw",
       };
   }
 }
 
 export function trimTrailingWhitespace(blocks: Block[]): Block[] {
-  return blocks.map((block) => {
+  return mapBlockTree(blocks, (block, { recurse }) => {
     switch (block.type) {
       case "blockquote":
-        return {
-          ...block,
-          children: trimTrailingWhitespace(block.children),
-        };
+      case "list":
+      case "listItem":
+        return recurse();
       case "heading":
       case "paragraph":
         return rebuildTextBlock(block, trimTrailingInlineWhitespace(block.children));
-      case "list":
-        return {
-          ...block,
-          items: block.items.map((item) => ({
-            ...item,
-            children: trimTrailingWhitespace(item.children),
-          })),
-        };
-      case "listItem":
-        return {
-          ...block,
-          children: trimTrailingWhitespace(block.children),
-        };
       case "table":
         return rebuildTableBlock(
           block,
@@ -532,59 +519,60 @@ export function trimTrailingWhitespace(blocks: Block[]): Block[] {
   });
 }
 
+// Trim trailing whitespace from the last non-empty text run in an inline list,
+// recursing into the tail of any link encountered. The walk goes right-to-left
+// and stops at the first node that doesn't change, so the average case visits a
+// single text node. Returns the input array unchanged (===) when nothing
+// trimmed, so callers can use referential equality as a fast no-op check.
 function trimTrailingInlineWhitespace(nodes: Inline[]): Inline[] {
-  const nextNodes = [...nodes];
+  let nextNodes: Inline[] | null = null;
+  const ensureMutable = () => (nextNodes ??= [...nodes]);
 
-  for (let index = nextNodes.length - 1; index >= 0; index -= 1) {
-    const node = nextNodes[index]!;
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    const node = nodes[index]!;
 
     if (node.type === "text") {
       const trimmedText = node.text.replace(/[ \t]+$/u, "");
 
       if (trimmedText.length === node.text.length) {
-        return nextNodes;
+        return nextNodes ?? nodes;
       }
 
+      const mutable = ensureMutable();
+
       if (trimmedText.length === 0) {
-        nextNodes.splice(index, 1);
+        mutable.splice(index, 1);
         continue;
       }
 
-      nextNodes[index] = {
-        ...node,
-        text: trimmedText,
-      };
+      mutable[index] = { ...node, text: trimmedText };
 
-      return nextNodes;
+      return mutable;
     }
 
     if (node.type === "link") {
       const trimmedChildren = trimTrailingInlineWhitespace(node.children);
 
-      if (
-        trimmedChildren.length === node.children.length &&
-        trimmedChildren.every((child, childIndex) => child === node.children[childIndex])
-      ) {
-        return nextNodes;
+      if (trimmedChildren === node.children) {
+        return nextNodes ?? nodes;
       }
 
+      const mutable = ensureMutable();
+
       if (trimmedChildren.length === 0) {
-        nextNodes.splice(index, 1);
+        mutable.splice(index, 1);
         continue;
       }
 
-      nextNodes[index] = {
-        ...node,
-        children: trimmedChildren,
-      };
+      mutable[index] = { ...node, children: trimmedChildren };
 
-      return nextNodes;
+      return mutable;
     }
 
-    return nextNodes;
+    return nextNodes ?? nodes;
   }
 
-  return nextNodes;
+  return nextNodes ?? nodes;
 }
 
 // Produces stable semantic node IDs from node kind, tree path, and semantic content.

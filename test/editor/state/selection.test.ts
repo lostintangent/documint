@@ -1,11 +1,9 @@
 import { expect, test } from "bun:test";
-import { createEditorState, getSelectionContext, selectAll, setSelection } from "@/editor/state";
-import { parseDocument } from "@/markdown";
+import { getSelectionContext, selectAll, setSelection } from "@/editor/state";
+import { setup } from "../helpers";
 
 test("derives the active block and span from the selection anchor", () => {
-  let state = createEditorState(
-    parseDocument("Paragraph with **strong** text and [link](https://example.com).\n"),
-  );
+  let state = setup("Paragraph with **strong** text and [link](https://example.com).\n");
   const container = state.documentIndex.regions[0];
 
   if (!container) {
@@ -34,7 +32,7 @@ test("derives the active block and span from the selection anchor", () => {
 });
 
 test("selectAll expands the selection from the start of the first region to the end of the last", () => {
-  const state = createEditorState(parseDocument("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n"));
+  const state = setup("# Heading\n\nalpha\n\n- one\n- two\n\ngamma\n");
   const [first] = state.documentIndex.regions;
   const last = state.documentIndex.regions.at(-1);
 
@@ -52,7 +50,7 @@ test("selectAll expands the selection from the start of the first region to the 
 });
 
 test("selectAll collapses to a single point on an empty document", () => {
-  const state = createEditorState(parseDocument(""));
+  const state = setup("");
   const nextState = selectAll(state);
 
   // An empty document normalizes to a single empty paragraph, so the range

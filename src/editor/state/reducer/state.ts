@@ -29,12 +29,13 @@ import {
   replaceIndexedDocument,
 } from "../index/build";
 import type { DocumentIndex } from "../index/types";
-import type { ActionSelection, EditorState, EditorStateAction, HistoryEntry } from "../types";
+import type { EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
   resolveRegion,
   resolveSelectionTarget,
   type EditorSelection,
   type EditorSelectionPoint,
+  type SelectionTarget,
 } from "../selection";
 import { replaceWithBlocks, spliceText } from "./text";
 
@@ -109,7 +110,7 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
     }
 
     case "splice-fragment": {
-      const result = replaceWithBlocks(state.documentIndex, action.selection, action.fragment);
+      const result = replaceWithBlocks(state.documentIndex, action.selection, action.blocks);
       return applyDocumentMutation(state, result.documentIndex, result.selection);
     }
 
@@ -128,13 +129,14 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
 function applyDocumentMutation(
   state: EditorState,
   documentIndex: DocumentIndex,
-  selection: ActionSelection | null,
+  selection: SelectionTarget | null,
 ): EditorState {
   const nextState = pushHistory(state, documentIndex);
+
   const resolvedSelection =
     resolveSelectionTarget(nextState.documentIndex, selection) ?? state.selection;
-  const blockChanged = didActiveBlockChange(state, nextState, resolvedSelection);
 
+  const blockChanged = didActiveBlockChange(state, nextState, resolvedSelection);
   return setSelection(nextState, resolvedSelection, blockChanged);
 }
 

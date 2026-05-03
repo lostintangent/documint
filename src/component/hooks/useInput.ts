@@ -16,6 +16,7 @@ import {
   deleteForward,
   deleteSelection,
   insertLineBreak,
+  insertSoftLineBreak,
   insertImage,
   insertText,
   measureVisualCaretTarget,
@@ -41,7 +42,7 @@ import {
   undo,
   type EditorSelectionPoint,
   type EditorState,
-  type EditorViewportState,
+  type EditorLayoutState,
 } from "@/editor";
 import { parseFragment, serializeFragment } from "@/markdown";
 import type { LazyRefHandle } from "./useLazyRef";
@@ -55,7 +56,7 @@ type UseInputOptions = {
   // Editor state and lookups the hook reads from.
   editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorViewportState>;
+  editorViewportState: LazyRefHandle<EditorLayoutState>;
   keybindings?: EditorKeybinding[];
 
   // Host callbacks the hook invokes.
@@ -374,7 +375,9 @@ export function useInput({
    *     / autocomplete. Routed through `applyNativeText` (handles
    *     embedded `\n`).
    *   - `insertReplacementText` → OS-initiated replacement.
-   *   - `insertLineBreak` / `insertParagraph` → `insertLineBreak`.
+   *   - `insertLineBreak` / `insertParagraph` → `insertLineBreak`
+   *     (structural Enter; iOS conflates the two so we can't split them
+   *     here — see `isLineBreakInputType`).
    *   - `delete*` → `deleteBackward` / `deleteForward` (see
    *     `resolveDeleteDirection`).
    *   - `historyUndo` / `historyRedo` → editor undo stack, plus iOS
@@ -452,6 +455,15 @@ export function useInput({
     }
 
     if (isLineBreakInputType(event.inputType)) {
+      // Treat both `insertParagraph` and `insertLineBreak` inputTypes as
+      // structural Enter here. iOS Safari emits `insertLineBreak` for the
+      // virtual keyboard's Return key regardless of any modifier state, so
+      // the inputType alone can't tell us whether the user wanted a soft
+      // break. Soft breaks are still reachable on desktop via the Shift+
+      // Enter keybinding — `keydown` fires first on physical keyboards
+      // and preventDefaults the corresponding beforeinput before this
+      // branch sees it. Touch-primary devices intentionally don't get a
+      // soft-break gesture (consistent with Notion, Docs, etc.).
       event.preventDefault();
       applyStateChange(insertLineBreak(state));
       return;
@@ -526,6 +538,17 @@ export function useInput({
     applyStateChange(applyNativeText(state, value));
   });
 
+  // Cross-handler contract: when this handler returns a state change for a
+  // chord that the browser would otherwise also surface through a
+  // `beforeinput` (notably Shift+Enter, which fires `keydown` with
+  // `shiftKey: true` *and* `beforeinput` with `inputType: "insertLineBreak"`),
+  // we MUST `preventDefault` here so the corresponding beforeinput is
+  // suppressed. Otherwise the soft-break-via-keydown would be followed
+  // immediately by a structural-Enter-via-beforeinput and the document
+  // would mutate twice for one user gesture. This contract is also why
+  // the beforeinput handler can safely route both `insertLineBreak` and
+  // `insertParagraph` to structural Enter — the soft-break gesture is
+  // already consumed before beforeinput fires.
   const handleKeyDown = useEffectEvent(
     (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       const stateChange = applyKeyboardEvent(
@@ -747,6 +770,13 @@ function useIsTouchPrimary(): boolean {
   return isTouchPrimary;
 }
 
+// `insertParagraph` is what desktop browsers fire for plain Enter;
+// `insertLineBreak` is what they fire for Shift+Enter — but iOS Safari
+// fires `insertLineBreak` for the virtual keyboard's Return key
+// regardless of any modifier state. Both inputTypes route to the same
+// "structural Enter" command at this layer; soft breaks are reachable
+// only via the Shift+Enter keybinding on physical keyboards (handled by
+// `keydown`, which preventDefaults this beforeinput before it fires).
 export function isLineBreakInputType(inputType: string) {
   return inputType === "insertLineBreak" || inputType === "insertParagraph";
 }
@@ -866,7 +896,7 @@ export function syncInputContext(input: HTMLTextAreaElement, state: EditorState)
 
 function applyKeyboardEvent(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   event: KeyboardEvent,
   keybindings?: EditorKeybinding[],
 ): EditorState | null {
@@ -897,6 +927,8 @@ function applyKeyboardEvent(
     switch (command) {
       case "insertLineBreak":
         return insertLineBreak(state);
+      case "insertSoftLineBreak":
+        return insertSoftLineBreak(state);
       case "deleteBackward":
         return deleteBackward(state);
       case "indent":

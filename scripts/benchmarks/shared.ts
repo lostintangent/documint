@@ -14,6 +14,7 @@ export type BenchmarkBudgetTree = {
   };
   editor: {
     backspace_long: number;
+    backspace_long_full_frame: number;
     backspace_medium: number;
     comment_repair_dense: number;
     comment_toggle_dense: number;
@@ -38,6 +39,7 @@ export type BenchmarkBudgetTree = {
     typing_code: number;
     typing_comments_elsewhere: number;
     typing_long: number;
+    typing_long_full_frame: number;
     typing_medium: number;
     typing_small: number;
     typing_table: number;
@@ -46,6 +48,9 @@ export type BenchmarkBudgetTree = {
     canvas: number;
     canvas_huge: number;
     canvas_xlarge: number;
+    full_document_huge: number;
+    full_document_long: number;
+    full_document_xlarge: number;
     scroll: number;
     scroll_huge: number;
     scroll_step: number;

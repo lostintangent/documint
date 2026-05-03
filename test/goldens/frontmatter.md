@@ -14,4 +14,4 @@ This document opens with YAML front matter.
 
 A trailing thematic break should still parse normally.
 
-***
+---

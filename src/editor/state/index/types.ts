@@ -19,7 +19,7 @@ export type EditorInline = {
   id: string;
   image: RuntimeImageAttributes | null;
   inlineCode: boolean;
-  kind: "break" | "image" | "inlineCode" | "text" | "unsupported";
+  kind: "code" | "image" | "lineBreak" | "raw" | "text";
   link: RuntimeLinkAttributes | null;
   marks: Mark[];
   originalType: string | null;

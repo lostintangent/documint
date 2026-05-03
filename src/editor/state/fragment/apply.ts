@@ -14,7 +14,7 @@
 // they want a non-null outcome.
 
 import { createParagraphBlock, type Fragment } from "@/document";
-import { insertInlines } from "../actions/inline";
+import { insertInlines } from "../actions/inlines";
 import { dispatch } from "../reducer/state";
 import type { EditorState } from "../types";
 import { resolveFragmentDestinationContext } from "./context";
@@ -60,7 +60,7 @@ export function applyFragment(state: EditorState, fragment: Fragment): EditorSta
 
       return dispatch(state, {
         kind: "splice-fragment",
-        fragment: [createParagraphBlock({ children: fragment.inlines })],
+        blocks: [createParagraphBlock({ children: fragment.inlines })],
         selection: state.selection,
       });
     }
@@ -72,7 +72,7 @@ export function applyFragment(state: EditorState, fragment: Fragment): EditorSta
 
       return dispatch(state, {
         kind: "splice-fragment",
-        fragment: fragment.blocks,
+        blocks: fragment.blocks,
         selection: state.selection,
       });
   }

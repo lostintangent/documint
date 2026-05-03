@@ -9,7 +9,7 @@ import {
   type EditorPoint,
   type EditorSelectionPoint,
   type EditorState,
-  type EditorViewportState,
+  type EditorLayoutState,
   type NormalizedEditorSelection,
 } from "@/editor";
 import type { LazyRefHandle } from "./useLazyRef";
@@ -67,7 +67,7 @@ type UseSelectionOptions = {
   canShowSelectionLeaf: boolean;
   editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorViewportState>;
+  editorViewportState: LazyRefHandle<EditorLayoutState>;
   resolvePoint: (event: PointerEvent<HTMLElement>) => EditorPoint | null;
   threads: EditorCommentState["threads"];
 
@@ -312,7 +312,7 @@ export function useSelection({
 
 function resolveSelectionHandles(
   state: EditorState,
-  viewport: EditorViewportState,
+  viewport: EditorLayoutState,
   selection: NormalizedEditorSelection,
 ): SelectionHandles | null {
   if (selection.collapsed) {

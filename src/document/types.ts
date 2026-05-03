@@ -97,7 +97,7 @@ export type TableCell = {
   plainText: string;
 };
 
-export type DividerBlock = BlockNode<"thematicBreak">;
+export type DividerBlock = BlockNode<"divider">;
 
 export type CodeBlock = BlockNode<
   "code",
@@ -118,7 +118,7 @@ export type DirectiveBlock = BlockNode<
 >;
 
 export type RawBlock = BlockNode<
-  "unsupported",
+  "raw",
   {
     originalType: string;
     source: string;
@@ -154,12 +154,12 @@ export type Image = DocumentNode<
   }
 >;
 
-export type LineBreak = DocumentNode<"break">;
+export type LineBreak = DocumentNode<"lineBreak">;
 
-export type Code = DocumentNode<"inlineCode", { code: string }>;
+export type Code = DocumentNode<"code", { code: string }>;
 
 export type Raw = DocumentNode<
-  "unsupported",
+  "raw",
   {
     originalType: string;
     source: string;

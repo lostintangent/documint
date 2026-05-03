@@ -163,10 +163,10 @@ function replaceEditorInline(
 ) {
   switch (run.kind) {
     case "text":
-    case "inlineCode":
-    case "unsupported":
+    case "code":
+    case "raw":
       return replaceTextLikeEditorInline(run, startOffset, endOffset, replacementText);
-    case "break":
+    case "lineBreak":
       return replaceBreakEditorInline(run, startOffset, endOffset, replacementText, context);
     case "image":
       return replaceImageEditorInline(run, startOffset, endOffset, replacementText);
@@ -336,11 +336,11 @@ function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInl
 
 function editorInlineToDocumentInline(run: EditorInline): Inline | null {
   switch (run.kind) {
-    case "break":
+    case "lineBreak":
       return createDocumentLineBreakNode();
     case "image":
       return run.image ? createImageNodeFromRuntimeAttributes(run.image) : null;
-    case "inlineCode":
+    case "code":
       return createDocumentInlineCodeNode({
         code: run.text,
       });
@@ -351,9 +351,9 @@ function editorInlineToDocumentInline(run: EditorInline): Inline | null {
             text: run.text,
           })
         : null;
-    case "unsupported":
+    case "raw":
       return createDocumentUnsupportedInlineNode({
-        originalType: run.originalType ?? "unsupported",
+        originalType: run.originalType ?? "raw",
         source: run.text,
       });
   }

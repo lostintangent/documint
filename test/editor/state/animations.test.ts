@@ -1,15 +1,13 @@
 import { expect, test } from "bun:test";
 import {
-  createEditorState,
   deleteBackward,
   hasNewAnimation,
   insertLineBreak,
   insertText,
   setSelection,
 } from "@/editor/state";
-import { getEditorAnimationDuration, hasRunningEditorAnimations as hasRunningAnimations } from "@/editor/canvas/animations";
-import { parseDocument } from "@/markdown";
-import { getRegion, placeAt, setup } from "./helpers";
+import { getEditorAnimationDuration, hasRunningEditorAnimations as hasRunningAnimations } from "@/editor/canvas/lib/animations";
+import { getRegion, placeAt, setup } from "../helpers";
 
 test("starts and expires inserted-text highlight animations for typed text", () => {
   const state = setup("alpha\n");
@@ -99,7 +97,7 @@ test("starts and expires deleted-text fade animations for single-character delet
 });
 
 test("starts an active-block flash animation when selection moves into a different block", () => {
-  const state = createEditorState(parseDocument("alpha\n\nbeta\n"));
+  const state = setup("alpha\n\nbeta\n");
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) throw new Error("Expected two paragraph regions");
@@ -114,7 +112,7 @@ test("starts an active-block flash animation when selection moves into a differe
 });
 
 test("starts an active-block flash animation when selection moves into a different table cell", () => {
-  const state = createEditorState(parseDocument("| A | B |\n| - | - |\n| one | two |\n"));
+  const state = setup("| A | B |\n| - | - |\n| one | two |\n");
   const [first, second] = state.documentIndex.regions;
 
   if (!first || !second) throw new Error("Expected table cell regions");

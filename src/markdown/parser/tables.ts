@@ -2,14 +2,22 @@
  * Owns canonical GFM-style table parsing and helper logic.
  */
 import { createTableBlock, createTableCell, createTableRow } from "@/document";
-import { parseInlineMarkdown } from "./inline";
-import type { MarkdownLineCursor } from "./index";
+import {
+  currentLine,
+  isBlankLine,
+  peekLine,
+  sliceIndentedContent,
+  type MarkdownLineCursor,
+} from "./index";
+import { parseInlineMarkdown } from "./inlines";
 
 const tableAlignmentCell = /^:?-+:?$/;
 
+// --- Public exports ---
+
 export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
   const headerLine = currentLine(cursor);
-  const alignLine = cursor.lines[cursor.index + 1] ?? "";
+  const alignLine = peekLine(cursor, 1);
   const headerContent = sliceIndentedContent(headerLine, baseIndent);
   const alignmentContent = sliceIndentedContent(alignLine, baseIndent);
 
@@ -47,16 +55,18 @@ export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
   });
 }
 
-function looksLikeTableRow(line: string) {
-  const trimmed = line.trim();
-
-  return /\|/.test(line) && trimmed.startsWith("|") && trimmed.endsWith("|");
-}
-
 export function looksLikeAlignmentRow(line: string) {
   const cells = splitTableRow(line);
 
   return cells.length > 0 && cells.every((cell) => tableAlignmentCell.test(cell.trim()));
+}
+
+// --- Internal helpers ---
+
+function looksLikeTableRow(line: string) {
+  const trimmed = line.trim();
+
+  return trimmed.startsWith("|") && trimmed.endsWith("|");
 }
 
 function parseAlignmentRow(line: string) {
@@ -82,20 +92,15 @@ function parseAlignmentRow(line: string) {
 function splitTableRow(line: string) {
   const trimmed = line.trim();
 
+  // Real table rows are pipe-fenced. Bail without allocating for the common
+  // case where this is called speculatively from `shouldParagraphStop` on an
+  // ordinary paragraph line.
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) {
+    return [];
+  }
+
   return trimmed
     .slice(1, -1)
     .split("|")
     .map((cell) => cell.trim());
-}
-
-function currentLine(cursor: MarkdownLineCursor) {
-  return cursor.lines[cursor.index] ?? "";
-}
-
-function isBlankLine(line: string) {
-  return line.trim() === "";
-}
-
-function sliceIndentedContent(line: string, indent: number) {
-  return line.slice(indent);
 }

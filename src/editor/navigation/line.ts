@@ -9,9 +9,14 @@ import {
   resolveCaretVisualLeft,
   resolveEditorHitAtPoint,
   type CaretTarget,
-  type ViewportLayout,
+  type DocumentLayout,
 } from "../layout";
-import { setSelectionPoint, type EditorState } from "../state";
+import {
+  nextRegionInFlow,
+  previousRegionInFlow,
+  setSelectionPoint,
+  type EditorState,
+} from "../state";
 
 // Small rightward nudge when hit-testing at a caret's visual X to avoid
 // landing exactly on a region boundary and resolving to the wrong side.
@@ -36,7 +41,7 @@ export function moveCaretHorizontallyInFlow(
   }
 
   if (delta < 0) {
-    const previousContainer = state.documentIndex.regions[regionIndex - 1];
+    const previousContainer = previousRegionInFlow(state.documentIndex, container.id);
 
     if (!previousContainer) {
       return state;
@@ -50,7 +55,7 @@ export function moveCaretHorizontallyInFlow(
     );
   }
 
-  const nextContainer = state.documentIndex.regions[regionIndex + 1];
+  const nextContainer = nextRegionInFlow(state.documentIndex, container.id);
 
   if (!nextContainer) {
     return state;
@@ -61,7 +66,7 @@ export function moveCaretHorizontallyInFlow(
 
 export function moveCaretVerticallyInFlow(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   caret: CaretTarget,
   direction: -1 | 1,
   extendSelection: boolean,
@@ -92,7 +97,7 @@ export function moveCaretVerticallyInFlow(
 
 export function moveCaretToCurrentLineBoundary(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   boundary: "Home" | "End",
   extendSelection: boolean,
 ) {
@@ -112,7 +117,7 @@ export function moveCaretToCurrentLineBoundary(
 
 export function moveCaretByViewportInFlow(
   state: EditorState,
-  layout: ViewportLayout,
+  layout: DocumentLayout,
   caret: CaretTarget,
   direction: -1 | 1,
   extendSelection: boolean,
@@ -154,7 +159,7 @@ export function moveCaretByViewportInFlow(
   return setSelectionPoint(state, hit.regionId, hit.offset, extendSelection);
 }
 
-function findCurrentLine(state: EditorState, layout: ViewportLayout) {
+function findCurrentLine(state: EditorState, layout: DocumentLayout) {
   return findLineForRegionOffset(
     layout,
     state.selection.focus.regionId,

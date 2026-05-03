@@ -9,25 +9,25 @@ export {
 
 // Layout — viewport composition (aliased to public names)
 export {
-  measureViewportCaretTarget as measureCaretTarget,
-  measureViewportVisualCaretTarget as measureVisualCaretTarget,
+  measureLayoutCaretTarget as measureCaretTarget,
+  measureLayoutVisualCaretTarget as measureVisualCaretTarget,
   measureInlineImageBounds,
-  prepareViewport,
-  resolveViewportDragFocus as resolveDragFocus,
-  resolveViewportHoverTarget as resolveHoverTarget,
-  resolveViewportSelectionHit as resolveSelectionHit,
-  resolveViewportTargetAtSelection as resolveTargetAtSelection,
-  resolveViewportWordSelection as resolveWordSelection,
+  prepareLayout,
+  resolveLayoutDragFocus as resolveDragFocus,
+  resolveLayoutHoverTarget as resolveHoverTarget,
+  resolveLayoutSelectionHit as resolveSelectionHit,
+  resolveLayoutTargetAtSelection as resolveTargetAtSelection,
+  resolveLayoutWordSelection as resolveWordSelection,
   type EditorHoverTarget,
   type EditorPoint,
-  type EditorViewportState,
+  type EditorLayoutState,
   type InlineBounds,
 } from "./layout";
 
 // Canvas
-export { paintContent, paintOverlay } from "./canvas/paint";
-export { createCanvasRenderCache } from "./canvas/cache";
-export { hasRunningEditorAnimations as hasRunningAnimations } from "./canvas/animations";
+export { paintContent, paintOverlay } from "./canvas";
+export { createCanvasRenderCache } from "./canvas/lib/cache";
+export { hasRunningEditorAnimations as hasRunningAnimations } from "./canvas/lib/animations";
 
 // State lifecycle, selection, and commands
 export {

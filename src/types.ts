@@ -35,6 +35,7 @@ export type EditorCommand =
   | "deleteBackward"
   | "indent"
   | "insertLineBreak"
+  | "insertSoftLineBreak"
   | "moveListItemDown"
   | "moveListItemUp"
   | "moveToDocumentEnd"
@@ -69,6 +70,7 @@ export type EditorTheme = {
   commentHighlightActive: string;
   commentHighlightResolved: string;
   commentHighlightResolvedActive: string;
+  dividerRule?: string;
   headingRule: string;
   headingText: string;
   imageLoadingOverlay: string;

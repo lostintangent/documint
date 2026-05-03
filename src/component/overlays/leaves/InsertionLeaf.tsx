@@ -9,6 +9,7 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Minus,
   Table2,
   TextQuote,
 } from "lucide-react";
@@ -75,6 +76,11 @@ export function InsertionLeaf({ onInsert, onInsertTable }: InsertionLeafProps) {
         icon={TextQuote}
         label="Insert blockquote"
         onClick={() => onInsert("> ")}
+      />
+      <LeafToolbar.Button
+        icon={Minus}
+        label="Insert divider"
+        onClick={() => onInsert("--- ")}
       />
     </LeafToolbar>
   );
