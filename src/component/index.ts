@@ -2,7 +2,6 @@ export {
   Documint,
   type CommentChange,
   type DocumintProps,
-  type DocumintState,
   type DocumintTheme,
 } from "./Documint";
 

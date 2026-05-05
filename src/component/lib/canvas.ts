@@ -2,7 +2,6 @@
  * Small canvas-host helpers that keep render-specific details out of the main
  * component body.
  */
-import type { DocumintState } from "../Documint";
 
 export function resolveDevicePixelRatio() {
   if (typeof window === "undefined") {
@@ -49,19 +48,4 @@ export function prepareCanvasLayer(
     height,
     width,
   };
-}
-
-export function areStatesEqual(previous: DocumintState, next: DocumintState) {
-  return (
-    previous.activeBlockType === next.activeBlockType &&
-    previous.activeCommentThreadIndex === next.activeCommentThreadIndex &&
-    previous.activeSpanKind === next.activeSpanKind &&
-    previous.canonicalContent === next.canonicalContent &&
-    previous.characterCount === next.characterCount &&
-    previous.commentThreadCount === next.commentThreadCount &&
-    previous.layoutWidth === next.layoutWidth &&
-    previous.resolvedCommentCount === next.resolvedCommentCount &&
-    previous.selectionFrom === next.selectionFrom &&
-    previous.selectionTo === next.selectionTo
-  );
 }

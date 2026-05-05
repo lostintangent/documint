@@ -34,7 +34,6 @@ export {
 export {
   // Resolve lines within the prepared layout.
   findDocumentLayoutLineAtPoint as findLineAtPoint,
-  findDocumentLayoutLineAtY as findLineAtY,
   findDocumentLayoutLineEntryForRegionOffset as findLineEntryForRegionOffset,
   findDocumentLayoutLineForRegionOffset as findLineForRegionOffset,
   findDocumentLayoutBlockRange as findVisibleBlockRange,

@@ -244,7 +244,11 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   ) : null;
 
   return (
-    <div className={contentClassName} ref={rootRef}>
+    <div
+      className={contentClassName}
+      data-resolved={isResolved ? "true" : undefined}
+      ref={rootRef}
+    >
       <div className={showCreateChrome ? "documint-comment-leaf-create-shell" : undefined}>
         {showCreateChrome ? (
           <LeafToolbar>

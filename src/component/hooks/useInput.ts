@@ -689,7 +689,7 @@ export function useInput({
   // positioning lands before the browser paints.
   useLayoutEffect(() => {
     positionInputAtPoint(editorState.selection.focus);
-  }, [editorState, positionInputAtPoint]);
+  }, [editorState]);
 
   // React's synthetic `onBeforeInput` prop wires to the legacy WebKit
   // `textInput` event, which does NOT fire for delete operations on iOS
@@ -703,7 +703,7 @@ export function useInput({
     const listener = (event: Event) => handleBeforeInput(event as InputEvent);
     input.addEventListener("beforeinput", listener);
     return () => input.removeEventListener("beforeinput", listener);
-  }, [inputRef, handleBeforeInput]);
+  }, [inputRef]);
 
   // Install diagnostic listeners (composition events on the input bridge,
   // document `selectionchange`). Production strips this call and the

@@ -1,19 +1,29 @@
 /**
- * Geometric projection of resolved presence cursors against the prepared
- * viewport. Decides whether each cursor is above, below, or visible in the
- * current scroll window, and computes the scroll target needed to bring an
- * off-screen cursor into view.
+ * Geometric projection of a cursor against the prepared viewport. Decides
+ * whether a cursor sits above, below, or inside the visible scroll window.
  *
- * Sibling to `./presence`, which owns the semantic step (anchor → cursor
- * point); this module owns the geometric step.
+ * Two consumers:
+ *   - `resolvePresenceViewport` — runs over the full presence list and adds a
+ *     scroll target so the host can scroll to an off-screen remote cursor.
+ *   - `resolveCursorViewportStatus` — single-cursor status check. Used by the
+ *     host's own caret (`useCursor`) to gate the leaf overlay and the blink
+ *     interval when the user's cursor scrolls off-screen.
+ *
+ * The geometric core (`resolveExtentViewportStatus`) is shared between them.
  */
 
 import { measureCaretTarget, type EditorLayoutState } from "../layout";
-import type { DocumentIndex } from "../state";
+import type { DocumentIndex, EditorSelectionPoint } from "../state";
 import type { EditorState } from "../state/types";
-import type { EditorPresence, EditorPresenceViewport } from "./presence";
+import type {
+  EditorPresence,
+  EditorPresenceViewport,
+  EditorPresenceViewportStatus,
+} from "./presence";
 
 const presenceViewportScrollMargin = 48;
+
+/* Public API */
 
 export function resolvePresenceViewport(
   state: EditorState,
@@ -41,6 +51,31 @@ export function resolvePresenceViewport(
   }));
 }
 
+export function resolveCursorViewportStatus(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  point: EditorSelectionPoint,
+): EditorPresenceViewportStatus;
+export function resolveCursorViewportStatus(
+  documentIndex: DocumentIndex,
+  viewport: EditorLayoutState,
+  point: EditorSelectionPoint,
+): EditorPresenceViewportStatus;
+export function resolveCursorViewportStatus(
+  stateOrIndex: EditorState | DocumentIndex,
+  viewport: EditorLayoutState,
+  point: EditorSelectionPoint,
+): EditorPresenceViewportStatus {
+  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
+  const extent = resolveCursorExtent(documentIndex, viewport, point);
+  if (!extent) {
+    return "unresolved";
+  }
+  return resolveExtentViewportStatus(viewport, extent);
+}
+
+/* Internals */
+
 function resolveEditorPresenceViewport(
   documentIndex: DocumentIndex,
   viewport: EditorLayoutState,
@@ -50,25 +85,30 @@ function resolveEditorPresenceViewport(
     return { status: "unresolved" };
   }
 
-  const exactCaret = measureCaretTarget(viewport.layout, documentIndex, presence.cursorPoint);
-  const extent = exactCaret
-    ? {
-        bottom: exactCaret.top + exactCaret.height,
-        top: exactCaret.top,
-      }
-    : viewport.estimateRegionBounds(presence.cursorPoint.regionId);
-
+  const extent = resolveCursorExtent(documentIndex, viewport, presence.cursorPoint);
   if (!extent) {
     return { status: "unresolved" };
   }
 
   return {
     scrollTop: resolvePresenceCursorScrollTop(viewport, extent),
-    status: resolvePresenceViewportStatus(viewport, extent),
+    status: resolveExtentViewportStatus(viewport, extent),
   };
 }
 
-function resolvePresenceViewportStatus(
+function resolveCursorExtent(
+  documentIndex: DocumentIndex,
+  viewport: EditorLayoutState,
+  point: EditorSelectionPoint,
+): { bottom: number; top: number } | null {
+  const exactCaret = measureCaretTarget(viewport.layout, documentIndex, point);
+  if (exactCaret) {
+    return { bottom: exactCaret.top + exactCaret.height, top: exactCaret.top };
+  }
+  return viewport.estimateRegionBounds(point.regionId);
+}
+
+function resolveExtentViewportStatus(
   viewport: EditorLayoutState,
   extent: { bottom: number; top: number },
 ): "above" | "below" | "visible" {

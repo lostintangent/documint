@@ -25,9 +25,14 @@ export type DocumentResources = {
 // returning a path string that will round-trip back through `readFile` on the
 // next render. The host can derive a name, MIME type, and extension from the
 // `File` directly.
+//
+// `openFile` is invoked when the user cmd+clicks a non-remote link. The host
+// is responsible for opening the path in the appropriate way (e.g. opening a
+// file in the OS, navigating within the app, etc.).
 export type DocumintStorage = {
   readFile(path: string): Promise<Blob | null>;
   writeFile(file: File): Promise<string>;
+  openFile?(path: string): void;
 };
 
 export type EditorCommand =

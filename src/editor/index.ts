@@ -51,9 +51,11 @@ export * from "./state/commands";
 // Annotations
 export {
   getCommentState,
+  resolveCursorViewportStatus,
   resolvePresenceCursors,
   resolvePresenceViewport,
   type EditorCommentState,
   type EditorPresence,
   type EditorPresenceViewport,
+  type EditorPresenceViewportStatus,
 } from "./anchors";

@@ -112,7 +112,6 @@ test("resolves link hover targets with overlapping comment metadata", () => {
       url: "https://example.com",
     }),
   );
-  expect(hover?.kind === "link" ? hover.anchorBottom : 0).toBeGreaterThan(caret.top);
 });
 
 test("preserves selection when creating a comment thread", () => {

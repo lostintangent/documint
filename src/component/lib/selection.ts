@@ -24,23 +24,6 @@ type EditorSelectionState = {
   };
 };
 
-export function normalizeSelectionAbsolutePositions(state: EditorSelectionState) {
-  const anchorContainer = state.documentIndex.regions.find(
-    (entry) => entry.id === state.selection.anchor.regionId,
-  );
-  const focusContainer = state.documentIndex.regions.find(
-    (entry) => entry.id === state.selection.focus.regionId,
-  );
-
-  const anchor = (anchorContainer?.start ?? 0) + state.selection.anchor.offset;
-  const focus = (focusContainer?.start ?? 0) + state.selection.focus.offset;
-
-  return {
-    end: Math.max(anchor, focus),
-    start: Math.min(anchor, focus),
-  };
-}
-
 export function readSingleContainerSelectionRange(state: EditorSelectionState) {
   const normalized = normalizeSelectionPoints(state);
 

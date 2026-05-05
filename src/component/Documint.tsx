@@ -9,10 +9,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type UIEvent,
 } from "react";
 import {
-  countResolvedCommentThreads,
-  isResolvedCommentThread,
   type Comment,
   type CommentThread,
   type Document,
@@ -34,6 +33,7 @@ import {
   insertTableColumn,
   insertTableRow,
   insertText,
+  measureVisualCaretTarget,
   normalizeSelection,
   paintContent,
   paintOverlay,
@@ -55,6 +55,7 @@ import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
 import type { CompletionSource } from "./overlays/leaves/core/LeafInput";
 import { InsertionLeaf } from "./overlays/leaves/InsertionLeaf";
 import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
+import type { LeafResolution } from "./overlays/leaves/core/shared";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
 import { useCursor } from "./hooks/useCursor";
@@ -67,12 +68,12 @@ import { useRenderScheduler } from "./hooks/useRenderScheduler";
 import { useSelection } from "./hooks/useSelection";
 import { useTheme } from "./hooks/useTheme";
 import { useViewport } from "./hooks/useViewport";
-import { areStatesEqual, prepareCanvasLayer } from "./lib/canvas";
+import { prepareCanvasLayer } from "./lib/canvas";
 import { emitDiagnostic } from "./lib/diagnostics";
 import { type EditorKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
 import { joinUsersAndPresence } from "./lib/presence";
-import { normalizeSelectionAbsolutePositions } from "./lib/selection";
+import { DocumentStorage } from "./lib/storage";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
 import { DocumintSsr } from "./Ssr";
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
@@ -88,7 +89,6 @@ export type DocumintProps = {
   users?: DocumentUser[];
 
   onContentChanged?: (content: string, document: Document) => void;
-  onStateChanged?: (state: DocumintState) => void;
   onCommentChanged?: (change: CommentChange) => void;
 };
 
@@ -123,42 +123,12 @@ export type CommentChange =
 
 export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
 
-export type DocumintState = {
-  activeBlockType: string | null;
-  activeCommentThreadIndex: number | null;
-  activeSpanKind: string | null;
-  canonicalContent: string;
-  characterCount: number;
-  commentThreadCount: number;
-  layoutWidth: number;
-
-  resolvedCommentCount: number;
-  selectionFrom: number;
-  selectionTo: number;
-};
-
-const selectionLeafVerticalOffset = 2;
-
-const defaultDocumintState: DocumintState = {
-  activeBlockType: null,
-  activeCommentThreadIndex: null,
-  activeSpanKind: null,
-  canonicalContent: "",
-  characterCount: 0,
-  commentThreadCount: 0,
-  layoutWidth: 0,
-  resolvedCommentCount: 0,
-  selectionFrom: 0,
-  selectionTo: 0,
-};
-
 export function Documint({
   className,
   content,
   keybindings,
   onCommentChanged,
   onContentChanged,
-  onStateChanged,
   presence,
   storage,
   theme,
@@ -170,17 +140,19 @@ export function Documint({
   const editorStateRef = useRef<EditorState | null>(null);
   const lastEmittedContentRef = useRef(content);
   const canonicalContentRef = useRef("");
-  const componentStateRef = useRef(defaultDocumintState);
 
   const [hasMountedCanvases, setHasMountedCanvases] = useState(false);
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
-  const [componentState, setComponentState] = useState(defaultDocumintState);
 
   const contentDocument = useMemo(() => parseDocument(content), [content]);
   const canonicalContent = useMemo(() => serializeDocument(contentDocument), [contentDocument]);
 
   const [editorState, setEditorState] = useState(() => createEditorState(contentDocument));
-  const images = useImages(editorState.documentIndex.imageUrls, storage);
+  const documentStorage = useMemo(
+    () => new DocumentStorage(storage, typeof window !== "undefined" ? window : null),
+    [storage],
+  );
+  const images = useImages(editorState.documentIndex.imageUrls, documentStorage);
   const renderResources = images.resources;
 
   const hasLoadingImages = useMemo(
@@ -208,9 +180,9 @@ export function Documint({
   const {
     autoScrollDuringDrag,
     getScrollTop,
+    invalidatePreparedLayout,
     observePreparedViewport,
     observeScrollContainer,
-    prepareNextPaint,
     reconcileEditorState,
     resolvePoint,
     scrollTo,
@@ -220,7 +192,6 @@ export function Documint({
     layoutWidth,
     preparedViewport,
     scrollContentHeight,
-    surfaceWidth,
     viewportHeight,
     viewportTop,
   } = viewportState;
@@ -249,32 +220,6 @@ export function Documint({
   );
   const canEditComments = Boolean(onContentChanged);
   const readCurrentState = () => editorStateRef.current ?? editorState;
-
-  const publishState = useEffectEvent((state: typeof editorState, canonicalContent: string) => {
-    const nextSelectionContext = getSelectionContext(state);
-    const nextCommentState = getCommentState(state);
-    const nextAbsoluteSelection = normalizeSelectionAbsolutePositions(state);
-    const nextState: DocumintState = {
-      activeBlockType: nextSelectionContext.block?.nodeType ?? null,
-      activeCommentThreadIndex: resolveActiveCommentThreadIndex(state, nextCommentState.liveRanges),
-      activeSpanKind:
-        nextSelectionContext.span.kind === "none" ? null : nextSelectionContext.span.kind,
-      canonicalContent,
-      characterCount: canonicalContent.length,
-      commentThreadCount: nextCommentState.threads.length,
-      layoutWidth,
-      resolvedCommentCount: countResolvedCommentThreads(nextCommentState.threads),
-      selectionFrom: nextAbsoluteSelection.start,
-      selectionTo: nextAbsoluteSelection.end,
-    };
-
-    setComponentState((previous) => (areStatesEqual(previous, nextState) ? previous : nextState));
-
-    if (!areStatesEqual(componentStateRef.current, nextState)) {
-      componentStateRef.current = nextState;
-      onStateChanged?.(nextState);
-    }
-  });
 
   const applyNextState = useEffectEvent((nextState: EditorState | null) => {
     if (!nextState) {
@@ -368,10 +313,11 @@ export function Documint({
   //   - `renderContent` / `renderOverlay` read the cached layout via
   //     `preparedViewport.peek()` — they paint with whatever layout is
   //     currently cached, no recompute.
-  //   - `renderViewport` calls `prepareNextPaint()` first, which invalidates
-  //     and recomputes the layout, then paints both layers with the fresh
-  //     state. This is why "viewport" mode is heavier — the layout cost is
-  //     paid only on this path.
+  //   - `renderViewport` reads via `preparedViewport.get()`, which returns
+  //     the cached layout or recomputes if it was invalidated by an
+  //     earlier signal (scroll, doc-change reconcile, or the layout-
+  //     affecting effect below). The layout cost is paid here, not on
+  //     the lighter paint paths.
 
   const renderContent = useEffectEvent((viewportState = preparedViewport.peek()) => {
     if (!viewportState) {
@@ -437,10 +383,11 @@ export function Documint({
   });
 
   const renderViewport = useEffectEvent(() => {
-    const viewportState = prepareNextPaint();
+    const viewportState = preparedViewport.get();
 
     observePreparedViewport(viewportState);
     presenceController.refreshPresence(viewportState);
+    cursor.refreshCaretViewportStatus(viewportState);
     renderContent(viewportState);
     renderOverlay(viewportState);
   });
@@ -457,8 +404,16 @@ export function Documint({
     renderViewport,
   });
 
-  const scrollContainerProps = viewportProps.getScrollContainer({
-    onScroll: () => scheduleFullRender(),
+  // Sync `useViewport`'s scroll metrics and schedule a render after any
+  // scroll position change — whether driven by the user (native scroll event)
+  // or programmatically (e.g. `usePresence.scrollToPresence`). Stable identity
+  // via `useEffectEvent` so the listener doesn't re-attach on every render.
+  const handleViewportScroll = useEffectEvent((scrollContainer: HTMLDivElement) => {
+    observeScrollContainer(scrollContainer);
+    scheduleFullRender();
+  });
+  const handleScrollEvent = useEffectEvent((event: UIEvent<HTMLDivElement>) => {
+    handleViewportScroll(event.currentTarget);
   });
 
   const cursor = useCursor({
@@ -500,14 +455,10 @@ export function Documint({
     onActivity: cursor.markActivity,
     readCurrentState,
     resolvePoint,
+    storage: documentStorage,
   });
   const hoveredCommentThreadIndex =
-    pointer.leaf?.kind === "comment" ? pointer.leaf.threadIndex : null;
-
-  const handleViewportScroll = useEffectEvent((scrollContainer: HTMLDivElement) => {
-    observeScrollContainer(scrollContainer);
-    scheduleFullRender();
-  });
+    pointer.leaf?.kind === "thread" ? pointer.leaf.threadIndex : null;
 
   const presenceController = usePresence({
     editorState,
@@ -551,18 +502,25 @@ export function Documint({
   //     `useCursor.onVisibilityChange` and `usePresence.scheduleOverlayRender`.
   //
   // Other render triggers in the host live where they're naturally wired:
-  //   - `scrollContainerProps.onScroll` → `scheduleFullRender()` on scroll
+  //   - `handleViewportScroll` → `scheduleFullRender()` on scroll (native or
+  //      programmatic). Inside the resulting `renderViewport` pass,
+  //      `presence.refreshPresence` and `cursor.refreshCaretViewportStatus`
+  //      both project against the fresh layout and only setState when their
+  //      visibility flag flips, so steady-state scrolls stay free.
   //   - `applyNextState` → `scheduleContentPaint()` when an animation starts
 
-  // Layout-affecting changes — fresh layout for paint.
+  // Layout-affecting changes — invalidate the cache, then schedule a fresh
+  // paint. Doc-index changes are reconciled inside `applyNextState` (which
+  // can keep the cache when the focus region is still indexed); we always
+  // invalidate here so the rAF that follows builds against the new state.
   useEffect(() => {
+    invalidatePreparedLayout();
     scheduleFullRender();
   }, [
     editorState.documentIndex,
     layoutWidth,
     preferredTheme,
     renderResources,
-    scheduleFullRender,
     viewportHeight,
   ]);
 
@@ -584,7 +542,6 @@ export function Documint({
     normalizedSel.end.regionId,
     normalizedSel.start.offset,
     normalizedSel.start.regionId,
-    scheduleFullPaint,
     selectionContext.block?.blockId,
   ]);
 
@@ -596,7 +553,6 @@ export function Documint({
     activeCommentThreadIndex,
     commentState.liveRanges,
     hoveredCommentThreadIndex,
-    scheduleContentPaint,
   ]);
 
   // While images are still loading, keep rendering so dimensions update
@@ -621,75 +577,75 @@ export function Documint({
         windowObject.cancelAnimationFrame(frameId);
       }
     };
-  }, [hasLoadingImages, scheduleFullRender]);
+  }, [hasLoadingImages]);
 
   /* Leaf presentation */
 
-  // Composes leaf outputs from `usePointer` (hover), `useSelection`
-  // (comment-create / thread), and `useCursor` (insertion / table /
-  // contextual) into one visible leaf, arbitrating priority and rendering
-  // the appropriate leaf component.
+  // Three hooks produce candidate leaves (`pointer > selection > cursor`);
+  // the host arbitrates priority, resolves the anchor, and renders one
+  // through the portaled `LeafAnchor`. See "Leaf overlay coordination" in
+  // component/AGENTS.md.
 
-  const resolveVisibleLeafPresentation = () => {
-    const hoveredLeaf = pointer.leaf;
-    const visibleLeaf = hoveredLeaf ?? selection.leaf ?? cursor.leaf;
-    const isSelectionLeafVisible = !hoveredLeaf && Boolean(selection.leaf);
-    const scrollContainerBounds = scrollContainerRef.current?.getBoundingClientRect() ?? null;
-    const visibleThreadLeaf =
-      visibleLeaf?.kind === "thread"
-        ? {
-            ...visibleLeaf,
-            thread: commentState.threads[visibleLeaf.threadIndex] ?? null,
-          }
-        : null;
-    const annotationThreadLeaf =
-      visibleLeaf?.kind === "comment"
-        ? {
-            animateInitialComment: false,
-            link: visibleLeaf.link,
-            thread: visibleLeaf.thread,
-            threadIndex: visibleLeaf.threadIndex,
-          }
-        : visibleThreadLeaf?.thread
-          ? {
-              animateInitialComment: visibleThreadLeaf.animateInitialComment ?? false,
-              link: null,
-              thread: visibleThreadLeaf.thread,
-              threadIndex: visibleThreadLeaf.threadIndex,
-            }
-          : null;
-    const visibleLeafStatus: "default" | "resolved" =
-      annotationThreadLeaf?.thread && isResolvedCommentThread(annotationThreadLeaf.thread)
-        ? "resolved"
-        : "default";
+  const activeLeaf = pointer.leaf ?? selection.leaf ?? cursor.leaf;
 
-    return {
-      annotationThreadLeaf,
-      visibleLeaf,
-      visibleLeafAnchor: visibleLeaf
-        ? ({
-            isSelection: isSelectionLeafVisible,
-            left: (scrollContainerBounds?.left ?? 0) + visibleLeaf.left,
-            onPointerEnter: hoveredLeaf ? pointer.leafHandlers.onPointerEnter : undefined,
-            onPointerLeave: hoveredLeaf ? pointer.leafHandlers.onPointerLeave : undefined,
-            top:
-              (scrollContainerBounds?.top ?? 0) +
-              visibleLeaf.top -
-              viewportTop +
-              (isSelectionLeafVisible ? selectionLeafVerticalOffset : 0),
-          } satisfies LeafAnchor)
-        : undefined,
-      visibleLeafStatus,
-    };
-  };
-  const { annotationThreadLeaf, visibleLeaf, visibleLeafAnchor, visibleLeafStatus } =
-    resolveVisibleLeafPresentation();
-  const resolveVisibleLeafContent = () => {
-    if (!visibleLeaf) {
+  // Resolve the active leaf's anchor target into pixel geometry against
+  // the prepared layout. Returns null when no leaf is active or its
+  // anchor falls outside the editor's visible window — the same gate the
+  // canvas painter applies to the caret.
+  const resolveLeafAnchor = (): LeafResolution | null => {
+    if (!activeLeaf) {
       return null;
     }
 
-    switch (visibleLeaf.kind) {
+    const measured = measureVisualCaretTarget(
+      editorState,
+      preparedViewport.get(),
+      activeLeaf.anchor,
+    );
+    if (!measured) {
+      return null;
+    }
+
+    const anchorBottom = measured.top + measured.height;
+    const viewportBottom = viewportTop + viewportHeight;
+    if (anchorBottom <= viewportTop || anchorBottom >= viewportBottom) {
+      return null;
+    }
+
+    // Doc-absolute coords let the browser handle host-page scrolls
+    // (including iOS keyboard auto-scroll) without window listeners. The
+    // host-rect read is gated by the early-returns above so it doesn't
+    // run on idle paint frames.
+    const scrollContainerBounds = scrollContainerRef.current?.getBoundingClientRect();
+    const hostScrollX = typeof window !== "undefined" ? window.scrollX : 0;
+    const hostScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+    // `pointer.leaf` always wins priority, so when it's the active leaf,
+    // reference equality picks out the hover case.
+    const isHoverLeaf = activeLeaf === pointer.leaf;
+
+    return {
+      anchorHeight: measured.height,
+      // Hover leaves want the bridge for pointer hand-off (see styles.css).
+      bridge: isHoverLeaf,
+      left:
+        (scrollContainerBounds?.left ?? 0) +
+        hostScrollX +
+        (activeLeaf.leftOverride ?? measured.left),
+      onPointerEnter: isHoverLeaf ? pointer.leafHandlers.onPointerEnter : undefined,
+      onPointerLeave: isHoverLeaf ? pointer.leafHandlers.onPointerLeave : undefined,
+      paddingY: activeLeaf.paddingY ?? 0,
+      top:
+        (scrollContainerBounds?.top ?? 0) + hostScrollY + anchorBottom - viewportTop,
+    };
+  };
+  const leafAnchor = resolveLeafAnchor();
+
+  const resolveLeafContent = () => {
+    if (!activeLeaf) {
+      return null;
+    }
+
+    switch (activeLeaf.kind) {
       case "insertion":
         return (
           <InsertionLeaf
@@ -704,8 +660,8 @@ export function Documint({
       case "table":
         return (
           <TableLeaf
-            canDeleteColumn={visibleLeaf.columnCount > 1}
-            canDeleteRow={visibleLeaf.rowCount > 1}
+            canDeleteColumn={activeLeaf.columnCount > 1}
+            canDeleteRow={activeLeaf.rowCount > 1}
             onDeleteColumn={() => {
               applyNextState(deleteTableColumn(readCurrentState()));
             }}
@@ -730,9 +686,9 @@ export function Documint({
             onDelete={() => {
               const stateUpdate = removeLink(
                 readCurrentState(),
-                visibleLeaf.regionId,
-                visibleLeaf.startOffset,
-                visibleLeaf.endOffset,
+                activeLeaf.regionId,
+                activeLeaf.startOffset,
+                activeLeaf.endOffset,
               );
 
               if (stateUpdate) {
@@ -742,9 +698,9 @@ export function Documint({
             onSave={(url) => {
               const stateUpdate = updateLink(
                 readCurrentState(),
-                visibleLeaf.regionId,
-                visibleLeaf.startOffset,
-                visibleLeaf.endOffset,
+                activeLeaf.regionId,
+                activeLeaf.startOffset,
+                activeLeaf.endOffset,
                 url,
               );
 
@@ -752,14 +708,14 @@ export function Documint({
                 applyNextState(stateUpdate);
               }
             }}
-            title={visibleLeaf.title}
-            url={visibleLeaf.url}
+            title={activeLeaf.title}
+            url={activeLeaf.url}
           />
         );
-      case "create":
+      case "annotation":
         return (
           <AnnotationLeaf
-            activeMarks={visibleLeaf.activeMarks}
+            activeMarks={activeLeaf.activeMarks}
             canEdit={canEditComments}
             link={null}
             mode="create"
@@ -769,7 +725,7 @@ export function Documint({
               const threadIndex = getDocument(currentState).comments.length;
               const stateUpdate = addComment(
                 currentState,
-                visibleLeaf.selection,
+                activeLeaf.selection,
                 body.trim(),
               );
 
@@ -795,16 +751,16 @@ export function Documint({
             }}
           />
         );
-      default:
-        return annotationThreadLeaf ? (
+      case "thread":
+        return (
           <AnnotationLeaf
-            animateInitialComment={annotationThreadLeaf.animateInitialComment}
+            animateInitialComment={activeLeaf.animateInitialComment}
             canEdit={canEditComments}
-            link={annotationThreadLeaf.link}
+            link={activeLeaf.link}
             mode="thread"
             mentionSources={mentionSources}
             onDeleteComment={(commentIndex) => {
-              const { threadIndex } = annotationThreadLeaf;
+              const { threadIndex } = activeLeaf;
               const previousState = readCurrentState();
               const thread = getDocument(previousState).comments[threadIndex];
               const comment = thread?.comments[commentIndex];
@@ -816,7 +772,7 @@ export function Documint({
               }
             }}
             onDeleteThread={() => {
-              const { threadIndex } = annotationThreadLeaf;
+              const { threadIndex } = activeLeaf;
               const previousState = readCurrentState();
               const thread = getDocument(previousState).comments[threadIndex];
               const stateUpdate = deleteThread(previousState, threadIndex);
@@ -829,7 +785,7 @@ export function Documint({
               }
             }}
             onEditComment={(commentIndex, body) => {
-              const { threadIndex } = annotationThreadLeaf;
+              const { threadIndex } = activeLeaf;
               const previousState = readCurrentState();
               const previousBody =
                 getDocument(previousState).comments[threadIndex]?.comments[commentIndex]?.body;
@@ -841,7 +797,7 @@ export function Documint({
               }
             }}
             onReply={(body) => {
-              const { threadIndex } = annotationThreadLeaf;
+              const { threadIndex } = activeLeaf;
               const stateUpdate = replyToThread(readCurrentState(), threadIndex, body);
               if (!stateUpdate) return;
               applyNextState(stateUpdate);
@@ -851,17 +807,22 @@ export function Documint({
               applyNextState(
                 resolveThread(
                   readCurrentState(),
-                  annotationThreadLeaf.threadIndex,
-                  !isResolvedCommentThread(annotationThreadLeaf.thread),
+                  activeLeaf.threadIndex,
+                  !activeLeaf.resolved,
                 ),
               );
             }}
-            thread={annotationThreadLeaf.thread}
+            thread={activeLeaf.thread}
           />
-        ) : null;
+        );
     }
   };
-  const visibleLeafContent = resolveVisibleLeafContent();
+  
+  // Skip building the leaf's React tree when no leaf is going to render.
+  // Each branch of `resolveLeafContent` allocates several inline callbacks,
+  // so this avoids per-frame churn during scrolls that move the cursor
+  // leaf's anchor in and out of the viewport.
+  const leafContent = leafAnchor ? resolveLeafContent() : null;
 
   /* State machine */
 
@@ -872,11 +833,6 @@ export function Documint({
   useEffect(() => {
     setHasMountedCanvases(true);
   }, []);
-
-  // Publish the derived `DocumintState` to host props on every state change.
-  useEffect(() => {
-    publishState(editorState, canonicalContentRef.current || canonicalContent);
-  }, [canonicalContent, editorState, publishState, surfaceWidth]);
 
   /* Reconciliation */
 
@@ -906,7 +862,7 @@ export function Documint({
     // selection. Longer term, the viewport cache should carry enough input
     // metadata to validate itself before reuse.
     scrollTo(nextViewportTop);
-  }, [canonicalContent, content, contentDocument, getScrollTop, scrollTo]);
+  }, [canonicalContent, content, contentDocument]);
 
   /* Render */
 
@@ -916,14 +872,12 @@ export function Documint({
     <OverlayPortalProvider themeStyles={themeStyles}>
       <section
         className={sectionClassName}
-        data-active-block={componentState.activeBlockType ?? ""}
-        data-active-comment-thread={componentState.activeCommentThreadIndex ?? ""}
-        data-active-span={componentState.activeSpanKind ?? ""}
         style={{ ...themeStyles, height: "100%", minHeight: 0 }}
       >
         <style>{DOCUMINT_EDITOR_STYLES}</style>
         <div
-          {...scrollContainerProps}
+          ref={scrollContainerRef}
+          onScroll={handleScrollEvent}
           className="documint-scroll-container"
           style={{
             height: "100%",
@@ -971,11 +925,7 @@ export function Documint({
             </>}
 
             {/* Leaf overlay */}
-            {visibleLeaf && visibleLeafAnchor ? (
-              <LeafAnchor anchor={visibleLeafAnchor} status={visibleLeafStatus}>
-                {visibleLeafContent}
-              </LeafAnchor>
-            ) : null}
+            {leafAnchor ? <LeafAnchor anchor={leafAnchor}>{leafContent}</LeafAnchor> : null}
           </div>
 
           {/* SSR fallback */}
@@ -1063,3 +1013,4 @@ function resolveSelectionPointOrder(
 ) {
   return (regionOrderIndex.get(regionId) ?? -1) * 1_000_000 + offset;
 }
+

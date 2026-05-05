@@ -1,9 +1,8 @@
 // Owns the editor's image-resource pipeline. Given the set of image URLs
 // the document currently references (precomputed by the indexer during the
-// walk it does anyway), decodes each one into an `ImageBitmap` — directly
-// via `createImageBitmap(blob)` for host-storage-resolved local URLs, or
-// via `<img>` followed by `createImageBitmap(image)` for remote URLs — and
-// exposes the results as `DocumentResources` for the canvas painter.
+// walk it does anyway), resolves each one to a Blob via DocumentStorage
+// (which handles remote vs. local routing) and decodes it into an
+// `ImageBitmap` for the canvas painter.
 //
 // Also owns the write path: `persistImage(file)` hands a pasted file to
 // the host's storage, decodes it locally, and stashes the result in state
@@ -21,8 +20,8 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   type DocumentImageResource,
   type DocumentResources,
-  type DocumintStorage,
 } from "@/types";
+import type { DocumentStorage } from "../lib/storage";
 
 export type ImagesApi = {
   resources: DocumentResources | null;
@@ -31,14 +30,14 @@ export type ImagesApi = {
 
 export function useImages(
   imageUrls: ReadonlySet<string>,
-  storage?: DocumintStorage,
+  storage: DocumentStorage,
 ): ImagesApi {
   const [imageResources, setImageResources] = useState<Map<string, DocumentImageResource>>(
     new Map(),
   );
 
   const reconcileImageLoads = useEffectEvent((urls: ReadonlySet<string>) => {
-    if (typeof Image === "undefined") {
+    if (typeof createImageBitmap === "undefined") {
       return; // SSR — no decode pipeline available.
     }
 
@@ -102,7 +101,6 @@ export function useImages(
   // matching markdown image into the document; the very next render's
   // reconcile sees the resource already loaded and skips the load.
   const persistImage = useEffectEvent(async (file: File) => {
-    if (!storage?.writeFile) return null;
     try {
       const path = await storage.writeFile(file);
       const bitmap = await createImageBitmap(file).catch(() => null);
@@ -134,50 +132,16 @@ export function useImages(
 
 /* Loading pipeline */
 
-// Loads a single image. Returns the decoded `ImageBitmap` on success, or
-// `null` on any failure (resolution failed, decode failed, host has no
-// storage to resolve a local URL).
 async function loadImage(
   url: string,
-  storage: DocumintStorage | undefined,
+  storage: DocumentStorage,
 ): Promise<ImageBitmap | null> {
-  // http(s):, data:, blob: load directly via <img>.src. Everything else
-  // (file:, relative, app-scheme:, bare filename) is "local" and routes
-  // through the host's storage.readFile.
-  if (/^(https?:|data:|blob:)/i.test(url)) {
-    return decodeImageFromUrl(url);
-  }
-
-  if (!storage?.readFile) {
-    return null;
-  }
-
   try {
     const blob = await storage.readFile(url);
     return blob ? await createImageBitmap(blob) : null;
   } catch {
     return null;
   }
-}
-
-// Fetches a remote URL via `<img>` (preserving the existing CORS and cache
-// behavior of image loading) and converts the loaded element into an
-// `ImageBitmap` for uniform paint-source handling.
-function decodeImageFromUrl(url: string): Promise<ImageBitmap | null> {
-  return new Promise((resolve) => {
-    const image = new Image();
-    image.decoding = "async";
-    image.crossOrigin = "anonymous";
-    image.onload = async () => {
-      try {
-        resolve(await createImageBitmap(image));
-      } catch {
-        resolve(null);
-      }
-    };
-    image.onerror = () => resolve(null);
-    image.src = url;
-  });
 }
 
 /* Helpers */

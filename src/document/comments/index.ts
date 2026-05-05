@@ -3,7 +3,6 @@ export { resolveCommentThread } from "./anchors";
 export { parseCommentThread } from "./serialization";
 
 export {
-  countResolvedCommentThreads,
   createCommentThread,
   deleteCommentFromThread,
   editCommentInThread,

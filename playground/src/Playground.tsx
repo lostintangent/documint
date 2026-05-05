@@ -24,6 +24,9 @@ function createInMemoryStorage(): DocumintStorage {
       files.set(file.name, file);
       return file.name;
     },
+    openFile(_path) {
+      window.open("https://github.com/lostintangent/documint", "_blank");
+    },
   };
 }
 

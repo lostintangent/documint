@@ -114,10 +114,6 @@ export function isResolvedCommentThread(thread: CommentThread) {
   return thread.resolvedAt != null;
 }
 
-export function countResolvedCommentThreads(threads: CommentThread[]) {
-  return threads.filter((thread) => isResolvedCommentThread(thread)).length;
-}
-
 export function getCommentThreadUpdatedAt(thread: CommentThread): string | null {
   if (thread.comments.length === 0) {
     return null;

@@ -1,49 +1,6 @@
-# AGENTS.md
+# Documint (Architecture + Contribution Guidelines)
 
-## Mission
-
-Build a markdown-native writing surface that stays rendered as a document — content displays as polished output, and the active block or span (whichever the caret or selection sits in) reveals source-like editing affordances. The semantic truth is `Document`; the editor projects it into `EditorState` (immutable in-memory editing state, built around a `DocumentIndex` for hot-path lookup, with selection and history) and from there into `EditorLayoutState` (geometry packaged for paint). Pretext — a third-party text segmentation and layout library — handles low-level text measurement; everything else is bespoke.
-
-## Product principles
-
-- Markdown is the persistence boundary.
-- The editing projection is semantic, not raw markdown text.
-- Only the active region reveals source-like editing affordances.
-- Comments are anchored annotations, not document content.
-- Pretext never owns caret, IME, clipboard, undo, or live selection.
-- Canvas is the live editor surface.
-
-## Toolchain defaults
-
-- Use Bun as the default package manager, script runner, bundler, and test runner.
-- Use `oxlint` and `oxfmt`.
-- Keep the playground healthy; it is a required dogfooding surface.
-
-## Writing great code
-
-- Start with the correct layer. Keep logic in the lowest correct subsystem and own it there completely instead of smearing one behavior across component, editor, markdown, and document layers.
-- Use immutable data with structural sharing throughout. `Document`, `EditorState`, and `EditorLayoutState` are immutable values; mutations produce new values that share unchanged structure with the previous one. A selection move keeps the same `documentIndex` reference, which is exactly what lets the `EditorLayoutState` cache survive across the change. Pure-function transformations are easy to test in isolation and safe to cache against by reference identity.
-- Push side effects to the edge. The editor engine — `Document`, `EditorState`, layout, query — is pure data and pure functions. Canvas pixels, DOM events, rAF scheduling, and `now` all live in [`src/component`](src/component/AGENTS.md), which owns the render loop. User input enters at the edge, flows inward as data transformations, then exits at the edge as paint calls. Concentrating side effects this way is what makes the engine testable without DOM stubs and lets the same immutable state drive multiple paint passes per frame.
-- Favor declarative data over imperative APIs, without over-abstracting. Animations are descriptors paint resolves at frame time, not callbacks. Commands are state-to-state transforms, not setter sequences. Spacing, typography, and gap policies live in tables and small policy objects. The goal is clearer data flow, not indirection for its own sake — don't add a layer just to be pure.
-- Prefer small, semantic public APIs. Export capabilities in terms of what they mean, not how they are implemented.
-- Make files read clearly from top to bottom. Put the main entrypoint first, then the supporting helpers in dependency order.
-- Use concise module comments when they help a reader understand the file’s role. Skip boilerplate commentary.
-- Choose semantic names for functions, types, and variables. Avoid names that overfit the current implementation detail.
-- Keep helper modules only when they earn their keep through clearer ownership, reuse, or simpler reading.
-
-## Writing great tests
-
-- Test the subsystem that owns the behavior.
-- Prefer focused unit coverage over broad UI smoke tests.
-- Use markdown golden tests to protect round-trip stability.
-- Add or update benchmark coverage when changing layout, paint, viewport planning, or other hot paths.
-- Verify the real browser behavior in the playground after meaningful UI changes, especially for input, scrolling, resize, and paint issues.
-- Group tests logically with `describe` blocks, ordered common-case-first → edge-case-last; order the tests within each group the same way.
-- Helpers belong in the lowest subsystem they apply to (`test/document/`, `test/markdown/`, `test/editor/`); higher subsystems import from lower ones, never the other way around.
-
-## Architecture
-
-The core data pipeline is `markdown → Document → EditorState → EditorLayoutState → canvas pixels`.
+The core rendering lifecycle of content is: `markdown → Document → EditorState → EditorLayoutState → canvas pixels`.
 
 Each transition has its own cadence. `markdown ↔ Document` runs at file boundaries (load, save, clipboard). `Document → EditorState` produces a new immutable state per mutation or selection move. `EditorState → EditorLayoutState` is lazily recomputed when its layout-affecting inputs change — document structure the cache can't cover, scroll, or surface resize — so selection-only updates, animation ticks, and caret blinks reuse the cached layout state and skip straight to paint.
 
@@ -87,6 +44,28 @@ Each subsystem has its own `AGENTS.md` with the lower-level boundaries and owner
 - `playground` - Dogfooding app for exercising real browser behavior.
 - `scripts` - Build, packaging, and benchmark automation.
 - `test` - Unit tests, golden fixtures, and benchmark support.
+
+## Writing great code
+
+- Start with the correct layer. Keep logic in the lowest correct subsystem and own it there completely instead of smearing one behavior across component, editor, markdown, and document layers.
+- Use immutable data with structural sharing throughout. `Document`, `EditorState`, and `EditorLayoutState` are immutable values; mutations produce new values that share unchanged structure with the previous one. A selection move keeps the same `documentIndex` reference, which is exactly what lets the `EditorLayoutState` cache survive across the change. Pure-function transformations are easy to test in isolation and safe to cache against by reference identity.
+- Push side effects to the edge. The editor engine — `Document`, `EditorState`, layout, query — is pure data and pure functions. Canvas pixels, DOM events, rAF scheduling, and `now` all live in [`src/component`](src/component/AGENTS.md), which owns the render loop. User input enters at the edge, flows inward as data transformations, then exits at the edge as paint calls. Concentrating side effects this way is what makes the engine testable without DOM stubs and lets the same immutable state drive multiple paint passes per frame.
+- Favor declarative data over imperative APIs, without over-abstracting. Animations are descriptors paint resolves at frame time, not callbacks. Commands are state-to-state transforms, not setter sequences. Spacing, typography, and gap policies live in tables and small policy objects. The goal is clearer data flow, not indirection for its own sake — don't add a layer just to be pure.
+- Prefer small, semantic public APIs. Export capabilities in terms of what they mean, not how they are implemented.
+- Make files read clearly from top to bottom. Put the main entrypoint first, then the supporting helpers in dependency order.
+- Use concise module comments when they help a reader understand the file’s role. Skip boilerplate commentary.
+- Choose semantic names for functions, types, and variables. Avoid names that overfit the current implementation detail.
+- Keep helper modules only when they earn their keep through clearer ownership, reuse, or simpler reading.
+
+## Writing great tests
+
+- Test the subsystem that owns the behavior.
+- Prefer focused unit coverage over broad UI smoke tests.
+- Use markdown golden tests to protect round-trip stability.
+- Add or update benchmark coverage when changing layout, paint, viewport planning, or other hot paths.
+- Verify the real browser behavior in the playground after meaningful UI changes, especially for input, scrolling, resize, and paint issues.
+- Group tests logically with `describe` blocks, ordered common-case-first → edge-case-last; order the tests within each group the same way.
+- Helpers belong in the lowest subsystem they apply to (`test/document/`, `test/markdown/`, `test/editor/`); higher subsystems import from lower ones, never the other way around.
 
 ## Definition of done
 

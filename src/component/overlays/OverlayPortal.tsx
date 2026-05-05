@@ -7,7 +7,7 @@
 // Documint's theme is exposed as inline CSS custom properties on a wrapper
 // around the portaled content, so the editor's visual identity travels
 // with the overlay even though it no longer descends from the host element.
-// That detail is internal — consumers just wrap UI in <OverlayPortal>.
+
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -32,9 +32,6 @@ export function OverlayPortal({ children }: { children: ReactNode }) {
     return null;
   }
 
-  // The wrapper exists only to carry theme custom properties to portaled
-  // descendants. `display: contents` keeps it transparent to layout so the
-  // overlay's own positioning (typically position: fixed) is unaffected.
   return createPortal(
     <div className="documint-overlay" style={{ display: "contents", ...themeStyles }}>
       {children}

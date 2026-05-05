@@ -1,0 +1,180 @@
+// Type vocabulary and shared resolver for the leaf system. The leaf
+// overlay flow is:
+//
+//   1. Hooks (useCursor / useSelection / usePointer) emit a
+//      `LeafBase` subtype — the declarative "I attach here,
+//      render this kind of leaf" candidate.
+//   2. Documint resolves each candidate's anchor against the prepared
+//      layout into a `LeafResolution` — the geometric form
+//      `LeafAnchor` consumes.
+//   3. `LeafAnchor` renders the resolution; the kind discriminator picks
+//      the leaf-specific React component (LinkLeaf, AnnotationLeaf, …).
+
+import { isResolvedCommentThread, type Mark } from "@/document";
+import type {
+  EditorCommentState,
+  EditorHoverTarget,
+  EditorSelectionPoint,
+} from "@/editor";
+import type { PointerEventHandler } from "react";
+
+// Declarative anchoring intent emitted by leaf-producing hooks. Every
+// leaf candidate kind extends this base.
+export type LeafBase = {
+  // Document point the leaf attaches to. The host derives the line-bottom
+  // y (`top`), caret-x (`left`), and line height (`anchorHeight`) from it.
+  anchor: EditorSelectionPoint;
+  // Override `left` when the leaf's x doesn't come from the anchor — e.g.
+  // table leaves (cell text-left) or selection-annotation (range-start).
+  leftOverride?: number;
+  // Extra vertical breathing room from the anchor, applied symmetrically
+  // above or below. Selection-annotation uses 2 to clear the highlight.
+  paddingY?: number;
+};
+
+// Reference-stable comparison hooks use to skip leaf re-renders when the
+// underlying anchor target hasn't moved.
+export function areLeafBasesEqual(
+  previous: LeafBase,
+  next: LeafBase,
+) {
+  return (
+    previous.anchor.regionId === next.anchor.regionId &&
+    previous.anchor.offset === next.anchor.offset &&
+    previous.leftOverride === next.leftOverride &&
+    previous.paddingY === next.paddingY
+  );
+}
+
+// The fully-resolved geometric form of a `LeafBase`. Hooks emit
+// the target (declarative); Documint resolves it against the prepared
+// layout, then adds the cross-cutting presentation flags.
+export type LeafResolution = {
+  // Line height at the anchor row. The above-flip uses this plus the
+  // shell's own height to clear the anchor line.
+  anchorHeight: number;
+  // True for hover leaves (renders the bridge child as the pointer
+  // hand-off surface). False for cursor and selection leaves — the
+  // wrapper also becomes pointer-event-transparent (see styles.css).
+  bridge: boolean;
+  // Document-absolute anchor coordinates.
+  left: number;
+  top: number;
+  // Hover-bridge handlers — set only when `bridge: true`.
+  onPointerEnter?: PointerEventHandler<HTMLDivElement>;
+  onPointerLeave?: PointerEventHandler<HTMLDivElement>;
+  // Extra vertical breathing room from the anchor, applied symmetrically
+  // above or below (CSS variable `--documint-leaf-padding-y`).
+  paddingY: number;
+};
+
+// Leaf shown when the caret sits on an empty top-level paragraph — the
+// block-insertion menu (heading, list, table, …).
+export type InsertionLeaf = LeafBase & {
+  kind: "insertion";
+};
+
+// Leaf shown when the caret sits inside a table cell — the table-editing
+// menu (insert/delete row/column, delete table).
+export type TableLeaf = LeafBase & {
+  cellIndex: number;
+  columnCount: number;
+  kind: "table";
+  rowCount: number;
+  rowIndex: number;
+};
+
+// Leaf shown when there's an active text selection — the annotation
+// toolbar (formatting marks + add-comment trigger). Promoting this leaf
+// after a comment is added produces a `ThreadLeaf`.
+export type AnnotationLeaf = LeafBase & {
+  activeMarks: Mark[];
+  kind: "annotation";
+  selection: {
+    endOffset: number;
+    regionId: string;
+    startOffset: number;
+  };
+};
+
+// Leaf shown when hover or caret lands on a link span.
+export type LinkLeaf = LeafBase & {
+  endOffset: number;
+  kind: "link";
+  regionId: string;
+  startOffset: number;
+  title: string | null;
+  url: string;
+};
+
+// Leaf showing a comment thread. Produced by two paths:
+//   - usePointer / useCursor when hover or caret lands on a commented span.
+//   - useSelection when a selection-annotation leaf is promoted post-submit.
+// Both paths emit this same shape so the renderer doesn't normalize.
+export type ThreadLeaf = LeafBase & {
+  // Plays the entry animation for a freshly-promoted thread; false for
+  // hover/cursor-derived threads.
+  animateInitialComment: boolean;
+  kind: "thread";
+  // Set when the commented span is also a link (hover/cursor path); null
+  // for selection-promoted threads.
+  link: { title: string | null; url: string } | null;
+  // Whether the thread is currently resolved.
+  resolved: boolean;
+  thread: EditorCommentState["threads"][number];
+  threadIndex: number;
+};
+
+// Resolves an editor hover/selection-point target into the leaf candidate
+// that should appear for it. Shared between usePointer (hover) and
+// useCursor (caret-on-annotated-span) since the discrimination is the
+// same in both contexts.
+export function resolveContextualLeaf(
+  target: EditorHoverTarget | null,
+  threads: EditorCommentState["threads"],
+  liveRanges: EditorCommentState["liveRanges"],
+): ThreadLeaf | LinkLeaf | null {
+  if (!target || target.kind === "task-toggle") {
+    return null;
+  }
+
+  if (target.commentThreadIndex !== null) {
+    const thread = threads[target.commentThreadIndex] ?? null;
+    // Comment leaves anchor to the start of the comment range, not the
+    // hover point.
+    const range = liveRanges.find((entry) => entry.threadIndex === target.commentThreadIndex);
+    if (!thread || !range) {
+      return null;
+    }
+
+    return {
+      anchor: { regionId: range.regionId, offset: range.startOffset },
+      animateInitialComment: false,
+      kind: "thread",
+      link:
+        target.kind === "link"
+          ? {
+              title: target.title,
+              url: target.url,
+            }
+          : null,
+      resolved: isResolvedCommentThread(thread),
+      thread,
+      threadIndex: target.commentThreadIndex,
+    };
+  }
+
+  if (target.kind !== "link") {
+    return null;
+  }
+
+  return {
+    anchor: { regionId: target.regionId, offset: target.startOffset },
+    endOffset: target.endOffset,
+    kind: "link",
+    regionId: target.regionId,
+    startOffset: target.startOffset,
+    title: target.title,
+    url: target.url,
+  };
+}

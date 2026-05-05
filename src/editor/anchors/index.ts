@@ -55,4 +55,4 @@ export {
   type EditorPresenceViewportStatus,
 } from "./presence";
 
-export { resolvePresenceViewport } from "./presence-viewport";
+export { resolveCursorViewportStatus, resolvePresenceViewport } from "./presence-viewport";

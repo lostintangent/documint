@@ -8,7 +8,6 @@ export {
   type CommentChange,
   type EditorKeybinding,
   type DocumintProps,
-  type DocumintState,
   type DocumintTheme,
 } from "./component";
 

@@ -1,3 +1,7 @@
+## 🗓️ v0.0.9 (05-05-26)
+
+- Added a new `openFile` method to the custom storage API, so that embedders can detect and handle clicking links to non-HTTP resources (e.g. opening a local file)
+
 ## 🗓️ v0.0.8 (05-03-26)
 
 - Added support for document dividers (`---`)

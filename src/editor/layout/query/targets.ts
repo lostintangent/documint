@@ -30,8 +30,6 @@ export type CanvasCheckboxHit = {
 };
 
 export type CanvasLinkHit = {
-  anchorBottom: number;
-  anchorLeft: number;
   endOffset: number;
   regionId: string;
   startOffset: number;
@@ -41,8 +39,6 @@ export type CanvasLinkHit = {
 
 export type EditorHoverTarget =
   | {
-      anchorBottom: number;
-      anchorLeft: number;
       endOffset: number;
       kind: "link";
       commentThreadIndex: number | null;
@@ -56,8 +52,6 @@ export type EditorHoverTarget =
       listItemId: string;
     }
   | {
-      anchorBottom: number;
-      anchorLeft: number;
       kind: "text";
       commentThreadIndex: number | null;
     };
@@ -109,7 +103,7 @@ export function resolveLinkHitAtPoint(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
-) {
+): CanvasLinkHit | null {
   const hit = resolveEditorHitAtPoint(layout, state, point);
 
   if (!hit) {
@@ -130,15 +124,7 @@ export function resolveLinkHitAtPoint(
     return null;
   }
 
-  const anchor = resolveHoverAnchor(layout, state, hit.regionId, run.start);
-
-  if (!anchor) {
-    return null;
-  }
-
   return {
-    anchorBottom: anchor.anchorBottom,
-    anchorLeft: anchor.anchorLeft,
     endOffset: run.end,
     regionId: hit.regionId,
     startOffset: run.start,
@@ -173,16 +159,10 @@ export function resolveHoverTargetAtPoint(
     hit.offset,
     liveCommentRanges,
   );
-  const commentAnchor =
-    commentThreadIndex !== null
-      ? resolveCommentAnchor(commentThreadIndex, layout, state, liveCommentRanges)
-      : null;
   const linkHit = resolveLinkHitAtPoint(layout, state, point);
 
   if (linkHit) {
     return {
-      anchorBottom: commentAnchor?.anchorBottom ?? linkHit.anchorBottom,
-      anchorLeft: commentAnchor?.anchorLeft ?? linkHit.anchorLeft,
       endOffset: linkHit.endOffset,
       kind: "link",
       commentThreadIndex,
@@ -194,8 +174,6 @@ export function resolveHoverTargetAtPoint(
   }
 
   return {
-    anchorBottom: commentAnchor?.anchorBottom ?? hit.top + hit.height,
-    anchorLeft: commentAnchor?.anchorLeft ?? hit.left,
     kind: "text",
     commentThreadIndex,
   };
@@ -218,25 +196,13 @@ export function resolveTargetAtSelectionPoint(
     selectionPoint.offset,
     liveCommentRanges,
   );
-  const commentAnchor =
-    commentThreadIndex !== null
-      ? resolveCommentAnchor(commentThreadIndex, layout, state, liveCommentRanges)
-      : null;
   const run =
     container.inlines.find(
       (entry) => selectionPoint.offset >= entry.start && selectionPoint.offset <= entry.end,
     ) ?? null;
 
   if (run?.link) {
-    const linkAnchor = resolveHoverAnchor(layout, state, selectionPoint.regionId, run.start);
-
-    if (!linkAnchor) {
-      return null;
-    }
-
     return {
-      anchorBottom: commentAnchor?.anchorBottom ?? linkAnchor.anchorBottom,
-      anchorLeft: commentAnchor?.anchorLeft ?? linkAnchor.anchorLeft,
       commentThreadIndex,
       endOffset: run.end,
       kind: "link",
@@ -247,10 +213,8 @@ export function resolveTargetAtSelectionPoint(
     };
   }
 
-  if (commentAnchor) {
+  if (commentThreadIndex !== null) {
     return {
-      anchorBottom: commentAnchor.anchorBottom,
-      anchorLeft: commentAnchor.anchorLeft,
       commentThreadIndex,
       kind: "text",
     };
@@ -298,39 +262,6 @@ function resolveCommentThreadIndexAtSelectionPoint(
   }
 
   return null;
-}
-
-function resolveCommentAnchor(
-  threadIndex: number,
-  layout: DocumentLayout,
-  state: EditorState,
-  liveCommentRanges: EditorCommentRange[],
-) {
-  const range = liveCommentRanges.find((entry) => entry.threadIndex === threadIndex);
-
-  if (!range) {
-    return null;
-  }
-
-  return resolveHoverAnchor(layout, state, range.regionId, range.startOffset);
-}
-
-function resolveHoverAnchor(
-  layout: DocumentLayout,
-  state: EditorState,
-  regionId: string,
-  offset: number,
-) {
-  const line = findDocumentLayoutLineForRegionOffset(layout, regionId, offset);
-
-  if (!line) {
-    return null;
-  }
-
-  return {
-    anchorBottom: line.top + line.height,
-    anchorLeft: measureCanvasLineOffsetLeft(line, offset) + resolveLineContentInset(state, line),
-  };
 }
 
 function resolveInteractiveLineAtPoint(

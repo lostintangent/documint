@@ -11,7 +11,6 @@ import {
   type MouseEvent,
   type PointerEvent,
   type RefObject,
-  type UIEvent,
   useEffect,
   useEffectEvent,
   useRef,
@@ -38,6 +37,13 @@ export type ViewportController = {
   actions: {
     autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
     getScrollTop: () => number;
+    /**
+     * Mark the cached layout as stale so the next `state.preparedViewport.get()`
+     * recomputes. Callers invoke this when an input the layout depends on has
+     * changed but isn't covered by `reconcileEditorState` (width, theme,
+     * resources, viewport height). Scroll position is invalidated internally.
+     */
+    invalidatePreparedLayout: () => void;
     observePreparedViewport: (viewportState: EditorLayoutState) => void;
     observeScrollContainer: (scrollContainer: HTMLDivElement) => void;
     /**
@@ -46,22 +52,12 @@ export type ViewportController = {
      * invalidates if not — callers don't touch the cache directly.
      */
     reconcileEditorState: (prevState: EditorState | null, nextState: EditorState) => void;
-    /**
-     * Force a fresh layout for the next paint and return it. Use this from the
-     * viewport-render path; lighter paint paths (content-only, overlay-only)
-     * should peek the cached state via `state.preparedViewport.peek()`.
-     */
-    prepareNextPaint: () => EditorLayoutState;
     resolvePoint: (
       event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>,
     ) => EditorPoint | null;
     scrollTo: (top: number) => number;
   };
   props: {
-    getScrollContainer: (options?: { onScroll?: (event: UIEvent<HTMLDivElement>) => void }) => {
-      onScroll: (event: UIEvent<HTMLDivElement>) => void;
-      ref: RefObject<HTMLDivElement | null>;
-    };
     scrollContent: {
       style: CSSProperties;
     };
@@ -73,7 +69,6 @@ export type ViewportController = {
     layoutWidth: number;
     preparedViewport: LazyRefHandle<EditorLayoutState>;
     scrollContentHeight: number;
-    surfaceWidth: number;
     viewportHeight: number;
     viewportTop: number;
   };
@@ -84,8 +79,7 @@ export type ViewportController = {
  *
  * What this hook owns:
  *   - The scroll container DOM ref (created internally, exposed to the host
- *     via `props.getScrollContainer` for spreading and `refs.scrollContainer`
- *     for direct access).
+ *     via `refs.scrollContainer`).
  *   - Viewport metrics (width, height, scroll position, content height),
  *     tracked via `ResizeObserver` and the scroll event.
  *   - The lazily-prepared editor viewport state — the heavy "what to paint
@@ -97,9 +91,10 @@ export type ViewportController = {
  *   - Coordinate translation: pointer/mouse event → document point.
  *
  * Contract with the host:
- *   - Spread `props.getScrollContainer({onScroll})` onto the scroll container
- *     element. The optional `onScroll` callback is invoked after the viewport
- *     records the scroll (typically used to schedule a render).
+ *   - Apply `refs.scrollContainer` as the `ref` of the scroll container
+ *     element, and wire its `onScroll` to a handler that calls
+ *     `actions.observeScrollContainer(event.currentTarget)` (typically
+ *     followed by a render schedule).
  *   - Spread `props.scrollContent.style` onto the inner scroll content wrapper
  *     so it sizes to the virtualized content height.
  *   - Call `actions.scrollTo(top)` for content reconciliation and focus
@@ -109,9 +104,13 @@ export type ViewportController = {
  *   - Call `actions.reconcileEditorState(prev, next)` whenever the editor
  *     state transitions; the viewport decides whether the cached layout is
  *     still usable for the new state.
- *   - Call `actions.prepareNextPaint()` from the viewport-render path to get
- *     a freshly-prepared layout. Lighter paint paths (content-only,
- *     overlay-only) read the cached layout via `state.preparedViewport.peek()`.
+ *   - Call `actions.invalidatePreparedLayout()` when an input the layout
+ *     depends on changes outside of doc/scroll (width, theme, resources,
+ *     viewport height) before scheduling a render.
+ *   - Read `state.preparedViewport.get()` from the viewport-render path
+ *     (recomputes if invalidated, returns cached otherwise). Lighter paint
+ *     paths (content-only, overlay-only) read the cached layout via
+ *     `state.preparedViewport.peek()`.
  *   - Read `state.preparedViewport` (a read-only `LazyRefHandle`) and share
  *     it with the other hooks (usePointer, useInput, useSelection).
  *   - Wire `actions.resolvePoint` and `actions.autoScrollDuringDrag` into
@@ -137,7 +136,12 @@ export function useViewport({
 
   /* Prepared viewport (lazy cache) */
 
-  const createEditorLayoutState = useEffectEvent((): EditorLayoutState => {
+  // Plain closure (not `useEffectEvent`) because `useLazyRef` may invoke
+  // this during host render — when the cache was invalidated since the
+  // last paint and a consumer reads `.get()` before the next rAF rebuilds
+  // it. `useEffectEvent` results aren't callable during render. Closure
+  // freshness is preserved through `useLazyRef`'s own ref indirection.
+  const createEditorLayoutState = (): EditorLayoutState => {
     const currentState = editorStateRef.current ?? editorState;
     const viewport = viewportMetricsRef.current;
 
@@ -153,7 +157,7 @@ export function useViewport({
       renderCacheRef.current,
       renderResources,
     );
-  });
+  };
 
   const preparedViewport = useLazyRef(createEditorLayoutState);
 
@@ -231,11 +235,12 @@ export function useViewport({
     },
   );
 
-  // Force a fresh layout for the next paint. Used by the viewport-render
-  // path; lighter paths (content / overlay) peek the cached layout instead.
-  const prepareNextPaint = useEffectEvent((): EditorLayoutState => {
+  // Mark the cached layout as stale. Callers invoke this when an input the
+  // layout depends on has changed but isn't covered by `reconcileEditorState`
+  // (width, theme, resources, viewport height). The next read of
+  // `preparedViewport.get()` will recompute against current inputs.
+  const invalidatePreparedLayout = useEffectEvent(() => {
     preparedViewport.invalidate();
-    return preparedViewport.get();
   });
 
   /* Coordinate translation + drag autoscroll */
@@ -289,27 +294,18 @@ export function useViewport({
 
   /* Public API */
 
-  const getScrollContainer: ViewportController["props"]["getScrollContainer"] = (options) => ({
-    onScroll: (event) => {
-      observeScrollContainer(event.currentTarget);
-      options?.onScroll?.(event);
-    },
-    ref: scrollContainerRef,
-  });
-
   return {
     actions: {
       autoScrollDuringDrag,
       getScrollTop,
+      invalidatePreparedLayout,
       observePreparedViewport,
       observeScrollContainer,
-      prepareNextPaint,
       reconcileEditorState,
       resolvePoint,
       scrollTo,
     },
     props: {
-      getScrollContainer,
       scrollContent: {
         style: {
           height: `${scrollContentHeight}px`,
@@ -323,7 +319,6 @@ export function useViewport({
       layoutWidth,
       preparedViewport,
       scrollContentHeight,
-      surfaceWidth,
       viewportHeight,
       viewportTop,
     },

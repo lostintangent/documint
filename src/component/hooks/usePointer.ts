@@ -22,8 +22,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { resolveContextualLeaf, type ContextualLeaf } from "../overlays/leaves/lib/leaf-target";
+import {
+  resolveContextualLeaf,
+  type LinkLeaf,
+  type ThreadLeaf,
+} from "../overlays/leaves/core/shared";
 import type { FocusInput } from "./useInput";
+import type { DocumentStorage } from "../lib/storage";
 
 type UsePointerOptions = {
   // DOM refs the hook reads from.
@@ -43,6 +48,7 @@ type UsePointerOptions = {
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
   focusInput: FocusInput;
   onActivity: () => void;
+  storage: DocumentStorage;
 };
 
 type CanvasPointerHandlers = {
@@ -63,7 +69,7 @@ type LeafHoverHandlers = {
 type PointerController = {
   canvasHandlers: CanvasPointerHandlers;
   cursor: "pointer" | "text";
-  leaf: ContextualLeaf | null;
+  leaf: LinkLeaf | ThreadLeaf | null;
   leafHandlers: LeafHoverHandlers;
 };
 
@@ -104,6 +110,7 @@ export function usePointer({
   onActivity,
   readCurrentState,
   resolvePoint,
+  storage,
 }: UsePointerOptions): PointerController {
   /* Internal state */
 
@@ -117,7 +124,7 @@ export function usePointer({
   const dragAnchorRef = useRef<EditorSelectionPoint | null>(null);
   const lastPointerTypeRef = useRef<string | null>(null);
 
-  const leaf = resolveContextualLeaf(hoverTarget, commentState.threads);
+  const leaf = resolveContextualLeaf(hoverTarget, commentState.threads, commentState.liveRanges);
   const cursor = hoverTarget?.kind === "task-toggle" || leaf?.kind === "link" ? "pointer" : "text";
 
   /* Hover lifecycle */
@@ -361,16 +368,12 @@ export function usePointer({
       return;
     }
 
-    // Cmd/Ctrl-click on a link opens it in a new tab; a plain click falls
-    // through to caret placement so users can edit link text normally.
+    // Cmd/Ctrl-click on a link opens it; a plain click falls through to
+    // caret placement so users can edit link text normally.
     if (target?.kind === "link" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       event.stopPropagation();
-      event.currentTarget.ownerDocument.defaultView?.open(
-        target.url,
-        "_blank",
-        "noopener,noreferrer",
-      );
+      storage.openFile(target.url);
       return;
     }
 

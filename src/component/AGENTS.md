@@ -30,13 +30,55 @@ Multiple schedule calls within a tick produce one rAF. Heavier modes subsume lig
 State tracking that drives the loop:
 
 - **`editorStateRef`** — live ref to the current `EditorState`. The scheduler reads it on each frame to decide whether to continue for animations.
-- **`preparedViewport`** — `LazyRefHandle<EditorLayoutState>` owned by `useViewport`. Heavy paths force a fresh layout via `prepareNextPaint()`; cheap paths read the cached value via `peek()`. See [`src/editor/layout`](../editor/layout/AGENTS.md) for what the cache holds and what invalidates it.
+- **`preparedViewport`** — `LazyRefHandle<EditorLayoutState>` owned by `useViewport`. The render-viewport path reads via `get()` (recomputes if invalidated, returns cached otherwise); cheap paint paths read via `peek()`. The cache is invalidated by `observeScrollContainer`, `reconcileEditorState`, and the host's layout-affecting effect (`invalidatePreparedLayout`). See [`src/editor/layout`](../editor/layout/AGENTS.md) for what the cache holds.
+
+### Scroll-driven UI
+
+Every scroll in the editor — native (user scroll) or programmatic (e.g. `usePresence.scrollToPresence`) — funnels through one host worker, `Documint.handleViewportScroll`. It does two things:
+
+1. `useViewport.observeScrollContainer` — sync scroll state (`viewportTop`, content height) and invalidate the layout cache.
+2. `scheduleFullRender` — queue the next `renderViewport` rAF pass.
+
+That's the full scroll API: one entry point, two effects.
+
+Three independent UI surfaces derive their visibility from this signal, each with a clear owner:
+
+| Decision | Owner | Where the gate lives |
+| --- | --- | --- |
+| Show leaf overlay (insertion menu, link preview, comment, etc.) | `Documint` | `isLeafAnchorVisible` in `resolveVisibleLeafPresentation`. Derived during React render from `viewportTop` / `viewportHeight`; rides the existing render with no extra setState. |
+| Suspend caret blink | `useCursor` | `caretInViewport`, refreshed by `refreshCaretViewportStatus` in `renderViewport`. The blink `useEffect` reads it. |
+| Show off-viewport up/down arrow for remote cursors | `usePresence` (data) + `PresenceOverlay` (DOM) | `presence[i].viewport.status`, refreshed by `refreshPresence` in `renderViewport`. |
+
+The two rAF refreshers (`refreshPresence` and `refreshCaretViewportStatus`) sit next to each other in `renderViewport` and share a single geometric primitive — `resolveCursorViewportStatus` from [`src/editor/anchors`](../editor/anchors/AGENTS.md), returning `"above" | "below" | "visible" | "unresolved"`. Both setState only when a visibility flag actually flips, so steady-state scrolling produces zero React work for either.
+
+### Leaf overlay coordination
+
+Contextual leaf UI (insertion menu, table menu, link preview, comment thread, comment-create toolbar) is orchestrated by `Documint.resolveVisibleLeafPresentation`. Three hooks emit declarative leaf candidates; the host arbitrates priority (`pointer > selection > cursor`), materializes the geometry, and renders through the portaled `LeafAnchor` primitive ([`overlays/leaves/core/LeafAnchor.tsx`](overlays/leaves/core/LeafAnchor.tsx)).
+
+**Sources:**
+
+- `usePointer.leaf` — hover target (link preview, comment thread under pointer).
+- `useSelection.leaf` — selection-mode leaves (comment-create over a range, expanded thread).
+- `useCursor.leaf` — caret-anchored (insertion menu on empty paragraph, table menu inside a table, contextual link/comment under the caret).
+
+Each candidate extends a `LeafBase` shape — a document anchor point plus optional `leftOverride` (table → cell text-left; selection-annotation → range-start) and `paddingY` (selection-annotation uses 2 to clear the highlight). Documint resolves the candidate against the prepared layout into a `LeafResolution` with document-absolute coordinates:
+
+```
+top  = scrollContainerBounds.top  + window.scrollY + anchorBottom        - viewportTop
+left = scrollContainerBounds.left + window.scrollX + (leftOverride ?? anchorLeft)
+```
+
+`LeafAnchor` is `position: absolute` against the initial containing block, so host-page scrolls are free — the browser moves the leaf with the document, including iOS's auto-scroll above the virtual keyboard. Editor-internal scrolls route through React (`observeScrollContainer` → re-render with new `viewportTop`).
+
+**Visibility gate** (`isLeafAnchorVisible`): the leaf hides when its anchor falls outside `[viewportTop, viewportBottom]` — same scroll visibility the canvas painter enforces for the caret. Implemented once at the orchestration point so all three sources gate uniformly; skipping the host-rect read on hidden frames also avoids a layout-flushing `getBoundingClientRect` on common selection/edit/blink paths.
+
+**Above/below placement** lives in `LeafAnchor` itself — a `useLayoutEffect` measures the shell and flips it above the anchor when below would overflow the visible viewport, using `anchorHeight` from the resolution to clear the anchor row.
 
 ### Key Areas
 
 - **Core** (`Documint.tsx`, `Ssr.tsx`, `index.ts`) - Owns the public `Documint` component, host lifecycle, DOM event wiring, controlled-content bridging, canvas layer management, and the SSR fallback rendered before the canvas mounts.
 
-- **Hooks** (`hooks/`) - Each hook owns one orchestration concern: editor lifetime, viewport state cache, render-frame coalescing, text/keyboard/clipboard input bridging, selection handle management, cursor blink and leaf resolution, hover target debouncing, async image loading, presence cursor projection, and pointer coordinate translation.
+- **Hooks** ([`hooks/`](hooks/AGENTS.md)) - Each hook owns one orchestration concern between the host component and the editor engine: viewport state, render scheduling, user-interaction translation, and specialized concerns like presence and images. See [`hooks/AGENTS.md`](hooks/AGENTS.md) for the role of each.
 
 - **Overlays / Leaves** (`overlays/`) - Owns the contextual leaf UI rendered via portals: comment creation and thread interaction, block insertion menus, table editing menus, link preview and editing, and the shared compound toolbar.
 

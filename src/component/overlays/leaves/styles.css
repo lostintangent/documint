@@ -13,25 +13,61 @@
 
 /* -- Anchor: positioned wrapper rendered by LeafAnchor (via OverlayPortal) -- */
 
+/* `--documint-leaf-anchor-height`, `--documint-leaf-bridge-height`, and
+   `--documint-leaf-padding-y` are JS-owned (set inline by `LeafAnchor`).
+   `position: absolute` against the initial containing block lets the
+   browser move the leaf with host-page scrolls naturally. */
 .documint-leaf-anchor {
-  --documint-leaf-anchor-bridge-height: 12px;
-  position: fixed;
+  position: absolute;
   z-index: 1000;
-  padding-top: var(--documint-leaf-anchor-bridge-height);
-  margin-top: calc(var(--documint-leaf-anchor-bridge-height) * -1);
-  pointer-events: auto;
 
-  &[data-selection="true"] {
-    --documint-leaf-anchor-bridge-height: 0px;
-    padding-top: 0;
-    margin-top: 14px;
+  /* Hover: wrapper occupies the bridge gap so the bridge child can hand
+     off pointer events between anchor row and shell. */
+  &[data-bridge="true"] {
+    padding-top: var(--documint-leaf-bridge-height);
+    margin-top: calc(var(--documint-leaf-bridge-height) * -1);
+    pointer-events: auto;
+  }
+
+  /* Bridgeless (cursor + selection): wrapper is pointer-event-transparent
+     so canvas gestures pass through the gap area to the underlying canvas.
+     The shell carries the visual gap via its own margin-top below. */
+  &[data-bridge="false"] {
     pointer-events: none;
+  }
+
+  /* Above-flip: render the bridge below the shell (column-reverse) and
+     translate up by the anchor row's height + paddingY so the shell sits
+     a bridge-height gap above the anchor — symmetric with below-mode. */
+  &[data-placement="above"] {
+    padding-top: 0;
+    margin-top: 0;
+    display: flex;
+    flex-direction: column-reverse;
+    transform: translateY(calc(
+      -100%
+      - var(--documint-leaf-anchor-height, 0px)
+      - var(--documint-leaf-padding-y, 0px)
+    ));
   }
 }
 
 .documint-leaf-bridge {
   width: 100%;
-  height: var(--documint-leaf-anchor-bridge-height);
+  height: var(--documint-leaf-bridge-height);
+}
+
+/* Bridgeless: shell carries the gap to the anchor itself. */
+.documint-leaf-anchor[data-bridge="false"] .documint-leaf-shell {
+  margin-top: calc(
+    var(--documint-leaf-bridge-height) + var(--documint-leaf-padding-y, 0px)
+  );
+}
+
+/* Above-flip for bridgeless: the gap belongs below the shell. */
+.documint-leaf-anchor[data-placement="above"][data-bridge="false"] .documint-leaf-shell {
+  margin-top: 0;
+  margin-bottom: var(--documint-leaf-bridge-height);
 }
 
 /* -- Shell: bordered, themed container that holds leaf content -- */
@@ -60,7 +96,11 @@
     padding: 0.8rem;
   }
 
-  &[data-status="resolved"] {
+  /* Comment-thread-specific resolved styling — `data-resolved` is set by
+     AnnotationLeaf on its own root, not by the shared shell. We target it
+     via :has() so the resolved state stays a comment concern instead of
+     leaking up into the generic LeafAnchor surface. */
+  &:has([data-resolved="true"]) {
     border-color: var(--documint-leaf-resolved-border);
     background: var(--documint-leaf-resolved-bg);
   }
@@ -207,7 +247,7 @@
   }
 }
 
-.documint-leaf-shell[data-status="resolved"] .documint-leaf-input {
+.documint-leaf-shell:has([data-resolved="true"]) .documint-leaf-input {
   border-color: var(--documint-leaf-resolved-border);
 }
 
@@ -322,7 +362,7 @@
   }
 }
 
-.documint-leaf-shell[data-status="resolved"] .documint-comment-reply {
+.documint-leaf-shell:has([data-resolved="true"]) .documint-comment-reply {
   border-top-color: color-mix(in srgb, var(--documint-leaf-resolved-border) 72%, transparent);
 }
 

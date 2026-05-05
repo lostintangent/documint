@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useRef } from "react";
 
 /**
  * Lazily resolves an imperative value on first read and keeps it until the
@@ -18,7 +18,20 @@ export type LazyRef<T> = LazyRefHandle<T> & {
 };
 
 export function useLazyRef<T>(resolve: () => T): LazyRef<T> {
-  return useMemo(() => createLazyRef({ current: null }, resolve), [resolve]);
+  // Hold `resolve` behind a ref so the LazyRef always reads the latest
+  // closure without re-creating the LazyRef itself. `useMemo([resolve])`
+  // is unsafe here because `resolve` typically comes from `useEffectEvent`,
+  // whose returned function identity isn't stable across all React
+  // versions/configurations — observed instability would orphan the
+  // populated cache on a stale instance and `peek()` against the new one
+  // would always return null.
+  const resolveRef = useRef(resolve);
+  resolveRef.current = resolve;
+  const lazyRefRef = useRef<LazyRef<T> | null>(null);
+  if (lazyRefRef.current === null) {
+    lazyRefRef.current = createLazyRef({ current: null }, () => resolveRef.current());
+  }
+  return lazyRefRef.current;
 }
 
 function createLazyRef<T>(ref: { current: T | null }, resolve: () => T): LazyRef<T> {

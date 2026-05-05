@@ -1,5 +1,6 @@
-import type { Mark } from "@/document";
+import { isResolvedCommentThread, type Mark } from "@/document";
 import {
+  getDocument,
   getSelectionMarks,
   measureVisualCaretTarget,
   normalizeSelection,
@@ -24,6 +25,11 @@ import {
   useState,
 } from "react";
 import { readSingleContainerSelectionRange } from "../lib/selection";
+import {
+  areLeafBasesEqual,
+  type AnnotationLeaf,
+  type ThreadLeaf,
+} from "../overlays/leaves/core/shared";
 import type { FocusInput } from "./useInput";
 
 export type ResizeHandle = {
@@ -40,27 +46,7 @@ type SelectionHandleProps = {
   onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
 };
 
-type SelectionLeaf =
-  | {
-      activeMarks: Mark[];
-      kind: "create";
-      left: number;
-      selection: {
-        endOffset: number;
-        regionId: string;
-        startOffset: number;
-      };
-      top: number;
-    }
-  | {
-      animateInitialComment?: boolean;
-      kind: "thread";
-      left: number;
-      threadIndex: number;
-      top: number;
-    };
-
-type SelectionCreateLeaf = Extract<SelectionLeaf, { kind: "create" }>;
+type SelectionLeaf = AnnotationLeaf | ThreadLeaf;
 
 type UseSelectionOptions = {
   // Editor state and lookups the hook reads from.
@@ -180,14 +166,24 @@ export function useSelection({
 
   const promoteLeafToThread = useEffectEvent(
     (threadIndex: number, animateInitialComment = true) => {
+      // Look up the freshly-added thread from the post-mutation state —
+      // the closure's `threads` is from the previous render and doesn't
+      // know about the new thread yet.
+      const currentState = editorStateRef.current ?? editorState;
+      const thread = getDocument(currentState).comments[threadIndex];
+      if (!thread) return;
       setSelectionLeaf((currentLeaf) =>
-        currentLeaf?.kind === "create"
+        currentLeaf?.kind === "annotation"
           ? {
+              anchor: currentLeaf.anchor,
               animateInitialComment,
               kind: "thread",
-              left: currentLeaf.left,
+              leftOverride: currentLeaf.leftOverride,
+              link: null,
+              paddingY: currentLeaf.paddingY,
+              resolved: isResolvedCommentThread(thread),
+              thread,
               threadIndex,
-              top: currentLeaf.top,
             }
           : currentLeaf,
       );
@@ -338,7 +334,13 @@ function resolveSelectionHandles(
   };
 }
 
-function resolveSelectionCreateLeaf(
+// Small vertical nudge below the selection-end's line bottom. Pairs with the
+// 14px CSS margin-top on the selection-mode anchor wrapper to give the
+// annotation toolbar a touch of breathing room from the selection
+// highlight.
+const selectionLeafVerticalNudge = 2;
+
+function resolveAnnotationLeaf(
   selection: {
     endOffset: number;
     regionId: string;
@@ -346,13 +348,19 @@ function resolveSelectionCreateLeaf(
   },
   handles: SelectionHandles,
   activeMarks: Mark[],
-): SelectionCreateLeaf {
+): AnnotationLeaf {
   return {
     activeMarks,
-    kind: "create",
-    left: handles.start.left,
+    // Anchor row comes from selection-end (the leaf renders below the
+    // entire selected range).
+    anchor: { regionId: selection.regionId, offset: selection.endOffset },
+    kind: "annotation",
+    // Cross-corner: x from selection-start while top comes from
+    // selection-end's row, so the leaf sits at the bottom-left of the
+    // range's bounding box.
+    leftOverride: handles.start.left,
+    paddingY: selectionLeafVerticalNudge,
     selection,
-    top: handles.end.top,
   };
 }
 
@@ -380,24 +388,31 @@ function resolveSelectionLeaf({
   }
 
   if (currentLeaf?.kind === "thread") {
-    return threads[currentLeaf.threadIndex] ? currentLeaf : null;
+    const thread = threads[currentLeaf.threadIndex];
+    if (!thread) return null;
+    // Refresh thread reference and resolved state — another user may have
+    // edited or toggled resolution since the leaf was promoted.
+    const resolved = isResolvedCommentThread(thread);
+    if (currentLeaf.thread === thread && currentLeaf.resolved === resolved) {
+      return currentLeaf;
+    }
+    return { ...currentLeaf, resolved, thread };
   }
 
-  return resolveSelectionCreateLeaf(selectionRange, handles, activeMarks);
+  return resolveAnnotationLeaf(selectionRange, handles, activeMarks);
 }
 
-function isSameSelectionCreateLeaf(
+function isSameAnnotationLeaf(
   currentLeaf: SelectionLeaf | null,
-  nextLeaf: SelectionCreateLeaf,
+  nextLeaf: AnnotationLeaf,
 ) {
   return (
-    currentLeaf?.kind === "create" &&
-    currentLeaf.left === nextLeaf.left &&
+    currentLeaf?.kind === "annotation" &&
+    areLeafBasesEqual(currentLeaf, nextLeaf) &&
     currentLeaf.selection.regionId === nextLeaf.selection.regionId &&
     currentLeaf.selection.startOffset === nextLeaf.selection.startOffset &&
     currentLeaf.selection.endOffset === nextLeaf.selection.endOffset &&
-    areSameMarks(currentLeaf.activeMarks, nextLeaf.activeMarks) &&
-    currentLeaf.top === nextLeaf.top
+    areSameMarks(currentLeaf.activeMarks, nextLeaf.activeMarks)
   );
 }
 
@@ -410,17 +425,17 @@ function areSelectionLeavesEqual(previous: SelectionLeaf | null, next: Selection
     return false;
   }
 
-  if (previous.kind === "create" && next.kind === "create") {
-    return isSameSelectionCreateLeaf(previous, next);
+  if (previous.kind === "annotation" && next.kind === "annotation") {
+    return isSameAnnotationLeaf(previous, next);
   }
 
   return (
     previous.kind === "thread" &&
     next.kind === "thread" &&
+    areLeafBasesEqual(previous, next) &&
     previous.animateInitialComment === next.animateInitialComment &&
-    previous.left === next.left &&
-    previous.threadIndex === next.threadIndex &&
-    previous.top === next.top
+    previous.thread === next.thread &&
+    previous.threadIndex === next.threadIndex
   );
 }
 

@@ -1,8 +1,8 @@
 import {
   measureCaretTarget,
   measureInlineImageBounds,
-  measureVisualCaretTarget,
   normalizeSelection,
+  resolveCursorViewportStatus,
   resolveImageAtSelection,
   resolveTargetAtSelection,
   type EditorCommentState,
@@ -15,7 +15,14 @@ import {
 import type { DocumentResources } from "@/types";
 import type { LazyRefHandle } from "./useLazyRef";
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { resolveContextualLeaf, type ContextualLeaf } from "../overlays/leaves/lib/leaf-target";
+import {
+  areLeafBasesEqual,
+  resolveContextualLeaf,
+  type InsertionLeaf,
+  type LinkLeaf,
+  type TableLeaf,
+  type ThreadLeaf,
+} from "../overlays/leaves/core/shared";
 
 /* Public types (consumed by the host to render the cursor leaf) */
 
@@ -26,23 +33,7 @@ export type ImageAtCursor = {
   run: EditorInline;
 };
 
-export type InsertionLeaf = {
-  kind: "insertion";
-  left: number;
-  top: number;
-};
-
-export type TableLeaf = {
-  cellIndex: number;
-  columnCount: number;
-  kind: "table";
-  left: number;
-  rowCount: number;
-  rowIndex: number;
-  top: number;
-};
-
-export type CursorLeaf = ContextualLeaf | InsertionLeaf | TableLeaf;
+export type CursorLeaf = LinkLeaf | ThreadLeaf | InsertionLeaf | TableLeaf;
 
 /* Hook surface */
 
@@ -65,10 +56,25 @@ type UseCursorOptions = {
 };
 
 type CursorController = {
+  /**
+   * Whether the user caret is inside the editor's visible scroll window.
+   * Refreshed by `refreshCaretViewportStatus` on each viewport-affecting
+   * paint; used internally to suspend the blink interval when the caret
+   * scrolls off-screen, and exposed for consumers that want to gate other
+   * caret-anchored UI on the same signal.
+   */
+  caretInViewport: boolean;
   imageAtCursor: ImageAtCursor | null;
   leaf: CursorLeaf | null;
   isVisible: () => boolean;
   markActivity: () => void;
+  /**
+   * Refresh the caret's viewport status against the freshly-prepared layout.
+   * Called from the host's render-viewport pass (next to `refreshPresence`)
+   * so steady-state scrolling produces no React re-renders unless the
+   * status actually flips.
+   */
+  refreshCaretViewportStatus: (viewportState: EditorLayoutState) => void;
 };
 
 type FocusVisibilityRequest = {
@@ -98,7 +104,7 @@ const FOCUS_VISIBILITY_PADDING = 24;
  * What this hook owns:
  *   - Caret blink lifecycle: solid for `CARET_IDLE_DELAY_MS` after any
  *     activity, then blinking at `CARET_BLINK_INTERVAL_MS`. Disabled when a
- *     range is selected.
+ *     range is selected, and suspended when the caret is off-viewport.
  *   - The "cursor leaf" — an insertion menu (empty paragraph), table
  *     control, or contextual link/comment leaf, derived from where the
  *     caret currently sits.
@@ -108,6 +114,10 @@ const FOCUS_VISIBILITY_PADDING = 24;
  *     (via typing, navigation, or layout changes), scroll just enough to
  *     bring it back. Dedupes against repeat triggers for the same logical
  *     state to avoid scroll thrash.
+ *   - Caret viewport status: tracks whether the caret is inside the
+ *     visible scroll window (refreshed by the host's render-viewport pass
+ *     via `refreshCaretViewportStatus`). Drives blink suspension and is
+ *     exposed for other caret-anchored UI to gate on.
  *
  * Contract with the host:
  *   - The host renders the `leaf` as a contextual overlay (alongside
@@ -141,6 +151,11 @@ export function useCursor({
   const normalizedSel = useMemo(() => normalizeSelection(editorState), [editorState]);
   const [leaf, setLeaf] = useState<CursorLeaf | null>(null);
   const [imageAtCursor, setImageAtCursor] = useState<ImageAtCursor | null>(null);
+  // Default to `true` so the initial render — before any viewport pass has
+  // run — behaves like today (blink active, caret rendered). The host's
+  // render-viewport pass refreshes this to the actual status on the first
+  // frame.
+  const [caretInViewport, setCaretInViewport] = useState(true);
   const shouldBlinkCaret =
     normalizedSel.start.regionId === normalizedSel.end.regionId &&
     normalizedSel.start.offset === normalizedSel.end.offset;
@@ -158,6 +173,25 @@ export function useCursor({
     lastActivityAtRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
     cursorVisibleRef.current = true;
     emitVisibilityChange();
+  });
+
+  /* Caret viewport status */
+
+  // Mirrors `usePresence.refreshPresence`: called from the host's
+  // render-viewport pass with the freshly-prepared layout, projects the
+  // caret against the viewport, and only updates state when the visibility
+  // flag actually flips. Steady-state scrolling produces no React renders.
+  // "unresolved" is treated as visible — it only happens transiently while
+  // the focused region's layout is being prepared, and a stale "off-screen"
+  // would surface as a visible glitch (suppressed leaf, paused blink).
+  const refreshCaretViewportStatus = useEffectEvent((viewportState: EditorLayoutState) => {
+    const status = resolveCursorViewportStatus(
+      editorState,
+      viewportState,
+      editorState.selection.focus,
+    );
+    const next = status !== "above" && status !== "below";
+    setCaretInViewport((previous) => (previous === next ? previous : next));
   });
 
   /* Cursor leaf */
@@ -246,17 +280,21 @@ export function useCursor({
     editorViewportState,
     layoutWidth,
     scrollContentHeight,
-    scrollTo,
     viewportHeight,
   ]);
 
   /* Caret blink loop */
 
+  // Restart whenever the blink eligibility flips: collapsed↔ranged selection
+  // (`shouldBlinkCaret`) and on/off-viewport (`caretInViewport`). The blink
+  // is suspended when the caret is off-screen — the canvas painter clips
+  // to the visible region anyway, so the timer ticks would just schedule
+  // overlay paints that produce no pixels.
   useEffect(() => {
     cursorVisibleRef.current = true;
     emitVisibilityChange();
 
-    if (!shouldBlinkCaret || typeof window === "undefined") {
+    if (!shouldBlinkCaret || !caretInViewport || typeof window === "undefined") {
       return;
     }
 
@@ -279,15 +317,17 @@ export function useCursor({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [shouldBlinkCaret]);
+  }, [shouldBlinkCaret, caretInViewport]);
 
   /* Public API */
 
   return {
+    caretInViewport,
     imageAtCursor,
     leaf,
     isVisible: () => cursorVisibleRef.current,
     markActivity,
+    refreshCaretViewportStatus,
   };
 }
 
@@ -318,7 +358,7 @@ function resolveCursorLeaf({
     return null;
   }
 
-  const insertionLeaf = canShowInsertionLeaf ? resolveInsertionLeaf(state, viewport) : null;
+  const insertionLeaf = canShowInsertionLeaf ? resolveInsertionLeaf(state) : null;
 
   if (insertionLeaf) {
     return insertionLeaf;
@@ -333,6 +373,7 @@ function resolveCursorLeaf({
   return resolveContextualLeaf(
     resolveTargetAtSelection(state, viewport, focus, commentState.liveRanges),
     commentState.threads,
+    commentState.liveRanges,
   );
 }
 
@@ -355,19 +396,20 @@ function resolveTableLeaf(state: EditorState, viewport: EditorLayoutState): Tabl
     return null;
   }
 
-  const caret = measureVisualCaretTarget(state, viewport, focus);
   const textLeft = resolveRegionTextLeft(viewport, focusedRegion.id);
   const columnCount = Math.max(1, ...table.rows.map((row) => row.cells.length));
 
-  return caret && textLeft !== null
+  return textLeft !== null
     ? {
+        anchor: focus,
         cellIndex: tableCellPosition.cellIndex,
         columnCount,
         kind: "table",
-        left: textLeft,
+        // The cell's text-area edge isn't a caret position, so override the
+        // host's default left (caret-x at the anchor).
+        leftOverride: textLeft,
         rowCount: table.rows.length,
         rowIndex: tableCellPosition.rowIndex,
-        top: caret.top + caret.height,
       }
     : null;
 }
@@ -378,10 +420,7 @@ function resolveRegionTextLeft(viewport: EditorLayoutState, regionId: string) {
   return firstLine ? firstLine.left : null;
 }
 
-function resolveInsertionLeaf(
-  state: EditorState,
-  viewport: EditorLayoutState,
-): InsertionLeaf | null {
+function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
   const focus = state.selection.focus;
   const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
 
@@ -399,15 +438,7 @@ function resolveInsertionLeaf(
     return null;
   }
 
-  const caret = measureVisualCaretTarget(state, viewport, focus);
-
-  return caret
-    ? {
-        kind: "insertion",
-        left: caret.left,
-        top: caret.top + caret.height,
-      }
-    : null;
+  return { anchor: focus, kind: "insertion" };
 }
 
 function areCursorLeavesEqual(previous: CursorLeaf | null, next: CursorLeaf | null) {
@@ -419,28 +450,29 @@ function areCursorLeavesEqual(previous: CursorLeaf | null, next: CursorLeaf | nu
     return false;
   }
 
+  if (!areLeafBasesEqual(previous, next)) {
+    return false;
+  }
+
   switch (previous.kind) {
-    case "comment":
+    case "thread":
       return (
-        next.kind === "comment" &&
-        previous.left === next.left &&
+        next.kind === "thread" &&
+        previous.animateInitialComment === next.animateInitialComment &&
         previous.link?.title === next.link?.title &&
         previous.link?.url === next.link?.url &&
         previous.thread === next.thread &&
-        previous.threadIndex === next.threadIndex &&
-        previous.top === next.top
+        previous.threadIndex === next.threadIndex
       );
     case "insertion":
-      return next.kind === "insertion" && previous.left === next.left && previous.top === next.top;
+      return next.kind === "insertion";
     case "link":
       return (
         next.kind === "link" &&
         previous.endOffset === next.endOffset &&
-        previous.left === next.left &&
         previous.regionId === next.regionId &&
         previous.startOffset === next.startOffset &&
         previous.title === next.title &&
-        previous.top === next.top &&
         previous.url === next.url
       );
     case "table":
@@ -448,10 +480,8 @@ function areCursorLeavesEqual(previous: CursorLeaf | null, next: CursorLeaf | nu
         next.kind === "table" &&
         previous.cellIndex === next.cellIndex &&
         previous.columnCount === next.columnCount &&
-        previous.left === next.left &&
         previous.rowCount === next.rowCount &&
-        previous.rowIndex === next.rowIndex &&
-        previous.top === next.top
+        previous.rowIndex === next.rowIndex
       );
   }
 }
