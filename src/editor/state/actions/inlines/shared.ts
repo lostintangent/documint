@@ -1,15 +1,58 @@
-// Inline node traversal and slicing primitives shared across inline command modules.
+// Inline region plumbing: types, splicing primitives, and the shared
+// machinery that turns a `(region, range, nextChildren)` triple into an
+// `InlineRegionReplacement` the reducer can apply.
 import {
-  createCode as createDocumentInlineCodeNode,
-  createText as createDocumentTextNode,
+  createCode,
+  createTableCell as createDocumentTableCell,
+  createText,
   defragmentTextInlines,
   extractPlainTextFromInlineNodes,
-  type Code,
+  rebuildTableBlock,
+  rebuildTextBlock,
+  type Block,
+  type HeadingBlock,
   type Inline,
-  type Mark,
-  type Text,
+  type ParagraphBlock,
+  type TableBlock,
+  type TableCell,
 } from "@/document";
+import type { RegionRangePathSelectionTarget } from "../../selection";
 import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../../index/shared";
+
+// An InlineRegion is the subset of editable regions whose backing data is
+// `Inline[]` rather than raw text. Structurally that's Heading, Paragraph,
+// and TableCell — ListItem and Blockquote hold `Block[]` (they need
+// nesting), and Code regions hold `source: string`.
+//
+// This isn't the raw block union because each variant carries runtime
+// context the block itself doesn't know:
+//   - `path`: where this region lives in the document tree
+//   - `blockPath` (table cell only): path to the parent TableBlock, needed
+//     because replacing a cell rebuilds the whole table
+//   - `kind`: discriminates the rebuild strategy — `inlineBlock` rebuilds
+//     in place via `rebuildTextBlock`, `tableCell` rebuilds the parent
+//     table via `rebuildTableBlock`
+export type InlineRegion =
+  | {
+      block: HeadingBlock | ParagraphBlock;
+      children: Inline[];
+      kind: "inlineBlock";
+      path: string;
+    }
+  | {
+      block: TableBlock;
+      blockPath: string;
+      cell: TableCell;
+      children: Inline[];
+      kind: "tableCell";
+      path: string;
+    };
+
+export type InlineRegionReplacement = {
+  block: Block;
+  blockId: string;
+  selection: RegionRangePathSelectionTarget;
+};
 
 export function measureInlineNodeText(node: Inline) {
   switch (node.type) {
@@ -26,6 +69,86 @@ export function measureInlineNodeText(node: Inline) {
     case "raw":
       return node.source.length;
   }
+}
+
+// Path suffix used by inline actions when stamping a node that represents
+// the current selection range — feeds `resolveNodeId` so the new node gets
+// a deterministic id derived from where it lives.
+export function selectedNodePath(inlineRegion: InlineRegion) {
+  return `${inlineRegion.path}.children.selected`;
+}
+
+// Splices `inlines` into the region's children over `[startOffset, endOffset]`,
+// then rebuilds the owning block (paragraph/heading in place, table cell
+// via parent rebuild) and emits an `InlineRegionReplacement` with the
+// caret landing at the end of the inserted content.
+export function spliceRegionInlines(
+  inlineRegion: InlineRegion,
+  startOffset: number,
+  endOffset: number,
+  inlines: Inline[],
+): InlineRegionReplacement {
+  const childrenPath = `${inlineRegion.path}.children`;
+  const nextChildren = spliceInlineNodes(
+    inlineRegion.children,
+    startOffset,
+    endOffset,
+    childrenPath,
+    inlines,
+  );
+  const insertedLength = inlines.reduce((total, node) => total + measureInlineNodeText(node), 0);
+  const caretOffset = startOffset + insertedLength;
+
+  return createInlineRegionReplacement(inlineRegion, nextChildren, caretOffset, caretOffset);
+}
+
+export function createInlineRegionReplacement(
+  inlineRegion: InlineRegion,
+  nextChildren: Inline[],
+  startOffset: number,
+  endOffset: number,
+): InlineRegionReplacement {
+  switch (inlineRegion.kind) {
+    case "inlineBlock":
+      return {
+        block: rebuildTextBlock(inlineRegion.block, nextChildren),
+        blockId: inlineRegion.block.id,
+        selection: createRangeSelectionTarget(
+          `${inlineRegion.path}.children`,
+          startOffset,
+          endOffset,
+        ),
+      };
+    case "tableCell": {
+      const nextCell = createDocumentTableCell({
+        children: nextChildren,
+        path: inlineRegion.path,
+      });
+      const nextRows = inlineRegion.block.rows.map((row) => ({
+        ...row,
+        cells: row.cells.map((cell) => (cell.id === inlineRegion.cell.id ? nextCell : cell)),
+      }));
+
+      return {
+        block: rebuildTableBlock(inlineRegion.block, nextRows),
+        blockId: inlineRegion.block.id,
+        selection: createRangeSelectionTarget(inlineRegion.path, startOffset, endOffset),
+      };
+    }
+  }
+}
+
+function createRangeSelectionTarget(
+  path: string,
+  startOffset: number,
+  endOffset: number,
+): RegionRangePathSelectionTarget {
+  return {
+    endOffset,
+    kind: "region-range-path",
+    path,
+    startOffset,
+  };
 }
 
 // Splices a sequence of inline nodes into `nodes` over the offset range
@@ -74,7 +197,7 @@ export function spliceInlineNodes(
   return defragmentTextInlines(nextNodes);
 }
 
-export function collectInlinePrefix(node: Inline, offset: number, path: string): Inline[] {
+function collectInlinePrefix(node: Inline, offset: number, path: string): Inline[] {
   if (offset <= 0) {
     return [];
   }
@@ -82,7 +205,7 @@ export function collectInlinePrefix(node: Inline, offset: number, path: string):
   return sliceInlineNode(node, 0, offset, `${path}.before`);
 }
 
-export function collectInlineSuffix(node: Inline, offset: number, path: string): Inline[] {
+function collectInlineSuffix(node: Inline, offset: number, path: string): Inline[] {
   const nodeLength = measureInlineNodeText(node);
 
   if (offset >= nodeLength) {
@@ -92,7 +215,7 @@ export function collectInlineSuffix(node: Inline, offset: number, path: string):
   return sliceInlineNode(node, offset, nodeLength, `${path}.after`);
 }
 
-export function sliceInlineNode(
+function sliceInlineNode(
   node: Inline,
   startOffset: number,
   endOffset: number,
@@ -103,14 +226,14 @@ export function sliceInlineNode(
   }
 
   switch (node.type) {
-    case "text":
-      return defragmentTextInlines(
-        [createPathTextNode(node.text.slice(startOffset, endOffset), node.marks, path)].filter(
-          Boolean,
-        ) as Text[],
-      );
+    case "text": {
+      const slicedText = node.text.slice(startOffset, endOffset);
+      return slicedText.length > 0
+        ? [createText({ text: slicedText, marks: node.marks, path })]
+        : [];
+    }
     case "code":
-      return [createPathInlineCodeNode(node.code.slice(startOffset, endOffset), path)];
+      return [createCode({ code: node.code.slice(startOffset, endOffset), path })];
     case "link": {
       const children = defragmentTextInlines(
         sliceInlineChildren(node.children, startOffset, endOffset, `${path}.children`),
@@ -150,26 +273,7 @@ export function extractInlineSelectionText(
   return text;
 }
 
-export function createPathTextNode(text: string, marks: Mark[], path: string) {
-  if (text.length === 0) {
-    return null;
-  }
-
-  return createDocumentTextNode({
-    marks,
-    path,
-    text,
-  }) satisfies Text;
-}
-
-export function createPathInlineCodeNode(code: string, path: string): Code {
-  return createDocumentInlineCodeNode({
-    code,
-    path,
-  });
-}
-
-function sliceInlineChildren(
+export function sliceInlineChildren(
   nodes: Inline[],
   startOffset: number,
   endOffset: number,

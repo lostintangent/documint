@@ -1,3 +1,8 @@
+## 🗓️ v0.0.10 (05-05-26)
+
+- You can now insert a link by selecting some text and pasting a URL.
+- Fixed some bugs with auto-completion/correction when typing
+
 ## 🗓️ v0.0.9 (05-05-26)
 
 - Added a new `openFile` method to the custom storage API, so that embedders can detect and handle clicking links to non-HTTP resources (e.g. opening a local file)

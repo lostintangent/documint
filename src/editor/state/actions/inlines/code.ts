@@ -1,12 +1,11 @@
-import { type Code, type Inline } from "@/document";
-import type { InlineRegion, InlineRegionReplacement } from ".";
-import { createInlineRegionReplacement } from ".";
+import { createCode, createText, type Code, type Inline } from "@/document";
 import {
-  measureInlineNodeText,
+  createInlineRegionReplacement,
   extractInlineSelectionText,
-  createPathTextNode,
-  createPathInlineCodeNode,
+  measureInlineNodeText,
   spliceInlineNodes,
+  type InlineRegion,
+  type InlineRegionReplacement,
 } from "./shared";
 
 export function toggleInlineCode(
@@ -35,8 +34,10 @@ function toggleInlineCodeNodes(
   const exactInlineCode = resolveExactSelectedInlineCode(nodes, startOffset, endOffset);
 
   if (exactInlineCode) {
-    const replacement = createPathTextNode(exactInlineCode.code, [], `${path}.selected`);
-    return spliceInlineNodes(nodes, startOffset, endOffset, path, replacement ? [replacement] : []);
+    const replacement = exactInlineCode.code.length > 0
+      ? [createText({ text: exactInlineCode.code, marks: [], path: `${path}.selected` })]
+      : [];
+    return spliceInlineNodes(nodes, startOffset, endOffset, path, replacement);
   }
 
   const selectedText = extractInlineSelectionText(nodes, startOffset, endOffset);
@@ -46,7 +47,7 @@ function toggleInlineCodeNodes(
   }
 
   return spliceInlineNodes(nodes, startOffset, endOffset, path, [
-    createPathInlineCodeNode(selectedText, `${path}.selected`),
+    createCode({ code: selectedText, path: `${path}.selected` }),
   ]);
 }
 

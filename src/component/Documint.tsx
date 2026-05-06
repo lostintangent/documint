@@ -891,6 +891,18 @@ export function Documint({
             className="documint-input"
             spellCheck={false}
             tabIndex={-1}
+            // Disable visual wrapping so the prefix context (up to ~1KB of
+            // characters before the caret, kept for dictation/IME) lives on
+            // a single line in the textarea's internal layout. With the
+            // default soft wrap, a 2px-wide textarea would wrap that prefix
+            // into a vertical column of one character per line, and the OS
+            // would draw caret-adjacent UI (autocorrect "revert" bubbles,
+            // IME windows, dictation indicators) anchored to the corrected
+            // word's content-coordinate position — which lands far above
+            // the visible caret on screen. With wrap="off", content stays
+            // on the caret's line so those overlays sit adjacent to the
+            // visible caret like they do for normal inputs.
+            wrap="off"
           />
 
           <PresenceOverlay

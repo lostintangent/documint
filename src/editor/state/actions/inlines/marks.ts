@@ -1,8 +1,11 @@
 // Mark toggling: bold, italic, strikethrough, underline.
-import { defragmentTextInlines, type Inline, type Mark, type Text } from "@/document";
-import type { InlineRegion, InlineRegionReplacement } from ".";
-import { createInlineRegionReplacement } from ".";
-import { measureInlineNodeText, createPathTextNode } from "./shared";
+import { createText, defragmentTextInlines, type Inline, type Mark, type Text } from "@/document";
+import {
+  createInlineRegionReplacement,
+  measureInlineNodeText,
+  type InlineRegion,
+  type InlineRegionReplacement,
+} from "./shared";
 
 export function toggleInlineMark(
   inlineRegion: InlineRegion,
@@ -205,11 +208,16 @@ function toggleTextNodeMark(
     ? node.marks.filter((candidate) => candidate !== mark)
     : insertMark(node.marks, mark);
 
-  return [
-    createPathTextNode(beforeText, node.marks, `${path}.before`),
-    createPathTextNode(selectedText, selectedMarks, `${path}.selected`),
-    createPathTextNode(afterText, node.marks, `${path}.after`),
-  ].filter(Boolean) as Text[];
+  const segments: Text[] = [];
+  const pushSegment = (text: string, marks: Mark[], suffix: string) => {
+    if (text.length > 0) {
+      segments.push(createText({ text, marks, path: `${path}.${suffix}` }));
+    }
+  };
+  pushSegment(beforeText, node.marks, "before");
+  pushSegment(selectedText, selectedMarks, "selected");
+  pushSegment(afterText, node.marks, "after");
+  return segments;
 }
 
 function insertMark(marks: Mark[], mark: Mark) {

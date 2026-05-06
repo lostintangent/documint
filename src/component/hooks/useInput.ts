@@ -16,6 +16,7 @@ import {
   deleteForward,
   deleteSelection,
   insertLineBreak,
+  insertLink,
   insertSoftLineBreak,
   insertImage,
   insertText,
@@ -250,13 +251,14 @@ export function useInput({
 
   /* Caret positioning + focus */
 
-  // Move the hidden textarea so its bounding rect overlays the visible
-  // caret. Inspired by CodeMirror's model: textarea is `position: absolute`
-  // (inherited from CSS) as a direct child of the scrollable ancestor, so
-  // iOS's "scroll focused input into view" behavior naturally scrolls the
-  // scroll-container to reveal the caret when the keyboard appears.
+  // Move the hidden textarea so that it's positioned directly beneath
+  // the virtual cursor on the canvas. This is important for two reasons:
+  //   1. iOS/mobile auto-scroll: the OS scrolls the focused input into
+  //      view when the virtual keyboard appears. 
+  //   2. iOS/desktop caret-adjacent UI: autocorrect popovers, IME
+  //      composition windows, and the dictation indicator anchor to the
+  //      input's box instead of the scroll container's top-left corner.
   const positionInputAtPoint = useEffectEvent((point: EditorSelectionPoint) => {
-    if (!isTouchPrimary) return;
     const input = inputRef.current;
     if (!input) return;
 
@@ -324,17 +326,29 @@ export function useInput({
     return nextState === state ? null : nextState;
   });
 
-  // Replace the `charsToDelete` characters immediately before the caret
-  // with `replacement`, in a single editor action — one undo entry, one
-  // animation tick — instead of N delete + M insert operations.
+  // Replace a range of `charsToDelete` characters with `replacement`, in a
+  // single editor action — one undo entry, one animation tick — instead of
+  // N delete + M insert operations. The range ends `trailingOffset` chars
+  // before the editor caret; `trailingOffset === 0` is the common case
+  // (replacement abuts the caret), but macOS Text Replacements can extend
+  // the textarea selection backward over a word while leaving the caret
+  // past a just-typed trailing character (e.g. the space that triggered
+  // the replacement) — see `resolveReplacementRange`.
   const applyReplacementText = useEffectEvent(
-    (state: typeof editorState, charsToDelete: number, replacement: string) => {
+    (
+      state: typeof editorState,
+      charsToDelete: number,
+      trailingOffset: number,
+      replacement: string,
+    ) => {
       const focusPoint = state.selection.focus;
+      const end = Math.max(0, focusPoint.offset - trailingOffset);
+      const focus = { regionId: focusPoint.regionId, offset: end };
       const anchor = {
         regionId: focusPoint.regionId,
-        offset: Math.max(0, focusPoint.offset - charsToDelete),
+        offset: Math.max(0, end - charsToDelete),
       };
-      const extended = setSelection(state, { anchor, focus: focusPoint });
+      const extended = setSelection(state, { anchor, focus });
       return replaceSelection(extended, replacement);
     },
   );
@@ -421,9 +435,11 @@ export function useInput({
 
       // User-initiated replacement (suggestion-bar tap, dictation revision):
       // textarea selection extended over the range to replace.
-      const charsToReplace = resolveReplacementLength(event.target);
-      if (charsToReplace > 0) {
-        applyStateChange(applyReplacementText(state, charsToReplace, event.data));
+      const range = resolveReplacementRange(event.target);
+      if (range.charsToReplace > 0) {
+        applyStateChange(
+          applyReplacementText(state, range.charsToReplace, range.trailingOffset, event.data),
+        );
         return;
       }
 
@@ -449,8 +465,10 @@ export function useInput({
       // user-initiated `insertText` path above; see JSDoc.
       if (!event.data) return;
       event.preventDefault();
-      const charsToReplace = resolveReplacementLength(event.target);
-      applyStateChange(applyReplacementText(state, charsToReplace, event.data));
+      const range = resolveReplacementRange(event.target);
+      applyStateChange(
+        applyReplacementText(state, range.charsToReplace, range.trailingOffset, event.data),
+      );
       return;
     }
 
@@ -627,6 +645,15 @@ export function useInput({
         return;
       }
 
+      if (/^https?:\/\//.test(pastedText)) {
+        const nextState = insertLink(readCurrentState(), pastedText);
+        if (nextState) {
+          event.preventDefault();
+          applyStateChange(nextState);
+          return;
+        }
+      }
+
       event.preventDefault();
       const fragment = parseFragment(pastedText);
       applyStateChange(pasteFragment(readCurrentState(), fragment, pastedText));
@@ -782,16 +809,26 @@ export function isLineBreakInputType(inputType: string) {
 }
 
 // Reads the textarea's selection range — how many chars before the caret
-// a `beforeinput` event is asking us to replace. iOS uses this channel to
-// signal the replacement range for both `insertReplacementText` (OS
-// autocorrect) and `insertText` (user-initiated replacements like the
-// suggestion-bar tap or a voice dictation revision). See the JSDoc on
+// a `beforeinput` event is asking us to replace, plus how far the
+// selection's trailing edge sits *before* the textarea's caret. iOS uses
+// this channel to signal the replacement range for both
+// `insertReplacementText` (OS autocorrect) and `insertText` (user-
+// initiated replacements like the suggestion-bar tap or a voice
+// dictation revision). macOS Text Replacements may also fire after the
+// trigger character (e.g. the space) has already been inserted, so the
+// selection's trailing edge can be earlier than the textarea's caret
+// (and the editor caret); the trailing offset captures that gap so the
+// editor-side replacement targets the right range. See the JSDoc on
 // `handleBeforeInput` for the full taxonomy.
-function resolveReplacementLength(target: EventTarget | null) {
+function resolveReplacementRange(target: EventTarget | null) {
   const textarea = target as HTMLTextAreaElement | null;
   const selStart = textarea?.selectionStart ?? 0;
   const selEnd = textarea?.selectionEnd ?? selStart;
-  return Math.max(0, selEnd - selStart);
+  const valueLength = textarea?.value.length ?? selEnd;
+  return {
+    charsToReplace: Math.max(0, selEnd - selStart),
+    trailingOffset: Math.max(0, valueLength - selEnd),
+  };
 }
 
 // Detects iOS voice-dictation FLUSH events: a collapsed-selection
@@ -882,6 +919,15 @@ export function syncInputContext(input: HTMLTextAreaElement, state: EditorState)
 
   input.value = nextValue;
   input.setSelectionRange(nextValue.length, nextValue.length);
+  // Force the textarea's internal scroll all the way right so the caret sits
+  // at the visible edge of the 2px box. iOS does this implicitly after
+  // `setSelectionRange`, but macOS Safari does not — leaving the caret
+  // hundreds of px to the left of the box's painted area, which causes the
+  // OS-drawn autocorrect inline highlight strip to leak past the right edge
+  // (visible "input" artifact) and pushes the autocorrect popover far right
+  // of the visible cursor. Aligning the content edge with the box edge clips
+  // the highlight to the 2px box and anchors the popover to the caret.
+  input.scrollLeft = input.scrollWidth;
 
   if (process.env.NODE_ENV !== "production") {
     emitDiagnostic("syncInputContext", {

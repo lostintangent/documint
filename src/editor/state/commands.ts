@@ -48,13 +48,15 @@ import {
   type InlineRegion,
   type InlineRegionReplacement,
   insertInlineNode,
-  insertInlineIntoRegion,
-  replaceExactInlineLinkRange,
+  removeInlineLink,
   replaceInlineRange,
   resolveInlineRegion,
   toggleInlineCode,
   toggleInlineMark,
+  updateInlineLinkUrl,
+  wrapInlineLink,
 } from "./actions/inlines";
+import { selectedNodePath, spliceRegionInlines } from "./actions/inlines/shared";
 import {
   createImage,
   createLineBreak,
@@ -305,7 +307,13 @@ export const updateLink = makeCommand((
   endOffset: number,
   url: string,
 ) =>
-  replaceExactInlineLinkRange(state.documentIndex, regionId, startOffset, endOffset, url),
+  replaceInlineRange(
+    state.documentIndex,
+    regionId,
+    startOffset,
+    endOffset,
+    (region, start, end) => updateInlineLinkUrl(region, start, end, url),
+  ),
 );
 
 export const removeLink = makeCommand((
@@ -314,8 +322,19 @@ export const removeLink = makeCommand((
   startOffset: number,
   endOffset: number,
 ) =>
-  replaceExactInlineLinkRange(state.documentIndex, regionId, startOffset, endOffset, null),
+  replaceInlineRange(
+    state.documentIndex,
+    regionId,
+    startOffset,
+    endOffset,
+    removeInlineLink,
+  ),
 );
+
+export const insertLink = (state: EditorState, url: string) =>
+  applyInlineSelectionEdit(state, (region, start, end) =>
+    wrapInlineLink(region, start, end, url),
+  );
 
 // --- Images ---
 
@@ -338,9 +357,15 @@ export const resizeImage = makeCommand((
   }
 
   const { image } = run;
-  const replacement = insertInlineIntoRegion(inlineRegion, run.start, run.end, (path) =>
-    createImage({ alt: image.alt, path, title: image.title, url: image.url, width: newWidth }),
-  );
+  const replacement = spliceRegionInlines(inlineRegion, run.start, run.end, [
+    createImage({
+      alt: image.alt,
+      path: selectedNodePath(inlineRegion),
+      title: image.title,
+      url: image.url,
+      width: newWidth,
+    }),
+  ]);
 
   return {
     kind: "replace-block",

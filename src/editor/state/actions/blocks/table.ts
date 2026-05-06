@@ -12,7 +12,8 @@ import {
 } from "@/document";
 import type { DocumentIndex } from "../../index/types";
 import type { EditorStateAction } from "../../types";
-import { insertInlineIntoRegion, resolveInlineRegion } from "../inlines";
+import { resolveInlineRegion } from "../inlines";
+import { selectedNodePath, spliceRegionInlines } from "../inlines/shared";
 import {
   createRootPrimaryRegionTarget,
   createTableCellTarget,
@@ -107,9 +108,9 @@ export function resolveTableCellLineBreak(
 
   const startOffset = Math.min(selection.anchor.offset, selection.focus.offset);
   const endOffset = Math.max(selection.anchor.offset, selection.focus.offset);
-  const replacement = insertInlineIntoRegion(inlineRegion, startOffset, endOffset, (path) =>
-    createLineBreak({ path }),
-  );
+  const replacement = spliceRegionInlines(inlineRegion, startOffset, endOffset, [
+    createLineBreak({ path: selectedNodePath(inlineRegion) }),
+  ]);
 
   return {
     kind: "replace-block",

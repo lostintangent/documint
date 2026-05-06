@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -26,17 +26,17 @@
     "benchmark": "bun run scripts/benchmarks/index.ts"
   },
   "devDependencies": {
-    "@chenglou/pretext": "^0.0.4",
+    "@chenglou/pretext": "^0.0.6",
     "@types/bun": "latest",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "dts-bundle-generator": "^9.5.1",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^1.14.0",
     "oxfmt": "latest",
     "oxlint": "latest",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "typescript": "^5.9.3"
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "react": "^19.0.0",

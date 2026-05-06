@@ -1,90 +1,97 @@
-// Link manipulation: create, update, and remove inline links.
+// Link mutations within an InlineRegion: wrap, update URL, remove.
+import { createLink as createDocumentLinkNode, type Inline, type Link } from "@/document";
 import {
-  createLink as createDocumentLinkNode,
-  defragmentTextInlines,
-  type Inline,
-} from "@/document";
-import type { DocumentIndex } from "../../index/types";
-import type { InlineRegion, InlineRegionReplacement } from ".";
-import { createInlineRegionReplacement, replaceInlineRange } from ".";
-import { measureInlineNodeText } from "./shared";
+  measureInlineNodeText,
+  selectedNodePath,
+  sliceInlineChildren,
+  spliceRegionInlines,
+  type InlineRegion,
+  type InlineRegionReplacement,
+} from "./shared";
 
-export function replaceExactInlineLinkRange(
-  documentIndex: DocumentIndex,
-  regionId: string,
-  startOffset: number,
-  endOffset: number,
-  url: string | null,
-) {
-  return replaceInlineRange(
-    documentIndex,
-    regionId,
-    startOffset,
-    endOffset,
-    (inlineRegion, resolvedStartOffset, resolvedEndOffset) =>
-      replaceExactInlineLink(inlineRegion, resolvedStartOffset, resolvedEndOffset, url),
-  );
-}
-
-export function replaceExactInlineLink(
+export function wrapInlineLink(
   inlineRegion: InlineRegion,
   startOffset: number,
   endOffset: number,
-  url: string | null,
+  url: string,
 ): InlineRegionReplacement | null {
-  const nextChildren = defragmentTextInlines(
-    replaceExactInlineLinkInNodes(
-      inlineRegion.children,
-      startOffset,
-      endOffset,
-      url,
-      `${inlineRegion.path}.children`,
-    ) ?? [],
+  const linkChildren = sliceInlineChildren(
+    inlineRegion.children,
+    startOffset,
+    endOffset,
+    `${inlineRegion.path}.children`,
   );
 
-  return nextChildren.length > 0
-    ? createInlineRegionReplacement(inlineRegion, nextChildren, startOffset, endOffset)
-    : null;
+  if (linkChildren.length === 0) {
+    return null;
+  }
+
+  return spliceRegionInlines(inlineRegion, startOffset, endOffset, [
+    createDocumentLinkNode({
+      children: linkChildren,
+      path: selectedNodePath(inlineRegion),
+      title: null,
+      url,
+    }),
+  ]);
 }
 
-function replaceExactInlineLinkInNodes(
+export function updateInlineLinkUrl(
+  inlineRegion: InlineRegion,
+  startOffset: number,
+  endOffset: number,
+  url: string,
+): InlineRegionReplacement | null {
+  const link = findExactInlineLink(inlineRegion.children, startOffset, endOffset);
+
+  if (!link) {
+    return null;
+  }
+
+  return spliceRegionInlines(inlineRegion, startOffset, endOffset, [
+    createDocumentLinkNode({
+      children: link.children,
+      path: selectedNodePath(inlineRegion),
+      title: link.title,
+      url,
+    }),
+  ]);
+}
+
+export function removeInlineLink(
+  inlineRegion: InlineRegion,
+  startOffset: number,
+  endOffset: number,
+): InlineRegionReplacement | null {
+  const link = findExactInlineLink(inlineRegion.children, startOffset, endOffset);
+
+  if (!link) {
+    return null;
+  }
+
+  return spliceRegionInlines(inlineRegion, startOffset, endOffset, link.children);
+}
+
+function findExactInlineLink(
   nodes: Inline[],
   startOffset: number,
   endOffset: number,
-  url: string | null,
-  path: string,
-): Inline[] | null {
-  const nextNodes: Inline[] = [];
+): Link | null {
   let cursor = 0;
-  let didReplace = false;
 
-  for (const [index, node] of nodes.entries()) {
-    const nodePath = `${path}.${index}`;
+  for (const node of nodes) {
     const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
 
-    if (!didReplace && node.type === "link" && startOffset === nodeStart && endOffset === nodeEnd) {
-      if (url === null) {
-        nextNodes.push(...node.children);
-      } else {
-        nextNodes.push(
-          createDocumentLinkNode({
-            children: node.children,
-            path: nodePath,
-            title: node.title,
-            url,
-          }),
-        );
-      }
-
-      didReplace = true;
-      continue;
+    if (
+      node.type === "link" &&
+      cursor === startOffset &&
+      cursor + nodeLength === endOffset
+    ) {
+      return node;
     }
 
-    nextNodes.push(node);
+    cursor += nodeLength;
   }
 
-  return didReplace ? nextNodes : null;
+  return null;
 }
