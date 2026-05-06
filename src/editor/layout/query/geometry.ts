@@ -4,12 +4,13 @@
 // metric helpers (visual-left, task checkbox bounds).
 
 import type { EditorListItemMarker, EditorState } from "../../state";
+import {
+  LIST_MARKER_TEXT_INSET,
+  TASK_CHECKBOX_SIZE,
+  TASK_MARKER_TEXT_INSET,
+} from "../lib/geometry";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import { measureCanvasLineOffsetLeft } from "./lookup";
-
-const LIST_MARKER_TEXT_INSET = 18;
-const TASK_CHECKBOX_SIZE = 14;
-const TASK_MARKER_TEXT_INSET = 22;
 
 export function resolveLineVisualLeft(
   state: EditorState,

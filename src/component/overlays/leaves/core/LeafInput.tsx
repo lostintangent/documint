@@ -1,20 +1,10 @@
-// Shared input for leaf surfaces. Wraps a textarea with two pluggable concerns:
-//   1. Action chrome — either edit (cancel + save) or compose (send).
-//   2. Optional completion popovers triggered by single characters in the text.
-// LinkLeaf uses this without completion sources; AnnotationLeaf wires presence
-// users in as an "@"-mention source. The popover reuses the leaf-menu styles
-// so completion lists and toolbar menus share a single visual identity.
-//
-// The popover is rendered through OverlayPortal so it escapes any overflow
-// clipping or stacking-context interference from ancestors (the comment
-// thread, the embedding host application, etc.). Layering above the leaf
-// is handled by z-index in the popover's CSS.
+// Shared text input for leaves, which provides inline actions for cancelling
+// and saving an edit action, as well as configurable auto-completion (e.g. @mentions).
+
 import { Check, SendHorizontal, X, type LucideIcon } from "lucide-react";
 import {
-  forwardRef,
   useCallback,
   useEffect,
-  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -22,6 +12,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
   type PointerEvent,
+  type RefObject,
   type SyntheticEvent,
 } from "react";
 import { OverlayPortal } from "../../OverlayPortal";
@@ -29,9 +20,6 @@ import { resolveTextareaAnchor } from "../lib/textarea-anchor";
 
 export type CompletionItem = {
   label: string;
-  // Opaque host-domain identifier (e.g. user ID for "@" mentions). Carried
-  // through to LeafOutput's tokenizer so consumers can map matched labels
-  // back to their source entity; ignored by the input itself.
   id?: string;
 };
 
@@ -56,11 +44,14 @@ export type LeafInputActions =
 
 type LeafInputProps = {
   actions: LeafInputActions;
+  autoFocus?: boolean;
   completionSources?: CompletionSource[];
   onChange: (value: string) => void;
   placeholder?: string;
   readOnly?: boolean;
+  ref?: RefObject<HTMLTextAreaElement | null>;
   rows?: number;
+  saveOnEnter?: boolean;
   value: string;
 };
 
@@ -75,20 +66,28 @@ type ActiveCompletion = {
 const popoverMaxHeight = 240;
 const completionItemBaseClass = "documint-leaf-menu-item documint-completion-item";
 
-export const LeafInput = forwardRef<HTMLTextAreaElement, LeafInputProps>(function LeafInput(
-  { actions, completionSources, onChange, placeholder, readOnly = false, rows = 3, value },
+export function LeafInput({
+  actions,
+  autoFocus = false,
+  completionSources,
+  onChange,
+  placeholder,
+  readOnly = false,
   ref,
-) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  useImperativeHandle(ref, () => textareaRef.current as HTMLTextAreaElement, []);
-
-  const sortedSources = useMemo(() => sortSources(completionSources), [completionSources]);
-
+  rows = 3,
+  saveOnEnter = false,
+  value,
+}: LeafInputProps) {
   const [activeCompletion, setActiveCompletion] = useState<ActiveCompletion | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(
     null,
   );
+
+  const fallbackRef = useRef<HTMLTextAreaElement | null>(null);
+  const textareaRef = ref ?? fallbackRef;
+
+  const sortedSources = useMemo(() => sortSources(completionSources), [completionSources]);
 
   const updateActiveCompletion = useCallback(
     (nextValue: string, caret: number) => {
@@ -204,8 +203,17 @@ export const LeafInput = forwardRef<HTMLTextAreaElement, LeafInputProps>(functio
         event.preventDefault();
         actions.onCancel();
       }
+
+      if (event.key === "Enter" && saveOnEnter) {
+        event.preventDefault();
+        if (actions.kind === "edit" && !actions.saveDisabled) {
+          actions.onSave();
+        } else if (actions.kind === "compose" && !actions.submitDisabled) {
+          actions.onSubmit();
+        }
+      }
     },
-    [actions, activeCompletion, activeIndex, insertCompletion],
+    [actions, activeCompletion, activeIndex, insertCompletion, saveOnEnter],
   );
 
   // Track the popover anchor as long as a completion is active. The popover
@@ -242,6 +250,7 @@ export const LeafInput = forwardRef<HTMLTextAreaElement, LeafInputProps>(functio
   return (
     <div className="documint-leaf-input-field">
       <textarea
+        autoFocus={autoFocus}
         className="documint-leaf-input"
         onBlur={handleBlur}
         onChange={handleChange}
@@ -268,7 +277,7 @@ export const LeafInput = forwardRef<HTMLTextAreaElement, LeafInputProps>(functio
       ) : null}
     </div>
   );
-});
+}
 
 function renderActions(actions: LeafInputActions) {
   if (actions.kind === "edit") {
@@ -328,7 +337,6 @@ function LeafInputAction({
       disabled={disabled}
       onClick={onClick}
       title={label}
-      type="button"
     >
       <Icon size={iconSize} strokeWidth={2.2} />
     </button>

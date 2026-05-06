@@ -1,111 +1,108 @@
-// Link editor leaf — shows the URL with edit/delete actions in read mode
-// and swaps to a textarea (via LeafInput) when the user begins editing. The
-// shell width is driven by the inner `.documint-link-leaf` div's CSS so the
-// leaf shrink-fits to its content like every other leaf type.
+// When you hover or focus on a link, this leaf displays the
+// link's associated URL and allows you to edit it. It also
+// provides a hint to CMD/CTRL+click to open the link.
+
 import { Pencil, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { LeafInput } from "./core/LeafInput";
 
 type LinkLeafProps = {
-  canEdit: boolean;
-  onDelete: () => void;
-  onSave: (url: string) => void;
-  title: string | null;
   url: string;
+  title: string | null;
+  canEdit: boolean;
+  onSave: (url: string) => void;
+  onDelete: () => void;  
 };
 
-export function LinkLeaf({ canEdit, onDelete, onSave, title, url }: LinkLeafProps) {
-  const [draftUrl, setDraftUrl] = useState(url);
+export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const openModifierLabel = resolveOpenModifierLabel();
-  const nextUrl = draftUrl.trim();
-  const canSave = canEdit && nextUrl.length > 0;
+  const [draftUrl, setDraftUrl] = useState("");
+
+  const decodedUrl = safeDecodeUrl(url);
+  const faviconUrl = resolveFaviconUrl(url);
+
   const showActions = canEdit && !isEditing;
-  const hintText = `${openModifierLabel}click to open`;
-  const rowClassName = `documint-link-leaf-row${isEditing ? " is-editing" : ""}`;
+  const canSave = canEdit && draftUrl.trim().length > 0;
 
-  useEffect(() => {
-    if (isEditing) {
-      return;
-    }
-
-    setDraftUrl(url);
-  }, [isEditing, url]);
-
-  useEffect(() => {
-    if (!isEditing) {
-      return;
-    }
-
-    inputRef.current?.focus();
-  }, [isEditing]);
+  const openModifierLabel = resolveOpenModifierLabel();
 
   const beginEditing = () => {
     if (!canEdit) {
       return;
     }
 
-    setDraftUrl(url);
+    setDraftUrl(decodedUrl);
     setIsEditing(true);
   };
 
-  const cancelEditing = () => {
-    setDraftUrl(url);
-    setIsEditing(false);
-  };
-
   const saveLink = () => {
-    onSave(nextUrl);
+    onSave(encodeURI(draftUrl.trim()));
     setIsEditing(false);
   };
 
   return (
     <div className="documint-link-leaf">
-      {title ? <div className="documint-link-leaf-title">{title}</div> : null}
-      <div className={rowClassName}>
+      {title && <div className="documint-link-leaf-title">{title}</div>}
+
+      <div className="documint-link-leaf-row">
+
         {isEditing ? (
           <LeafInput
             actions={{
               kind: "edit",
-              onCancel: cancelEditing,
+              onCancel: () => setIsEditing(false),
               onSave: saveLink,
               saveDisabled: !canSave,
             }}
+            autoFocus
             onChange={setDraftUrl}
             readOnly={!canEdit}
-            ref={inputRef}
             rows={3}
+            saveOnEnter
             value={draftUrl}
           />
         ) : (
-          <div className="documint-link-leaf-url">{url}</div>
+          <div className="documint-link-leaf-url-row">
+            {faviconUrl && (
+              <img
+                className="documint-link-leaf-favicon"
+                key={faviconUrl}
+                onError={(e) => { e.currentTarget.hidden = true; }}
+                src={faviconUrl}
+              />
+            )}
+            <div className="documint-link-leaf-url">{decodedUrl}</div>
+          </div>
         )}
-        {showActions ? (
+
+        {showActions && (
           <div className="documint-link-leaf-actions">
             <button
               className="documint-leaf-action"
               aria-label="Edit link"
               onClick={beginEditing}
               title="Edit link"
-              type="button"
             >
               <Pencil size={14} strokeWidth={2.2} />
             </button>
+
             <button
               className="documint-leaf-action documint-leaf-action-danger"
               aria-label="Remove link"
               onClick={onDelete}
               title="Remove link"
-              type="button"
             >
               <Trash2 size={14} strokeWidth={2.2} />
             </button>
           </div>
-        ) : null}
+        )}
+
       </div>
+
+      {/* CMD+click hint */}
       <div className="documint-link-leaf-divider" />
-      <div className="documint-link-leaf-hint">{hintText}</div>
+      <div className="documint-link-leaf-hint">{openModifierLabel}click to open</div>
+
     </div>
   );
 }
@@ -118,4 +115,21 @@ function resolveOpenModifierLabel() {
   const platform = navigator.platform || navigator.userAgent;
 
   return /Mac|iPhone|iPad|iPod/.test(platform) ? "CMD+" : "CTRL+";
+}
+
+function safeDecodeUrl(url: string): string {
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
+}
+
+function resolveFaviconUrl(url: string): string | null {
+  try {
+    const { hostname } = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`;
+  } catch {
+    return null;
+  }
 }

@@ -11,6 +11,7 @@ import {
   type CanvasRenderCache,
   type CanvasViewportPlan,
 } from "../../canvas/lib/cache";
+import { resolveListMarkerInset } from "../lib/geometry";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { DocumentLayout } from "../measure";
 import { createContainerHeightCacheKey } from "./estimate";
@@ -106,17 +107,28 @@ export function updateMeasuredContainerHeights(
   cache: CanvasRenderCache,
   documentIndex: DocumentIndex,
   layout: DocumentLayout,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
   for (const [regionId, extent] of layout.regionBounds) {
     const height = extent.bottom - extent.top;
     const container = documentIndex.regionIndex.get(regionId);
+    // Mirror the inset the planner applied when estimating this region —
+    // otherwise the cache key for the measured height won't match the
+    // cache key the next estimate pass looks up, defeating the cache.
+    const listInset = container
+      ? resolveListMarkerInset(
+          documentIndex.blockIndex,
+          documentIndex.listItemMarkers,
+          container.blockId,
+        )
+      : 0;
 
     cacheMeasuredContainerHeight(
       cache,
       createContainerHeightCacheKey(
         container ?? { path: regionId, inlines: [], text: "" },
+        listInset,
         options,
         resources,
       ),

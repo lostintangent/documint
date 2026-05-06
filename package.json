@@ -19,6 +19,7 @@
     "build:dev": "bun run scripts/build.ts",
     "build:prod": "bun run scripts/build.ts --prod",
     "build:playground": "bun run scripts/build.ts --playground",
+    "prepublishOnly": "bun run build:prod",
     "test": "bun test",
     "lint": "oxlint .",
     "format": "oxfmt . '!test/goldens/**/*.md'",

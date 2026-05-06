@@ -240,6 +240,7 @@
   background: var(--documint-leaf-button-bg);
   color: var(--documint-leaf-text);
   font: inherit;
+  overflow-wrap: anywhere;
   resize: none;
 
   &::placeholder {
@@ -474,12 +475,15 @@
 
 .documint-link-leaf-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: flex-start;
   gap: 0.6rem;
 
-  &.is-editing {
-    grid-template-columns: minmax(0, 1fr);
+  /* Reserve a second track for the action buttons only when they're
+     actually rendered — keeps the editing input full-width without a
+     dynamic className. */
+  &:has(.documint-link-leaf-actions) {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   & > .documint-leaf-input-field {
@@ -502,6 +506,20 @@
   color: var(--documint-leaf-text);
   font-size: 0.78rem;
   font-weight: 600;
+}
+
+.documint-link-leaf-url-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.documint-link-leaf-favicon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
 }
 
 .documint-link-leaf-url {

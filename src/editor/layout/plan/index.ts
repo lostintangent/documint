@@ -19,7 +19,12 @@ import {
   type CanvasRenderCache,
   type CanvasViewportPlan,
 } from "../../canvas/lib/cache";
-import type { DocumentLayoutOptions } from "../lib/options";
+import { resolveListMarkerInset } from "../lib/geometry";
+import {
+  resolveDocumentLayoutOptions,
+  type DocumentLayoutOptions,
+  type PartialDocumentLayoutOptions,
+} from "../lib/options";
 import { resolveLeafBlockGap } from "../lib/spacing";
 import {
   buildDocumentBlockMap,
@@ -51,12 +56,16 @@ export type ViewportLayout = {
 
 export function createViewportLayout(
   documentIndex: DocumentIndex,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  options: PartialDocumentLayoutOptions,
   viewport: CanvasViewport,
   pinnedContainerIds: string[] = [],
   cache = createCanvasRenderCache(),
   resources: DocumentResources | null = null,
 ): ViewportLayout {
+  // Resolve options once at this public boundary; every internal helper
+  // takes a full `DocumentLayoutOptions` so plan / estimate / cache key
+  // can never silently disagree with measure on a default value.
+  const resolvedOptions = resolveDocumentLayoutOptions(options);
   const resolvedResources: DocumentResources = resources ?? { images: new Map() };
   const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
   // documentIndex.blockIndex is already `Map<string, EditorBlock>` keyed by
@@ -71,7 +80,7 @@ export function createViewportLayout(
     documentIndex,
     blockMap,
     runtimeBlocks,
-    options,
+    resolvedOptions,
     resolvedResources,
   );
   let sliceStartIndex = findViewportPlanEntryIndexAtOrAfter(plan, expandedTop);
@@ -112,7 +121,7 @@ export function createViewportLayout(
           ...documentIndex,
           regions: [],
         },
-        options,
+        resolvedOptions,
         cache,
         resolvedResources,
       ),
@@ -128,19 +137,25 @@ export function createViewportLayout(
     sliceStartIndex,
     sliceEndIndex,
   );
-  const sliceTop = plan.entries[expandedSlice.startIndex]?.top ?? options.paddingY ?? 0;
+  const sliceTop = plan.entries[expandedSlice.startIndex]?.top ?? resolvedOptions.paddingY;
   const sliceLayout = createDocumentLayout(
     {
       ...documentIndex,
       regions: documentIndex.regions.slice(expandedSlice.startIndex, expandedSlice.endIndex),
     },
-    options,
+    resolvedOptions,
     cache,
     resolvedResources,
   );
   const shiftedLayout = shiftDocumentLayout(sliceLayout, sliceTop, plan.totalHeight);
 
-  updateMeasuredContainerHeights(cache, documentIndex, shiftedLayout, options, resolvedResources);
+  updateMeasuredContainerHeights(
+    cache,
+    documentIndex,
+    shiftedLayout,
+    resolvedOptions,
+    resolvedResources,
+  );
 
   return {
     estimateRegionBounds: plan.estimateRegionBounds,
@@ -155,7 +170,7 @@ function getOrCreateViewportPlan(
   documentIndex: DocumentIndex,
   blockMap: Map<string, Block>,
   runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
   const cacheKey = createViewportPlanCacheKey(documentIndex, options, resources);
@@ -172,9 +187,7 @@ function getOrCreateViewportPlan(
   // `documentIndex.regions`. Container blocks (blockquote, list,
   // listItem) are skipped here just as in layout — their leaf descendants
   // emit the actual entries.
-  const blockGap = options.blockGap ?? 16;
-  const lineHeight = options.lineHeight ?? 24;
-  let totalHeight = options.paddingY ?? 0;
+  let totalHeight = options.paddingY;
   // Sparse array — entries[i] corresponds to documentIndex.regions[i]; slots
   // for inert leaves (which have no region) are never written.
   const entries: CanvasViewportPlan["entries"] = [];
@@ -195,12 +208,12 @@ function getOrCreateViewportPlan(
         blockMap,
         previousLaidOutBlockId,
         blockEntry.id,
-        blockGap,
+        options.blockGap,
       );
     }
 
     if (isInert) {
-      totalHeight += lineHeight;
+      totalHeight += options.lineHeight;
     } else if (block.type === "table") {
       const result = appendTablePlanEntries({
         block,
@@ -217,6 +230,11 @@ function getOrCreateViewportPlan(
         totalHeight = result.totalHeight;
       }
     } else {
+      const listInset = resolveListMarkerInset(
+        documentIndex.blockIndex,
+        documentIndex.listItemMarkers,
+        blockEntry.id,
+      );
       for (const _regionId of blockEntry.regionIds) {
         const container = documentIndex.regions[regionCursor];
         if (!container) {
@@ -228,6 +246,7 @@ function getOrCreateViewportPlan(
           container,
           block,
           blockEntry.depth,
+          listInset,
           options,
           resources,
         );
@@ -269,7 +288,7 @@ function appendTablePlanEntries({
   containerIndices: Map<string, number>;
   entries: CanvasViewportPlan["entries"];
   index: number;
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">;
+  options: DocumentLayoutOptions;
   runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>;
   totalHeight: number;
   regions: DocumentIndex["regions"];
@@ -287,15 +306,13 @@ function appendTablePlanEntries({
     return null;
   }
 
-  const paddingX = options.paddingX ?? 0;
-  const indentWidth = options.indentWidth ?? 24;
   const depth = runtimeBlock?.depth ?? 0;
-  const left = paddingX + depth * indentWidth;
-  const tableWidth = Math.max(TABLE_MIN_WIDTH, options.width - left - paddingX);
+  const left = options.paddingX + depth * options.indentWidth;
+  const tableWidth = Math.max(TABLE_MIN_WIDTH, options.width - left - options.paddingX);
   const columnCount = Math.max(1, ...block.rows.map((row) => row.cells.length));
   const columnWidth = tableWidth / columnCount;
   const cellWidth = Math.max(40, columnWidth - TABLE_CELL_PADDING_X * 2);
-  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight ?? 24);
+  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
   const rowCells = collectTableRowRegions(tableRegions, index);
   let nextTop = totalHeight;
 
@@ -365,16 +382,16 @@ function collectTableRowRegions(regions: DocumentIndex["regions"], startIndex: n
 
 function createViewportPlanCacheKey(
   documentIndex: DocumentIndex,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
   return [
     options.width,
-    options.paddingX ?? 0,
-    options.paddingY ?? 0,
-    options.indentWidth ?? 24,
-    options.lineHeight ?? 24,
-    options.blockGap ?? 16,
+    options.paddingX,
+    options.paddingY,
+    options.indentWidth,
+    options.lineHeight,
+    options.blockGap,
     resolveImageResourceSignature(documentIndex, resources),
   ].join(":");
 }

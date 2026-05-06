@@ -449,6 +449,7 @@ export function Documint({
     autoScrollDuringDrag,
     canvasRef: contentCanvasRef,
     commentState,
+    editorState,
     editorStateRef,
     editorViewportState: preparedViewport,
     focusInput: input.focus,

@@ -3,6 +3,7 @@ import {
   resolveDragFocus,
   resolveHoverTarget as resolveHoverTargetAtViewport,
   resolveSelectionHit,
+  resolveTargetAtSelection,
   resolveWordSelection,
   setSelection,
   toggleTask,
@@ -19,6 +20,7 @@ import {
   type RefObject,
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -36,6 +38,7 @@ type UsePointerOptions = {
 
   // Editor state and lookups the hook reads from.
   commentState: EditorCommentState;
+  editorState: EditorState;
   editorStateRef: RefObject<EditorState | null>;
   editorViewportState: LazyRefHandle<EditorLayoutState>;
   readCurrentState: () => EditorState;
@@ -104,6 +107,7 @@ export function usePointer({
   autoScrollDuringDrag,
   canvasRef,
   commentState,
+  editorState,
   editorStateRef,
   editorViewportState,
   focusInput,
@@ -124,7 +128,28 @@ export function usePointer({
   const dragAnchorRef = useRef<EditorSelectionPoint | null>(null);
   const lastPointerTypeRef = useRef<string | null>(null);
 
-  const leaf = resolveContextualLeaf(hoverTarget, commentState.threads, commentState.liveRanges);
+  // The pointer captures `hoverTarget` once and doesn't refresh it while
+  // the pointer sits still — so editing a link's URL via the leaf would
+  // otherwise leave the leaf's `url` prop pointing at the pre-edit value.
+  // Re-resolve at the captured offset on every state change (same lookup
+  // `useCursor` does for caret-anchored leaves).
+  const refreshedHoverTarget = useMemo(() => {
+    if (hoverTarget?.kind !== "link") return hoverTarget;
+
+    return resolveTargetAtSelection(
+      editorState,
+      editorViewportState.get(),
+      { regionId: hoverTarget.regionId, offset: hoverTarget.startOffset },
+      commentState.liveRanges,
+    );
+  }, [hoverTarget, editorState, editorViewportState, commentState.liveRanges]);
+  
+  const leaf = resolveContextualLeaf(
+    refreshedHoverTarget,
+    commentState.threads,
+    commentState.liveRanges,
+  );
+
   const cursor = hoverTarget?.kind === "task-toggle" || leaf?.kind === "link" ? "pointer" : "text";
 
   /* Hover lifecycle */

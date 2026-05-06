@@ -20,7 +20,7 @@ A canvas-based, batteries-included markdown editor for React.
 
 - **Comments and presence for review workflows** — Anchor comments to any range of text, with full threading (replies, resolution, deletion) and self-repairing quote-based matching after edits. External user and AI agent presence can be projected into the document as live cursors and viewport indicators without becoming document content.
 
-- **Fast and lightweight** — Canvas-based rendering optimized for hot-path performance even on large documents. A custom markdown parser, editor engine, and layout/rendering system all ship in a bundle <70 KB gzipped.
+- **Fast and lightweight** — Canvas-based rendering optimized for hot-path performance even on large documents. A custom markdown parser, editor engine, and layout/rendering system all ship in a bundle <80 KB gzipped.
 
 ## Getting Started
 

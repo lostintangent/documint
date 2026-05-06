@@ -21,21 +21,23 @@ export function estimateContainerHeight(
   container: EditorRegion,
   block: Block | null,
   depth: number,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  // List item content is shifted right by this inset (bullet or task
+  // checkbox); subtracting it here keeps the estimator's wrap math in
+  // step with measure's exact wrap. Non-list regions pass 0.
+  listInset: number,
+  options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  const cacheKey = createContainerHeightCacheKey(container, options, resources);
+  const cacheKey = createContainerHeightCacheKey(container, listInset, options, resources);
   const cached = cache.measuredContainerHeights.get(cacheKey);
 
   if (cached !== undefined) {
     return cached;
   }
 
-  const paddingX = options.paddingX ?? 0;
-  const indentWidth = options.indentWidth ?? 24;
-  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight ?? 24);
-  const left = paddingX + depth * indentWidth;
-  const availableWidth = Math.max(40, options.width - left - paddingX);
+  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
+  const left = options.paddingX + depth * options.indentWidth;
+  const availableWidth = Math.max(40, options.width - left - options.paddingX - listInset);
 
   if (container.inlines.some((run) => run.kind === "image")) {
     const font = resolveTextBlockFont(block);
@@ -79,8 +81,9 @@ export function estimateTableCellHeight(
 
 export function createContainerHeightCacheKey(
   container: Pick<EditorRegion, "path" | "inlines" | "text">,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  listInset: number,
+  options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX ?? 0}:${options.indentWidth ?? 24}:${options.lineHeight ?? 24}`;
+  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.lineHeight}:${listInset}`;
 }

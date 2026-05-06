@@ -3,3 +3,4 @@ dist
 .playwright-cli
 .DS_Store
 coverage
+.claude

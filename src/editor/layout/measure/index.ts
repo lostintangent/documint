@@ -5,9 +5,14 @@ import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { isContainerBlock, isInertBlock, type DocumentIndex, type EditorRegion } from "../../state";
 import { createCanvasRenderCache, type CanvasRenderCache } from "../../canvas/lib/cache";
-import { defaultDocumentLayoutOptions, type DocumentLayoutOptions } from "../lib/options";
+import {
+  defaultDocumentLayoutOptions,
+  resolveDocumentLayoutOptions,
+  type DocumentLayoutOptions,
+  type PartialDocumentLayoutOptions,
+} from "../lib/options";
 import { resolveLeafBlockGap } from "../lib/spacing";
-import type { LayoutBlockExtent } from "../lib/geometry";
+import { resolveListMarkerInset, type LayoutBlockExtent } from "../lib/geometry";
 import { layoutTable } from "./table";
 import {
   measureTextContainerLines,
@@ -90,15 +95,12 @@ export function estimateLayout(input: {
 
 export function createDocumentLayout(
   documentIndex: DocumentIndex,
-  options: Partial<DocumentLayoutOptions> & Pick<DocumentLayoutOptions, "width">,
+  options: PartialDocumentLayoutOptions,
   cache = createCanvasRenderCache(),
   resources: DocumentResources | null = null,
 ): DocumentLayout {
   const resolvedResources: DocumentResources = resources ?? { images: new Map() };
-  const resolvedOptions: DocumentLayoutOptions = {
-    ...defaultDocumentLayoutOptions,
-    ...options,
-  };
+  const resolvedOptions = resolveDocumentLayoutOptions(options);
   const lines: DocumentLayoutLine[] = [];
   const regionBounds = new Map<
     string,
@@ -125,7 +127,9 @@ export function createDocumentLayout(
   // do — so we skip them here.
   const visibleRegionIds = new Set(documentIndex.regions.map((r) => r.id));
   let y = resolvedOptions.paddingY;
-  let previousLaidOutBlockId: string | null = null;
+  // Cached as the runtime block, not just its id, so the trailing-gap
+  // step can read its `type` without re-querying `blockIndex.get`.
+  let previousLaidOutBlock: DocumentIndex["blocks"][number] | null = null;
 
   for (const blockEntry of documentIndex.blocks) {
     const block = blockMap.get(blockEntry.id) ?? null;
@@ -141,11 +145,11 @@ export function createDocumentLayout(
     if (!isInert && blockRegionsInScope.length === 0) continue;
 
     // Apply the inter-block gap before laying out (except for the first).
-    if (previousLaidOutBlockId !== null) {
+    if (previousLaidOutBlock !== null) {
       y += resolveLeafBlockGap(
         runtimeBlocks,
         blockMap,
-        previousLaidOutBlockId,
+        previousLaidOutBlock.id,
         blockEntry.id,
         resolvedOptions.blockGap,
       );
@@ -155,9 +159,8 @@ export function createDocumentLayout(
       // own geometry slot so paint can center chrome (e.g. the divider's
       // rule) symmetrically. Clicks in the gap below an inert leaf fall
       // through to the next block rather than snapping back.
-      const previousEntry = documentIndex.blockIndex.get(previousLaidOutBlockId);
-      if (previousEntry && !isInertBlock(previousEntry)) {
-        const previousExtent = blockExtents.get(previousLaidOutBlockId);
+      if (!isInertBlock(previousLaidOutBlock)) {
+        const previousExtent = blockExtents.get(previousLaidOutBlock.id);
         if (previousExtent) {
           previousExtent.bottom = Math.max(previousExtent.bottom, y);
         }
@@ -166,10 +169,22 @@ export function createDocumentLayout(
 
     const depth = blockEntry.depth;
     const left = resolvedOptions.paddingX + depth * resolvedOptions.indentWidth;
-    const availableWidth = Math.max(40, resolvedOptions.width - left - resolvedOptions.paddingX);
+    const listInset = resolveListMarkerInset(
+      runtimeBlocks,
+      documentIndex.listItemMarkers,
+      blockEntry.id,
+    );
+    const availableWidth = Math.max(
+      40,
+      resolvedOptions.width - left - resolvedOptions.paddingX - listInset,
+    );
 
     if (isInert) {
-      y = layoutInertBlock(blockExtents, blockEntry.id, y, resolvedOptions);
+      // Inert leaves (dividers, etc.) reserve a fixed-height slot without
+      // emitting lines; chrome is painted off `layout.blocks`.
+      const bottom = y + resolvedOptions.lineHeight;
+      blockExtents.set(blockEntry.id, { top: y, bottom });
+      y = bottom;
     } else if (block.type === "table") {
       const tableContainers = blockRegionsInScope
         .map((id) => documentIndex.regionIndex.get(id))
@@ -206,7 +221,7 @@ export function createDocumentLayout(
       }
     }
 
-    previousLaidOutBlockId = blockEntry.id;
+    previousLaidOutBlock = blockEntry;
   }
 
   // `layout.blocks` is the per-leaf-block bounding-box index used by the
@@ -239,22 +254,6 @@ export function createDocumentLayout(
     options: resolvedOptions,
     width: resolvedOptions.width,
   };
-}
-
-// Inert leaf block layout: reserve a fixed-height geometry slot via
-// `blockExtents` without emitting any lines. The canvas paints the
-// block's chrome (e.g. a divider's rule) by iterating `layout.blocks`
-// and dispatching on `block.type`. Hit-test resolves clicks on inert
-// leaves by redirecting to the next region in flow.
-function layoutInertBlock(
-  blockExtents: Map<string, LayoutBlockExtent>,
-  blockId: string,
-  top: number,
-  options: DocumentLayoutOptions,
-): number {
-  const height = options.lineHeight;
-  blockExtents.set(blockId, { top, bottom: top + height });
-  return top + height;
 }
 
 function layoutSingleContainer(
@@ -316,18 +315,21 @@ function layoutSingleContainer(
 }
 
 function createContainerLineIndices(lines: DocumentLayoutLine[]) {
-  const sortedLines = [...lines].sort(
-    (left, right) => left.top - right.top || left.left - right.left,
-  );
+  // Sort in place — table cell layout can interleave Y across the cells of
+  // a row, so we need a single top-then-left order to feed binary search
+  // in the paint/hit-test passes. (Cloning + `lines.push(...sortedLines)`
+  // also blows the call stack on long docs via spread-as-args.)
+  lines.sort((left, right) => left.top - right.top || left.left - right.left);
+
   const entries = new Map<string, number[]>();
-
-  lines.length = 0;
-  lines.push(...sortedLines);
-
-  for (const [index, line] of lines.entries()) {
-    const current = entries.get(line.regionId) ?? [];
-    current.push(index);
-    entries.set(line.regionId, current);
+  for (let index = 0; index < lines.length; index += 1) {
+    const regionId = lines[index]!.regionId;
+    const current = entries.get(regionId);
+    if (current) {
+      current.push(index);
+    } else {
+      entries.set(regionId, [index]);
+    }
   }
 
   return entries;
