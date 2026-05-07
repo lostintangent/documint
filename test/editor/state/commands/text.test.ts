@@ -11,7 +11,6 @@ import {
   deleteBackward,
   deleteForward,
   deleteSelection,
-  extendSelectionToPoint,
   insertText,
   replaceSelection,
   setSelection,
@@ -435,18 +434,6 @@ function selectionBetween(
     focus: { regionId: focusRegionId, offset: focusOffset },
   };
 }
-
-test("extends the selection focus to a new point while keeping the anchor fixed", () => {
-  const state = setup("Hello world\n");
-  const region = getRegion(state, "Hello world");
-  const placed = placeAt(state, region, 0);
-  const extended = extendSelectionToPoint(placed, region.id, 5);
-
-  expect(extended.selection.anchor.regionId).toBe(region.id);
-  expect(extended.selection.anchor.offset).toBe(0);
-  expect(extended.selection.focus.regionId).toBe(region.id);
-  expect(extended.selection.focus.offset).toBe(5);
-});
 
 test("deletes adjacent images atomically with deleteBackward and deleteForward", () => {
   const state = setup("before ![alt](https://example.com/image.png) after\n");

@@ -26,6 +26,7 @@ export {
   firstInFlowRegionOfRoot,
   getSelectionContext,
   getSelectionMarks,
+  getSelectionRange,
   isContainerBlock,
   isInertBlock,
   nextBlockInFlow,
@@ -44,15 +45,14 @@ export {
 export type {
   EditorSelection,
   EditorSelectionPoint,
+  EditorSelectionRange,
   NormalizedEditorSelection,
   SelectionContext,
   SelectionTarget,
 } from "./selection";
 
 // Animations
-export {
-  hasNewAnimation,
-} from "./animations";
+export { hasNewAnimation } from "./animations";
 
 export type {
   ActiveBlockFlashAnimation,

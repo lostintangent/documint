@@ -1,6 +1,11 @@
 import type { Block } from "@/document";
 import type { DocumentIndex, EditorRegion } from "../index/types";
-import { normalizeSelection, resolveRegion, type EditorSelection, type NormalizedEditorSelection } from "../selection";
+import {
+  normalizeSelection,
+  resolveRegion,
+  type EditorSelection,
+  type NormalizedEditorSelection,
+} from "../selection";
 
 export type FragmentSourceContext =
   | {
@@ -95,8 +100,7 @@ export function resolveFragmentDestinationContext(
     startRegion,
     endRegion,
     structuralBlocked,
-    prefersVerbatimFallback:
-      startRegion.blockType === "code" || endRegion.blockType === "code",
+    prefersVerbatimFallback: startRegion.blockType === "code" || endRegion.blockType === "code",
   };
 }
 

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { dedent, deleteBackward, deleteForward, deleteSelection, indent, insertLineBreak, insertText } from "@/editor/state";
+import {
+  dedent,
+  deleteBackward,
+  deleteForward,
+  deleteSelection,
+  indent,
+  insertLineBreak,
+  insertText,
+} from "@/editor/state";
 import { getRegion, getRegionByType, placeAt, selectIn, setup, toMarkdown } from "../../helpers";
 
 test("demotes headings and unwraps single-line blockquotes on backspace at start", () => {
@@ -34,9 +42,7 @@ test("backspace at start of a non-empty top-level first list item demotes the wh
   state = placeAt(state, alpha, 0);
   state = deleteBackward(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "alpha\n\nnested\n\nbravo\n",
-  );
+  expect(toMarkdown(state)).toBe("alpha\n\nnested\n\nbravo\n");
   expect(state.selection.focus.offset).toBe(0);
 });
 
@@ -47,9 +53,7 @@ test("backspace at start of a top-level list still demotes it when a previous ro
   state = placeAt(state, alpha, 0);
   state = deleteBackward(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "Lead\n\nalpha\n\nbravo\n",
-  );
+  expect(toMarkdown(state)).toBe("Lead\n\nalpha\n\nbravo\n");
 });
 
 test("backspace at start of an empty top-level first list item still demotes the list", () => {
@@ -137,9 +141,7 @@ test("splits paragraphs and extends headings through enter", () => {
   paragraphState = placeAt(paragraphState, paragraph, "Paragraph".length);
   paragraphState = insertLineBreak(paragraphState) ?? paragraphState;
 
-  expect(toMarkdown(paragraphState)).toBe(
-    "Paragraph\n\n&#x20;body.\n",
-  );
+  expect(toMarkdown(paragraphState)).toBe("Paragraph\n\n&#x20;body.\n");
 
   let headingState = setup("# Heading\n");
   const heading = headingState.documentIndex.regions[0];
@@ -184,9 +186,7 @@ test("forward delete at end of a paragraph followed by a list absorbs the first 
   state = placeAt(state, lead, lead.text.length);
   state = deleteForward(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "Leadalpha\n\n- bravo\n",
-  );
+  expect(toMarkdown(state)).toBe("Leadalpha\n\n- bravo\n");
   const merged = state.documentIndex.regions.find((c) => c.text === "Leadalpha");
   expect(state.selection.focus.regionId).toBe(merged!.id);
   expect(state.selection.focus.offset).toBe("Lead".length);
@@ -288,9 +288,7 @@ test("backspacing an empty paragraph after a list lands in the deepest-last regi
 
   const nested = getRegion(state, "nested");
 
-  expect(toMarkdown(state)).toBe(
-    "- top\n  - nested\n\nstub\n",
-  );
+  expect(toMarkdown(state)).toBe("- top\n  - nested\n\nstub\n");
   // The caret should land where the left arrow would take us — at the end
   // of the nested item, not the end of the top-level item.
   expect(state.selection.focus.regionId).toBe(nested.id);
@@ -370,9 +368,7 @@ test("preserves blockquote and code-fence context on enter", () => {
   quoteState = placeAt(quoteState, quoted, "quoted".length);
   quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-  expect(toMarkdown(quoteState)).toBe(
-    "> quoted\n>\n> &#x20;text\n",
-  );
+  expect(toMarkdown(quoteState)).toBe("> quoted\n>\n> &#x20;text\n");
 
   let codeState = setup("```ts\nconst x = 1;\n```\n");
   const code = getRegionByType(codeState, "code");
@@ -380,9 +376,7 @@ test("preserves blockquote and code-fence context on enter", () => {
   codeState = placeAt(codeState, code, code.text.length);
   codeState = insertLineBreak(codeState) ?? codeState;
 
-  expect(toMarkdown(codeState)).toBe(
-    "```ts\nconst x = 1;\n\n```\n",
-  );
+  expect(toMarkdown(codeState)).toBe("```ts\nconst x = 1;\n\n```\n");
 });
 
 test("pressing enter on an empty blockquote line exits to a paragraph", () => {
@@ -554,9 +548,7 @@ test("places the cursor at the merge junction when backspacing past the first ch
 
   const merged = getRegion(state, "bravocharlie");
 
-  expect(toMarkdown(state)).toBe(
-    "> alpha\n>\n> bravocharlie\n",
-  );
+  expect(toMarkdown(state)).toBe("> alpha\n>\n> bravocharlie\n");
   expect(state.selection.focus.regionId).toBe(merged.id);
   expect(state.selection.focus.offset).toBe("bravo".length);
 });

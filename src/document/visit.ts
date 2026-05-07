@@ -359,10 +359,7 @@ export type BlockMapContext = {
   path: string;
 };
 
-export type BlockMapVisitor = (
-  block: Block,
-  context: BlockMapContext,
-) => Block | Block[] | null;
+export type BlockMapVisitor = (block: Block, context: BlockMapContext) => Block | Block[] | null;
 
 // Transform a block array, returning a new array with each block replaced by
 // the visitor's return value (`Block`, `Block[]`, or `null` to drop). Returns
@@ -412,11 +409,7 @@ export function mapBlockTree(
 // the rebuild matters: it's the difference between O(N) and O(N log N) on the
 // parse and splice hot paths, where the redundant `plainText` recomputation
 // in the rebuilders showed up as a measurable benchmark regression.
-function recurseBlockChildren(
-  block: Block,
-  visit: BlockMapVisitor,
-  childrenPath: string,
-): Block {
+function recurseBlockChildren(block: Block, visit: BlockMapVisitor, childrenPath: string): Block {
   switch (block.type) {
     case "blockquote":
     case "listItem": {

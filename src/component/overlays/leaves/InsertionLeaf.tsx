@@ -77,11 +77,7 @@ export function InsertionLeaf({ onInsert, onInsertTable }: InsertionLeafProps) {
         label="Insert blockquote"
         onClick={() => onInsert("> ")}
       />
-      <LeafToolbar.Button
-        icon={Minus}
-        label="Insert divider"
-        onClick={() => onInsert("--- ")}
-      />
+      <LeafToolbar.Button icon={Minus} label="Insert divider" onClick={() => onInsert("--- ")} />
     </LeafToolbar>
   );
 }

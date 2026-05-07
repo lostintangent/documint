@@ -58,8 +58,7 @@ export function placeAt(
   region: EditorRegion,
   offset: number | "start" | "end",
 ): EditorState {
-  const resolvedOffset =
-    offset === "start" ? 0 : offset === "end" ? region.text.length : offset;
+  const resolvedOffset = offset === "start" ? 0 : offset === "end" ? region.text.length : offset;
 
   return setSelection(state, { regionId: region.id, offset: resolvedOffset });
 }

@@ -242,7 +242,11 @@ function readBackslashLineBreakToken(source: string, index: number, end: number)
 }
 
 function readTrailingSpaceLineBreakToken(source: string, index: number) {
-  if (source[index] !== lineFeed || source[index - 1] !== spaceCharacter || source[index - 2] !== spaceCharacter) {
+  if (
+    source[index] !== lineFeed ||
+    source[index - 1] !== spaceCharacter ||
+    source[index - 2] !== spaceCharacter
+  ) {
     return null;
   }
 

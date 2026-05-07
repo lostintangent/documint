@@ -37,12 +37,8 @@ test("moves across table rows with tab and shift-tab", () => {
     throw new Error("Expected table cells");
   }
 
-  const nextState = indent(
-    placeAt(state, beta, 1),
-  );
-  const previousState = dedent(
-    placeAt(state, gamma, 1),
-  );
+  const nextState = indent(placeAt(state, beta, 1));
+  const previousState = dedent(placeAt(state, gamma, 1));
 
   expect(nextState?.selection.focus.regionId).toBe(gamma.id);
   expect(nextState?.selection.focus.offset).toBe(1);
@@ -59,9 +55,7 @@ test("adds a new empty row when tabbing from the last table cell", () => {
   const nextState = indent(state);
 
   expect(nextState).toBeDefined();
-  expect(toMarkdown(nextState!)).toBe(
-    "| A | B |\n| --- | --- |\n| alpha | beta |\n|  |  |\n",
-  );
+  expect(toMarkdown(nextState!)).toBe("| A | B |\n| --- | --- |\n| alpha | beta |\n|  |  |\n");
 
   const focusedContainer = nextState!.documentIndex.regionIndex.get(
     nextState!.selection.focus.regionId,
@@ -97,7 +91,9 @@ function inFirstCell(state: ReturnType<typeof stateWithTable>) {
 
 test("inserts a table with the requested column count", () => {
   expect(toMarkdown(stateWithTable())).toContain("|");
-  expect(stateWithTable().documentIndex.regions.filter((r) => r.tableCellPosition != null).length).toBeGreaterThanOrEqual(2);
+  expect(
+    stateWithTable().documentIndex.regions.filter((r) => r.tableCellPosition != null).length,
+  ).toBeGreaterThanOrEqual(2);
 });
 
 test("inserts a column to the right of the current cell", () => {

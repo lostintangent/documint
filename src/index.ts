@@ -11,12 +11,7 @@ export {
   type DocumintTheme,
 } from "./component";
 
-export type {
-  DocumentPresence,
-  DocumentUser,
-  DocumintStorage,
-  EditorTheme,
-} from "./types";
+export type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "./types";
 
 export type {
   Anchor,

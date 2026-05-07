@@ -166,7 +166,11 @@ export function resolveActiveBlockFlashColor(
   activeBlockFlashColor: string,
   activeBlockFlash: ActiveBlockFlash,
 ) {
-  return blendCanvasColors(activeBlockFlashColor, transparentCanvasColor, activeBlockFlash.progress);
+  return blendCanvasColors(
+    activeBlockFlashColor,
+    transparentCanvasColor,
+    activeBlockFlash.progress,
+  );
 }
 
 export function resolvePunctuationPulseColor(

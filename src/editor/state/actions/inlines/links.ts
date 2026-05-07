@@ -72,21 +72,13 @@ export function removeInlineLink(
   return spliceRegionInlines(inlineRegion, startOffset, endOffset, link.children);
 }
 
-function findExactInlineLink(
-  nodes: Inline[],
-  startOffset: number,
-  endOffset: number,
-): Link | null {
+function findExactInlineLink(nodes: Inline[], startOffset: number, endOffset: number): Link | null {
   let cursor = 0;
 
   for (const node of nodes) {
     const nodeLength = measureInlineNodeText(node);
 
-    if (
-      node.type === "link" &&
-      cursor === startOffset &&
-      cursor + nodeLength === endOffset
-    ) {
+    if (node.type === "link" && cursor === startOffset && cursor + nodeLength === endOffset) {
       return node;
     }
 

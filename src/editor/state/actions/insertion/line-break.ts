@@ -2,7 +2,11 @@ import type { DocumentIndex } from "../../index/types";
 import type { EditorSelection } from "../../selection";
 import type { EditorStateAction } from "../../types";
 import type { BlockCommandContext } from "../../context";
-import { resolveBlockquoteTextBlockSplit, resolveRootTextBlockSplit, resolveStructuralBlockquoteSplit } from "../blocks";
+import {
+  resolveBlockquoteTextBlockSplit,
+  resolveRootTextBlockSplit,
+  resolveStructuralBlockquoteSplit,
+} from "../blocks";
 import { resolveListItemSplit, resolveStructuralListBlockSplit } from "../blocks/list";
 import { resolveTableCellLineBreak } from "../blocks/table";
 
@@ -22,7 +26,9 @@ export function resolveLineBreakAction(
       return resolveTableCellLineBreak(documentIndex, selection);
 
     case "listItem":
-      return resolveStructuralListBlockSplit(ctx, ctx.offset) ?? resolveListItemSplit(ctx, ctx.offset);
+      return (
+        resolveStructuralListBlockSplit(ctx, ctx.offset) ?? resolveListItemSplit(ctx, ctx.offset)
+      );
 
     case "blockquoteTextBlock":
       return (

@@ -3,9 +3,14 @@
  * boundary keeps call sites semantic while splitting core line-based movement
  * from table-specific vertical overrides.
  */
-import type { CaretTarget, DocumentLayout } from "../layout";
-import { measureCaretTarget } from "../layout";
-import { setSelectionPoint, type EditorState } from "../state";
+import type { CaretTarget, DocumentLayout, EditorLayoutState, EditorPoint } from "../layout";
+import { measureCaretTarget, resolveLayoutDragFocus, resolveLayoutSelectionHit } from "../layout";
+import {
+  setSelection,
+  setSelectionPoint,
+  type EditorSelectionPoint,
+  type EditorState,
+} from "../state";
 import {
   moveCaretByViewportInFlow,
   moveCaretHorizontallyInFlow,
@@ -51,6 +56,42 @@ export function moveCaretToDocumentBoundary(
   extendSelection = false,
 ) {
   return applyDocumentBoundaryMotion(state, boundary, extendSelection);
+}
+
+export function setSelectionAtPoint(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  point: EditorPoint,
+) {
+  const hit = resolveLayoutSelectionHit(state, viewport, point);
+
+  return hit ? setSelection(state, { offset: hit.offset, regionId: hit.regionId }) : null;
+}
+
+export function extendSelectionToPoint(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  point: EditorPoint,
+) {
+  const hit = resolveLayoutSelectionHit(state, viewport, point);
+
+  return hit ? setSelectionPoint(state, hit.regionId, hit.offset, true) : null;
+}
+
+export function updateSelectionFromDrag(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  point: EditorPoint,
+  anchor: EditorSelectionPoint,
+) {
+  const focus = resolveLayoutDragFocus(state, viewport, point, anchor);
+
+  return focus
+    ? setSelection(state, {
+        anchor,
+        focus,
+      })
+    : null;
 }
 
 function applyVerticalMotion(

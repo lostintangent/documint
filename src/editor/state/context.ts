@@ -142,11 +142,7 @@ export function resolveDeleteCommandContext(
 ): DeleteCommandContext {
   const ctx = resolveBlockCommandContext(documentIndex, selection);
   const atBoundary =
-    ctx.kind === "unsupported"
-      ? false
-      : direction === "backward"
-        ? ctx.atStart
-        : ctx.atEnd;
+    ctx.kind === "unsupported" ? false : direction === "backward" ? ctx.atStart : ctx.atEnd;
 
   switch (ctx.kind) {
     case "rootTextBlock":

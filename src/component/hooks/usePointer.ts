@@ -1,53 +1,43 @@
 import {
   extendSelectionToPoint,
-  resolveDragFocus,
-  resolveHoverTarget as resolveHoverTargetAtViewport,
-  resolveSelectionHit,
-  resolveTargetAtSelection,
+  resolveHoverTarget as resolveEditorHoverTarget,
   resolveWordSelection,
+  setSelectionAtPoint,
   setSelection,
   toggleTask,
-  type EditorCommentState,
+  updateSelectionFromDrag,
   type EditorHoverTarget,
   type EditorSelectionPoint,
-  type EditorState,
-  type EditorLayoutState,
 } from "@/editor";
-import type { LazyRefHandle } from "./useLazyRef";
 import {
   type MouseEvent,
   type PointerEvent,
   type RefObject,
   useEffect,
   useEffectEvent,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import {
-  resolveContextualLeaf,
-  type LinkLeaf,
-  type ThreadLeaf,
-} from "../overlays/leaves/core/shared";
 import type { FocusInput } from "./useInput";
 import type { DocumentStorage } from "../lib/storage";
+import {
+  pointerViewValue,
+  useDocumintStore,
+  useEditorCommand,
+  useStoreValue,
+  type PointerLeaf,
+} from "../store";
 
 type UsePointerOptions = {
   // DOM refs the hook reads from.
   canvasRef: RefObject<HTMLCanvasElement | null>;
 
-  // Editor state and lookups the hook reads from.
-  commentState: EditorCommentState;
-  editorState: EditorState;
-  editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorLayoutState>;
-  readCurrentState: () => EditorState;
+  // Browser coordinate translation owned by useViewport.
   resolvePoint: (
     event: PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>,
   ) => { x: number; y: number } | null;
 
   // Host callbacks the hook invokes.
-  applyNextState: (nextState: EditorState | null) => void;
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
   focusInput: FocusInput;
   onActivity: () => void;
@@ -72,7 +62,7 @@ type LeafHoverHandlers = {
 type PointerController = {
   canvasHandlers: CanvasPointerHandlers;
   cursor: "pointer" | "text";
-  leaf: LinkLeaf | ThreadLeaf | null;
+  leaf: PointerLeaf | null;
   leafHandlers: LeafHoverHandlers;
 };
 
@@ -85,8 +75,8 @@ const HOVER_HIDE_DELAY_MS = 48;
  * the editor.
  *
  * What this hook owns:
- *   - Hover state — which target is under the pointer, cursor style, the
- *     visible contextual leaf, and hide-on-leave timing.
+ *   - Hover state — which target is under the pointer and hide-on-leave
+ *     timing. The resolved leaf/cursor view model is store-derived.
  *   - Drag-to-select on mouse/pen — anchor tracking, pointer capture, and
  *     autoscroll past the canvas edge.
  *   - Tap-to-place-caret on touch — deferred to `click` so the browser's
@@ -95,30 +85,31 @@ const HOVER_HIDE_DELAY_MS = 48;
  *     activation.
  *
  * Contract with the host:
- *   - The host provides DOM refs, editor state accessors, and callbacks for
- *     state changes / focus / activity (see `UsePointerOptions`).
+ *   - The host provides DOM refs, coordinate translation, focus/activity
+ *     callbacks, and storage for link activation.
  *   - The host spreads `canvasHandlers` onto the canvas, reads `cursor` for
  *     its style, and renders `leaf` with `leafHandlers` for contextual UI.
  *   - The host knows nothing about pointer types, drag anchors, hit testing,
  *     or gesture disambiguation — those live entirely in this hook.
  */
 export function usePointer({
-  applyNextState,
   autoScrollDuringDrag,
   canvasRef,
-  commentState,
-  editorState,
-  editorStateRef,
-  editorViewportState,
   focusInput,
   onActivity,
-  readCurrentState,
   resolvePoint,
   storage,
 }: UsePointerOptions): PointerController {
   /* Internal state */
 
+  const store = useDocumintStore();
+  const setEditorSelection = useEditorCommand(setSelection);
+  const setEditorSelectionAtPoint = useEditorCommand(setSelectionAtPoint);
+  const extendEditorSelectionToPoint = useEditorCommand(extendSelectionToPoint);
+  const toggleTaskItem = useEditorCommand(toggleTask);
+  const dragEditorSelection = useEditorCommand(updateSelectionFromDrag);
   const [hoverTarget, setHoverTarget] = useState<EditorHoverTarget | null>(null);
+  const { cursor, leaf } = useStoreValue(pointerViewValue, hoverTarget);
   const hideTimeoutRef = useRef<number | null>(null);
   const isLeafHoveredRef = useRef(false);
   // Drag-to-select uses pointer capture; `lastPointerTypeRef` lets `click`
@@ -127,30 +118,6 @@ export function usePointer({
   const dragPointerIdRef = useRef<number | null>(null);
   const dragAnchorRef = useRef<EditorSelectionPoint | null>(null);
   const lastPointerTypeRef = useRef<string | null>(null);
-
-  // The pointer captures `hoverTarget` once and doesn't refresh it while
-  // the pointer sits still — so editing a link's URL via the leaf would
-  // otherwise leave the leaf's `url` prop pointing at the pre-edit value.
-  // Re-resolve at the captured offset on every state change (same lookup
-  // `useCursor` does for caret-anchored leaves).
-  const refreshedHoverTarget = useMemo(() => {
-    if (hoverTarget?.kind !== "link") return hoverTarget;
-
-    return resolveTargetAtSelection(
-      editorState,
-      editorViewportState.get(),
-      { regionId: hoverTarget.regionId, offset: hoverTarget.startOffset },
-      commentState.liveRanges,
-    );
-  }, [hoverTarget, editorState, editorViewportState, commentState.liveRanges]);
-  
-  const leaf = resolveContextualLeaf(
-    refreshedHoverTarget,
-    commentState.threads,
-    commentState.liveRanges,
-  );
-
-  const cursor = hoverTarget?.kind === "task-toggle" || leaf?.kind === "link" ? "pointer" : "text";
 
   /* Hover lifecycle */
 
@@ -214,13 +181,6 @@ export function usePointer({
     }
 
     if (target.commentThreadIndex !== null) {
-      const thread = commentState.threads[target.commentThreadIndex] ?? null;
-
-      if (!thread) {
-        clearLeafIfPointerIsOutsideLeaf();
-        return;
-      }
-
       cancelHide();
       const threadIndex = target.commentThreadIndex;
       setHoverTarget((previous) =>
@@ -252,18 +212,11 @@ export function usePointer({
 
   const resolveHoverTarget = useEffectEvent(
     (event: PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>) => {
-      const currentState = editorStateRef.current;
-      if (!currentState) return null;
-
       const point = resolvePoint(event);
       if (!point) return null;
 
-      return resolveHoverTargetAtViewport(
-        currentState,
-        editorViewportState.get(),
-        point,
-        commentState.liveRanges,
-      );
+      const currentState = store.editor.getState();
+      return resolveEditorHoverTarget(currentState, store.viewport.get(), point);
     },
   );
 
@@ -305,7 +258,7 @@ export function usePointer({
     }
 
     const canvas = canvasRef.current;
-    const currentState = readCurrentState();
+    const viewport = store.viewport.get();
     const point = resolvePoint(event);
     if (!point) return;
 
@@ -318,33 +271,30 @@ export function usePointer({
       return;
     }
 
-    const hit = resolveSelectionHit(currentState, editorViewportState.get(), point);
-    if (!canvas || !hit) return;
+    if (!canvas) return;
+
+    const transition = event.shiftKey
+      ? extendEditorSelectionToPoint(viewport, point)
+      : setEditorSelectionAtPoint(viewport, point);
+    if (!transition) return;
+
+    const focus = transition.next.selection.focus;
 
     dragPointerIdRef.current = event.pointerId;
+    dragAnchorRef.current = event.shiftKey ? transition.previous.selection.anchor : focus;
     onActivity();
     canvas.setPointerCapture(event.pointerId);
-
-    if (event.shiftKey) {
-      // Preserve the existing anchor so a subsequent drag continues extending from the same origin.
-      dragAnchorRef.current = currentState.selection.anchor;
-      applyNextState(extendSelectionToPoint(currentState, hit.regionId, hit.offset));
-    } else {
-      dragAnchorRef.current = { offset: hit.offset, regionId: hit.regionId };
-      applyNextState(setSelection(currentState, { offset: hit.offset, regionId: hit.regionId }));
-    }
 
     // Pass the tapped caret to `focus` so it positions the hidden textarea
     // synchronously before invoking the native `focus()`. Without this, the
     // textarea's position only updates on the next React render via the
     // layout effect — which is too late for iOS's scroll-to-focused-input
     // decision, leaving the caret hidden behind the virtual keyboard.
-    focusInput({ offset: hit.offset, regionId: hit.regionId });
+    focusInput(focus);
   });
 
   const handlePointerMove = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
     const anchor = dragAnchorRef.current;
-    const currentState = readCurrentState();
     const point = resolvePoint(event);
     if (!point) return;
 
@@ -358,12 +308,11 @@ export function usePointer({
       return;
     }
 
-    const nextFocus = resolveDragFocus(currentState, editorViewportState.get(), point, anchor);
-    if (!nextFocus) return;
+    const transition = dragEditorSelection(store.viewport.get(), point, anchor);
+    if (!transition) return;
 
     onActivity();
     autoScrollDuringDrag(event);
-    applyNextState(setSelection(currentState, { anchor, focus: nextFocus }));
   });
 
   const handlePointerLeave = useEffectEvent(() => {
@@ -382,13 +331,11 @@ export function usePointer({
     const target = resolveHoverTarget(event);
 
     if (target?.kind === "task-toggle") {
-      const currentState = readCurrentState();
-      const toggled = toggleTask(currentState, target.listItemId);
-      if (toggled) {
+      const transition = toggleTaskItem(target.listItemId);
+      if (transition) {
         event.preventDefault();
         event.stopPropagation();
         onActivity();
-        applyNextState(toggled);
       }
       return;
     }
@@ -413,33 +360,36 @@ export function usePointer({
     // Touch path: pointerdown deferred to here. Resolve the hit and place
     // the caret now, after the browser has confirmed this was a tap and
     // not a scroll/swipe/long-press.
-    const currentState = readCurrentState();
     const point = resolvePoint(event);
-    const hit = point ? resolveSelectionHit(currentState, editorViewportState.get(), point) : null;
 
-    if (hit) {
+    if (point) {
+      const transition = setEditorSelectionAtPoint(store.viewport.get(), point);
+      if (!transition) {
+        focusInput();
+        return;
+      }
+
       onActivity();
-      applyNextState(setSelection(currentState, { offset: hit.offset, regionId: hit.regionId }));
-      focusInput({ offset: hit.offset, regionId: hit.regionId });
+      focusInput(transition.next.selection.focus);
     } else {
       focusInput();
     }
   });
 
   const handleDoubleClick = useEffectEvent((event: MouseEvent<HTMLCanvasElement>) => {
-    const currentState = readCurrentState();
+    const currentState = store.editor.getState();
     const point = resolvePoint(event);
     const target = resolveHoverTarget(event);
 
     if (!point || target?.kind === "task-toggle") return;
 
-    const wordSel = resolveWordSelection(currentState, editorViewportState.get(), point);
+    const wordSel = resolveWordSelection(currentState, store.viewport.get(), point);
     if (!wordSel) return;
 
     event.preventDefault();
     event.stopPropagation();
     onActivity();
-    applyNextState(setSelection(currentState, wordSel));
+    setEditorSelection(wordSel);
     focusInput();
   });
 

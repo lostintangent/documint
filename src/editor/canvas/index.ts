@@ -67,10 +67,7 @@ import {
   resolveSelectionRegionOrderRange,
   type SelectionRegionOrderRange,
 } from "./painters/selection";
-import {
-  paintActiveTableCellHighlightPass,
-  type PaintRegionBounds,
-} from "./painters/table";
+import { paintActiveTableCellHighlightPass, type PaintRegionBounds } from "./painters/table";
 import {
   paintCanvasDeletedTextFades,
   paintCanvasLineText,

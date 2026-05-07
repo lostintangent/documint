@@ -6,16 +6,16 @@ Each transition has its own cadence. `markdown ↔ Document` runs at file bounda
 
 Common interactions in terms of that pipeline:
 
-| Interaction | `EditorState` | `EditorLayoutState` | Paint |
-| --- | --- | --- | --- |
-| Document load / replace | new (new `documentIndex`) | fresh | content + overlay |
-| Text or structural edit | new (new `documentIndex`) | invalidated, recomputed | content + overlay |
-| Selection or caret move | new (same `documentIndex`) | reused from cache | content + overlay |
-| Animation start | new (same `documentIndex`) | reused from cache | content + overlay |
-| Animation in-flight tick | unchanged | reused from cache | content + overlay |
-| Scroll | unchanged | invalidated, recomputed | content + overlay |
-| Surface resize | unchanged | invalidated, recomputed | content + overlay |
-| Caret blink (idle) | unchanged | reused from cache | overlay only |
+| Interaction              | `EditorState`              | `EditorLayoutState`     | Paint             |
+| ------------------------ | -------------------------- | ----------------------- | ----------------- |
+| Document load / replace  | new (new `documentIndex`)  | fresh                   | content + overlay |
+| Text or structural edit  | new (new `documentIndex`)  | invalidated, recomputed | content + overlay |
+| Selection or caret move  | new (same `documentIndex`) | reused from cache       | content + overlay |
+| Animation start          | new (same `documentIndex`) | reused from cache       | content + overlay |
+| Animation in-flight tick | unchanged                  | reused from cache       | content + overlay |
+| Scroll                   | unchanged                  | invalidated, recomputed | content + overlay |
+| Surface resize           | unchanged                  | invalidated, recomputed | content + overlay |
+| Caret blink (idle)       | unchanged                  | reused from cache       | overlay only      |
 
 The asymmetry that matters for performance: edits, scroll, and resize recompute layout; selection moves, animations, and caret blinks reuse it. That's why animations stay smooth during typing — the cache survives, and per-frame ticks are pure paint with no state churn (animations carry only `{ kind, startedAt, ...identifiers }` in `EditorState` and let paint compute the current frame from `now`).
 

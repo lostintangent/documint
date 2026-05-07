@@ -44,11 +44,9 @@
     margin-top: 0;
     display: flex;
     flex-direction: column-reverse;
-    transform: translateY(calc(
-      -100%
-      - var(--documint-leaf-anchor-height, 0px)
-      - var(--documint-leaf-padding-y, 0px)
-    ));
+    transform: translateY(
+      calc(-100% - var(--documint-leaf-anchor-height, 0px) - var(--documint-leaf-padding-y, 0px))
+    );
   }
 }
 
@@ -59,9 +57,7 @@
 
 /* Bridgeless: shell carries the gap to the anchor itself. */
 .documint-leaf-anchor[data-bridge="false"] .documint-leaf-shell {
-  margin-top: calc(
-    var(--documint-leaf-bridge-height) + var(--documint-leaf-padding-y, 0px)
-  );
+  margin-top: calc(var(--documint-leaf-bridge-height) + var(--documint-leaf-padding-y, 0px));
 }
 
 /* Above-flip for bridgeless: the gap belongs below the shell. */
@@ -73,8 +69,7 @@
 /* -- Shell: bordered, themed container that holds leaf content -- */
 
 .documint-leaf-shell {
-  --documint-leaf-divider-color:
-    color-mix(in srgb, var(--documint-leaf-border) 60%, transparent);
+  --documint-leaf-divider-color: color-mix(in srgb, var(--documint-leaf-border) 60%, transparent);
   padding: 0.8rem;
   border: 1px solid var(--documint-leaf-border);
   border-radius: 0.95rem;
@@ -113,10 +108,16 @@
 /* -- Menu: shared dropdown surface (toolbar menus, completion popover) -- */
 
 .documint-leaf-menu {
-  --documint-leaf-menu-border-color:
-    color-mix(in srgb, var(--documint-leaf-border) 88%, transparent);
-  --documint-leaf-menu-hover-bg:
-    color-mix(in srgb, var(--documint-leaf-accent) 12%, var(--documint-leaf-bg));
+  --documint-leaf-menu-border-color: color-mix(
+    in srgb,
+    var(--documint-leaf-border) 88%,
+    transparent
+  );
+  --documint-leaf-menu-hover-bg: color-mix(
+    in srgb,
+    var(--documint-leaf-accent) 12%,
+    var(--documint-leaf-bg)
+  );
   position: absolute;
   top: calc(100% + 0.55rem);
   left: 0;

@@ -11,11 +11,7 @@
 //      the leaf-specific React component (LinkLeaf, AnnotationLeaf, …).
 
 import { isResolvedCommentThread, type Mark } from "@/document";
-import type {
-  EditorCommentState,
-  EditorHoverTarget,
-  EditorSelectionPoint,
-} from "@/editor";
+import type { EditorCommentState, EditorHoverTarget, EditorSelectionPoint } from "@/editor";
 import type { PointerEventHandler } from "react";
 
 // Declarative anchoring intent emitted by leaf-producing hooks. Every
@@ -34,10 +30,7 @@ export type LeafBase = {
 
 // Reference-stable comparison hooks use to skip leaf re-renders when the
 // underlying anchor target hasn't moved.
-export function areLeafBasesEqual(
-  previous: LeafBase,
-  next: LeafBase,
-) {
+export function areLeafBasesEqual(previous: LeafBase, next: LeafBase) {
   return (
     previous.anchor.regionId === next.anchor.regionId &&
     previous.anchor.offset === next.anchor.offset &&
@@ -88,7 +81,7 @@ export type TableLeaf = LeafBase & {
 // toolbar (formatting marks + add-comment trigger). Promoting this leaf
 // after a comment is added produces a `ThreadLeaf`.
 export type AnnotationLeaf = LeafBase & {
-  activeMarks: Mark[];
+  activeMarks: readonly Mark[];
   kind: "annotation";
   selection: {
     endOffset: number;

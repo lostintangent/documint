@@ -17,8 +17,7 @@ export function extractCommentDirective(blocks: Block[]) {
   // rather than rendered as content. That asymmetry is why we capture-then-
   // filter instead of doing both in one pass.
   const lastBlock = blocks.at(-1);
-  const trailingCommentBlock =
-    lastBlock && isCommentDirectiveBlock(lastBlock) ? lastBlock : null;
+  const trailingCommentBlock = lastBlock && isCommentDirectiveBlock(lastBlock) ? lastBlock : null;
   const contentBlocks = blocks.filter((block) => !isCommentDirectiveBlock(block));
 
   return {

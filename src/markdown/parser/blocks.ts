@@ -22,12 +22,7 @@ import {
   lineFeed,
   type MarkdownOptions,
 } from "../shared";
-import {
-  currentLine,
-  isBlankLine,
-  sliceIndentedContent,
-  type MarkdownLineCursor,
-} from "./index";
+import { currentLine, isBlankLine, sliceIndentedContent, type MarkdownLineCursor } from "./index";
 import { parseInlineMarkdown } from "./inlines";
 import { looksLikeAlignmentRow, readTable } from "./tables";
 

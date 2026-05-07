@@ -71,10 +71,7 @@ export {
 import { createViewportLayout, type CanvasViewport } from "./plan";
 import type { DocumentLayoutOptions, DocumentLayout } from "./measure";
 import { buildDocumentBlockMap } from "./measure";
-import {
-  measureDocumentCaretTarget,
-  resolveCaretVisualLeft,
-} from "./query/caret";
+import { measureDocumentCaretTarget, resolveCaretVisualLeft } from "./query/caret";
 import {
   resolveEditorHitAtPoint,
   resolveHitBelowLayout,

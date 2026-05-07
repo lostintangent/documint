@@ -12,8 +12,8 @@
    rendered in-tree or portaled to document.body. */
 .documint,
 .documint-overlay {
-  --documint-leaf-shadow-fallback:
-    0 14px 40px color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
+  --documint-leaf-shadow-fallback: 0 14px 40px
+    color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
 }
 
 .documint-scroll-container {

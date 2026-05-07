@@ -147,10 +147,7 @@ function matchTriggerForContext(
   // building the prospective string, so the dominant typing case
   // (non-whitespace character anywhere in a paragraph) skips both the
   // string allocation and the regex walk entirely.
-  if (
-    context.kind === "root-paragraph" &&
-    !prospectiveEndsWithWhitespace(region, text, end)
-  ) {
+  if (context.kind === "root-paragraph" && !prospectiveEndsWithWhitespace(region, text, end)) {
     return null;
   }
 
@@ -170,11 +167,7 @@ function matchTriggerForContext(
 // is determined by whichever side of the splice is non-empty at the tail:
 //   - cursor not at end of region → suffix is non-empty → region's last char wins
 //   - cursor at end of region     → suffix is empty     → text's last char wins
-function prospectiveEndsWithWhitespace(
-  region: EditorRegion,
-  text: string,
-  end: number,
-): boolean {
+function prospectiveEndsWithWhitespace(region: EditorRegion, text: string, end: number): boolean {
   const tail = end < region.text.length ? region.text : text;
   return tail.length > 0 && /\s/.test(tail[tail.length - 1]!);
 }
@@ -259,9 +252,7 @@ const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
     pattern: compileCreatePattern(/>/, { allowIndent: false }),
     apply: (_, { rootIndex }) => ({
       kind: "splice-blocks",
-      blocks: [
-        createBlockquoteBlock({ children: [createParagraphTextBlock({ text: "" })] }),
-      ],
+      blocks: [createBlockquoteBlock({ children: [createParagraphTextBlock({ text: "" })] })],
       rootIndex,
       selection: createDescendantPrimaryRegionTarget(rootIndex, [0]),
     }),

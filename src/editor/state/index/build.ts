@@ -394,7 +394,12 @@ export function replaceEditorBlock(
     return null;
   }
 
-  return replaceDocumentBlock(documentIndex.document, targetBlockId, replacer, blockEntry.rootIndex);
+  return replaceDocumentBlock(
+    documentIndex.document,
+    targetBlockId,
+    replacer,
+    blockEntry.rootIndex,
+  );
 }
 
 function createResolvedDocumentIndex(

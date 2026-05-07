@@ -1,12 +1,8 @@
-import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
-import { hasRunningAnimations, type EditorState } from "@/editor";
+import { useEffect, useEffectEvent, useRef } from "react";
+import { hasRunningAnimations } from "@/editor";
+import { useDocumintStore } from "../store";
 
 type UseRenderSchedulerOptions = {
-  /**
-   * Live ref to the editor state. Read after each frame to decide whether
-   * to keep the loop ticking for in-flight animations.
-   */
-  editorStateRef: RefObject<EditorState | null>;
   /** Repaint the content layer using the cached viewport layout. */
   renderContent: () => void;
   /** Repaint the overlay layer (cursor, presence). */
@@ -41,12 +37,27 @@ type RenderScheduler = {
   scheduleOverlayPaint: () => void;
 };
 
+type PendingRenderRequests = {
+  fullRender: boolean;
+  fullPaint: boolean;
+  contentPaint: boolean;
+  overlayPaint: boolean;
+};
+
+function createPendingRenderRequests(): PendingRenderRequests {
+  return {
+    fullRender: false,
+    fullPaint: false,
+    contentPaint: false,
+    overlayPaint: false,
+  };
+}
+
 /**
  * Owns the rAF render loop for a Documint instance.
  *
  * The host's responsibilities are narrow:
- *   1. Provide one paint callback per layer plus a ref to the current
- *      editor state.
+ *   1. Provide one paint callback per layer.
  *   2. Call the schedule method that matches what changed. The verb encodes
  *      the cost: `Render` recomputes layout; `Paint` reuses the cached
  *      layout. The suffix names the layers: `Full` = content + overlay,
@@ -66,16 +77,13 @@ type RenderScheduler = {
  * On the server, paint callbacks are dispatched synchronously.
  */
 export function useRenderScheduler({
-  editorStateRef,
   renderContent,
   renderOverlay,
   renderViewport,
 }: UseRenderSchedulerOptions): RenderScheduler {
+  const store = useDocumintStore();
   const frameIdRef = useRef<number | null>(null);
-  const pendingFullRenderRef = useRef(false);
-  const pendingFullPaintRef = useRef(false);
-  const pendingContentPaintRef = useRef(false);
-  const pendingOverlayPaintRef = useRef(false);
+  const pendingRef = useRef(createPendingRenderRequests());
 
   /* Public API */
 
@@ -84,7 +92,7 @@ export function useRenderScheduler({
       renderViewport();
       return;
     }
-    pendingFullRenderRef.current = true;
+    pendingRef.current.fullRender = true;
     requestFrame();
   });
 
@@ -94,7 +102,7 @@ export function useRenderScheduler({
       renderOverlay();
       return;
     }
-    pendingFullPaintRef.current = true;
+    pendingRef.current.fullPaint = true;
     requestFrame();
   });
 
@@ -103,7 +111,7 @@ export function useRenderScheduler({
       renderContent();
       return;
     }
-    pendingContentPaintRef.current = true;
+    pendingRef.current.contentPaint = true;
     requestFrame();
   });
 
@@ -112,7 +120,7 @@ export function useRenderScheduler({
       renderOverlay();
       return;
     }
-    pendingOverlayPaintRef.current = true;
+    pendingRef.current.overlayPaint = true;
     requestFrame();
   });
 
@@ -135,15 +143,13 @@ export function useRenderScheduler({
   const flushRenderRequests = useEffectEvent(() => {
     frameIdRef.current = null;
 
-    const shouldFullRender = pendingFullRenderRef.current;
-    const shouldFullPaint = pendingFullPaintRef.current;
-    const shouldContentPaint = pendingContentPaintRef.current;
-    const shouldOverlayPaint = pendingOverlayPaintRef.current;
+    const pending = pendingRef.current;
+    const shouldFullRender = pending.fullRender;
+    const shouldFullPaint = pending.fullPaint;
+    const shouldContentPaint = pending.contentPaint;
+    const shouldOverlayPaint = pending.overlayPaint;
 
-    pendingFullRenderRef.current = false;
-    pendingFullPaintRef.current = false;
-    pendingContentPaintRef.current = false;
-    pendingOverlayPaintRef.current = false;
+    pendingRef.current = createPendingRenderRequests();
 
     if (shouldFullRender) {
       renderViewport();
@@ -171,12 +177,11 @@ export function useRenderScheduler({
   // the editor has running animations. Overlay-only frames don't trigger
   // continuation: animations live on the content layer.
   const scheduleAnimationContinuation = useEffectEvent(() => {
-    const state = editorStateRef.current;
-    if (!state || !hasRunningAnimations(state, performance.now())) {
+    if (!hasRunningAnimations(store.editor.getState(), performance.now())) {
       return;
     }
 
-    pendingContentPaintRef.current = true;
+    pendingRef.current.contentPaint = true;
     requestFrame();
   });
 

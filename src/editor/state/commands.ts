@@ -23,17 +23,8 @@ import {
   addPlainTextDeletionFadeAnimation,
   addPunctuationPulseAnimation,
 } from "./animations";
-import {
-  type EditorSelection,
-  normalizeSelection,
-} from "./selection";
-import {
-  dispatch,
-  redoEditorState,
-  setSelection,
-  setSelectionPoint,
-  undoEditorState,
-} from "./reducer/state";
+import { type EditorSelection, normalizeSelection } from "./selection";
+import { dispatch, redoEditorState, setSelection, undoEditorState } from "./reducer/state";
 import {
   resolveBlockById,
   resolveBlockCommandContext,
@@ -204,9 +195,7 @@ export function pasteFragment(
 
   if (result) {
     const insertedLength = inlineInsertionLength(fragment);
-    return insertedLength > 0
-      ? addInsertedTextHighlightAnimation(result, insertedLength)
-      : result;
+    return insertedLength > 0 ? addInsertedTextHighlightAnimation(result, insertedLength) : result;
   }
 
   // applyFragment refused. Empty `text` payloads silently no-op; opaque
@@ -262,14 +251,6 @@ function pasteIntoOpaqueRoot(
 
 // --- Selection ---
 
-export function extendSelectionToPoint(
-  state: EditorState,
-  regionId: string,
-  offset: number,
-): EditorState {
-  return setSelectionPoint(state, regionId, offset, true);
-}
-
 export function selectAll(state: EditorState): EditorState {
   const regions = state.documentIndex.regions;
   const first = regions[0];
@@ -291,8 +272,7 @@ export const toggleBold = (state: EditorState) => toggleMark(state, "bold");
 
 export const toggleItalic = (state: EditorState) => toggleMark(state, "italic");
 
-export const toggleStrikethrough = (state: EditorState) =>
-  toggleMark(state, "strikethrough");
+export const toggleStrikethrough = (state: EditorState) => toggleMark(state, "strikethrough");
 
 export const toggleUnderline = (state: EditorState) => toggleMark(state, "underline");
 
@@ -300,41 +280,24 @@ export const toggleCode = (state: EditorState) => applyInlineSelectionEdit(state
 
 // --- Links ---
 
-export const updateLink = makeCommand((
-  state: EditorState,
-  regionId: string,
-  startOffset: number,
-  endOffset: number,
-  url: string,
-) =>
-  replaceInlineRange(
-    state.documentIndex,
-    regionId,
-    startOffset,
-    endOffset,
-    (region, start, end) => updateInlineLinkUrl(region, start, end, url),
-  ),
+export const updateLink = makeCommand(
+  (state: EditorState, regionId: string, startOffset: number, endOffset: number, url: string) =>
+    replaceInlineRange(
+      state.documentIndex,
+      regionId,
+      startOffset,
+      endOffset,
+      (region, start, end) => updateInlineLinkUrl(region, start, end, url),
+    ),
 );
 
-export const removeLink = makeCommand((
-  state: EditorState,
-  regionId: string,
-  startOffset: number,
-  endOffset: number,
-) =>
-  replaceInlineRange(
-    state.documentIndex,
-    regionId,
-    startOffset,
-    endOffset,
-    removeInlineLink,
-  ),
+export const removeLink = makeCommand(
+  (state: EditorState, regionId: string, startOffset: number, endOffset: number) =>
+    replaceInlineRange(state.documentIndex, regionId, startOffset, endOffset, removeInlineLink),
 );
 
 export const insertLink = (state: EditorState, url: string) =>
-  applyInlineSelectionEdit(state, (region, start, end) =>
-    wrapInlineLink(region, start, end, url),
-  );
+  applyInlineSelectionEdit(state, (region, start, end) => wrapInlineLink(region, start, end, url));
 
 // --- Images ---
 
@@ -344,35 +307,37 @@ export const insertImage = makeCommand((state, url: string, alt?: string) =>
   ),
 );
 
-export const resizeImage = makeCommand((
-  state: EditorState,
-  regionId: string,
-  run: { start: number; end: number; image: NonNullable<EditorInline["image"]> },
-  newWidth: number,
-): EditorStateAction | null => {
-  const inlineRegion = resolveInlineRegion(state.documentIndex, regionId);
+export const resizeImage = makeCommand(
+  (
+    state: EditorState,
+    regionId: string,
+    run: { start: number; end: number; image: NonNullable<EditorInline["image"]> },
+    newWidth: number,
+  ): EditorStateAction | null => {
+    const inlineRegion = resolveInlineRegion(state.documentIndex, regionId);
 
-  if (!inlineRegion) {
-    return null;
-  }
+    if (!inlineRegion) {
+      return null;
+    }
 
-  const { image } = run;
-  const replacement = spliceRegionInlines(inlineRegion, run.start, run.end, [
-    createImage({
-      alt: image.alt,
-      path: selectedNodePath(inlineRegion),
-      title: image.title,
-      url: image.url,
-      width: newWidth,
-    }),
-  ]);
+    const { image } = run;
+    const replacement = spliceRegionInlines(inlineRegion, run.start, run.end, [
+      createImage({
+        alt: image.alt,
+        path: selectedNodePath(inlineRegion),
+        title: image.title,
+        url: image.url,
+        width: newWidth,
+      }),
+    ]);
 
-  return {
-    kind: "replace-block",
-    block: replacement.block,
-    blockId: replacement.blockId,
-  };
-});
+    return {
+      kind: "replace-block",
+      block: replacement.block,
+      blockId: replacement.blockId,
+    };
+  },
+);
 
 // --- History ---
 
@@ -382,43 +347,47 @@ export const redo = (state: EditorState) => redoEditorState(state);
 
 // --- Structural operations (indent / dedent) ---
 
-export const indent = makeCommand((state, ctx) => {
-  switch (ctx.kind) {
-    case "tableCell":
-      return resolveTableSelectionMove(state.documentIndex, state.selection, ctx, 1);
-    case "rootTextBlock":
-      return resolveHeadingDepthShift(ctx, 1, state.selection.focus.offset);
-    case "listItem":
-      return resolveListItemIndent(ctx);
-    default:
-      return null;
-  }
-}, { context: resolveBlockCommandContext });
+export const indent = makeCommand(
+  (state, ctx) => {
+    switch (ctx.kind) {
+      case "tableCell":
+        return resolveTableSelectionMove(state.documentIndex, state.selection, ctx, 1);
+      case "rootTextBlock":
+        return resolveHeadingDepthShift(ctx, 1, state.selection.focus.offset);
+      case "listItem":
+        return resolveListItemIndent(ctx);
+      default:
+        return null;
+    }
+  },
+  { context: resolveBlockCommandContext },
+);
 
-export const dedent = makeCommand((state, ctx) => {
-  switch (ctx.kind) {
-    case "tableCell":
-      return resolveTableSelectionMove(state.documentIndex, state.selection, ctx, -1);
-    case "rootTextBlock":
-      return resolveHeadingDepthShift(ctx, -1, state.selection.focus.offset);
-    case "listItem":
-      return resolveListItemDedent(ctx);
-    default:
-      return null;
-  }
-}, { context: resolveBlockCommandContext });
+export const dedent = makeCommand(
+  (state, ctx) => {
+    switch (ctx.kind) {
+      case "tableCell":
+        return resolveTableSelectionMove(state.documentIndex, state.selection, ctx, -1);
+      case "rootTextBlock":
+        return resolveHeadingDepthShift(ctx, -1, state.selection.focus.offset);
+      case "listItem":
+        return resolveListItemDedent(ctx);
+      default:
+        return null;
+    }
+  },
+  { context: resolveBlockCommandContext },
+);
 
 // --- Lists & tasks ---
 
-export const moveListItemUp = makeCommand((_, ctx) =>
-  resolveListItemMove(ctx, -1),
-  { context: resolveListItemContext },
-);
+export const moveListItemUp = makeCommand((_, ctx) => resolveListItemMove(ctx, -1), {
+  context: resolveListItemContext,
+});
 
-export const moveListItemDown = makeCommand((_, ctx) =>
-  resolveListItemMove(ctx, 1),
-  { context: resolveListItemContext },
-);
+export const moveListItemDown = makeCommand((_, ctx) => resolveListItemMove(ctx, 1), {
+  context: resolveListItemContext,
+});
 
 export const toggleTask = makeCommand((state, listItemId: string) => {
   const block = resolveBlockById(state.documentIndex, listItemId);
@@ -445,46 +414,45 @@ export const insertTableColumn = makeCommand(
   { context: resolveTableCellContextFromSelection },
 );
 
-export const deleteTableColumn = makeCommand((_, ctx) =>
-  resolveTableColumnDeletion(ctx),
-  { context: resolveTableCellContextFromSelection },
-);
+export const deleteTableColumn = makeCommand((_, ctx) => resolveTableColumnDeletion(ctx), {
+  context: resolveTableCellContextFromSelection,
+});
 
 export const insertTableRow = makeCommand(
   (_, ctx, direction: "above" | "below") => resolveTableRowInsertion(ctx, direction),
   { context: resolveTableCellContextFromSelection },
 );
 
-export const deleteTableRow = makeCommand((_, ctx) =>
-  resolveTableRowDeletion(ctx),
-  { context: resolveTableCellContextFromSelection },
-);
+export const deleteTableRow = makeCommand((_, ctx) => resolveTableRowDeletion(ctx), {
+  context: resolveTableCellContextFromSelection,
+});
 
-export const deleteTable = makeCommand((_, ctx) =>
-  resolveTableDeletion(ctx),
-  { context: resolveTableCellContextFromSelection },
-);
+export const deleteTable = makeCommand((_, ctx) => resolveTableDeletion(ctx), {
+  context: resolveTableCellContextFromSelection,
+});
 
 // --- Comments ---
 
-export const addComment = makeCommand((
-  state: EditorState,
-  selection: { endOffset: number; regionId: string; startOffset: number },
-  body: string,
-): EditorStateAction | null => {
-  const thread = createCommentThreadForSelection(state.documentIndex, selection, body);
+export const addComment = makeCommand(
+  (
+    state: EditorState,
+    selection: { endOffset: number; regionId: string; startOffset: number },
+    body: string,
+  ): EditorStateAction | null => {
+    const thread = createCommentThreadForSelection(state.documentIndex, selection, body);
 
-  if (!thread) {
-    return null;
-  }
+    if (!thread) {
+      return null;
+    }
 
-  return {
-    kind: "splice-comments",
-    count: 0,
-    index: state.documentIndex.document.comments.length,
-    threads: [thread],
-  };
-});
+    return {
+      kind: "splice-comments",
+      count: 0,
+      index: state.documentIndex.document.comments.length,
+      threads: [thread],
+    };
+  },
+);
 
 export const replyToThread = (state: EditorState, threadIndex: number, body: string) =>
   updateCommentThread(state, threadIndex, (thread) =>
@@ -501,11 +469,7 @@ export const editComment = (
     editCommentInThread(thread, commentIndex, body),
   );
 
-export const deleteComment = (
-  state: EditorState,
-  threadIndex: number,
-  commentIndex: number,
-) =>
+export const deleteComment = (state: EditorState, threadIndex: number, commentIndex: number) =>
   updateCommentThread(state, threadIndex, (thread) =>
     deleteCommentFromThread(thread, commentIndex),
   );
@@ -513,22 +477,16 @@ export const deleteComment = (
 export const deleteThread = (state: EditorState, threadIndex: number) =>
   updateCommentThread(state, threadIndex, () => null);
 
-export const resolveThread = (
-  state: EditorState,
-  threadIndex: number,
-  resolved: boolean,
-) => updateCommentThread(state, threadIndex, (thread) => markThreadResolved(thread, resolved));
+export const resolveThread = (state: EditorState, threadIndex: number, resolved: boolean) =>
+  updateCommentThread(state, threadIndex, (thread) => markThreadResolved(thread, resolved));
 
 // --- Private helpers ---
 
-type Command<A extends unknown[] = []> = (state: EditorState, ...args: A) => EditorState | null;
-type CommandResult<R extends EditorStateAction | null> =
-  [Extract<R, null>] extends [never] ? EditorState : EditorState | null;
+type CommandResult<R extends EditorStateAction | null> = [Extract<R, null>] extends [never]
+  ? EditorState
+  : EditorState | null;
 
-type ContextResolver<C> = (
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-) => C | null;
+type ContextResolver<C> = (documentIndex: DocumentIndex, selection: EditorSelection) => C | null;
 
 // Optional post-dispatch hook used to layer presentation effects (typically
 // an animation) on top of the freshly-dispatched state. Return a new
@@ -608,10 +566,7 @@ function deleteStructuralStage(state: EditorState, direction: "backward" | "forw
   return dispatch(state, resolveStructuralDelete(state.documentIndex, ctx));
 }
 
-function toggleMark(
-  state: EditorState,
-  mark: "italic" | "bold" | "strikethrough" | "underline",
-) {
+function toggleMark(state: EditorState, mark: "italic" | "bold" | "strikethrough" | "underline") {
   return applyInlineSelectionEdit(state, (inlineRegion, startOffset, endOffset) =>
     toggleInlineMark(inlineRegion, startOffset, endOffset, mark),
   );

@@ -1,10 +1,5 @@
 import { useState } from "react";
-import {
-  Documint,
-  type DocumentPresence,
-  type DocumentUser,
-  type DocumintStorage,
-} from "documint";
+import { Documint, type DocumentPresence, type DocumentUser, type DocumintStorage } from "documint";
 import { fixtureOptions, getThemeOption, themeOptions } from "./data";
 import { DiagnosticsPopover } from "./popovers/DiagnosticsPopover";
 import { UsersPopover } from "./popovers/UsersPopover";
@@ -115,7 +110,6 @@ export function Playground() {
             />
           </div>
         </div>
-        
       </section>
     </main>
   );

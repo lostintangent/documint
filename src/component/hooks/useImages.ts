@@ -17,21 +17,17 @@
 // once their references drop from state.
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import {
-  type DocumentImageResource,
-  type DocumentResources,
-} from "@/types";
+import { type DocumentImageResource, type DocumentResources } from "@/types";
 import type { DocumentStorage } from "../lib/storage";
+import { imageUrlsValue, useStoreValue } from "../store";
 
 export type ImagesApi = {
   resources: DocumentResources | null;
   persistImage: (file: File) => Promise<string | null>;
 };
 
-export function useImages(
-  imageUrls: ReadonlySet<string>,
-  storage: DocumentStorage,
-): ImagesApi {
+export function useImages(storage: DocumentStorage): ImagesApi {
+  const imageUrls = useStoreValue(imageUrlsValue);
   const [imageResources, setImageResources] = useState<Map<string, DocumentImageResource>>(
     new Map(),
   );
@@ -41,8 +37,10 @@ export function useImages(
       return; // SSR — no decode pipeline available.
     }
 
-    const inactiveUrls = [...imageResources.keys()].filter((url) => !urls.has(url));
-    if (inactiveUrls.length > 0) {
+    const inactiveUrls = resolveInactiveImageUrls(imageResources, urls);
+    const pendingUrls = resolvePendingImageUrls(imageResources, urls);
+
+    if (inactiveUrls.length) {
       setImageResources((previous) => {
         const next = new Map(previous);
         for (const url of inactiveUrls) next.delete(url);
@@ -53,10 +51,7 @@ export function useImages(
     // The "loading" placeholder set here doubles as the dedup signal for
     // in-flight loads from prior reconciliations: effects run post-commit,
     // so by the next reconciliation the placeholder is visible here.
-    for (const url of urls) {
-      const status = imageResources.get(url)?.status;
-      if (status === "loaded" || status === "loading") continue;
-
+    for (const url of pendingUrls) {
       setImageResources((previous) =>
         withImageResource(previous, url, createImageResource("loading")),
       );
@@ -132,10 +127,7 @@ export function useImages(
 
 /* Loading pipeline */
 
-async function loadImage(
-  url: string,
-  storage: DocumentStorage,
-): Promise<ImageBitmap | null> {
+async function loadImage(url: string, storage: DocumentStorage): Promise<ImageBitmap | null> {
   try {
     const blob = await storage.readFile(url);
     return blob ? await createImageBitmap(blob) : null;
@@ -145,6 +137,23 @@ async function loadImage(
 }
 
 /* Helpers */
+
+function resolveInactiveImageUrls(
+  resources: Map<string, DocumentImageResource>,
+  urls: ReadonlySet<string>,
+) {
+  return [...resources.keys()].filter((url) => !urls.has(url));
+}
+
+function resolvePendingImageUrls(
+  resources: Map<string, DocumentImageResource>,
+  urls: ReadonlySet<string>,
+) {
+  return [...urls].filter((url) => {
+    const status = resources.get(url)?.status;
+    return status !== "loaded" && status !== "loading";
+  });
+}
 
 function withImageResource(
   previous: Map<string, DocumentImageResource>,

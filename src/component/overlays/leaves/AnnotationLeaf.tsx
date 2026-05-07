@@ -31,7 +31,7 @@ type AnnotationLeafBaseProps = {
 };
 
 type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
-  activeMarks: Mark[];
+  activeMarks: readonly Mark[];
   mode: "create";
   onCreateThread: (body: string) => void;
   onToggleBold: () => void;
@@ -244,11 +244,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   ) : null;
 
   return (
-    <div
-      className={contentClassName}
-      data-resolved={isResolved ? "true" : undefined}
-      ref={rootRef}
-    >
+    <div className={contentClassName} data-resolved={isResolved ? "true" : undefined} ref={rootRef}>
       <div className={showCreateChrome ? "documint-comment-leaf-create-shell" : undefined}>
         {showCreateChrome ? (
           <LeafToolbar>

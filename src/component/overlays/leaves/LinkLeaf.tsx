@@ -11,7 +11,7 @@ type LinkLeafProps = {
   title: string | null;
   canEdit: boolean;
   onSave: (url: string) => void;
-  onDelete: () => void;  
+  onDelete: () => void;
 };
 
 export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProps) {
@@ -45,7 +45,6 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
       {title && <div className="documint-link-leaf-title">{title}</div>}
 
       <div className="documint-link-leaf-row">
-
         {isEditing ? (
           <LeafInput
             actions={{
@@ -65,9 +64,13 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
           <div className="documint-link-leaf-url-row">
             {faviconUrl && (
               <img
+                alt=""
+                aria-hidden="true"
                 className="documint-link-leaf-favicon"
                 key={faviconUrl}
-                onError={(e) => { e.currentTarget.hidden = true; }}
+                onError={(event) => {
+                  event.currentTarget.hidden = true;
+                }}
                 src={faviconUrl}
               />
             )}
@@ -96,13 +99,11 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
             </button>
           </div>
         )}
-
       </div>
 
       {/* CMD+click hint */}
       <div className="documint-link-leaf-divider" />
       <div className="documint-link-leaf-hint">{openModifierLabel}click to open</div>
-
     </div>
   );
 }

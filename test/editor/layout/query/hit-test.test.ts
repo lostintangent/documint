@@ -195,9 +195,7 @@ test("resolves a click on the trailing empty line below a soft break to its post
   const region = getRegion(state, "foo\n");
   const layout = createDocumentLayout(state.documentIndex, { width: 320 });
 
-  const trailingLine = layout.lines.find(
-    (line) => line.regionId === region.id && line.text === "",
-  );
+  const trailingLine = layout.lines.find((line) => line.regionId === region.id && line.text === "");
 
   if (!trailingLine) {
     throw new Error("Expected a trailing empty line for the soft break");
@@ -339,7 +337,10 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
 
   if (!line || !listItem) throw new Error("Expected task list line");
 
-  const hover = resolveHoverTarget(state, viewport, { x: line.left + 6, y: line.top + line.height / 2 }, []);
+  const hover = resolveHoverTarget(state, viewport, {
+    x: line.left + 6,
+    y: line.top + line.height / 2,
+  });
 
   expect(hover).toEqual({ kind: "task-toggle", listItemId: listItem.id });
 });

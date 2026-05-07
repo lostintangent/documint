@@ -11,10 +11,7 @@ import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
 } from "../../selection";
-import {
-  type BlockquoteTextBlockContext,
-  type RootTextBlockContext,
-} from "../../context";
+import { type BlockquoteTextBlockContext, type RootTextBlockContext } from "../../context";
 
 // Block-level action resolvers that aren't specific to lists or
 // tables: splits for paragraphs/headings/blockquotes and heading
@@ -46,7 +43,13 @@ export function resolveBlockquoteTextBlockSplit(
   const text = ctx.region.text;
   const beforeText = text.slice(0, offset);
   const afterText = text.slice(offset);
-  const splitBlocks = buildTextBlockSplitBlocks(ctx.block, beforeText, afterText, offset, text.length);
+  const splitBlocks = buildTextBlockSplitBlocks(
+    ctx.block,
+    beforeText,
+    afterText,
+    offset,
+    text.length,
+  );
   const focusChildIndices =
     offset === 0
       ? ctx.blockChildIndices

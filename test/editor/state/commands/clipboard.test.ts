@@ -50,18 +50,21 @@ describe("Paragraphs", () => {
   test("copy: italic mark survives a substring selection", () => {
     // Block-level structure drops on partial selection but inline marks are
     // part of the slice itself — italic survives.
-    expect(copySubstring("*italic content* trail\n", "italic content trail", "content"))
-      .toBe("*content*");
+    expect(copySubstring("*italic content* trail\n", "italic content trail", "content")).toBe(
+      "*content*",
+    );
   });
 
   test("paste: plain text inserts inline at the caret", () => {
-    expect(pasteInto("Hello\n", { region: "Hello", offset: "end" }, " world"))
-      .toBe("Hello world\n");
+    expect(pasteInto("Hello\n", { region: "Hello", offset: "end" }, " world")).toBe(
+      "Hello world\n",
+    );
   });
 
   test("paste: italic markdown round-trips through the structural path", () => {
-    expect(pasteInto("Hello \n", { region: "Hello ", offset: "end" }, "*world*"))
-      .toBe("Hello *world*\n");
+    expect(pasteInto("Hello \n", { region: "Hello ", offset: "end" }, "*world*")).toBe(
+      "Hello *world*\n",
+    );
   });
 
   test("paste: italic markdown mid-text absorbs at the front seam and lands the caret after it", () => {
@@ -79,15 +82,17 @@ describe("Paragraphs", () => {
   });
 
   test("paste: two paragraphs into mid-text splits and absorbs at both seams", () => {
-    expect(pasteInto("Hello world\n", { region: "Hello world", offset: 6 }, "first\n\nsecond"))
-      .toBe("Hello first\n\nsecondworld\n");
+    expect(
+      pasteInto("Hello world\n", { region: "Hello world", offset: 6 }, "first\n\nsecond"),
+    ).toBe("Hello first\n\nsecondworld\n");
   });
 
   test("paste: paragraph + heading + paragraph absorbs around the heading", () => {
     // Front paragraph absorbs into prefix; trailing paragraph absorbs into
     // suffix; the heading remains structural between them.
-    expect(pasteInto("Hello world\n", { region: "Hello world", offset: 6 }, "X\n\n# H\n\nY"))
-      .toBe("Hello X\n\n# H\n\nYworld\n");
+    expect(pasteInto("Hello world\n", { region: "Hello world", offset: 6 }, "X\n\n# H\n\nY")).toBe(
+      "Hello X\n\n# H\n\nYworld\n",
+    );
   });
 });
 
@@ -107,8 +112,9 @@ describe("Headings", () => {
   test("paste: mid-paragraph splits the paragraph cleanly", () => {
     // Trailing whitespace on the prefix paragraph is normalized away by the
     // markdown serializer; the structural break around the heading survives.
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "# H\n"))
-      .toBe("alpha\n\n# H\n\nbeta\n");
+    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "# H\n")).toBe(
+      "alpha\n\n# H\n\nbeta\n",
+    );
   });
 });
 
@@ -179,8 +185,9 @@ describe("Lists", () => {
   });
 
   test("paste: text into the middle of an item paragraph stays inline", () => {
-    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "X"))
-      .toBe("- alpha Xbeta\n");
+    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "X")).toBe(
+      "- alpha Xbeta\n",
+    );
   });
 
   test("paste: into an empty paragraph replaces it and lands the caret at end of the last item", () => {
@@ -191,8 +198,9 @@ describe("Lists", () => {
   });
 
   test("paste: list mid-paragraph splits the paragraph cleanly", () => {
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "- item\n"))
-      .toBe("alpha\n\n- item\n\nbeta\n");
+    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "- item\n")).toBe(
+      "alpha\n\n- item\n\nbeta\n",
+    );
   });
 
   test("paste: single-item list into an empty item does not nest or duplicate", () => {
@@ -200,8 +208,9 @@ describe("Lists", () => {
   });
 
   test("paste: multi-item list into an empty middle item flattens via container peel", () => {
-    expect(pasteInto("- a\n- \n- b\n", { region: "", offset: "start" }, "- Y\n- Z\n"))
-      .toBe("- a\n- Y\n- Z\n- b\n");
+    expect(pasteInto("- a\n- \n- b\n", { region: "", offset: "start" }, "- Y\n- Z\n")).toBe(
+      "- a\n- Y\n- Z\n- b\n",
+    );
   });
 
   test("paste: list at end of an existing list extends it via container peel", () => {
@@ -213,16 +222,18 @@ describe("Lists", () => {
 
   test("paste: heading into an item splits the surrounding list", () => {
     // Heading breaks out of the list; the remaining list item flows after.
-    expect(pasteInto("- alpha\n- beta\n", { region: "alpha", offset: "end" }, "\n# H\n"))
-      .toBe("- alpha\n\n# H\n\n- beta\n");
+    expect(pasteInto("- alpha\n- beta\n", { region: "alpha", offset: "end" }, "\n# H\n")).toBe(
+      "- alpha\n\n# H\n\n- beta\n",
+    );
   });
 
   test("paste: italic markdown inside an item stays inline within the item", () => {
     // Inline-kind fragments splice into the destination's leaf without
     // disturbing the surrounding container — the list stays a single item
     // and the marked content lands inline in it.
-    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "*X*"))
-      .toBe("- alpha *X*beta\n");
+    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "*X*")).toBe(
+      "- alpha *X*beta\n",
+    );
   });
 
   test("paste: marked inlines into an item preserve all marks", () => {
@@ -252,18 +263,19 @@ describe("Blockquotes", () => {
   });
 
   test("paste: into an empty paragraph replaces it", () => {
-    expect(pasteInto("\n", { region: "", offset: "start" }, "> quoted\n"))
-      .toBe("> quoted\n");
+    expect(pasteInto("\n", { region: "", offset: "start" }, "> quoted\n")).toBe("> quoted\n");
   });
 
   test("paste: text into a blockquote stays inline within the quote", () => {
-    expect(pasteInto("> quoted\n", { region: "quoted", offset: "end" }, " more"))
-      .toBe("> quoted more\n");
+    expect(pasteInto("> quoted\n", { region: "quoted", offset: "end" }, " more")).toBe(
+      "> quoted more\n",
+    );
   });
 
   test("paste: marked inlines into a blockquote stay inline within the quote", () => {
-    expect(pasteInto("> quoted\n", { region: "quoted", offset: "end" }, " *more*"))
-      .toBe("> quoted *more*\n");
+    expect(pasteInto("> quoted\n", { region: "quoted", offset: "end" }, " *more*")).toBe(
+      "> quoted *more*\n",
+    );
   });
 
   test("paste: into an existing blockquote merges children via container peel", () => {
@@ -284,8 +296,9 @@ describe("Tables", () => {
   });
 
   test("copy: partial cell content emits the slice", () => {
-    expect(copySubstring("| A | B |\n| --- | --- |\n| one fish | two |\n", "one fish", "fish"))
-      .toBe("fish");
+    expect(
+      copySubstring("| A | B |\n| --- | --- |\n| one fish | two |\n", "one fish", "fish"),
+    ).toBe("fish");
   });
 
   test("copy: cross-cell selection covering the whole table emits the table", () => {
@@ -343,13 +356,18 @@ describe("Tables", () => {
       { region: "four", offset: "end" },
     )!;
 
-    expect(pasteInto("\n", { region: "", offset: "start" }, md))
-      .toBe("| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n");
+    expect(pasteInto("\n", { region: "", offset: "start" }, md)).toBe(
+      "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n",
+    );
   });
 
   test("paste: plain text into a cell inserts inline", () => {
     expect(
-      pasteInto("| A | B |\n| --- | --- |\n| one | two |\n", { region: "one", offset: "end" }, " fish"),
+      pasteInto(
+        "| A | B |\n| --- | --- |\n| one | two |\n",
+        { region: "one", offset: "end" },
+        " fish",
+      ),
     ).toBe("| A | B |\n| --- | --- |\n| one fish | two |\n");
   });
 
@@ -357,20 +375,32 @@ describe("Tables", () => {
     // Table cells *are* inline regions — `inlines` fragments take the
     // single-region inline-splice path, not the structural fallback.
     expect(
-      pasteInto("| A | B |\n| --- | --- |\n| one | two |\n", { region: "one", offset: "end" }, " *fish*"),
+      pasteInto(
+        "| A | B |\n| --- | --- |\n| one | two |\n",
+        { region: "one", offset: "end" },
+        " *fish*",
+      ),
     ).toBe("| A | B |\n| --- | --- |\n| one *fish* | two |\n");
   });
 
   test("paste: list into a cell flattens to plain text and preserves the table", () => {
     // The list flattens to its plain-text projection; the table stays intact.
     expect(
-      pasteInto("| A | B |\n| --- | --- |\n| one | two |\n", { region: "one", offset: "start" }, "- item\n"),
+      pasteInto(
+        "| A | B |\n| --- | --- |\n| one | two |\n",
+        { region: "one", offset: "start" },
+        "- item\n",
+      ),
     ).toBe("| A | B |\n| --- | --- |\n| itemone | two |\n");
   });
 
   test("paste: heading into a cell flattens to the heading text", () => {
     expect(
-      pasteInto("| A | B |\n| --- | --- |\n| one | two |\n", { region: "two", offset: "end" }, "\n## sub"),
+      pasteInto(
+        "| A | B |\n| --- | --- |\n| one | two |\n",
+        { region: "two", offset: "end" },
+        "\n## sub",
+      ),
     ).toBe("| A | B |\n| --- | --- |\n| one | twosub |\n");
   });
 
@@ -402,30 +432,35 @@ describe("Tables", () => {
 
 describe("Code blocks", () => {
   test("copy: whole-region selection preserves the fence", () => {
-    expect(copyWholeRegion("```ts\nconst x = 1;\n```\n", "const x = 1;"))
-      .toBe("```ts\nconst x = 1;\n```");
+    expect(copyWholeRegion("```ts\nconst x = 1;\n```\n", "const x = 1;")).toBe(
+      "```ts\nconst x = 1;\n```",
+    );
   });
 
   test("paste: into an empty paragraph replaces it", () => {
-    expect(pasteInto("\n", { region: "", offset: "start" }, "```\nfoo\n```\n"))
-      .toBe("```\nfoo\n```\n");
+    expect(pasteInto("\n", { region: "", offset: "start" }, "```\nfoo\n```\n")).toBe(
+      "```\nfoo\n```\n",
+    );
   });
 
   test("paste: text into the middle of a code block inserts as source", () => {
-    expect(pasteInto("```\nfoo bar\n```\n", { region: "foo bar", offset: 4 }, "X"))
-      .toBe("```\nfoo Xbar\n```\n");
+    expect(pasteInto("```\nfoo bar\n```\n", { region: "foo bar", offset: 4 }, "X")).toBe(
+      "```\nfoo Xbar\n```\n",
+    );
   });
 
   test("paste: markdown structure into a code block stays literal source", () => {
     // Inside a code block, markdown markers are just characters — the source
     // stays opaque to structural paste.
-    expect(pasteInto("```\nfoo\n```\n", { region: "foo", offset: "end" }, "\n- item"))
-      .toBe("```\nfoo\n- item\n```\n");
+    expect(pasteInto("```\nfoo\n```\n", { region: "foo", offset: "end" }, "\n- item")).toBe(
+      "```\nfoo\n- item\n```\n",
+    );
   });
 
   test("paste: italic markdown into a code block keeps the asterisks literal", () => {
-    expect(pasteInto("```\nx\n```\n", { region: "x", offset: "end" }, "*y*"))
-      .toBe("```\nx*y*\n```\n");
+    expect(pasteInto("```\nx\n```\n", { region: "x", offset: "end" }, "*y*")).toBe(
+      "```\nx*y*\n```\n",
+    );
   });
 
   test("paste: cross-region selection touching a code block stays literal in reverse", () => {
@@ -456,19 +491,16 @@ describe("Thematic breaks", () => {
   });
 
   test("paste: thematic break splits the paragraph cleanly", () => {
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "---\n"))
-      .toBe("alpha\n\n---\n\nbeta\n");
+    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "---\n")).toBe(
+      "alpha\n\n---\n\nbeta\n",
+    );
   });
 });
 
 describe("Cross-block / multi-root", () => {
   test("copy: cross-paragraph partial selection trims both endpoints", () => {
     expect(
-      copyAcross(
-        "alpha\n\nbeta\n",
-        { region: "alpha", offset: 2 },
-        { region: "beta", offset: 2 },
-      ),
+      copyAcross("alpha\n\nbeta\n", { region: "alpha", offset: 2 }, { region: "beta", offset: 2 }),
     ).toBe("pha\n\nbe");
   });
 
@@ -501,8 +533,7 @@ describe("Round trips", () => {
       { region: "three", offset: "end" },
     )!;
 
-    expect(pasteInto("\n", { region: "", offset: "start" }, md))
-      .toBe("- one\n- two\n- three\n");
+    expect(pasteInto("\n", { region: "", offset: "start" }, md)).toBe("- one\n- two\n- three\n");
   });
 
   test("whole heading → empty list item replaces the destination", () => {
@@ -520,8 +551,9 @@ describe("Round trips", () => {
       { region: "two", offset: "end" },
     )!;
 
-    expect(pasteInto("Before\n", { region: "Before", offset: "end" }, md))
-      .toBe("Before\n\n| A | B |\n| --- | --- |\n| one | two |\n");
+    expect(pasteInto("Before\n", { region: "Before", offset: "end" }, md)).toBe(
+      "Before\n\n| A | B |\n| --- | --- |\n| one | two |\n",
+    );
   });
 
   test("whole blockquote → end of a paragraph", () => {
@@ -531,8 +563,9 @@ describe("Round trips", () => {
       { region: "second", offset: "end" },
     )!;
 
-    expect(pasteInto("Before\n", { region: "Before", offset: "end" }, md))
-      .toBe("Before\n\n> first\n>\n> second\n");
+    expect(pasteInto("Before\n", { region: "Before", offset: "end" }, md)).toBe(
+      "Before\n\n> first\n>\n> second\n",
+    );
   });
 
   test("whole list item → empty list item collapses the destination", () => {
@@ -547,10 +580,15 @@ describe("Round trips", () => {
     // Verifies the inline-fragment round trip: copy emits an `inlines`
     // payload, paste applies it via the inline-splice path, the marks
     // survive without splitting the destination's container.
-    const md = copySubstring("Hello *italic world* trail\n", "Hello italic world trail", "italic world")!;
+    const md = copySubstring(
+      "Hello *italic world* trail\n",
+      "Hello italic world trail",
+      "italic world",
+    )!;
 
-    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, md))
-      .toBe("- alpha *italic world*beta\n");
+    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, md)).toBe(
+      "- alpha *italic world*beta\n",
+    );
   });
 });
 
@@ -604,11 +642,7 @@ describe("Comments — clipboard repair", () => {
   });
 
   test("cross-region delete preserves a thread anchored before the cut range", () => {
-    const seeded = withCommentOn(
-      setup("alpha beta\n\ngamma delta\n"),
-      "alpha beta",
-      "alpha",
-    );
+    const seeded = withCommentOn(setup("alpha beta\n\ngamma delta\n"), "alpha beta", "alpha");
     const selected = setSelection(seeded, {
       anchor: { regionId: getRegion(seeded, "alpha beta").id, offset: "alpha ".length },
       focus: { regionId: getRegion(seeded, "gamma delta").id, offset: "gamma ".length },
@@ -679,7 +713,9 @@ function pasteIntoState(setupMd: string, caret: RangeAnchor, source: string): Ed
   const next = pasteFragment(placed, fragment, source);
 
   if (!next) {
-    throw new Error(`pasteFragment unexpectedly returned null for source ${JSON.stringify(source)}`);
+    throw new Error(
+      `pasteFragment unexpectedly returned null for source ${JSON.stringify(source)}`,
+    );
   }
 
   return next;
@@ -720,7 +756,9 @@ function withCommentOn(state: EditorState, regionText: string, quote: string): E
   const startOffset = region.text.indexOf(quote);
 
   if (startOffset === -1) {
-    throw new Error(`Quote ${JSON.stringify(quote)} not found in region ${JSON.stringify(regionText)}`);
+    throw new Error(
+      `Quote ${JSON.stringify(quote)} not found in region ${JSON.stringify(regionText)}`,
+    );
   }
 
   const next = addComment(

@@ -1,11 +1,6 @@
 import { expect, test } from "bun:test";
 import { createCanvasRenderCache } from "@/editor/canvas/lib/cache";
-import {
-  createDocumentIndex,
-  insertLineBreak,
-  setSelection,
-  toggleBold,
-} from "@/editor/state";
+import { createDocumentIndex, insertLineBreak, setSelection, toggleBold } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
 import { createDocumentLayout, measureCaretTarget } from "@/editor/layout";
 import { parseDocument } from "@/markdown";

@@ -20,10 +20,7 @@ import {
   resolveTableCellRegion,
   type EditorSelection,
 } from "../../selection";
-import {
-  resolveRootTextBlockContext,
-  type TableCellContext,
-} from "../../context";
+import { resolveRootTextBlockContext, type TableCellContext } from "../../context";
 
 // Table action resolvers: insert/delete rows and columns, cell navigation,
 // and table deletion. Most take a pre-resolved TableCellContext so

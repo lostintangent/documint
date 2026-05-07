@@ -11,11 +11,7 @@ import {
   useState,
   type UIEvent,
 } from "react";
-import {
-  type Comment,
-  type CommentThread,
-  type Document,
-} from "@/document";
+import { type Comment, type CommentThread, type Document } from "@/document";
 import {
   addComment,
   createEditorState,
@@ -25,16 +21,12 @@ import {
   deleteTableRow,
   deleteThread,
   editComment,
-  getCommentState,
   getDocument,
-  getSelectionContext,
-  hasNewAnimation,
   insertTable,
   insertTableColumn,
   insertTableRow,
   insertText,
   measureVisualCaretTarget,
-  normalizeSelection,
   paintContent,
   paintOverlay,
   removeLink,
@@ -45,7 +37,7 @@ import {
   toggleStrikethrough,
   toggleUnderline,
   updateLink,
-  type EditorState,
+  type EditorPresence,
 } from "@/editor";
 import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
@@ -63,7 +55,6 @@ import { useImageHandles } from "./hooks/useImageHandles";
 import { useImages } from "./hooks/useImages";
 import { usePointer } from "./hooks/usePointer";
 import { useInput } from "./hooks/useInput";
-import { usePresence } from "./hooks/usePresence";
 import { useRenderScheduler } from "./hooks/useRenderScheduler";
 import { useSelection } from "./hooks/useSelection";
 import { useTheme } from "./hooks/useTheme";
@@ -76,6 +67,21 @@ import { joinUsersAndPresence } from "./lib/presence";
 import { DocumentStorage } from "./lib/storage";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
 import { DocumintSsr } from "./Ssr";
+import {
+  activeCommentThreadIndexValue,
+  commentStateValue,
+  createStore,
+  DocumintStoreProvider,
+  editorStateValue,
+  normalizedSelectionValue,
+  presenceValue,
+  selectionContextValue,
+  type DocumintStore,
+  type EditorTransition,
+  useDocumintStore,
+  useEditorCommand,
+  useStoreValue,
+} from "./store";
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
 export type DocumintProps = {
@@ -123,7 +129,22 @@ export type CommentChange =
 
 export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
 
-export function Documint({
+export function Documint({ content, ...props }: DocumintProps) {
+  const storeRef = useRef<DocumintStore | null>(null);
+  const contentDocument = useMemo(() => parseDocument(content), [content]);
+
+  if (!storeRef.current) {
+    storeRef.current = createStore(contentDocument);
+  }
+
+  return (
+    <DocumintStoreProvider store={storeRef.current}>
+      <DocumintHost content={content} {...props} contentDocument={contentDocument} />
+    </DocumintStoreProvider>
+  );
+}
+
+function DocumintHost({
   className,
   content,
   keybindings,
@@ -133,26 +154,26 @@ export function Documint({
   storage,
   theme,
   users,
-}: DocumintProps) {
+  contentDocument,
+}: DocumintProps & { contentDocument: Document }) {
   const contentCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const editorStateRef = useRef<EditorState | null>(null);
   const lastEmittedContentRef = useRef(content);
   const canonicalContentRef = useRef("");
+  const store = useDocumintStore();
+  const editorState = useStoreValue(editorStateValue);
 
   const [hasMountedCanvases, setHasMountedCanvases] = useState(false);
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
 
-  const contentDocument = useMemo(() => parseDocument(content), [content]);
   const canonicalContent = useMemo(() => serializeDocument(contentDocument), [contentDocument]);
 
-  const [editorState, setEditorState] = useState(() => createEditorState(contentDocument));
   const documentStorage = useMemo(
     () => new DocumentStorage(storage, typeof window !== "undefined" ? window : null),
     [storage],
   );
-  const images = useImages(editorState.documentIndex.imageUrls, documentStorage);
+  const images = useImages(documentStorage);
   const renderResources = images.resources;
 
   const hasLoadingImages = useMemo(
@@ -160,12 +181,9 @@ export function Documint({
     [renderResources],
   );
 
-  editorStateRef.current = editorState;
   canonicalContentRef.current ||= canonicalContent;
 
   const viewport = useViewport({
-    editorState,
-    editorStateRef,
     renderResources,
     theme: preferredTheme,
   });
@@ -180,28 +198,22 @@ export function Documint({
   const {
     autoScrollDuringDrag,
     getScrollTop,
-    invalidatePreparedLayout,
-    observePreparedViewport,
+    invalidateViewport,
+    observeViewport,
     observeScrollContainer,
     reconcileEditorState,
     resolvePoint,
     scrollTo,
   } = viewportActions;
 
-  const {
-    layoutWidth,
-    preparedViewport,
-    scrollContentHeight,
-    viewportHeight,
-    viewportTop,
-  } = viewportState;
+  const { layoutWidth, scrollContentHeight, viewportLayout, viewportHeight, viewportTop } =
+    viewportState;
 
   const { scrollContainer: scrollContainerRef } = viewportRefs;
 
-  const selectionContext = useMemo(() => getSelectionContext(editorState), [editorState]);
-
-  const commentState = useMemo(() => getCommentState(editorState), [editorState]);
-  const normalizedSel = useMemo(() => normalizeSelection(editorState), [editorState]);
+  const selectionContext = useStoreValue(selectionContextValue);
+  const commentState = useStoreValue(commentStateValue);
+  const normalizedSel = useStoreValue(normalizedSelectionValue);
   // Mention completion is driven entirely off the user roster — independent of
   // who is actively present in the document.
   const mentionSources = useMemo<CompletionSource[] | undefined>(() => {
@@ -214,45 +226,63 @@ export function Documint({
     ];
   }, [users]);
   const userPresence = useMemo(() => joinUsersAndPresence(users, presence), [users, presence]);
-  const activeCommentThreadIndex = useMemo(
-    () => resolveActiveCommentThreadIndex(editorState, commentState.liveRanges),
-    [commentState.liveRanges, editorState],
-  );
-  const canEditComments = Boolean(onContentChanged);
-  const readCurrentState = () => editorStateRef.current ?? editorState;
+  const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
+  const isEditable = Boolean(onContentChanged);
+  const readCurrentState = () => store.editor.getState();
 
-  const applyNextState = useEffectEvent((nextState: EditorState | null) => {
-    if (!nextState) {
+  const commitEditorCommandTransition = useEffectEvent((transition: EditorTransition | null) => {
+    if (!transition) {
       return;
     }
 
-    const previousState = editorStateRef.current ?? editorState;
-    const documentChanged = previousState.documentIndex !== nextState.documentIndex;
-    const animationStarted = hasNewAnimation(previousState, nextState);
+    if (transition.reason === "external-content") {
+      return;
+    }
 
-    editorStateRef.current = nextState;
-    setEditorState(nextState);
+    reconcileEditorState(transition.previous, transition.next);
 
-    reconcileEditorState(previousState, nextState);
-
-    if (animationStarted) {
+    if (transition.animationStarted) {
       // All editor animations are content-layer effects (block flash,
       // inserted/deleted text fade, list marker pop, punctuation pulse).
       // None affect layout or overlay, so a content paint is sufficient.
       scheduleContentPaint();
     }
 
-    if (!documentChanged) {
+    if (!transition.documentChanged) {
       return;
     }
 
-    const nextDocument = getDocument(nextState);
+    const nextDocument = getDocument(transition.next);
     const nextContent = serializeDocument(nextDocument);
 
     canonicalContentRef.current = nextContent;
     lastEmittedContentRef.current = nextContent;
     onContentChanged?.(nextContent, nextDocument);
   });
+
+  useLayoutEffect(() => {
+    return store.editor.subscribe(commitEditorCommandTransition);
+  }, [store]);
+
+  const insertTextCommand = useEditorCommand(insertText);
+  const insertTableCommand = useEditorCommand(insertTable);
+  const deleteTableColumnCommand = useEditorCommand(deleteTableColumn);
+  const deleteTableRowCommand = useEditorCommand(deleteTableRow);
+  const deleteTableCommand = useEditorCommand(deleteTable);
+  const insertTableColumnCommand = useEditorCommand(insertTableColumn);
+  const insertTableRowCommand = useEditorCommand(insertTableRow);
+  const removeLinkCommand = useEditorCommand(removeLink);
+  const updateLinkCommand = useEditorCommand(updateLink);
+  const addCommentCommand = useEditorCommand(addComment);
+  const toggleBoldCommand = useEditorCommand(toggleBold);
+  const toggleItalicCommand = useEditorCommand(toggleItalic);
+  const toggleStrikethroughCommand = useEditorCommand(toggleStrikethrough);
+  const toggleUnderlineCommand = useEditorCommand(toggleUnderline);
+  const deleteCommentCommand = useEditorCommand(deleteComment);
+  const deleteThreadCommand = useEditorCommand(deleteThread);
+  const editCommentCommand = useEditorCommand(editComment);
+  const replyToThreadCommand = useEditorCommand(replyToThread);
+  const resolveThreadCommand = useEditorCommand(resolveThread);
 
   // Comment-changed emitters. Adds and edits read the freshly-applied state
   // for their thread/comment payload; deletes are passed pre-state snapshots
@@ -281,11 +311,7 @@ export function Documint({
     });
   };
 
-  const emitCommentEdited = (
-    threadIndex: number,
-    commentIndex: number,
-    previousBody: string,
-  ) => {
+  const emitCommentEdited = (threadIndex: number, commentIndex: number, previousBody: string) => {
     const thread = getDocument(readCurrentState()).comments[threadIndex];
     const comment = thread?.comments[commentIndex];
     if (!thread || !comment) return;
@@ -299,11 +325,7 @@ export function Documint({
     });
   };
 
-  const emitCommentDeleted = (
-    threadIndex: number,
-    thread: CommentThread,
-    comment: Comment,
-  ) => {
+  const emitCommentDeleted = (threadIndex: number, thread: CommentThread, comment: Comment) => {
     emitCommentChanged({ kind: "deleted", comment, thread, threadIndex });
   };
 
@@ -311,15 +333,15 @@ export function Documint({
   //
   // The render scheduler dispatches into one of these per mode:
   //   - `renderContent` / `renderOverlay` read the cached layout via
-  //     `preparedViewport.peek()` — they paint with whatever layout is
+  //     `viewportLayout.peek()` — they paint with whatever layout is
   //     currently cached, no recompute.
-  //   - `renderViewport` reads via `preparedViewport.get()`, which returns
+  //   - `renderViewport` reads via `viewportLayout.get()`, which returns
   //     the cached layout or recomputes if it was invalidated by an
   //     earlier signal (scroll, doc-change reconcile, or the layout-
   //     affecting effect below). The layout cost is paid here, not on
   //     the lighter paint paths.
 
-  const renderContent = useEffectEvent((viewportState = preparedViewport.peek()) => {
+  const renderContent = useEffectEvent((viewportState = viewportLayout.peek()) => {
     if (!viewportState) {
       return;
     }
@@ -351,7 +373,7 @@ export function Documint({
     });
   });
 
-  const renderOverlay = useEffectEvent((viewportState = preparedViewport.peek()) => {
+  const renderOverlay = useEffectEvent((viewportState = viewportLayout.peek()) => {
     if (!viewportState) {
       return;
     }
@@ -372,7 +394,7 @@ export function Documint({
       devicePixelRatio,
       height,
       normalizedSelection: normalizedSel,
-      presence: presenceController.presence,
+      presence: resolvedPresence,
       showCaret:
         normalizedSel.start.regionId !== normalizedSel.end.regionId ||
         normalizedSel.start.offset !== normalizedSel.end.offset ||
@@ -383,30 +405,23 @@ export function Documint({
   });
 
   const renderViewport = useEffectEvent(() => {
-    const viewportState = preparedViewport.get();
+    const viewportState = viewportLayout.get();
 
-    observePreparedViewport(viewportState);
-    presenceController.refreshPresence(viewportState);
-    cursor.refreshCaretViewportStatus(viewportState);
+    observeViewport(viewportState);
     renderContent(viewportState);
     renderOverlay(viewportState);
   });
 
-  const {
-    scheduleContentPaint,
-    scheduleFullPaint,
-    scheduleFullRender,
-    scheduleOverlayPaint,
-  } = useRenderScheduler({
-    editorStateRef,
-    renderContent,
-    renderOverlay,
-    renderViewport,
-  });
+  const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
+    useRenderScheduler({
+      renderContent,
+      renderOverlay,
+      renderViewport,
+    });
 
   // Sync `useViewport`'s scroll metrics and schedule a render after any
   // scroll position change — whether driven by the user (native scroll event)
-  // or programmatically (e.g. `usePresence.scrollToPresence`). Stable identity
+  // or programmatically (e.g. offscreen presence navigation). Stable identity
   // via `useEffectEvent` so the listener doesn't re-attach on every render.
   const handleViewportScroll = useEffectEvent((scrollContainer: HTMLDivElement) => {
     observeScrollContainer(scrollContainer);
@@ -417,27 +432,18 @@ export function Documint({
   });
 
   const cursor = useCursor({
-    canShowInsertionLeaf: Boolean(onContentChanged),
-    canShowTableLeaf: Boolean(onContentChanged),
-    commentState,
-    editorState,
-    editorViewportState: preparedViewport,
     getScrollTop,
+    isEditable,
     layoutWidth,
     onVisibilityChange: scheduleOverlayPaint,
-    resources: renderResources,
     scrollContentHeight,
     scrollTo,
     viewportHeight,
   });
 
-  const imageHandle = useImageHandles(cursor.imageAtCursor, editorState, applyNextState);
+  const imageHandle = useImageHandles(renderResources);
 
   const input = useInput({
-    applyNextState,
-    editorState,
-    editorStateRef,
-    editorViewportState: preparedViewport,
     inputRef,
     keybindings,
     onActivity: cursor.markActivity,
@@ -445,43 +451,38 @@ export function Documint({
   });
 
   const pointer = usePointer({
-    applyNextState,
     autoScrollDuringDrag,
     canvasRef: contentCanvasRef,
-    commentState,
-    editorState,
-    editorStateRef,
-    editorViewportState: preparedViewport,
     focusInput: input.focus,
     onActivity: cursor.markActivity,
-    readCurrentState,
     resolvePoint,
     storage: documentStorage,
   });
   const hoveredCommentThreadIndex =
     pointer.leaf?.kind === "thread" ? pointer.leaf.threadIndex : null;
 
-  const presenceController = usePresence({
-    editorState,
-    editorStateRef,
-    editorViewportState: preparedViewport,
-    onViewportScroll: handleViewportScroll,
-    scrollContainerRef,
-    scheduleOverlayRender: scheduleOverlayPaint,
-    userPresence,
+  const resolvedPresence = useStoreValue(presenceValue, userPresence);
+  const scrollToPresence = useEffectEvent((target: EditorPresence) => {
+    if (!target.viewport || target.viewport.status === "unresolved") {
+      return;
+    }
+
+    const scrollContainer = scrollContainerRef.current;
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    scrollContainer.scrollTop = target.viewport.scrollTop;
+    handleViewportScroll(scrollContainer);
   });
 
   const selection = useSelection({
-    applyNextState,
     autoScrollDuringDrag,
-    canShowSelectionLeaf: canEditComments,
-    editorState,
-    editorStateRef,
-    editorViewportState: preparedViewport,
     focusInput: input.focus,
+    isEditable,
     onActivity: cursor.markActivity,
     resolvePoint,
-    threads: commentState.threads,
   });
 
   /* Render loop */
@@ -500,30 +501,23 @@ export function Documint({
   //     For changes that only restyle content (comment highlights, animations).
   //   - `scheduleOverlayPaint()` — paint only the overlay layer.
   //     For cursor blink and presence updates. Wired inline to
-  //     `useCursor.onVisibilityChange` and `usePresence.scheduleOverlayRender`.
+  //     `useCursor.onVisibilityChange` and reactive presence changes.
   //
   // Other render triggers in the host live where they're naturally wired:
   //   - `handleViewportScroll` → `scheduleFullRender()` on scroll (native or
   //      programmatic). Inside the resulting `renderViewport` pass,
-  //      `presence.refreshPresence` and `cursor.refreshCaretViewportStatus`
-  //      both project against the fresh layout and only setState when their
-  //      visibility flag flips, so steady-state scrolls stay free.
-  //   - `applyNextState` → `scheduleContentPaint()` when an animation starts
+  //      the viewport store publishes the fresh viewport for reactive consumers.
+  //   - editor command transitions → `scheduleContentPaint()` when an
+  //     animation starts
 
   // Layout-affecting changes — invalidate the cache, then schedule a fresh
-  // paint. Doc-index changes are reconciled inside `applyNextState` (which
-  // can keep the cache when the focus region is still indexed); we always
-  // invalidate here so the rAF that follows builds against the new state.
+  // paint. Doc-index changes are reconciled by the store transition bridge;
+  // we always invalidate here so the rAF that follows builds against the new
+  // state.
   useEffect(() => {
-    invalidatePreparedLayout();
+    invalidateViewport();
     scheduleFullRender();
-  }, [
-    editorState.documentIndex,
-    layoutWidth,
-    preferredTheme,
-    renderResources,
-    viewportHeight,
-  ]);
+  }, [editorState.documentIndex, layoutWidth, preferredTheme, renderResources, viewportHeight]);
 
   // Selection changes — caret moves on overlay, range highlight on content.
   //
@@ -550,11 +544,12 @@ export function Documint({
   // (See note on the selection effect above for the future overlay move.)
   useEffect(() => {
     scheduleContentPaint();
-  }, [
-    activeCommentThreadIndex,
-    commentState.liveRanges,
-    hoveredCommentThreadIndex,
-  ]);
+  }, [activeCommentThreadIndex, commentState.liveRanges, hoveredCommentThreadIndex]);
+
+  // Presence changes affect only the overlay canvas and DOM overlay.
+  useEffect(() => {
+    scheduleOverlayPaint();
+  }, [resolvedPresence]);
 
   // While images are still loading, keep rendering so dimensions update
   // once each image resolves. Loops via rAF until all images settle.
@@ -598,11 +593,7 @@ export function Documint({
       return null;
     }
 
-    const measured = measureVisualCaretTarget(
-      editorState,
-      preparedViewport.get(),
-      activeLeaf.anchor,
-    );
+    const measured = measureVisualCaretTarget(editorState, viewportLayout.get(), activeLeaf.anchor);
     if (!measured) {
       return null;
     }
@@ -635,8 +626,7 @@ export function Documint({
       onPointerEnter: isHoverLeaf ? pointer.leafHandlers.onPointerEnter : undefined,
       onPointerLeave: isHoverLeaf ? pointer.leafHandlers.onPointerLeave : undefined,
       paddingY: activeLeaf.paddingY ?? 0,
-      top:
-        (scrollContainerBounds?.top ?? 0) + hostScrollY + anchorBottom - viewportTop,
+      top: (scrollContainerBounds?.top ?? 0) + hostScrollY + anchorBottom - viewportTop,
     };
   };
   const leafAnchor = resolveLeafAnchor();
@@ -651,10 +641,10 @@ export function Documint({
         return (
           <InsertionLeaf
             onInsert={(text) => {
-              applyNextState(insertText(readCurrentState(), text));
+              insertTextCommand(text);
             }}
             onInsertTable={(columnCount) => {
-              applyNextState(insertTable(readCurrentState(), columnCount));
+              insertTableCommand(columnCount);
             }}
           />
         );
@@ -664,50 +654,36 @@ export function Documint({
             canDeleteColumn={activeLeaf.columnCount > 1}
             canDeleteRow={activeLeaf.rowCount > 1}
             onDeleteColumn={() => {
-              applyNextState(deleteTableColumn(readCurrentState()));
+              deleteTableColumnCommand();
             }}
             onDeleteRow={() => {
-              applyNextState(deleteTableRow(readCurrentState()));
+              deleteTableRowCommand();
             }}
             onDeleteTable={() => {
-              applyNextState(deleteTable(readCurrentState()));
+              deleteTableCommand();
             }}
             onInsertColumn={(direction) => {
-              applyNextState(insertTableColumn(readCurrentState(), direction));
+              insertTableColumnCommand(direction);
             }}
             onInsertRow={(direction) => {
-              applyNextState(insertTableRow(readCurrentState(), direction));
+              insertTableRowCommand(direction);
             }}
           />
         );
       case "link":
         return (
           <LinkLeaf
-            canEdit={canEditComments}
+            canEdit={isEditable}
             onDelete={() => {
-              const stateUpdate = removeLink(
-                readCurrentState(),
-                activeLeaf.regionId,
-                activeLeaf.startOffset,
-                activeLeaf.endOffset,
-              );
-
-              if (stateUpdate) {
-                applyNextState(stateUpdate);
-              }
+              removeLinkCommand(activeLeaf.regionId, activeLeaf.startOffset, activeLeaf.endOffset);
             }}
             onSave={(url) => {
-              const stateUpdate = updateLink(
-                readCurrentState(),
+              updateLinkCommand(
                 activeLeaf.regionId,
                 activeLeaf.startOffset,
                 activeLeaf.endOffset,
                 url,
               );
-
-              if (stateUpdate) {
-                applyNextState(stateUpdate);
-              }
             }}
             title={activeLeaf.title}
             url={activeLeaf.url}
@@ -717,38 +693,33 @@ export function Documint({
         return (
           <AnnotationLeaf
             activeMarks={activeLeaf.activeMarks}
-            canEdit={canEditComments}
+            canEdit={isEditable}
             link={null}
             mode="create"
             mentionSources={mentionSources}
             onCreateThread={(body) => {
               const currentState = readCurrentState();
               const threadIndex = getDocument(currentState).comments.length;
-              const stateUpdate = addComment(
-                currentState,
-                activeLeaf.selection,
-                body.trim(),
-              );
+              const transition = addCommentCommand(activeLeaf.selection, body.trim());
 
-              if (!stateUpdate) {
+              if (!transition) {
                 return;
               }
 
-              applyNextState(stateUpdate);
               selection.promoteLeafToThread(threadIndex, true);
               emitCommentAdded(threadIndex);
             }}
             onToggleBold={() => {
-              applyNextState(toggleBold(readCurrentState()));
+              toggleBoldCommand();
             }}
             onToggleItalic={() => {
-              applyNextState(toggleItalic(readCurrentState()));
+              toggleItalicCommand();
             }}
             onToggleStrikethrough={() => {
-              applyNextState(toggleStrikethrough(readCurrentState()));
+              toggleStrikethroughCommand();
             }}
             onToggleUnderline={() => {
-              applyNextState(toggleUnderline(readCurrentState()));
+              toggleUnderlineCommand();
             }}
           />
         );
@@ -756,7 +727,7 @@ export function Documint({
         return (
           <AnnotationLeaf
             animateInitialComment={activeLeaf.animateInitialComment}
-            canEdit={canEditComments}
+            canEdit={isEditable}
             link={activeLeaf.link}
             mode="thread"
             mentionSources={mentionSources}
@@ -765,9 +736,8 @@ export function Documint({
               const previousState = readCurrentState();
               const thread = getDocument(previousState).comments[threadIndex];
               const comment = thread?.comments[commentIndex];
-              const stateUpdate = deleteComment(previousState, threadIndex, commentIndex);
-              if (!stateUpdate) return;
-              applyNextState(stateUpdate);
+              const transition = deleteCommentCommand(threadIndex, commentIndex);
+              if (!transition) return;
               if (thread && comment) {
                 emitCommentDeleted(threadIndex, thread, comment);
               }
@@ -776,9 +746,8 @@ export function Documint({
               const { threadIndex } = activeLeaf;
               const previousState = readCurrentState();
               const thread = getDocument(previousState).comments[threadIndex];
-              const stateUpdate = deleteThread(previousState, threadIndex);
-              if (!stateUpdate) return;
-              applyNextState(stateUpdate);
+              const transition = deleteThreadCommand(threadIndex);
+              if (!transition) return;
               if (thread) {
                 for (const comment of thread.comments) {
                   emitCommentDeleted(threadIndex, thread, comment);
@@ -790,35 +759,27 @@ export function Documint({
               const previousState = readCurrentState();
               const previousBody =
                 getDocument(previousState).comments[threadIndex]?.comments[commentIndex]?.body;
-              const stateUpdate = editComment(previousState, threadIndex, commentIndex, body);
-              if (!stateUpdate) return;
-              applyNextState(stateUpdate);
+              const transition = editCommentCommand(threadIndex, commentIndex, body);
+              if (!transition) return;
               if (previousBody !== undefined) {
                 emitCommentEdited(threadIndex, commentIndex, previousBody);
               }
             }}
             onReply={(body) => {
               const { threadIndex } = activeLeaf;
-              const stateUpdate = replyToThread(readCurrentState(), threadIndex, body);
-              if (!stateUpdate) return;
-              applyNextState(stateUpdate);
+              const transition = replyToThreadCommand(threadIndex, body);
+              if (!transition) return;
               emitCommentAdded(threadIndex);
             }}
             onToggleResolved={() => {
-              applyNextState(
-                resolveThread(
-                  readCurrentState(),
-                  activeLeaf.threadIndex,
-                  !activeLeaf.resolved,
-                ),
-              );
+              resolveThreadCommand(activeLeaf.threadIndex, !activeLeaf.resolved);
             }}
             thread={activeLeaf.thread}
           />
         );
     }
   };
-  
+
   // Skip building the leaf's React tree when no leaf is going to render.
   // Each branch of `resolveLeafContent` allocates several inline callbacks,
   // so this avoids per-frame churn during scrolls that move the cursor
@@ -845,16 +806,15 @@ export function Documint({
       return;
     }
 
-    const previousState = editorStateRef.current;
+    const previousState = store.editor.getState();
     const reconciliation = reconcileExternalContentChange(
       previousState,
       createEditorState(contentDocument),
     );
     const nextState = reconciliation.state;
     const nextViewportTop = reconciliation.didReconcile ? getScrollTop() : 0;
+    store.editor.replace(nextState, "external-content");
 
-    editorStateRef.current = nextState;
-    setEditorState(nextState);
     lastEmittedContentRef.current = content;
     canonicalContentRef.current = canonicalContent;
     // The prepared viewport is tied to the previous editor state. Clear it so
@@ -909,8 +869,8 @@ export function Documint({
           <PresenceOverlay
             insetX={preferredTheme.paddingX}
             insetY={preferredTheme.paddingY}
-            onSelect={presenceController.scrollToPresence}
-            presence={presenceController.presence}
+            onSelect={scrollToPresence}
+            presence={resolvedPresence}
           />
 
           {/* Scroll content wrapper (this forces a virtualized scroll height for the document, that is only partially rendered) */}
@@ -932,10 +892,29 @@ export function Documint({
             <canvas aria-hidden="true" className="documint-overlay-canvas" ref={overlayCanvasRef} />
 
             {/* Resize handles — selection and image handles via a unified declarative system */}
-            {activeHandle && <>
-              <div aria-hidden="true" className="documint-resize-handle" style={{ left: `${activeHandle.start.left}px`, top: `${activeHandle.start.top}px` }} {...activeHandle.start.props}><span className="documint-resize-handle-knob" /></div>
-              <div aria-hidden="true" className="documint-resize-handle" style={{ left: `${activeHandle.end.left}px`, top: `${activeHandle.end.top}px` }} {...activeHandle.end.props}><span className="documint-resize-handle-knob" /></div>
-            </>}
+            {activeHandle && (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="documint-resize-handle"
+                  style={{
+                    left: `${activeHandle.start.left}px`,
+                    top: `${activeHandle.start.top}px`,
+                  }}
+                  {...activeHandle.start.props}
+                >
+                  <span className="documint-resize-handle-knob" />
+                </div>
+                <div
+                  aria-hidden="true"
+                  className="documint-resize-handle"
+                  style={{ left: `${activeHandle.end.left}px`, top: `${activeHandle.end.top}px` }}
+                  {...activeHandle.end.props}
+                >
+                  <span className="documint-resize-handle-knob" />
+                </div>
+              </>
+            )}
 
             {/* Leaf overlay */}
             {leafAnchor ? <LeafAnchor anchor={leafAnchor}>{leafContent}</LeafAnchor> : null}
@@ -952,78 +931,3 @@ export function Documint({
     </OverlayPortalProvider>
   );
 }
-
-function resolveActiveCommentThreadIndex(
-  state: {
-    documentIndex: {
-      regions: Array<{
-        id: string;
-      }>;
-    };
-    selection: {
-      anchor: {
-        offset: number;
-        regionId: string;
-      };
-      focus: {
-        offset: number;
-        regionId: string;
-      };
-    };
-  },
-  liveRanges: Array<{
-    endOffset: number;
-    regionId: string;
-    startOffset: number;
-    threadIndex: number;
-  }>,
-) {
-  const regionOrderIndex = new Map(
-    state.documentIndex.regions.map((region, index) => [region.id, index]),
-  );
-  const anchorOrder = resolveSelectionPointOrder(
-    regionOrderIndex,
-    state.selection.anchor.regionId,
-    state.selection.anchor.offset,
-  );
-  const focusOrder = resolveSelectionPointOrder(
-    regionOrderIndex,
-    state.selection.focus.regionId,
-    state.selection.focus.offset,
-  );
-  const [selectionStart, selectionEnd] =
-    anchorOrder <= focusOrder ? [anchorOrder, focusOrder] : [focusOrder, anchorOrder];
-  const isCollapsed = anchorOrder === focusOrder;
-
-  for (const range of liveRanges) {
-    const rangeStart = resolveSelectionPointOrder(
-      regionOrderIndex,
-      range.regionId,
-      range.startOffset,
-    );
-    const rangeEnd = resolveSelectionPointOrder(regionOrderIndex, range.regionId, range.endOffset);
-
-    if (isCollapsed) {
-      if (selectionStart >= rangeStart && selectionStart <= rangeEnd) {
-        return range.threadIndex;
-      }
-
-      continue;
-    }
-
-    if (Math.max(selectionStart, rangeStart) < Math.min(selectionEnd, rangeEnd)) {
-      return range.threadIndex;
-    }
-  }
-
-  return null;
-}
-
-function resolveSelectionPointOrder(
-  regionOrderIndex: Map<string, number>,
-  regionId: string,
-  offset: number,
-) {
-  return (regionOrderIndex.get(regionId) ?? -1) * 1_000_000 + offset;
-}
-

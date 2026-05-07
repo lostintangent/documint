@@ -88,21 +88,14 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     regionId: region.id,
     offset: linkOffset,
   });
-  const commentState = getCommentState(state.documentIndex);
-
   if (!caret) {
     throw new Error("Expected caret target");
   }
 
-  const hover = resolveHoverTarget(
-    state,
-    viewport,
-    {
-      x: caret.left + 4,
-      y: caret.top + caret.height / 2,
-    },
-    commentState.liveRanges,
-  );
+  const hover = resolveHoverTarget(state, viewport, {
+    x: caret.left + 4,
+    y: caret.top + caret.height / 2,
+  });
 
   expect(hover).toEqual(
     expect.objectContaining({

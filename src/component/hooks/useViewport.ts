@@ -2,8 +2,8 @@ import {
   createCanvasRenderCache,
   prepareLayout,
   type EditorPoint,
-  type EditorState,
   type EditorLayoutState,
+  type EditorState,
 } from "@/editor";
 import type { DocumentResources, EditorTheme } from "@/types";
 import {
@@ -16,19 +16,22 @@ import {
   useRef,
   useState,
 } from "react";
-import { type LazyRefHandle, useLazyRef } from "./useLazyRef";
-import { autoScrollSelectionContainer } from "../lib/selection";
 import { resolvePointerPointInScrollContainer } from "../lib/pointer";
+import { useDocumintStore } from "../store";
+import type { ViewportLayoutHandle } from "../store/viewport/store";
 
 type ViewportMetrics = {
   height: number;
   top: number;
 };
 
+// Distance from the viewport edge at which drag autoscroll activates.
+const DRAG_AUTO_SCROLL_EDGE_THRESHOLD = 28;
+
+// Pixels scrolled per pointer-move event while autoscrolling.
+const DRAG_AUTO_SCROLL_INCREMENT = 18;
+
 type UseViewportOptions = {
-  // Editor inputs the viewport reads to compute prepared state.
-  editorState: EditorState;
-  editorStateRef: RefObject<EditorState | null>;
   renderResources: DocumentResources | null;
   theme: EditorTheme;
 };
@@ -38,13 +41,13 @@ export type ViewportController = {
     autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
     getScrollTop: () => number;
     /**
-     * Mark the cached layout as stale so the next `state.preparedViewport.get()`
+     * Mark the cached viewport as stale so the next `state.viewportLayout.get()`
      * recomputes. Callers invoke this when an input the layout depends on has
      * changed but isn't covered by `reconcileEditorState` (width, theme,
      * resources, viewport height). Scroll position is invalidated internally.
      */
-    invalidatePreparedLayout: () => void;
-    observePreparedViewport: (viewportState: EditorLayoutState) => void;
+    invalidateViewport: () => void;
+    observeViewport: (viewportState: EditorLayoutState) => void;
     observeScrollContainer: (scrollContainer: HTMLDivElement) => void;
     /**
      * Notify the viewport that the editor state has transitioned. The viewport
@@ -67,8 +70,8 @@ export type ViewportController = {
   };
   state: {
     layoutWidth: number;
-    preparedViewport: LazyRefHandle<EditorLayoutState>;
     scrollContentHeight: number;
+    viewportLayout: ViewportLayoutHandle;
     viewportHeight: number;
     viewportTop: number;
   };
@@ -84,9 +87,6 @@ export type ViewportController = {
  *     tracked via `ResizeObserver` and the scroll event.
  *   - The lazily-prepared editor viewport state — the heavy "what to paint
  *     where" structure used by hit testing and rendering.
- *   - Wheel event handling, attached natively so we can call `preventDefault`
- *     and own the scroll math (the default browser scroll doesn't mesh with
- *     our virtualized scroll content height).
  *   - Autoscroll while dragging a selection beyond the visible edge.
  *   - Coordinate translation: pointer/mouse event → document point.
  *
@@ -99,32 +99,28 @@ export type ViewportController = {
  *     so it sizes to the virtualized content height.
  *   - Call `actions.scrollTo(top)` for content reconciliation and focus
  *     visibility scroll-into-view.
- *   - Call `actions.observePreparedViewport(state)` from the render pipeline
+ *   - Call `actions.observeViewport(state)` from the render pipeline
  *     so the scroll content height stays in sync with editor content.
  *   - Call `actions.reconcileEditorState(prev, next)` whenever the editor
  *     state transitions; the viewport decides whether the cached layout is
  *     still usable for the new state.
- *   - Call `actions.invalidatePreparedLayout()` when an input the layout
+ *   - Call `actions.invalidateViewport()` when an input the layout
  *     depends on changes outside of doc/scroll (width, theme, resources,
  *     viewport height) before scheduling a render.
- *   - Read `state.preparedViewport.get()` from the viewport-render path
+ *   - Read `state.viewportLayout.get()` from the viewport-render path
  *     (recomputes if invalidated, returns cached otherwise). Lighter paint
  *     paths (content-only, overlay-only) read the cached layout via
- *     `state.preparedViewport.peek()`.
- *   - Read `state.preparedViewport` (a read-only `LazyRefHandle`) and share
+ *     `state.viewportLayout.peek()`.
+ *   - Read `state.viewportLayout` (the store-backed viewport handle) and share
  *     it with the other hooks (usePointer, useInput, useSelection).
  *   - Wire `actions.resolvePoint` and `actions.autoScrollDuringDrag` into
  *     the other hooks that need them — this hook is the single owner of
  *     coordinate translation and drag-edge autoscroll.
  */
-export function useViewport({
-  editorState,
-  editorStateRef,
-  renderResources,
-  theme,
-}: UseViewportOptions): ViewportController {
+export function useViewport({ renderResources, theme }: UseViewportOptions): ViewportController {
   /* Internal state */
 
+  const store = useDocumintStore();
   const renderCacheRef = useRef(createCanvasRenderCache());
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportMetricsRef = useRef<ViewportMetrics>({ height: 240, top: 0 });
@@ -134,15 +130,13 @@ export function useViewport({
   const [scrollContentHeight, setScrollContentHeight] = useState(240);
   const layoutWidth = resolveLayoutWidth(surfaceWidth);
 
-  /* Prepared viewport (lazy cache) */
+  /* Viewport layout cache */
 
-  // Plain closure (not `useEffectEvent`) because `useLazyRef` may invoke
-  // this during host render — when the cache was invalidated since the
-  // last paint and a consumer reads `.get()` before the next rAF rebuilds
-  // it. `useEffectEvent` results aren't callable during render. Closure
-  // freshness is preserved through `useLazyRef`'s own ref indirection.
+  // Plain closure (not `useEffectEvent`) because layout may be computed during
+  // host render when the cache was invalidated since the last paint and a
+  // consumer reads `.get()` before the next rAF rebuilds it.
   const createEditorLayoutState = (): EditorLayoutState => {
-    const currentState = editorStateRef.current ?? editorState;
+    const currentState = store.editor.getState();
     const viewport = viewportMetricsRef.current;
 
     return prepareLayout(
@@ -159,9 +153,12 @@ export function useViewport({
     );
   };
 
-  const preparedViewport = useLazyRef(createEditorLayoutState);
+  store.viewport.setViewportResolver(createEditorLayoutState);
 
-  const observePreparedViewport = useEffectEvent((viewportState: EditorLayoutState) => {
+  const viewportLayout = store.viewport;
+
+  const observeViewport = useEffectEvent((viewportState: EditorLayoutState) => {
+    store.viewport.observeViewport(viewportState);
     setScrollContentHeight((previous) => {
       const nextHeight = resolveScrollContentHeight(
         viewportState,
@@ -176,7 +173,7 @@ export function useViewport({
   const setViewportTop = useEffectEvent((top: number) => {
     viewportMetricsRef.current = { ...viewportMetricsRef.current, top };
     setViewportTopState((previous) => (previous === top ? previous : top));
-    preparedViewport.invalidate();
+    viewportLayout.invalidate();
   });
 
   const observeScrollContainer = useEffectEvent((scrollContainer: HTMLDivElement) => {
@@ -189,7 +186,7 @@ export function useViewport({
     // viewport state. (Programmatic `scrollTo` already invalidates via
     // `setViewportTop`; this keeps the two paths consistent.)
     if (topChanged) {
-      preparedViewport.invalidate();
+      viewportLayout.invalidate();
     }
   });
 
@@ -223,14 +220,14 @@ export function useViewport({
     (prevState: EditorState | null, nextState: EditorState) => {
       const documentChanged =
         prevState !== null && prevState.documentIndex !== nextState.documentIndex;
-      const cachedViewportState = preparedViewport.peek();
+      const cachedViewportState = viewportLayout.peek();
       const canReuse =
         !documentChanged ||
         !cachedViewportState ||
         cachedViewportState.layout.regionLineIndices.has(nextState.selection.focus.regionId);
 
       if (!canReuse) {
-        preparedViewport.invalidate();
+        viewportLayout.invalidate();
       }
     },
   );
@@ -238,9 +235,9 @@ export function useViewport({
   // Mark the cached layout as stale. Callers invoke this when an input the
   // layout depends on has changed but isn't covered by `reconcileEditorState`
   // (width, theme, resources, viewport height). The next read of
-  // `preparedViewport.get()` will recompute against current inputs.
-  const invalidatePreparedLayout = useEffectEvent(() => {
-    preparedViewport.invalidate();
+  // `viewportLayout.get()` will recompute against current inputs.
+  const invalidateViewport = useEffectEvent(() => {
+    viewportLayout.invalidate();
   });
 
   /* Coordinate translation + drag autoscroll */
@@ -252,12 +249,25 @@ export function useViewport({
     },
   );
 
-  // Wraps the lib autoscroll so `usePointer` and `useSelection` call a
-  // single viewport method instead of importing the lib themselves and
-  // threading the scroll container ref. Keeps this hook the single owner
-  // of scroll-position mutation.
   const autoScrollDuringDrag = useEffectEvent((event: PointerEvent<HTMLElement>) => {
-    autoScrollSelectionContainer(scrollContainerRef.current, event);
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const bounds = scrollContainer.getBoundingClientRect();
+
+    if (event.clientY < bounds.top + DRAG_AUTO_SCROLL_EDGE_THRESHOLD) {
+      scrollContainer.scrollTop = Math.max(
+        0,
+        scrollContainer.scrollTop - DRAG_AUTO_SCROLL_INCREMENT,
+      );
+      return;
+    }
+
+    if (event.clientY > bounds.bottom - DRAG_AUTO_SCROLL_EDGE_THRESHOLD) {
+      scrollContainer.scrollTop += DRAG_AUTO_SCROLL_INCREMENT;
+    }
   });
 
   /* Resize observation */
@@ -265,7 +275,7 @@ export function useViewport({
   // Track container size changes. ResizeObserver is the only reliable signal
   // for layout-driven dimension changes. Wheel and touch scroll are handled
   // natively by the browser via `overflow: auto` on the scroll container —
-  // we just observe the resulting scroll events through `getScrollContainer`
+  // we just observe the resulting scroll events through `observeScrollContainer`
   // to keep state in sync.
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -298,8 +308,8 @@ export function useViewport({
     actions: {
       autoScrollDuringDrag,
       getScrollTop,
-      invalidatePreparedLayout,
-      observePreparedViewport,
+      invalidateViewport,
+      observeViewport,
       observeScrollContainer,
       reconcileEditorState,
       resolvePoint,
@@ -317,8 +327,8 @@ export function useViewport({
     },
     state: {
       layoutWidth,
-      preparedViewport,
       scrollContentHeight,
+      viewportLayout,
       viewportHeight,
       viewportTop,
     },

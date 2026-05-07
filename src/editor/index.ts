@@ -5,6 +5,9 @@ export {
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
   moveCaretVertically,
+  extendSelectionToPoint,
+  setSelectionAtPoint,
+  updateSelectionFromDrag,
 } from "./navigation";
 
 // Layout — viewport composition (aliased to public names)
@@ -14,13 +17,12 @@ export {
   measureInlineImageBounds,
   prepareLayout,
   resolveLayoutDragFocus as resolveDragFocus,
-  resolveLayoutHoverTarget as resolveHoverTarget,
   resolveLayoutSelectionHit as resolveSelectionHit,
-  resolveLayoutTargetAtSelection as resolveTargetAtSelection,
   resolveLayoutWordSelection as resolveWordSelection,
   type EditorHoverTarget,
   type EditorPoint,
   type EditorLayoutState,
+  type CaretTarget,
   type InlineBounds,
 } from "./layout";
 
@@ -35,6 +37,7 @@ export {
   createEditorState,
   getSelectionContext,
   getSelectionMarks,
+  getSelectionRange,
   hasNewAnimation,
   normalizeSelection,
   resolveImageAtSelection,
@@ -42,9 +45,41 @@ export {
   type EditorInline,
   type EditorSelection,
   type EditorSelectionPoint,
+  type EditorSelectionRange,
   type EditorState,
   type NormalizedEditorSelection,
+  type SelectionContext,
 } from "./state";
+
+import {
+  resolveLayoutHoverTarget,
+  resolveLayoutTargetAtSelection,
+  type EditorLayoutState,
+  type EditorPoint,
+} from "./layout";
+import { getCommentState } from "./anchors";
+import type { EditorSelectionPoint, EditorState } from "./state";
+
+export function resolveHoverTarget(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  point: EditorPoint,
+) {
+  return resolveLayoutHoverTarget(state, viewport, point, getCommentState(state).liveRanges);
+}
+
+export function resolveTargetAtSelection(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  selectionPoint: EditorSelectionPoint,
+) {
+  return resolveLayoutTargetAtSelection(
+    state,
+    viewport,
+    selectionPoint,
+    getCommentState(state).liveRanges,
+  );
+}
 
 export * from "./state/commands";
 

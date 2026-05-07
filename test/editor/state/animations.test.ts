@@ -6,7 +6,10 @@ import {
   insertText,
   setSelection,
 } from "@/editor/state";
-import { getEditorAnimationDuration, hasRunningEditorAnimations as hasRunningAnimations } from "@/editor/canvas/lib/animations";
+import {
+  getEditorAnimationDuration,
+  hasRunningEditorAnimations as hasRunningAnimations,
+} from "@/editor/canvas/lib/animations";
 import { getRegion, placeAt, setup } from "../helpers";
 
 test("starts and expires inserted-text highlight animations for typed text", () => {
@@ -32,7 +35,9 @@ test("starts and expires inserted-text highlight animations for typed text", () 
 
   expect(effect).toBeDefined();
   expect(hasRunningAnimations(result!, effect!.startedAt + 10)).toBe(true);
-  expect(hasRunningAnimations(result!, effect!.startedAt + getEditorAnimationDuration(effect!) + 10)).toBe(false);
+  expect(
+    hasRunningAnimations(result!, effect!.startedAt + getEditorAnimationDuration(effect!) + 10),
+  ).toBe(false);
 });
 
 test("starts a punctuation pulse animation when typing a period", () => {
@@ -58,7 +63,12 @@ test("starts a punctuation pulse animation when typing a period", () => {
 
   expect(pulse).toBeDefined();
   expect(hasRunningAnimations(stateWithPulseOnly, pulse!.startedAt + 10)).toBe(true);
-  expect(hasRunningAnimations(stateWithPulseOnly, pulse!.startedAt + getEditorAnimationDuration(pulse!) + 10)).toBe(false);
+  expect(
+    hasRunningAnimations(
+      stateWithPulseOnly,
+      pulse!.startedAt + getEditorAnimationDuration(pulse!) + 10,
+    ),
+  ).toBe(false);
 });
 
 test("does not start a punctuation pulse animation for ordinary text input", () => {
@@ -93,7 +103,12 @@ test("starts and expires deleted-text fade animations for single-character delet
 
   expect(animation).toBeDefined();
   expect(hasRunningAnimations(stateWithFadeOnly, animation!.startedAt + 10)).toBe(true);
-  expect(hasRunningAnimations(stateWithFadeOnly, animation!.startedAt + getEditorAnimationDuration(animation!) + 10)).toBe(false);
+  expect(
+    hasRunningAnimations(
+      stateWithFadeOnly,
+      animation!.startedAt + getEditorAnimationDuration(animation!) + 10,
+    ),
+  ).toBe(false);
 });
 
 test("starts an active-block flash animation when selection moves into a different block", () => {

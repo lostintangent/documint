@@ -6,12 +6,7 @@
 // before content that should be visible.
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import {
-  isContainerBlock,
-  isInertBlock,
-  type DocumentIndex,
-  type EditorRegion,
-} from "../../state";
+import { isContainerBlock, isInertBlock, type DocumentIndex, type EditorRegion } from "../../state";
 import {
   createCanvasRenderCache,
   getViewportPlan,
@@ -26,11 +21,7 @@ import {
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
 import { resolveLeafBlockGap } from "../lib/spacing";
-import {
-  buildDocumentBlockMap,
-  createDocumentLayout,
-  type DocumentLayout,
-} from "../measure";
+import { buildDocumentBlockMap, createDocumentLayout, type DocumentLayout } from "../measure";
 import { TABLE_CELL_PADDING_X, TABLE_CELL_PADDING_Y, TABLE_MIN_WIDTH } from "../measure/table";
 import { resolveTextBlockLineHeight } from "../measure/text";
 import { estimateContainerHeight, estimateTableCellHeight } from "./estimate";

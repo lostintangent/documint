@@ -24,11 +24,7 @@ export function PresenceOverlay({ insetX, insetY, onSelect, presence }: Presence
       }}
     >
       {presence.map((entry) => (
-        <PresenceIndicator
-          key={entry.id}
-          onSelect={() => onSelect(entry)}
-          presence={entry}
-        />
+        <PresenceIndicator key={entry.id} onSelect={() => onSelect(entry)} presence={entry} />
       ))}
     </div>
   );

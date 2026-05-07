@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  createDocumentFromIndex,
-  createDocumentIndex,
-  normalizeSelection,
-} from "@/editor/state";
+import { createDocumentFromIndex, createDocumentIndex, normalizeSelection } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
 import { parseDocument, serializeDocument } from "@/markdown";
 

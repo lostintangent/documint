@@ -1,11 +1,7 @@
 import { expect, test } from "bun:test";
 import { createDocument, createParagraphTextBlock } from "@/document";
 import { createDocumentIndex, createEditorState } from "@/editor/state";
-import {
-  createDocumentLayout,
-  measureCaretTarget,
-  resolveCaretVisualLeft,
-} from "@/editor/layout";
+import { createDocumentLayout, measureCaretTarget, resolveCaretVisualLeft } from "@/editor/layout";
 import { parseDocument } from "@/markdown";
 
 test("measures caret geometry for a container offset", () => {

@@ -1,51 +1,19 @@
+import type { CaretTarget } from "@/editor";
+import { useEffect, useEffectEvent, useRef } from "react";
 import {
-  measureCaretTarget,
-  measureInlineImageBounds,
-  normalizeSelection,
-  resolveCursorViewportStatus,
-  resolveImageAtSelection,
-  resolveTargetAtSelection,
-  type EditorCommentState,
-  type EditorInline,
-  type EditorState,
-  type EditorLayoutState,
-  type InlineBounds,
-  type NormalizedEditorSelection,
-} from "@/editor";
-import type { DocumentResources } from "@/types";
-import type { LazyRefHandle } from "./useLazyRef";
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  areLeafBasesEqual,
-  resolveContextualLeaf,
-  type InsertionLeaf,
-  type LinkLeaf,
-  type TableLeaf,
-  type ThreadLeaf,
-} from "../overlays/leaves/core/shared";
-
-/* Public types (consumed by the host to render the cursor leaf) */
-
-export type ImageAtCursor = {
-  bounds: InlineBounds;
-  maxWidth: number | null;
-  regionId: string;
-  run: EditorInline;
-};
-
-export type CursorLeaf = LinkLeaf | ThreadLeaf | InsertionLeaf | TableLeaf;
+  caretInViewportValue,
+  caretTargetValue,
+  cursorLeafValue,
+  normalizedSelectionValue,
+  useStoreValue,
+  type CursorLeaf,
+} from "../store";
 
 /* Hook surface */
 
 type UseCursorOptions = {
-  // Editor state and lookups the hook reads from.
-  canShowInsertionLeaf: boolean;
-  canShowTableLeaf: boolean;
-  commentState: EditorCommentState;
-  editorState: EditorState;
-  editorViewportState: LazyRefHandle<EditorLayoutState>;
+  isEditable: boolean;
   layoutWidth: number;
-  resources: DocumentResources | null;
   scrollContentHeight: number;
   viewportHeight: number;
 
@@ -58,23 +26,14 @@ type UseCursorOptions = {
 type CursorController = {
   /**
    * Whether the user caret is inside the editor's visible scroll window.
-   * Refreshed by `refreshCaretViewportStatus` on each viewport-affecting
-   * paint; used internally to suspend the blink interval when the caret
-   * scrolls off-screen, and exposed for consumers that want to gate other
+   * Used internally to suspend the blink interval when the caret scrolls
+   * off-screen, and exposed for consumers that want to gate other
    * caret-anchored UI on the same signal.
    */
   caretInViewport: boolean;
-  imageAtCursor: ImageAtCursor | null;
   leaf: CursorLeaf | null;
   isVisible: () => boolean;
   markActivity: () => void;
-  /**
-   * Refresh the caret's viewport status against the freshly-prepared layout.
-   * Called from the host's render-viewport pass (next to `refreshPresence`)
-   * so steady-state scrolling produces no React re-renders unless the
-   * status actually flips.
-   */
-  refreshCaretViewportStatus: (viewportState: EditorLayoutState) => void;
 };
 
 type FocusVisibilityRequest = {
@@ -98,26 +57,24 @@ const CARET_BLINK_INTERVAL_MS = 530;
 const FOCUS_VISIBILITY_PADDING = 24;
 
 /**
- * Owns everything anchored to the text caret — visual blink, the contextual
- * leaf at the caret position, and keeping the caret visible in the viewport.
+ * Owns the browser lifecycle around the text caret — visual blink, activity
+ * signals, and keeping the caret visible in the viewport.
  *
  * What this hook owns:
  *   - Caret blink lifecycle: solid for `CARET_IDLE_DELAY_MS` after any
  *     activity, then blinking at `CARET_BLINK_INTERVAL_MS`. Disabled when a
  *     range is selected, and suspended when the caret is off-viewport.
- *   - The "cursor leaf" — an insertion menu (empty paragraph), table
- *     control, or contextual link/comment leaf, derived from where the
- *     caret currently sits.
+ *   - Store-derived cursor view data: the contextual leaf, caret viewport
+ *     status, and measured caret target.
  *   - `markActivity()` — the activity signal other hooks call to keep the
  *     caret solid during typing, scrolling, and pointer interactions.
  *   - Focus visibility: when the caret moves out of the visible viewport
  *     (via typing, navigation, or layout changes), scroll just enough to
  *     bring it back. Dedupes against repeat triggers for the same logical
  *     state to avoid scroll thrash.
- *   - Caret viewport status: tracks whether the caret is inside the
- *     visible scroll window (refreshed by the host's render-viewport pass
- *     via `refreshCaretViewportStatus`). Drives blink suspension and is
- *     exposed for other caret-anchored UI to gate on.
+ *   - Caret viewport status: reads whether the caret is inside the
+ *     visible scroll window. Drives blink suspension and is exposed for
+ *     other caret-anchored UI to gate on.
  *
  * Contract with the host:
  *   - The host renders the `leaf` as a contextual overlay (alongside
@@ -133,29 +90,20 @@ const FOCUS_VISIBILITY_PADDING = 24;
  *     keep the caret in view without the host owning that logic.
  */
 export function useCursor({
-  canShowInsertionLeaf,
-  canShowTableLeaf,
-  commentState,
-  editorState,
-  editorViewportState,
   getScrollTop,
+  isEditable,
   layoutWidth,
   onVisibilityChange,
-  resources,
   scrollContentHeight,
   scrollTo,
   viewportHeight,
 }: UseCursorOptions): CursorController {
   /* Internal state */
 
-  const normalizedSel = useMemo(() => normalizeSelection(editorState), [editorState]);
-  const [leaf, setLeaf] = useState<CursorLeaf | null>(null);
-  const [imageAtCursor, setImageAtCursor] = useState<ImageAtCursor | null>(null);
-  // Default to `true` so the initial render — before any viewport pass has
-  // run — behaves like today (blink active, caret rendered). The host's
-  // render-viewport pass refreshes this to the actual status on the first
-  // frame.
-  const [caretInViewport, setCaretInViewport] = useState(true);
+  const normalizedSel = useStoreValue(normalizedSelectionValue);
+  const leaf = useStoreValue(cursorLeafValue, isEditable);
+  const caretInViewport = useStoreValue(caretInViewportValue);
+  const caretTarget = useStoreValue(caretTargetValue);
   const shouldBlinkCaret =
     normalizedSel.start.regionId === normalizedSel.end.regionId &&
     normalizedSel.start.offset === normalizedSel.end.offset;
@@ -165,65 +113,15 @@ export function useCursor({
 
   /* Activity + visibility */
 
-  const emitVisibilityChange = useEffectEvent(() => {
+  const requestVisibilityPaint = useEffectEvent(() => {
     onVisibilityChange();
   });
 
   const markActivity = useEffectEvent(() => {
     lastActivityAtRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
     cursorVisibleRef.current = true;
-    emitVisibilityChange();
+    requestVisibilityPaint();
   });
-
-  /* Caret viewport status */
-
-  // Mirrors `usePresence.refreshPresence`: called from the host's
-  // render-viewport pass with the freshly-prepared layout, projects the
-  // caret against the viewport, and only updates state when the visibility
-  // flag actually flips. Steady-state scrolling produces no React renders.
-  // "unresolved" is treated as visible — it only happens transiently while
-  // the focused region's layout is being prepared, and a stale "off-screen"
-  // would surface as a visible glitch (suppressed leaf, paused blink).
-  const refreshCaretViewportStatus = useEffectEvent((viewportState: EditorLayoutState) => {
-    const status = resolveCursorViewportStatus(
-      editorState,
-      viewportState,
-      editorState.selection.focus,
-    );
-    const next = status !== "above" && status !== "below";
-    setCaretInViewport((previous) => (previous === next ? previous : next));
-  });
-
-  /* Cursor leaf */
-
-  useLayoutEffect(() => {
-    const nextLeaf = resolveCursorLeaf({
-      canShowInsertionLeaf,
-      canShowTableLeaf,
-      commentState,
-      normalizedSelection: normalizedSel,
-      state: editorState,
-      viewport: editorViewportState.get(),
-    });
-
-    setLeaf((previous) => (areCursorLeavesEqual(previous, nextLeaf) ? previous : nextLeaf));
-  }, [
-    canShowInsertionLeaf,
-    canShowTableLeaf,
-    commentState,
-    editorState,
-    editorViewportState,
-  ]);
-
-  useLayoutEffect(() => {
-    const nextImageAtCursor = resources
-      ? resolveImageAtCursor(editorState, editorViewportState.get(), normalizedSel, resources)
-      : null;
-
-    setImageAtCursor((previous) =>
-      areImageAtCursorsEqual(previous, nextImageAtCursor) ? previous : nextImageAtCursor,
-    );
-  }, [editorState, editorViewportState, normalizedSel, resources]);
 
   /* Focus visibility */
 
@@ -232,7 +130,7 @@ export function useCursor({
   // just enough to bring it back. Dedupes against repeat triggers for the
   // same logical state to avoid scroll thrash on incidental rerenders.
   useEffect(() => {
-    const focus = editorState.selection.focus;
+    const focus = normalizedSel.end;
     const focusVisibilityRequest: FocusVisibilityRequest = {
       layoutWidth,
       offset: focus.offset,
@@ -247,26 +145,32 @@ export function useCursor({
       return;
     }
 
-    const caret = measureCaretTarget(editorState, editorViewportState.get(), focus);
-    if (!caret) return;
+    if (!caretTarget) return;
 
     const currentTop = getScrollTop();
     const visibleTop = currentTop + FOCUS_VISIBILITY_PADDING;
     const visibleBottom = currentTop + viewportHeight - FOCUS_VISIBILITY_PADDING;
 
-    if (caret.top < visibleTop) {
-      const appliedTop = scrollTo(Math.max(0, caret.top - FOCUS_VISIBILITY_PADDING));
-      if (isCaretVisibleAtScrollTop(caret, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)) {
+    if (caretTarget.top < visibleTop) {
+      const appliedTop = scrollTo(Math.max(0, caretTarget.top - FOCUS_VISIBILITY_PADDING));
+      if (
+        isCaretVisibleAtScrollTop(caretTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
+      ) {
         lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
       }
       return;
     }
 
-    if (caret.top + caret.height > visibleBottom) {
+    if (caretTarget.top + caretTarget.height > visibleBottom) {
       const appliedTop = scrollTo(
-        Math.max(0, caret.top + caret.height - viewportHeight + FOCUS_VISIBILITY_PADDING),
+        Math.max(
+          0,
+          caretTarget.top + caretTarget.height - viewportHeight + FOCUS_VISIBILITY_PADDING,
+        ),
       );
-      if (isCaretVisibleAtScrollTop(caret, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)) {
+      if (
+        isCaretVisibleAtScrollTop(caretTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
+      ) {
         lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
       }
       return;
@@ -274,11 +178,10 @@ export function useCursor({
 
     lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
   }, [
-    editorState,
-    editorState.selection.focus.offset,
-    editorState.selection.focus.regionId,
-    editorViewportState,
+    caretTarget,
     layoutWidth,
+    normalizedSel.end.offset,
+    normalizedSel.end.regionId,
     scrollContentHeight,
     viewportHeight,
   ]);
@@ -292,7 +195,7 @@ export function useCursor({
   // overlay paints that produce no pixels.
   useEffect(() => {
     cursorVisibleRef.current = true;
-    emitVisibilityChange();
+    requestVisibilityPaint();
 
     if (!shouldBlinkCaret || !caretInViewport || typeof window === "undefined") {
       return;
@@ -304,14 +207,14 @@ export function useCursor({
       if (now - lastActivityAtRef.current < CARET_IDLE_DELAY_MS) {
         if (!cursorVisibleRef.current) {
           cursorVisibleRef.current = true;
-          emitVisibilityChange();
+          requestVisibilityPaint();
         }
 
         return;
       }
 
       cursorVisibleRef.current = !cursorVisibleRef.current;
-      emitVisibilityChange();
+      requestVisibilityPaint();
     }, CARET_BLINK_INTERVAL_MS);
 
     return () => {
@@ -323,167 +226,10 @@ export function useCursor({
 
   return {
     caretInViewport,
-    imageAtCursor,
     leaf,
     isVisible: () => cursorVisibleRef.current,
     markActivity,
-    refreshCaretViewportStatus,
   };
-}
-
-function resolveCursorLeaf({
-  canShowInsertionLeaf,
-  canShowTableLeaf,
-  commentState,
-  normalizedSelection,
-  state,
-  viewport,
-}: {
-  canShowInsertionLeaf: boolean;
-  canShowTableLeaf: boolean;
-  commentState: EditorCommentState;
-  normalizedSelection: NormalizedEditorSelection;
-  state: EditorState;
-  viewport: EditorLayoutState | null;
-}): CursorLeaf | null {
-  if (!viewport) {
-    return null;
-  }
-  const focus = state.selection.focus;
-
-  if (
-    normalizedSelection.start.regionId !== normalizedSelection.end.regionId ||
-    normalizedSelection.start.offset !== normalizedSelection.end.offset
-  ) {
-    return null;
-  }
-
-  const insertionLeaf = canShowInsertionLeaf ? resolveInsertionLeaf(state) : null;
-
-  if (insertionLeaf) {
-    return insertionLeaf;
-  }
-
-  const tableLeaf = canShowTableLeaf ? resolveTableLeaf(state, viewport) : null;
-
-  if (tableLeaf) {
-    return tableLeaf;
-  }
-
-  return resolveContextualLeaf(
-    resolveTargetAtSelection(state, viewport, focus, commentState.liveRanges),
-    commentState.threads,
-    commentState.liveRanges,
-  );
-}
-
-function resolveTableLeaf(state: EditorState, viewport: EditorLayoutState): TableLeaf | null {
-  const focus = state.selection.focus;
-  const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
-  const tableCellPosition = focusedRegion
-    ? (state.documentIndex.tableCellIndex.get(focusedRegion.id) ?? null)
-    : null;
-
-  if (!focusedRegion || !tableCellPosition) {
-    return null;
-  }
-
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.blockId);
-  const table =
-    blockEntry?.type === "table" ? state.documentIndex.document.blocks[blockEntry.rootIndex] : null;
-
-  if (!blockEntry || !table || table.type !== "table") {
-    return null;
-  }
-
-  const textLeft = resolveRegionTextLeft(viewport, focusedRegion.id);
-  const columnCount = Math.max(1, ...table.rows.map((row) => row.cells.length));
-
-  return textLeft !== null
-    ? {
-        anchor: focus,
-        cellIndex: tableCellPosition.cellIndex,
-        columnCount,
-        kind: "table",
-        // The cell's text-area edge isn't a caret position, so override the
-        // host's default left (caret-x at the anchor).
-        leftOverride: textLeft,
-        rowCount: table.rows.length,
-        rowIndex: tableCellPosition.rowIndex,
-      }
-    : null;
-}
-
-function resolveRegionTextLeft(viewport: EditorLayoutState, regionId: string) {
-  const firstLine = viewport.layout.lines.find((line) => line.regionId === regionId);
-
-  return firstLine ? firstLine.left : null;
-}
-
-function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
-  const focus = state.selection.focus;
-  const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
-
-  if (!focusedRegion || focusedRegion.blockType !== "paragraph" || focusedRegion.text.length > 0) {
-    return null;
-  }
-
-  if (focus.offset !== 0) {
-    return null;
-  }
-
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.blockId);
-
-  if (!blockEntry || blockEntry.parentBlockId !== null) {
-    return null;
-  }
-
-  return { anchor: focus, kind: "insertion" };
-}
-
-function areCursorLeavesEqual(previous: CursorLeaf | null, next: CursorLeaf | null) {
-  if (previous === next) {
-    return true;
-  }
-
-  if (!previous || !next || previous.kind !== next.kind) {
-    return false;
-  }
-
-  if (!areLeafBasesEqual(previous, next)) {
-    return false;
-  }
-
-  switch (previous.kind) {
-    case "thread":
-      return (
-        next.kind === "thread" &&
-        previous.animateInitialComment === next.animateInitialComment &&
-        previous.link?.title === next.link?.title &&
-        previous.link?.url === next.link?.url &&
-        previous.thread === next.thread &&
-        previous.threadIndex === next.threadIndex
-      );
-    case "insertion":
-      return next.kind === "insertion";
-    case "link":
-      return (
-        next.kind === "link" &&
-        previous.endOffset === next.endOffset &&
-        previous.regionId === next.regionId &&
-        previous.startOffset === next.startOffset &&
-        previous.title === next.title &&
-        previous.url === next.url
-      );
-    case "table":
-      return (
-        next.kind === "table" &&
-        previous.cellIndex === next.cellIndex &&
-        previous.columnCount === next.columnCount &&
-        previous.rowCount === next.rowCount &&
-        previous.rowIndex === next.rowIndex
-      );
-  }
 }
 
 function areFocusVisibilityRequestsEqual(
@@ -500,7 +246,7 @@ function areFocusVisibilityRequestsEqual(
 }
 
 function isCaretVisibleAtScrollTop(
-  caret: { height: number; top: number },
+  caret: Pick<CaretTarget, "height" | "top">,
   scrollTop: number,
   visibleHeight: number,
   padding: number,
@@ -508,53 +254,5 @@ function isCaretVisibleAtScrollTop(
   return (
     caret.top >= scrollTop + padding &&
     caret.top + caret.height <= scrollTop + visibleHeight - padding
-  );
-}
-
-function resolveImageAtCursor(
-  state: EditorState,
-  viewport: EditorLayoutState | null,
-  normalizedSelection: NormalizedEditorSelection,
-  resources: DocumentResources,
-): ImageAtCursor | null {
-  if (!viewport) {
-    return null;
-  }
-
-  // Only show image handles for a collapsed selection (cursor), not a text selection.
-  if (
-    normalizedSelection.start.regionId !== normalizedSelection.end.regionId ||
-    normalizedSelection.start.offset !== normalizedSelection.end.offset
-  ) {
-    return null;
-  }
-
-  const imageRun = resolveImageAtSelection(state);
-
-  if (!imageRun) {
-    return null;
-  }
-
-  const bounds = measureInlineImageBounds(state, viewport, resources, imageRun);
-  const maxWidth = imageRun.image ? (resources.images.get(imageRun.image.url)?.intrinsicWidth ?? null) : null;
-  const regionId = state.selection.anchor.regionId;
-
-  return bounds ? { bounds, maxWidth, regionId, run: imageRun } : null;
-}
-
-function areImageAtCursorsEqual(
-  previous: ImageAtCursor | null,
-  next: ImageAtCursor | null,
-): boolean {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-
-  return (
-    previous.regionId === next.regionId &&
-    previous.maxWidth === next.maxWidth &&
-    previous.bounds.left === next.bounds.left &&
-    previous.bounds.top === next.bounds.top &&
-    previous.bounds.width === next.bounds.width &&
-    previous.bounds.height === next.bounds.height
   );
 }

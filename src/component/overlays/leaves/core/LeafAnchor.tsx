@@ -5,13 +5,7 @@
 //   1. OverlayPortal — host-app-defended placement, theme cascade
 //   2. Anchor frame  — viewport positioning, optional hover bridge
 //   3. Leaf shell    — bordered, shadowed container
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { OverlayPortal } from "../../OverlayPortal";
 import type { LeafResolution } from "./shared";
 

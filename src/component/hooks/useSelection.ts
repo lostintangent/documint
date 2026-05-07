@@ -1,35 +1,19 @@
-import { isResolvedCommentThread, type Mark } from "@/document";
 import {
-  getDocument,
-  getSelectionMarks,
-  measureVisualCaretTarget,
-  normalizeSelection,
-  resolveDragFocus,
   setSelection,
-  type EditorCommentState,
   type EditorPoint,
   type EditorSelectionPoint,
-  type EditorState,
-  type EditorLayoutState,
   type NormalizedEditorSelection,
+  updateSelectionFromDrag,
 } from "@/editor";
-import type { LazyRefHandle } from "./useLazyRef";
+import { type HTMLAttributes, type PointerEvent, useEffectEvent, useRef, useState } from "react";
 import {
-  type HTMLAttributes,
-  type PointerEvent,
-  type RefObject,
-  useEffectEvent,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { readSingleContainerSelectionRange } from "../lib/selection";
-import {
-  areLeafBasesEqual,
-  type AnnotationLeaf,
-  type ThreadLeaf,
-} from "../overlays/leaves/core/shared";
+  selectionLeafValue,
+  selectionViewValue,
+  useEditorCommand,
+  useStoreValue,
+  type PromotedSelectionThread,
+  type SelectionLeaf,
+} from "../store";
 import type { FocusInput } from "./useInput";
 
 export type ResizeHandle = {
@@ -46,27 +30,14 @@ type SelectionHandleProps = {
   onPointerUp: (event: PointerEvent<HTMLDivElement>) => void;
 };
 
-type SelectionLeaf = AnnotationLeaf | ThreadLeaf;
-
 type UseSelectionOptions = {
-  // Editor state and lookups the hook reads from.
-  canShowSelectionLeaf: boolean;
-  editorState: EditorState;
-  editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorLayoutState>;
+  isEditable: boolean;
   resolvePoint: (event: PointerEvent<HTMLElement>) => EditorPoint | null;
-  threads: EditorCommentState["threads"];
 
   // Host callbacks the hook invokes.
-  applyNextState: (nextState: EditorState) => void;
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
   focusInput: FocusInput;
   onActivity: () => void;
-};
-
-type SelectionHandles = {
-  end: { left: number; top: number };
-  start: { left: number; top: number };
 };
 
 type SelectionController = {
@@ -81,10 +52,8 @@ type SelectionController = {
  * selection leaf (the comment-creation popover that anchors to a range).
  *
  * What this hook owns:
- *   - Pixel positions for the start/end selection handles, recomputed when
- *     selection or viewport changes.
- *   - The selection leaf state (create-comment vs. thread), including
- *     promotion when the host posts a new thread.
+ *   - React handle props for the store-derived start/end selection handles.
+ *   - The promoted-thread marker created when the host posts a new thread.
  *   - The handle drag gesture — pointer capture, hit testing via
  *     `resolvePoint`, autoscroll past the canvas edge during drag, and
  *     selection extension.
@@ -100,93 +69,40 @@ type SelectionController = {
  *   - The host does not own any handle-drag state — it lives entirely here.
  */
 export function useSelection({
-  applyNextState,
   autoScrollDuringDrag,
-  canShowSelectionLeaf,
-  editorState,
-  editorStateRef,
-  editorViewportState,
+  isEditable,
   focusInput,
   onActivity,
   resolvePoint,
-  threads,
 }: UseSelectionOptions): SelectionController {
   /* Derived selection state */
 
-  const normalizedSel = useMemo(() => normalizeSelection(editorState), [editorState]);
-  const selectionRange = useMemo(
-    () => readSingleContainerSelectionRange(editorState),
-    [editorState],
-  );
-  const activeMarks = useMemo(() => getSelectionMarks(editorState), [editorState]);
+  const [promotedThread, setPromotedThread] = useState<PromotedSelectionThread | null>(null);
+  const selection = useStoreValue(selectionViewValue);
+  const selectionLeaf = useStoreValue(selectionLeafValue, promotedThread);
+  const setEditorSelection = useEditorCommand(setSelection);
+  const dragSelectionHandle = useEditorCommand(updateSelectionFromDrag);
 
   /* Internal state */
 
-  const [rawHandles, setRawHandles] = useState<SelectionHandles | null>(null);
-  const [selectionLeaf, setSelectionLeaf] = useState<SelectionLeaf | null>(null);
   const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
   const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
 
-  /* Layout: keep handles + leaf positioned in sync with selection */
-
-  useLayoutEffect(() => {
-    const nextHandles = resolveSelectionHandles(
-      editorState,
-      editorViewportState.get(),
-      normalizedSel,
-    );
-
-    setRawHandles((previous) =>
-      areSelectionHandlesEqual(previous, nextHandles) ? previous : nextHandles,
-    );
-  }, [
-    editorState,
-    editorViewportState,
-    normalizedSel.end.offset,
-    normalizedSel.end.regionId,
-    normalizedSel.start.offset,
-    normalizedSel.start.regionId,
-  ]);
-
-  useLayoutEffect(() => {
-    const nextLeaf = resolveSelectionLeaf({
-      canShowSelectionLeaf,
-      currentLeaf: selectionLeaf,
-      activeMarks,
-      handles: rawHandles,
-      selectionRange,
-      threads,
-    });
-
-    setSelectionLeaf((previous) =>
-      areSelectionLeavesEqual(previous, nextLeaf) ? previous : nextLeaf,
-    );
-  }, [activeMarks, canShowSelectionLeaf, rawHandles, selectionLeaf, selectionRange, threads]);
-
   const promoteLeafToThread = useEffectEvent(
     (threadIndex: number, animateInitialComment = true) => {
-      // Look up the freshly-added thread from the post-mutation state —
-      // the closure's `threads` is from the previous render and doesn't
-      // know about the new thread yet.
-      const currentState = editorStateRef.current ?? editorState;
-      const thread = getDocument(currentState).comments[threadIndex];
-      if (!thread) return;
-      setSelectionLeaf((currentLeaf) =>
-        currentLeaf?.kind === "annotation"
-          ? {
-              anchor: currentLeaf.anchor,
-              animateInitialComment,
-              kind: "thread",
-              leftOverride: currentLeaf.leftOverride,
-              link: null,
-              paddingY: currentLeaf.paddingY,
-              resolved: isResolvedCommentThread(thread),
-              thread,
-              threadIndex,
-            }
-          : currentLeaf,
-      );
+      if (selectionLeaf?.kind !== "annotation") {
+        return;
+      }
+
+      setPromotedThread({
+        anchor: selectionLeaf.anchor,
+        animateInitialComment,
+        leftOverride: selectionLeaf.leftOverride,
+        paddingY: selectionLeaf.paddingY,
+        selection: selectionLeaf.selection,
+        threadIndex,
+      });
     },
   );
 
@@ -207,27 +123,21 @@ export function useSelection({
   });
 
   const updateSelectionFromHandle = useEffectEvent((event: PointerEvent<HTMLDivElement>) => {
-    const currentState = editorStateRef.current;
     const stationarySelectionPoint = stationarySelectionPointRef.current;
     const point = resolvePoint(event);
 
     if (
       !point ||
-      !currentState ||
       !stationarySelectionPoint ||
-      dragPointerIdRef.current !== event.pointerId
+      dragPointerIdRef.current !== event.pointerId ||
+      !selection.viewport
     ) {
       return;
     }
 
-    const nextFocus = resolveDragFocus(
-      currentState,
-      editorViewportState.get(),
-      point,
-      stationarySelectionPoint,
-    );
+    const transition = dragSelectionHandle(selection.viewport, point, stationarySelectionPoint);
 
-    if (!nextFocus) {
+    if (!transition) {
       return;
     }
 
@@ -235,12 +145,6 @@ export function useSelection({
     event.stopPropagation();
     onActivity();
     autoScrollDuringDrag(event);
-    applyNextState(
-      setSelection(currentState, {
-        anchor: stationarySelectionPoint,
-        focus: nextFocus,
-      }),
-    );
   });
 
   const createHandleProps = (kind: SelectionHandleKind): SelectionHandleProps => ({
@@ -248,11 +152,11 @@ export function useSelection({
       clearDrag(event);
     },
     onPointerDown: (event) => {
-      const currentState = editorStateRef.current ?? editorState;
-      const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSel, kind);
-      const draggedSelectionPoint = kind === "start" ? normalizedSel.start : normalizedSel.end;
+      const stationarySelectionPoint = resolveStationarySelectionPoint(selection.normalized, kind);
+      const draggedSelectionPoint =
+        kind === "start" ? selection.normalized.start : selection.normalized.end;
 
-      if (!rawHandles) {
+      if (!selection.handles) {
         return;
       }
 
@@ -267,12 +171,10 @@ export function useSelection({
       // the user drags the handle — without this, focus drifts to the
       // handle's host element and the keyboard dismisses mid-gesture.
       focusInput();
-      applyNextState(
-        setSelection(currentState, {
-          anchor: stationarySelectionPoint,
-          focus: draggedSelectionPoint,
-        }),
-      );
+      setEditorSelection({
+        anchor: stationarySelectionPoint,
+        focus: draggedSelectionPoint,
+      });
     },
     onPointerMove: (event) => {
       if (activeHandleKindRef.current !== kind) {
@@ -292,178 +194,18 @@ export function useSelection({
 
   /* Public API */
 
-  const handle: ResizeHandle | null = rawHandles
+  const handle: ResizeHandle | null = selection.handles
     ? {
-        start: { ...rawHandles.start, props: createHandleProps("start") },
-        end: { ...rawHandles.end, props: createHandleProps("end") },
+        start: { ...selection.handles.start, props: createHandleProps("start") },
+        end: { ...selection.handles.end, props: createHandleProps("end") },
       }
     : null;
 
   return {
     handle,
-    leaf: selectionLeaf,
+    leaf: isEditable ? selectionLeaf : null,
     promoteLeafToThread,
   };
-}
-
-function resolveSelectionHandles(
-  state: EditorState,
-  viewport: EditorLayoutState,
-  selection: NormalizedEditorSelection,
-): SelectionHandles | null {
-  if (selection.collapsed) {
-    return null;
-  }
-
-  const startCaret = measureVisualCaretTarget(state, viewport, selection.start);
-  const endCaret = measureVisualCaretTarget(state, viewport, selection.end);
-
-  if (!startCaret || !endCaret) {
-    return null;
-  }
-
-  return {
-    end: {
-      left: endCaret.left,
-      top: endCaret.top + endCaret.height,
-    },
-    start: {
-      left: startCaret.left,
-      top: startCaret.top,
-    },
-  };
-}
-
-// Small vertical nudge below the selection-end's line bottom. Pairs with the
-// 14px CSS margin-top on the selection-mode anchor wrapper to give the
-// annotation toolbar a touch of breathing room from the selection
-// highlight.
-const selectionLeafVerticalNudge = 2;
-
-function resolveAnnotationLeaf(
-  selection: {
-    endOffset: number;
-    regionId: string;
-    startOffset: number;
-  },
-  handles: SelectionHandles,
-  activeMarks: Mark[],
-): AnnotationLeaf {
-  return {
-    activeMarks,
-    // Anchor row comes from selection-end (the leaf renders below the
-    // entire selected range).
-    anchor: { regionId: selection.regionId, offset: selection.endOffset },
-    kind: "annotation",
-    // Cross-corner: x from selection-start while top comes from
-    // selection-end's row, so the leaf sits at the bottom-left of the
-    // range's bounding box.
-    leftOverride: handles.start.left,
-    paddingY: selectionLeafVerticalNudge,
-    selection,
-  };
-}
-
-function resolveSelectionLeaf({
-  activeMarks,
-  canShowSelectionLeaf,
-  currentLeaf,
-  handles,
-  selectionRange,
-  threads,
-}: {
-  activeMarks: Mark[];
-  canShowSelectionLeaf: boolean;
-  currentLeaf: SelectionLeaf | null;
-  handles: SelectionHandles | null;
-  selectionRange: {
-    endOffset: number;
-    regionId: string;
-    startOffset: number;
-  } | null;
-  threads: EditorCommentState["threads"];
-}): SelectionLeaf | null {
-  if (!canShowSelectionLeaf || !selectionRange || !handles) {
-    return null;
-  }
-
-  if (currentLeaf?.kind === "thread") {
-    const thread = threads[currentLeaf.threadIndex];
-    if (!thread) return null;
-    // Refresh thread reference and resolved state — another user may have
-    // edited or toggled resolution since the leaf was promoted.
-    const resolved = isResolvedCommentThread(thread);
-    if (currentLeaf.thread === thread && currentLeaf.resolved === resolved) {
-      return currentLeaf;
-    }
-    return { ...currentLeaf, resolved, thread };
-  }
-
-  return resolveAnnotationLeaf(selectionRange, handles, activeMarks);
-}
-
-function isSameAnnotationLeaf(
-  currentLeaf: SelectionLeaf | null,
-  nextLeaf: AnnotationLeaf,
-) {
-  return (
-    currentLeaf?.kind === "annotation" &&
-    areLeafBasesEqual(currentLeaf, nextLeaf) &&
-    currentLeaf.selection.regionId === nextLeaf.selection.regionId &&
-    currentLeaf.selection.startOffset === nextLeaf.selection.startOffset &&
-    currentLeaf.selection.endOffset === nextLeaf.selection.endOffset &&
-    areSameMarks(currentLeaf.activeMarks, nextLeaf.activeMarks)
-  );
-}
-
-function areSelectionLeavesEqual(previous: SelectionLeaf | null, next: SelectionLeaf | null) {
-  if (previous === next) {
-    return true;
-  }
-
-  if (!previous || !next || previous.kind !== next.kind) {
-    return false;
-  }
-
-  if (previous.kind === "annotation" && next.kind === "annotation") {
-    return isSameAnnotationLeaf(previous, next);
-  }
-
-  return (
-    previous.kind === "thread" &&
-    next.kind === "thread" &&
-    areLeafBasesEqual(previous, next) &&
-    previous.animateInitialComment === next.animateInitialComment &&
-    previous.thread === next.thread &&
-    previous.threadIndex === next.threadIndex
-  );
-}
-
-function areSelectionHandlesEqual(
-  previous: SelectionHandles | null,
-  next: SelectionHandles | null,
-) {
-  if (previous === next) {
-    return true;
-  }
-
-  if (!previous || !next) {
-    return false;
-  }
-
-  return (
-    previous.start.left === next.start.left &&
-    previous.start.top === next.start.top &&
-    previous.end.left === next.end.left &&
-    previous.end.top === next.end.top
-  );
-}
-
-function areSameMarks(currentMarks: Mark[], nextMarks: Mark[]) {
-  return (
-    currentMarks.length === nextMarks.length &&
-    currentMarks.every((mark, index) => mark === nextMarks[index])
-  );
 }
 
 function resolveStationarySelectionPoint(

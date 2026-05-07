@@ -1,11 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildSyntheticLongFixture, sampleMarkdown } from "@test/utils";
-import {
-  createCanvasRenderCache,
-  insertText,
-  prepareLayout,
-  setSelection,
-} from "@/editor";
+import { createCanvasRenderCache, insertText, prepareLayout, setSelection } from "@/editor";
 import { createDocumentIndex } from "@/editor/state";
 import { createDocumentLayout, createViewportLayout } from "@/editor/layout";
 import { parseDocument } from "@/markdown";

@@ -9,9 +9,7 @@ test("indents a list item under its previous sibling", () => {
   state = placeAt(state, beta, 0);
   state = indent(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- alpha\n  - beta\n- gamma\n",
-  );
+  expect(toMarkdown(state)).toBe("- alpha\n  - beta\n- gamma\n");
 });
 
 test("does not indent the first list item without a previous sibling", () => {
@@ -30,9 +28,7 @@ test("dedents a nested list item one level up", () => {
   state = placeAt(state, beta, 0);
   state = dedent(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- alpha\n  - gamma\n- beta\n- tail\n",
-  );
+  expect(toMarkdown(state)).toBe("- alpha\n  - gamma\n- beta\n- tail\n");
 });
 
 test("does not dedent top-level list items", () => {

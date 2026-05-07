@@ -82,11 +82,7 @@ export function findDocumentLayoutLineAtPoint(
 // intersects `[top, top + height)`. Mirrors `findDocumentLayoutLineRange`
 // for the per-block index — used by the paint pass to scope inert-block
 // chrome iteration to the visible viewport.
-export function findDocumentLayoutBlockRange(
-  layout: DocumentLayout,
-  top: number,
-  height: number,
-) {
+export function findDocumentLayoutBlockRange(layout: DocumentLayout, top: number, height: number) {
   if (layout.blocks.length === 0) {
     return { endIndex: 0, startIndex: 0 };
   }

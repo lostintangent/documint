@@ -37,15 +37,8 @@ import {
   type Fragment,
   type Inline,
 } from "@/document";
-import {
-  editorInlinesToDocumentInlines,
-  replaceEditorInlines,
-} from "../reducer/inlines";
-import {
-  blockContainsRegion,
-  trimBlockToPrefix,
-  trimBlockToSuffix,
-} from "./blocks";
+import { editorInlinesToDocumentInlines, replaceEditorInlines } from "../reducer/inlines";
+import { blockContainsRegion, trimBlockToPrefix, trimBlockToSuffix } from "./blocks";
 import type { DocumentIndex, EditorRegion } from "../index/types";
 import { type EditorSelection } from "../selection";
 import { resolveFragmentSourceContext } from "./context";
@@ -174,7 +167,14 @@ function extractWithinRoot(
   // (no markdown shape — drop). Within-cell selections are routed to the
   // inline path upstream.
   if (root.type === "table") {
-    return extractTableRowSlice(documentIndex, root, startRegion, startOffset, endRegion, endOffset);
+    return extractTableRowSlice(
+      documentIndex,
+      root,
+      startRegion,
+      startOffset,
+      endRegion,
+      endOffset,
+    );
   }
 
   const narrowed = narrowToRange(root, startRegion, startOffset, endRegion, endOffset);

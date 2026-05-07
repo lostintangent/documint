@@ -73,15 +73,11 @@ test("moves top-level list items up and down while preserving their nested subtr
   state = placeAt(state, alpha, 0);
   state = moveListItemDown(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- beta\n- alpha\n  - child\n- gamma\n",
-  );
+  expect(toMarkdown(state)).toBe("- beta\n- alpha\n  - child\n- gamma\n");
 
   state = moveListItemUp(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- alpha\n  - child\n- beta\n- gamma\n",
-  );
+  expect(toMarkdown(state)).toBe("- alpha\n  - child\n- beta\n- gamma\n");
 });
 
 test("moves nested list items only within their current parent list", () => {
@@ -91,15 +87,11 @@ test("moves nested list items only within their current parent list", () => {
   state = placeAt(state, second, 0);
   state = moveListItemUp(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- parent\n  - second\n  - first\n  - third\n",
-  );
+  expect(toMarkdown(state)).toBe("- parent\n  - second\n  - first\n  - third\n");
 
   state = moveListItemDown(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- parent\n  - first\n  - second\n  - third\n",
-  );
+  expect(toMarkdown(state)).toBe("- parent\n  - first\n  - second\n  - third\n");
 });
 
 test("does not move list items past the boundaries of their current parent list", () => {
@@ -218,9 +210,7 @@ test("joining adjacent lists across an empty paragraph lands the cursor at the d
   state = deleteBackward(state) ?? state;
 
   // Two lists merged into one.
-  expect(toMarkdown(state)).toBe(
-    "- top\n  - nested\n- another\n",
-  );
+  expect(toMarkdown(state)).toBe("- top\n  - nested\n- another\n");
 
   // Cursor at end of "nested" — the deepest-last region of the
   // pre-merge previous list — not at end of "top" (the last top-level
@@ -280,9 +270,7 @@ test("lifts empty nested list items one level before exiting the list entirely",
   state = placeAt(state, empty, 0);
   state = insertLineBreak(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- parent\n  - child\n-\n- sibling\n",
-  );
+  expect(toMarkdown(state)).toBe("- parent\n  - child\n-\n- sibling\n");
 });
 
 test("routes list enter behavior and markdown task rules", () => {
@@ -292,9 +280,7 @@ test("routes list enter behavior and markdown task rules", () => {
   state = placeAt(state, task, "shipped b".length);
   state = insertLineBreak(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- [x] shipped b\n- [ ] aseline\n",
-  );
+  expect(toMarkdown(state)).toBe("- [x] shipped b\n- [ ] aseline\n");
 
   let inputState = setup("x\n");
   const placeholder = inputState.documentIndex.regions[0];
@@ -438,15 +424,11 @@ test("preserves nested list semantics when splitting a nested task item at the e
   state = placeAt(state, task, task.text.length);
   state = insertLineBreak(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- alpha\n  - [x] shipped child\n  - [ ] \n  - gamma\n",
-  );
+  expect(toMarkdown(state)).toBe("- alpha\n  - [x] shipped child\n  - [ ] \n  - gamma\n");
 
   state = insertText(state, "z") ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- alpha\n  - [x] shipped child\n  - [ ] z\n  - gamma\n",
-  );
+  expect(toMarkdown(state)).toBe("- alpha\n  - [x] shipped child\n  - [ ] z\n  - gamma\n");
 });
 
 test("toggles semantic task-list state for rendered task items", () => {
@@ -499,9 +481,7 @@ test("toggles nested semantic task-list state for rendered task items", () => {
     throw new Error("Expected toggled nested task state");
   }
 
-  expect(toMarkdown(toggled)).toBe(
-    "- parent\n  - [x] ship nested\n",
-  );
+  expect(toMarkdown(toggled)).toBe("- parent\n  - [x] ship nested\n");
 });
 
 test("toggles task list state through the action dispatcher", () => {
@@ -594,9 +574,7 @@ test("backspacing an empty first nested list item removes just the item and land
 
   const top = getRegion(state, "top");
 
-  expect(toMarkdown(state)).toBe(
-    "- top\n  - sibling\n",
-  );
+  expect(toMarkdown(state)).toBe("- top\n  - sibling\n");
   expect(state.selection.focus.regionId).toBe(top.id);
   expect(state.selection.focus.offset).toBe("top".length);
 });
@@ -614,9 +592,7 @@ test("backspacing an empty deeply-nested first list item collapses one level at 
   state = placeAt(state, empty, 0);
   state = deleteBackward(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- one\n  - two\n",
-  );
+  expect(toMarkdown(state)).toBe("- one\n  - two\n");
   const two = state.documentIndex.regions.find((r) => r.text === "two");
   expect(state.selection.focus.regionId).toBe(two!.id);
   expect(state.selection.focus.offset).toBe("two".length);
@@ -633,9 +609,7 @@ test("backspace at start of a non-empty nested first list item merges into the p
   state = placeAt(state, bravo, 0);
   state = deleteBackward(state) ?? state;
 
-  expect(toMarkdown(state)).toBe(
-    "- alphabravo\n  - charlie\n",
-  );
+  expect(toMarkdown(state)).toBe("- alphabravo\n  - charlie\n");
 });
 
 test("backspacing an empty list item lands the cursor at the visually previous region, not the previous sibling", () => {

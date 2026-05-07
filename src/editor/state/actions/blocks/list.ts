@@ -11,11 +11,7 @@ import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
 } from "../../selection";
-import {
-  createInsertedListItem,
-  resolveListItemPath,
-  type ListItemContext,
-} from "../../context";
+import { createInsertedListItem, resolveListItemPath, type ListItemContext } from "../../context";
 
 // List action resolvers: splits, indent / dedent, item movement.
 // Backspace and forward-delete on a list item are handled by the
@@ -219,8 +215,7 @@ export function resolveListItemMove(
 
 function liftEmptyNestedListItem(context: ListItemContext): EditorStateAction | null {
   return buildLiftedListAction(context, (parentItem) => {
-    const liftedChecked =
-      typeof parentItem.checked === "boolean" ? false : parentItem.checked;
+    const liftedChecked = typeof parentItem.checked === "boolean" ? false : parentItem.checked;
     return {
       insertedItem: createInsertedListItem("", liftedChecked, parentItem.spread),
       trackInsertedPath: true,

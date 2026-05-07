@@ -230,9 +230,7 @@ function replaceTableCellText(
     }
 
     const cells = row.cells.map<TableCell>((cell, currentCellIndex) =>
-      currentCellIndex === cellIndex
-        ? createDocumentTableCell({ children: nextChildren })
-        : cell,
+      currentCellIndex === cellIndex ? createDocumentTableCell({ children: nextChildren }) : cell,
     );
 
     return { ...row, cells };

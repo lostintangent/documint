@@ -23,11 +23,7 @@ import {
   pruneEditorAnimations,
   resolveFocusedBlockPath,
 } from "../animations";
-import {
-  createDocumentIndex,
-  replaceEditorBlock,
-  replaceIndexedDocument,
-} from "../index/build";
+import { createDocumentIndex, replaceEditorBlock, replaceIndexedDocument } from "../index/build";
 import type { DocumentIndex } from "../index/types";
 import type { EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
@@ -84,11 +80,7 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
       return setSelection(state, action.selection);
 
     case "replace-block": {
-      const document = replaceEditorBlock(
-        state.documentIndex,
-        action.blockId,
-        () => action.block,
-      );
+      const document = replaceEditorBlock(state.documentIndex, action.blockId, () => action.block);
       return document
         ? applyDocumentMutation(state, createDocumentIndex(document), action.selection ?? null)
         : null;
@@ -121,7 +113,11 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
         action.count,
         action.threads,
       );
-      return applyDocumentMutation(state, replaceIndexedDocument(state.documentIndex, document), null);
+      return applyDocumentMutation(
+        state,
+        replaceIndexedDocument(state.documentIndex, document),
+        null,
+      );
     }
   }
 }

@@ -6,11 +6,7 @@
 // orchestrator collects across the visible range and then paints once.
 
 import type { Block } from "@/document";
-import {
-  findBlockAncestor,
-  resolveLineContentInset,
-  type DocumentLayout,
-} from "../../layout";
+import { findBlockAncestor, resolveLineContentInset, type DocumentLayout } from "../../layout";
 import type { EditorState } from "../../state";
 import type { EditorTheme } from "@/types";
 import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../lib/animations";

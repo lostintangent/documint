@@ -5,18 +5,11 @@
 
 import type { EditorCommentRange } from "../../anchors";
 import type { DocumentResources } from "@/types";
-import type {
-  EditorInline,
-  EditorSelectionPoint,
-  EditorState,
-} from "../../state";
+import type { EditorInline, EditorSelectionPoint, EditorState } from "../../state";
 import type { EditorLayoutState } from "..";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import { resolveInlineImageDimensions } from "../measure/image";
-import {
-  findDocumentLayoutLineForRegionOffset,
-  measureCanvasLineOffsetLeft,
-} from "./lookup";
+import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./lookup";
 import {
   findBlockAncestor,
   resolveLineContentInset,

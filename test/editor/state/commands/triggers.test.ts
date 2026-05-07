@@ -116,9 +116,7 @@ test("transforms list type from typed markdown markers at the start of a list it
   unorderedState = insertText(unorderedState, "-") ?? unorderedState;
   unorderedState = insertText(unorderedState, " ") ?? unorderedState;
 
-  expect(toMarkdown(unorderedState)).toBe(
-    "- alpha\n- beta\n",
-  );
+  expect(toMarkdown(unorderedState)).toBe("- alpha\n- beta\n");
 
   let orderedState = setup("- alpha\n- beta\n");
   const beta = getRegion(orderedState, "beta");
@@ -127,7 +125,5 @@ test("transforms list type from typed markdown markers at the start of a list it
   orderedState = insertText(orderedState, "1.") ?? orderedState;
   orderedState = insertText(orderedState, " ") ?? orderedState;
 
-  expect(toMarkdown(orderedState)).toBe(
-    "1. alpha\n1. beta\n",
-  );
+  expect(toMarkdown(orderedState)).toBe("1. alpha\n1. beta\n");
 });

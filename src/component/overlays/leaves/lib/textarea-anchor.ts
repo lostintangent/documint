@@ -94,10 +94,7 @@ export function resolveTextareaAnchor(
   const lineHeight = parseFloat(computed.lineHeight) || marker.offsetHeight;
   const anchor: TextareaAnchor = {
     left:
-      rect.left +
-      marker.offsetLeft +
-      parseFloat(computed.borderLeftWidth) -
-      textarea.scrollLeft,
+      rect.left + marker.offsetLeft + parseFloat(computed.borderLeftWidth) - textarea.scrollLeft,
     top:
       rect.top +
       marker.offsetTop +

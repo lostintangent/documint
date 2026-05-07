@@ -34,9 +34,10 @@ function toggleInlineCodeNodes(
   const exactInlineCode = resolveExactSelectedInlineCode(nodes, startOffset, endOffset);
 
   if (exactInlineCode) {
-    const replacement = exactInlineCode.code.length > 0
-      ? [createText({ text: exactInlineCode.code, marks: [], path: `${path}.selected` })]
-      : [];
+    const replacement =
+      exactInlineCode.code.length > 0
+        ? [createText({ text: exactInlineCode.code, marks: [], path: `${path}.selected` })]
+        : [];
     return spliceInlineNodes(nodes, startOffset, endOffset, path, replacement);
   }
 
@@ -83,4 +84,3 @@ function resolveExactSelectedInlineCode(
 
   return null;
 }
-

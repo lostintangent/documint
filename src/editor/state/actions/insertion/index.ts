@@ -24,7 +24,10 @@ export function resolveTextInsertion(
   text: string,
 ): EditorStateAction | null {
   return (
-    resolveInsertionTrigger(documentIndex, selection, text)
-    ?? { kind: "splice-text", selection, text }
+    resolveInsertionTrigger(documentIndex, selection, text) ?? {
+      kind: "splice-text",
+      selection,
+      text,
+    }
   );
 }

@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  extendSelectionToPoint,
   moveCaretHorizontally,
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
   moveCaretVertically,
 } from "@/editor/navigation";
 import { createDocumentLayout } from "@/editor/layout";
+import { createCanvasRenderCache, prepareLayout, resolveSelectionHit } from "@/editor";
 import { getRegion, placeAt, setup } from "../helpers";
 
 test("moves left to the previous container when the caret is at the start", () => {
@@ -77,12 +79,7 @@ test("extends the selection to the start of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");
   const layout = createDocumentLayout(state.documentIndex, { width: 90 });
-  const nextState = moveCaretToLineBoundary(
-    placeAt(state, container, "end"),
-    layout,
-    "Home",
-    true,
-  );
+  const nextState = moveCaretToLineBoundary(placeAt(state, container, "end"), layout, "Home", true);
 
   expect(nextState.selection.anchor.regionId).toBe(container.id);
   expect(nextState.selection.anchor.offset).toBe(container.text.length);
@@ -148,6 +145,35 @@ test("extends the selection vertically across a region boundary while keeping th
   expect(nextState.selection.anchor.regionId).toBe(first.id);
   expect(nextState.selection.anchor.offset).toBe(2);
   expect(nextState.selection.focus.regionId).toBe(second.id);
+});
+
+test("extends the selection to a viewport point while keeping the anchor", () => {
+  const state = setup("Hello world\n");
+  const region = getRegion(state, "Hello world");
+  const placed = placeAt(state, region, 0);
+  const viewport = prepareLayout(
+    placed,
+    { height: 320, top: 0, width: 520 },
+    createCanvasRenderCache(),
+  );
+  const line = viewport.layout.lines[0];
+
+  if (!line) throw new Error("Expected first layout line");
+
+  const point = {
+    x: line.left + line.width / 2,
+    y: line.top + line.height / 2,
+  };
+  const hit = resolveSelectionHit(placed, viewport, point);
+  const extended = extendSelectionToPoint(placed, viewport, point);
+
+  expect(hit).not.toBeNull();
+  expect(extended).not.toBeNull();
+  expect(extended!.selection.anchor).toEqual({ offset: 0, regionId: region.id });
+  expect(extended!.selection.focus).toEqual({
+    offset: hit!.offset,
+    regionId: hit!.regionId,
+  });
 });
 
 test("jumps to the start of the document when moveCaretToDocumentBoundary is invoked with start", () => {

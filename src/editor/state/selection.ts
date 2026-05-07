@@ -30,6 +30,12 @@ export type NormalizedEditorSelection = {
   start: EditorSelectionPoint;
 };
 
+export type EditorSelectionRange = {
+  endOffset: number;
+  regionId: string;
+  startOffset: number;
+};
+
 export type RegionRangePathSelectionTarget = {
   endOffset: number;
   kind: "region-range-path";
@@ -99,10 +105,7 @@ export function createRootPrimaryRegionTarget(
   };
 }
 
-export function createRegionTarget(
-  regionId: string,
-  offset: number | "end" = 0,
-): SelectionTarget {
+export function createRegionTarget(regionId: string, offset: number | "end" = 0): SelectionTarget {
   return {
     kind: "region",
     offset,
@@ -271,10 +274,7 @@ function findAdjacentBlockInFlow(
 // Peer to `previousRegionInFlow` / `nextRegionInFlow`; used by
 // gestures whose semantics depend on whether the cursor is at the
 // leading edge of a root (e.g. backward-delete block demotion).
-export function firstInFlowRegionOfRoot(
-  documentIndex: DocumentIndex,
-  rootIndex: number,
-) {
+export function firstInFlowRegionOfRoot(documentIndex: DocumentIndex, rootIndex: number) {
   return documentIndex.roots[rootIndex]?.regions[0] ?? null;
 }
 
@@ -412,10 +412,7 @@ export function resolveSelectionTarget(
   }
 
   if (selection.kind === "region-path") {
-    return createCollapsedSelection(
-      region.id,
-      resolveRegionOffset(region.text, selection.offset),
-    );
+    return createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset));
   }
 
   return {
@@ -561,17 +558,31 @@ export function resolveImageAtSelection(state: EditorState): EditorInline | null
   return run?.kind === "image" ? run : null;
 }
 
-export function getSelectionMarks(state: EditorState): Mark[] {
+export function getSelectionRange(state: EditorState): EditorSelectionRange | null {
   const normalized = normalizeSelection(state.documentIndex, state.selection);
 
   if (
     normalized.start.regionId !== normalized.end.regionId ||
     normalized.start.offset === normalized.end.offset
   ) {
+    return null;
+  }
+
+  return {
+    endOffset: normalized.end.offset,
+    regionId: normalized.start.regionId,
+    startOffset: normalized.start.offset,
+  };
+}
+
+export function getSelectionMarks(state: EditorState): Mark[] {
+  const selectionRange = getSelectionRange(state);
+
+  if (!selectionRange) {
     return [];
   }
 
-  const region = state.documentIndex.regionIndex.get(normalized.start.regionId);
+  const region = state.documentIndex.regionIndex.get(selectionRange.regionId);
 
   if (!region) {
     return [];
@@ -586,7 +597,7 @@ export function getSelectionMarks(state: EditorState): Mark[] {
   const inlineRegion = resolveInlineRegionFromBlock(block, region.path, region.semanticRegionId);
 
   return inlineRegion
-    ? resolveInlineMarks(inlineRegion, normalized.start.offset, normalized.end.offset)
+    ? resolveInlineMarks(inlineRegion, selectionRange.startOffset, selectionRange.endOffset)
     : [];
 }
 

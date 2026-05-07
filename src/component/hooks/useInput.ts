@@ -41,27 +41,28 @@ import {
   toggleStrikethrough,
   toggleUnderline,
   undo,
+  type EditorLayoutState,
   type EditorSelectionPoint,
   type EditorState,
-  type EditorLayoutState,
 } from "@/editor";
 import { parseFragment, serializeFragment } from "@/markdown";
-import type { LazyRefHandle } from "./useLazyRef";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
+import {
+  editorStateValue,
+  useDocumintStore,
+  useEditorCommand,
+  useStoreValue,
+  type EditorTransition,
+} from "../store";
 
 type UseInputOptions = {
   // DOM refs the hook reads from.
   inputRef: RefObject<HTMLTextAreaElement | null>;
 
-  // Editor state and lookups the hook reads from.
-  editorState: EditorState;
-  editorStateRef: RefObject<EditorState | null>;
-  editorViewportState: LazyRefHandle<EditorLayoutState>;
   keybindings?: EditorKeybinding[];
 
   // Host callbacks the hook invokes.
-  applyNextState: (nextState: EditorState | null) => void;
   onActivity: () => void;
   // Invoked when the clipboard contains an image and the host has agreed
   // to persist it. Receives the pasted file (carrying blob bytes, MIME
@@ -170,10 +171,6 @@ const DICTATION_FLUSH_OVERLAP_THRESHOLD = 16;
  *     value and the editor state, both managed here.
  */
 export function useInput({
-  applyNextState,
-  editorState,
-  editorStateRef,
-  editorViewportState,
   inputRef,
   keybindings,
   onActivity,
@@ -181,8 +178,10 @@ export function useInput({
 }: UseInputOptions): InputController {
   /* Internal state */
 
+  const store = useDocumintStore();
+  const editorState = useStoreValue(editorStateValue);
   const isTouchPrimary = useIsTouchPrimary();
-  const readCurrentState = () => editorStateRef.current ?? editorState;
+  const readCurrentState = () => store.editor.getState();
   // When `primingRef.current === true`, the bridge is in the middle of
   // execCommand-ing a dummy insert+delete to seed iOS's UIUndoManager so
   // that Shake-to-Undo and related gestures dispatch `historyUndo`
@@ -191,15 +190,31 @@ export function useInput({
   // our own logic doesn't preventDefault the priming execCommands.
   const primingRef = useRef(false);
   const undoStackPrimedRef = useRef(false);
+  const insertNativeText = useEditorCommand(insertNativeTextCommand);
+  const replaceNativeText = useEditorCommand(replaceNativeTextCommand);
+  const insertLineBreakCommand = useEditorCommand(insertLineBreak);
+  const deleteBackwardCommand = useEditorCommand(deleteBackward);
+  const deleteForwardCommand = useEditorCommand(deleteForward);
+  const undoCommand = useEditorCommand(undo);
+  const redoCommand = useEditorCommand(redo);
+  const applyKeyboardInput = useEditorCommand(applyKeyboardInputCommand);
+  const deleteSelectionCommand = useEditorCommand(deleteSelection);
+  const insertImageCommand = useEditorCommand(insertImage);
+  const insertLinkCommand = useEditorCommand(insertLink);
+  const pasteFragmentCommand = useEditorCommand(pasteFragment);
 
-  const applyStateChange = useEffectEvent((nextState: EditorState | null) => {
-    if (!nextState) {
-      return;
-    }
-
-    onActivity();
-    applyNextState(nextState);
-  });
+  const runInputCommand = useEffectEvent(
+    <Args extends unknown[]>(
+      command: (...args: Args) => EditorTransition | null,
+      ...args: Args
+    ) => {
+      const transition = command(...args);
+      if (transition) {
+        onActivity();
+      }
+      return transition;
+    },
+  );
 
   /* iOS UIUndoManager priming */
 
@@ -254,7 +269,7 @@ export function useInput({
   // Move the hidden textarea so that it's positioned directly beneath
   // the virtual cursor on the canvas. This is important for two reasons:
   //   1. iOS/mobile auto-scroll: the OS scrolls the focused input into
-  //      view when the virtual keyboard appears. 
+  //      view when the virtual keyboard appears.
   //   2. iOS/desktop caret-adjacent UI: autocorrect popovers, IME
   //      composition windows, and the dictation indicator anchor to the
   //      input's box instead of the scroll container's top-left corner.
@@ -262,7 +277,7 @@ export function useInput({
     const input = inputRef.current;
     if (!input) return;
 
-    const viewport = editorViewportState.get();
+    const viewport = store.viewport.get();
     const caret = measureVisualCaretTarget(readCurrentState(), viewport, point);
     if (!caret) return;
 
@@ -305,54 +320,6 @@ export function useInput({
     primeUndoStack();
   });
 
-  /* Text application helpers */
-
-  // Apply the textarea's full value to the editor by stripping the synced
-  // prefix (everything we've already mirrored in) and inserting whatever
-  // remains as new text — splitting on `\n` so embedded line breaks turn
-  // into editor line-break operations rather than literal characters.
-  const applyNativeText = useEffectEvent((state: typeof editorState, value: string) => {
-    const insertedText = stripSyncedInputPrefix(value, resolveInputPrefix(state));
-    const segments = insertedText.replace(/\r\n/g, "\n").split(/(\n)/);
-    let nextState = state;
-
-    for (const segment of segments) {
-      if (segment.length === 0) continue;
-      const result = segment === "\n" ? insertLineBreak(nextState) : insertText(nextState, segment);
-      if (!result) continue;
-      nextState = result;
-    }
-
-    return nextState === state ? null : nextState;
-  });
-
-  // Replace a range of `charsToDelete` characters with `replacement`, in a
-  // single editor action — one undo entry, one animation tick — instead of
-  // N delete + M insert operations. The range ends `trailingOffset` chars
-  // before the editor caret; `trailingOffset === 0` is the common case
-  // (replacement abuts the caret), but macOS Text Replacements can extend
-  // the textarea selection backward over a word while leaving the caret
-  // past a just-typed trailing character (e.g. the space that triggered
-  // the replacement) — see `resolveReplacementRange`.
-  const applyReplacementText = useEffectEvent(
-    (
-      state: typeof editorState,
-      charsToDelete: number,
-      trailingOffset: number,
-      replacement: string,
-    ) => {
-      const focusPoint = state.selection.focus;
-      const end = Math.max(0, focusPoint.offset - trailingOffset);
-      const focus = { regionId: focusPoint.regionId, offset: end };
-      const anchor = {
-        regionId: focusPoint.regionId,
-        offset: Math.max(0, end - charsToDelete),
-      };
-      const extended = setSelection(state, { anchor, focus });
-      return replaceSelection(extended, replacement);
-    },
-  );
-
   /* Native event handlers (beforeinput / input / keydown) */
 
   /**
@@ -370,7 +337,7 @@ export function useInput({
    *     directly requested a swap (iOS suggestion-bar tap, voice
    *     dictation revising a partial).
    *
-   * Both ultimately call `applyReplacementText`. The replacement range
+   * Both ultimately call `replaceNativeText`. The replacement range
    * is signaled by the textarea's `selectionStart` / `selectionEnd`,
    * which the OS extends over the to-be-replaced range right before
    * firing the event. Honoring that selection is what distinguishes a
@@ -386,7 +353,7 @@ export function useInput({
    *     already streamed; we insert only the non-overlapping suffix
    *     (see `detectDictationFlushOverlap`).
    *   - `insertText` collapsed, no overlap → plain typing / IME commit
-   *     / autocomplete. Routed through `applyNativeText` (handles
+   *     / autocomplete. Routed through `insertNativeText` (handles
    *     embedded `\n`).
    *   - `insertReplacementText` → OS-initiated replacement.
    *   - `insertLineBreak` / `insertParagraph` → `insertLineBreak`
@@ -402,7 +369,7 @@ export function useInput({
    * `compositionstart` / `compositionupdate` / `compositionend` are NOT
    * handled here — empirical testing confirmed iOS voice dictation
    * doesn't use them, and IME compositions reach the editor via the
-   * `input` event path through `applyNativeText`.
+   * `input` event path through `insertNativeText`.
    */
   const handleBeforeInput = useEffectEvent((event: InputEvent) => {
     if (process.env.NODE_ENV !== "production") {
@@ -437,9 +404,7 @@ export function useInput({
       // textarea selection extended over the range to replace.
       const range = resolveReplacementRange(event.target);
       if (range.charsToReplace > 0) {
-        applyStateChange(
-          applyReplacementText(state, range.charsToReplace, range.trailingOffset, event.data),
-        );
+        runInputCommand(replaceNativeText, range.charsToReplace, range.trailingOffset, event.data);
         return;
       }
 
@@ -449,13 +414,13 @@ export function useInput({
       if (overlap > 0) {
         const suffix = event.data.slice(overlap);
         if (suffix.length > 0) {
-          applyStateChange(applyNativeText(state, suffix));
+          runInputCommand(insertNativeText, suffix);
         }
         return;
       }
 
       // Plain typing / IME commit / autocomplete.
-      applyStateChange(applyNativeText(state, event.data));
+      runInputCommand(insertNativeText, event.data);
       return;
     }
 
@@ -466,9 +431,7 @@ export function useInput({
       if (!event.data) return;
       event.preventDefault();
       const range = resolveReplacementRange(event.target);
-      applyStateChange(
-        applyReplacementText(state, range.charsToReplace, range.trailingOffset, event.data),
-      );
+      runInputCommand(replaceNativeText, range.charsToReplace, range.trailingOffset, event.data);
       return;
     }
 
@@ -483,19 +446,19 @@ export function useInput({
       // branch sees it. Touch-primary devices intentionally don't get a
       // soft-break gesture (consistent with Notion, Docs, etc.).
       event.preventDefault();
-      applyStateChange(insertLineBreak(state));
+      runInputCommand(insertLineBreakCommand);
       return;
     }
 
     if (deleteDirection === "backward") {
       event.preventDefault();
-      applyStateChange(deleteBackward(state));
+      runInputCommand(deleteBackwardCommand);
       return;
     }
 
     if (deleteDirection === "forward") {
       event.preventDefault();
-      applyStateChange(deleteForward(state));
+      runInputCommand(deleteForwardCommand);
       return;
     }
 
@@ -506,14 +469,14 @@ export function useInput({
     // UIUndoManager pointer advances even when we preventDefault).
     if (event.inputType === "historyUndo") {
       event.preventDefault();
-      applyStateChange(undo(state));
+      runInputCommand(undoCommand);
       rePrimeUndoStack();
       return;
     }
 
     if (event.inputType === "historyRedo") {
       event.preventDefault();
-      applyStateChange(redo(state));
+      runInputCommand(redoCommand);
       rePrimeUndoStack();
       return;
     }
@@ -553,7 +516,7 @@ export function useInput({
       return;
     }
 
-    applyStateChange(applyNativeText(state, value));
+    runInputCommand(insertNativeText, value);
   });
 
   // Cross-handler contract: when this handler returns a state change for a
@@ -569,19 +532,18 @@ export function useInput({
   // already consumed before beforeinput fires.
   const handleKeyDown = useEffectEvent(
     (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const stateChange = applyKeyboardEvent(
-        readCurrentState(),
-        editorViewportState.get(),
+      const transition = runInputCommand(
+        applyKeyboardInput,
+        store.viewport.get(),
         event.nativeEvent,
         keybindings,
       );
 
-      if (!stateChange) {
+      if (!transition) {
         return;
       }
 
       event.preventDefault();
-      applyStateChange(stateChange);
     },
   );
 
@@ -616,7 +578,7 @@ export function useInput({
 
       event.preventDefault();
       event.clipboardData.setData("text/plain", serializeFragment(fragment));
-      applyStateChange(deleteSelection(state));
+      runInputCommand(deleteSelectionCommand);
     },
   );
 
@@ -626,7 +588,9 @@ export function useInput({
       // invalidated as soon as the handler yields. Prefer image over text
       // when both are present (browsers commonly include both).
       const imageItem = onImagePaste
-        ? [...event.clipboardData.items].find((item) => item.kind === "file" && item.type.startsWith("image/"))
+        ? [...event.clipboardData.items].find(
+            (item) => item.kind === "file" && item.type.startsWith("image/"),
+          )
         : undefined;
       const imageFile = imageItem?.getAsFile() ?? null;
 
@@ -634,7 +598,7 @@ export function useInput({
         event.preventDefault();
         const path = await onImagePaste(imageFile);
         if (path) {
-          applyStateChange(insertImage(readCurrentState(), path));
+          runInputCommand(insertImageCommand, path);
         }
         return;
       }
@@ -646,17 +610,16 @@ export function useInput({
       }
 
       if (/^https?:\/\//.test(pastedText)) {
-        const nextState = insertLink(readCurrentState(), pastedText);
-        if (nextState) {
+        const transition = runInputCommand(insertLinkCommand, pastedText);
+        if (transition) {
           event.preventDefault();
-          applyStateChange(nextState);
           return;
         }
       }
 
       event.preventDefault();
       const fragment = parseFragment(pastedText);
-      applyStateChange(pasteFragment(readCurrentState(), fragment, pastedText));
+      runInputCommand(pasteFragmentCommand, fragment, pastedText);
     },
   );
 
@@ -940,7 +903,51 @@ export function syncInputContext(input: HTMLTextAreaElement, state: EditorState)
   }
 }
 
-function applyKeyboardEvent(
+// Apply the textarea's full value to the editor by stripping the synced
+// prefix (everything we've already mirrored in) and inserting whatever
+// remains as new text — splitting on `\n` so embedded line breaks turn
+// into editor line-break operations rather than literal characters.
+function insertNativeTextCommand(state: EditorState, value: string) {
+  const insertedText = stripSyncedInputPrefix(value, resolveInputPrefix(state));
+  const segments = insertedText.replace(/\r\n/g, "\n").split(/(\n)/);
+  let nextState = state;
+
+  for (const segment of segments) {
+    if (segment.length === 0) continue;
+    const result = segment === "\n" ? insertLineBreak(nextState) : insertText(nextState, segment);
+    if (!result) continue;
+    nextState = result;
+  }
+
+  return nextState === state ? null : nextState;
+}
+
+// Replace a range of `charsToDelete` characters with `replacement`, in a
+// single editor action — one undo entry, one animation tick — instead of
+// N delete + M insert operations. The range ends `trailingOffset` chars
+// before the editor caret; `trailingOffset === 0` is the common case
+// (replacement abuts the caret), but macOS Text Replacements can extend
+// the textarea selection backward over a word while leaving the caret
+// past a just-typed trailing character (e.g. the space that triggered
+// the replacement) — see `resolveReplacementRange`.
+function replaceNativeTextCommand(
+  state: EditorState,
+  charsToDelete: number,
+  trailingOffset: number,
+  replacement: string,
+) {
+  const focusPoint = state.selection.focus;
+  const end = Math.max(0, focusPoint.offset - trailingOffset);
+  const focus = { regionId: focusPoint.regionId, offset: end };
+  const anchor = {
+    regionId: focusPoint.regionId,
+    offset: Math.max(0, end - charsToDelete),
+  };
+  const extended = setSelection(state, { anchor, focus });
+  return replaceSelection(extended, replacement);
+}
+
+function applyKeyboardInputCommand(
   state: EditorState,
   viewport: EditorLayoutState,
   event: KeyboardEvent,
