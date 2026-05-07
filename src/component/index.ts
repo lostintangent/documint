@@ -1,4 +1,11 @@
-export { Documint, type CommentChange, type DocumintProps, type DocumintTheme } from "./Documint";
+export {
+  Documint,
+  type CommentChange,
+  type DocumintAction,
+  type DocumintActions,
+  type DocumintProps,
+  type DocumintTheme,
+} from "./Documint";
 
 export { darkTheme, lightTheme, midnightTheme, mintTheme } from "./lib/themes";
 

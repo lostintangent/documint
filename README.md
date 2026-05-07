@@ -44,6 +44,35 @@ export function App() {
 }
 ```
 
+## Custom Actions
+
+Use the `actions` prop to add custom buttons to contextual leaf menus. The first supported target is `selection`, which appears in the annotation toolbar when text is selected. Each action provides a Lucide icon name and receives the selected text when clicked.
+
+```tsx
+import { useState } from "react";
+import { Documint } from "documint";
+
+export function App() {
+  const [content, setContent] = useState("Select this text");
+
+  return (
+    <Documint
+      content={content}
+      onContentChanged={setContent}
+      actions={{
+        selection: {
+          icon: "copy",
+          label: "Copy selected text",
+          onClick: (selectedText) => {
+            navigator.clipboard.writeText(selectedText);
+          },
+        },
+      }}
+    />
+  );
+}
+```
+
 ## Custom Themes
 
 By default, Documint will detect the end-user's system theme and apply either the built-in light or dark theme. You can also specify a theme explicitly by passing `"light"` or `"dark"` to the `theme` prop, or provide a custom theme object with your own colors and styles.

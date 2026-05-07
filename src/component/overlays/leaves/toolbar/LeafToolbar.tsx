@@ -2,6 +2,7 @@
 // This stays in one file because the compound API and its private views are
 // small, tightly coupled, and easier to read together than split apart.
 import { ChevronDown, type LucideIcon } from "lucide-react";
+import { DynamicIcon, type IconName } from "lucide-react/dynamic";
 import {
   Children,
   isValidElement,
@@ -20,7 +21,7 @@ type LeafToolbarButtonProps = {
   active?: boolean;
   className?: string;
   disabled?: boolean;
-  icon: LucideIcon;
+  icon: LucideIcon | IconName;
   label: string;
   onClick: () => void;
 };
@@ -93,7 +94,7 @@ function LeafToolbarIconButton({
   active = false,
   className,
   disabled = false,
-  icon: Icon,
+  icon,
   label,
   onClick,
 }: LeafToolbarButtonProps) {
@@ -116,9 +117,18 @@ function LeafToolbarIconButton({
       title={label}
       type="button"
     >
-      <Icon size={15} strokeWidth={2.2} />
+      <ToolbarButtonIcon icon={icon} />
     </button>
   );
+}
+
+function ToolbarButtonIcon({ icon }: { icon: LucideIcon | IconName }) {
+  if (typeof icon === "string") {
+    return <DynamicIcon name={icon} size={15} strokeWidth={2.2} />;
+  }
+
+  const Icon = icon;
+  return <Icon size={15} strokeWidth={2.2} />;
 }
 
 function LeafToolbarMenuView({ children, className, icon, label, onSelect }: LeafToolbarMenuProps) {

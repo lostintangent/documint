@@ -15,6 +15,7 @@ import {
   Underline,
 } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import type { DocumintAction } from "../../Documint";
 import { LeafInput, type CompletionSource } from "./core/LeafInput";
 import { LeafOutput } from "./core/LeafOutput";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
@@ -38,6 +39,7 @@ type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
   onToggleItalic: () => void;
   onToggleStrikethrough: () => void;
   onToggleUnderline: () => void;
+  actions?: readonly DocumintAction<void>[];
 };
 
 type AnnotationThreadLeafProps = AnnotationLeafBaseProps & {
@@ -97,6 +99,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const toggleItalic = createProps?.onToggleItalic ?? noop;
   const toggleStrikethrough = createProps?.onToggleStrikethrough ?? noop;
   const toggleUnderline = createProps?.onToggleUnderline ?? noop;
+  const actions = createProps?.actions ?? [];
   const composerPlaceholder = canEdit
     ? createMode
       ? "Add a comment"
@@ -254,7 +257,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               label="Add comment"
               onClick={() => setIsExpanded(true)}
             />
-            <LeafToolbar.Divider className="documint-comment-leaf-create-divider" />
+            <LeafToolbar.Divider />
             <LeafToolbar.Button
               active={activeMarks.includes("bold")}
               className="documint-comment-leaf-create-mark"
@@ -283,6 +286,24 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               label="Strikethrough"
               onClick={toggleStrikethrough}
             />
+            {actions.length > 0
+              ? [
+                  <LeafToolbar.Divider key="actions-divider" />,
+                  ...actions.map((action, index) => {
+                    const label = action.label ?? action.icon;
+
+                    return (
+                      <LeafToolbar.Button
+                        className="documint-comment-leaf-create-mark"
+                        icon={action.icon}
+                        key={`${action.icon}:${label}:${index}`}
+                        label={label}
+                        onClick={() => action.onClick()}
+                      />
+                    );
+                  }),
+                ]
+              : null}
           </LeafToolbar>
         ) : null}
         <div className={showCreateChrome ? "documint-comment-leaf-create-content" : undefined}>

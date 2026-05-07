@@ -397,7 +397,7 @@
       pointer-events: none;
     }
 
-    & .documint-comment-leaf-create-divider {
+    & .documint-leaf-toolbar-divider {
       opacity: 0;
     }
 
@@ -438,7 +438,7 @@
     transform var(--documint-comment-create-scale-duration) ease;
 }
 
-.documint-comment-leaf-create-divider {
+.documint-comment-leaf-create .documint-leaf-toolbar-divider {
   opacity: 1;
   transition: opacity var(--documint-comment-create-fade-duration) ease;
 }

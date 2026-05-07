@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Documint, type DocumentPresence, type DocumentUser, type DocumintStorage } from "documint";
+import {
+  Documint,
+  type DocumentPresence,
+  type DocumentUser,
+  type DocumintActions,
+  type DocumintStorage,
+} from "documint";
 import { fixtureOptions, getThemeOption, themeOptions } from "./data";
 import { DiagnosticsPopover } from "./popovers/DiagnosticsPopover";
 import { UsersPopover } from "./popovers/UsersPopover";
@@ -26,6 +32,16 @@ function createInMemoryStorage(): DocumintStorage {
 }
 
 const storage = createInMemoryStorage();
+
+const actions: DocumintActions = {
+  selection: {
+    icon: "hand",
+    label: "Say hi",
+    onClick(selectedText) {
+      window.alert(`Hi, ${selectedText.trim() || "there"}!`);
+    },
+  },
+};
 
 export function Playground() {
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
@@ -89,6 +105,7 @@ export function Playground() {
         <div className="host-panel">
           <div className="host-card">
             <Documint
+              actions={actions}
               content={content}
               onContentChanged={setContent}
               theme={activeTheme ?? undefined}

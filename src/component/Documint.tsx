@@ -11,9 +11,15 @@ import {
   useState,
   type UIEvent,
 } from "react";
-import { type Comment, type CommentThread, type Document } from "@/document";
+import {
+  extractPlainTextFromFragment,
+  type Comment,
+  type CommentThread,
+  type Document,
+} from "@/document";
 import {
   addComment,
+  copySelection,
   createEditorState,
   deleteComment,
   deleteTable,
@@ -39,6 +45,7 @@ import {
   updateLink,
   type EditorPresence,
 } from "@/editor";
+import type { IconName } from "lucide-react/dynamic";
 import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -88,6 +95,7 @@ export type DocumintProps = {
   content: string;
   className?: string;
 
+  actions?: DocumintActions;
   theme?: DocumintTheme;
   keybindings?: EditorKeybinding[];
   presence?: DocumentPresence[];
@@ -96,6 +104,16 @@ export type DocumintProps = {
 
   onContentChanged?: (content: string, document: Document) => void;
   onCommentChanged?: (change: CommentChange) => void;
+};
+
+export type DocumintAction<T> = {
+  icon: IconName;
+  label?: string;
+  onClick: (arg: T) => void;
+};
+
+export type DocumintActions = {
+  selection?: DocumintAction<string> | readonly DocumintAction<string>[];
 };
 
 // Describes a single comment add, edit, or delete. Adds and edits carry the
@@ -145,6 +163,7 @@ export function Documint({ content, ...props }: DocumintProps) {
 }
 
 function DocumintHost({
+  actions,
   className,
   content,
   keybindings,
@@ -229,6 +248,12 @@ function DocumintHost({
   const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
   const isEditable = Boolean(onContentChanged);
   const readCurrentState = () => store.editor.getState();
+  const selectionActions = normalizeDocumintActions(actions?.selection);
+  const resolveSelectedText = () => {
+    const fragment = copySelection(store.editor.getState());
+
+    return fragment ? extractPlainTextFromFragment(fragment) : "";
+  };
 
   const commitEditorCommandTransition = useEffectEvent((transition: EditorTransition | null) => {
     if (!transition) {
@@ -689,7 +714,18 @@ function DocumintHost({
             url={activeLeaf.url}
           />
         );
-      case "annotation":
+      case "annotation": {
+        const annotationActions =
+          selectionActions.length > 0
+            ? selectionActions.map((action) => ({
+                icon: action.icon,
+                label: action.label ?? formatActionLabel(action.icon),
+                onClick: () => {
+                  action.onClick(resolveSelectedText());
+                },
+              }))
+            : undefined;
+
         return (
           <AnnotationLeaf
             activeMarks={activeLeaf.activeMarks}
@@ -721,8 +757,10 @@ function DocumintHost({
             onToggleUnderline={() => {
               toggleUnderlineCommand();
             }}
+            actions={annotationActions}
           />
         );
+      }
       case "thread":
         return (
           <AnnotationLeaf
@@ -930,4 +968,20 @@ function DocumintHost({
       </section>
     </OverlayPortalProvider>
   );
+}
+
+function normalizeDocumintActions<T>(
+  actions: DocumintAction<T> | readonly DocumintAction<T>[] | undefined,
+): readonly DocumintAction<T>[] {
+  if (!actions) {
+    return [];
+  }
+
+  return "onClick" in actions ? [actions] : actions;
+}
+
+function formatActionLabel(icon: IconName) {
+  const label = icon.replaceAll("-", " ");
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }

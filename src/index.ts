@@ -6,6 +6,8 @@ export {
   midnightTheme,
   mintTheme,
   type CommentChange,
+  type DocumintAction,
+  type DocumintActions,
   type EditorKeybinding,
   type DocumintProps,
   type DocumintTheme,
