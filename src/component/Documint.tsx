@@ -51,13 +51,15 @@ import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseDocument, serializeDocument } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
-import type { CompletionSource } from "./overlays/leaves/core/LeafInput";
+import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
+import type { CompletionSource } from "./completions/completions";
 import { InsertionLeaf } from "./overlays/leaves/InsertionLeaf";
 import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
 import type { LeafResolution } from "./overlays/leaves/core/shared";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
 import { useCursor } from "./hooks/useCursor";
+import { useDocumentCompletions } from "./completions/useDocumentCompletions";
 import { useImageHandles } from "./hooks/useImageHandles";
 import { useImages } from "./hooks/useImages";
 import { usePointer } from "./hooks/usePointer";
@@ -77,6 +79,7 @@ import { DocumintSsr } from "./Ssr";
 import {
   activeCommentThreadIndexValue,
   commentStateValue,
+  completionSourcesValue,
   createStore,
   DocumintStoreProvider,
   editorStateValue,
@@ -233,20 +236,17 @@ function DocumintHost({
   const selectionContext = useStoreValue(selectionContextValue);
   const commentState = useStoreValue(commentStateValue);
   const normalizedSel = useStoreValue(normalizedSelectionValue);
-  // Mention completion is driven entirely off the user roster — independent of
-  // who is actively present in the document.
-  const mentionSources = useMemo<CompletionSource[] | undefined>(() => {
-    if (!users?.length) return undefined;
-    return [
-      {
-        trigger: "@",
-        items: users.map((user) => ({ label: user.fullName ?? user.username, id: user.id })),
-      },
-    ];
-  }, [users]);
+  const isEditable = Boolean(onContentChanged);
+  const completionSources = useStoreValue(completionSourcesValue, users);
+  const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
+    return isEditable ? completionSources : undefined;
+  }, [completionSources, isEditable]);
+  const documentCompletions = useDocumentCompletions({
+    completionSources: documentCompletionSources,
+    enabled: isEditable,
+  });
   const userPresence = useMemo(() => joinUsersAndPresence(users, presence), [users, presence]);
   const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
-  const isEditable = Boolean(onContentChanged);
   const readCurrentState = () => store.editor.getState();
   const selectionActions = normalizeDocumintActions(actions?.selection);
   const resolveSelectedText = () => {
@@ -330,7 +330,7 @@ function DocumintHost({
     emitCommentChanged({
       kind: "added",
       comment,
-      mentionedUserIds: extractMentionedUserIds(comment.body, mentionSources),
+      mentionedUserIds: extractMentionedUserIds(comment.body, completionSources),
       thread,
       threadIndex,
     });
@@ -344,7 +344,7 @@ function DocumintHost({
       kind: "edited",
       comment,
       previousBody,
-      mentionedUserIds: extractMentionedUserIds(comment.body, mentionSources),
+      mentionedUserIds: extractMentionedUserIds(comment.body, completionSources),
       thread,
       threadIndex,
     });
@@ -469,9 +469,12 @@ function DocumintHost({
   const imageHandle = useImageHandles(renderResources);
 
   const input = useInput({
+    enableTouchKeyDown: documentCompletions.leaf !== null,
     inputRef,
     keybindings,
     onActivity: cursor.markActivity,
+    onBeforeInput: documentCompletions.handleBeforeInput,
+    onKeyDown: documentCompletions.handleKeyDown,
     onImagePaste: images.persistImage,
   });
 
@@ -602,12 +605,12 @@ function DocumintHost({
 
   /* Leaf presentation */
 
-  // Three hooks produce candidate leaves (`pointer > selection > cursor`);
-  // the host arbitrates priority, resolves the anchor, and renders one
-  // through the portaled `LeafAnchor`. See "Leaf overlay coordination" in
-  // component/AGENTS.md.
+  // Four sources produce candidate leaves (`selection > documentCompletions >
+  // pointer > cursor`); the host arbitrates priority, resolves the anchor,
+  // and renders one through the portaled `LeafAnchor`. See "Leaf overlay
+  // coordination" in component/AGENTS.md.
 
-  const activeLeaf = pointer.leaf ?? selection.leaf ?? cursor.leaf;
+  const activeLeaf = selection.leaf ?? documentCompletions.leaf ?? pointer.leaf ?? cursor.leaf;
 
   // Resolve the active leaf's anchor target into pixel geometry against
   // the prepared layout. Returns null when no leaf is active or its
@@ -636,8 +639,8 @@ function DocumintHost({
     const scrollContainerBounds = scrollContainerRef.current?.getBoundingClientRect();
     const hostScrollX = typeof window !== "undefined" ? window.scrollX : 0;
     const hostScrollY = typeof window !== "undefined" ? window.scrollY : 0;
-    // `pointer.leaf` always wins priority, so when it's the active leaf,
-    // reference equality picks out the hover case.
+    // Reference equality picks out the hover case when pointer arbitration
+    // leaves it active.
     const isHoverLeaf = activeLeaf === pointer.leaf;
 
     return {
@@ -700,15 +703,10 @@ function DocumintHost({
           <LinkLeaf
             canEdit={isEditable}
             onDelete={() => {
-              removeLinkCommand(activeLeaf.regionId, activeLeaf.startOffset, activeLeaf.endOffset);
+              removeLinkCommand(activeLeaf);
             }}
             onSave={(url) => {
-              updateLinkCommand(
-                activeLeaf.regionId,
-                activeLeaf.startOffset,
-                activeLeaf.endOffset,
-                url,
-              );
+              updateLinkCommand(activeLeaf, url);
             }}
             title={activeLeaf.title}
             url={activeLeaf.url}
@@ -732,7 +730,7 @@ function DocumintHost({
             canEdit={isEditable}
             link={null}
             mode="create"
-            mentionSources={mentionSources}
+            completionSources={completionSources}
             onCreateThread={(body) => {
               const currentState = readCurrentState();
               const threadIndex = getDocument(currentState).comments.length;
@@ -768,7 +766,7 @@ function DocumintHost({
             canEdit={isEditable}
             link={activeLeaf.link}
             mode="thread"
-            mentionSources={mentionSources}
+            completionSources={completionSources}
             onDeleteComment={(commentIndex) => {
               const { threadIndex } = activeLeaf;
               const previousState = readCurrentState();
@@ -813,6 +811,15 @@ function DocumintHost({
               resolveThreadCommand(activeLeaf.threadIndex, !activeLeaf.resolved);
             }}
             thread={activeLeaf.thread}
+          />
+        );
+      case "completion":
+        return (
+          <CompletionLeaf
+            activeIndex={activeLeaf.activeIndex}
+            matches={activeLeaf.matches}
+            onHover={activeLeaf.onHover}
+            onSelect={activeLeaf.onSelect}
           />
         );
     }

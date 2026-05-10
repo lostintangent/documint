@@ -22,51 +22,59 @@ import {
   addListMarkerPopAnimation,
   addPlainTextDeletionFadeAnimation,
   addPunctuationPulseAnimation,
+  clearInsertedTextHighlightAnimations,
 } from "./animations";
-import { type EditorSelection, normalizeSelection } from "./selection";
+import { normalizeSelection } from "./selection";
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "./reducer/state";
 import {
   resolveBlockById,
-  resolveBlockCommandContext,
-  resolveDeleteCommandContext,
+  resolveBlockContext,
+  resolveDeletionContext,
+  resolveInlineContext,
+  resolveInlineRangeContext,
+  resolveInlineTargetContext,
   resolveListItemContext,
   resolveTableCellContext,
+  resolveTextRangeContext,
+  type InlineContext,
+  type TableCellContext,
+  type TextRangeContext,
+  type TextRangeTarget,
 } from "./context";
 import type { EditorState, EditorStateAction } from "./types";
-import type { DocumentIndex, EditorInline } from "./index/types";
 import { createCommentThreadForSelection, getCommentState } from "../anchors";
 import {
-  type InlineRegion,
-  type InlineRegionReplacement,
   insertInlineNode,
   removeInlineLink,
-  replaceInlineRange,
-  resolveInlineRegion,
+  resolveInlineRangeReplacement,
+  resolveImageResize,
+  resolveMentionReplacement,
   toggleInlineCode,
   toggleInlineMark,
   updateInlineLinkUrl,
   wrapInlineLink,
+  type ImageResizeTarget,
 } from "./actions/inlines";
-import { selectedNodePath, spliceRegionInlines } from "./actions/inlines/shared";
 import {
   createImage,
   createLineBreak,
+  createMention,
   deleteCommentFromThread,
   editCommentInThread,
+  extractPlainTextFromFragment,
+  extractPlainTextFromInlineNodes,
   markCommentThreadAsResolved as markThreadResolved,
   replyToCommentThread as appendThreadReply,
   type CommentThread,
+  type Fragment,
+  type Mark,
 } from "@/document";
 import { resolveCharacterDelete } from "./actions/deletion/character";
 import { resolveTextInsertion } from "./actions/insertion";
 import { resolveLineBreakAction } from "./actions/insertion/line-break";
+import { resolveTextRangeReplacement, resolveTextReplacement } from "./actions/insertion/replace";
 import { applyFragment, extractFragment } from "./fragment";
 import { resolveFragmentDestinationContext } from "./fragment/context";
-import {
-  extractPlainTextFromFragment,
-  extractPlainTextFromInlineNodes,
-  type Fragment,
-} from "@/document";
 import {
   resolveListItemDedent,
   resolveListItemIndent,
@@ -98,32 +106,29 @@ export const insertText = makeCommand(
         return addPunctuationPulseAnimation(nextState);
       }
 
-      return addInsertedTextHighlightAnimation(nextState, text.length);
+      return addInsertedTextHighlightAnimation(nextState, text);
     },
   },
 );
 
-export const insertLineBreak = makeCommand(
-  (state, ctx) => resolveLineBreakAction(state.documentIndex, state.selection, ctx),
-  {
-    context: resolveBlockCommandContext,
-    animate: (_, nextState, action) => {
-      if (action.kind !== "replace-block" || !action.listItemInsertedPath) {
-        return;
-      }
+export const insertLineBreak = makeCommand(resolveLineBreakAction, {
+  context: resolveBlockContext,
+  animate: (_, nextState, action) => {
+    if (action.kind !== "replace-block" || !action.listItemInsertedPath) {
+      return;
+    }
 
-      return addListMarkerPopAnimation(nextState, action.listItemInsertedPath);
-    },
+    return addListMarkerPopAnimation(nextState, action.listItemInsertedPath);
   },
-);
+});
 
-// Inserts an inline LineBreak at the caret (the Shift+Enter gesture). The
-// inline-region path mirrors `insertImage` — both are single-inline inserts
-// at the selection — and falls back to a literal `\n` splice for source-
-// text regions (code blocks, raw blocks) where no inline tree exists.
+// Inserts an inline LineBreak at the caret (the Shift+Enter gesture). This
+// mirrors `insertImage` — both are single-inline inserts at the selection —
+// and falls back to a literal `\n` splice for source-text regions (code
+// blocks, raw blocks) where no inline tree exists.
 export const insertSoftLineBreak = makeCommand(
   (state) =>
-    insertInlineNode(state.documentIndex, state.selection, (path) => createLineBreak({ path })) ?? {
+    insertSoftLineBreakInline(state) ?? {
       kind: "splice-text",
       selection: state.selection,
       text: "\n",
@@ -131,19 +136,32 @@ export const insertSoftLineBreak = makeCommand(
 );
 
 export const replaceSelection = makeCommand(
-  (state, text: string): EditorStateAction => ({
-    kind: "splice-text",
-    selection: state.selection,
-    text,
-  }),
+  (state, text: string): EditorStateAction => resolveTextReplacement(state.selection, text),
   {
     animate: (_prevState, nextState, _action, text) => {
-      if (text.length > 0) {
-        return addInsertedTextHighlightAnimation(nextState, text.length);
-      }
+      return animateInsertedText(nextState, text);
     },
   },
 );
+
+export const replaceTextRange = makeCommand(
+  (
+    context: TextRangeContext,
+    _startOffset: number,
+    _endOffset: number,
+    text: string,
+  ): EditorStateAction => resolveTextRangeReplacement(context, text),
+  {
+    context: (state, startOffset: number, endOffset: number) =>
+      resolveTextRangeContext(state, startOffset, endOffset),
+    animate: (_prevState, nextState, _action, _startOffset, _endOffset, text) =>
+      animateInsertedText(clearInsertedTextHighlightAnimations(nextState), text),
+  },
+);
+
+function animateInsertedText(nextState: EditorState, text: string) {
+  return text.length > 0 ? addInsertedTextHighlightAnimation(nextState, text) : undefined;
+}
 
 export const deleteSelection = (state: EditorState) => replaceSelection(state, "");
 
@@ -194,8 +212,10 @@ export function pasteFragment(
   const result = applyFragment(state, fragment);
 
   if (result) {
-    const insertedLength = inlineInsertionLength(fragment);
-    return insertedLength > 0 ? addInsertedTextHighlightAnimation(result, insertedLength) : result;
+    const insertedText = inlineInsertionText(fragment);
+    return insertedText.length > 0
+      ? addInsertedTextHighlightAnimation(result, insertedText)
+      : result;
   }
 
   // applyFragment refused. Empty `text` payloads silently no-op; opaque
@@ -207,22 +227,22 @@ export function pasteFragment(
   return pasteIntoOpaqueRoot(state, fragment, verbatimFallback);
 }
 
-// The number of characters the paste landed inline in the destination
-// region. For `text` and `inlines`, that's the whole payload. For a
-// single-paragraph block fragment, it's the paragraph's text — the seam
-// merge absorbs it into the destination block's run. Multi-block
-// fragments cross block boundaries (the active-block flash takes over)
-// so they report 0 — no inline highlight.
-function inlineInsertionLength(fragment: Fragment): number {
+// The text that paste landed inline in the destination region. For `text`
+// and `inlines`, that's the whole payload. For a single-paragraph block
+// fragment, it's the paragraph's text — the seam merge absorbs it into the
+// destination block's inline content. Multi-block fragments cross block
+// boundaries (the active-block flash takes over) so they report empty text
+// — no inline highlight.
+function inlineInsertionText(fragment: Fragment): string {
   switch (fragment.kind) {
     case "text":
-      return fragment.text.length;
+      return fragment.text;
     case "inlines":
-      return extractPlainTextFromInlineNodes(fragment.inlines).length;
+      return extractPlainTextFromInlineNodes(fragment.inlines);
     case "blocks":
       return fragment.blocks.length === 1 && fragment.blocks[0]!.type === "paragraph"
-        ? fragment.blocks[0]!.plainText.length
-        : 0;
+        ? fragment.blocks[0]!.plainText
+        : "";
   }
 }
 
@@ -268,75 +288,72 @@ export function selectAll(state: EditorState): EditorState {
 
 // --- Inline formatting ---
 
-export const toggleBold = (state: EditorState) => toggleMark(state, "bold");
+export const toggleBold = createToggleMarkCommand("bold");
 
-export const toggleItalic = (state: EditorState) => toggleMark(state, "italic");
+export const toggleItalic = createToggleMarkCommand("italic");
 
-export const toggleStrikethrough = (state: EditorState) => toggleMark(state, "strikethrough");
+export const toggleStrikethrough = createToggleMarkCommand("strikethrough");
 
-export const toggleUnderline = (state: EditorState) => toggleMark(state, "underline");
+export const toggleUnderline = createToggleMarkCommand("underline");
 
-export const toggleCode = (state: EditorState) => applyInlineSelectionEdit(state, toggleInlineCode);
+export const toggleCode = makeCommand(
+  (context: InlineContext) => resolveInlineRangeReplacement(context, toggleInlineCode),
+  { context: resolveInlineContext },
+);
 
 // --- Links ---
 
 export const updateLink = makeCommand(
-  (state: EditorState, regionId: string, startOffset: number, endOffset: number, url: string) =>
-    replaceInlineRange(
-      state.documentIndex,
-      regionId,
-      startOffset,
-      endOffset,
-      (region, start, end) => updateInlineLinkUrl(region, start, end, url),
+  (context: InlineContext, _target: TextRangeTarget, url: string) =>
+    resolveInlineRangeReplacement(context, (region, start, end) =>
+      updateInlineLinkUrl(region, start, end, url),
     ),
+  { context: resolveInlineTargetContext },
 );
 
 export const removeLink = makeCommand(
-  (state: EditorState, regionId: string, startOffset: number, endOffset: number) =>
-    replaceInlineRange(state.documentIndex, regionId, startOffset, endOffset, removeInlineLink),
+  (context: InlineContext, _target: TextRangeTarget) =>
+    resolveInlineRangeReplacement(context, removeInlineLink),
+  { context: resolveInlineTargetContext },
 );
 
-export const insertLink = (state: EditorState, url: string) =>
-  applyInlineSelectionEdit(state, (region, start, end) => wrapInlineLink(region, start, end, url));
+export const insertLink = makeCommand(
+  (context: InlineContext, url: string) =>
+    resolveInlineRangeReplacement(context, (region, start, end) =>
+      wrapInlineLink(region, start, end, url),
+    ),
+  { context: resolveInlineContext },
+);
 
-// --- Images ---
+// --- Inline objects ---
 
-export const insertImage = makeCommand((state, url: string, alt?: string) =>
-  insertInlineNode(state.documentIndex, state.selection, (path) =>
-    createImage({ alt: alt ?? null, path, url }),
-  ),
+export const insertImage = makeCommand(
+  (context: InlineContext, url: string, alt?: string) =>
+    insertInlineNode(context, createImage({ alt: alt ?? null, url })),
+  { context: resolveInlineContext },
+);
+
+export const insertMention = makeCommand(
+  (context: InlineContext, userId: string, name: string) =>
+    insertInlineNode(context, createMention({ name, userId })),
+  { context: resolveInlineContext },
+);
+
+export const replaceTextRangeWithMention = makeCommand(
+  (
+    context: InlineContext,
+    _target: TextRangeTarget,
+    userId: string,
+    name: string,
+    trailingText: string = "",
+  ): EditorStateAction => resolveMentionReplacement(context, userId, name, trailingText),
+  { context: resolveInlineTargetContext },
 );
 
 export const resizeImage = makeCommand(
-  (
-    state: EditorState,
-    regionId: string,
-    run: { start: number; end: number; image: NonNullable<EditorInline["image"]> },
-    newWidth: number,
-  ): EditorStateAction | null => {
-    const inlineRegion = resolveInlineRegion(state.documentIndex, regionId);
-
-    if (!inlineRegion) {
-      return null;
-    }
-
-    const { image } = run;
-    const replacement = spliceRegionInlines(inlineRegion, run.start, run.end, [
-      createImage({
-        alt: image.alt,
-        path: selectedNodePath(inlineRegion),
-        title: image.title,
-        url: image.url,
-        width: newWidth,
-      }),
-    ]);
-
-    return {
-      kind: "replace-block",
-      block: replacement.block,
-      blockId: replacement.blockId,
-    };
-  },
+  (context: InlineContext, inline: ImageResizeTarget, newWidth: number): EditorStateAction =>
+    resolveImageResize(context.inlineContainer, inline, newWidth),
+  { context: resolveInlineContext },
 );
 
 // --- History ---
@@ -348,44 +365,44 @@ export const redo = (state: EditorState) => redoEditorState(state);
 // --- Structural operations (indent / dedent) ---
 
 export const indent = makeCommand(
-  (state, ctx) => {
+  (ctx) => {
     switch (ctx.kind) {
       case "tableCell":
-        return resolveTableSelectionMove(state.documentIndex, state.selection, ctx, 1);
+        return resolveTableSelectionMove(ctx, 1);
       case "rootTextBlock":
-        return resolveHeadingDepthShift(ctx, 1, state.selection.focus.offset);
+        return resolveHeadingDepthShift(ctx, 1);
       case "listItem":
         return resolveListItemIndent(ctx);
       default:
         return null;
     }
   },
-  { context: resolveBlockCommandContext },
+  { context: resolveBlockContext },
 );
 
 export const dedent = makeCommand(
-  (state, ctx) => {
+  (ctx) => {
     switch (ctx.kind) {
       case "tableCell":
-        return resolveTableSelectionMove(state.documentIndex, state.selection, ctx, -1);
+        return resolveTableSelectionMove(ctx, -1);
       case "rootTextBlock":
-        return resolveHeadingDepthShift(ctx, -1, state.selection.focus.offset);
+        return resolveHeadingDepthShift(ctx, -1);
       case "listItem":
         return resolveListItemDedent(ctx);
       default:
         return null;
     }
   },
-  { context: resolveBlockCommandContext },
+  { context: resolveBlockContext },
 );
 
 // --- Lists & tasks ---
 
-export const moveListItemUp = makeCommand((_, ctx) => resolveListItemMove(ctx, -1), {
+export const moveListItemUp = makeCommand((ctx) => resolveListItemMove(ctx, -1), {
   context: resolveListItemContext,
 });
 
-export const moveListItemDown = makeCommand((_, ctx) => resolveListItemMove(ctx, 1), {
+export const moveListItemDown = makeCommand((ctx) => resolveListItemMove(ctx, 1), {
   context: resolveListItemContext,
 });
 
@@ -410,25 +427,27 @@ export const insertTable = makeCommand((state, columnCount: number) =>
 );
 
 export const insertTableColumn = makeCommand(
-  (_, ctx, direction: "left" | "right") => resolveTableColumnInsertion(ctx, direction),
-  { context: resolveTableCellContextFromSelection },
+  (ctx: TableCellContext, direction: "left" | "right") =>
+    resolveTableColumnInsertion(ctx, direction),
+  { context: resolveTableCellContext },
 );
 
-export const deleteTableColumn = makeCommand((_, ctx) => resolveTableColumnDeletion(ctx), {
-  context: resolveTableCellContextFromSelection,
+export const deleteTableColumn = makeCommand(resolveTableColumnDeletion, {
+  context: resolveTableCellContext,
 });
 
 export const insertTableRow = makeCommand(
-  (_, ctx, direction: "above" | "below") => resolveTableRowInsertion(ctx, direction),
-  { context: resolveTableCellContextFromSelection },
+  (ctx: TableCellContext, direction: "above" | "below") =>
+    resolveTableRowInsertion(ctx, direction),
+  { context: resolveTableCellContext },
 );
 
-export const deleteTableRow = makeCommand((_, ctx) => resolveTableRowDeletion(ctx), {
-  context: resolveTableCellContextFromSelection,
+export const deleteTableRow = makeCommand(resolveTableRowDeletion, {
+  context: resolveTableCellContext,
 });
 
-export const deleteTable = makeCommand((_, ctx) => resolveTableDeletion(ctx), {
-  context: resolveTableCellContextFromSelection,
+export const deleteTable = makeCommand(resolveTableDeletion, {
+  context: resolveTableCellContext,
 });
 
 // --- Comments ---
@@ -486,7 +505,7 @@ type CommandResult<R extends EditorStateAction | null> = [Extract<R, null>] exte
   ? EditorState
   : EditorState | null;
 
-type ContextResolver<C> = (documentIndex: DocumentIndex, selection: EditorSelection) => C | null;
+type ContextResolver<C, A extends unknown[] = []> = (state: EditorState, ...args: A) => C | null;
 
 // Optional post-dispatch hook used to layer presentation effects (typically
 // an animation) on top of the freshly-dispatched state. Return a new
@@ -499,38 +518,57 @@ type CommandAnimator<A extends unknown[] = []> = (
   ...args: A
 ) => EditorState | void;
 
-type CommandOptions<C = never, A extends unknown[] = []> = {
+type CommandOptions<A extends unknown[] = []> = {
   animate?: CommandAnimator<A>;
-  context?: ContextResolver<C>;
 };
 
+type ContextCommandOptions<C, A extends unknown[] = []> = CommandOptions<A> & {
+  context: ContextResolver<C, A>;
+};
+
+type StateActionResolver<A extends unknown[], R extends EditorStateAction | null> = (
+  state: EditorState,
+  ...args: A
+) => R;
+
+type ContextActionResolver<C, A extends unknown[], R extends EditorStateAction | null> = (
+  context: C,
+  ...args: A
+) => R;
+
+function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
+  resolveAction: (context: C, ...args: A) => R,
+  options: ContextCommandOptions<C, A>,
+): (state: EditorState, ...args: A) => CommandResult<R>;
 function makeCommand<A extends unknown[], R extends EditorStateAction | null>(
-  resolveAction: (state: EditorState, ...args: A) => R,
-  options?: CommandOptions<never, A>,
+  resolveAction: StateActionResolver<A, R>,
+  options?: CommandOptions<A>,
 ): (state: EditorState, ...args: A) => CommandResult<R>;
 function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
-  resolveAction: (state: EditorState, context: C, ...args: A) => R,
-  options: CommandOptions<C, A> & { context: ContextResolver<C> },
-): (state: EditorState, ...args: A) => CommandResult<R>;
-function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
-  resolveAction: (state: EditorState, ...rest: unknown[]) => R,
-  options?: CommandOptions<C, A>,
+  resolveAction: StateActionResolver<A, R> | ContextActionResolver<C, A, R>,
+  options?: CommandOptions<A> | ContextCommandOptions<C, A>,
 ): (state: EditorState, ...args: A) => CommandResult<R> {
   return ((state: EditorState, ...args: A) => {
-    const prefix: unknown[] = [];
+    const action =
+      options && "context" in options
+        ? resolveContextAction(resolveAction, options, state, args)
+        : (resolveAction as StateActionResolver<A, R>)(state, ...args);
 
-    if (options?.context) {
-      const context = options.context(state.documentIndex, state.selection);
-      if (!context) return null;
-      prefix.push(context);
-    }
-
-    const action = resolveAction(state, ...prefix, ...args);
     if (!action) return null;
 
     const nextState = dispatch(state, action);
     return options?.animate?.(state, nextState, action, ...args) ?? nextState;
   }) as (state: EditorState, ...args: A) => CommandResult<R>;
+}
+
+function resolveContextAction<C, A extends unknown[], R extends EditorStateAction | null>(
+  resolveAction: StateActionResolver<A, R> | ContextActionResolver<C, A, R>,
+  options: ContextCommandOptions<C, A>,
+  state: EditorState,
+  args: A,
+): R | null {
+  const context = options.context(state, ...args);
+  return context ? (resolveAction as ContextActionResolver<C, A, R>)(context, ...args) : null;
 }
 
 function makePipelineCommand<A extends unknown[]>(
@@ -549,55 +587,31 @@ function makePipelineCommand<A extends unknown[]>(
   };
 }
 
-function resolveTableCellContextFromSelection(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-) {
-  return resolveTableCellContext(documentIndex, selection.focus.regionId);
-}
-
 function deleteExpandedSelectionStage(state: EditorState) {
   return hasExpandedSelection(state) ? deleteSelection(state) : null;
 }
 
 function deleteStructuralStage(state: EditorState, direction: "backward" | "forward") {
-  const ctx = resolveDeleteCommandContext(state.documentIndex, state.selection, direction);
+  const ctx = resolveDeletionContext(state, direction);
 
   return dispatch(state, resolveStructuralDelete(state.documentIndex, ctx));
 }
 
-function toggleMark(state: EditorState, mark: "italic" | "bold" | "strikethrough" | "underline") {
-  return applyInlineSelectionEdit(state, (inlineRegion, startOffset, endOffset) =>
-    toggleInlineMark(inlineRegion, startOffset, endOffset, mark),
-  );
+function insertSoftLineBreakInline(state: EditorState) {
+  const context = resolveInlineContext(state);
+
+  return context ? insertInlineNode(context, createLineBreak()) : null;
 }
 
-function applyInlineSelectionEdit(
-  state: EditorState,
-  applyEdit: (
-    inlineRegion: InlineRegion,
-    startOffset: number,
-    endOffset: number,
-  ) => InlineRegionReplacement | null,
-) {
-  const selection = normalizeSelection(state.documentIndex, state.selection);
+type ToggleMark = Extract<Mark, "italic" | "bold" | "strikethrough" | "underline">;
 
-  if (
-    selection.start.regionId !== selection.end.regionId ||
-    selection.start.offset === selection.end.offset
-  ) {
-    return null;
-  }
-
-  return dispatch(
-    state,
-    replaceInlineRange(
-      state.documentIndex,
-      selection.start.regionId,
-      selection.start.offset,
-      selection.end.offset,
-      applyEdit,
-    ),
+function createToggleMarkCommand(mark: ToggleMark) {
+  return makeCommand(
+    (context: InlineContext) =>
+      resolveInlineRangeReplacement(context, (inlineContainer, startOffset, endOffset) =>
+        toggleInlineMark(inlineContainer, startOffset, endOffset, mark),
+      ),
+    { context: resolveInlineContext },
   );
 }
 

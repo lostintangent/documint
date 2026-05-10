@@ -307,6 +307,32 @@ test("routes list enter behavior and markdown task rules", () => {
   }
 
   expect(toMarkdown(taskRuleState)).toBe("- [ ] \n");
+
+  let canonicalInputState = setup("x\n");
+  const canonicalPlaceholder = canonicalInputState.documentIndex.regions[0];
+
+  if (!canonicalPlaceholder) {
+    throw new Error("Expected placeholder container");
+  }
+
+  canonicalInputState = setSelection(canonicalInputState, {
+    anchor: {
+      regionId: canonicalPlaceholder.id,
+      offset: 0,
+    },
+    focus: {
+      regionId: canonicalPlaceholder.id,
+      offset: canonicalPlaceholder.text.length,
+    },
+  });
+
+  const canonicalTaskRuleState = insertText(canonicalInputState, "- [ ] ");
+
+  if (!canonicalTaskRuleState || "documentIndex" in canonicalTaskRuleState === false) {
+    throw new Error("Expected canvas state from canonical task rule");
+  }
+
+  expect(toMarkdown(canonicalTaskRuleState)).toBe("- [ ] \n");
 });
 
 test("creates unordered, ordered, and task lists from lightweight markdown triggers", () => {

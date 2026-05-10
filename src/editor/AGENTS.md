@@ -4,7 +4,7 @@ This sub-system owns the framework-agnostic editing engine. Its internal pipelin
 
 `Document -> EditorState -> EditorLayoutState -> canvas 2D drawing calls`
 
-Five subsystems sit on that pipeline. **State** owns the projection from `Document` to `EditorState` and all editing mutations. **Navigation** translates keyboard intent into selection updates. **Layout** turns `EditorState` into positioned geometry packaged as `EditorLayoutState`. **Canvas** paints from that geometry. **Anchors** keeps content-addressable positions (comment threads, presence cursors) live across edits, sitting alongside the pipeline rather than inside it.
+Six subsystems sit on that pipeline. **State** owns the projection from `Document` to `EditorState` and all editing mutations. **Navigation** translates keyboard intent into selection updates. **Layout** turns `EditorState` into positioned geometry packaged as `EditorLayoutState`. **Canvas** paints from that geometry. **Anchors** keeps content-addressable positions (comment threads, presence cursors) live across edits, sitting alongside the pipeline rather than inside it. **Text** owns pure text semantics that multiple subsystems must agree on, such as grapheme boundaries and marked font-string resolution.
 
 The important boundary is that `src/editor` owns the capabilities in that pipeline, while [`src/component`](../component/AGENTS.md) owns orchestration of when they run. In other words:
 
@@ -24,3 +24,5 @@ The important boundary is that `src/editor` owns the capabilities in that pipeli
 - **Canvas** ([`canvas/`](canvas/AGENTS.md)) - Owns canvas-specific code: immediate-mode painting from prepared layout plus editor/runtime inputs (selection, comments, presence, animations, theme), and shared canvas-measurement primitives (font metrics, prepared-text cache) that both paint and layout consume. Includes `paintContent` and `paintOverlay` wrappers that translate `EditorLayoutState` into raw paint params.
 
 - **Anchors** ([`anchors/`](anchors/AGENTS.md)) - Owns editor-side runtime support for the document layer's anchor algebra: projecting persisted comment threads against the current snapshot, resolving host-provided presence cursors, and edit-time offset remap that keeps anchored state sticky during inline edits.
+
+- **Text** ([`text/`](text/AGENTS.md)) - Owns pure text semantics shared by multiple editor subsystems. Grapheme helpers keep layout measurement, navigation, and deletion aligned on user-visible character boundaries; font helpers keep layout measurement and canvas painting aligned on mark-derived font strings. Single-owner text policy stays with that owner until it becomes shared editor semantics.

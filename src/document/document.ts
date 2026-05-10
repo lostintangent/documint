@@ -132,7 +132,7 @@ function replaceBlockInTree(
   switch (block.type) {
     case "blockquote": {
       const nextChildren = replaceBlockInChildren(block.children, targetBlockId, replacer);
-      return nextChildren ? createBlockquoteBlock({ children: nextChildren }) : null;
+      return nextChildren ? createBlockquoteBlock(nextChildren) : null;
     }
     case "listItem": {
       const nextChildren = replaceBlockInChildren(block.children, targetBlockId, replacer);
@@ -178,6 +178,8 @@ export function extractPlainTextFromInlineNodes(nodes: Inline[]): string {
           return "\n";
         case "image":
           return node.alt ?? "";
+        case "mention":
+          return `@${node.name}`;
         case "code":
           return node.code;
         case "link":
@@ -283,7 +285,7 @@ export function replaceBlockChildren(block: Block, children: Block[]): Block | n
 
   switch (block.type) {
     case "blockquote":
-      return createBlockquoteBlock({ children });
+      return createBlockquoteBlock(children);
     case "list":
       return rebuildListBlock(block, children as ListItemBlock[]);
     case "listItem":
@@ -454,6 +456,13 @@ function normalizeInlineNode(node: Inline, path: string): Inline {
         type: "image",
         url: node.url,
         width: node.width,
+      };
+    case "mention":
+      return {
+        id: nodeId("mention", path, `${node.userId}:${node.name}`),
+        name: node.name,
+        type: "mention",
+        userId: node.userId,
       };
     case "code":
       return {

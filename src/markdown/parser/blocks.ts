@@ -149,9 +149,7 @@ function readBlockquote(cursor: MarkdownLineCursor, baseIndent: number, options:
     cursor.index += 1;
   }
 
-  return createBlockquoteBlock({
-    children: parseBlocks({ index: 0, lines: strippedLines }, 0, options),
-  });
+  return createBlockquoteBlock(parseBlocks({ index: 0, lines: strippedLines }, 0, options));
 }
 
 function readFencedCode(cursor: MarkdownLineCursor, baseIndent: number) {
@@ -380,7 +378,7 @@ function parseListItemChildren(lines: string[], options: MarkdownOptions) {
     return blocks;
   }
 
-  return [createParagraphBlock({ children: [] })];
+  return [createParagraphBlock([])];
 }
 
 function readRawHtmlBlock(cursor: MarkdownLineCursor, baseIndent: number) {
@@ -422,9 +420,7 @@ function readParagraph(cursor: MarkdownLineCursor, baseIndent: number) {
     cursor.index += 1;
   }
 
-  return createParagraphBlock({
-    children: parseInlineMarkdown(lines.join(lineFeed)),
-  });
+  return createParagraphBlock(parseInlineMarkdown(lines.join(lineFeed)));
 }
 
 function shouldParagraphStop(line: string, content: string, baseIndent: number) {

@@ -9,9 +9,10 @@
 // selection context from the resulting state.
 
 import { findBlockById, getBlockChildren, type Block, type Mark } from "@/document";
-import type { DocumentIndex, EditorInline } from "./index/types";
+import type { DocumentIndex, EditorInline, EditorRegion } from "./index/types";
 import type { EditorState } from "./types";
-import { resolveInlineMarks, resolveInlineRegionFromBlock } from "./actions/inlines";
+import { resolveInlineMarks } from "./actions/inlines/marks";
+import { resolveInlineContainerFromBlock } from "./context";
 import { createTableCellRegionKey, SELECTION_ORDER_MULTIPLIER } from "./index/shared";
 
 export type EditorSelectionPoint = {
@@ -173,6 +174,44 @@ export function resolveRegion(documentIndex: DocumentIndex, regionId: string) {
   return documentIndex.regionIndex.get(regionId) ?? null;
 }
 
+export type ResolvedRegionRange = {
+  endOffset: number;
+  region: EditorRegion;
+  selection: EditorSelection;
+  startOffset: number;
+};
+
+export function resolveRegionRange(
+  documentIndex: DocumentIndex,
+  regionId: string,
+  startOffset: number,
+  endOffset: number,
+  options: { allowCollapsed?: boolean } = {},
+): ResolvedRegionRange | null {
+  const region = resolveRegion(documentIndex, regionId);
+
+  if (!region || startOffset > endOffset) {
+    return null;
+  }
+
+  const start = clampOffset(startOffset, region.text.length);
+  const end = clampOffset(endOffset, region.text.length);
+
+  if (start === end && options.allowCollapsed !== true) {
+    return null;
+  }
+
+  return {
+    endOffset: end,
+    region,
+    selection: {
+      anchor: { regionId, offset: start },
+      focus: { regionId, offset: end },
+    },
+    startOffset: start,
+  };
+}
+
 export function resolveRegionByPath(documentIndex: DocumentIndex, path: string) {
   return documentIndex.regionPathIndex.get(path) ?? null;
 }
@@ -188,6 +227,10 @@ export function resolveTableCellRegion(
   );
 
   return regionId ? (documentIndex.regionIndex.get(regionId) ?? null) : null;
+}
+
+function clampOffset(offset: number, length: number) {
+  return Math.max(0, Math.min(offset, length));
 }
 
 // Step one position backward / forward through the flat document-order
@@ -531,10 +574,32 @@ export type SelectionContext = {
   span: SelectionSpanContext;
 };
 
+export type CaretTextContext = {
+  offset: number;
+  regionId: string;
+  text: string;
+};
+
+export function getCaretTextContext(state: EditorState): CaretTextContext | null {
+  if (!isSelectionCollapsed(state.selection)) {
+    return null;
+  }
+
+  const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+
+  return region
+    ? {
+        offset: state.selection.focus.offset,
+        regionId: region.id,
+        text: region.text,
+      }
+    : null;
+}
+
 export function getSelectionContext(state: EditorState): SelectionContext {
   const container = state.documentIndex.regionIndex.get(state.selection.anchor.regionId) ?? null;
   const block = container ? (state.documentIndex.blockIndex.get(container.blockId) ?? null) : null;
-  const run = resolveInlineAtAnchor(state);
+  const inline = resolveInlineAtAnchor(state);
 
   return {
     block: block
@@ -545,17 +610,17 @@ export function getSelectionContext(state: EditorState): SelectionContext {
           text: container?.text ?? "",
         }
       : null,
-    span: run?.link
-      ? { kind: "link", url: run.link.url }
-      : run && run.marks.length > 0
-        ? { kind: "marks", marks: run.marks }
+    span: inline?.link
+      ? { kind: "link", url: inline.link.url }
+      : inline && inline.marks.length > 0
+        ? { kind: "marks", marks: inline.marks }
         : { kind: "none" },
   };
 }
 
 export function resolveImageAtSelection(state: EditorState): EditorInline | null {
-  const run = resolveInlineAtAnchor(state);
-  return run?.kind === "image" ? run : null;
+  const inline = resolveInlineAtAnchor(state);
+  return inline?.kind === "image" ? inline : null;
 }
 
 export function getSelectionRange(state: EditorState): EditorSelectionRange | null {
@@ -594,10 +659,14 @@ export function getSelectionMarks(state: EditorState): Mark[] {
     return [];
   }
 
-  const inlineRegion = resolveInlineRegionFromBlock(block, region.path, region.semanticRegionId);
+  const inlineContainer = resolveInlineContainerFromBlock(
+    block,
+    region.path,
+    region.semanticRegionId,
+  );
 
-  return inlineRegion
-    ? resolveInlineMarks(inlineRegion, selectionRange.startOffset, selectionRange.endOffset)
+  return inlineContainer
+    ? resolveInlineMarks(inlineContainer, selectionRange.startOffset, selectionRange.endOffset)
     : [];
 }
 

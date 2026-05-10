@@ -18,8 +18,8 @@ import {
 } from "../../selection";
 import {
   replaceListItemLeadingParagraphText,
-  resolveListItemContext,
-  resolveRootTextBlockContext,
+  resolveListItemContextFromSelection,
+  resolveRootTextBlockContextFromSelection,
   type ListItemContext,
 } from "../../context";
 
@@ -108,10 +108,10 @@ function resolveTriggerContext(
   // further work.
   switch (region.blockType) {
     case "heading": {
-      // Confirm the heading is at root level — `resolveRootTextBlockContext`
+      // Confirm the heading is at root level — `resolveRootTextBlockContextFromSelection`
       // returns null for non-root blocks (e.g. nested in containers), and
       // a non-root heading has no sensible depth-change transform.
-      const rootBlock = resolveRootTextBlockContext(documentIndex, selection);
+      const rootBlock = resolveRootTextBlockContextFromSelection(documentIndex, selection);
       return rootBlock?.block.type === "heading"
         ? { kind: "heading", rootIndex: rootBlock.rootIndex }
         : null;
@@ -119,11 +119,11 @@ function resolveTriggerContext(
     case "paragraph": {
       // Try list-item first: the cursor inside a list item's paragraph
       // wouldn't surface via the root-text-block resolver anyway.
-      const listItem = resolveListItemContext(documentIndex, selection);
+      const listItem = resolveListItemContextFromSelection(documentIndex, selection);
       if (listItem) {
         return { kind: "list-item", item: listItem };
       }
-      const rootBlock = resolveRootTextBlockContext(documentIndex, selection);
+      const rootBlock = resolveRootTextBlockContextFromSelection(documentIndex, selection);
       return rootBlock?.block.type === "paragraph"
         ? { kind: "root-paragraph", rootIndex: rootBlock.rootIndex }
         : null;
@@ -193,22 +193,24 @@ function matchAndApply<C>(
 
 // ---- Trigger definitions ---------------------------------------------------
 
-// Each pattern anchors on a distinct leading character (`#`, `[-+*]`,
-// digit, `[`, `>`, `-`), so the patterns are mutually exclusive and
-// the order within this list is just for readability.
+// Most patterns anchor on a distinct leading character (`#`, `[-+*]`,
+// digit, `[`, `>`, `-`), so the order within this list is mostly for
+// readability. Task-list supports both the lightweight `[ ] ` trigger
+// and the canonical markdown `- [ ] ` form that bulk insertions use, so
+// it must run before bullet-list.
 //
-// Task-list deliberately does NOT include a leading `[-+*]` marker:
-// bullet-list would always pre-empt it on the per-keystroke path
-// (typing `- ` triggers bullet creation before you can finish typing
-// `- [ ] `). Anchoring task on the bracket lets it stand on its own.
+// Per-keystroke task-list creation still uses the bracket form: typing
+// `- ` creates a bullet list before you can finish typing `- [ ] `.
+// Bulk insertion can provide the full canonical marker at once.
 //
 // Thematic break only triggers on `---` (the canonical form the
 // serializer emits) even though the parser also accepts `***` and
 // `___` for interop. New documents should converge on one syntax.
 const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
   {
-    // Task list: `[ ] ` / `[x] ` / `[]` (with optional leading indent).
-    pattern: compileCreatePattern(/\[[ xX]?\]/, { allowIndent: true }),
+    // Task list: `[ ] ` / `[x] ` / `[]` or `- [ ] ` / `- [x] ` / `- []`
+    // (with optional leading indent).
+    pattern: compileCreatePattern(/(?:[-+*]\s+)?\[[ xX]?\]/, { allowIndent: true }),
     apply: (match, { rootIndex }) =>
       createListAction(rootIndex, {
         checked: match[1]!.toLowerCase().includes("x"),
@@ -252,7 +254,7 @@ const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
     pattern: compileCreatePattern(/>/, { allowIndent: false }),
     apply: (_, { rootIndex }) => ({
       kind: "splice-blocks",
-      blocks: [createBlockquoteBlock({ children: [createParagraphTextBlock({ text: "" })] })],
+      blocks: [createBlockquoteBlock([createParagraphTextBlock("")])],
       rootIndex,
       selection: createDescendantPrimaryRegionTarget(rootIndex, [0]),
     }),
@@ -262,7 +264,7 @@ const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
     pattern: compileCreatePattern(/---/, { allowIndent: false }),
     apply: (_, { rootIndex }) => ({
       kind: "splice-blocks",
-      blocks: [createDividerBlock(), createParagraphTextBlock({ text: "" })],
+      blocks: [createDividerBlock(), createParagraphTextBlock("")],
       rootIndex,
       selection: createRootPrimaryRegionTarget(rootIndex + 1),
     }),
@@ -348,7 +350,7 @@ function createListAction(
         items: [
           createListItemBlock({
             checked: options.checked,
-            children: [createParagraphTextBlock({ text: "" })],
+            children: [createParagraphTextBlock("")],
             spread: false,
           }),
         ],

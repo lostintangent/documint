@@ -91,15 +91,8 @@ test("supports stopping traversal once a semantic target has been found", () => 
 });
 
 test("finds nested blocks through document queries", () => {
-  const nestedParagraph = createParagraphTextBlock({
-    text: "Inside",
-  });
-  const snapshot = createDocument([
-    createBlockquoteBlock({
-      children: [nestedParagraph],
-      path: "root.0",
-    }),
-  ]);
+  const nestedParagraph = createParagraphTextBlock("Inside");
+  const snapshot = createDocument([createBlockquoteBlock([nestedParagraph])]);
   const nestedParagraphId =
     snapshot.blocks[0]?.type === "blockquote" ? snapshot.blocks[0].children[0]?.id : null;
 

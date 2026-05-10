@@ -229,7 +229,7 @@ function createState(markdown: string) {
 function insertTransientEmptyRootParagraph(markdown: string, rootIndex: number) {
   const state = createState(markdown);
   const nextDocument = spliceDocument(state.documentIndex.document, rootIndex, 0, [
-    createParagraphTextBlock({ text: "" }),
+    createParagraphTextBlock(""),
   ]);
   const nextState = createEditorState(nextDocument);
   const selection = resolveSelectionTarget(

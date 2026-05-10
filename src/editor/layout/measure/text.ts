@@ -6,7 +6,9 @@ import { layoutWithLines, prepareWithSegments, type PrepareOptions } from "@chen
 import type { Block, Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { EditorInline, EditorRegion } from "../../state";
+import { splitGraphemes } from "../../text/graphemes";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./image";
+import { measureInlineMentionWidth } from "./mention";
 import {
   cacheLineBoundaries,
   cacheMeasuredLines,
@@ -46,6 +48,9 @@ const headingTypographyScale = [
   { fontSize: 18, lineHeight: 26 },
 ] as const;
 
+const SANS_SERIF_STACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
 let textMeasurementContext:
   | OffscreenCanvasRenderingContext2D
   | CanvasRenderingContext2D
@@ -56,14 +61,14 @@ export function resolveTextBlockFont(block: Block | null) {
   if (block?.type === "heading") {
     const { fontSize } = resolveHeadingTypography(block.depth);
 
-    return `700 ${fontSize}px "Iowan Old Style", "Palatino Linotype", serif`;
+    return `700 ${fontSize}px ${SANS_SERIF_STACK}`;
   }
 
   switch (block?.type) {
     case "code":
       return "15px ui-monospace, SFMono-Regular, Menlo, monospace";
     default:
-      return '16px "Iowan Old Style", "Palatino Linotype", serif';
+      return `16px ${SANS_SERIF_STACK}`;
   }
 }
 
@@ -131,10 +136,6 @@ export function measureTextLineBoundaries(
 
   const context = getTextMeasurementContext();
 
-  if (!context) {
-    return createFallbackLineBoundaries(text);
-  }
-
   const boundaries: TextLineBoundary[] = [
     {
       left: 0,
@@ -166,9 +167,22 @@ export function measureTextLineBoundaries(
       continue;
     }
 
-    context.font = resolveInlineFont(font, run.marks);
+    if (context) {
+      context.font = resolveInlineFont(font, run.marks);
+    }
 
-    for (const grapheme of Array.from(segmentText)) {
+    if (isMentionInline(run)) {
+      width += measureInlineMentionWidth(context, run.mention);
+      offset += segmentText.length;
+      boundaries.push({
+        left: width,
+        offset,
+      });
+
+      continue;
+    }
+
+    for (const grapheme of splitGraphemes(segmentText)) {
       width += measureGraphemeWidth(cache, context, grapheme);
       offset += grapheme.length;
       boundaries.push({
@@ -262,7 +276,7 @@ function cursorToOffset(
   }
 
   const segment = segments[cursor.segmentIndex] ?? "";
-  const graphemes = Array.from(segment);
+  const graphemes = splitGraphemes(segment);
 
   for (let index = 0; index < cursor.graphemeIndex; index += 1) {
     offset += graphemes[index]?.length ?? 0;
@@ -281,7 +295,7 @@ function createFallbackLineBoundaries(text: string) {
   let left = 0;
   let offset = 0;
 
-  for (const grapheme of Array.from(text)) {
+  for (const grapheme of splitGraphemes(text)) {
     left += 9;
     offset += grapheme.length;
     boundaries.push({
@@ -492,9 +506,22 @@ function flattenMeasuredInlineSegments(
     if (context) {
       context.font = resolveInlineFont(font, run.marks);
     }
+
+    if (isMentionInline(run)) {
+      segments.push({
+        breakable: true,
+        end: run.end,
+        height: lineHeight,
+        start: run.start,
+        text: run.text,
+        width: measureInlineMentionWidth(context, run.mention),
+      });
+      continue;
+    }
+
     let offset = run.start;
 
-    for (const grapheme of Array.from(run.text)) {
+    for (const grapheme of splitGraphemes(run.text)) {
       const start = offset;
       const end = start + grapheme.length;
 
@@ -519,7 +546,11 @@ function requiresMeasuredInlineLayout(container: EditorRegion) {
   // that a `lineBreak` run contributes. The measured greedy line breaker
   // in `layoutSegmentsIntoLines` already honors `\n` as a forced break.
   return container.inlines.some(
-    (run) => run.kind === "image" || run.kind === "lineBreak" || runHasInlineFontMetrics(run),
+    (run) =>
+      run.kind === "image" ||
+      isMentionInline(run) ||
+      run.kind === "lineBreak" ||
+      runHasInlineFontMetrics(run),
   );
 }
 
@@ -582,6 +613,10 @@ function resolveRunMeasurementSignature(run: EditorInline, resources: DocumentRe
     return resolveInlineImageSignature(run, resources);
   }
 
+  if (isMentionInline(run)) {
+    return `${run.kind}:${run.mention.userId}:${run.mention.name}`;
+  }
+
   return `${run.kind}:${run.inlineCode ? 1 : 0}:${run.marks.join(",")}:${run.link?.url ?? ""}`;
 }
 
@@ -598,6 +633,12 @@ function hashMeasurementText(text: string) {
 
 function runHasInlineFontMetrics(run: EditorInline) {
   return run.marks.includes("italic") || run.marks.includes("bold");
+}
+
+function isMentionInline(
+  run: EditorInline,
+): run is EditorInline & { mention: NonNullable<EditorInline["mention"]> } {
+  return Boolean(run.mention);
 }
 
 function resolveInlineFont(font: string, marks: Mark[]) {

@@ -1,12 +1,12 @@
-// Owns line text rendering: the per-run text, inline code background,
+// Owns line text rendering: the per-inline text, inline code background,
 // strikethrough/underline decorations, and the two effect overlays that draw
 // directly into glyph space (deleted-text fades, punctuation pulses). Inline
-// images are drawn here too via a delegate so the run iteration stays linear.
+// images are drawn here too via a delegate so the inline iteration stays linear.
 
-import type { Mark } from "@/document";
 import { measureLineOffsetLeft, type DocumentLayout } from "../../layout";
 import type { EditorRegion } from "../../state";
 import type { DocumentResources, EditorTheme } from "@/types";
+import { resolveMarkedTextFont } from "../../text/fonts";
 import {
   resolveActiveInsertedTextHighlightForSegment,
   resolveAnimatedTextColor,
@@ -23,6 +23,8 @@ import {
   resolveCanvasFontMetrics,
 } from "../lib/fonts";
 import { paintInlineImage } from "./image";
+import { paintInlineMention } from "./mention";
+import { splitGraphemes } from "../../text/graphemes";
 
 const inlineCodeBackgroundBottomInset = 6;
 const inlineCodeBackgroundHorizontalPadding = 3;
@@ -52,19 +54,19 @@ export function paintCanvasLineText(
     return;
   }
 
-  const visibleRuns = container.inlines.filter(
-    (run) => run.end > line.start && run.start < line.end,
+  const visibleInlines = container.inlines.filter(
+    (inline) => inline.end > line.start && inline.start < line.end,
   );
 
-  if (visibleRuns.length === 0) {
+  if (visibleInlines.length === 0) {
     context.fillStyle = defaultColor;
     context.fillText(line.text, textLeft, textBaseline);
     return;
   }
 
-  for (const run of visibleRuns) {
-    const start = Math.max(line.start, run.start);
-    const end = Math.min(line.end, run.end);
+  for (const inline of visibleInlines) {
+    const start = Math.max(line.start, inline.start);
+    const end = Math.min(line.end, inline.end);
     const segmentText = container.text.slice(start, end);
 
     if (segmentText.length === 0) {
@@ -77,18 +79,23 @@ export function paintCanvasLineText(
       start,
       end,
     );
-    const runFont = resolveCanvasInlineFont(line.font, run.marks);
-    context.font = runFont;
+    const inlineFont = resolveMarkedTextFont(line.font, inline.marks);
+    context.font = inlineFont;
 
-    if (run.kind === "image") {
+    if (inline.kind === "image") {
       const imageWidth = Math.max(24, segmentRight - segmentLeft);
-      paintInlineImage(context, line, run, resources, theme, segmentLeft, imageWidth);
+      paintInlineImage(context, line, inline, resources, theme, segmentLeft, imageWidth);
       continue;
     }
 
-    if (run.kind === "code") {
-      paintInlineCodeBackground(context, line, runFont, theme, segmentLeft, segmentRight);
-      paintTextRunSegments(
+    if (inline.kind === "mention") {
+      paintInlineMention(context, line, inline, theme, segmentLeft, segmentRight);
+      continue;
+    }
+
+    if (inline.kind === "code") {
+      paintInlineCodeBackground(context, line, inlineFont, theme, segmentLeft, segmentRight);
+      paintTextInlineSegments(
         context,
         line,
         container.text,
@@ -107,7 +114,7 @@ export function paintCanvasLineText(
       continue;
     }
 
-    paintTextRunSegments(
+    paintTextInlineSegments(
       context,
       line,
       container.text,
@@ -115,18 +122,18 @@ export function paintCanvasLineText(
       textBaseline,
       start,
       end,
-      run.link ? theme.linkText : defaultColor,
+      inline.link ? theme.linkText : defaultColor,
       insertedTextHighlights,
       theme,
       {
-        strikethrough: run.marks.includes("strikethrough"),
-        underline: run.marks.includes("underline") || Boolean(run.link),
+        strikethrough: inline.marks.includes("strikethrough"),
+        underline: inline.marks.includes("underline") || Boolean(inline.link),
       },
     );
   }
 }
 
-function paintTextRunSegments(
+function paintTextInlineSegments(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   containerText: string,
@@ -146,7 +153,7 @@ function paintTextRunSegments(
     startOffset,
     endOffset,
     insertedTextHighlights,
-  );
+  ).filter((offset) => isTextGraphemeBoundary(containerText, startOffset, endOffset, offset));
 
   for (let index = 0; index < segmentBoundaries.length - 1; index += 1) {
     const segmentStart = segmentBoundaries[index]!;
@@ -196,6 +203,31 @@ function paintTextRunSegments(
       );
     }
   }
+}
+
+function isTextGraphemeBoundary(
+  text: string,
+  startOffset: number,
+  endOffset: number,
+  offset: number,
+) {
+  if (offset <= startOffset || offset >= endOffset) {
+    return true;
+  }
+
+  let cursor = startOffset;
+
+  for (const grapheme of splitGraphemes(text.slice(startOffset, endOffset))) {
+    cursor += grapheme.length;
+    if (cursor === offset) {
+      return true;
+    }
+    if (cursor > offset) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 export function paintCanvasDeletedTextFades(
@@ -306,20 +338,6 @@ function resolveCanvasTextDecorationTop(textBaseline: number, lineHeight: number
   const lineTop = textBaseline - resolveCanvasCenteredTextBaseline(lineHeight, font);
 
   return Math.min(lineTop + lineHeight - 4, glyphBottom);
-}
-
-function resolveCanvasInlineFont(font: string, marks: Mark[]) {
-  const parts: string[] = [];
-
-  if (marks.includes("italic")) {
-    parts.push("italic");
-  }
-
-  if (marks.includes("bold")) {
-    parts.push("700");
-  }
-
-  return parts.length > 0 ? `${parts.join(" ")} ${font}` : font;
 }
 
 function resolveLineSegmentBounds(

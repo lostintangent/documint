@@ -27,8 +27,7 @@ import {
   moveCaretToLineBoundary,
   moveCaretVertically,
   pasteFragment,
-  replaceSelection,
-  setSelection,
+  replaceTextRange,
   dedent,
   indent,
   moveListItemDown,
@@ -64,6 +63,15 @@ type UseInputOptions = {
 
   // Host callbacks the hook invokes.
   onActivity: () => void;
+  // Optional pre-handlers for transient UI such as completions. Return true
+  // after handling an event to prevent the editor's normal input routing.
+  //
+  // Touch-primary devices normally omit keydown to preserve iOS
+  // autocapitalization, but transient UI may need it while visible to consume
+  // Return before the OS advances sentence capitalization state.
+  enableTouchKeyDown?: boolean;
+  onBeforeInput?: (event: InputEvent) => boolean;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => boolean;
   // Invoked when the clipboard contains an image and the host has agreed
   // to persist it. Receives the pasted file (carrying blob bytes, MIME
   // type, and the originating filename when available), returns the path
@@ -173,7 +181,10 @@ const DICTATION_FLUSH_OVERLAP_THRESHOLD = 16;
 export function useInput({
   inputRef,
   keybindings,
+  enableTouchKeyDown = false,
   onActivity,
+  onBeforeInput,
+  onKeyDown,
   onImagePaste,
 }: UseInputOptions): InputController {
   /* Internal state */
@@ -393,6 +404,11 @@ export function useInput({
     }
 
     if (primingRef.current) return;
+
+    if (onBeforeInput?.(event)) {
+      return;
+    }
+
     const state = readCurrentState();
     const deleteDirection = resolveDeleteDirection(event.inputType);
 
@@ -532,6 +548,10 @@ export function useInput({
   // already consumed before beforeinput fires.
   const handleKeyDown = useEffectEvent(
     (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
+      if (onKeyDown?.(event)) {
+        return;
+      }
+
       const transition = runInputCommand(
         applyKeyboardInput,
         store.viewport.get(),
@@ -713,7 +733,7 @@ export function useInput({
     onCopy: handleCopy,
     onCut: handleCut,
     onPaste: handlePaste,
-    ...(isTouchPrimary ? {} : { onKeyDown: handleKeyDown }),
+    ...(!isTouchPrimary || enableTouchKeyDown ? { onKeyDown: handleKeyDown } : {}),
   };
 
   return {
@@ -878,7 +898,7 @@ export function stripSyncedInputPrefix(value: string, prefix: string) {
 // The caret is placed at the end so new input appends after the prefix.
 export function syncInputContext(input: HTMLTextAreaElement, state: EditorState) {
   const prefix = resolveInputPrefix(state);
-  const nextValue = `${INPUT_SEED}${prefix}`;
+  const nextValue = prefix.length > 0 ? prefix : INPUT_SEED;
 
   input.value = nextValue;
   input.setSelectionRange(nextValue.length, nextValue.length);
@@ -938,13 +958,8 @@ function replaceNativeTextCommand(
 ) {
   const focusPoint = state.selection.focus;
   const end = Math.max(0, focusPoint.offset - trailingOffset);
-  const focus = { regionId: focusPoint.regionId, offset: end };
-  const anchor = {
-    regionId: focusPoint.regionId,
-    offset: Math.max(0, end - charsToDelete),
-  };
-  const extended = setSelection(state, { anchor, focus });
-  return replaceSelection(extended, replacement);
+  const start = Math.max(0, end - charsToDelete);
+  return replaceTextRange(state, start, end, replacement);
 }
 
 function applyKeyboardInputCommand(

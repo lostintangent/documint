@@ -110,7 +110,9 @@ function resolveCanvasCaretPaintMetrics(
   caret: NonNullable<ReturnType<typeof measureCaretTarget>>,
 ) {
   const line = findLineForRegionOffset(layout, caret.regionId, caret.offset);
-  const font = line?.font ?? '16px "Iowan Old Style", "Palatino Linotype", serif';
+  const font =
+    line?.font ??
+    '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
   const { ascent, descent } = resolveCanvasFontMetrics(font);
   const glyphHeight = Math.max(1, ascent + descent);
   const height = Math.min(caret.height - caretVerticalInset, glyphHeight);

@@ -76,7 +76,7 @@ function insertTransientEmptyRootParagraph(
   rootIndex: number,
 ) {
   const nextDocument = spliceDocument(state.documentIndex.document, rootIndex, 0, [
-    createParagraphTextBlock({ text: "" }),
+    createParagraphTextBlock(""),
   ]);
   const nextState = createEditorState(nextDocument);
   const selection = resolveSelectionTarget(

@@ -74,7 +74,7 @@ export function resolveBlockDemotion(
 function demoteRootBlock(block: Block): Block[] | null {
   switch (block.type) {
     case "heading":
-      return [createParagraphBlock({ children: block.children })];
+      return [createParagraphBlock(block.children)];
     case "blockquote":
       return [...block.children];
     case "list":
@@ -99,7 +99,7 @@ function flattenListItemsToParagraphs(items: ListItemBlock[]): Block[] {
 function leadingItemAsParagraph(item: ListItemBlock): Block {
   const leading = item.children[0];
   if (leading && (leading.type === "paragraph" || leading.type === "heading")) {
-    return createParagraphBlock({ children: leading.children });
+    return createParagraphBlock(leading.children);
   }
-  return createParagraphTextBlock({ text: "" });
+  return createParagraphTextBlock("");
 }

@@ -99,6 +99,7 @@ function createInlines(
       kind: input.kind,
       link: input.link ?? null,
       marks: input.marks ?? [],
+      mention: null,
       originalType: input.originalType ?? null,
       start,
       text: input.text,

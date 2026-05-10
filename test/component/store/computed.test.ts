@@ -6,6 +6,8 @@ import {
 } from "@/component/store/core/computed";
 import {
   activeCommentThreadIndexValue,
+  completionSourcesValue,
+  documentCompletionValue,
   normalizedSelectionValue,
 } from "@/component/store/editor/computed-values";
 import { documentIndexValue, editorStateValue } from "@/component/store/editor/values";
@@ -178,6 +180,58 @@ describe("computed values", () => {
     });
     expect(presence?.viewport).toBeNull();
     expect(presenceValue.read(store, undefined)).toBeUndefined();
+  });
+
+  test("derives document completion from the active editor selection", () => {
+    const state = setup("Hello @Ja\n");
+    const store = createStore(getDocument(state));
+    const region = getRegion(store.editor.getState(), "Hello @Ja");
+    store.editor.apply(
+      setSelection(store.editor.getState(), { regionId: region.id, offset: region.text.length }),
+    );
+
+    expect(
+      documentCompletionValue.read(store, [
+        {
+          trigger: "@",
+          items: [
+            { label: "Jane", id: "u-jane" },
+            { label: "John", id: "u-john" },
+          ],
+        },
+      ]),
+    ).toEqual({
+      regionId: region.id,
+      trigger: "@",
+      query: "Ja",
+      triggerStart: 6,
+      caret: 9,
+      matches: [{ label: "Jane", id: "u-jane" }],
+    });
+  });
+
+  test("derives shared completion sources from built-ins and host users", () => {
+    const state = setup("Hello\n");
+    const store = createStore(getDocument(state));
+
+    const sources = completionSourcesValue.read(store, [
+      { id: "u-zoe", username: "zoe" },
+      { id: "u-amy", username: "amy", fullName: "Amy Adams" },
+    ]);
+
+    expect(sources[0]).toEqual({
+      trigger: "@",
+      items: [
+        { label: "Amy Adams", id: "u-amy", kind: "mention" },
+        { label: "zoe", id: "u-zoe", kind: "mention" },
+      ],
+    });
+    expect(sources[1]?.trigger).toBe(":");
+    expect(sources[1]?.items.some((item) => item.label === "sparkles")).toBe(true);
+
+    expect(completionSourcesValue.read(store, undefined).map((source) => source.trigger)).toEqual([
+      ":",
+    ]);
   });
 
   test("preserves parameterized presence output when resolved semantics are equal", () => {

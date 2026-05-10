@@ -5,7 +5,9 @@ import {
   deleteBackward,
   deleteForward,
   insertImage,
+  insertMention,
   insertSoftLineBreak,
+  replaceTextRangeWithMention,
   resizeImage,
   toggleBold,
   toggleCode,
@@ -213,14 +215,74 @@ describe("Images", () => {
       throw new Error("Expected image run");
     }
 
+    const placed = placeAt(state, region, imageRun.start);
     const next = resizeImage(
-      state,
-      region.id,
+      placed,
       { start: imageRun.start, end: imageRun.end, image: imageRun.image },
       320,
     );
 
     expect(next).not.toBeNull();
     expect(toMarkdown(next!)).toContain("![alt](https://example.com/img.png)");
+  });
+});
+
+describe("Mentions", () => {
+  test("inserts a user mention inline at the current caret position", () => {
+    const base = setup("Hello \n");
+    const region = getRegion(base, "Hello ");
+    const placed = placeAt(base, region, "end");
+    const next = insertMention(placed, "user-123", "Jane Doe");
+
+    expect(next).not.toBeNull();
+    expect(toMarkdown(next!)).toBe("Hello @[Jane Doe](user-123)\n");
+  });
+
+  test("replaces an explicit text range with a user mention", () => {
+    const base = setup("Hello @ja\n");
+    const region = getRegion(base, "Hello @ja");
+    const next = replaceTextRangeWithMention(
+      base,
+      {
+        endOffset: "Hello @ja".length,
+        regionId: region.id,
+        startOffset: "Hello ".length,
+      },
+      "user-123",
+      "Jane Doe",
+    );
+
+    expect(next).not.toBeNull();
+    expect(toMarkdown(next!)).toBe("Hello @[Jane Doe](user-123)\n");
+  });
+
+  test("replaces an explicit text range with a user mention and trailing text", () => {
+    const base = setup("Hello @ja\n");
+    const region = getRegion(base, "Hello @ja");
+    const next = replaceTextRangeWithMention(
+      base,
+      {
+        endOffset: "Hello @ja".length,
+        regionId: region.id,
+        startOffset: "Hello ".length,
+      },
+      "user-123",
+      "Jane Doe",
+      " ",
+    );
+
+    expect(next).not.toBeNull();
+    expect(getRegion(next!, "Hello ￼ ").text).toBe("Hello ￼ ");
+    expect(next!.selection.focus.offset).toBe("Hello ￼ ".length);
+  });
+
+  test("deletes user mentions atomically", () => {
+    const base = setup("Hello @[Jane Doe](user-123)!\n");
+    const region = getRegion(base, "Hello ￼!");
+    const placed = placeAt(base, region, "Hello ￼".length);
+    const next = deleteBackward(placed);
+
+    expect(next).not.toBeNull();
+    expect(toMarkdown(next!)).toBe("Hello !\n");
   });
 });

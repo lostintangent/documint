@@ -10,7 +10,7 @@ The document layer also owns the **anchor algebra**: the content-addressable pos
 
 - `document.ts` - Owns canonical document operations: `createDocument(...)` for full construction, `spliceDocument(...)` for incremental root-level edits, and shared semantic helpers such as `nodeId(...)`, plain-text extraction, and block-tree accessors.
 
-- `build.ts` - Owns semantic node builders and rebuild helpers that keep semantic node shape and derived fields such as `plainText` correct for core node families.
+- `build.ts` - Owns semantic node builders and rebuild helpers that keep semantic node shape and derived fields such as `plainText` correct for core node families. Builders do not assign canonical IDs; `createDocument(...)` and `spliceDocument(...)` normalize IDs from canonical tree paths.
 
 - `visit.ts` - Owns typed semantic tree traversal: visitor types and walkers for blocks, inline nodes, and table cells, plus small queries built on the shared walker (`findBlockById`, `mapBlockTree`).
 

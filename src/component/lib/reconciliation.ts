@@ -368,7 +368,7 @@ function resolveRecreatedEmptyParagraphRootIndex(
 
 function recreateEmptyRootParagraphSelection(nextState: EditorState, rootIndex: number) {
   const nextDocument = spliceDocument(nextState.documentIndex.document, rootIndex, 0, [
-    createParagraphTextBlock({ text: "" }),
+    createParagraphTextBlock(""),
   ]);
   const restoredState = {
     ...nextState,

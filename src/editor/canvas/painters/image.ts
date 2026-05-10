@@ -6,7 +6,8 @@ import type { DocumentLayout } from "../../layout";
 
 const imageFallbackAspectRatio = 9 / 16;
 const imageMinimumHeight = 48;
-const imagePlaceholderLabelFont = '500 12px "Iowan Old Style", "Palatino Linotype", serif';
+const imagePlaceholderLabelFont =
+  '500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const imagePlaceholderIconInset = 12;
 const imagePlaceholderIconMaximumSize = 34;
 const imagePlaceholderIconMinimumSize = 18;
@@ -32,14 +33,14 @@ type ImagePlaceholderBox = PaintBox & {
 export function paintInlineImage(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  run: EditorInline,
+  inline: EditorInline,
   resources: DocumentResources,
   theme: EditorTheme,
   left: number,
   width: number,
 ) {
-  const resource = run.image ? resources.images.get(run.image.url) : null;
-  const imageHeight = resolvePaintedImageHeight(run, resources, width);
+  const resource = inline.image ? resources.images.get(inline.image.url) : null;
+  const imageHeight = resolvePaintedImageHeight(inline, resources, width);
   const box = resolveInlineImagePaintBox(line, left, width, imageHeight);
 
   context.fillStyle = theme.imageSurfaceBackground;
@@ -132,12 +133,16 @@ function paintImageLoadingShimmer(
   context.fillRect(box.left, box.top, box.width, box.height);
 }
 
-function resolvePaintedImageHeight(run: EditorInline, resources: DocumentResources, width: number) {
-  if (!run.image) {
+function resolvePaintedImageHeight(
+  inline: EditorInline,
+  resources: DocumentResources,
+  width: number,
+) {
+  if (!inline.image) {
     return resolveFallbackImageHeight(width);
   }
 
-  const resource = resources.images.get(run.image.url);
+  const resource = resources.images.get(inline.image.url);
 
   if (!resource || resource.intrinsicWidth <= 0 || resource.intrinsicHeight <= 0) {
     return resolveFallbackImageHeight(width);

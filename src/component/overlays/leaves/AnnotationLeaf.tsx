@@ -15,8 +15,9 @@ import {
   Underline,
 } from "lucide-react";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
-import { LeafInput, type CompletionSource } from "./core/LeafInput";
+import { LeafInput } from "./core/LeafInput";
 import { LeafOutput } from "./core/LeafOutput";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
 
@@ -27,8 +28,8 @@ type AnnotationLink = {
 
 type AnnotationLeafBaseProps = {
   canEdit: boolean;
+  completionSources?: CompletionSource[];
   link: AnnotationLink | null;
-  mentionSources?: CompletionSource[];
 };
 
 type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
@@ -79,7 +80,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const [isTransitioningFromCreate, setIsTransitioningFromCreate] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const mentionSources = props.mentionSources;
+  const completionSources = props.completionSources;
   const threadUpdatedAt = thread ? getCommentThreadUpdatedAt(thread) : null;
   const threadAge = threadUpdatedAt ? formatRelativeTime(threadUpdatedAt) : "";
   const canMutateThread = canEdit && !isResolved;
@@ -224,7 +225,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       isInitialCommentVisible={isInitialCommentVisible}
       isResolved={isResolved}
       link={link}
-      mentionSources={mentionSources}
+      completionSources={completionSources}
       mode={props.mode}
       onBeginEditingComment={beginEditingComment}
       onCancelEditing={cancelEditing}
@@ -328,7 +329,7 @@ function AnnotationLeafBody({
   isInitialCommentVisible,
   isResolved,
   link,
-  mentionSources,
+  completionSources,
   mode,
   onBeginEditingComment,
   onCancelEditing,
@@ -361,7 +362,7 @@ function AnnotationLeafBody({
   isInitialCommentVisible: boolean;
   isResolved: boolean;
   link: AnnotationLink | null;
-  mentionSources: CompletionSource[] | undefined;
+  completionSources: CompletionSource[] | undefined;
   mode: AnnotationLeafProps["mode"];
   onBeginEditingComment: (commentIndex: number, body: string) => void;
   onCancelEditing: () => void;
@@ -426,7 +427,7 @@ function AnnotationLeafBody({
         >
           {rootComment ? (
             <LeafOutput
-              completionSources={mentionSources}
+              completionSources={completionSources}
               onEdit={() => onBeginEditingComment(0, rootComment.body)}
               value={rootComment.body}
             />
@@ -480,7 +481,7 @@ function AnnotationLeafBody({
                     onSave: () => onSubmitEditedComment(actualIndex),
                     saveDisabled: !canSaveEditedComment,
                   }}
-                  completionSources={mentionSources}
+                  completionSources={completionSources}
                   onChange={onChangeEditDraft}
                   readOnly={!canEdit}
                   rows={3}
@@ -488,7 +489,7 @@ function AnnotationLeafBody({
                 />
               ) : (
                 <LeafOutput
-                  completionSources={mentionSources}
+                  completionSources={completionSources}
                   onEdit={() => onBeginEditingComment(actualIndex, comment.body)}
                   value={comment.body}
                 />
@@ -516,7 +517,7 @@ function AnnotationLeafBody({
                   submitLabel: "Reply",
                 }
           }
-          completionSources={mentionSources}
+          completionSources={completionSources}
           onChange={mode === "create" ? onChangeCreateDraft : onChangeReplyDraft}
           placeholder={composerPlaceholder}
           readOnly={!canEdit}

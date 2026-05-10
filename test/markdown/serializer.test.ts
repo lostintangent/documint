@@ -52,6 +52,17 @@ describe("Inline canonicalization", () => {
     expect(serialized).toBe("snake\\_case\\_identifier\n");
     expect(serializeDocument(parseDocument(serialized))).toBe(serialized);
   });
+
+  test("preserves user mention identity through markdown export", () => {
+    expectRoundTrip("Hello @[Jane Doe](user-123).\n");
+  });
+
+  test("defensively escapes plain text that looks like a user mention", () => {
+    const serialized = serializeDocument(parseDocument("Literal \\@[Jane Doe](user-123).\n"));
+
+    expect(serialized).toBe("Literal \\@[Jane Doe](user-123).\n");
+    expect(serializeDocument(parseDocument(serialized))).toBe(serialized);
+  });
 });
 
 describe("Lists", () => {

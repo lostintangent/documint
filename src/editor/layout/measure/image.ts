@@ -14,12 +14,12 @@ export type InlineImageDimensions = {
 };
 
 export function resolveInlineImageDimensions(
-  run: EditorInline,
+  inline: EditorInline,
   resources: DocumentResources,
   availableWidth: number,
 ): InlineImageDimensions {
-  const resource = run.image ? (resources.images.get(run.image.url) ?? null) : null;
-  const authoredWidth = run.image?.width ?? null;
+  const resource = inline.image ? (resources.images.get(inline.image.url) ?? null) : null;
+  const authoredWidth = inline.image?.width ?? null;
   const fallbackWidth = Math.min(availableWidth, authoredWidth ?? IMAGE_FALLBACK_WIDTH);
   const fallbackHeight = Math.max(
     IMAGE_FALLBACK_MIN_HEIGHT,
@@ -42,12 +42,12 @@ export function resolveInlineImageDimensions(
   };
 }
 
-export function resolveInlineImageSignature(run: EditorInline, resources: DocumentResources) {
-  if (!run.image) {
-    return `${run.kind}:missing-image`;
+export function resolveInlineImageSignature(inline: EditorInline, resources: DocumentResources) {
+  if (!inline.image) {
+    return `${inline.kind}:missing-image`;
   }
 
-  const resource = resources.images.get(run.image.url);
+  const resource = resources.images.get(inline.image.url);
 
-  return `${run.kind}:${run.image.url}:${run.image.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
+  return `${inline.kind}:${inline.image.url}:${inline.image.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
 }

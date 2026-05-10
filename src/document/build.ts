@@ -1,13 +1,8 @@
 // Semantic node builders and rebuild helpers. These own semantic node shape and
-// derived fields such as plain-text projections. When a path is provided they
-// also derive deterministic pre-build IDs, but canonical document IDs still
-// come from `createDocument(...)` and `spliceDocument(...)`.
+// derived fields such as plain-text projections. Canonical document IDs come
+// from `createDocument(...)` and `spliceDocument(...)`.
 
-import {
-  extractPlainTextFromBlockNodes,
-  extractPlainTextFromInlineNodes,
-  nodeId,
-} from "./document";
+import { extractPlainTextFromBlockNodes, extractPlainTextFromInlineNodes } from "./document";
 
 import type {
   Block,
@@ -24,6 +19,7 @@ import type {
   ListBlock,
   ListItemBlock,
   Mark,
+  Mention,
   ParagraphBlock,
   Raw,
   RawBlock,
@@ -33,43 +29,35 @@ import type {
   Text,
 } from "./types";
 
-type PathOptions = {
-  path?: string;
-};
+const preNormalizationFields = {
+  id: "",
+} as const;
 
-export function createParagraphBlock(
-  options: {
-    children: Inline[];
-  } & PathOptions,
-): ParagraphBlock {
-  const plainText = extractPlainTextFromInlineNodes(options.children);
+export function createParagraphBlock(children: Inline[]): ParagraphBlock {
+  const plainText = extractPlainTextFromInlineNodes(children);
 
   return {
-    children: options.children,
-    id: resolveNodeId(options.path, "paragraph", plainText),
+    children,
+    ...preNormalizationFields,
     plainText,
     type: "paragraph",
   };
 }
 
-export function createParagraphTextBlock(options: { text: string }): ParagraphBlock {
-  return createParagraphBlock({
-    children: createTextChildren(undefined, options.text),
-  });
+export function createParagraphTextBlock(text: string): ParagraphBlock {
+  return createParagraphBlock(createTextChildren(text));
 }
 
-export function createHeadingBlock(
-  options: {
-    children: Inline[];
-    depth: HeadingBlock["depth"];
-  } & PathOptions,
-): HeadingBlock {
+export function createHeadingBlock(options: {
+  children: Inline[];
+  depth: HeadingBlock["depth"];
+}): HeadingBlock {
   const plainText = extractPlainTextFromInlineNodes(options.children);
 
   return {
     children: options.children,
     depth: options.depth,
-    id: resolveNodeId(options.path, "heading", `${options.depth}:${plainText}`),
+    ...preNormalizationFields,
     plainText,
     type: "heading",
   };
@@ -80,76 +68,61 @@ export function createHeadingTextBlock(options: {
   text: string;
 }): HeadingBlock {
   return createHeadingBlock({
-    children: createTextChildren(undefined, options.text),
+    children: createTextChildren(options.text),
     depth: options.depth,
   });
 }
 
-export function createText(
-  options: {
-    marks?: Mark[];
-    text: string;
-  } & PathOptions,
-): Text {
-  const marks = options.marks ?? [];
-
+export function createText(text: string, marks: Mark[] = []): Text {
   return {
-    id: resolveNodeId(options.path, "text", `${options.text}:${marks.join(",")}`),
     marks,
-    text: options.text,
+    ...preNormalizationFields,
+    text,
     type: "text",
   };
 }
 
-export function createLineBreak(options: PathOptions = {}): LineBreak {
+export function createLineBreak(): LineBreak {
   return {
-    id: resolveNodeId(options.path, "lineBreak", "lineBreak"),
+    ...preNormalizationFields,
     type: "lineBreak",
   };
 }
 
-export function createCode(options: { code: string } & PathOptions): Code {
+export function createCode(code: string): Code {
   return {
-    code: options.code,
-    id: resolveNodeId(options.path, "code", options.code),
+    code,
+    ...preNormalizationFields,
     type: "code",
   };
 }
 
-export function createLink(
-  options: {
-    children: Inline[];
-    title?: string | null;
-    url: string;
-  } & PathOptions,
-): Link {
+export function createLink(options: {
+  children: Inline[];
+  title?: string | null;
+  url: string;
+}): Link {
   return {
     children: options.children,
-    id: resolveNodeId(
-      options.path,
-      "link",
-      `${options.url}:${extractPlainTextFromInlineNodes(options.children)}`,
-    ),
+    ...preNormalizationFields,
     title: options.title ?? null,
     type: "link",
     url: options.url,
   };
 }
 
-export function createImage(
-  options: {
-    alt?: string | null;
-    title?: string | null;
-    url: string;
-    width?: number | null;
-  } & PathOptions,
-): Image {
+export function createImage(options: {
+  alt?: string | null;
+  title?: string | null;
+  url: string;
+  width?: number | null;
+}): Image {
   const alt = options.alt ?? null;
   const width = options.width ?? null;
 
   return {
     alt,
-    id: resolveNodeId(options.path, "image", `${options.url}:${width ?? ""}:${alt ?? ""}`),
+    ...preNormalizationFields,
     title: options.title ?? null,
     type: "image",
     url: options.url,
@@ -157,52 +130,52 @@ export function createImage(
   };
 }
 
-export function createRaw(
-  options: {
-    originalType: string;
-    source: string;
-  } & PathOptions,
-): Raw {
+export function createMention(options: { name: string; userId: string }): Mention {
   return {
-    id: resolveNodeId(options.path, "raw", options.source),
+    name: options.name,
+    ...preNormalizationFields,
+    type: "mention",
+    userId: options.userId,
+  };
+}
+
+export function createRaw(options: { originalType: string; source: string }): Raw {
+  return {
     originalType: options.originalType,
+    ...preNormalizationFields,
     source: options.source,
     type: "raw",
   };
 }
 
-export function createListItemBlock(
-  options: {
-    checked?: boolean | null;
-    children: Block[];
-    spread?: boolean;
-  } & PathOptions,
-): ListItemBlock {
+export function createListItemBlock(options: {
+  checked?: boolean | null;
+  children: Block[];
+  spread?: boolean;
+}): ListItemBlock {
   const plainText = extractPlainTextFromBlockNodes(options.children);
 
   return {
     checked: options.checked ?? null,
     children: options.children,
-    id: resolveNodeId(options.path, "listItem", plainText),
+    ...preNormalizationFields,
     plainText,
     spread: options.spread ?? false,
     type: "listItem",
   };
 }
 
-export function createListBlock(
-  options: {
-    items: ListItemBlock[];
-    ordered: boolean;
-    spread?: boolean;
-    start?: number | null;
-  } & PathOptions,
-): ListBlock {
+export function createListBlock(options: {
+  items: ListItemBlock[];
+  ordered: boolean;
+  spread?: boolean;
+  start?: number | null;
+}): ListBlock {
   const plainText = options.items.map((item) => item.plainText).join("\n");
 
   return {
-    id: resolveNodeId(options.path, "list", `${String(options.ordered)}:${plainText}`),
     items: options.items,
+    ...preNormalizationFields,
     ordered: options.ordered,
     plainText,
     spread: options.spread ?? false,
@@ -211,77 +184,61 @@ export function createListBlock(
   };
 }
 
-export function createBlockquoteBlock(
-  options: {
-    children: Block[];
-  } & PathOptions,
-): BlockquoteBlock {
-  const plainText = extractPlainTextFromBlockNodes(options.children);
+export function createBlockquoteBlock(children: Block[]): BlockquoteBlock {
+  const plainText = extractPlainTextFromBlockNodes(children);
 
   return {
-    children: options.children,
-    id: resolveNodeId(options.path, "blockquote", plainText),
+    children,
+    ...preNormalizationFields,
     plainText,
     type: "blockquote",
   };
 }
 
-export function createCodeBlock(
-  options: {
-    language?: string | null;
-    meta?: string | null;
-    source: string;
-  } & PathOptions,
-): CodeBlock {
+export function createCodeBlock(options: {
+  language?: string | null;
+  meta?: string | null;
+  source: string;
+}): CodeBlock {
   return {
-    id: resolveNodeId(options.path, "code", `${options.language ?? ""}:${options.source}`),
     language: options.language ?? null,
     meta: options.meta ?? null,
+    ...preNormalizationFields,
     plainText: options.source,
     source: options.source,
     type: "code",
   };
 }
 
-export function createTableCell(
-  options: {
-    children: Inline[];
-  } & PathOptions,
-): TableCell {
-  const plainText = extractPlainTextFromInlineNodes(options.children);
+export function createTableCell(children: Inline[]): TableCell {
+  const plainText = extractPlainTextFromInlineNodes(children);
 
   return {
-    children: options.children,
-    id: resolveNodeId(options.path, "tableCell", plainText),
+    children,
+    ...preNormalizationFields,
     plainText,
   };
 }
 
-export function createTableRow(
-  options: {
-    cells: TableCell[];
-  } & PathOptions,
-): TableRow {
+export function createTableRow(cells: TableCell[]): TableRow {
   return {
-    cells: options.cells,
-    id: resolveNodeId(options.path, "tableRow", String(options.cells.length)),
+    cells,
+    ...preNormalizationFields,
   };
 }
 
-export function createTableBlock(
-  options: {
-    align?: TableBlock["align"];
-    rows: TableRow[];
-  } & PathOptions,
-): TableBlock {
+export function createTableBlock(options: {
+  align?: TableBlock["align"];
+  rows: TableRow[];
+}): TableBlock {
   const plainText = options.rows
     .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
     .join("\n");
 
   return {
     align: options.align ?? [],
-    id: resolveNodeId(options.path, "table", plainText),
     plainText,
+    ...preNormalizationFields,
     rows: options.rows,
     type: "table",
   };
@@ -289,42 +246,31 @@ export function createTableBlock(
 
 export function createDividerBlock(): DividerBlock {
   return {
-    id: "",
     plainText: "",
+    ...preNormalizationFields,
     type: "divider",
   };
 }
 
-export function createRawBlock(
-  options: {
-    originalType: string;
-    source: string;
-  } & PathOptions,
-): RawBlock {
+export function createRawBlock(options: { originalType: string; source: string }): RawBlock {
   return {
-    id: resolveNodeId(options.path, "raw", options.source),
     originalType: options.originalType,
+    ...preNormalizationFields,
     plainText: options.source,
     source: options.source,
     type: "raw",
   };
 }
 
-export function createDirectiveBlock(
-  options: {
-    attributes: string;
-    body: string;
-    name: string;
-  } & PathOptions,
-): DirectiveBlock {
+export function createDirectiveBlock(options: {
+  attributes: string;
+  body: string;
+  name: string;
+}): DirectiveBlock {
   return {
     attributes: options.attributes,
     body: options.body,
-    id: resolveNodeId(
-      options.path,
-      "directive",
-      `${options.name}{${options.attributes}}:${options.body}`,
-    ),
+    ...preNormalizationFields,
     name: options.name,
     plainText: options.body,
     type: "directive",
@@ -350,11 +296,7 @@ export function defragmentTextInlines(nodes: Inline[]) {
       node.type === "text" &&
       previous.marks.join(",") === node.marks.join(",")
     ) {
-      defragmented[defragmented.length - 1] = createText({
-        marks: previous.marks,
-        path: previous.id,
-        text: previous.text + node.text,
-      });
+      defragmented[defragmented.length - 1] = createText(previous.text + node.text, previous.marks);
       continue;
     }
 
@@ -370,9 +312,7 @@ export function rebuildTextBlock(block: HeadingBlock | ParagraphBlock, children:
         children,
         depth: block.depth,
       })
-    : createParagraphBlock({
-        children,
-      });
+    : createParagraphBlock(children);
 }
 
 export function rebuildListItemBlock(block: ListItemBlock, children: Block[]): ListItemBlock {
@@ -418,17 +358,6 @@ export function rebuildRawBlock(block: RawBlock, source: string): RawBlock {
   });
 }
 
-function createTextChildren(path: string | undefined, text: string): Text[] {
-  return text.length > 0
-    ? [
-        createText({
-          path: path ? `${path}.children.0` : undefined,
-          text,
-        }),
-      ]
-    : [];
-}
-
-function resolveNodeId(path: string | undefined, type: string, semanticSeed: string) {
-  return path ? nodeId(type, path, semanticSeed) : "";
+function createTextChildren(text: string): Text[] {
+  return text.length > 0 ? [createText(text)] : [];
 }

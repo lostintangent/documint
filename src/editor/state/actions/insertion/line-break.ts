@@ -1,7 +1,5 @@
-import type { DocumentIndex } from "../../index/types";
-import type { EditorSelection } from "../../selection";
 import type { EditorStateAction } from "../../types";
-import type { BlockCommandContext } from "../../context";
+import type { BlockContext } from "../../context";
 import {
   resolveBlockquoteTextBlockSplit,
   resolveRootTextBlockSplit,
@@ -14,16 +12,14 @@ import { resolveTableCellLineBreak } from "../blocks/table";
 // resulting action, and apply presentation concerns like list-marker
 // animations.
 export function resolveLineBreakAction(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-  ctx: BlockCommandContext,
+  ctx: BlockContext,
 ): EditorStateAction | null {
   switch (ctx.kind) {
     case "code":
-      return { kind: "splice-text", selection, text: "\n" };
+      return { kind: "splice-text", selection: ctx.selection, text: "\n" };
 
     case "tableCell":
-      return resolveTableCellLineBreak(documentIndex, selection);
+      return resolveTableCellLineBreak(ctx);
 
     case "listItem":
       return (

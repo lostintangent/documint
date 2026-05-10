@@ -20,7 +20,14 @@ import {
   type NormalizedEditorSelection,
 } from "@/editor";
 import { isResolvedCommentThread, type Mark } from "@/document";
-import type { DocumentResources } from "@/types";
+import type { DocumentResources, DocumentUser } from "@/types";
+import {
+  equalDocumentCompletions,
+  resolveDocumentCompletionContext,
+  type DocumentCompletion,
+} from "../../completions/document-completions";
+import { equalCompletionSources, type CompletionSource } from "../../completions/completions";
+import { createMentionCompletionSource, emojiCompletionSource } from "../../completions/sources";
 import {
   areLeafBasesEqual,
   type AnnotationLeaf,
@@ -46,6 +53,8 @@ import {
 import type { DocumintStoreValue } from "../core/values";
 import { publishedViewportValue } from "../viewport/values";
 import { editorStateValue } from "./values";
+
+export type { DocumentCompletion } from "../../completions/document-completions";
 
 type SelectionRange = EditorSelectionRange | null;
 
@@ -87,9 +96,8 @@ export type SelectionView = {
 
 export type ImageAtCursor = {
   bounds: InlineBounds;
+  inline: EditorInline;
   maxWidth: number | null;
-  regionId: string;
-  run: EditorInline;
 };
 
 const equalSelectionRanges = equalNullableBy<NonNullable<SelectionRange>>((range) => [
@@ -243,6 +251,40 @@ export const caretTargetValue = computedValue(
   equalCaretTargets,
 );
 
+export const documentCompletionValue = parameterizedComputedValue(
+  [editorStateValue] as const,
+  (
+    _store,
+    [completionSources]: readonly [CompletionSource[] | undefined],
+    state,
+  ): DocumentCompletion | null => {
+    return resolveDocumentCompletionContext(state, completionSources);
+  },
+  equalDocumentCompletions,
+);
+
+export const completionSourcesValue = parameterizedComputedValue(
+  [] as const,
+  (_store, [users]: readonly [readonly DocumentUser[] | undefined]): CompletionSource[] => {
+    const mentionSource = createMentionCompletionSource(users);
+    return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
+  },
+  equalCompletionSourceLists,
+);
+
+function equalCompletionSourceLists(
+  previous: CompletionSource[] | null | undefined,
+  next: CompletionSource[] | null | undefined,
+) {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+
+  return (
+    previous.length === next.length &&
+    previous.every((source, index) => equalCompletionSources(source, next[index]))
+  );
+}
+
 /* Pointer */
 
 export const pointerViewValue = parameterizedComputedValue(
@@ -309,19 +351,18 @@ function resolveImageAtCursor(
     return null;
   }
 
-  const imageRun = resolveImageAtSelection(state);
+  const imageInline = resolveImageAtSelection(state);
 
-  if (!imageRun) {
+  if (!imageInline) {
     return null;
   }
 
-  const bounds = measureInlineImageBounds(state, viewport, resources, imageRun);
-  const maxWidth = imageRun.image
-    ? (resources.images.get(imageRun.image.url)?.intrinsicWidth ?? null)
+  const bounds = measureInlineImageBounds(state, viewport, resources, imageInline);
+  const maxWidth = imageInline.image
+    ? (resources.images.get(imageInline.image.url)?.intrinsicWidth ?? null)
     : null;
-  const regionId = state.selection.anchor.regionId;
 
-  return bounds ? { bounds, maxWidth, regionId, run: imageRun } : null;
+  return bounds ? { bounds, inline: imageInline, maxWidth } : null;
 }
 
 function equalImageAtCursors(previous: ImageAtCursor | null, next: ImageAtCursor | null) {
@@ -329,7 +370,6 @@ function equalImageAtCursors(previous: ImageAtCursor | null, next: ImageAtCursor
   if (!previous || !next) return false;
 
   return (
-    previous.regionId === next.regionId &&
     previous.maxWidth === next.maxWidth &&
     previous.bounds.left === next.bounds.left &&
     previous.bounds.top === next.bounds.top &&

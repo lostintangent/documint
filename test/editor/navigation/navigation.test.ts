@@ -75,6 +75,29 @@ test("moves horizontally across images as atomic inline objects", () => {
   expect(afterLeft.selection.focus.offset).toBe(imageRun.start);
 });
 
+test("moves horizontally across grapheme clusters as atomic characters", () => {
+  const state = setup("a ✈️ b");
+  const region = getRegion(state, "a ✈️ b");
+  const emojiStart = region.text.indexOf("✈️");
+  const emojiEnd = emojiStart + "✈️".length;
+  const afterLeft = moveCaretHorizontally(placeAt(state, region, emojiEnd), -1);
+  const afterRight = moveCaretHorizontally(placeAt(state, region, emojiStart), 1);
+
+  expect(afterLeft.selection.focus.offset).toBe(emojiStart);
+  expect(afterRight.selection.focus.offset).toBe(emojiEnd);
+});
+
+test("extends horizontal selections by grapheme clusters", () => {
+  const state = setup("a ✈️ b");
+  const region = getRegion(state, "a ✈️ b");
+  const emojiStart = region.text.indexOf("✈️");
+  const emojiEnd = emojiStart + "✈️".length;
+  const next = moveCaretHorizontally(placeAt(state, region, emojiEnd), -1, true);
+
+  expect(next.selection.anchor.offset).toBe(emojiEnd);
+  expect(next.selection.focus.offset).toBe(emojiStart);
+});
+
 test("extends the selection to the start of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");

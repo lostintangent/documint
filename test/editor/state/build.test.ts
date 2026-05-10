@@ -37,7 +37,7 @@ alpha
 `);
   const original = createEditorRoot(snapshot.blocks[1]!, 1);
   const nextDocument = spliceDocument(snapshot, 1, 1, [
-    createParagraphTextBlock({ text: "omega" }),
+    createParagraphTextBlock("omega"),
   ]);
   const rebuilt = rebuildEditorRoot(original, nextDocument.blocks[1]!);
 
@@ -56,7 +56,7 @@ beta
   const model = createDocumentIndex(snapshot);
   const runtime = createDocumentIndex(snapshot);
   const nextDocument = spliceDocument(snapshot, 1, 1, [
-    createParagraphTextBlock({ text: "alphabet" }),
+    createParagraphTextBlock("alphabet"),
   ]);
   const replacedModel = spliceDocumentIndex(model, nextDocument, 1, 1);
   const replaced = spliceDocumentIndex(runtime, nextDocument, 1, 1);
@@ -95,7 +95,7 @@ alpha
 `);
   const index = createDocumentIndex(snapshot);
   const nextDocument = spliceDocument(snapshot, 1, 1, [
-    createParagraphTextBlock({ text: "alphabet" }),
+    createParagraphTextBlock("alphabet"),
   ]);
   const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
@@ -149,7 +149,7 @@ test("replaces a nested editor block through the reducer", () => {
   }
 
   const reduction = replaceEditorBlock(documentIndex, paragraph.id, () =>
-    createParagraphTextBlock({ text: "beta" }),
+    createParagraphTextBlock("beta"),
   );
 
   if (!reduction) {
@@ -162,7 +162,7 @@ test("replaces a nested editor block through the reducer", () => {
 test("replaces a root range through the reducer", () => {
   const documentIndex = createDocumentIndex(parseDocument("alpha\n\nbeta\n"));
   const reduction = spliceDocument(documentIndex.document, 1, 1, [
-    createParagraphTextBlock({ text: "omega" }),
+    createParagraphTextBlock("omega"),
   ]);
 
   expect(serializeDocument(reduction)).toBe("alpha\n\nomega\n");

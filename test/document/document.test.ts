@@ -44,9 +44,7 @@ test("defaults document comment metadata", () => {
       depth: 1,
       text: "Title",
     }),
-    createParagraphTextBlock({
-      text: "Paragraph",
-    }),
+    createParagraphTextBlock("Paragraph"),
   ]);
 
   expect(document.comments).toEqual([]);
@@ -58,9 +56,7 @@ test("preserves semantic document blocks without cached source metadata", () => 
       depth: 1,
       text: "Title",
     }),
-    createParagraphTextBlock({
-      text: "Paragraph",
-    }),
+    createParagraphTextBlock("Paragraph"),
   ]);
 
   expect(document.blocks.map((block) => block.type)).toEqual(["heading", "paragraph"]);
@@ -70,11 +66,7 @@ test("splices one root without renormalizing unaffected siblings", () => {
   const document = createTestDocument(createSampleBlocks());
   const leadingBlock = document.blocks[0];
   const trailingBlock = document.blocks[1];
-  const nextDocument = spliceDocument(document, 1, 1, [
-    createParagraphTextBlock({
-      text: "beta",
-    }),
-  ]);
+  const nextDocument = spliceDocument(document, 1, 1, [createParagraphTextBlock("beta")]);
 
   expect(nextDocument.blocks[0]).toBe(leadingBlock);
   expect(nextDocument.blocks[1]?.plainText).toBe("beta");
@@ -84,11 +76,7 @@ test("splices one root without renormalizing unaffected siblings", () => {
 test("renormalizes shifted suffix roots when inserting new top-level blocks", () => {
   const document = createTestDocument(createSampleBlocks());
   const shiftedBlock = document.blocks[1];
-  const nextDocument = spliceDocument(document, 1, 0, [
-    createParagraphTextBlock({
-      text: "inserted",
-    }),
-  ]);
+  const nextDocument = spliceDocument(document, 1, 0, [createParagraphTextBlock("inserted")]);
 
   expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
   expect(nextDocument.blocks[1]?.plainText).toBe("inserted");
@@ -103,12 +91,8 @@ test("renormalizes shifted suffix roots when removing top-level blocks", () => {
       depth: 1,
       text: "Sample",
     }),
-    createParagraphTextBlock({
-      text: "alpha",
-    }),
-    createParagraphTextBlock({
-      text: "beta",
-    }),
+    createParagraphTextBlock("alpha"),
+    createParagraphTextBlock("beta"),
   ]);
   const shiftedBlock = document.blocks[2];
   const nextDocument = spliceDocument(document, 1, 1, []);
@@ -156,15 +140,14 @@ test("splices comment threads without rebuilding semantic blocks", () => {
 
 test("extracts plain text from semantic inline nodes", () => {
   const nodes: Inline[] = [
-    createText({ path: "inline.0", text: "Plain " }),
+    createText("Plain "),
     createLink({
-      children: [createText({ path: "inline.1.children.0", text: "link" })],
-      path: "inline.1",
+      children: [createText("link")],
       url: "https://example.com",
     }),
-    createLineBreak({ path: "inline.2" }),
-    createCode({ code: "code", path: "inline.3" }),
-    createImage({ alt: "alt text", path: "inline.4", url: "https://example.com/image.png" }),
+    createLineBreak(),
+    createCode("code"),
+    createImage({ alt: "alt text", url: "https://example.com/image.png" }),
   ];
 
   expect(extractPlainTextFromInlineNodes(nodes)).toBe("Plain link\ncodealt text");
@@ -172,23 +155,20 @@ test("extracts plain text from semantic inline nodes", () => {
 
 test("extracts plain text from links and unsupported inline nodes", () => {
   const nodes: Inline[] = [
-    createText({ path: "inline.0", text: "Before " }),
+    createText("Before "),
     createLink({
       children: [
-        createText({ path: "inline.1.children.0", text: "alpha" }),
-        createLineBreak({ path: "inline.1.children.1" }),
+        createText("alpha"),
+        createLineBreak(),
         createImage({
           alt: "preview",
-          path: "inline.1.children.2",
           url: "https://example.com/preview.png",
         }),
       ],
-      path: "inline.1",
       url: "https://example.com",
     }),
     createRaw({
       originalType: "textDirective",
-      path: "inline.2",
       source: ":badge[raw]{disabled}",
     }),
   ];
@@ -198,52 +178,28 @@ test("extracts plain text from links and unsupported inline nodes", () => {
 
 test("extracts plain text from semantic block trees", () => {
   const blocks: Block[] = [
-    createParagraphTextBlock({
-      text: "Lead",
-    }),
+    createParagraphTextBlock("Lead"),
     createListBlock({
       items: [
         createListItemBlock({
-          children: [createParagraphTextBlock({ text: "alpha" })],
-          path: "root.1.children.0",
+          children: [createParagraphTextBlock("alpha")],
         }),
         createListItemBlock({
-          children: [createParagraphTextBlock({ text: "beta" })],
-          path: "root.1.children.1",
+          children: [createParagraphTextBlock("beta")],
         }),
       ],
       ordered: false,
-      path: "root.1",
     }),
     createTableBlock({
-      path: "root.2",
       rows: [
-        createTableRow({
-          cells: [
-            createTableCell({
-              children: [createText({ path: "root.2.rows.0.cells.0.children.0", text: "left" })],
-              path: "root.2.rows.0.cells.0",
-            }),
-            createTableCell({
-              children: [createText({ path: "root.2.rows.0.cells.1.children.0", text: "right" })],
-              path: "root.2.rows.0.cells.1",
-            }),
-          ],
-          path: "root.2.rows.0",
-        }),
-        createTableRow({
-          cells: [
-            createTableCell({
-              children: [createText({ path: "root.2.rows.1.cells.0.children.0", text: "one" })],
-              path: "root.2.rows.1.cells.0",
-            }),
-            createTableCell({
-              children: [createText({ path: "root.2.rows.1.cells.1.children.0", text: "two" })],
-              path: "root.2.rows.1.cells.1",
-            }),
-          ],
-          path: "root.2.rows.1",
-        }),
+        createTableRow([
+          createTableCell([createText("left")]),
+          createTableCell([createText("right")]),
+        ]),
+        createTableRow([
+          createTableCell([createText("one")]),
+          createTableCell([createText("two")]),
+        ]),
       ],
     }),
   ];
@@ -253,37 +209,21 @@ test("extracts plain text from semantic block trees", () => {
 
 test("extracts plain text from nested structural blocks and empty thematic breaks", () => {
   const blocks: Block[] = [
-    createBlockquoteBlock({
-      children: [
-        createParagraphTextBlock({
-          text: "Quote",
-        }),
-      ],
-      path: "root.0",
-    }),
+    createBlockquoteBlock([createParagraphTextBlock("Quote")]),
     createListItemBlock({
       children: [
-        createParagraphBlock({
-          children: [
-            createText({ path: "root.1.children.0.children.0", text: "Nested " }),
-            createRaw({
-              originalType: "textDirective",
-              path: "root.1.children.0.children.1",
-              source: ':badge[body]{tone="info"}',
-            }),
-          ],
-          path: "root.1.children.0",
-        }),
+        createParagraphBlock([
+          createText("Nested "),
+          createRaw({
+            originalType: "textDirective",
+            source: ':badge[body]{tone="info"}',
+          }),
+        ]),
       ],
-      path: "root.1",
     }),
-    createCodeBlock({
-      path: "root.2",
-      source: "const stage = 1;",
-    }),
+    createCodeBlock({ source: "const stage = 1;" }),
     createRawBlock({
       originalType: "containerDirective",
-      path: "root.3",
       source: ':::callout{tone="note"}\nBody\n:::',
     }),
   ];
@@ -304,8 +244,6 @@ function createSampleBlocks(): Block[] {
       depth: 1,
       text: "Sample",
     }),
-    createParagraphTextBlock({
-      text: "alpha",
-    }),
+    createParagraphTextBlock("alpha"),
   ];
 }

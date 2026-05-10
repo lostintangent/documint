@@ -192,6 +192,63 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
   expect(markedBoundaries).not.toBe(plainBoundaries);
 });
 
+test("treats emoji variation sequences as single caret boundary units", () => {
+  const state = setup("a ✈️b\n");
+  const region = getRegion(state, "a ✈️b");
+  const layout = createDocumentLayout(state.documentIndex, { width: 420 });
+  const line = layout.lines.find((line) => line.regionId === region.id);
+
+  if (!line) {
+    throw new Error("Expected paragraph line");
+  }
+
+  expect(line.boundaries.map((boundary) => boundary.offset)).toEqual([0, 1, 2, 4, 5]);
+});
+
+test("wraps repeated color emoji without losing text past the line edge", () => {
+  const emojiText = `x ${"🔥".repeat(30)}`;
+  const state = setup(`${emojiText}\n`);
+  const region = getRegion(state, emojiText);
+  const layout = createDocumentLayout(state.documentIndex, { width: 220 });
+  const lines = layout.lines.filter((line) => line.regionId === region.id);
+  const availableWidth = layout.width - layout.options.paddingX * 2;
+
+  expect(lines.length).toBeGreaterThan(1);
+  expect(lines.map((line) => line.text).join("")).toBe(emojiText);
+  expect(lines.every((line) => line.width <= availableWidth)).toBe(true);
+});
+
+test("does not reuse cached lines across different astral symbols", () => {
+  const cache = createCanvasRenderCache();
+  const first = createDocumentIndex(parseDocument("😀\n"));
+  const second = createDocumentIndex(parseDocument("😁\n"));
+
+  createDocumentLayout(first, { width: 420 }, cache);
+  const secondLayout = createDocumentLayout(second, { width: 420 }, cache);
+
+  expect(secondLayout.lines[0]?.text).toBe("😁");
+});
+
+test("treats user mentions as single caret boundary units", () => {
+  const state = setup("Hi @[Jane Doe](user-123)!\n");
+  const region = getRegion(state, "Hi ￼!");
+  const layout = createDocumentLayout(state.documentIndex, { width: 420 });
+  const line = layout.lines.find((line) => line.regionId === region.id);
+
+  if (!line) {
+    throw new Error("Expected paragraph line");
+  }
+
+  expect(line.boundaries.map((boundary) => boundary.offset)).toEqual([0, 1, 2, 3, 4, 5]);
+
+  const beforeMention = line.boundaries.find((boundary) => boundary.offset === 3);
+  const afterMention = line.boundaries.find((boundary) => boundary.offset === 4);
+
+  expect(beforeMention).toBeDefined();
+  expect(afterMention).toBeDefined();
+  expect(afterMention!.left - beforeMention!.left).toBeGreaterThan(60);
+});
+
 test("uses authored image width when laying out image runs", () => {
   const runtime = createDocumentIndex(
     parseDocument("![Preview](https://example.com/preview.png){width=120}\n"),

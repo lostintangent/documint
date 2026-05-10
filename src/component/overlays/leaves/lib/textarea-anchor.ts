@@ -1,10 +1,10 @@
-// Anchor measurement for textareas. Resolves a viewport-space anchor for a
-// given character index in the textarea — useful for placing autocomplete
+// Anchor measurement for textareas. Resolves a document-absolute anchor for
+// a given character index in the textarea — useful for placing autocomplete
 // popovers, mention menus, and any other UI that should sit just below
 // where a specific character renders. Browsers don't expose this directly,
 // so we mirror the textarea's rendering into an offscreen <div>, place a
 // marker <span> at the requested index, and translate the marker's box
-// into viewport coordinates.
+// into document coordinates.
 
 const MIRRORED_PROPERTIES = [
   "box-sizing",
@@ -39,24 +39,25 @@ const MIRRORED_PROPERTIES = [
 ];
 
 export type TextareaAnchor = {
-  /** Anchor x in viewport coordinates, aligned to the character's left edge. */
+  /** Text line height at the anchor row. */
+  anchorHeight: number;
+  /** Anchor x in document coordinates, aligned to the character's left edge. */
   left: number;
-  /** Anchor y in viewport coordinates, set to the bottom of the character's
-   *  line plus `topGap` so UI positioned here sits just below the character
-   *  with a small breathing-room offset. */
+  /** Anchor y in document coordinates, set to the bottom of the character's line. */
   top: number;
 };
 
 export type ResolveTextareaAnchorOptions = {
-  /** Pixels to add below the cursor line so anchored UI doesn't visually
-   *  touch it. Defaults to 8. Pass 0 to anchor flush against the line. */
-  topGap?: number;
+  /** Document-page x scroll to add to viewport-space textarea geometry. */
+  scrollX?: number;
+  /** Document-page y scroll to add to viewport-space textarea geometry. */
+  scrollY?: number;
 };
 
 export function resolveTextareaAnchor(
   textarea: HTMLTextAreaElement,
   index: number,
-  { topGap = 8 }: ResolveTextareaAnchorOptions = {},
+  { scrollX = window.scrollX, scrollY = window.scrollY }: ResolveTextareaAnchorOptions = {},
 ): TextareaAnchor | null {
   if (!textarea.isConnected) return null;
 
@@ -85,22 +86,26 @@ export function resolveTextareaAnchor(
 
   document.body.appendChild(mirror);
 
-  // Translate the marker's box into viewport coordinates: lift to the
+  // Translate the marker's box into document coordinates: lift to the
   // textarea's outer edge by adding border widths, drop to the line's
-  // bottom by adding line height (+ topGap for breathing room), subtract
-  // the textarea's internal scroll, then add the textarea's viewport
-  // position.
+  // bottom by adding line height, subtract the textarea's internal scroll,
+  // then add the textarea's viewport position and document-page scroll.
   const rect = textarea.getBoundingClientRect();
   const lineHeight = parseFloat(computed.lineHeight) || marker.offsetHeight;
   const anchor: TextareaAnchor = {
+    anchorHeight: lineHeight,
     left:
-      rect.left + marker.offsetLeft + parseFloat(computed.borderLeftWidth) - textarea.scrollLeft,
+      scrollX +
+      rect.left +
+      marker.offsetLeft +
+      parseFloat(computed.borderLeftWidth) -
+      textarea.scrollLeft,
     top:
+      scrollY +
       rect.top +
       marker.offsetTop +
       parseFloat(computed.borderTopWidth) +
-      lineHeight +
-      topGap -
+      lineHeight -
       textarea.scrollTop,
   };
 

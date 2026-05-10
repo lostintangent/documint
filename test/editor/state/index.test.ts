@@ -6,7 +6,7 @@ import { parseDocument, serializeDocument } from "@/markdown";
 test("projects semantic snapshots into a deterministic editor document", () => {
   const snapshot = parseDocument(`# Runtime
 
-Paragraph with [link](https://example.com), \`code\`, and ![alt text](https://example.com/image.png).
+Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and ![alt text](https://example.com/image.png).
 
 - alpha
 - beta
@@ -25,7 +25,7 @@ Paragraph with [link](https://example.com), \`code\`, and ![alt text](https://ex
   ]);
   expect(runtime.regions.map((container) => container.text)).toEqual([
     "Runtime",
-    "Paragraph with link, code, and \uFFFC.",
+    "Paragraph with link, code, \uFFFC, and \uFFFC.",
     "alpha",
     "beta",
   ]);
@@ -35,13 +35,20 @@ Paragraph with [link](https://example.com), \`code\`, and ![alt text](https://ex
     "text",
     "code",
     "text",
+    "mention",
+    "text",
     "image",
     "text",
   ]);
   expect(runtime.regions[1]?.inlines[1]?.link?.url).toBe("https://example.com");
   expect(runtime.regions[1]?.inlines[5]?.text).toBe("\uFFFC");
-  expect(runtime.regions[1]?.inlines[5]?.image?.alt).toBe("alt text");
-  expect(runtime.text).toContain("Paragraph with link, code, and \uFFFC.");
+  expect(runtime.regions[1]?.inlines[5]?.mention).toEqual({
+    name: "Jane Doe",
+    userId: "user-123",
+  });
+  expect(runtime.regions[1]?.inlines[7]?.text).toBe("\uFFFC");
+  expect(runtime.regions[1]?.inlines[7]?.image?.alt).toBe("alt text");
+  expect(runtime.text).toContain("Paragraph with link, code, \uFFFC, and \uFFFC.");
   expect(runtime.length).toBe(runtime.text.length);
 });
 

@@ -1,7 +1,7 @@
 import { rebuildListBlock, type ListBlock } from "@/document";
 import type { DocumentIndex } from "../../index/types";
 import type { EditorStateAction } from "../../types";
-import type { DeleteCommandContext, RootTextBlockContext } from "../../context";
+import type { DeletionContext, RootTextBlockContext } from "../../context";
 import { createRootPrimaryRegionTarget, previousRegionInFlow } from "../../selection";
 import { regionPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
@@ -32,7 +32,7 @@ import { resolveBlockDemotion } from "./block-demote";
 // start" or "join the two lists you're sitting between."
 export function resolveStructuralDelete(
   documentIndex: DocumentIndex,
-  ctx: DeleteCommandContext,
+  ctx: DeletionContext,
 ): EditorStateAction | null {
   if (ctx.kind === "unsupported" || !ctx.atBoundary) {
     return null;
@@ -49,7 +49,7 @@ export function resolveStructuralDelete(
 }
 
 function resolveBackwardOverride(
-  ctx: Exclude<DeleteCommandContext, { kind: "unsupported" }>,
+  ctx: Exclude<DeletionContext, { kind: "unsupported" }>,
   documentIndex: DocumentIndex,
 ): EditorStateAction | null {
   const demoted = resolveBlockDemotion(documentIndex, ctx.region);

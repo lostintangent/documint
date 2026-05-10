@@ -14,14 +14,20 @@ export type RuntimeImageAttributes = {
   width: number | null;
 };
 
+export type RuntimeMentionAttributes = {
+  name: string;
+  userId: string;
+};
+
 export type EditorInline = {
   end: number;
   id: string;
   image: RuntimeImageAttributes | null;
   inlineCode: boolean;
-  kind: "code" | "image" | "lineBreak" | "raw" | "text";
+  kind: "code" | "image" | "lineBreak" | "mention" | "raw" | "text";
   link: RuntimeLinkAttributes | null;
   marks: Mark[];
+  mention: RuntimeMentionAttributes | null;
   originalType: string | null;
   start: number;
   text: string;

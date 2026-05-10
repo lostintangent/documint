@@ -1,6 +1,6 @@
-// Inline region plumbing: types, splicing primitives, and the shared
-// machinery that turns a `(region, range, nextChildren)` triple into an
-// `InlineRegionReplacement` the reducer can apply.
+// Inline container plumbing: types, splicing primitives, and the shared
+// machinery that turns a `(container, range, nextChildren)` triple into an
+// `InlineContainerReplacement` the reducer can apply.
 import {
   createCode,
   createTableCell as createDocumentTableCell,
@@ -10,45 +10,15 @@ import {
   rebuildTableBlock,
   rebuildTextBlock,
   type Block,
-  type HeadingBlock,
   type Inline,
-  type ParagraphBlock,
-  type TableBlock,
-  type TableCell,
 } from "@/document";
 import type { RegionRangePathSelectionTarget } from "../../selection";
 import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../../index/shared";
+import type { InlineContainer } from "../../context";
 
-// An InlineRegion is the subset of editable regions whose backing data is
-// `Inline[]` rather than raw text. Structurally that's Heading, Paragraph,
-// and TableCell — ListItem and Blockquote hold `Block[]` (they need
-// nesting), and Code regions hold `source: string`.
-//
-// This isn't the raw block union because each variant carries runtime
-// context the block itself doesn't know:
-//   - `path`: where this region lives in the document tree
-//   - `blockPath` (table cell only): path to the parent TableBlock, needed
-//     because replacing a cell rebuilds the whole table
-//   - `kind`: discriminates the rebuild strategy — `inlineBlock` rebuilds
-//     in place via `rebuildTextBlock`, `tableCell` rebuilds the parent
-//     table via `rebuildTableBlock`
-export type InlineRegion =
-  | {
-      block: HeadingBlock | ParagraphBlock;
-      children: Inline[];
-      kind: "inlineBlock";
-      path: string;
-    }
-  | {
-      block: TableBlock;
-      blockPath: string;
-      cell: TableCell;
-      children: Inline[];
-      kind: "tableCell";
-      path: string;
-    };
+export type { InlineContainer } from "../../context";
 
-export type InlineRegionReplacement = {
+export type InlineContainerReplacement = {
   block: Block;
   blockId: string;
   selection: RegionRangePathSelectionTarget;
@@ -59,6 +29,7 @@ export function measureInlineNodeText(node: Inline) {
     case "lineBreak":
       return 1;
     case "image":
+    case "mention":
       return INLINE_OBJECT_REPLACEMENT_TEXT.length;
     case "code":
       return node.code.length;
@@ -71,68 +42,51 @@ export function measureInlineNodeText(node: Inline) {
   }
 }
 
-// Path suffix used by inline actions when stamping a node that represents
-// the current selection range — feeds `resolveNodeId` so the new node gets
-// a deterministic id derived from where it lives.
-export function selectedNodePath(inlineRegion: InlineRegion) {
-  return `${inlineRegion.path}.children.selected`;
-}
-
-// Splices `inlines` into the region's children over `[startOffset, endOffset]`,
+// Splices `inlines` into the container's children over `[startOffset, endOffset]`,
 // then rebuilds the owning block (paragraph/heading in place, table cell
-// via parent rebuild) and emits an `InlineRegionReplacement` with the
+// via parent rebuild) and emits an `InlineContainerReplacement` with the
 // caret landing at the end of the inserted content.
-export function spliceRegionInlines(
-  inlineRegion: InlineRegion,
+export function spliceInlineContainer(
+  inlineContainer: InlineContainer,
   startOffset: number,
   endOffset: number,
   inlines: Inline[],
-): InlineRegionReplacement {
-  const childrenPath = `${inlineRegion.path}.children`;
-  const nextChildren = spliceInlineNodes(
-    inlineRegion.children,
-    startOffset,
-    endOffset,
-    childrenPath,
-    inlines,
-  );
+): InlineContainerReplacement {
+  const nextChildren = spliceInlineNodes(inlineContainer.children, startOffset, endOffset, inlines);
   const insertedLength = inlines.reduce((total, node) => total + measureInlineNodeText(node), 0);
   const caretOffset = startOffset + insertedLength;
 
-  return createInlineRegionReplacement(inlineRegion, nextChildren, caretOffset, caretOffset);
+  return createInlineContainerReplacement(inlineContainer, nextChildren, caretOffset, caretOffset);
 }
 
-export function createInlineRegionReplacement(
-  inlineRegion: InlineRegion,
+export function createInlineContainerReplacement(
+  inlineContainer: InlineContainer,
   nextChildren: Inline[],
   startOffset: number,
   endOffset: number,
-): InlineRegionReplacement {
-  switch (inlineRegion.kind) {
+): InlineContainerReplacement {
+  switch (inlineContainer.kind) {
     case "inlineBlock":
       return {
-        block: rebuildTextBlock(inlineRegion.block, nextChildren),
-        blockId: inlineRegion.block.id,
+        block: rebuildTextBlock(inlineContainer.block, nextChildren),
+        blockId: inlineContainer.block.id,
         selection: createRangeSelectionTarget(
-          `${inlineRegion.path}.children`,
+          `${inlineContainer.path}.children`,
           startOffset,
           endOffset,
         ),
       };
     case "tableCell": {
-      const nextCell = createDocumentTableCell({
-        children: nextChildren,
-        path: inlineRegion.path,
-      });
-      const nextRows = inlineRegion.block.rows.map((row) => ({
+      const nextCell = createDocumentTableCell(nextChildren);
+      const nextRows = inlineContainer.block.rows.map((row) => ({
         ...row,
-        cells: row.cells.map((cell) => (cell.id === inlineRegion.cell.id ? nextCell : cell)),
+        cells: row.cells.map((cell) => (cell.id === inlineContainer.cell.id ? nextCell : cell)),
       }));
 
       return {
-        block: rebuildTableBlock(inlineRegion.block, nextRows),
-        blockId: inlineRegion.block.id,
-        selection: createRangeSelectionTarget(inlineRegion.path, startOffset, endOffset),
+        block: rebuildTableBlock(inlineContainer.block, nextRows),
+        blockId: inlineContainer.block.id,
+        selection: createRangeSelectionTarget(inlineContainer.path, startOffset, endOffset),
       };
     }
   }
@@ -160,15 +114,13 @@ export function spliceInlineNodes(
   nodes: Inline[],
   startOffset: number,
   endOffset: number,
-  path: string,
   replacement: Inline[],
 ): Inline[] {
   const nextNodes: Inline[] = [];
   let cursor = 0;
   let inserted = false;
 
-  for (const [index, node] of nodes.entries()) {
-    const nodePath = `${path}.${index}`;
+  for (const node of nodes) {
     const nodeLength = measureInlineNodeText(node);
     const nodeStart = cursor;
     const nodeEnd = nodeStart + nodeLength;
@@ -180,14 +132,12 @@ export function spliceInlineNodes(
     }
 
     if (!inserted) {
-      nextNodes.push(...collectInlinePrefix(node, Math.max(0, startOffset - nodeStart), nodePath));
+      nextNodes.push(...collectInlinePrefix(node, Math.max(0, startOffset - nodeStart)));
       nextNodes.push(...replacement);
       inserted = true;
     }
 
-    nextNodes.push(
-      ...collectInlineSuffix(node, Math.min(nodeLength, endOffset - nodeStart), nodePath),
-    );
+    nextNodes.push(...collectInlineSuffix(node, Math.min(nodeLength, endOffset - nodeStart)));
   }
 
   if (!inserted) {
@@ -197,30 +147,25 @@ export function spliceInlineNodes(
   return defragmentTextInlines(nextNodes);
 }
 
-function collectInlinePrefix(node: Inline, offset: number, path: string): Inline[] {
+function collectInlinePrefix(node: Inline, offset: number): Inline[] {
   if (offset <= 0) {
     return [];
   }
 
-  return sliceInlineNode(node, 0, offset, `${path}.before`);
+  return sliceInlineNode(node, 0, offset);
 }
 
-function collectInlineSuffix(node: Inline, offset: number, path: string): Inline[] {
+function collectInlineSuffix(node: Inline, offset: number): Inline[] {
   const nodeLength = measureInlineNodeText(node);
 
   if (offset >= nodeLength) {
     return [];
   }
 
-  return sliceInlineNode(node, offset, nodeLength, `${path}.after`);
+  return sliceInlineNode(node, offset, nodeLength);
 }
 
-function sliceInlineNode(
-  node: Inline,
-  startOffset: number,
-  endOffset: number,
-  path: string,
-): Inline[] {
+function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): Inline[] {
   if (startOffset >= endOffset) {
     return [];
   }
@@ -228,15 +173,13 @@ function sliceInlineNode(
   switch (node.type) {
     case "text": {
       const slicedText = node.text.slice(startOffset, endOffset);
-      return slicedText.length > 0
-        ? [createText({ text: slicedText, marks: node.marks, path })]
-        : [];
+      return slicedText.length > 0 ? [createText(slicedText, node.marks)] : [];
     }
     case "code":
-      return [createCode({ code: node.code.slice(startOffset, endOffset), path })];
+      return [createCode(node.code.slice(startOffset, endOffset))];
     case "link": {
       const children = defragmentTextInlines(
-        sliceInlineChildren(node.children, startOffset, endOffset, `${path}.children`),
+        sliceInlineChildren(node.children, startOffset, endOffset),
       );
       return children.length > 0 ? [{ ...node, children }] : [];
     }
@@ -273,16 +216,11 @@ export function extractInlineSelectionText(
   return text;
 }
 
-export function sliceInlineChildren(
-  nodes: Inline[],
-  startOffset: number,
-  endOffset: number,
-  path: string,
-) {
+export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOffset: number) {
   const sliced: Inline[] = [];
   let cursor = 0;
 
-  for (const [index, node] of nodes.entries()) {
+  for (const node of nodes) {
     const nodeLength = measureInlineNodeText(node);
     const nodeStart = cursor;
     const nodeEnd = nodeStart + nodeLength;
@@ -297,7 +235,6 @@ export function sliceInlineChildren(
         node,
         Math.max(0, startOffset - nodeStart),
         Math.min(nodeLength, endOffset - nodeStart),
-        `${path}.${index}`,
       ),
     );
   }
@@ -314,6 +251,7 @@ function extractInlineNodeSlice(node: Inline, startOffset: number, endOffset: nu
     case "lineBreak":
       return "\n".slice(startOffset, endOffset);
     case "image":
+    case "mention":
       return INLINE_OBJECT_REPLACEMENT_TEXT.slice(startOffset, endOffset);
     case "code":
       return node.code.slice(startOffset, endOffset);

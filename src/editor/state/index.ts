@@ -16,6 +16,7 @@ export type {
   DocumentIndex,
   EditorRegion,
   RuntimeLinkAttributes,
+  RuntimeMentionAttributes,
 } from "./index/types";
 
 // Selection
@@ -24,6 +25,7 @@ export {
   createRegionTarget,
   createRootPrimaryRegionTarget,
   firstInFlowRegionOfRoot,
+  getCaretTextContext,
   getSelectionContext,
   getSelectionMarks,
   getSelectionRange,
@@ -43,6 +45,7 @@ export {
 } from "./selection";
 
 export type {
+  CaretTextContext,
   EditorSelection,
   EditorSelectionPoint,
   EditorSelectionRange,
@@ -74,6 +77,8 @@ export {
 } from "./reducer/state";
 
 export type { EditorState } from "./types";
+
+export type { TextRangeTarget } from "./context";
 
 // Commands
 export * from "./commands";

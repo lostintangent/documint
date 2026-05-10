@@ -79,9 +79,7 @@ export function resolveListItemSplit(
   const afterText = text.slice(offset);
   const nextItem = createInsertedListItem(afterText, nextChecked, currentItem.spread);
   const updatedCurrentItem = rebuildListItemBlock(currentItem, [
-    createParagraphTextBlock({
-      text: beforeText,
-    }),
+    createParagraphTextBlock(beforeText),
   ]);
 
   return {
@@ -128,9 +126,7 @@ export function resolveStructuralListBlockSplit(
   }
 
   replacementBlocks.push(
-    createParagraphTextBlock({
-      text: "",
-    }),
+    createParagraphTextBlock(""),
   );
 
   if (afterItems.length > 0) {

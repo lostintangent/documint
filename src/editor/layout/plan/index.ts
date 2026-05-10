@@ -399,10 +399,10 @@ function resolveImageResourceSignature(documentIndex: DocumentIndex, resources: 
   return documentIndex.regions
     .flatMap((container) =>
       container.inlines
-        .filter((run) => run.kind === "image" && run.image)
-        .map((run) => {
-          const resource = run.image ? resources.images.get(run.image.url) : null;
-          return `${run.image?.url ?? ""}:${run.image?.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
+        .filter((inline) => inline.kind === "image" && inline.image)
+        .map((inline) => {
+          const resource = inline.image ? resources.images.get(inline.image.url) : null;
+          return `${inline.image?.url ?? ""}:${inline.image?.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
         }),
     )
     .join("|");

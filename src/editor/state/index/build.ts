@@ -61,14 +61,14 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
       position += 1;
     }
 
-    const text = inlines.map((run) => run.text).join("");
+    const text = inlines.map((inline) => inline.text).join("");
     const start = position;
     const end = start + text.length;
 
     textParts.push(text);
     position = end;
-    for (const run of inlines) {
-      if (run.image) imageUrls.add(run.image.url);
+    for (const inline of inlines) {
+      if (inline.image) imageUrls.add(inline.image.url);
     }
     regions.push({
       blockId: block.id,
@@ -122,6 +122,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
               kind: "text",
               link: null,
               marks: [],
+              mention: null,
               originalType: null,
               start: 0,
               text: block.source,
@@ -184,6 +185,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
               kind: "raw",
               link: null,
               marks: [],
+              mention: null,
               originalType: block.originalType,
               start: 0,
               text: block.source,
@@ -755,7 +757,7 @@ function createRuntimeEditableDocument(document: Document): Document {
   }
 
   return createDocument(
-    [createParagraphTextBlock({ text: "" })],
+    [createParagraphTextBlock("")],
     document.comments,
     document.frontMatter,
   );
@@ -783,12 +785,12 @@ function flattenInlineNodes(
   const inlines: EditorInline[] = [];
   let position = 0;
 
-  const pushRun = (run: Omit<EditorInline, "end" | "start">) => {
+  const pushInline = (inline: Omit<EditorInline, "end" | "start">) => {
     const start = position;
-    const end = start + run.text.length;
+    const end = start + inline.text.length;
 
     inlines.push({
-      ...run,
+      ...inline,
       end,
       start,
     });
@@ -798,19 +800,20 @@ function flattenInlineNodes(
   for (const node of nodes) {
     switch (node.type) {
       case "lineBreak":
-        pushRun({
+        pushInline({
           id: node.id,
           image: null,
           inlineCode: false,
           kind: "lineBreak",
           link,
           marks: [],
+          mention: null,
           originalType: null,
           text: "\n",
         });
         break;
       case "image":
-        pushRun({
+        pushInline({
           id: node.id,
           image: {
             alt: node.alt,
@@ -822,50 +825,70 @@ function flattenInlineNodes(
           kind: "image",
           link,
           marks: [],
+          mention: null,
           originalType: null,
-          text: resolveImageRunText(node.alt),
+          text: INLINE_OBJECT_REPLACEMENT_TEXT,
+        });
+        break;
+      case "mention":
+        pushInline({
+          id: node.id,
+          image: null,
+          inlineCode: false,
+          kind: "mention",
+          link,
+          marks: [],
+          mention: {
+            name: node.name,
+            userId: node.userId,
+          },
+          originalType: null,
+          text: INLINE_OBJECT_REPLACEMENT_TEXT,
         });
         break;
       case "code":
-        pushRun({
+        pushInline({
           id: node.id,
           image: null,
           inlineCode: true,
           kind: "code",
           link,
           marks: [],
+          mention: null,
           originalType: null,
           text: node.code,
         });
         break;
       case "link":
-        for (const childRun of flattenInlineNodes(node.children, {
+        for (const childInline of flattenInlineNodes(node.children, {
           title: node.title,
           url: node.url,
         })) {
-          pushRun(childRun);
+          pushInline(childInline);
         }
         break;
       case "text":
-        pushRun({
+        pushInline({
           id: node.id,
           image: null,
           inlineCode: false,
           kind: "text",
           link,
           marks: node.marks,
+          mention: null,
           originalType: null,
           text: node.text,
         });
         break;
       case "raw":
-        pushRun({
+        pushInline({
           id: node.id,
           image: null,
           inlineCode: false,
           kind: "raw",
           link,
           marks: [],
+          mention: null,
           originalType: node.originalType,
           text: node.source,
         });
@@ -874,10 +897,4 @@ function flattenInlineNodes(
   }
 
   return inlines;
-}
-
-function resolveImageRunText(alt: string | null) {
-  void alt;
-
-  return INLINE_OBJECT_REPLACEMENT_TEXT;
 }

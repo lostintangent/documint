@@ -8,8 +8,7 @@
 // An optional onEdit handler wires double-click-to-edit, so callers don't
 // repeat the wrapper element + handler at every read-only call site.
 import { Fragment, type ReactNode } from "react";
-import { tokenizeTriggers } from "../../../lib/mentions";
-import type { CompletionSource } from "./LeafInput";
+import { tokenizeTriggers, type CompletionSource } from "../../../completions/completions";
 
 type LeafOutputProps = {
   value: string;
@@ -30,11 +29,16 @@ function renderSegments(
     return value;
   }
   return segments.map((segment, index) =>
-    segment.kind === "token" ? (
+    segment.kind === "token" && segment.id ? (
       <span className="documint-mention" key={index}>
         {segment.trigger}
         {segment.label}
       </span>
+    ) : segment.kind === "token" ? (
+      <Fragment key={index}>
+        {segment.trigger}
+        {segment.label}
+      </Fragment>
     ) : (
       <Fragment key={index}>{segment.text}</Fragment>
     ),

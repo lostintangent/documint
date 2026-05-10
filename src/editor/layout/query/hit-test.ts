@@ -139,13 +139,7 @@ export function resolveWordSelectionAtPoint(
     return null;
   }
 
-  const offset =
-    hit.offset < container.text.length && /\w/.test(container.text[hit.offset] ?? "")
-      ? hit.offset
-      : hit.offset > 0 && /\w/.test(container.text[hit.offset - 1] ?? "")
-        ? hit.offset - 1
-        : hit.offset;
-  const range = expandWordRange(container.text, offset);
+  const range = resolveWordRange(container.text, resolveWordOffset(container.text, hit.offset));
 
   if (range.start === range.end) {
     return null;
@@ -257,15 +251,20 @@ function resolveViewportTop(layout: DocumentLayout) {
   return layout.lines[0]?.top ?? 0;
 }
 
-function expandWordRange(text: string, offset: number) {
+type TextRange = {
+  end: number;
+  start: number;
+};
+
+function resolveWordRange(text: string, offset: number): TextRange {
   let start = offset;
   let end = offset;
 
-  while (start > 0 && /\w/.test(text[start - 1] ?? "")) {
+  while (start > 0 && isWordCharacter(text[start - 1])) {
     start -= 1;
   }
 
-  while (end < text.length && /\w/.test(text[end] ?? "")) {
+  while (end < text.length && isWordCharacter(text[end])) {
     end += 1;
   }
 
@@ -273,4 +272,20 @@ function expandWordRange(text: string, offset: number) {
     end,
     start,
   };
+}
+
+function resolveWordOffset(text: string, offset: number) {
+  if (offset < text.length && isWordCharacter(text[offset])) {
+    return offset;
+  }
+
+  if (offset > 0 && isWordCharacter(text[offset - 1])) {
+    return offset - 1;
+  }
+
+  return offset;
+}
+
+function isWordCharacter(character: string | undefined) {
+  return character !== undefined && /\w/.test(character);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { extractMentionedUserIds, tokenizeTriggers } from "@/component/lib/mentions";
-import type { CompletionSource } from "@/component/overlays/leaves/core/LeafInput";
+import type { CompletionSource } from "@/component/completions/completions";
+import { extractMentionedUserIds } from "@/component/lib/mentions";
 
 const userSource: CompletionSource = {
   trigger: "@",
@@ -11,51 +11,13 @@ const userSource: CompletionSource = {
   ],
 };
 
-describe("tokenizeTriggers", () => {
-  test("returns a single text segment when no triggers are present", () => {
-    expect(tokenizeTriggers("nothing to see here", [userSource])).toEqual([
-      { kind: "text", text: "nothing to see here" },
-    ]);
-  });
-
-  test("tokenizes a mention at the start of the body", () => {
-    expect(tokenizeTriggers("@Jane shipped it", [userSource])).toEqual([
-      { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-      { kind: "text", text: " shipped it" },
-    ]);
-  });
-
-  test("tokenizes a mention after whitespace", () => {
-    expect(tokenizeTriggers("hi @John!", [userSource])).toEqual([
-      { kind: "text", text: "hi " },
-      { kind: "token", trigger: "@", label: "John", id: "u-john" },
-      { kind: "text", text: "!" },
-    ]);
-  });
-
-  test("prefers the longest matching label", () => {
-    expect(tokenizeTriggers("@Jane Doe wrote this", [userSource])).toEqual([
-      { kind: "token", trigger: "@", label: "Jane Doe", id: "u-jane-doe" },
-      { kind: "text", text: " wrote this" },
-    ]);
-  });
-
-  test("does not match a trigger embedded inside a word", () => {
-    expect(tokenizeTriggers("email@Jane.com", [userSource])).toEqual([
-      { kind: "text", text: "email@Jane.com" },
-    ]);
-  });
-
-  test("ignores triggers that don't match any source item", () => {
-    expect(tokenizeTriggers("@Unknown person", [userSource])).toEqual([
-      { kind: "text", text: "@Unknown person" },
-    ]);
-  });
-
-  test("returns a single text segment when no sources are provided", () => {
-    expect(tokenizeTriggers("@Jane", undefined)).toEqual([{ kind: "text", text: "@Jane" }]);
-  });
-});
+const emojiSource: CompletionSource = {
+  trigger: ":",
+  items: [
+    { label: "smile", id: "emoji-smile" },
+    { label: "wave", id: "emoji-wave" },
+  ],
+};
 
 describe("extractMentionedUserIds", () => {
   test("returns the IDs of mentioned users in first-occurrence order", () => {
@@ -86,6 +48,12 @@ describe("extractMentionedUserIds", () => {
       items: [{ label: "deploy", id: "cmd-deploy" }],
     };
     expect(extractMentionedUserIds("/deploy and @Jane", [userSource, slashSource])).toEqual([
+      "u-jane",
+    ]);
+  });
+
+  test("ignores non-'@' trigger tokens even when they tokenize", () => {
+    expect(extractMentionedUserIds(":smile and @Jane", [userSource, emojiSource])).toEqual([
       "u-jane",
     ]);
   });

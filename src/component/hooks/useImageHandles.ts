@@ -28,7 +28,7 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
       dragPointerIdRef.current = event.pointerId;
       dragStartXRef.current = event.clientX;
       dragStartYRef.current = event.clientY;
-      dragStartWidthRef.current = imageAtCursor.run.image?.width ?? imageAtCursor.bounds.width;
+      dragStartWidthRef.current = imageAtCursor.inline.image?.width ?? imageAtCursor.bounds.width;
       dragDirectionRef.current = direction;
     },
   );
@@ -39,7 +39,7 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
       dragStartXRef.current === null ||
       dragStartYRef.current === null ||
       dragStartWidthRef.current === null ||
-      !imageAtCursor?.run.image
+      !imageAtCursor?.inline.image
     ) {
       return;
     }
@@ -53,13 +53,13 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
         Math.round(dragStartWidthRef.current + dragDirectionRef.current * (dx + dy)),
       ),
     );
-    const imageRun = {
-      end: imageAtCursor.run.end,
-      image: imageAtCursor.run.image,
-      start: imageAtCursor.run.start,
+    const imageInline = {
+      end: imageAtCursor.inline.end,
+      image: imageAtCursor.inline.image,
+      start: imageAtCursor.inline.start,
     };
 
-    resizeSelectedImage(imageAtCursor.regionId, imageRun, newWidth);
+    resizeSelectedImage(imageInline, newWidth);
   });
 
   const onPointerUp = useEffectEvent((event: React.PointerEvent<HTMLDivElement>) => {

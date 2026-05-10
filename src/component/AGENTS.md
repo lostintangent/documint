@@ -78,12 +78,13 @@ component layer.
 
 ### Leaf overlay coordination
 
-Contextual leaf UI (insertion menu, table menu, link preview, comment thread, comment-create toolbar) is orchestrated by `Documint.resolveVisibleLeafPresentation`. Three hooks emit declarative leaf candidates; the host arbitrates priority (`pointer > selection > cursor`), materializes the geometry, and renders through the portaled `LeafAnchor` primitive ([`overlays/leaves/core/LeafAnchor.tsx`](overlays/leaves/core/LeafAnchor.tsx)).
+Contextual leaf UI (insertion menu, table menu, link preview, comment thread, comment-create toolbar, completion list) is orchestrated by `Documint.resolveVisibleLeafPresentation`. Hooks and host-level controllers emit declarative leaf candidates; the host arbitrates priority (`selection > documentCompletions > pointer > cursor`), materializes the geometry, and renders through the portaled `LeafAnchor` primitive ([`overlays/leaves/core/LeafAnchor.tsx`](overlays/leaves/core/LeafAnchor.tsx)).
 
 **Sources:**
 
 - `usePointer.leaf` — hover target (link preview, comment thread under pointer).
 - `useSelection.leaf` — selection-mode leaves (comment-create over a range, expanded thread).
+- `useDocumentCompletions.leaf` — caret-anchored completion list for root document text.
 - `useCursor.leaf` — caret-anchored (insertion menu on empty paragraph, table menu inside a table, contextual link/comment under the caret).
 
 Each candidate extends a `LeafBase` shape — a document anchor point plus optional `leftOverride` (table → cell text-left; selection-annotation → range-start) and `paddingY` (selection-annotation uses 2 to clear the highlight). Documint resolves the candidate against the prepared layout into a `LeafResolution` with document-absolute coordinates:

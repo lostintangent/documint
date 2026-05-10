@@ -12,15 +12,14 @@ import {
 } from "@/document";
 import type { DocumentIndex } from "../../index/types";
 import type { EditorStateAction } from "../../types";
-import { resolveInlineRegion } from "../inlines";
-import { selectedNodePath, spliceRegionInlines } from "../inlines/shared";
+import { spliceInlineContainer } from "../inlines/shared";
 import {
   createRootPrimaryRegionTarget,
   createTableCellTarget,
   resolveTableCellRegion,
   type EditorSelection,
 } from "../../selection";
-import { resolveRootTextBlockContext, type TableCellContext } from "../../context";
+import { resolveRootTextBlockContextFromSelection, type TableCellContext } from "../../context";
 
 // Table action resolvers: insert/delete rows and columns, cell navigation,
 // and table deletion. Most take a pre-resolved TableCellContext so
@@ -31,7 +30,7 @@ export function resolveTableInsertion(
   selection: EditorSelection,
   columnCount: number,
 ): EditorStateAction | null {
-  const context = resolveRootTextBlockContext(documentIndex, selection);
+  const context = resolveRootTextBlockContextFromSelection(documentIndex, selection);
   const resolvedColumnCount = Math.max(2, columnCount);
 
   if (
@@ -58,8 +57,6 @@ export function resolveTableInsertion(
 }
 
 export function resolveTableSelectionMove(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
   context: TableCellContext,
   direction: -1 | 1,
 ): EditorStateAction | null {
@@ -83,30 +80,21 @@ export function resolveTableSelectionMove(
   return {
     kind: "set-selection",
     selection: createTableCellSelection(
-      documentIndex,
-      selection,
+      context.documentIndex,
+      context.selection,
       context.table,
       nextPosition.rowIndex,
       nextPosition.cellIndex,
-      Math.min(selection.focus.offset, nextCell.plainText.length),
+      Math.min(context.selection.focus.offset, nextCell.plainText.length),
     ),
   };
 }
 
-export function resolveTableCellLineBreak(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): EditorStateAction | null {
-  const inlineRegion = resolveInlineRegion(documentIndex, selection.focus.regionId);
-
-  if (!inlineRegion || inlineRegion.kind !== "tableCell") {
-    return null;
-  }
-
-  const startOffset = Math.min(selection.anchor.offset, selection.focus.offset);
-  const endOffset = Math.max(selection.anchor.offset, selection.focus.offset);
-  const replacement = spliceRegionInlines(inlineRegion, startOffset, endOffset, [
-    createLineBreak({ path: selectedNodePath(inlineRegion) }),
+export function resolveTableCellLineBreak(context: TableCellContext): EditorStateAction | null {
+  const startOffset = Math.min(context.selection.anchor.offset, context.selection.focus.offset);
+  const endOffset = Math.max(context.selection.anchor.offset, context.selection.focus.offset);
+  const replacement = spliceInlineContainer(context.inlineContainer, startOffset, endOffset, [
+    createLineBreak(),
   ]);
 
   return {
@@ -128,9 +116,9 @@ export function resolveTableColumnInsertion(
     createTableBlock({
       align: spliceTableAlign(context.table.align, insertCellIndex, 0, [null]),
       rows: context.table.rows.map((row) =>
-        createTableRow({
-          cells: spliceTableRowCells(row.cells, insertCellIndex, 0, [createEmptyTableCell()]),
-        }),
+        createTableRow(
+          spliceTableRowCells(row.cells, insertCellIndex, 0, [createEmptyTableCell()]),
+        ),
       ),
     }),
     createTableCellTarget(context.rootIndex, context.rowIndex, insertCellIndex),
@@ -149,9 +137,7 @@ export function resolveTableColumnDeletion(context: TableCellContext): EditorSta
     createTableBlock({
       align: spliceTableAlign(context.table.align, context.cellIndex, 1, []),
       rows: context.table.rows.map((row) =>
-        createTableRow({
-          cells: row.cells.filter((_, cellIndex) => cellIndex !== context.cellIndex),
-        }),
+        createTableRow(row.cells.filter((_, cellIndex) => cellIndex !== context.cellIndex)),
       ),
     }),
     createTableCellTarget(
@@ -207,23 +193,17 @@ export function resolveTableRowDeletion(context: TableCellContext): EditorStateA
 export function resolveTableDeletion(context: TableCellContext): EditorStateAction | null {
   return replaceTableBlock(
     context,
-    createParagraphTextBlock({
-      text: "",
-    }),
+    createParagraphTextBlock(""),
     createRootPrimaryRegionTarget(context.rootIndex),
   );
 }
 
 function createEmptyTableRow(columnCount: number): TableRow {
-  return createTableRow({
-    cells: Array.from({ length: columnCount }, () => createEmptyTableCell()),
-  });
+  return createTableRow(Array.from({ length: columnCount }, () => createEmptyTableCell()));
 }
 
 function createEmptyTableCell(): TableCell {
-  return createTableCell({
-    children: [],
-  });
+  return createTableCell([]);
 }
 
 function appendTableRow(context: TableCellContext): EditorStateAction {

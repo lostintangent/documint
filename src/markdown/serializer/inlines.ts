@@ -18,12 +18,12 @@ const markdownDestinationEscapePattern = /([\\)&])/g;
 const markdownTitleEscapePattern = /(["\\])/g;
 
 export function serializeInlines(nodes: Inline[]): string {
-  return defragmentTextInlines(nodes)
-    .map((node) => serializeInline(node))
-    .join("");
+  const normalized = defragmentTextInlines(nodes);
+
+  return normalized.map((node, index) => serializeInline(node, normalized[index + 1])).join("");
 }
 
-function serializeInline(node: Inline): string {
+function serializeInline(node: Inline, nextNode?: Inline): string {
   switch (node.type) {
     case "lineBreak":
       // `<br>` is the only hard-break encoding that survives prettier,
@@ -33,12 +33,14 @@ function serializeInline(node: Inline): string {
       return "<br>";
     case "image":
       return serializeImage(node);
+    case "mention":
+      return serializeMention(node);
     case "code":
       return serializeInlineCode(node.code);
     case "link":
       return serializeLink(node);
     case "text":
-      return applyMarks(escapeMarkdownText(node.text), node.marks);
+      return applyMarks(escapeMarkdownText(node.text, nextNode), node.marks);
     case "raw":
       return node.source;
   }
@@ -91,6 +93,10 @@ function serializeImage(node: Extract<Inline, { type: "image" }>) {
   return `![${alt}]${destination}${width}`;
 }
 
+function serializeMention(node: Extract<Inline, { type: "mention" }>) {
+  return `@[${escapeMarkdownText(node.name)}](${escapeMarkdownDestination(node.userId)})`;
+}
+
 function serializeLink(node: Extract<Inline, { type: "link" }>) {
   return `[${serializeInlines(node.children)}]${serializeLinkDestination(node.url, node.title)}`;
 }
@@ -101,8 +107,11 @@ function serializeLinkDestination(url: string, title: string | null) {
 
 // --- Low-level utilities ---
 
-function escapeMarkdownText(value: string) {
-  return value.replace(markdownTextEscapePattern, "\\$1");
+function escapeMarkdownText(value: string, nextNode?: Inline) {
+  const escaped = value.replace(markdownTextEscapePattern, "\\$1").replace(/@(?=\[)/g, "\\@");
+  return nextNode?.type === "link" && escaped.endsWith("@")
+    ? `${escaped.slice(0, -1)}\\@`
+    : escaped;
 }
 
 function escapeMarkdownDestination(value: string) {

@@ -13,6 +13,7 @@ import {
   deleteSelection,
   insertText,
   replaceSelection,
+  replaceTextRange,
   setSelection,
   type EditorSelection,
 } from "@/editor/state";
@@ -60,6 +61,52 @@ test("replaces and deletes selected text within a single canvas container", () =
   state = deleteSelection(state);
 
   expect(toMarkdown(state)).toBe("Selected.\n");
+});
+
+test("replaces an explicit text range in one region", () => {
+  const state = setup("Hello @Ja friend\n");
+  const nextState = replaceTextRange(state, 6, 9, "@Jane ");
+
+  if (!nextState) {
+    throw new Error("Expected replaceTextRange to produce a new state");
+  }
+
+  expect(toMarkdown(nextState)).toBe("Hello @Jane  friend\n");
+  expect(nextState.selection.anchor).toEqual({
+    regionId: nextState.selection.focus.regionId,
+    offset: "Hello @Jane ".length,
+  });
+});
+
+test("replacing an explicit text range invalidates stale insertion highlights", () => {
+  const state = setup("alpha\n");
+  const region = getRegion(state, "alpha");
+  const stateWithInsertion = insertText(placeAt(state, region, "end"), "x");
+
+  if (!stateWithInsertion) {
+    throw new Error("Expected insertText to produce a new state");
+  }
+
+  const nextState = replaceTextRange(stateWithInsertion, 0, 1, "A");
+
+  if (!nextState) {
+    throw new Error("Expected replaceTextRange to produce a new state");
+  }
+
+  expect(
+    nextState.animations.filter((animation) => animation.kind === "inserted-text-highlight"),
+  ).toEqual([
+    expect.objectContaining({
+      endOffset: 1,
+      startOffset: 0,
+    }),
+  ]);
+});
+
+test("returns null when replacing an invalid explicit text range", () => {
+  const state = setup("Hello @Ja\n");
+
+  expect(replaceTextRange(state, 3, 0, "@Jane ")).toBeNull();
 });
 
 test("deleting all text within a single heading keeps the heading block", () => {
@@ -452,6 +499,17 @@ test("deletes adjacent images atomically with deleteBackward and deleteForward",
   expect(forward).not.toBeNull();
   expect(toMarkdown(backward!)).toBe("before  after\n");
   expect(toMarkdown(forward!)).toBe("before  after\n");
+});
+
+test("deletes emoji variation sequences as one character", () => {
+  const state = setup("a ✈️b\n");
+  const region = getRegion(state, "a ✈️b");
+
+  const backward = deleteBackward(placeAt(state, region, 4));
+  const forward = deleteForward(placeAt(state, region, 2));
+
+  expect(backward ? toMarkdown(backward) : null).toBe("a b\n");
+  expect(forward ? toMarkdown(forward) : null).toBe("a b\n");
 });
 
 test("does not persist a typed trailing prose space as a markdown entity", () => {

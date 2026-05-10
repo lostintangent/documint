@@ -21,6 +21,10 @@
   position: absolute;
   z-index: 1000;
 
+  &:has(> .documint-leaf-shell > .documint-completion-leaf) {
+    z-index: 1100;
+  }
+
   /* Hover: wrapper occupies the bridge gap so the bridge child can hand
      off pointer events between anchor row and shell. */
   &[data-bridge="true"] {
@@ -85,6 +89,11 @@
   &:has(> .documint-comment-leaf-create) {
     width: auto;
     padding: 0.38rem 0.58rem;
+  }
+
+  &:has(> .documint-completion-leaf) {
+    width: auto;
+    padding: 0.35rem;
   }
 
   &:has(> .documint-comment-leaf-create.is-expanded) {
@@ -537,14 +546,28 @@
   font-style: italic;
 }
 
-/* -- Completion popover (uses .documint-leaf-menu for visual base) -- */
+/* -- Completion leaf (direct shell child when hosted via LeafAnchor) -- */
 
-.documint-completion-popover {
-  z-index: 1100;
+.documint-completion-leaf {
+  --documint-completion-item-height: calc((0.84rem * 1.2) + 0.9rem);
+  --documint-completion-visible-items: 5;
+  --documint-leaf-menu-hover-bg: color-mix(
+    in srgb,
+    var(--documint-leaf-accent) 12%,
+    var(--documint-leaf-bg)
+  );
+  display: grid;
+  gap: 0.2rem;
   min-width: 12rem;
+  max-height: calc(
+    (var(--documint-completion-item-height) * var(--documint-completion-visible-items)) +
+      (0.2rem * (var(--documint-completion-visible-items) - 1))
+  );
+  overflow-y: auto;
 }
 
 .documint-completion-item {
+  gap: 0.5rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -552,6 +575,12 @@
   &.is-active {
     background: var(--documint-leaf-menu-hover-bg);
   }
+}
+
+.documint-completion-item-icon {
+  width: 1.25em;
+  flex: 0 0 auto;
+  text-align: center;
 }
 
 /* -- Mention: inline pill rendered inside read-only leaf text -- */

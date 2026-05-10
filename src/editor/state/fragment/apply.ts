@@ -17,6 +17,7 @@ import { createParagraphBlock, type Fragment } from "@/document";
 import { insertInlines } from "../actions/inlines";
 import { dispatch } from "../reducer/state";
 import type { EditorState } from "../types";
+import { resolveInlineContext } from "../context";
 import { resolveFragmentDestinationContext } from "./context";
 
 export function applyFragment(state: EditorState, fragment: Fragment): EditorState | null {
@@ -45,7 +46,8 @@ export function applyFragment(state: EditorState, fragment: Fragment): EditorSta
       // destination leaf — no block-level splice, so the surrounding
       // container (list item, blockquote) stays intact.
       if (destination.sameRegion) {
-        const action = insertInlines(state.documentIndex, state.selection, fragment.inlines);
+        const context = resolveInlineContext(state);
+        const action = context ? insertInlines(context, fragment.inlines) : null;
         if (action) {
           return dispatch(state, action);
         }
@@ -60,7 +62,7 @@ export function applyFragment(state: EditorState, fragment: Fragment): EditorSta
 
       return dispatch(state, {
         kind: "splice-fragment",
-        blocks: [createParagraphBlock({ children: fragment.inlines })],
+        blocks: [createParagraphBlock(fragment.inlines)],
         selection: state.selection,
       });
     }

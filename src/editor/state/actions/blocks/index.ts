@@ -58,13 +58,11 @@ export function resolveBlockquoteTextBlockSplit(
   return {
     kind: "splice-blocks",
     blocks: [
-      createBlockquoteBlock({
-        children: [
-          ...ctx.quote.children.slice(0, ctx.childIndex),
-          ...splitBlocks,
-          ...ctx.quote.children.slice(ctx.childIndex + 1),
-        ],
-      }),
+      createBlockquoteBlock([
+        ...ctx.quote.children.slice(0, ctx.childIndex),
+        ...splitBlocks,
+        ...ctx.quote.children.slice(ctx.childIndex + 1),
+      ]),
     ],
     rootIndex: ctx.rootIndex,
     selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, focusChildIndices),
@@ -84,13 +82,13 @@ export function resolveStructuralBlockquoteSplit(
   const blocks: Block[] = [];
 
   if (beforeBlocks.length > 0) {
-    blocks.push(createBlockquoteBlock({ children: beforeBlocks }));
+    blocks.push(createBlockquoteBlock(beforeBlocks));
   }
 
-  blocks.push(createParagraphTextBlock({ text: "" }));
+  blocks.push(createParagraphTextBlock(""));
 
   if (afterBlocks.length > 0) {
-    blocks.push(createBlockquoteBlock({ children: afterBlocks }));
+    blocks.push(createBlockquoteBlock(afterBlocks));
   }
 
   return {
@@ -104,7 +102,6 @@ export function resolveStructuralBlockquoteSplit(
 export function resolveHeadingDepthShift(
   ctx: RootTextBlockContext,
   direction: -1 | 1,
-  cursorOffset: number,
 ): EditorStateAction | null {
   if (ctx.block.type !== "heading") {
     return null;
@@ -120,7 +117,7 @@ export function resolveHeadingDepthShift(
     kind: "splice-blocks",
     blocks: [createHeadingTextBlock({ depth: nextDepth, text: ctx.block.plainText })],
     rootIndex: ctx.rootIndex,
-    selection: createRootPrimaryRegionTarget(ctx.rootIndex, cursorOffset),
+    selection: createRootPrimaryRegionTarget(ctx.rootIndex, ctx.offset),
   };
 }
 
@@ -137,17 +134,17 @@ function buildTextBlockSplitBlocks(
   textLength: number,
 ): Block[] {
   if (offset === 0) {
-    return [createParagraphTextBlock({ text: "" }), block];
+    return [createParagraphTextBlock(""), block];
   }
 
   if (offset === textLength) {
-    return [block, createParagraphTextBlock({ text: "" })];
+    return [block, createParagraphTextBlock("")];
   }
 
   const beforeBlock =
     block.type === "heading"
       ? createHeadingTextBlock({ depth: block.depth, text: beforeText })
-      : createParagraphTextBlock({ text: beforeText });
+      : createParagraphTextBlock(beforeText);
 
-  return [beforeBlock, createParagraphTextBlock({ text: afterText })];
+  return [beforeBlock, createParagraphTextBlock(afterText)];
 }

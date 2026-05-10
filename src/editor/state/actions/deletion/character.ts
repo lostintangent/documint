@@ -1,4 +1,5 @@
 import { resolveRegion } from "../../selection";
+import { moveGraphemeOffset } from "../../../text/graphemes";
 import type { EditorState, EditorStateAction } from "../../types";
 
 // Resolves the splice-text action for a single-grapheme delete at the
@@ -35,12 +36,12 @@ export function resolveCharacterDelete(
 
   const startOffset =
     direction === "backward"
-      ? previousGraphemeOffset(region.text, state.selection.focus.offset)
+      ? moveGraphemeOffset(region.text, state.selection.focus.offset, -1)
       : state.selection.focus.offset;
   const endOffset =
     direction === "backward"
       ? state.selection.focus.offset
-      : nextGraphemeOffset(region.text, state.selection.focus.offset);
+      : moveGraphemeOffset(region.text, state.selection.focus.offset, 1);
 
   if (startOffset === endOffset) {
     return null;
@@ -54,20 +55,4 @@ export function resolveCharacterDelete(
     },
     text: "",
   };
-}
-
-function previousGraphemeOffset(text: string, offset: number) {
-  const slice = Array.from(text.slice(0, offset));
-
-  if (slice.length === 0) {
-    return 0;
-  }
-
-  return offset - slice.at(-1)!.length;
-}
-
-function nextGraphemeOffset(text: string, offset: number) {
-  const next = Array.from(text.slice(offset))[0];
-
-  return next ? offset + next.length : text.length;
 }

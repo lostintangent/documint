@@ -2,7 +2,7 @@
 // and rebuilding EditorInline arrays. Used by the text reducer to apply
 // edits to a region's children, and exposed to tests for direct coverage.
 //
-// EditorInline is the runtime projection: each "run" carries link/image/
+// EditorInline is the runtime projection: each inline carries link/image/
 // marks/code state plus precomputed offsets. These primitives operate on
 // EditorInline arrays and produce either new EditorInline arrays or
 // document-side Inline nodes ready to slot back into a Block.
@@ -12,6 +12,7 @@ import {
   createImage as createDocumentImageNode,
   createLineBreak as createDocumentLineBreakNode,
   createLink as createDocumentLinkNode,
+  createMention as createDocumentMentionNode,
   createRaw as createDocumentUnsupportedInlineNode,
   createText as createDocumentTextNode,
   defragmentTextInlines,
@@ -22,13 +23,14 @@ import type {
   EditorRegion,
   RuntimeImageAttributes,
   RuntimeLinkAttributes,
+  RuntimeMentionAttributes,
 } from "../index/types";
 
 type DraftEditorInline = Omit<EditorInline, "end" | "start">;
 
 type EditContext = {
   didInsert: boolean;
-  generatedRunCount: number;
+  generatedInlineCount: number;
   replacementText: string;
 };
 
@@ -53,7 +55,7 @@ export function replaceEditorInlines(
 ) {
   const context: EditContext = {
     didInsert: false,
-    generatedRunCount: 0,
+    generatedInlineCount: 0,
     replacementText,
   };
   const nextInlines = editEditorInlines(inlines, startOffset, endOffset, context);
@@ -65,11 +67,11 @@ export function editorInlinesToDocumentInlines(inlines: EditorInline[]): Inline[
   const nodes: Inline[] = [];
 
   for (let index = 0; index < inlines.length; index += 1) {
-    const run = inlines[index]!;
+    const inline = inlines[index]!;
 
-    if (run.link) {
+    if (inline.link) {
       const children: Inline[] = [];
-      const link = run.link;
+      const link = inline.link;
 
       while (index < inlines.length && sameRuntimeLink(inlines[index]!.link, link)) {
         const child = editorInlineToDocumentInline(inlines[index]!);
@@ -96,7 +98,7 @@ export function editorInlinesToDocumentInlines(inlines: EditorInline[]): Inline[
       continue;
     }
 
-    const node = editorInlineToDocumentInline(run);
+    const node = editorInlineToDocumentInline(inline);
 
     if (node) {
       nodes.push(node);
@@ -116,35 +118,35 @@ function editEditorInlines(
 ): DraftEditorInline[] {
   const nextInlines: DraftEditorInline[] = [];
 
-  for (const [index, run] of inlines.entries()) {
-    if (!context.didInsert && startOffset === endOffset && startOffset === run.start) {
-      pushGeneratedTextRun(
+  for (const [index, inline] of inlines.entries()) {
+    if (!context.didInsert && startOffset === endOffset && startOffset === inline.start) {
+      pushGeneratedTextInline(
         nextInlines,
         context,
-        resolveBoundaryLinkForInsertion(inlines[index - 1] ?? null, run),
+        resolveBoundaryLinkForInsertion(inlines[index - 1] ?? null, inline),
       );
     }
 
-    if (endOffset <= run.start || startOffset >= run.end) {
-      nextInlines.push(createDraftEditorInline(run));
+    if (endOffset <= inline.start || startOffset >= inline.end) {
+      nextInlines.push(createDraftEditorInline(inline));
       continue;
     }
 
-    const localStart = Math.max(0, startOffset - run.start);
-    const localEnd = Math.min(run.text.length, endOffset - run.start);
+    const localStart = Math.max(0, startOffset - inline.start);
+    const localEnd = Math.min(inline.text.length, endOffset - inline.start);
     const replacement =
       !context.didInsert && context.replacementText.length > 0 ? context.replacementText : "";
-    const nextForRun = replaceEditorInline(run, localStart, localEnd, replacement, context);
+    const nextForInline = replaceEditorInline(inline, localStart, localEnd, replacement, context);
 
     if (localStart !== localEnd || replacement.length > 0) {
       context.didInsert = true;
     }
 
-    nextInlines.push(...nextForRun);
+    nextInlines.push(...nextForInline);
   }
 
   if (!context.didInsert) {
-    pushGeneratedTextRun(
+    pushGeneratedTextInline(
       nextInlines,
       context,
       resolveBoundaryLinkForInsertion(inlines.at(-1) ?? null, null),
@@ -155,36 +157,38 @@ function editEditorInlines(
 }
 
 function replaceEditorInline(
-  run: EditorInline,
+  inline: EditorInline,
   startOffset: number,
   endOffset: number,
   replacementText: string,
   context: EditContext,
 ) {
-  switch (run.kind) {
+  switch (inline.kind) {
     case "text":
     case "code":
     case "raw":
-      return replaceTextLikeEditorInline(run, startOffset, endOffset, replacementText);
+      return replaceTextLikeEditorInline(inline, startOffset, endOffset, replacementText);
     case "lineBreak":
-      return replaceBreakEditorInline(run, startOffset, endOffset, replacementText, context);
+      return replaceBreakEditorInline(inline, startOffset, endOffset, replacementText, context);
     case "image":
-      return replaceImageEditorInline(run, startOffset, endOffset, replacementText);
+    case "mention":
+      return replaceAtomicEditorInline(inline, startOffset, endOffset, replacementText);
   }
 }
 
 function replaceTextLikeEditorInline(
-  run: EditorInline,
+  inline: EditorInline,
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ) {
-  const nextText = run.text.slice(0, startOffset) + replacementText + run.text.slice(endOffset);
+  const nextText =
+    inline.text.slice(0, startOffset) + replacementText + inline.text.slice(endOffset);
 
   return nextText.length > 0
     ? [
         {
-          ...createDraftEditorInline(run),
+          ...createDraftEditorInline(inline),
           text: nextText,
         },
       ]
@@ -192,41 +196,43 @@ function replaceTextLikeEditorInline(
 }
 
 function replaceBreakEditorInline(
-  run: EditorInline,
+  inline: EditorInline,
   startOffset: number,
   endOffset: number,
   replacementText: string,
   context: EditContext,
 ) {
   if (startOffset === endOffset) {
-    return [createDraftEditorInline(run)];
+    return [createDraftEditorInline(inline)];
   }
 
   const nextInlines: DraftEditorInline[] = [];
 
   if (replacementText.length > 0) {
-    pushGeneratedTextRun(nextInlines, context, run.link);
+    pushGeneratedTextInline(nextInlines, context, inline.link);
   }
 
   return nextInlines;
 }
 
-function replaceImageEditorInline(
-  run: EditorInline,
+function replaceAtomicEditorInline(
+  inline: EditorInline,
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ) {
-  if (startOffset === 0 && endOffset === run.text.length) {
-    return replacementText.length > 0 ? [createGeneratedTextRun(replacementText, run.link, 0)] : [];
+  if (startOffset === 0 && endOffset === inline.text.length) {
+    return replacementText.length > 0
+      ? [createGeneratedTextInline(replacementText, inline.link, 0)]
+      : [];
   }
 
-  return [createDraftEditorInline(run)];
+  return [createDraftEditorInline(inline)];
 }
 
-/* Generated runs and boundary resolution */
+/* Generated inlines and boundary resolution */
 
-function pushGeneratedTextRun(
+function pushGeneratedTextInline(
   inlines: DraftEditorInline[],
   context: EditContext,
   link: RuntimeLinkAttributes | null,
@@ -236,12 +242,14 @@ function pushGeneratedTextRun(
     return;
   }
 
-  inlines.push(createGeneratedTextRun(context.replacementText, link, context.generatedRunCount));
-  context.generatedRunCount += 1;
+  inlines.push(
+    createGeneratedTextInline(context.replacementText, link, context.generatedInlineCount),
+  );
+  context.generatedInlineCount += 1;
   context.didInsert = true;
 }
 
-function createGeneratedTextRun(
+function createGeneratedTextInline(
   text: string,
   link: RuntimeLinkAttributes | null,
   index: number,
@@ -253,32 +261,36 @@ function createGeneratedTextRun(
     kind: "text",
     link,
     marks: [],
+    mention: null,
     originalType: null,
     text,
   };
 }
 
 function resolveBoundaryLinkForInsertion(
-  previousRun: EditorInline | null,
-  nextRun: EditorInline | null,
+  previousInline: EditorInline | null,
+  nextInline: EditorInline | null,
 ) {
-  return previousRun?.link && nextRun?.link && sameRuntimeLink(previousRun.link, nextRun.link)
-    ? previousRun.link
+  return previousInline?.link &&
+    nextInline?.link &&
+    sameRuntimeLink(previousInline.link, nextInline.link)
+    ? previousInline.link
     : null;
 }
 
 /* Draft compaction and finalization */
 
-function createDraftEditorInline(run: EditorInline): DraftEditorInline {
+function createDraftEditorInline(inline: EditorInline): DraftEditorInline {
   return {
-    id: run.id,
-    image: run.image,
-    inlineCode: run.inlineCode,
-    kind: run.kind,
-    link: run.link,
-    marks: run.marks,
-    originalType: run.originalType,
-    text: run.text,
+    id: inline.id,
+    image: inline.image,
+    inlineCode: inline.inlineCode,
+    kind: inline.kind,
+    link: inline.link,
+    marks: inline.marks,
+    mention: inline.mention,
+    originalType: inline.originalType,
+    text: inline.text,
   };
 }
 
@@ -286,12 +298,12 @@ function finalizeEditorInlines(inlines: DraftEditorInline[]) {
   const finalized: EditorInline[] = [];
   let position = 0;
 
-  for (const run of inlines) {
+  for (const inline of inlines) {
     const start = position;
-    const end = start + run.text.length;
+    const end = start + inline.text.length;
 
     finalized.push({
-      ...run,
+      ...inline,
       end,
       start,
     });
@@ -304,18 +316,18 @@ function finalizeEditorInlines(inlines: DraftEditorInline[]) {
 function compactEditorInlines(inlines: DraftEditorInline[]) {
   const compacted: DraftEditorInline[] = [];
 
-  for (const run of inlines) {
+  for (const inline of inlines) {
     const previous = compacted.at(-1);
 
-    if (previous && canMergeEditorInlines(previous, run)) {
+    if (previous && canMergeEditorInlines(previous, inline)) {
       compacted[compacted.length - 1] = {
         ...previous,
-        text: previous.text + run.text,
+        text: previous.text + inline.text,
       };
       continue;
     }
 
-    compacted.push(run);
+    compacted.push(inline);
   }
 
   return compacted;
@@ -327,6 +339,7 @@ function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInl
     previous.inlineCode === next.inlineCode &&
     sameRuntimeLink(previous.link, next.link) &&
     sameRuntimeImage(previous.image, next.image) &&
+    sameRuntimeMention(previous.mention, next.mention) &&
     previous.originalType === next.originalType &&
     previous.marks.join(",") === next.marks.join(",")
   );
@@ -334,27 +347,22 @@ function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInl
 
 /* Document conversion */
 
-function editorInlineToDocumentInline(run: EditorInline): Inline | null {
-  switch (run.kind) {
+function editorInlineToDocumentInline(inline: EditorInline): Inline | null {
+  switch (inline.kind) {
     case "lineBreak":
       return createDocumentLineBreakNode();
     case "image":
-      return run.image ? createImageNodeFromRuntimeAttributes(run.image) : null;
+      return inline.image ? createImageNodeFromRuntimeAttributes(inline.image) : null;
+    case "mention":
+      return inline.mention ? createMentionNodeFromRuntimeAttributes(inline.mention) : null;
     case "code":
-      return createDocumentInlineCodeNode({
-        code: run.text,
-      });
+      return createDocumentInlineCodeNode(inline.text);
     case "text":
-      return run.text.length > 0
-        ? createDocumentTextNode({
-            marks: run.marks,
-            text: run.text,
-          })
-        : null;
+      return inline.text.length > 0 ? createDocumentTextNode(inline.text, inline.marks) : null;
     case "raw":
       return createDocumentUnsupportedInlineNode({
-        originalType: run.originalType ?? "raw",
-        source: run.text,
+        originalType: inline.originalType ?? "raw",
+        source: inline.text,
       });
   }
 }
@@ -365,6 +373,13 @@ function createImageNodeFromRuntimeAttributes(image: RuntimeImageAttributes) {
     title: image.title,
     url: image.url,
     width: image.width,
+  });
+}
+
+function createMentionNodeFromRuntimeAttributes(mention: RuntimeMentionAttributes) {
+  return createDocumentMentionNode({
+    name: mention.name,
+    userId: mention.userId,
   });
 }
 
@@ -382,4 +397,11 @@ function sameRuntimeImage(
     left?.alt === right?.alt &&
     left?.width === right?.width
   );
+}
+
+function sameRuntimeMention(
+  left: RuntimeMentionAttributes | null,
+  right: RuntimeMentionAttributes | null,
+) {
+  return left?.userId === right?.userId && left?.name === right?.name;
 }

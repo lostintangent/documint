@@ -64,7 +64,7 @@ export function spliceText(
   // bridge-merge) lives in one place. The merge itself reports what got
   // absorbed into the start-region, so comment repair stays accurate
   // without the caller threading the text through.
-  const fragment = text.length > 0 ? [createParagraphTextBlock({ text })] : [];
+  const fragment = text.length > 0 ? [createParagraphTextBlock(text)] : [];
 
   return replaceWithBlocks(documentIndex, selection, fragment);
 }
@@ -98,7 +98,7 @@ export function replaceWithBlocks(
   const suffix = trimBlockToSuffix(endRoot, endRegion, normalized.end.offset);
   const merged = mergeTrimmedBlocks(prefix, fragment, suffix);
   const replacementBlocks =
-    merged.blocks.length > 0 ? merged.blocks : [createParagraphTextBlock({ text: "" })];
+    merged.blocks.length > 0 ? merged.blocks : [createParagraphTextBlock("")];
 
   const rootIndex = startRegion.rootIndex;
   const count = endRegion.rootIndex - startRegion.rootIndex + 1;
@@ -230,7 +230,7 @@ function replaceTableCellText(
     }
 
     const cells = row.cells.map<TableCell>((cell, currentCellIndex) =>
-      currentCellIndex === cellIndex ? createDocumentTableCell({ children: nextChildren }) : cell,
+      currentCellIndex === cellIndex ? createDocumentTableCell(nextChildren) : cell,
     );
 
     return { ...row, cells };

@@ -39,7 +39,7 @@ export function estimateContainerHeight(
   const left = options.paddingX + depth * options.indentWidth;
   const availableWidth = Math.max(40, options.width - left - options.paddingX - listInset);
 
-  if (container.inlines.some((run) => run.kind === "image")) {
+  if (container.inlines.some((inline) => inline.kind === "image" || inline.kind === "mention")) {
     const font = resolveTextBlockFont(block);
     return measureTextContainerLines(
       cache,

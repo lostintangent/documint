@@ -40,6 +40,18 @@ test("starts and expires inserted-text highlight animations for typed text", () 
   ).toBe(false);
 });
 
+test("does not start inserted-text highlight animations for color emoji inserts", () => {
+  const state = setup("alpha\n");
+  const region = getRegion(state, "alpha");
+  const stateAtEnd = placeAt(state, region, "end");
+  const result = insertText(stateAtEnd, "🔥");
+
+  expect(result).not.toBeNull();
+  expect(result!.animations.some((animation) => animation.kind === "inserted-text-highlight")).toBe(
+    false,
+  );
+});
+
 test("starts a punctuation pulse animation when typing a period", () => {
   const state = setup("alpha\n");
   const region = getRegion(state, "alpha");
@@ -109,6 +121,18 @@ test("starts and expires deleted-text fade animations for single-character delet
       animation!.startedAt + getEditorAnimationDuration(animation!) + 10,
     ),
   ).toBe(false);
+});
+
+test("does not start deleted-text fade animations for color emoji deletes", () => {
+  const state = setup("alpha 🔥\n");
+  const region = getRegion(state, "alpha 🔥");
+  const stateAtEnd = placeAt(state, region, "end");
+  const result = deleteBackward(stateAtEnd);
+
+  expect(result).not.toBeNull();
+  expect(result!.animations.some((animation) => animation.kind === "deleted-text-fade")).toBe(
+    false,
+  );
 });
 
 test("starts an active-block flash animation when selection moves into a different block", () => {

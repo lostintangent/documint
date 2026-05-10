@@ -44,13 +44,7 @@ export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
   return createTableBlock({
     align,
     rows: rows.map((row) =>
-      createTableRow({
-        cells: row.map((cell) =>
-          createTableCell({
-            children: parseInlineMarkdown(cell),
-          }),
-        ),
-      }),
+      createTableRow(row.map((cell) => createTableCell(parseInlineMarkdown(cell)))),
     ),
   });
 }

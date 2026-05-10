@@ -1,42 +1,35 @@
 // Mark toggling: bold, italic, strikethrough, underline.
 import { createText, defragmentTextInlines, type Inline, type Mark, type Text } from "@/document";
 import {
-  createInlineRegionReplacement,
+  createInlineContainerReplacement,
   measureInlineNodeText,
-  type InlineRegion,
-  type InlineRegionReplacement,
+  type InlineContainer,
+  type InlineContainerReplacement,
 } from "./shared";
 
 export function toggleInlineMark(
-  inlineRegion: InlineRegion,
+  inlineContainer: InlineContainer,
   startOffset: number,
   endOffset: number,
   mark: Extract<Mark, "italic" | "bold" | "strikethrough" | "underline">,
-): InlineRegionReplacement | null {
-  const removeMark = shouldRemoveInlineMark(inlineRegion.children, startOffset, endOffset, mark);
+): InlineContainerReplacement | null {
+  const removeMark = shouldRemoveInlineMark(inlineContainer.children, startOffset, endOffset, mark);
 
   if (removeMark === null) {
     return null;
   }
 
   const nextChildren = defragmentTextInlines(
-    toggleInlineNodesMark(
-      inlineRegion.children,
-      startOffset,
-      endOffset,
-      mark,
-      removeMark,
-      `${inlineRegion.path}.children`,
-    ),
+    toggleInlineNodesMark(inlineContainer.children, startOffset, endOffset, mark, removeMark),
   );
 
   return nextChildren.length > 0
-    ? createInlineRegionReplacement(inlineRegion, nextChildren, startOffset, endOffset)
+    ? createInlineContainerReplacement(inlineContainer, nextChildren, startOffset, endOffset)
     : null;
 }
 
 export function resolveInlineMarks(
-  inlineRegion: InlineRegion,
+  inlineContainer: InlineContainer,
   startOffset: number,
   endOffset: number,
 ): Mark[] {
@@ -77,7 +70,7 @@ export function resolveInlineMarks(
     }
   };
 
-  visit(inlineRegion.children);
+  visit(inlineContainer.children);
 
   return commonMarks ? [...commonMarks] : [];
 }
@@ -134,16 +127,14 @@ function toggleInlineNodesMark(
   endOffset: number,
   mark: Mark,
   shouldRemove: boolean,
-  path: string,
 ): Inline[] {
   const nextNodes: Inline[] = [];
   let cursor = 0;
 
-  for (const [index, node] of nodes.entries()) {
+  for (const node of nodes) {
     const nodeStart = cursor;
     const nodeLength = measureInlineNodeText(node);
     const nodeEnd = nodeStart + nodeLength;
-    const nodePath = `${path}.${index}`;
 
     cursor = nodeEnd;
 
@@ -160,7 +151,6 @@ function toggleInlineNodesMark(
           Math.min(nodeLength, endOffset - nodeStart),
           mark,
           shouldRemove,
-          nodePath,
         ),
       );
       continue;
@@ -174,7 +164,6 @@ function toggleInlineNodesMark(
           Math.min(nodeLength, endOffset - nodeStart),
           mark,
           shouldRemove,
-          `${nodePath}.children`,
         ),
       );
 
@@ -199,7 +188,6 @@ function toggleTextNodeMark(
   endOffset: number,
   mark: Mark,
   shouldRemove: boolean,
-  path: string,
 ) {
   const beforeText = node.text.slice(0, startOffset);
   const selectedText = node.text.slice(startOffset, endOffset);
@@ -209,14 +197,14 @@ function toggleTextNodeMark(
     : insertMark(node.marks, mark);
 
   const segments: Text[] = [];
-  const pushSegment = (text: string, marks: Mark[], suffix: string) => {
+  const pushSegment = (text: string, marks: Mark[]) => {
     if (text.length > 0) {
-      segments.push(createText({ text, marks, path: `${path}.${suffix}` }));
+      segments.push(createText(text, marks));
     }
   };
-  pushSegment(beforeText, node.marks, "before");
-  pushSegment(selectedText, selectedMarks, "selected");
-  pushSegment(afterText, node.marks, "after");
+  pushSegment(beforeText, node.marks);
+  pushSegment(selectedText, selectedMarks);
+  pushSegment(afterText, node.marks);
   return segments;
 }
 

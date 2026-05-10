@@ -13,6 +13,7 @@
 import { isResolvedCommentThread, type Mark } from "@/document";
 import type { EditorCommentState, EditorHoverTarget, EditorSelectionPoint } from "@/editor";
 import type { PointerEventHandler } from "react";
+import type { CompletionItem } from "../../../completions/completions";
 
 // Declarative anchoring intent emitted by leaf-producing hooks. Every
 // leaf candidate kind extends this base.
@@ -116,6 +117,18 @@ export type ThreadLeaf = LeafBase & {
   resolved: boolean;
   thread: EditorCommentState["threads"][number];
   threadIndex: number;
+};
+
+// Leaf shown while the caret is positioned after a completion trigger (e.g.
+// `:` for emoji, `@` for mentions) — the inline suggestion list. The anchor
+// points to the trigger character so `LeafAnchor` positions the popover at
+// that line's bottom, with the normal above/below flip.
+export type CompletionLeaf = LeafBase & {
+  activeIndex: number;
+  kind: "completion";
+  matches: readonly CompletionItem[];
+  onHover: (index: number) => void;
+  onSelect: (item: CompletionItem) => void;
 };
 
 // Resolves an editor hover/selection-point target into the leaf candidate

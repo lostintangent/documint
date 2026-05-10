@@ -20,24 +20,16 @@ import {
 } from "@/document";
 
 test("creates canonical text blocks from semantic text input", () => {
-  const paragraph = createParagraphTextBlock({
-    text: "Alpha",
-  });
+  const paragraph = createParagraphTextBlock("Alpha");
   const heading = createHeadingTextBlock({
     depth: 2,
     text: "Beta",
   });
-  const emptyParagraph = createParagraphTextBlock({
-    text: "",
-  });
+  const emptyParagraph = createParagraphTextBlock("");
 
   expect(paragraph.plainText).toBe("Alpha");
   expect(paragraph.children).toHaveLength(1);
-  expect(paragraph.id).toBe(
-    createParagraphTextBlock({
-      text: "Alpha",
-    }).id,
-  );
+  expect(paragraph.id).toBe(createParagraphTextBlock("Alpha").id);
   expect(heading.depth).toBe(2);
   expect(heading.plainText).toBe("Beta");
   expect(heading.id).toBe(
@@ -52,57 +44,32 @@ test("creates canonical text blocks from semantic text input", () => {
 
 test("creates lists, tables, links, and unsupported nodes from semantic children", () => {
   const listItem = createListItemBlock({
-    children: [
-      createParagraphTextBlock({
-        text: "alpha",
-      }),
-    ],
-    path: "root.0.children.0",
+    children: [createParagraphTextBlock("alpha")],
   });
   const list = createListBlock({
     items: [listItem],
     ordered: true,
-    path: "root.0",
     start: 5,
   });
   const table = createTableBlock({
     align: [null, "right"],
-    path: "root.1",
     rows: [
-      createTableRow({
-        cells: [
-          createTableCell({
-            children: [createText({ path: "root.1.rows.0.cells.0.children.0", text: "A" })],
-            path: "root.1.rows.0.cells.0",
-          }),
-          createTableCell({
-            children: [createText({ path: "root.1.rows.0.cells.1.children.0", text: "B" })],
-            path: "root.1.rows.0.cells.1",
-          }),
-        ],
-        path: "root.1.rows.0",
-      }),
+      createTableRow([createTableCell([createText("A")]), createTableCell([createText("B")])]),
     ],
   });
-  const paragraph = createParagraphBlock({
-    children: [
-      createText({ path: "root.2.children.0", text: "See " }),
-      createLink({
-        children: [createText({ path: "root.2.children.1.children.0", text: "alpha" })],
-        path: "root.2.children.1",
-        url: "https://example.com",
-      }),
-      createRaw({
-        originalType: "textDirective",
-        path: "root.2.children.2",
-        source: ":badge[beta]{disabled}",
-      }),
-    ],
-    path: "root.2",
-  });
+  const paragraph = createParagraphBlock([
+    createText("See "),
+    createLink({
+      children: [createText("alpha")],
+      url: "https://example.com",
+    }),
+    createRaw({
+      originalType: "textDirective",
+      source: ":badge[beta]{disabled}",
+    }),
+  ]);
   const unsupportedBlock = createRawBlock({
     originalType: "containerDirective",
-    path: "root.3",
     source: ':::callout{tone="info"}\nBody\n:::',
   });
 
@@ -110,12 +77,7 @@ test("creates lists, tables, links, and unsupported nodes from semantic children
   expect(list.ordered).toBe(true);
   expect(list.start).toBe(5);
   expect(table.plainText).toBe("A | B");
-  expect(table.rows[0]?.id).toBe(
-    createTableRow({
-      cells: table.rows[0]!.cells,
-      path: "root.1.rows.0",
-    }).id,
-  );
+  expect(table.rows[0]?.id).toBe(createTableRow(table.rows[0]!.cells).id);
   expect(paragraph.plainText).toBe("See alpha:badge[beta]{disabled}");
   expect(unsupportedBlock.plainText).toBe(':::callout{tone="info"}\nBody\n:::');
 });
@@ -125,27 +87,16 @@ test("rebuilds semantic nodes while preserving non-derived fields", () => {
     depth: 3,
     text: "Before",
   });
-  const rebuiltHeading = rebuildTextBlock(heading, [
-    createText({
-      path: "root.0.children.0",
-      text: "After",
-    }),
-  ]);
+  const rebuiltHeading = rebuildTextBlock(heading, [createText("After")]);
   const list = createListBlock({
     items: [
       createListItemBlock({
         checked: true,
-        children: [
-          createParagraphTextBlock({
-            text: "first",
-          }),
-        ],
-        path: "root.1.children.0",
+        children: [createParagraphTextBlock("first")],
         spread: true,
       }),
     ],
     ordered: false,
-    path: "root.1",
     spread: true,
   });
   const rebuiltList = rebuildListBlock(
@@ -153,12 +104,7 @@ test("rebuilds semantic nodes while preserving non-derived fields", () => {
     [
       createListItemBlock({
         checked: true,
-        children: [
-          createParagraphTextBlock({
-            text: "renamed",
-          }),
-        ],
-        path: "root.1.children.0",
+        children: [createParagraphTextBlock("renamed")],
         spread: true,
       }),
     ],
@@ -169,34 +115,14 @@ test("rebuilds semantic nodes while preserving non-derived fields", () => {
   );
   const table = createTableBlock({
     align: ["center"],
-    path: "root.2",
-    rows: [
-      createTableRow({
-        cells: [
-          createTableCell({
-            children: [createText({ path: "root.2.rows.0.cells.0.children.0", text: "one" })],
-            path: "root.2.rows.0.cells.0",
-          }),
-        ],
-        path: "root.2.rows.0",
-      }),
-    ],
+    rows: [createTableRow([createTableCell([createText("one")])])],
   });
   const rebuiltTable = rebuildTableBlock(table, [
-    createTableRow({
-      cells: [
-        createTableCell({
-          children: [createText({ path: "root.2.rows.0.cells.0.children.0", text: "two" })],
-          path: "root.2.rows.0.cells.0",
-        }),
-      ],
-      path: "root.2.rows.0",
-    }),
+    createTableRow([createTableCell([createText("two")])]),
   ]);
   const code = createCodeBlock({
     language: "ts",
     meta: "title=demo.ts",
-    path: "root.3",
     source: "const before = true;",
   });
   const rebuiltCode = rebuildCodeBlock(code, "const after = true;");

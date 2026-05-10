@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { getSelectionContext, getSelectionRange, selectAll, setSelection } from "@/editor/state";
+import {
+  getCaretTextContext,
+  getSelectionContext,
+  getSelectionRange,
+  selectAll,
+  setSelection,
+} from "@/editor/state";
 import { setup } from "../helpers";
 
 test("derives the active block and span from the selection anchor", () => {
@@ -63,6 +69,33 @@ test("derives a same-region selection range", () => {
   });
 
   expect(getSelectionRange(state)).toBeNull();
+});
+
+test("derives caret text context", () => {
+  let state = setup("alpha beta\n\ngamma\n");
+  const [first, second] = state.documentIndex.regions;
+
+  if (!first || !second) {
+    throw new Error("Expected regions");
+  }
+
+  state = setSelection(state, {
+    regionId: first.id,
+    offset: 6,
+  });
+
+  expect(getCaretTextContext(state)).toEqual({
+    offset: 6,
+    regionId: first.id,
+    text: "alpha beta",
+  });
+
+  state = setSelection(state, {
+    anchor: { regionId: first.id, offset: 0 },
+    focus: { regionId: second.id, offset: 1 },
+  });
+
+  expect(getCaretTextContext(state)).toBeNull();
 });
 
 test("selectAll expands the selection from the start of the first region to the end of the last", () => {

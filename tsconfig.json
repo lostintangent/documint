@@ -3,6 +3,7 @@
     "target": "ES2022",
     "module": "Preserve",
     "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "allowJs": false,

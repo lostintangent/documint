@@ -6,6 +6,7 @@ import {
   createImage,
   createLineBreak,
   createLink,
+  createMention,
   createRaw,
   createText,
   defragmentTextInlines,
@@ -24,6 +25,7 @@ const spaceCharacter = " ";
 
 // --- Multi-character openings and closings ---
 const imageOpening = "![";
+const mentionOpening = "@[";
 const linkOpening = "[";
 const linkDestinationOpening = "(";
 const linkDestinationClosing = ")";
@@ -33,7 +35,7 @@ const wordCharacter = /[\p{L}\p{N}]/u;
 const textDirectiveNameStart = /[A-Za-z]/;
 const textDirectiveNameCharacter = /[-A-Za-z0-9_]/;
 const imageWidthAttribute = /\{width=([1-9]\d*)\}/y;
-const markdownTextEscape = /\\([\\`*_[\]{}()#+\-.!~|])/g;
+const markdownTextEscape = /\\([\\`*_[\]{}()#+\-.!~|@])/g;
 const markdownDestinationEscape = /\\(.)/g;
 
 // --- Inline mark delimiters ---
@@ -123,6 +125,8 @@ function readInlineToken(
       return readInlineCodeToken(source, index, end);
     case "!":
       return readImageToken(source, index, end);
+    case "@":
+      return readMentionToken(source, index, end);
     case linkOpening:
       return readLinkToken(source, index, end, marks);
   }
@@ -283,11 +287,7 @@ function readInlineCodeToken(source: string, index: number, end: number) {
 
   return {
     end: closeIndex + fenceWidth,
-    nodes: [
-      createCode({
-        code: source.slice(index + fenceWidth, closeIndex),
-      }),
-    ],
+    nodes: [createCode(source.slice(index + fenceWidth, closeIndex))],
   };
 }
 
@@ -318,6 +318,34 @@ function readImageToken(source: string, index: number, end: number) {
         title: destination.title,
         url: destination.url,
         width: width?.width ?? null,
+      }),
+    ],
+  };
+}
+
+function readMentionToken(source: string, index: number, end: number) {
+  if (!source.startsWith(mentionOpening, index)) {
+    return null;
+  }
+
+  const labelEnd = findClosingBracket(source, index + 1, end);
+
+  if (labelEnd < 0 || source[labelEnd + 1] !== linkDestinationOpening) {
+    return null;
+  }
+
+  const destination = readLinkDestination(source, labelEnd + 1, end);
+
+  if (!destination || destination.title !== null) {
+    return null;
+  }
+
+  return {
+    end: destination.end,
+    nodes: [
+      createMention({
+        name: unescapeMarkdownText(source.slice(index + mentionOpening.length, labelEnd)),
+        userId: destination.url,
       }),
     ],
   };
@@ -469,12 +497,7 @@ function flushText(nodes: Inline[], value: string, marks: Mark[]) {
     return;
   }
 
-  nodes.push(
-    createText({
-      marks,
-      text: unescapeMarkdownText(value),
-    }),
-  );
+  nodes.push(createText(unescapeMarkdownText(value), marks));
 }
 
 // --- Low-level utilities ---

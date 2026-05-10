@@ -95,6 +95,16 @@ describe("Inline parsing", () => {
 
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
   });
+
+  test("parses user mentions as semantic inline nodes", () => {
+    const document = parseDocument("Hello @[Jane Doe](user-123)!\n");
+    const paragraph = expectBlockAt(document, 0, "paragraph");
+    const mention = expectInlineAt(paragraph.children, 1, "mention");
+
+    expect(mention.name).toBe("Jane Doe");
+    expect(mention.userId).toBe("user-123");
+    expect(paragraph.plainText).toBe("Hello @Jane Doe!");
+  });
 });
 
 describe("Block parsing", () => {

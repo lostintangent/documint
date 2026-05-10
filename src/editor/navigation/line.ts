@@ -17,6 +17,7 @@ import {
   setSelectionPoint,
   type EditorState,
 } from "../state";
+import { moveGraphemeOffset } from "../text/graphemes";
 
 // Small rightward nudge when hit-testing at a caret's visual X to avoid
 // landing exactly on a region boundary and resolving to the wrong side.
@@ -34,9 +35,9 @@ export function moveCaretHorizontallyInFlow(
   }
 
   const container = state.documentIndex.regions[regionIndex]!;
-  const nextOffset = state.selection.focus.offset + delta;
+  const nextOffset = moveGraphemeOffset(container.text, state.selection.focus.offset, delta);
 
-  if (nextOffset >= 0 && nextOffset <= container.text.length) {
+  if (nextOffset !== state.selection.focus.offset) {
     return setSelectionPoint(state, container.id, nextOffset, extendSelection);
   }
 

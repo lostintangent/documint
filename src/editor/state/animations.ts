@@ -14,6 +14,7 @@
 // call, and the lifecycle primitives (prune, time, has-new).
 
 import { getEditorAnimationDuration } from "../canvas/lib/animations";
+import { containsColorEmoji } from "../text/emoji";
 import type { EditorState } from "./types";
 
 // --- Animation types ---
@@ -64,10 +65,16 @@ export type PunctuationPulseAnimation = {
 
 export function addInsertedTextHighlightAnimation(
   state: EditorState,
-  insertedTextLength: number,
+  insertedText: string,
   startedAt = getEditorAnimationTime(),
 ): EditorState {
+  const insertedTextLength = insertedText.length;
+
   if (insertedTextLength <= 0) {
+    return state;
+  }
+
+  if (containsColorEmoji(insertedText)) {
     return state;
   }
 
@@ -110,7 +117,7 @@ export function addPlainTextDeletionFadeAnimation(
 
   const text = region.text.slice(startOffset, endOffset);
 
-  if (text.length === 0) {
+  if (text.length === 0 || containsColorEmoji(text)) {
     return nextState;
   }
 
@@ -177,6 +184,19 @@ export function addActiveBlockFlashAnimation(
     kind: "active-block-flash",
     startedAt,
   });
+}
+
+export function clearInsertedTextHighlightAnimations(state: EditorState): EditorState {
+  if (!state.animations.some((animation) => animation.kind === "inserted-text-highlight")) {
+    return state;
+  }
+
+  return {
+    ...state,
+    animations: state.animations.filter(
+      (animation) => animation.kind !== "inserted-text-highlight",
+    ),
+  };
 }
 
 // --- Lifecycle ---

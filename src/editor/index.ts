@@ -35,6 +35,7 @@ export { hasRunningEditorAnimations as hasRunningAnimations } from "./canvas/lib
 export {
   createDocumentFromEditorState as getDocument,
   createEditorState,
+  getCaretTextContext,
   getSelectionContext,
   getSelectionMarks,
   getSelectionRange,
@@ -42,6 +43,7 @@ export {
   normalizeSelection,
   resolveImageAtSelection,
   setSelection,
+  type CaretTextContext,
   type EditorInline,
   type EditorSelection,
   type EditorSelectionPoint,
@@ -49,6 +51,7 @@ export {
   type EditorState,
   type NormalizedEditorSelection,
   type SelectionContext,
+  type TextRangeTarget,
 } from "./state";
 
 import {

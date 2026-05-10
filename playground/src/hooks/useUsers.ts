@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentPresence, DocumentUser } from "documint";
 import { createRandomAutoPresence } from "./lib/auto-presence";
 
@@ -17,6 +17,7 @@ const autoUser: DocumentUser = {
 const autoPresenceTickMs = 2200;
 
 export function useUsers(content: string) {
+  const contentRef = useRef(content);
   const [manualName, setManualName] = useState("");
   const [manualAvatarUrl, setManualAvatarUrl] = useState("");
   const [manualAnchorPrefix, setManualAnchorPrefix] = useState("");
@@ -27,6 +28,8 @@ export function useUsers(content: string) {
   const [autoPresence, setAutoPresence] = useState<DocumentPresence | null>(null);
 
   const mode: UsersMode = autoMode ? "auto" : manualEntries.length > 0 ? "manual" : "empty";
+
+  contentRef.current = content;
 
   const users = useMemo<DocumentUser[]>(() => {
     if (autoMode) return [autoUser];
@@ -54,7 +57,7 @@ export function useUsers(content: string) {
     }
 
     const tick = () => {
-      setAutoPresence(createRandomAutoPresence(content, autoUser.id));
+      setAutoPresence(createRandomAutoPresence(contentRef.current, autoUser.id));
     };
 
     tick();
@@ -64,7 +67,7 @@ export function useUsers(content: string) {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [autoMode, content]);
+  }, [autoMode]);
 
   return {
     users,
