@@ -2,7 +2,6 @@
 // This stays in one file because the compound API and its private views are
 // small, tightly coupled, and easier to read together than split apart.
 import { ChevronDown, type LucideIcon } from "lucide-react";
-import { DynamicIcon, type IconName } from "lucide-react/dynamic";
 import {
   Children,
   isValidElement,
@@ -21,7 +20,7 @@ type LeafToolbarButtonProps = {
   active?: boolean;
   className?: string;
   disabled?: boolean;
-  icon: LucideIcon | IconName;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
 };
@@ -122,11 +121,7 @@ function LeafToolbarIconButton({
   );
 }
 
-function ToolbarButtonIcon({ icon }: { icon: LucideIcon | IconName }) {
-  if (typeof icon === "string") {
-    return <DynamicIcon name={icon} size={15} strokeWidth={2.2} />;
-  }
-
+function ToolbarButtonIcon({ icon }: { icon: LucideIcon }) {
   const Icon = icon;
   return <Icon size={15} strokeWidth={2.2} />;
 }

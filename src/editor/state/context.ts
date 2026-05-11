@@ -132,14 +132,14 @@ export function resolveTextRangeContext(
   startOffset: number,
   endOffset: number,
 ): TextRangeContext | null {
-  return resolveTextRangeTargetContext(state, {
+  return resolveTargetRangeContext(state, {
     endOffset,
     regionId: state.selection.focus.regionId,
     startOffset,
   });
 }
 
-export function resolveTextRangeTargetContext(
+export function resolveTargetRangeContext(
   state: EditorState,
   target: TextRangeTarget,
 ): TextRangeContext | null {
@@ -152,21 +152,11 @@ export function resolveTextRangeTargetContext(
   );
 }
 
-export function resolveInlineRangeContext(
-  state: EditorState,
-  startOffset: number,
-  endOffset: number,
-): InlineContext | null {
-  const range = resolveTextRangeContext(state, startOffset, endOffset);
-
-  return range ? resolveInlineContextFromTextRange(state, range) : null;
-}
-
 export function resolveInlineTargetContext(
   state: EditorState,
   target: TextRangeTarget,
 ): InlineContext | null {
-  const range = resolveTextRangeTargetContext(state, target);
+  const range = resolveTargetRangeContext(state, target);
   return range ? resolveInlineContextFromTextRange(state, range) : null;
 }
 
@@ -186,7 +176,9 @@ export function resolveInlineContext(state: EditorState): InlineContext | null {
     return null;
   }
 
-  return resolveInlineRangeContext(state, selection.start.offset, selection.end.offset);
+  const range = resolveTextRangeContext(state, selection.start.offset, selection.end.offset);
+
+  return range ? resolveInlineContextFromTextRange(state, range) : null;
 }
 
 export function resolveBlockContext(state: EditorState): BlockContext {

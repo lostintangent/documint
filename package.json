@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -31,12 +31,14 @@
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "bun-plugin-tailwind": "^0.1.2",
     "dts-bundle-generator": "^9.5.1",
     "lucide-react": "^1.14.0",
     "oxfmt": "latest",
     "oxlint": "latest",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {

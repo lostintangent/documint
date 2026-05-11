@@ -1,11 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  deleteBackward,
-  hasNewAnimation,
-  insertLineBreak,
-  insertText,
-  setSelection,
-} from "@/editor/state";
+import { deleteBackward, insertLineBreak, insertText, setSelection } from "@/editor/state";
 import {
   getEditorAnimationDuration,
   hasRunningEditorAnimations as hasRunningAnimations,
@@ -19,7 +13,6 @@ test("starts and expires inserted-text highlight animations for typed text", () 
   const result = insertText(stateAtEnd, "!");
 
   expect(result).not.toBeNull();
-  expect(hasNewAnimation(stateAtEnd, result!)).toBe(true);
   expect(result!.animations).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -59,7 +52,6 @@ test("starts a punctuation pulse animation when typing a period", () => {
   const result = insertText(stateAtEnd, ".");
 
   expect(result).not.toBeNull();
-  expect(hasNewAnimation(stateAtEnd, result!)).toBe(true);
   expect(result!.animations).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -98,7 +90,6 @@ test("starts and expires deleted-text fade animations for single-character delet
   const result = deleteBackward(stateAtEnd);
 
   expect(result).not.toBeNull();
-  expect(hasNewAnimation(stateAtEnd, result!)).toBe(true);
   expect(result!.animations).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -144,7 +135,6 @@ test("starts an active-block flash animation when selection moves into a differe
   const stateAtFirst = setSelection(state, { regionId: first.id, offset: 0 });
   const stateAtSecond = setSelection(stateAtFirst, { regionId: second.id, offset: 0 });
 
-  expect(hasNewAnimation(stateAtFirst, stateAtSecond)).toBe(true);
   expect(stateAtSecond.animations).toEqual([
     expect.objectContaining({ blockPath: "root.1", kind: "active-block-flash" }),
   ]);
@@ -159,7 +149,6 @@ test("starts an active-block flash animation when selection moves into a differe
   const stateAtFirst = setSelection(state, { regionId: first.id, offset: 0 });
   const stateAtSecond = setSelection(stateAtFirst, { regionId: second.id, offset: 0 });
 
-  expect(hasNewAnimation(stateAtFirst, stateAtSecond)).toBe(true);
   expect(stateAtSecond.animations).toEqual([
     expect.objectContaining({ blockPath: "root.0", kind: "active-block-flash" }),
   ]);
@@ -172,7 +161,6 @@ test("starts a list-marker-pop animation when splitting a list item with insertL
   const result = insertLineBreak(stateAtEnd);
 
   expect(result).not.toBeNull();
-  expect(hasNewAnimation(stateAtEnd, result!)).toBe(true);
   expect(result!.animations).toEqual(
     expect.arrayContaining([expect.objectContaining({ kind: "list-marker-pop" })]),
   );

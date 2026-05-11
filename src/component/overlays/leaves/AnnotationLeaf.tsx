@@ -291,14 +291,12 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               ? [
                   <LeafToolbar.Divider key="actions-divider" />,
                   ...actions.map((action, index) => {
-                    const label = action.label ?? action.icon;
-
                     return (
                       <LeafToolbar.Button
                         className="documint-comment-leaf-create-mark"
                         icon={action.icon}
-                        key={`${action.icon}:${label}:${index}`}
-                        label={label}
+                        key={`${action.label}:${index}`}
+                        label={action.label}
                         onClick={() => action.onClick()}
                       />
                     );

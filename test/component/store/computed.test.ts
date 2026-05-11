@@ -53,7 +53,7 @@ describe("computed values", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
     const region = getRegion(store.editor.getState(), "alpha");
-    store.editor.replace(placeAt(store.editor.getState(), region, "end"), "reconciliation");
+    store.editor.replace(placeAt(store.editor.getState(), region, "end"), "external");
     let notifications = 0;
     const imageUrlSet = createStoreComputedValue(
       [editorStateValue] as const,

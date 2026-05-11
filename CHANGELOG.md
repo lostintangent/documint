@@ -1,3 +1,8 @@
+## 🗓️ v0.0.12 (05-10-26)
+
+- Added support for emoji completions in the document and in comments
+- Added support for @mentions in the document, as well as a new `onUserMentioned` event on the `Documint` component
+
 ## 🗓️ v0.0.11 (05-07-26)
 
 - Introduced a new `actions` prop on the component that allows embedders to define custom buttons that appear in contextual menus (e.g. when text is selected).

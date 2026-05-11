@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createEditorValue } from "@/component/store/core/values";
 import { createEditorStore } from "@/component/store/editor/store";
-import {
-  createEditorTransition,
-  type EditorTransition,
-} from "@/component/store/editor/transitions";
+import type { EditorStateTransition } from "@/component/store/editor/transitions";
 import { createViewportStore } from "@/component/store/viewport/store";
 import { insertText, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
@@ -14,7 +11,7 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createEditorStore(placeAt(state, region, "end"));
-    const transitions: EditorTransition[] = [];
+    const transitions: EditorStateTransition[] = [];
 
     store.subscribe((transition) => transitions.push(transition));
     const transition = store.apply(insertText(store.getState(), "!"));
@@ -28,11 +25,8 @@ describe("EditorStore", () => {
     expect(transition).toEqual(
       expect.objectContaining({
         documentChanged: true,
-        selectionChanged: true,
-        focusChanged: true,
-        imageUrlsChanged: false,
-        animationStarted: true,
-        reason: "command",
+        animationsChanged: true,
+        source: "local",
       }),
     );
   });
@@ -46,33 +40,10 @@ describe("EditorStore", () => {
     expect(transition).toEqual(
       expect.objectContaining({
         documentChanged: false,
-        selectionChanged: true,
-        focusChanged: true,
-        commentsChanged: false,
-        commentRangesChanged: false,
-        reason: "command",
+        animationsChanged: false,
+        source: "local",
       }),
     );
-  });
-
-  test("reports active block changes separately from selection movement", () => {
-    const state = setup("alpha\n\nbeta\n");
-    const [first, second] = state.documentIndex.regions;
-
-    if (!first || !second) {
-      throw new Error("Expected two regions");
-    }
-
-    const firstState = setSelection(state, { regionId: first.id, offset: 0 });
-    const transition = createEditorTransition(
-      firstState,
-      setSelection(firstState, { regionId: second.id, offset: 0 }),
-      "command",
-    );
-
-    expect(transition.selectionChanged).toBe(true);
-    expect(transition.activeBlockChanged).toBe(true);
-    expect(transition.documentChanged).toBe(false);
   });
 
   test("does not publish null or identity updates", () => {
@@ -89,15 +60,15 @@ describe("EditorStore", () => {
     expect(publishCount).toBe(0);
   });
 
-  test("replaces external content with an explicit reason", () => {
+  test("replaces external content with an explicit source", () => {
     const store = createEditorStore(setup("alpha\n"));
     const next = setup("beta\n");
-    const transition = store.replace(next, "external-content");
+    const transition = store.replace(next, "external");
 
     expect(transition).toEqual(
       expect.objectContaining({
         documentChanged: true,
-        reason: "external-content",
+        source: "external",
       }),
     );
     expect(store.getState()).toBe(next);

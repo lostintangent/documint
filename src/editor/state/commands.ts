@@ -31,7 +31,6 @@ import {
   resolveBlockContext,
   resolveDeletionContext,
   resolveInlineContext,
-  resolveInlineRangeContext,
   resolveInlineTargetContext,
   resolveListItemContext,
   resolveTableCellContext,
@@ -58,7 +57,6 @@ import {
 import {
   createImage,
   createLineBreak,
-  createMention,
   deleteCommentFromThread,
   editCommentInThread,
   extractPlainTextFromFragment,
@@ -334,12 +332,6 @@ export const insertImage = makeCommand(
 );
 
 export const insertMention = makeCommand(
-  (context: InlineContext, userId: string, name: string) =>
-    insertInlineNode(context, createMention({ name, userId })),
-  { context: resolveInlineContext },
-);
-
-export const replaceTextRangeWithMention = makeCommand(
   (
     context: InlineContext,
     _target: TextRangeTarget,
@@ -437,8 +429,7 @@ export const deleteTableColumn = makeCommand(resolveTableColumnDeletion, {
 });
 
 export const insertTableRow = makeCommand(
-  (ctx: TableCellContext, direction: "above" | "below") =>
-    resolveTableRowInsertion(ctx, direction),
+  (ctx: TableCellContext, direction: "above" | "below") => resolveTableRowInsertion(ctx, direction),
   { context: resolveTableCellContext },
 );
 

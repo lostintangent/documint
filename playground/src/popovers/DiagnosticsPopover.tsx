@@ -4,14 +4,28 @@ import { Activity } from "lucide-react";
 // than from `documint`'s public API — diagnostics are dev-only tooling for
 // the playground, not a stable public surface.
 import { DIAGNOSTIC_EVENT, type Diagnostic } from "@/component/lib/diagnostics";
-import { PlaygroundPopover } from "./PlaygroundPopover";
-import "./DiagnosticsPopover.css";
+import {
+  PlaygroundPopover,
+  popoverControlClassName,
+  popoverHeaderClassName,
+  popoverTitleClassName,
+} from "./PlaygroundPopover";
 
 // Most recent N diagnostic events to keep in memory. The popover is
 // inspection-time tooling; older events are dropped silently.
 const MAX_ENTRIES = 200;
 
 type Entry = Diagnostic & { id: number };
+
+const clearButtonClassName = `${popoverControlClassName} rounded-[0.6rem] px-[0.6rem] py-1 text-[0.8rem]`;
+const diagnosticListClassName = "grid min-h-0 content-start gap-[0.4rem] overflow-y-auto";
+const diagnosticEntryClassName =
+  "rounded-[0.55rem] border border-border/[0.08] bg-background/[0.9] px-[0.55rem] py-[0.45rem]";
+const diagnosticEntryHeaderClassName =
+  "font-controls mb-[0.3rem] flex items-center justify-between gap-2 text-[0.78rem]";
+const diagnosticDetailClassName = "m-0 whitespace-pre-wrap break-words text-[0.75rem]";
+const diagnosticFlyoutClassName =
+  "font-code max-h-[min(70vh,36rem)] grid-rows-[auto_minmax(0,1fr)] text-[0.78rem] leading-[1.4] max-[700px]:portrait:max-h-[min(60vh,30rem)]";
 
 /**
  * Live log of diagnostic events emitted by the editor (see
@@ -21,8 +35,7 @@ type Entry = Diagnostic & { id: number };
  *
  * Only mounted in the dev playground — `Playground.tsx` gates the JSX
  * behind `process.env.NODE_ENV !== "production"`, so the deployable demo
- * (and any other production-shaped build) tree-shakes both this component
- * and its CSS-in-JS counterpart away.
+ * (and any other production-shaped build) tree-shakes this component away.
  */
 export function DiagnosticsPopover() {
   const entries = useDiagnosticEntries();
@@ -31,24 +44,23 @@ export function DiagnosticsPopover() {
   return (
     <PlaygroundPopover
       ariaLabel="Input diagnostics"
-      containerClassName="diag-controls"
-      flyoutClassName="diag-flyout"
+      flyoutClassName={diagnosticFlyoutClassName}
       icon={<Activity size={16} strokeWidth={2.1} />}
-      iconClassName="diag-toggle-icon"
+      size="lg"
       showSwatch={false}
     >
-      <div className="presence-header">
-        <strong>
+      <div className={popoverHeaderClassName}>
+        <strong className={popoverTitleClassName}>
           Input diagnostics
           {entries.list.length > 0 ? ` (${entries.list.length})` : ""}
         </strong>
-        <button className="diag-log-clear" onClick={entries.clear} type="button">
+        <button className={clearButtonClassName} onClick={entries.clear} type="button">
           Clear
         </button>
       </div>
-      <div className="diag-log-list" ref={listRef}>
+      <div className={diagnosticListClassName} ref={listRef}>
         {entries.list.length === 0 ? (
-          <p className="diag-log-empty">
+          <p className="font-controls m-0 p-2 text-[0.85rem] text-muted">
             Waiting for input events… (focus the editor and type / dictate / move the caret)
           </p>
         ) : (
@@ -61,12 +73,12 @@ export function DiagnosticsPopover() {
 
 function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
   return (
-    <div className={`diag-log-entry diag-kind-${diagnostic.kind}`}>
-      <div className="diag-log-entry-head">
-        <span className="diag-log-kind">{diagnostic.kind}</span>
-        <span className="diag-log-time">{formatTime(diagnostic.ts)}</span>
+    <div className={`${diagnosticEntryClassName} ${getDiagnosticKindClassName(diagnostic.kind)}`}>
+      <div className={diagnosticEntryHeaderClassName}>
+        <span className="font-semibold text-slate-900">{diagnostic.kind}</span>
+        <span className="text-muted">{formatTime(diagnostic.ts)}</span>
       </div>
-      <pre className="diag-log-detail">{formatDetail(diagnostic.detail)}</pre>
+      <pre className={diagnosticDetailClassName}>{formatDetail(diagnostic.detail)}</pre>
     </div>
   );
 }
@@ -118,6 +130,27 @@ function formatDetail(detail: Record<string, unknown>) {
   return Object.entries(detail)
     .map(([key, value]) => `${key}: ${formatValue(value)}`)
     .join("\n");
+}
+
+function getDiagnosticKindClassName(kind: string) {
+  switch (kind) {
+    case "beforeinput":
+      return "border-l-[3px] border-l-sky-500";
+    case "input":
+      return "border-l-[3px] border-l-indigo-500";
+    case "compositionstart":
+    case "compositionupdate":
+    case "compositionend":
+      return "border-l-[3px] border-l-amber-500";
+    case "syncInputContext":
+      return "border-l-[3px] border-l-emerald-500";
+    case "editorStateEffect":
+      return "border-l-[3px] border-l-teal-500";
+    case "selectionchange":
+      return "border-l-[3px] border-l-purple-500";
+    default:
+      return "border-l-[3px] border-l-slate-300";
+  }
 }
 
 function formatValue(value: unknown) {

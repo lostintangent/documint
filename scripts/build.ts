@@ -1,5 +1,6 @@
 import { rmSync } from "fs";
 import { BuildOutput } from "bun";
+import tailwindPlugin from "bun-plugin-tailwind";
 
 // Build modes:
 //
@@ -15,8 +16,8 @@ import { BuildOutput } from "bun";
 //     `.github/workflows/publish.yml` (and the `build:prod` script
 //     locally for inspection of the prod-shaped bundle).
 //
-//   - `playground` — deployable demo. Minified playground bundle.
-//     Used by `.github/workflows/playground.yml`.
+//   - `playground` — deployable demo. Minified, standalone playground
+//     HTML bundle. Used by `.github/workflows/playground.yml`.
 //
 // All three modes substitute `process.env.NODE_ENV` with `"production"`,
 // which folds every `if (process.env.NODE_ENV !== "production")` gate in
@@ -30,6 +31,12 @@ type BuildMode = "dev" | "prod" | "playground";
 
 const mode = resolveMode(process.argv);
 
+// These scripted builds are production-shaped even in `dev` mode (which is
+// a CI bundle check, not the live dev server). Keep the process environment
+// aligned with the bundled define so plugins and build-time code observe the
+// same mode as bundled application code.
+process.env.NODE_ENV = "production";
+
 // Shared between library + playground builds. `process.env.NODE_ENV` is
 // the de-facto convention for browser bundlers (React, Vue, etc. read it
 // at module scope), so substituting it here produces correctly-shaped
@@ -38,27 +45,32 @@ const define = {
   "process.env.NODE_ENV": JSON.stringify("production"),
 };
 
-// Step 1 (all modes): Build the library bundle.
-const libraryBuild = await Bun.build({
-  entrypoints: ["src/index.ts"],
-  outdir: "dist",
-  target: "browser",
-  format: "esm",
-  sourcemap: mode === "dev" ? "external" : "none",
-  splitting: false,
-  external: ["react", "react-dom", "react/jsx-runtime"],
-  ...(mode !== "dev" && { minify: true }),
-  define,
-});
+// Step 1 (dev + prod): Build the library bundle.
+const libraryBuild =
+  mode !== "playground"
+    ? await Bun.build({
+        entrypoints: ["src/index.ts"],
+        outdir: "dist",
+        target: "browser",
+        format: "esm",
+        sourcemap: mode === "dev" ? "external" : "none",
+        splitting: false,
+        external: ["react", "react-dom", "react/jsx-runtime"],
+        ...(mode === "prod" && { minify: true }),
+        define,
+      })
+    : null;
 
-assertBuildSuccess(libraryBuild, "Library");
+if (libraryBuild) {
+  assertBuildSuccess(libraryBuild, "Library");
 
-for (const output of libraryBuild.outputs) {
-  console.log(`  ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
+  for (const output of libraryBuild.outputs) {
+    console.log(`  ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
+  }
 }
 
-// Step 2 (prod only): Bundle type declarations into a single dist/index.d.ts
-if (mode === "prod") {
+// Step 2 (prod): Bundle type declarations into a single dist/index.d.ts
+if (mode === "prod" && libraryBuild) {
   // Remove stale artifacts from prior builds before writing the declaration bundle.
   const staleArtifacts = [
     "dist/comments",
@@ -100,23 +112,25 @@ if (mode === "prod") {
   console.log("Package build complete. Ready to publish.");
 }
 
-// Step 3 (dev + playground): Build the playground app
+// Step 3 (dev + playground): Build the playground app.
 if (mode !== "prod") {
   rmSync("dist/playground", { recursive: true, force: true });
 
   const playgroundBuild = await Bun.build({
     entrypoints: ["playground/index.html"],
     outdir: "dist/playground",
-    target: "browser",
+    plugins: [tailwindPlugin],
     sourcemap: mode === "dev" ? "external" : "none",
+    ...(mode === "playground" && { compile: true }),
     ...(mode === "playground" && { minify: true }),
     define,
   });
 
   assertBuildSuccess(playgroundBuild, "Playground");
 
+  const libraryOutputCount = libraryBuild?.outputs.length ?? 0;
   console.log(
-    `\nBuilt ${libraryBuild.outputs.length} library outputs and ${playgroundBuild.outputs.length} playground outputs.`,
+    `\nBuilt ${libraryOutputCount} library outputs and ${playgroundBuild.outputs.length} playground outputs.`,
   );
 }
 

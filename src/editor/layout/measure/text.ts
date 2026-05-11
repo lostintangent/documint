@@ -6,6 +6,7 @@ import { layoutWithLines, prepareWithSegments, type PrepareOptions } from "@chen
 import type { Block, Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { EditorInline, EditorRegion } from "../../state";
+import { containsColorEmoji } from "../../text/emoji";
 import { splitGraphemes } from "../../text/graphemes";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./image";
 import { measureInlineMentionWidth } from "./mention";
@@ -550,7 +551,8 @@ function requiresMeasuredInlineLayout(container: EditorRegion) {
       run.kind === "image" ||
       isMentionInline(run) ||
       run.kind === "lineBreak" ||
-      runHasInlineFontMetrics(run),
+      runHasInlineFontMetrics(run) ||
+      containsColorEmoji(run.text),
   );
 }
 
@@ -623,8 +625,8 @@ function resolveRunMeasurementSignature(run: EditorInline, resources: DocumentRe
 function hashMeasurementText(text: string) {
   let hash = 2166136261;
 
-  for (const character of text) {
-    hash ^= character.charCodeAt(0);
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
 

@@ -55,8 +55,6 @@ export type {
 } from "./selection";
 
 // Animations
-export { hasNewAnimation } from "./animations";
-
 export type {
   ActiveBlockFlashAnimation,
   DeletedTextFadeAnimation,

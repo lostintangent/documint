@@ -11,6 +11,7 @@ export {
   type EditorKeybinding,
   type DocumintProps,
   type DocumintTheme,
+  type UserMentionEvent,
 } from "./component";
 
 export type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "./types";

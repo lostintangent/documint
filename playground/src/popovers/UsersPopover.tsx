@@ -2,7 +2,12 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import { Trash2, Users } from "lucide-react";
 import type { DocumentPresence, DocumentUser } from "documint";
 import { describeEntry, useUsers, type UsersMode } from "../hooks/useUsers";
-import { PlaygroundPopover } from "./PlaygroundPopover";
+import {
+  PlaygroundPopover,
+  popoverControlClassName,
+  popoverHeaderClassName,
+  popoverTitleClassName,
+} from "./PlaygroundPopover";
 
 type UsersPopoverProps = {
   content: string;
@@ -25,11 +30,10 @@ const swatchStyleByMode: Record<UsersMode, CSSProperties | undefined> = {
   empty: undefined,
 };
 
-const iconClassNameByMode: Record<UsersMode, string> = {
-  auto: "presence-toggle-icon presence-toggle is-auto",
-  manual: "presence-toggle-icon presence-toggle is-manual",
-  empty: "presence-toggle-icon presence-toggle",
-};
+const fieldLabelClassName = "font-controls grid gap-[0.35rem]";
+const fieldCaptionClassName = "text-[0.8rem] text-muted";
+const fieldInputClassName =
+  "w-full rounded-xl border border-border/[0.14] bg-background/[0.9] px-3 py-2";
 
 export function UsersPopover({
   content,
@@ -56,16 +60,14 @@ export function UsersPopover({
   return (
     <PlaygroundPopover
       ariaLabel="Configure users"
-      containerClassName="presence-controls"
-      flyoutClassName="presence-flyout"
+      flyoutClassName="max-[700px]:portrait:gap-3 max-[700px]:portrait:p-[0.85rem]"
       icon={<Users size={16} strokeWidth={2.1} />}
-      iconClassName={iconClassNameByMode[mode]}
       iconStyle={swatchStyleByMode[mode]}
       showSwatch={mode !== "empty"}
     >
-      <div className="presence-header">
-        <strong>Users</strong>
-        <label className="presence-checkbox">
+      <div className={popoverHeaderClassName}>
+        <strong className={popoverTitleClassName}>Users</strong>
+        <label className="flex items-center gap-[0.6rem]">
           <input
             checked={auto.enabled}
             onChange={(event) => auto.setEnabled(event.target.checked)}
@@ -75,10 +77,11 @@ export function UsersPopover({
         </label>
       </div>
 
-      <div className="presence-manual">
-        <label className="fixture-picker">
-          <span>Name</span>
+      <div className="grid gap-3">
+        <label className={fieldLabelClassName}>
+          <span className={fieldCaptionClassName}>Name</span>
           <input
+            className={fieldInputClassName}
             disabled={auto.enabled}
             onChange={(event) => manualForm.setName(event.target.value)}
             placeholder="Name"
@@ -88,9 +91,10 @@ export function UsersPopover({
           />
         </label>
 
-        <label className="fixture-picker">
-          <span>Avatar URL</span>
+        <label className={fieldLabelClassName}>
+          <span className={fieldCaptionClassName}>Avatar URL</span>
           <input
+            className={fieldInputClassName}
             disabled={auto.enabled}
             onChange={(event) => manualForm.setAvatarUrl(event.target.value)}
             placeholder="Optional avatar image"
@@ -99,9 +103,10 @@ export function UsersPopover({
           />
         </label>
 
-        <label className="fixture-picker">
-          <span>Prefix</span>
+        <label className={fieldLabelClassName}>
+          <span className={fieldCaptionClassName}>Prefix</span>
           <input
+            className={fieldInputClassName}
             disabled={auto.enabled}
             onChange={(event) => manualForm.setPrefix(event.target.value)}
             placeholder="Caret appears after this text"
@@ -110,9 +115,10 @@ export function UsersPopover({
           />
         </label>
 
-        <label className="fixture-picker">
-          <span>Suffix</span>
+        <label className={fieldLabelClassName}>
+          <span className={fieldCaptionClassName}>Suffix</span>
           <input
+            className={fieldInputClassName}
             disabled={auto.enabled}
             onChange={(event) => manualForm.setSuffix(event.target.value)}
             placeholder="Caret appears before this text"
@@ -121,10 +127,11 @@ export function UsersPopover({
           />
         </label>
 
-        <div className="presence-manual-row">
-          <label className="fixture-picker presence-color-picker">
-            <span>Color</span>
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-end gap-3">
+          <label className={`${fieldLabelClassName} min-w-20`}>
+            <span className={fieldCaptionClassName}>Color</span>
             <input
+              className={`${fieldInputClassName} min-h-[2.6rem] p-[0.35rem]`}
               disabled={auto.enabled}
               onChange={(event) => manualForm.setColor(event.target.value)}
               type="color"
@@ -133,7 +140,7 @@ export function UsersPopover({
           </label>
 
           <button
-            className="presence-add"
+            className={`${popoverControlClassName} justify-self-end rounded-xl px-[0.85rem] py-2`}
             disabled={auto.enabled || !manualForm.canAddEntry}
             onClick={manualForm.addEntry}
             type="button"
@@ -144,26 +151,28 @@ export function UsersPopover({
       </div>
 
       {auto.enabled ? (
-        <p className="presence-status">
+        <p className="m-0 text-[0.9rem] text-muted">
           {auto.presence
             ? `Auto user: ${describeEntry(auto.user, auto.presence)}`
             : "Auto user: waiting for a suitable text run"}
         </p>
       ) : manualEntries.items.length > 0 ? (
         <>
-          <div aria-hidden="true" className="presence-divider" />
-          <div className="presence-list">
+          <div aria-hidden="true" className="h-px bg-border/[0.12]" />
+          <div className="grid gap-3">
             {manualEntries.items.map((entry) => (
-              <div className="presence-chip" key={entry.user.id}>
+              <div className="flex min-w-0 items-center gap-[0.65rem]" key={entry.user.id}>
                 <span
                   aria-hidden="true"
-                  className="presence-chip-swatch"
+                  className="h-[0.8rem] w-[0.8rem] rounded-full shadow-swatch"
                   style={{ backgroundColor: entry.presence.color ?? "#0ea5e9" }}
                 />
-                <span>{describeEntry(entry.user, entry.presence)}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {describeEntry(entry.user, entry.presence)}
+                </span>
                 <button
                   aria-label={`Remove ${describeEntry(entry.user, entry.presence)}`}
-                  className="presence-remove"
+                  className="inline-flex cursor-pointer items-center justify-center border-0 bg-transparent p-1 text-red-600"
                   onClick={() => manualEntries.removeEntry(entry.user.id)}
                   type="button"
                 >

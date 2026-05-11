@@ -7,7 +7,6 @@ import {
   insertImage,
   insertMention,
   insertSoftLineBreak,
-  replaceTextRangeWithMention,
   resizeImage,
   toggleBold,
   toggleCode,
@@ -231,8 +230,16 @@ describe("Mentions", () => {
   test("inserts a user mention inline at the current caret position", () => {
     const base = setup("Hello \n");
     const region = getRegion(base, "Hello ");
-    const placed = placeAt(base, region, "end");
-    const next = insertMention(placed, "user-123", "Jane Doe");
+    const next = insertMention(
+      base,
+      {
+        endOffset: region.text.length,
+        regionId: region.id,
+        startOffset: region.text.length,
+      },
+      "user-123",
+      "Jane Doe",
+    );
 
     expect(next).not.toBeNull();
     expect(toMarkdown(next!)).toBe("Hello @[Jane Doe](user-123)\n");
@@ -241,7 +248,7 @@ describe("Mentions", () => {
   test("replaces an explicit text range with a user mention", () => {
     const base = setup("Hello @ja\n");
     const region = getRegion(base, "Hello @ja");
-    const next = replaceTextRangeWithMention(
+    const next = insertMention(
       base,
       {
         endOffset: "Hello @ja".length,
@@ -259,7 +266,7 @@ describe("Mentions", () => {
   test("replaces an explicit text range with a user mention and trailing text", () => {
     const base = setup("Hello @ja\n");
     const region = getRegion(base, "Hello @ja");
-    const next = replaceTextRangeWithMention(
+    const next = insertMention(
       base,
       {
         endOffset: "Hello @ja".length,

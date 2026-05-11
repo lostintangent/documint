@@ -5,6 +5,7 @@ export {
   type DocumintActions,
   type DocumintProps,
   type DocumintTheme,
+  type UserMentionEvent,
 } from "./Documint";
 
 export { darkTheme, lightTheme, midnightTheme, mintTheme } from "./lib/themes";

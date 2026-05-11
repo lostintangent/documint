@@ -211,15 +211,6 @@ export function getEditorAnimationTime() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
 
-export function hasNewAnimation(previousState: EditorState, nextState: EditorState) {
-  const previousLatestStart = Math.max(
-    -Infinity,
-    ...previousState.animations.map((animation) => animation.startedAt),
-  );
-
-  return nextState.animations.some((animation) => animation.startedAt > previousLatestStart);
-}
-
 // --- Selection helpers ---
 
 // Resolves the block path for the currently focused block, used as the

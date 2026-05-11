@@ -44,8 +44,9 @@ import {
   toggleUnderline,
   updateLink,
   type EditorPresence,
+  type TextRangeTarget,
 } from "@/editor";
-import type { IconName } from "lucide-react/dynamic";
+import type { LucideIcon } from "lucide-react";
 import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -75,6 +76,7 @@ import { extractMentionedUserIds } from "./lib/mentions";
 import { joinUsersAndPresence } from "./lib/presence";
 import { DocumentStorage } from "./lib/storage";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
+import { resolveMarkdownLineDiff } from "./lib/markdown-line-diff";
 import { DocumintSsr } from "./Ssr";
 import {
   activeCommentThreadIndexValue,
@@ -87,7 +89,7 @@ import {
   presenceValue,
   selectionContextValue,
   type DocumintStore,
-  type EditorTransition,
+  type EditorStateTransition,
   useDocumintStore,
   useEditorCommand,
   useStoreValue,
@@ -107,11 +109,12 @@ export type DocumintProps = {
 
   onContentChanged?: (content: string, document: Document) => void;
   onCommentChanged?: (change: CommentChange) => void;
+  onUserMentioned?: (event: UserMentionEvent) => void;
 };
 
 export type DocumintAction<T> = {
-  icon: IconName;
-  label?: string;
+  icon: LucideIcon;
+  label: string;
   onClick: (arg: T) => void;
 };
 
@@ -148,6 +151,12 @@ export type CommentChange =
       threadIndex: number;
     };
 
+export type UserMentionEvent = {
+  lineMarkdown: string;
+  lineNumber: number;
+  userId: string;
+};
+
 export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
 
 export function Documint({ content, ...props }: DocumintProps) {
@@ -172,6 +181,7 @@ function DocumintHost({
   keybindings,
   onCommentChanged,
   onContentChanged,
+  onUserMentioned,
   presence,
   storage,
   theme,
@@ -241,9 +251,39 @@ function DocumintHost({
   const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
     return isEditable ? completionSources : undefined;
   }, [completionSources, isEditable]);
+  const emitUserMentioned = useEffectEvent(
+    ({
+      target,
+      transition,
+      userId,
+    }: {
+      target: TextRangeTarget;
+      transition: EditorStateTransition;
+      userId: string;
+    }) => {
+      // TODO: replace this hook-specific payload plumbing with a general
+      // command-effect channel once editor commands can report semantic effects.
+      const lineDiff = resolveMarkdownLineDiff(transition, target);
+
+      if (!lineDiff) {
+        return;
+      }
+
+      const event: UserMentionEvent = {
+        ...lineDiff,
+        userId,
+      };
+
+      if (process.env.NODE_ENV !== "production") {
+        emitDiagnostic("userMentioned", { ...event });
+      }
+      onUserMentioned?.(event);
+    },
+  );
   const documentCompletions = useDocumentCompletions({
     completionSources: documentCompletionSources,
     enabled: isEditable,
+    onMentionAccepted: emitUserMentioned,
   });
   const userPresence = useMemo(() => joinUsersAndPresence(users, presence), [users, presence]);
   const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
@@ -255,35 +295,37 @@ function DocumintHost({
     return fragment ? extractPlainTextFromFragment(fragment) : "";
   };
 
-  const commitEditorCommandTransition = useEffectEvent((transition: EditorTransition | null) => {
-    if (!transition) {
-      return;
-    }
+  const commitEditorCommandTransition = useEffectEvent(
+    (transition: EditorStateTransition | null) => {
+      if (!transition) {
+        return;
+      }
 
-    if (transition.reason === "external-content") {
-      return;
-    }
+      if (transition.source === "external") {
+        return;
+      }
 
-    reconcileEditorState(transition.previous, transition.next);
+      reconcileEditorState(transition.previous, transition.next);
 
-    if (transition.animationStarted) {
-      // All editor animations are content-layer effects (block flash,
-      // inserted/deleted text fade, list marker pop, punctuation pulse).
-      // None affect layout or overlay, so a content paint is sufficient.
-      scheduleContentPaint();
-    }
+      if (transition.animationsChanged) {
+        // All editor animations are content-layer effects (block flash,
+        // inserted/deleted text fade, list marker pop, punctuation pulse).
+        // None affect layout or overlay, so a content paint is sufficient.
+        scheduleContentPaint();
+      }
 
-    if (!transition.documentChanged) {
-      return;
-    }
+      if (!transition.documentChanged) {
+        return;
+      }
 
-    const nextDocument = getDocument(transition.next);
-    const nextContent = serializeDocument(nextDocument);
+      const nextDocument = getDocument(transition.next);
+      const nextContent = serializeDocument(nextDocument);
 
-    canonicalContentRef.current = nextContent;
-    lastEmittedContentRef.current = nextContent;
-    onContentChanged?.(nextContent, nextDocument);
-  });
+      canonicalContentRef.current = nextContent;
+      lastEmittedContentRef.current = nextContent;
+      onContentChanged?.(nextContent, nextDocument);
+    },
+  );
 
   useLayoutEffect(() => {
     return store.editor.subscribe(commitEditorCommandTransition);
@@ -717,7 +759,7 @@ function DocumintHost({
           selectionActions.length > 0
             ? selectionActions.map((action) => ({
                 icon: action.icon,
-                label: action.label ?? formatActionLabel(action.icon),
+                label: action.label,
                 onClick: () => {
                   action.onClick(resolveSelectedText());
                 },
@@ -858,7 +900,7 @@ function DocumintHost({
     );
     const nextState = reconciliation.state;
     const nextViewportTop = reconciliation.didReconcile ? getScrollTop() : 0;
-    store.editor.replace(nextState, "external-content");
+    store.editor.replace(nextState, "external");
 
     lastEmittedContentRef.current = content;
     canonicalContentRef.current = canonicalContent;
@@ -985,10 +1027,4 @@ function normalizeDocumintActions<T>(
   }
 
   return "onClick" in actions ? [actions] : actions;
-}
-
-function formatActionLabel(icon: IconName) {
-  const label = icon.replaceAll("-", " ");
-
-  return label.charAt(0).toUpperCase() + label.slice(1);
 }

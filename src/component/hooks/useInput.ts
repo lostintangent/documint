@@ -52,7 +52,7 @@ import {
   useDocumintStore,
   useEditorCommand,
   useStoreValue,
-  type EditorTransition,
+  type EditorStateTransition,
 } from "../store";
 
 type UseInputOptions = {
@@ -216,7 +216,7 @@ export function useInput({
 
   const runInputCommand = useEffectEvent(
     <Args extends unknown[]>(
-      command: (...args: Args) => EditorTransition | null,
+      command: (...args: Args) => EditorStateTransition | null,
       ...args: Args
     ) => {
       const transition = command(...args);

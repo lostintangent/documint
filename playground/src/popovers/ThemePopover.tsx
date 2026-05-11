@@ -15,17 +15,20 @@ export function ThemePopover({ onThemeIdChange, themeId }: ThemePopoverProps) {
   return (
     <PlaygroundPopover
       ariaLabel="Select editor theme"
-      containerClassName="theme-controls"
-      flyoutClassName="theme-flyout"
       icon={<Palette size={16} strokeWidth={2.1} />}
       iconStyle={showSwatch ? getThemeSwatchStyle(activeThemeOption) : undefined}
+      size="sm"
       showSwatch={showSwatch}
     >
       {({ close }) => (
-        <div className="theme-list">
+        <div className="grid gap-[0.35rem]">
           {themeOptions.map((option) => (
             <button
-              className={option.id === themeId ? "is-active" : undefined}
+              className={`font-controls inline-flex cursor-pointer items-center gap-[0.55rem] rounded-xl border px-3 py-[0.55rem] text-left ${
+                option.id === themeId
+                  ? "border-accent/40 bg-accent/[0.08]"
+                  : "border-border/[0.12] bg-background/[0.9]"
+              }`}
               key={option.id}
               onClick={() => {
                 onThemeIdChange(option.id);
@@ -36,7 +39,7 @@ export function ThemePopover({ onThemeIdChange, themeId }: ThemePopoverProps) {
             >
               <span
                 aria-hidden="true"
-                className="theme-option-icon"
+                className="inline-flex h-[1.4rem] w-[1.4rem] flex-none items-center justify-center rounded-full border border-border/[0.14]"
                 style={getThemeSwatchStyle(option)}
               >
                 <Palette size={16} strokeWidth={2.1} />
@@ -57,7 +60,7 @@ function getThemeOptionLabelStyle(option: (typeof themeOptions)[number]): CSSPro
         ? "#111827"
         : option.id === "midnight"
           ? "#6d28d9"
-          : (option.theme?.paragraphText ?? option.theme?.leafText ?? "var(--playground-text)"),
+          : (option.theme?.paragraphText ?? option.theme?.leafText ?? "#1f2937"),
   };
 }
 

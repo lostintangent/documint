@@ -39,7 +39,6 @@ export {
   getSelectionContext,
   getSelectionMarks,
   getSelectionRange,
-  hasNewAnimation,
   normalizeSelection,
   resolveImageAtSelection,
   setSelection,

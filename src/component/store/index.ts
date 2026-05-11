@@ -40,5 +40,5 @@ export {
 } from "./editor/computed-values";
 export { publishedViewportValue } from "./viewport/values";
 export { documentIndexValue, editorStateValue, imageUrlsValue } from "./editor/values";
-export { type EditorTransition } from "./editor/transitions";
+export type { EditorStateTransition } from "./editor/transitions";
 export { presenceValue } from "./presence";
