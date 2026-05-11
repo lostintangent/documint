@@ -5,12 +5,12 @@
 import type { EditorTheme } from "@/types";
 import type {
   ActiveBlockFlashAnimation,
-  DeletedTextFadeAnimation,
+  TextFadeAnimation,
   EditorState,
   EditorAnimation,
-  InsertedTextHighlightAnimation,
-  ListMarkerPopAnimation,
-  PunctuationPulseAnimation,
+  TextHighlightAnimation,
+  BlockPulseAnimation,
+  TextPulseAnimation,
 } from "../../state";
 import { blendCanvasColors, transparentCanvasColor } from "./colors";
 
@@ -18,27 +18,27 @@ export type ActiveBlockFlash = ActiveBlockFlashAnimation & {
   progress: number;
 };
 
-export type ActiveDeletedTextFade = DeletedTextFadeAnimation & {
+export type ActiveTextFade = TextFadeAnimation & {
   progress: number;
 };
 
-export type ActiveInsertedTextHighlight = InsertedTextHighlightAnimation & {
+export type ActiveTextHighlight = TextHighlightAnimation & {
   progress: number;
 };
 
-export type ActiveListMarkerPop = ListMarkerPopAnimation & {
+export type ActiveBlockPulse = BlockPulseAnimation & {
   progress: number;
 };
 
-export type ActivePunctuationPulse = PunctuationPulseAnimation & {
+export type ActiveTextPulse = TextPulseAnimation & {
   progress: number;
 };
 
 const activeBlockFlashDurationMs = 300;
-const deletedTextFadeDurationMs = 180;
-const insertedTextHighlightDurationMs = 1000;
-const listMarkerPopDurationMs = 500;
-const punctuationPulseDurationMs = 140;
+const textFadeDurationMs = 180;
+const textHighlightDurationMs = 1000;
+const blockPulseDurationMs = 500;
+const textPulseDurationMs = 140;
 
 // List marker pop reaches full scale in the first half of its duration,
 // then blends color back to the base in the second half.
@@ -51,14 +51,14 @@ export function getEditorAnimationDuration(animation: EditorAnimation) {
   switch (animation.kind) {
     case "active-block-flash":
       return activeBlockFlashDurationMs;
-    case "deleted-text-fade":
-      return deletedTextFadeDurationMs;
-    case "inserted-text-highlight":
-      return insertedTextHighlightDurationMs;
-    case "list-marker-pop":
-      return listMarkerPopDurationMs;
-    case "punctuation-pulse":
-      return punctuationPulseDurationMs;
+    case "text-fade":
+      return textFadeDurationMs;
+    case "text-highlight":
+      return textHighlightDurationMs;
+    case "block-pulse":
+      return blockPulseDurationMs;
+    case "text-pulse":
+      return textPulseDurationMs;
   }
 }
 
@@ -70,12 +70,12 @@ export function hasRunningEditorAnimations(state: EditorState, now?: number) {
   );
 }
 
-export function resolveActiveInsertedTextHighlights(state: EditorState, now: number) {
+export function resolveActiveTextHighlights(state: EditorState, now: number) {
   return collectActiveAnimations<
-    "inserted-text-highlight",
-    InsertedTextHighlightAnimation,
-    ActiveInsertedTextHighlight
-  >(state, now, "inserted-text-highlight", (a) => a.regionPath);
+    "text-highlight",
+    TextHighlightAnimation,
+    ActiveTextHighlight
+  >(state, now, "text-highlight", (a) => a.regionPath);
 }
 
 export function resolveActiveBlockFlashes(state: EditorState, now: number) {
@@ -87,39 +87,39 @@ export function resolveActiveBlockFlashes(state: EditorState, now: number) {
   );
 }
 
-export function resolveActiveDeletedTextFades(state: EditorState, now: number) {
+export function resolveActiveTextFades(state: EditorState, now: number) {
   return collectActiveAnimations<
-    "deleted-text-fade",
-    DeletedTextFadeAnimation,
-    ActiveDeletedTextFade
-  >(state, now, "deleted-text-fade", (a) => a.regionPath);
+    "text-fade",
+    TextFadeAnimation,
+    ActiveTextFade
+  >(state, now, "text-fade", (a) => a.regionPath);
 }
 
-export function resolveActivePunctuationPulses(state: EditorState, now: number) {
+export function resolveActiveTextPulses(state: EditorState, now: number) {
   return collectActiveAnimations<
-    "punctuation-pulse",
-    PunctuationPulseAnimation,
-    ActivePunctuationPulse
-  >(state, now, "punctuation-pulse", (a) => a.regionPath);
+    "text-pulse",
+    TextPulseAnimation,
+    ActiveTextPulse
+  >(state, now, "text-pulse", (a) => a.regionPath);
 }
 
-export function resolveActiveListMarkerPops(state: EditorState, now: number) {
-  return collectActiveAnimation<"list-marker-pop", ListMarkerPopAnimation, ActiveListMarkerPop>(
+export function resolveActiveBlockPulses(state: EditorState, now: number) {
+  return collectActiveAnimation<"block-pulse", BlockPulseAnimation, ActiveBlockPulse>(
     state,
     now,
-    "list-marker-pop",
+    "block-pulse",
     (a) => a.blockPath,
   );
 }
 
-export function resolveInsertHighlightSegmentBoundaries(
+export function resolveTextHighlightSegmentBoundaries(
   startOffset: number,
   endOffset: number,
-  insertedTextHighlights: ActiveInsertedTextHighlight[],
+  textHighlights: ActiveTextHighlight[],
 ) {
   const boundaries = new Set<number>([startOffset, endOffset]);
 
-  for (const highlight of insertedTextHighlights) {
+  for (const highlight of textHighlights) {
     if (highlight.endOffset <= startOffset || highlight.startOffset >= endOffset) {
       continue;
     }
@@ -131,13 +131,13 @@ export function resolveInsertHighlightSegmentBoundaries(
   return [...boundaries].sort((left, right) => left - right);
 }
 
-export function resolveActiveInsertedTextHighlightForSegment(
-  insertedTextHighlights: ActiveInsertedTextHighlight[],
+export function resolveActiveTextHighlightForSegment(
+  textHighlights: ActiveTextHighlight[],
   startOffset: number,
   endOffset: number,
 ) {
   return (
-    insertedTextHighlights.find(
+    textHighlights.find(
       (highlight) => highlight.startOffset < endOffset && highlight.endOffset > startOffset,
     ) ?? null
   );
@@ -145,21 +145,21 @@ export function resolveActiveInsertedTextHighlightForSegment(
 
 export function resolveAnimatedTextColor(
   baseColor: string,
-  insertedTextHighlight: ActiveInsertedTextHighlight | null,
+  textHighlight: ActiveTextHighlight | null,
   theme: EditorTheme,
 ) {
-  if (!insertedTextHighlight) {
+  if (!textHighlight) {
     return baseColor;
   }
 
-  return blendCanvasColors(theme.insertHighlightText, baseColor, insertedTextHighlight.progress);
+  return blendCanvasColors(theme.insertHighlightText, baseColor, textHighlight.progress);
 }
 
-export function resolveDeletedTextFadeColor(
+export function resolveTextFadeColor(
   baseColor: string,
-  deletedTextFade: ActiveDeletedTextFade,
+  textFade: ActiveTextFade,
 ) {
-  return blendCanvasColors(baseColor, transparentCanvasColor, deletedTextFade.progress);
+  return blendCanvasColors(baseColor, transparentCanvasColor, textFade.progress);
 }
 
 export function resolveActiveBlockFlashColor(
@@ -173,25 +173,25 @@ export function resolveActiveBlockFlashColor(
   );
 }
 
-export function resolvePunctuationPulseColor(
-  punctuationPulse: ActivePunctuationPulse,
+export function resolveTextPulseColor(
+  textPulse: ActiveTextPulse,
   theme: EditorTheme,
 ) {
   return blendCanvasColors(
     theme.insertHighlightText,
     transparentCanvasColor,
-    punctuationPulse.progress,
+    textPulse.progress,
   );
 }
 
-export function resolveListMarkerPopScale(pop: ActiveListMarkerPop) {
+export function resolveBlockPulseScale(pop: ActiveBlockPulse) {
   const scaleProgress = Math.min(1, pop.progress * LIST_MARKER_POP_SCALE_SPEED);
   return LIST_MARKER_POP_MIN_SCALE + LIST_MARKER_POP_SCALE_RANGE * easeOutCubic(scaleProgress);
 }
 
-export function resolveListMarkerPopColor(
+export function resolveBlockPulseColor(
   baseColor: string,
-  pop: ActiveListMarkerPop,
+  pop: ActiveBlockPulse,
   theme: EditorTheme,
 ) {
   const colorProgress = Math.max(0, pop.progress * LIST_MARKER_POP_COLOR_SPEED - 1);

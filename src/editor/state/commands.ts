@@ -9,21 +9,13 @@
 //
 // The primary mechanism is a three-step pipeline: resolve any context the
 // operation needs, build an EditorStateAction describing the edit, then
-// dispatch it through the reducer to produce the next state. Some commands
-// layer presentation side-effects (animations) on top of the dispatched
-// state. A few escape hatches bypass the action pipeline entirely —
-// selection-only ops (selectAll) and history ops (undo/redo) — but still
-// honor the state-in/state-out contract.
+// dispatch it through the reducer to produce the next state. A few escape
+// hatches bypass the action pipeline entirely — selection-only ops
+// (selectAll) and history ops (undo/redo) — but still honor the
+// state-in/state-out contract.
 //
 // Commands never reach into reducer internals.
 
-import {
-  addInsertedTextHighlightAnimation,
-  addListMarkerPopAnimation,
-  addPlainTextDeletionFadeAnimation,
-  addPunctuationPulseAnimation,
-  clearInsertedTextHighlightAnimations,
-} from "./animations";
 import { normalizeSelection } from "./selection";
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "./reducer/state";
 import {
@@ -59,8 +51,6 @@ import {
   createLineBreak,
   deleteCommentFromThread,
   editCommentInThread,
-  extractPlainTextFromFragment,
-  extractPlainTextFromInlineNodes,
   markCommentThreadAsResolved as markThreadResolved,
   replyToCommentThread as appendThreadReply,
   type CommentThread,
@@ -70,9 +60,12 @@ import {
 import { resolveCharacterDelete } from "./actions/deletion/character";
 import { resolveTextInsertion } from "./actions/insertion";
 import { resolveLineBreakAction } from "./actions/insertion/line-break";
+import {
+  extractFragment,
+  resolvePasteFragmentAction,
+  resolvePasteFragmentContext,
+} from "./fragments";
 import { resolveTextRangeReplacement, resolveTextReplacement } from "./actions/insertion/replace";
-import { applyFragment, extractFragment } from "./fragment";
-import { resolveFragmentDestinationContext } from "./fragment/context";
 import {
   resolveListItemDedent,
   resolveListItemIndent,
@@ -94,31 +87,9 @@ import {
 
 export const insertText = makeCommand(
   (state, text: string) => resolveTextInsertion(state.documentIndex, state.selection, text),
-  {
-    animate: (_previousState, nextState, action, text) => {
-      if (action.kind !== "splice-text") {
-        return;
-      }
-
-      if (text === ".") {
-        return addPunctuationPulseAnimation(nextState);
-      }
-
-      return addInsertedTextHighlightAnimation(nextState, text);
-    },
-  },
 );
 
-export const insertLineBreak = makeCommand(resolveLineBreakAction, {
-  context: resolveBlockContext,
-  animate: (_, nextState, action) => {
-    if (action.kind !== "replace-block" || !action.listItemInsertedPath) {
-      return;
-    }
-
-    return addListMarkerPopAnimation(nextState, action.listItemInsertedPath);
-  },
-});
+export const insertLineBreak = makeCommand(resolveLineBreakAction, { context: resolveBlockContext });
 
 // Inserts an inline LineBreak at the caret (the Shift+Enter gesture). This
 // mirrors `insertImage` — both are single-inline inserts at the selection —
@@ -128,18 +99,13 @@ export const insertSoftLineBreak = makeCommand(
   (state) =>
     insertSoftLineBreakInline(state) ?? {
       kind: "splice-text",
-      selection: state.selection,
       text: "\n",
     },
 );
 
 export const replaceSelection = makeCommand(
-  (state, text: string): EditorStateAction => resolveTextReplacement(state.selection, text),
-  {
-    animate: (_prevState, nextState, _action, text) => {
-      return animateInsertedText(nextState, text);
-    },
-  },
+  (state, text: string): EditorStateAction =>
+    resolveTextReplacement(state.documentIndex, state.selection, text),
 );
 
 export const replaceTextRange = makeCommand(
@@ -152,14 +118,8 @@ export const replaceTextRange = makeCommand(
   {
     context: (state, startOffset: number, endOffset: number) =>
       resolveTextRangeContext(state, startOffset, endOffset),
-    animate: (_prevState, nextState, _action, _startOffset, _endOffset, text) =>
-      animateInsertedText(clearInsertedTextHighlightAnimations(nextState), text),
   },
 );
-
-function animateInsertedText(nextState: EditorState, text: string) {
-  return text.length > 0 ? addInsertedTextHighlightAnimation(nextState, text) : undefined;
-}
 
 export const deleteSelection = (state: EditorState) => replaceSelection(state, "");
 
@@ -186,85 +146,32 @@ export const deleteForward = makePipelineCommand(
 export const copySelection = (state: EditorState): Fragment | null =>
   extractFragment(state.documentIndex, state.selection);
 
-// Replace the current selection with a `Fragment`. Routing happens inside
-// `applyFragment`, dispatching at the lowest altitude the fragment kind
-// allows (text → inline replace, inlines → in-leaf splice, blocks →
-// structural seam-merge).
+// Replace the current selection with a `Fragment`. Fragment application
+// resolves to the lowest-altitude action the fragment kind allows
+// (text → inline replace, inlines → in-leaf splice, blocks → structural
+// seam-merge).
 //
-// `verbatimFallback` is consulted only when `applyFragment` declines on
+// `verbatimFallback` is consulted only when fragment application declines on
 // an opaque destination (code block, table cell). For code blocks the
 // fallback text inserts as literal source so markdown markers are
 // preserved; table cells get the fragment's plain-text projection. The
 // caller (component layer) supplies the original clipboard text as
 // `verbatimFallback` — the editor doesn't parse it, just inserts it.
 //
-// Inline-shaped pastes (text, inlines, single-paragraph blocks) flash an
-// inserted-text highlight so the visual feedback matches typing.
+// Inline-shaped pastes (text, inlines, single-paragraph blocks) flash a
+// text highlight so the visual feedback matches typing.
 // Multi-block pastes lean on the active-block flash that `setSelection`
 // fires when the caret lands in a new block.
+const pasteFragmentCommand = makeCommand(resolvePasteFragmentAction, {
+  context: resolvePasteFragmentContext,
+});
+
 export function pasteFragment(
   state: EditorState,
   fragment: Fragment,
   verbatimFallback?: string,
 ): EditorState | null {
-  const result = applyFragment(state, fragment);
-
-  if (result) {
-    const insertedText = inlineInsertionText(fragment);
-    return insertedText.length > 0
-      ? addInsertedTextHighlightAnimation(result, insertedText)
-      : result;
-  }
-
-  // applyFragment refused. Empty `text` payloads silently no-op; opaque
-  // destinations (code block / table cell) get a flatten fallback.
-  if (fragment.kind === "text") {
-    return null;
-  }
-
-  return pasteIntoOpaqueRoot(state, fragment, verbatimFallback);
-}
-
-// The text that paste landed inline in the destination region. For `text`
-// and `inlines`, that's the whole payload. For a single-paragraph block
-// fragment, it's the paragraph's text — the seam merge absorbs it into the
-// destination block's inline content. Multi-block fragments cross block
-// boundaries (the active-block flash takes over) so they report empty text
-// — no inline highlight.
-function inlineInsertionText(fragment: Fragment): string {
-  switch (fragment.kind) {
-    case "text":
-      return fragment.text;
-    case "inlines":
-      return extractPlainTextFromInlineNodes(fragment.inlines);
-    case "blocks":
-      return fragment.blocks.length === 1 && fragment.blocks[0]!.type === "paragraph"
-        ? fragment.blocks[0]!.plainText
-        : "";
-  }
-}
-
-function pasteIntoOpaqueRoot(
-  state: EditorState,
-  fragment: Extract<Fragment, { kind: "inlines" } | { kind: "blocks" }>,
-  verbatimFallback: string | undefined,
-): EditorState | null {
-  // Code blocks store source text — preserve every character of the
-  // original clipboard payload. Table cells (or code blocks without a
-  // verbatim source) take the fragment's plain-text projection so
-  // newlines / markdown markers don't bleed into the inline content.
-  const destination = resolveFragmentDestinationContext(state.documentIndex, state.selection);
-
-  if (!destination) {
-    return null;
-  }
-
-  const fallbackText =
-    destination.prefersVerbatimFallback && verbatimFallback && verbatimFallback.length > 0
-      ? verbatimFallback
-      : extractPlainTextFromFragment(fragment);
-
-  return fallbackText.length > 0 ? replaceSelection(state, fallbackText) : null;
+  return pasteFragmentCommand(state, fragment, verbatimFallback);
 }
 
 // --- Selection ---
@@ -498,22 +405,7 @@ type CommandResult<R extends EditorStateAction | null> = [Extract<R, null>] exte
 
 type ContextResolver<C, A extends unknown[] = []> = (state: EditorState, ...args: A) => C | null;
 
-// Optional post-dispatch hook used to layer presentation effects (typically
-// an animation) on top of the freshly-dispatched state. Return a new
-// EditorState to replace `nextState`; return nothing to keep `nextState`
-// as-is. Receives the original args so it can branch on what was requested.
-type CommandAnimator<A extends unknown[] = []> = (
-  previousState: EditorState,
-  nextState: EditorState,
-  action: EditorStateAction,
-  ...args: A
-) => EditorState | void;
-
-type CommandOptions<A extends unknown[] = []> = {
-  animate?: CommandAnimator<A>;
-};
-
-type ContextCommandOptions<C, A extends unknown[] = []> = CommandOptions<A> & {
+type ContextCommandOptions<C, A extends unknown[] = []> = {
   context: ContextResolver<C, A>;
 };
 
@@ -533,11 +425,11 @@ function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>
 ): (state: EditorState, ...args: A) => CommandResult<R>;
 function makeCommand<A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: StateActionResolver<A, R>,
-  options?: CommandOptions<A>,
+  options?: never,
 ): (state: EditorState, ...args: A) => CommandResult<R>;
 function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: StateActionResolver<A, R> | ContextActionResolver<C, A, R>,
-  options?: CommandOptions<A> | ContextCommandOptions<C, A>,
+  options?: ContextCommandOptions<C, A>,
 ): (state: EditorState, ...args: A) => CommandResult<R> {
   return ((state: EditorState, ...args: A) => {
     const action =
@@ -547,8 +439,7 @@ function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>
 
     if (!action) return null;
 
-    const nextState = dispatch(state, action);
-    return options?.animate?.(state, nextState, action, ...args) ?? nextState;
+    return dispatch(state, action);
   }) as (state: EditorState, ...args: A) => CommandResult<R>;
 }
 
@@ -617,19 +508,7 @@ function hasExpandedSelection(state: EditorState) {
 
 function deleteCollapsedCharacter(state: EditorState, direction: "backward" | "forward") {
   const action = resolveCharacterDelete(state, direction);
-  if (!action) return null;
-
-  const nextState = dispatch(state, action);
-  if (!nextState) return null;
-
-  // The action's selection carries the deletion range; the animation
-  // layer only needs the offsets, not the action shape itself.
-  return addPlainTextDeletionFadeAnimation(
-    state,
-    nextState,
-    action.selection.anchor.offset,
-    action.selection.focus.offset,
-  );
+  return dispatch(state, action);
 }
 
 function updateCommentThread(

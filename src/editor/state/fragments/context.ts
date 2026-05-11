@@ -25,15 +25,6 @@ export type FragmentSourceContext =
       endRoot: Block;
     };
 
-export type FragmentDestinationContext = {
-  normalized: NormalizedEditorSelection;
-  sameRegion: boolean;
-  startRegion: EditorRegion;
-  endRegion: EditorRegion;
-  structuralBlocked: boolean;
-  prefersVerbatimFallback: boolean;
-};
-
 export function resolveFragmentSourceContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
@@ -78,32 +69,4 @@ export function resolveFragmentSourceContext(
     startRoot,
     endRoot,
   };
-}
-
-export function resolveFragmentDestinationContext(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): FragmentDestinationContext | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
-
-  if (!startRegion || !endRegion) {
-    return null;
-  }
-
-  const structuralBlocked = isOpaqueRegion(startRegion) || isOpaqueRegion(endRegion);
-
-  return {
-    normalized,
-    sameRegion: startRegion === endRegion,
-    startRegion,
-    endRegion,
-    structuralBlocked,
-    prefersVerbatimFallback: startRegion.blockType === "code" || endRegion.blockType === "code",
-  };
-}
-
-function isOpaqueRegion(region: EditorRegion): boolean {
-  return region.blockType === "table" || region.blockType === "code";
 }

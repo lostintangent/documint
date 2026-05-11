@@ -49,7 +49,7 @@ import {
 // primitives but compute structural changes differently — boundary
 // collapse keeps the surviving block's identity and text layout, while
 // fragment seam-merge trims and rejoins arbitrary block trees. See
-// `state/fragment/blocks.ts`.
+// `state/reducer/fragments.ts`.
 //
 // Inert blocks (divider today; future image-as-block, embed) contribute
 // no region. The region-flow walk skips them by construction, so the

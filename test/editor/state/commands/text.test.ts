@@ -78,7 +78,7 @@ test("replaces an explicit text range in one region", () => {
   });
 });
 
-test("replacing an explicit text range invalidates stale insertion highlights", () => {
+test("replacing an explicit text range starts a highlight for the replacement text", () => {
   const state = setup("alpha\n");
   const region = getRegion(state, "alpha");
   const stateWithInsertion = insertText(placeAt(state, region, "end"), "x");
@@ -93,14 +93,15 @@ test("replacing an explicit text range invalidates stale insertion highlights", 
     throw new Error("Expected replaceTextRange to produce a new state");
   }
 
-  expect(
-    nextState.animations.filter((animation) => animation.kind === "inserted-text-highlight"),
-  ).toEqual([
-    expect.objectContaining({
-      endOffset: 1,
-      startOffset: 0,
-    }),
-  ]);
+  expect(nextState.animations).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        endOffset: 1,
+        kind: "text-highlight",
+        startOffset: 0,
+      }),
+    ]),
+  );
 });
 
 test("returns null when replacing an invalid explicit text range", () => {

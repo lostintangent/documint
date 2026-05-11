@@ -8,15 +8,14 @@ import {
 import { resolveListItemSplit, resolveStructuralListBlockSplit } from "../blocks/list";
 import { resolveTableCellLineBreak } from "../blocks/table";
 
-// Line-break policy. Commands should only resolve context, dispatch the
-// resulting action, and apply presentation concerns like list-marker
-// animations.
+// Line-break policy. Commands should only resolve context and dispatch the
+// resulting action.
 export function resolveLineBreakAction(
   ctx: BlockContext,
 ): EditorStateAction | null {
   switch (ctx.kind) {
     case "code":
-      return { kind: "splice-text", selection: ctx.selection, text: "\n" };
+      return { kind: "splice-text", text: "\n" };
 
     case "tableCell":
       return resolveTableCellLineBreak(ctx);

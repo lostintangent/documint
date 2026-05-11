@@ -6,7 +6,7 @@ import {
 } from "@/editor/canvas/lib/animations";
 import { getRegion, placeAt, setup } from "../helpers";
 
-test("starts and expires inserted-text highlight animations for typed text", () => {
+test("starts and expires text highlight animations for typed text", () => {
   const state = setup("alpha\n");
   const region = getRegion(state, "alpha");
   const stateAtEnd = placeAt(state, region, "end");
@@ -17,14 +17,14 @@ test("starts and expires inserted-text highlight animations for typed text", () 
     expect.arrayContaining([
       expect.objectContaining({
         endOffset: region.text.length + 1,
-        kind: "inserted-text-highlight",
+        kind: "text-highlight",
         regionPath: region.path,
         startOffset: region.text.length,
       }),
     ]),
   );
 
-  const effect = result!.animations.find((a) => a.kind === "inserted-text-highlight");
+  const effect = result!.animations.find((a) => a.kind === "text-highlight");
 
   expect(effect).toBeDefined();
   expect(hasRunningAnimations(result!, effect!.startedAt + 10)).toBe(true);
@@ -33,19 +33,38 @@ test("starts and expires inserted-text highlight animations for typed text", () 
   ).toBe(false);
 });
 
-test("does not start inserted-text highlight animations for color emoji inserts", () => {
+test("highlights both delimiters for paired delimiter insertion", () => {
+  const state = setup("alpha\n");
+  const region = getRegion(state, "alpha");
+  const result = insertText(placeAt(state, region, 2), "(");
+
+  expect(result).not.toBeNull();
+  expect(result!.animations).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        endOffset: 4,
+        kind: "text-highlight",
+        regionPath: region.path,
+        startOffset: 2,
+      }),
+    ]),
+  );
+  expect(result!.selection.focus.offset).toBe(3);
+});
+
+test("does not start text highlight animations for color emoji inserts", () => {
   const state = setup("alpha\n");
   const region = getRegion(state, "alpha");
   const stateAtEnd = placeAt(state, region, "end");
   const result = insertText(stateAtEnd, "🔥");
 
   expect(result).not.toBeNull();
-  expect(result!.animations.some((animation) => animation.kind === "inserted-text-highlight")).toBe(
+  expect(result!.animations.some((animation) => animation.kind === "text-highlight")).toBe(
     false,
   );
 });
 
-test("starts a punctuation pulse animation when typing a period", () => {
+test("starts a text pulse animation when typing a period", () => {
   const state = setup("alpha\n");
   const region = getRegion(state, "alpha");
   const stateAtEnd = placeAt(state, region, "end");
@@ -55,14 +74,14 @@ test("starts a punctuation pulse animation when typing a period", () => {
   expect(result!.animations).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        kind: "punctuation-pulse",
+        kind: "text-pulse",
         offset: region.text.length,
         regionPath: region.path,
       }),
     ]),
   );
 
-  const pulse = result!.animations.find((a) => a.kind === "punctuation-pulse");
+  const pulse = result!.animations.find((a) => a.kind === "text-pulse");
   const stateWithPulseOnly = { ...result!, animations: pulse ? [pulse] : [] };
 
   expect(pulse).toBeDefined();
@@ -75,15 +94,15 @@ test("starts a punctuation pulse animation when typing a period", () => {
   ).toBe(false);
 });
 
-test("does not start a punctuation pulse animation for ordinary text input", () => {
+test("does not start a text pulse animation for ordinary text input", () => {
   const state = setup("alpha\n");
   const result = insertText(placeAt(state, getRegion(state, "alpha"), "end"), "a");
 
   expect(result).not.toBeNull();
-  expect(result!.animations.some((a) => a.kind === "punctuation-pulse")).toBe(false);
+  expect(result!.animations.some((a) => a.kind === "text-pulse")).toBe(false);
 });
 
-test("starts and expires deleted-text fade animations for single-character deletes", () => {
+test("starts and expires text fade animations for single-character deletes", () => {
   const state = setup("alpha\n");
   const region = getRegion(state, "alpha");
   const stateAtEnd = placeAt(state, region, "end");
@@ -93,7 +112,7 @@ test("starts and expires deleted-text fade animations for single-character delet
   expect(result!.animations).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        kind: "deleted-text-fade",
+        kind: "text-fade",
         regionPath: region.path,
         startOffset: region.text.length - 1,
         text: "a",
@@ -101,7 +120,7 @@ test("starts and expires deleted-text fade animations for single-character delet
     ]),
   );
 
-  const animation = result!.animations.find((a) => a.kind === "deleted-text-fade");
+  const animation = result!.animations.find((a) => a.kind === "text-fade");
   const stateWithFadeOnly = { ...result!, animations: animation ? [animation] : [] };
 
   expect(animation).toBeDefined();
@@ -114,14 +133,14 @@ test("starts and expires deleted-text fade animations for single-character delet
   ).toBe(false);
 });
 
-test("does not start deleted-text fade animations for color emoji deletes", () => {
+test("does not start text fade animations for color emoji deletes", () => {
   const state = setup("alpha 🔥\n");
   const region = getRegion(state, "alpha 🔥");
   const stateAtEnd = placeAt(state, region, "end");
   const result = deleteBackward(stateAtEnd);
 
   expect(result).not.toBeNull();
-  expect(result!.animations.some((animation) => animation.kind === "deleted-text-fade")).toBe(
+  expect(result!.animations.some((animation) => animation.kind === "text-fade")).toBe(
     false,
   );
 });
@@ -154,7 +173,7 @@ test("starts an active-block flash animation when selection moves into a differe
   ]);
 });
 
-test("starts a list-marker-pop animation when splitting a list item with insertLineBreak", () => {
+test("starts a block-pulse animation when splitting a list item with insertLineBreak", () => {
   const state = setup("- alpha\n");
   const region = getRegion(state, "alpha");
   const stateAtEnd = placeAt(state, region, "end");
@@ -162,22 +181,22 @@ test("starts a list-marker-pop animation when splitting a list item with insertL
 
   expect(result).not.toBeNull();
   expect(result!.animations).toEqual(
-    expect.arrayContaining([expect.objectContaining({ kind: "list-marker-pop" })]),
+    expect.arrayContaining([expect.objectContaining({ kind: "block-pulse" })]),
   );
 });
 
-test("does not re-trigger list-marker-pop when typing inside an existing list item", () => {
+test("does not re-trigger block-pulse when typing inside an existing list item", () => {
   const state = setup("- alpha\n");
   const result = insertText(placeAt(state, getRegion(state, "alpha"), "end"), "b");
 
   expect(result).not.toBeNull();
-  expect(result!.animations.some((a) => a.kind === "list-marker-pop")).toBe(false);
+  expect(result!.animations.some((a) => a.kind === "block-pulse")).toBe(false);
 });
 
-test("does not start a list-marker-pop animation when splitting a task list item", () => {
+test("does not start a block-pulse animation when splitting a task list item", () => {
   const state = setup("- [ ] task\n");
   const result = insertLineBreak(placeAt(state, getRegion(state, "task"), "end"));
 
   expect(result).not.toBeNull();
-  expect(result!.animations.some((a) => a.kind === "list-marker-pop")).toBe(false);
+  expect(result!.animations.some((a) => a.kind === "block-pulse")).toBe(false);
 });

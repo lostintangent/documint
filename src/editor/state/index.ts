@@ -57,11 +57,11 @@ export type {
 // Animations
 export type {
   ActiveBlockFlashAnimation,
-  DeletedTextFadeAnimation,
+  TextFadeAnimation,
   EditorAnimation,
-  InsertedTextHighlightAnimation,
-  ListMarkerPopAnimation,
-  PunctuationPulseAnimation,
+  TextHighlightAnimation,
+  BlockPulseAnimation,
+  TextPulseAnimation,
 } from "./animations";
 
 // State

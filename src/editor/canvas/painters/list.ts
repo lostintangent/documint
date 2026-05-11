@@ -5,9 +5,9 @@
 import { resolveTaskCheckboxBounds, type DocumentLayout } from "../../layout";
 import type { EditorListItemMarker } from "../../state";
 import {
-  resolveListMarkerPopColor,
-  resolveListMarkerPopScale,
-  type ActiveListMarkerPop,
+  resolveBlockPulseColor,
+  resolveBlockPulseScale,
+  type ActiveBlockPulse,
 } from "../lib/animations";
 import type { EditorTheme } from "@/types";
 
@@ -34,14 +34,14 @@ export function paintListMarker(
   textLeft: number,
   textBaseline: number,
   theme: EditorTheme,
-  pop: ActiveListMarkerPop | null = null,
+  pop: ActiveBlockPulse | null = null,
 ) {
   if (!marker || line.start !== 0) {
     return;
   }
 
   if (pop) {
-    const scale = resolveListMarkerPopScale(pop);
+    const scale = resolveBlockPulseScale(pop);
     const center = resolveListMarkerCenter(marker, line, textLeft, textBaseline, context);
 
     context.save();
@@ -54,7 +54,7 @@ export function paintListMarker(
     paintTaskCheckbox(context, line, marker.checked, theme, pop);
   } else {
     context.fillStyle = pop
-      ? resolveListMarkerPopColor(theme.listMarkerText, pop, theme)
+      ? resolveBlockPulseColor(theme.listMarkerText, pop, theme)
       : theme.listMarkerText;
 
     if (marker.kind === "ordered") {
@@ -74,7 +74,7 @@ export function paintTaskCheckbox(
   line: DocumentLayout["lines"][number],
   checked: boolean,
   theme: EditorTheme,
-  pop: ActiveListMarkerPop | null = null,
+  pop: ActiveBlockPulse | null = null,
 ) {
   const checkboxBounds = resolveTaskCheckboxBounds(line);
 
@@ -92,13 +92,13 @@ function paintTaskCheckboxFrame(
   checkboxBounds: TaskCheckboxBounds,
   checked: boolean,
   theme: EditorTheme,
-  pop: ActiveListMarkerPop | null = null,
+  pop: ActiveBlockPulse | null = null,
 ) {
   const fillColor = checked ? theme.checkboxCheckedFill : theme.checkboxUncheckedFill;
   const strokeColor = checked ? theme.checkboxCheckedStroke : theme.checkboxUncheckedStroke;
 
-  context.fillStyle = pop ? resolveListMarkerPopColor(fillColor, pop, theme) : fillColor;
-  context.strokeStyle = pop ? resolveListMarkerPopColor(strokeColor, pop, theme) : strokeColor;
+  context.fillStyle = pop ? resolveBlockPulseColor(fillColor, pop, theme) : fillColor;
+  context.strokeStyle = pop ? resolveBlockPulseColor(strokeColor, pop, theme) : strokeColor;
   context.beginPath();
   context.lineWidth = taskCheckboxStrokeWidth;
   context.roundRect(
@@ -116,10 +116,10 @@ function paintTaskCheckboxCheckmark(
   context: CanvasRenderingContext2D,
   checkboxBounds: TaskCheckboxBounds,
   theme: EditorTheme,
-  pop: ActiveListMarkerPop | null = null,
+  pop: ActiveBlockPulse | null = null,
 ) {
   context.strokeStyle = pop
-    ? resolveListMarkerPopColor(theme.checkboxCheckmark, pop, theme)
+    ? resolveBlockPulseColor(theme.checkboxCheckmark, pop, theme)
     : theme.checkboxCheckmark;
   context.lineWidth = taskCheckmarkStrokeWidth;
   context.beginPath();

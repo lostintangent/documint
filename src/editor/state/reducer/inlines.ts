@@ -1,6 +1,6 @@
 // Editor-inline manipulation: low-level primitives for slicing, replacing,
-// and rebuilding EditorInline arrays. Used by the text reducer to apply
-// edits to a region's children, and exposed to tests for direct coverage.
+// and rebuilding EditorInline arrays. Used by text replacement and fragment
+// extraction to preserve inline semantics while editing region text.
 //
 // EditorInline is the runtime projection: each inline carries link/image/
 // marks/code state plus precomputed offsets. These primitives operate on

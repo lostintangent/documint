@@ -19,6 +19,7 @@ import {
 import { getCommentState } from "../../anchors";
 import {
   addActiveBlockFlashAnimation,
+  addAnimationIntent,
   getEditorAnimationTime,
   pruneEditorAnimations,
   resolveFocusedBlockPath,
@@ -72,6 +73,14 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
     return null;
   }
 
+  const nextState = reduceEditorStateAction(state, action);
+  return nextState ? addAnimationIntent(nextState, action.animation) : null;
+}
+
+function reduceEditorStateAction(
+  state: EditorState,
+  action: EditorStateAction,
+): EditorState | null {
   switch (action.kind) {
     case "keep-state":
       return state;
@@ -97,12 +106,16 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
     }
 
     case "splice-text": {
-      const result = spliceText(state.documentIndex, action.selection, action.text);
-      return applyDocumentMutation(state, result.documentIndex, result.selection);
+      const result = spliceText(state.documentIndex, action.range ?? state.selection, action.text);
+      return applyDocumentMutation(
+        state,
+        result.documentIndex,
+        action.selection ?? result.selection,
+      );
     }
 
     case "splice-fragment": {
-      const result = replaceWithBlocks(state.documentIndex, action.selection, action.blocks);
+      const result = replaceWithBlocks(state.documentIndex, state.selection, action.blocks);
       return applyDocumentMutation(state, result.documentIndex, result.selection);
     }
 

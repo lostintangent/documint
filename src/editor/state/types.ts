@@ -28,36 +28,62 @@ export type HistoryEntry = {
   selection: EditorSelection;
 };
 
-export type EditorStateAction =
+export type AnimationIntent =
   | {
+      endOffset: number;
+      kind: "text-highlight";
+      regionPath: string;
+      startOffset: number;
+    }
+  | {
+      kind: "text-fade";
+      regionPath: string;
+      startOffset: number;
+      text: string;
+    }
+  | {
+      kind: "text-pulse";
+      offset: number;
+      regionPath: string;
+    }
+  | {
+      blockPath: string;
+      kind: "block-pulse";
+    };
+
+type ActionAnimationFields = {
+  animation?: AnimationIntent;
+};
+
+export type EditorStateAction =
+  | ({
       kind: "replace-block";
       block: Block;
       blockId: string;
-      listItemInsertedPath?: string;
       selection?: SelectionTarget | null;
-    }
-  | {
+    } & ActionAnimationFields)
+  | ({
       kind: "splice-blocks";
       blocks: Block[];
       count?: number;
       rootIndex: number;
       selection?: SelectionTarget | null;
-    }
-  | {
+    } & ActionAnimationFields)
+  | ({
       kind: "splice-text";
-      selection: EditorSelection;
+      range?: EditorSelection;
+      selection?: SelectionTarget | null;
       text: string;
-    }
-  | {
+    } & ActionAnimationFields)
+  | ({
       kind: "splice-fragment";
       blocks: Block[];
-      selection: EditorSelection;
-    }
-  | {
+    } & ActionAnimationFields)
+  | ({
       kind: "splice-comments";
       count: number;
       index: number;
       threads: CommentThread[];
-    }
-  | { kind: "keep-state" }
-  | { kind: "set-selection"; selection: EditorSelection };
+    } & ActionAnimationFields)
+  | ({ kind: "keep-state" } & ActionAnimationFields)
+  | ({ kind: "set-selection"; selection: EditorSelection } & ActionAnimationFields);

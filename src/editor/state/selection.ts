@@ -348,7 +348,7 @@ export function targetNextRegionInFlow(
   return next ? createRegionTarget(next.id, offset) : null;
 }
 
-function isSelectionCollapsed(selection: EditorSelection): boolean {
+export function isSelectionCollapsed(selection: EditorSelection): boolean {
   return (
     selection.anchor.regionId === selection.focus.regionId &&
     selection.anchor.offset === selection.focus.offset
@@ -385,6 +385,9 @@ export function normalizeSelection(
   };
 }
 
+// Selection targets are declarative references to post-mutation selection
+// locations. The reducer materializes them after local edits, and external
+// reconciliation may materialize them after host-driven document rebuilds.
 export function resolveSelectionTarget(
   documentIndex: DocumentIndex,
   selection: SelectionTarget | null,

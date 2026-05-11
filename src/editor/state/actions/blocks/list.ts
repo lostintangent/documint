@@ -48,10 +48,12 @@ export function resolveListItemSplit(
         ...context.list.items.slice(context.itemIndex + 1),
       ]),
       blockId: context.list.id,
-      listItemInsertedPath: resolveInsertedItemPath(insertedItem, context.rootIndex, [
-        ...context.listChildIndices,
-        context.itemIndex,
-      ]),
+      animation: resolveInsertedListItemAnimation(
+        resolveInsertedItemPath(insertedItem, context.rootIndex, [
+          ...context.listChildIndices,
+          context.itemIndex,
+        ]),
+      ),
       selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex),
     };
   }
@@ -67,10 +69,12 @@ export function resolveListItemSplit(
         ...context.list.items.slice(context.itemIndex + 1),
       ]),
       blockId: context.list.id,
-      listItemInsertedPath: resolveInsertedItemPath(insertedItem, context.rootIndex, [
-        ...context.listChildIndices,
-        context.itemIndex + 1,
-      ]),
+      animation: resolveInsertedListItemAnimation(
+        resolveInsertedItemPath(insertedItem, context.rootIndex, [
+          ...context.listChildIndices,
+          context.itemIndex + 1,
+        ]),
+      ),
       selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex + 1),
     };
   }
@@ -91,10 +95,12 @@ export function resolveListItemSplit(
       ...context.list.items.slice(context.itemIndex + 1),
     ]),
     blockId: context.list.id,
-    listItemInsertedPath: resolveInsertedItemPath(nextItem, context.rootIndex, [
-      ...context.listChildIndices,
-      context.itemIndex + 1,
-    ]),
+    animation: resolveInsertedListItemAnimation(
+      resolveInsertedItemPath(nextItem, context.rootIndex, [
+        ...context.listChildIndices,
+        context.itemIndex + 1,
+      ]),
+    ),
     selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex + 1),
   };
 }
@@ -276,7 +282,7 @@ function buildLiftedListAction(
       ...context.parentList.items.slice(context.parentItemIndex + 1),
     ]),
     blockId: context.parentList.id,
-    listItemInsertedPath: insertedItemPath,
+    animation: resolveInsertedListItemAnimation(insertedItemPath),
     selection: selectItem(
       context.rootIndex,
       context.parentListChildIndices,
@@ -293,6 +299,10 @@ function resolveInsertedItemPath(
   return typeof item.checked === "boolean"
     ? undefined
     : resolveListItemPath(rootIndex, childIndices);
+}
+
+function resolveInsertedListItemAnimation(blockPath: string | undefined) {
+  return blockPath ? { blockPath, kind: "block-pulse" as const } : undefined;
 }
 
 function appendNestedListItem(

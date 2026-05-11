@@ -309,7 +309,7 @@ function DocumintHost({
 
       if (transition.animationsChanged) {
         // All editor animations are content-layer effects (block flash,
-        // inserted/deleted text fade, list marker pop, punctuation pulse).
+        // text highlight/fade/pulse, block pulse).
         // None affect layout or overlay, so a content paint is sufficient.
         scheduleContentPaint();
       }

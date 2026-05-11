@@ -1,17 +1,19 @@
-import { resolveRegion } from "../../selection";
+import { resolveRegion, type EditorSelection } from "../../selection";
 import { moveGraphemeOffset } from "../../../text/graphemes";
 import type { EditorState, EditorStateAction } from "../../types";
+import { resolveTextFadeAnimation } from "../animations";
 
 // Resolves the splice-text action for a single-grapheme delete at the
 // caret. Returns null when the selection is non-collapsed, the cursor
 // is at the boundary in the requested direction, or there is no
 // grapheme to delete (degenerate offsets).
 //
-// The action's `selection` carries the deletion range — callers that
-// need the start/end offsets (e.g. for animation metadata in the
-// commands layer) should read them off the action itself rather than
-// recomputing.
-type CharacterDeleteAction = Extract<EditorStateAction, { kind: "splice-text" }>;
+// The action's `range` carries the deletion range so the reducer deletes
+// exactly one grapheme even though most text splices default to the current
+// editor selection.
+type CharacterDeleteAction = Extract<EditorStateAction, { kind: "splice-text" }> & {
+  range: EditorSelection;
+};
 
 export function resolveCharacterDelete(
   state: EditorState,
@@ -48,8 +50,9 @@ export function resolveCharacterDelete(
   }
 
   return {
+    animation: resolveTextFadeAnimation(region, startOffset, endOffset),
     kind: "splice-text",
-    selection: {
+    range: {
       anchor: { regionId: region.id, offset: startOffset },
       focus: { regionId: region.id, offset: endOffset },
     },

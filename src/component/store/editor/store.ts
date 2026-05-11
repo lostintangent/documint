@@ -1,28 +1,26 @@
 import type { EditorState } from "@/editor";
 import { defaultEquality, type Equality } from "../core/equality";
 import {
-  createEditorStateTransition,
-  type EditorStateTransition,
-  type EditorStateTransitionSource,
+  createEditorTransition,
+  type EditorReplaceReason,
+  type EditorTransition,
+  type EditorTransitionReason,
 } from "./transitions";
 
-export type EditorStateTransitionListener = (transition: EditorStateTransition) => void;
+export type EditorTransitionListener = (transition: EditorTransition) => void;
 export type EditorValueListener = () => void;
 export type EditorValueReader<T> = (state: EditorState) => T;
 
 export type EditorStore = {
   getVersion: () => number;
   getState: () => EditorState;
-  apply: (nextState: EditorState | null) => EditorStateTransition | null;
+  apply: (nextState: EditorState | null) => EditorTransition | null;
   command: <A extends unknown[]>(
     command: (state: EditorState, ...args: A) => EditorState | null,
     ...args: A
-  ) => EditorStateTransition | null;
-  replace: (
-    nextState: EditorState,
-    source?: Extract<EditorStateTransitionSource, "external">,
-  ) => EditorStateTransition | null;
-  subscribe: (listener: EditorStateTransitionListener) => () => void;
+  ) => EditorTransition | null;
+  replace: (nextState: EditorState, reason?: EditorReplaceReason) => EditorTransition | null;
+  subscribe: (listener: EditorTransitionListener) => () => void;
   subscribeValue: <T>(
     read: EditorValueReader<T>,
     listener: EditorValueListener,
@@ -33,18 +31,18 @@ export type EditorStore = {
 export function createEditorStore(initialState: EditorState): EditorStore {
   let state = initialState;
   let version = 0;
-  const listeners = new Set<EditorStateTransitionListener>();
+  const listeners = new Set<EditorTransitionListener>();
 
   const publish = (
     nextState: EditorState | null,
-    source: EditorStateTransitionSource,
-  ): EditorStateTransition | null => {
+    reason: EditorTransitionReason,
+  ): EditorTransition | null => {
     if (!nextState || nextState === state) {
       return null;
     }
 
     const previous = state;
-    const transition = createEditorStateTransition(previous, nextState, source);
+    const transition = createEditorTransition(previous, nextState, reason);
     state = nextState;
     version += 1;
 
@@ -61,15 +59,15 @@ export function createEditorStore(initialState: EditorState): EditorStore {
     getState: () => state,
 
     apply(nextState) {
-      return publish(nextState, "local");
+      return publish(nextState, "command");
     },
 
     command(command, ...args) {
-      return publish(command(state, ...args), "local");
+      return publish(command(state, ...args), "command");
     },
 
-    replace(nextState, source = "external") {
-      return publish(nextState, source);
+    replace(nextState, reason = "external") {
+      return publish(nextState, reason);
     },
 
     subscribe(listener) {
@@ -82,7 +80,7 @@ export function createEditorStore(initialState: EditorState): EditorStore {
     subscribeValue(read, listener, equal = defaultEquality) {
       let selected = read(state);
 
-      const transitionListener: EditorStateTransitionListener = (transition) => {
+      const transitionListener: EditorTransitionListener = (transition) => {
         const nextSelected = read(transition.next);
         if (equal(selected, nextSelected)) {
           return;

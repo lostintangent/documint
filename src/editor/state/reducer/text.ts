@@ -26,7 +26,8 @@ import {
   type TableCell,
 } from "@/document";
 import { updateCommentThreadsForRegionEdit } from "../../anchors";
-import { mergeTrimmedBlocks, trimBlockToPrefix, trimBlockToSuffix } from "../fragment/blocks";
+import { trimBlockToPrefix, trimBlockToSuffix } from "../fragments/blocks";
+import { mergeTrimmedBlocks } from "./fragments";
 import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/build";
 import type { DocumentIndex, EditorRegion } from "../index/types";
 import {

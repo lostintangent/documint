@@ -1,30 +1,19 @@
-// Editor animations: presentation side-effects layered on top of state
-// mutations. The action/reducer pipeline stays pure; animations live here
-// so they can be added at the boundary where the operation's intent is
-// known.
-//
-// Most animations are triggered at the command layer — the command knows
-// what semantic operation just happened (typed a character, deleted plain
-// text, split a list item) and decides whether the result deserves visual
-// feedback. The exception is `active-block-flash`, which fires from
-// `setSelection` itself so every selection change can trigger it without
-// each command having to remember.
-//
-// This module owns the animation type shapes, the "add" helpers commands
-// call, and the lifecycle primitives (prune, time, has-new).
+// Editor animations: transient visual descriptors layered on top of state
+// mutations. Action resolvers declare semantic animation intent; the reducer
+// materializes that intent after the edit has produced the next immutable
+// state. Paint resolves the resulting descriptors frame-by-frame.
 
 import { getEditorAnimationDuration } from "../canvas/lib/animations";
-import { containsColorEmoji } from "../text/emoji";
-import type { EditorState } from "./types";
+import type { AnimationIntent, EditorState } from "./types";
 
 // --- Animation types ---
 
 export type EditorAnimation =
   | ActiveBlockFlashAnimation
-  | DeletedTextFadeAnimation
-  | InsertedTextHighlightAnimation
-  | ListMarkerPopAnimation
-  | PunctuationPulseAnimation;
+  | BlockPulseAnimation
+  | TextFadeAnimation
+  | TextHighlightAnimation
+  | TextPulseAnimation;
 
 export type ActiveBlockFlashAnimation = {
   blockPath: string;
@@ -32,146 +21,61 @@ export type ActiveBlockFlashAnimation = {
   startedAt: number;
 };
 
-export type DeletedTextFadeAnimation = {
-  kind: "deleted-text-fade";
+export type BlockPulseAnimation = {
+  blockPath: string;
+  kind: "block-pulse";
+  startedAt: number;
+};
+
+export type TextFadeAnimation = {
+  kind: "text-fade";
   regionPath: string;
   startOffset: number;
   startedAt: number;
   text: string;
 };
 
-export type InsertedTextHighlightAnimation = {
+export type TextHighlightAnimation = {
   endOffset: number;
-  kind: "inserted-text-highlight";
+  kind: "text-highlight";
   regionPath: string;
   startOffset: number;
   startedAt: number;
 };
 
-export type ListMarkerPopAnimation = {
-  blockPath: string;
-  kind: "list-marker-pop";
-  startedAt: number;
-};
-
-export type PunctuationPulseAnimation = {
-  kind: "punctuation-pulse";
+export type TextPulseAnimation = {
+  kind: "text-pulse";
   offset: number;
   regionPath: string;
   startedAt: number;
 };
 
-// --- Trigger helpers (called from the command layer or setSelection) ---
+// --- Intent materialization ---
 
-export function addInsertedTextHighlightAnimation(
+export function addAnimationIntent(
   state: EditorState,
-  insertedText: string,
+  animation: AnimationIntent | undefined,
   startedAt = getEditorAnimationTime(),
 ): EditorState {
-  const insertedTextLength = insertedText.length;
-
-  if (insertedTextLength <= 0) {
+  if (!animation) {
     return state;
   }
 
-  if (containsColorEmoji(insertedText)) {
-    return state;
+  switch (animation.kind) {
+    case "text-highlight":
+      return animation.endOffset > animation.startOffset
+        ? addEditorAnimation(state, { ...animation, startedAt })
+        : state;
+
+    case "text-fade":
+      return animation.text.length > 0
+        ? addEditorAnimation(state, { ...animation, startedAt })
+        : state;
+
+    case "text-pulse":
+    case "block-pulse":
+      return addEditorAnimation(state, { ...animation, startedAt });
   }
-
-  const region = resolveFocusedRegion(state);
-
-  if (!region) {
-    return state;
-  }
-
-  const endOffset = state.selection.focus.offset;
-  const startOffset = Math.max(0, endOffset - insertedTextLength);
-
-  if (endOffset <= startOffset) {
-    return state;
-  }
-
-  return addEditorAnimation(state, {
-    endOffset,
-    kind: "inserted-text-highlight",
-    regionPath: region.path,
-    startOffset,
-    startedAt,
-  });
-}
-
-// Adds a fade animation when the deleted range was a "plain" inline (no
-// marks, no link, no image). Used by character-delete commands so that
-// removing styled or linked text doesn't visually "ghost" the formatting.
-export function addPlainTextDeletionFadeAnimation(
-  previousState: EditorState,
-  nextState: EditorState,
-  startOffset: number,
-  endOffset: number,
-): EditorState {
-  const region = resolveFocusedRegion(previousState);
-
-  if (!region) {
-    return nextState;
-  }
-
-  const text = region.text.slice(startOffset, endOffset);
-
-  if (text.length === 0 || containsColorEmoji(text)) {
-    return nextState;
-  }
-
-  const isPlainText = region.inlines.some(
-    (entry) =>
-      entry.start <= startOffset &&
-      entry.end >= endOffset &&
-      entry.kind === "text" &&
-      entry.link === null &&
-      entry.marks.length === 0,
-  );
-
-  if (!isPlainText) {
-    return nextState;
-  }
-
-  return addEditorAnimation(nextState, {
-    kind: "deleted-text-fade",
-    regionPath: region.path,
-    startOffset,
-    startedAt: getEditorAnimationTime(),
-    text,
-  });
-}
-
-export function addPunctuationPulseAnimation(
-  state: EditorState,
-  startedAt = getEditorAnimationTime(),
-): EditorState {
-  const region = resolveFocusedRegion(state);
-  const offset = state.selection.focus.offset - 1;
-
-  if (!region || offset < 0 || region.text[offset] !== ".") {
-    return state;
-  }
-
-  return addEditorAnimation(state, {
-    kind: "punctuation-pulse",
-    offset,
-    regionPath: region.path,
-    startedAt,
-  });
-}
-
-export function addListMarkerPopAnimation(
-  state: EditorState,
-  blockPath: string,
-  startedAt = getEditorAnimationTime(),
-): EditorState {
-  return addEditorAnimation(state, {
-    blockPath,
-    kind: "list-marker-pop",
-    startedAt,
-  });
 }
 
 export function addActiveBlockFlashAnimation(
@@ -186,19 +90,6 @@ export function addActiveBlockFlashAnimation(
   });
 }
 
-export function clearInsertedTextHighlightAnimations(state: EditorState): EditorState {
-  if (!state.animations.some((animation) => animation.kind === "inserted-text-highlight")) {
-    return state;
-  }
-
-  return {
-    ...state,
-    animations: state.animations.filter(
-      (animation) => animation.kind !== "inserted-text-highlight",
-    ),
-  };
-}
-
 // --- Lifecycle ---
 
 export function pruneEditorAnimations(animations: EditorAnimation[], now: number) {
@@ -210,8 +101,6 @@ export function pruneEditorAnimations(animations: EditorAnimation[], now: number
 export function getEditorAnimationTime() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
-
-// --- Selection helpers ---
 
 // Resolves the block path for the currently focused block, used as the
 // target for the active block flash animation.

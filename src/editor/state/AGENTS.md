@@ -24,22 +24,24 @@ new immutable `EditorState` or `null` for no-op.
 
 Most edits flow through this sequence:
 
-`command(state, payload) -> context(state, payload) -> action(context, payload) -> reducer(state, action) -> animation(previousState, nextState, action, payload)`
+`command(state, payload) -> context(state, payload) -> action(context, payload) -> reducer(state, action)`
 
-Context and animation are optional, but the ownership stays consistent:
+Context is optional, but the ownership stays consistent:
 
 - Commands are the public API and compose the pipeline.
 - Context resolvers project command-relevant facts from `EditorState`.
 - Actions turn resolved context plus intent payload into `EditorStateAction`s.
+  When an edit should start an animation, the action declares a semantic
+  `AnimationIntent` on the action.
 - The reducer is the only place that applies actions to produce a new state.
 - Selection targets describe post-mutation landing positions that must survive
   document rebuilding; concrete `set-selection` actions use `EditorSelection`.
-- Animations are transient descriptors stored on `EditorState` and interpreted
-  later by paint.
+- The reducer materializes action animation intent into transient descriptors
+  stored on `EditorState`; paint interprets those descriptors later.
 
 ### Key Areas
 
-- **Commands** (`commands.ts`) - Owns the public editing API over `EditorState`: typing, deletion, formatting, structural edits, clipboard, undo/redo, and table/list operations. Commands should read semantically: resolve context, call an action resolver, dispatch, then layer any animation.
+- **Commands** (`commands.ts`) - Owns the public editing API over `EditorState`: typing, deletion, formatting, structural edits, clipboard, undo/redo, and table/list operations. Commands should read semantically: resolve context, call an action resolver, then dispatch.
 
 - **Index** (`index/`) - Owns the hot-path editing projection from `Document` to `DocumentIndex`: roots, regions, paths, block metadata, and the helpers needed to rebuild that projection incrementally after edits.
 
@@ -47,13 +49,15 @@ Context and animation are optional, but the ownership stays consistent:
 
 - **Context** (`context.ts`) - Owns semantic command context resolution from `EditorState`: block, inline, range, deletion, list item, table cell, and related editing views. It may also expose shared structural lookup helpers used by actions, kept under a separate section.
 
-- **Fragment** (`fragment/`) - Owns clipboard-specific semantics. `extract.ts` turns a selection into a `Fragment`, `apply.ts` routes a `Fragment` into the correct mutation path, `context.ts` resolves source and destination clipboard context, and `blocks.ts` owns shared structural trim and seam-merge policy.
+- **Fragments** (`fragments/`) - Owns editor-state policy for document `Fragment` values. `extract.ts` turns a selection into a `Fragment`, `paste.ts` resolves a `Fragment` into an editor action, `context.ts` resolves fragment-specific context, and `blocks.ts` owns shared structural fragment slicing.
 
 - **Actions** (`actions/`) - Owns focused action factories for edit families such as text insertion, inline mutation, lists, tables, block transforms, deletion, and input rules. Actions return `EditorStateAction | null`; they do not dispatch and should not inspect `EditorState` directly.
 
-- **Reducer** (`reducer/`) - Owns the concrete state transition machinery. It applies actions, rewrites document structure, updates undo/redo state, and preserves anchor/selection consistency through edits.
+- **Reducer** (`reducer/`) - Owns the concrete state transition machinery. It applies actions, rewrites document structure, updates undo/redo state, and preserves anchor/selection consistency through edits. Low-level mutation primitives for document/index substructures live here; fragment extraction may reuse the inline primitives so copied slices preserve the same inline semantics as text edits.
 
-- **Animations** (`animations.ts`) - Owns edit-driven animation descriptors that the rendering pipeline consumes later.
+- **Animations** (`animations.ts`) - Owns transient animation descriptor types,
+  action-intent materialization, lifecycle pruning, and selection-driven
+  animation helpers such as active-block flash.
 
 ### Design Notes
 
@@ -93,11 +97,12 @@ Context and animation are optional, but the ownership stays consistent:
 
 - Keep reducer actions small and declarative. The reducer applies the action,
   rebuilds the document index, resolves selection targets against the new
-  document, and updates history. It should not know about UI gestures,
-  completions, clipboard flavors, or animation policy.
+  document, materializes declared animation intent, and updates history. It
+  should not know about UI gestures, completions, clipboard flavors, or why an
+  animation was chosen.
 
-- Keep clipboard policy in `fragment/`, not in `src/document` or `src/component`. Clipboard crosses markdown, selection, and mutation concerns, so it belongs at the editor-state altitude.
+- Keep fragment policy in editor state, not in `src/document` or `src/component`. Fragment extraction and paste action resolution belong in `fragments/`; reducer-level mutation primitives, including structural range replacement and inline slice/rebuild behavior, belong in `reducer/`.
 
-- Keep animations as transient state descriptors. Commands decide when an edit
-  should start an animation because commands know user intent; paint decides
-  how an in-flight animation looks.
+- Keep animations as transient state descriptors. Actions decide when their
+  mutation should start an animation because actions own the semantic edit
+  policy; paint decides how an in-flight animation looks.

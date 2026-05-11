@@ -1,3 +1,7 @@
+## 🗓️ v0.0.13 (05-11-26)
+
+- Added support for brace completion when typing an opening `(`, `{`, or `[` character.
+
 ## 🗓️ v0.0.12 (05-10-26)
 
 - Added support for emoji completions in the document and in comments

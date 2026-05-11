@@ -1,14 +1,19 @@
 import type { DocumentIndex } from "../../index/types";
 import type { EditorStateAction } from "../../types";
 import type { EditorSelection } from "../../selection";
+import { resolveInlineInsertionAnimation } from "../animations";
+import { resolvePairedDelimiterInsertion } from "./pairs";
 import { resolveInsertionTrigger } from "./triggers";
 
 // Text insertion dispatcher.
 //
-// Insertion has one default behavior and one substantial override:
+// Insertion has one default behavior and two substantial overrides:
 //
 //   - default: splice the typed characters into the current selection
 //     (the hot path while the user types).
+//   - paired delimiter (`pairs.ts`): when the typed text is an opening
+//     delimiter, insert the closing delimiter too and land the caret
+//     between them.
 //   - markdown trigger (`triggers.ts`): when the typed text completes
 //     a markdown shortcut (`# `, `1. `, `> `, …), upgrade the
 //     insertion into a structural transform instead — a heading, a
@@ -24,9 +29,10 @@ export function resolveTextInsertion(
   text: string,
 ): EditorStateAction | null {
   return (
+    resolvePairedDelimiterInsertion(documentIndex, selection, text) ??
     resolveInsertionTrigger(documentIndex, selection, text) ?? {
+      animation: resolveInlineInsertionAnimation(documentIndex, selection, text),
       kind: "splice-text",
-      selection,
       text,
     }
   );

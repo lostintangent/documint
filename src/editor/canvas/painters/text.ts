@@ -1,6 +1,6 @@
 // Owns line text rendering: the per-inline text, inline code background,
 // strikethrough/underline decorations, and the two effect overlays that draw
-// directly into glyph space (deleted-text fades, punctuation pulses). Inline
+// directly into glyph space (text fades, text pulses). Inline
 // images are drawn here too via a delegate so the inline iteration stays linear.
 
 import { measureLineOffsetLeft, type DocumentLayout } from "../../layout";
@@ -8,14 +8,14 @@ import type { EditorRegion } from "../../state";
 import type { DocumentResources, EditorTheme } from "@/types";
 import { resolveMarkedTextFont } from "../../text/fonts";
 import {
-  resolveActiveInsertedTextHighlightForSegment,
+  resolveActiveTextHighlightForSegment,
   resolveAnimatedTextColor,
-  resolveDeletedTextFadeColor,
-  resolveInsertHighlightSegmentBoundaries,
-  resolvePunctuationPulseColor,
-  type ActiveDeletedTextFade,
-  type ActiveInsertedTextHighlight,
-  type ActivePunctuationPulse,
+  resolveTextFadeColor,
+  resolveTextHighlightSegmentBoundaries,
+  resolveTextPulseColor,
+  type ActiveTextFade,
+  type ActiveTextHighlight,
+  type ActiveTextPulse,
 } from "../lib/animations";
 import {
   resolveCanvasCenteredTextBaseline,
@@ -31,9 +31,9 @@ const inlineCodeBackgroundHorizontalPadding = 3;
 const inlineCodeBackgroundMinimumHeight = 12;
 const inlineCodeBackgroundMinimumWidth = 10;
 const inlineCodeBackgroundTopInset = 2;
-const punctuationPulseBaseRadius = 4;
-const punctuationPulseRadiusGrowth = 4;
-const punctuationPulseStrokeWidth = 1.5;
+const textPulseBaseRadius = 4;
+const textPulseRadiusGrowth = 4;
+const textPulseStrokeWidth = 1.5;
 const textDecorationMinimumWidth = 2;
 const textDecorationThickness = 1.25;
 
@@ -43,7 +43,7 @@ export function paintCanvasLineText(
   container: EditorRegion | null,
   textLeft: number,
   textBaseline: number,
-  insertedTextHighlights: ActiveInsertedTextHighlight[],
+  textHighlights: ActiveTextHighlight[],
   defaultColor: string,
   resources: DocumentResources,
   theme: EditorTheme,
@@ -104,7 +104,7 @@ export function paintCanvasLineText(
         start,
         end,
         theme.inlineCodeText,
-        insertedTextHighlights,
+        textHighlights,
         theme,
         {
           strikethrough: false,
@@ -123,7 +123,7 @@ export function paintCanvasLineText(
       start,
       end,
       inline.link ? theme.linkText : defaultColor,
-      insertedTextHighlights,
+      textHighlights,
       theme,
       {
         strikethrough: inline.marks.includes("strikethrough"),
@@ -142,17 +142,17 @@ function paintTextInlineSegments(
   startOffset: number,
   endOffset: number,
   baseColor: string,
-  insertedTextHighlights: ActiveInsertedTextHighlight[],
+  textHighlights: ActiveTextHighlight[],
   theme: EditorTheme,
   decorations: {
     strikethrough: boolean;
     underline: boolean;
   },
 ) {
-  const segmentBoundaries = resolveInsertHighlightSegmentBoundaries(
+  const segmentBoundaries = resolveTextHighlightSegmentBoundaries(
     startOffset,
     endOffset,
-    insertedTextHighlights,
+    textHighlights,
   ).filter((offset) => isTextGraphemeBoundary(containerText, startOffset, endOffset, offset));
 
   for (let index = 0; index < segmentBoundaries.length - 1; index += 1) {
@@ -175,8 +175,8 @@ function paintTextInlineSegments(
       segmentStart,
       segmentEnd,
     );
-    const activeHighlight = resolveActiveInsertedTextHighlightForSegment(
-      insertedTextHighlights,
+    const activeHighlight = resolveActiveTextHighlightForSegment(
+      textHighlights,
       segmentStart,
       segmentEnd,
     );
@@ -230,20 +230,20 @@ function isTextGraphemeBoundary(
   return false;
 }
 
-export function paintCanvasDeletedTextFades(
+export function paintCanvasTextFades(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   container: EditorRegion | null,
   textLeft: number,
   textBaseline: number,
-  deletedTextFades: ActiveDeletedTextFade[],
+  textFades: ActiveTextFade[],
   baseColor: string,
 ) {
-  if (!container || deletedTextFades.length === 0) {
+  if (!container || textFades.length === 0) {
     return;
   }
 
-  for (const fade of deletedTextFades) {
+  for (const fade of textFades) {
     if (fade.startOffset < line.start || fade.startOffset > line.end) {
       continue;
     }
@@ -251,25 +251,25 @@ export function paintCanvasDeletedTextFades(
     const ghostLeft =
       textLeft + (measureLineOffsetLeft(line, fade.startOffset - line.start) - line.left);
 
-    context.fillStyle = resolveDeletedTextFadeColor(baseColor, fade);
+    context.fillStyle = resolveTextFadeColor(baseColor, fade);
     context.fillText(fade.text, ghostLeft, textBaseline);
   }
 }
 
-export function paintCanvasPunctuationPulses(
+export function paintCanvasTextPulses(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   container: EditorRegion | null,
   textLeft: number,
   textBaseline: number,
-  punctuationPulses: ActivePunctuationPulse[],
+  textPulses: ActiveTextPulse[],
   theme: EditorTheme,
 ) {
-  if (!container || punctuationPulses.length === 0) {
+  if (!container || textPulses.length === 0) {
     return;
   }
 
-  for (const pulse of punctuationPulses) {
+  for (const pulse of textPulses) {
     if (pulse.offset < line.start || pulse.offset >= line.end) {
       continue;
     }
@@ -281,16 +281,16 @@ export function paintCanvasPunctuationPulses(
       pulse.offset + 1,
     );
     const radius = Math.max(
-      punctuationPulseBaseRadius,
+      textPulseBaseRadius,
       (right - left) / 2 +
-        punctuationPulseBaseRadius +
-        punctuationPulseRadiusGrowth * pulse.progress,
+        textPulseBaseRadius +
+        textPulseRadiusGrowth * pulse.progress,
     );
     const { ascent, descent } = resolveCanvasFontMetrics(line.font);
     const glyphCenterY = textBaseline - Math.max(1, ascent * 0.42) + Math.max(0.5, descent * 0.15);
 
-    context.strokeStyle = resolvePunctuationPulseColor(pulse, theme);
-    context.lineWidth = punctuationPulseStrokeWidth;
+    context.strokeStyle = resolveTextPulseColor(pulse, theme);
+    context.lineWidth = textPulseStrokeWidth;
     context.beginPath();
     context.arc((left + right) / 2, glyphCenterY, radius, 0, Math.PI * 2);
     context.stroke();
