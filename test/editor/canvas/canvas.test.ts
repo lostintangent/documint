@@ -8,7 +8,7 @@ import { expect, test } from "bun:test";
 import type { Block } from "@/document";
 import { paintCanvasEditorSurface } from "@/editor/canvas";
 import { createDocumentLayout } from "@/editor/layout";
-import { setSelection, type EditorState } from "@/editor/state";
+import { insertText, setSelection, type EditorState } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
 import { setup } from "../helpers";
 import {
@@ -190,6 +190,39 @@ test("does not paint a selection highlight when the selection is collapsed", () 
   );
 
   expect(selectionFillIndex).toBe(-1);
+});
+
+test("paints insert highlights as a glyph overlay without splitting text runs", () => {
+  let state = setup("alpha\n");
+  const container = state.documentIndex.regions[0];
+
+  if (!container) {
+    throw new Error("Expected paragraph region");
+  }
+
+  state = setSelection(state, { regionId: container.id, offset: container.text.length });
+  state = insertText(state, "!") ?? state;
+
+  const { context } = renderPaintOperations(state, { height: 180, width: 240 });
+  const textOperations = context.operations.filter(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillText" }> =>
+      operation.kind === "fillText",
+  );
+  const insertedCharacterPaint = textOperations.find((operation) => operation.text === "!");
+  const baseTextPaint = textOperations.find(
+    (operation) =>
+      operation.text === "alpha!" && operation.fillStyle === lightTheme.paragraphText,
+  );
+  const highlightOverlayPaint = textOperations.find(
+    (operation) =>
+      operation.text === "alpha!" && operation.fillStyle === lightTheme.insertHighlightText,
+  );
+
+  expect(insertedCharacterPaint).toBeUndefined();
+  expect(baseTextPaint).toBeDefined();
+  expect(highlightOverlayPaint).toBeDefined();
+  expect(highlightOverlayPaint?.globalAlpha).toBeGreaterThan(0);
+  expect(highlightOverlayPaint?.globalAlpha).toBeLessThanOrEqual(1);
 });
 
 test("right-aligns ordered list markers without moving list text", () => {

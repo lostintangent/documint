@@ -14,6 +14,7 @@ export type RecordingOperation =
     }
   | {
       fillStyle: string | CanvasGradient | CanvasPattern;
+      globalAlpha: number;
       kind: "fillText";
       text: string;
       textAlign: CanvasTextAlign;
@@ -32,8 +33,17 @@ export type RecordingOperation =
 export class RecordingCanvasContext {
   fillStyle: string | CanvasGradient | CanvasPattern = "";
   font = "";
+  globalAlpha = 1;
   lineWidth = 1;
   operations: RecordingOperation[] = [];
+  private stateStack: Array<{
+    fillStyle: string | CanvasGradient | CanvasPattern;
+    font: string;
+    globalAlpha: number;
+    strokeStyle: string | CanvasGradient | CanvasPattern;
+    textAlign: CanvasTextAlign;
+    textBaseline: CanvasTextBaseline;
+  }> = [];
   strokeStyle: string | CanvasGradient | CanvasPattern = "";
   textAlign: CanvasTextAlign = "start";
   textBaseline: CanvasTextBaseline = "alphabetic";
@@ -43,6 +53,8 @@ export class RecordingCanvasContext {
   beginPath() {}
 
   clearRect() {}
+
+  clip() {}
 
   fill() {}
 
@@ -60,6 +72,7 @@ export class RecordingCanvasContext {
   fillText(text: string, x: number, y: number) {
     this.operations.push({
       fillStyle: this.fillStyle,
+      globalAlpha: this.globalAlpha,
       kind: "fillText",
       text,
       textAlign: this.textAlign,
@@ -72,11 +85,35 @@ export class RecordingCanvasContext {
 
   moveTo() {}
 
-  restore() {}
+  rect() {}
+
+  restore() {
+    const state = this.stateStack.pop();
+
+    if (!state) {
+      return;
+    }
+
+    this.fillStyle = state.fillStyle;
+    this.font = state.font;
+    this.globalAlpha = state.globalAlpha;
+    this.strokeStyle = state.strokeStyle;
+    this.textAlign = state.textAlign;
+    this.textBaseline = state.textBaseline;
+  }
 
   roundRect() {}
 
-  save() {}
+  save() {
+    this.stateStack.push({
+      fillStyle: this.fillStyle,
+      font: this.font,
+      globalAlpha: this.globalAlpha,
+      strokeStyle: this.strokeStyle,
+      textAlign: this.textAlign,
+      textBaseline: this.textBaseline,
+    });
+  }
 
   scale() {}
 

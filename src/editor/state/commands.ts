@@ -16,12 +16,10 @@
 //
 // Commands never reach into reducer internals.
 
-import { normalizeSelection } from "./selection";
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "./reducer/state";
 import {
   resolveBlockById,
   resolveBlockContext,
-  resolveDeletionContext,
   resolveInlineContext,
   resolveInlineTargetContext,
   resolveListItemContext,
@@ -57,7 +55,6 @@ import {
   type Fragment,
   type Mark,
 } from "@/document";
-import { resolveCharacterDelete } from "./actions/deletion/character";
 import { resolveTextInsertion } from "./actions/insertion";
 import { resolveLineBreakAction } from "./actions/insertion/line-break";
 import {
@@ -71,8 +68,8 @@ import {
   resolveListItemIndent,
   resolveListItemMove,
 } from "./actions/blocks/list";
-import { resolveHeadingDepthShift } from "./actions/blocks";
-import { resolveStructuralDelete } from "./actions/deletion";
+import { resolveHeadingDepthShift, resolveParagraphBlockquoteIndent } from "./actions/blocks";
+import { resolveDeletion } from "./actions/deletion";
 import {
   resolveTableColumnDeletion,
   resolveTableColumnInsertion,
@@ -85,11 +82,11 @@ import {
 
 // --- Core editing ---
 
-export const insertText = makeCommand(
-  (state, text: string) => resolveTextInsertion(state.documentIndex, state.selection, text),
+export const insertText = makeCommand((state, text: string) =>
+  resolveTextInsertion(state.documentIndex, state.selection, text),
 );
 
-export const insertLineBreak = makeCommand(resolveLineBreakAction, { context: resolveBlockContext });
+export const insertLineBreak = makeCommand(resolveLineBreakAction, resolveBlockContext);
 
 // Inserts an inline LineBreak at the caret (the Shift+Enter gesture). This
 // mirrors `insertImage` — both are single-inline inserts at the selection —
@@ -115,25 +112,15 @@ export const replaceTextRange = makeCommand(
     _endOffset: number,
     text: string,
   ): EditorStateAction => resolveTextRangeReplacement(context, text),
-  {
-    context: (state, startOffset: number, endOffset: number) =>
-      resolveTextRangeContext(state, startOffset, endOffset),
-  },
+  (state, startOffset: number, endOffset: number) =>
+    resolveTextRangeContext(state, startOffset, endOffset),
 );
 
 export const deleteSelection = (state: EditorState) => replaceSelection(state, "");
 
-export const deleteBackward = makePipelineCommand(
-  deleteExpandedSelectionStage,
-  (state) => deleteCollapsedCharacter(state, "backward"),
-  (state) => deleteStructuralStage(state, "backward"),
-);
+export const deleteBackward = makeCommand((state) => resolveDeletion(state, "backward"));
 
-export const deleteForward = makePipelineCommand(
-  deleteExpandedSelectionStage,
-  (state) => deleteCollapsedCharacter(state, "forward"),
-  (state) => deleteStructuralStage(state, "forward"),
-);
+export const deleteForward = makeCommand((state) => resolveDeletion(state, "forward"));
 
 // --- Clipboard ---
 
@@ -162,9 +149,7 @@ export const copySelection = (state: EditorState): Fragment | null =>
 // text highlight so the visual feedback matches typing.
 // Multi-block pastes lean on the active-block flash that `setSelection`
 // fires when the caret lands in a new block.
-const pasteFragmentCommand = makeCommand(resolvePasteFragmentAction, {
-  context: resolvePasteFragmentContext,
-});
+const pasteFragmentCommand = makeCommand(resolvePasteFragmentAction, resolvePasteFragmentContext);
 
 export function pasteFragment(
   state: EditorState,
@@ -203,7 +188,7 @@ export const toggleUnderline = createToggleMarkCommand("underline");
 
 export const toggleCode = makeCommand(
   (context: InlineContext) => resolveInlineRangeReplacement(context, toggleInlineCode),
-  { context: resolveInlineContext },
+  resolveInlineContext,
 );
 
 // --- Links ---
@@ -213,13 +198,13 @@ export const updateLink = makeCommand(
     resolveInlineRangeReplacement(context, (region, start, end) =>
       updateInlineLinkUrl(region, start, end, url),
     ),
-  { context: resolveInlineTargetContext },
+  resolveInlineTargetContext,
 );
 
 export const removeLink = makeCommand(
   (context: InlineContext, _target: TextRangeTarget) =>
     resolveInlineRangeReplacement(context, removeInlineLink),
-  { context: resolveInlineTargetContext },
+  resolveInlineTargetContext,
 );
 
 export const insertLink = makeCommand(
@@ -227,7 +212,7 @@ export const insertLink = makeCommand(
     resolveInlineRangeReplacement(context, (region, start, end) =>
       wrapInlineLink(region, start, end, url),
     ),
-  { context: resolveInlineContext },
+  resolveInlineContext,
 );
 
 // --- Inline objects ---
@@ -235,7 +220,7 @@ export const insertLink = makeCommand(
 export const insertImage = makeCommand(
   (context: InlineContext, url: string, alt?: string) =>
     insertInlineNode(context, createImage({ alt: alt ?? null, url })),
-  { context: resolveInlineContext },
+  resolveInlineContext,
 );
 
 export const insertMention = makeCommand(
@@ -246,13 +231,13 @@ export const insertMention = makeCommand(
     name: string,
     trailingText: string = "",
   ): EditorStateAction => resolveMentionReplacement(context, userId, name, trailingText),
-  { context: resolveInlineTargetContext },
+  resolveInlineTargetContext,
 );
 
 export const resizeImage = makeCommand(
   (context: InlineContext, inline: ImageResizeTarget, newWidth: number): EditorStateAction =>
     resolveImageResize(context.inlineContainer, inline, newWidth),
-  { context: resolveInlineContext },
+  resolveInlineContext,
 );
 
 // --- History ---
@@ -263,47 +248,43 @@ export const redo = (state: EditorState) => redoEditorState(state);
 
 // --- Structural operations (indent / dedent) ---
 
-export const indent = makeCommand(
-  (ctx) => {
-    switch (ctx.kind) {
-      case "tableCell":
-        return resolveTableSelectionMove(ctx, 1);
-      case "rootTextBlock":
-        return resolveHeadingDepthShift(ctx, 1);
-      case "listItem":
-        return resolveListItemIndent(ctx);
-      default:
-        return null;
-    }
-  },
-  { context: resolveBlockContext },
-);
+export const indent = makeCommand((ctx) => {
+  switch (ctx.kind) {
+    case "tableCell":
+      return resolveTableSelectionMove(ctx, 1);
+    case "rootTextBlock":
+      return resolveHeadingDepthShift(ctx, 1) ?? resolveParagraphBlockquoteIndent(ctx);
+    case "listItem":
+      return resolveListItemIndent(ctx);
+    default:
+      return null;
+  }
+}, resolveBlockContext);
 
-export const dedent = makeCommand(
-  (ctx) => {
-    switch (ctx.kind) {
-      case "tableCell":
-        return resolveTableSelectionMove(ctx, -1);
-      case "rootTextBlock":
-        return resolveHeadingDepthShift(ctx, -1);
-      case "listItem":
-        return resolveListItemDedent(ctx);
-      default:
-        return null;
-    }
-  },
-  { context: resolveBlockContext },
-);
+export const dedent = makeCommand((ctx) => {
+  switch (ctx.kind) {
+    case "tableCell":
+      return resolveTableSelectionMove(ctx, -1);
+    case "rootTextBlock":
+      return resolveHeadingDepthShift(ctx, -1);
+    case "listItem":
+      return resolveListItemDedent(ctx);
+    default:
+      return null;
+  }
+}, resolveBlockContext);
 
 // --- Lists & tasks ---
 
-export const moveListItemUp = makeCommand((ctx) => resolveListItemMove(ctx, -1), {
-  context: resolveListItemContext,
-});
+export const moveListItemUp = makeCommand(
+  (ctx) => resolveListItemMove(ctx, -1),
+  resolveListItemContext,
+);
 
-export const moveListItemDown = makeCommand((ctx) => resolveListItemMove(ctx, 1), {
-  context: resolveListItemContext,
-});
+export const moveListItemDown = makeCommand(
+  (ctx) => resolveListItemMove(ctx, 1),
+  resolveListItemContext,
+);
 
 export const toggleTask = makeCommand((state, listItemId: string) => {
   const block = resolveBlockById(state.documentIndex, listItemId);
@@ -328,25 +309,19 @@ export const insertTable = makeCommand((state, columnCount: number) =>
 export const insertTableColumn = makeCommand(
   (ctx: TableCellContext, direction: "left" | "right") =>
     resolveTableColumnInsertion(ctx, direction),
-  { context: resolveTableCellContext },
+  resolveTableCellContext,
 );
 
-export const deleteTableColumn = makeCommand(resolveTableColumnDeletion, {
-  context: resolveTableCellContext,
-});
+export const deleteTableColumn = makeCommand(resolveTableColumnDeletion, resolveTableCellContext);
 
 export const insertTableRow = makeCommand(
   (ctx: TableCellContext, direction: "above" | "below") => resolveTableRowInsertion(ctx, direction),
-  { context: resolveTableCellContext },
+  resolveTableCellContext,
 );
 
-export const deleteTableRow = makeCommand(resolveTableRowDeletion, {
-  context: resolveTableCellContext,
-});
+export const deleteTableRow = makeCommand(resolveTableRowDeletion, resolveTableCellContext);
 
-export const deleteTable = makeCommand(resolveTableDeletion, {
-  context: resolveTableCellContext,
-});
+export const deleteTable = makeCommand(resolveTableDeletion, resolveTableCellContext);
 
 // --- Comments ---
 
@@ -405,10 +380,6 @@ type CommandResult<R extends EditorStateAction | null> = [Extract<R, null>] exte
 
 type ContextResolver<C, A extends unknown[] = []> = (state: EditorState, ...args: A) => C | null;
 
-type ContextCommandOptions<C, A extends unknown[] = []> = {
-  context: ContextResolver<C, A>;
-};
-
 type StateActionResolver<A extends unknown[], R extends EditorStateAction | null> = (
   state: EditorState,
   ...args: A
@@ -421,21 +392,20 @@ type ContextActionResolver<C, A extends unknown[], R extends EditorStateAction |
 
 function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: (context: C, ...args: A) => R,
-  options: ContextCommandOptions<C, A>,
+  resolveContext: ContextResolver<C, A>,
 ): (state: EditorState, ...args: A) => CommandResult<R>;
 function makeCommand<A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: StateActionResolver<A, R>,
-  options?: never,
+  resolveContext?: never,
 ): (state: EditorState, ...args: A) => CommandResult<R>;
 function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: StateActionResolver<A, R> | ContextActionResolver<C, A, R>,
-  options?: ContextCommandOptions<C, A>,
+  resolveContext?: ContextResolver<C, A>,
 ): (state: EditorState, ...args: A) => CommandResult<R> {
   return ((state: EditorState, ...args: A) => {
-    const action =
-      options && "context" in options
-        ? resolveContextAction(resolveAction, options, state, args)
-        : (resolveAction as StateActionResolver<A, R>)(state, ...args);
+    const action = resolveContext
+      ? resolveContextAction(resolveAction, resolveContext, state, args)
+      : (resolveAction as StateActionResolver<A, R>)(state, ...args);
 
     if (!action) return null;
 
@@ -445,38 +415,12 @@ function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>
 
 function resolveContextAction<C, A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: StateActionResolver<A, R> | ContextActionResolver<C, A, R>,
-  options: ContextCommandOptions<C, A>,
+  resolveContext: ContextResolver<C, A>,
   state: EditorState,
   args: A,
 ): R | null {
-  const context = options.context(state, ...args);
+  const context = resolveContext(state, ...args);
   return context ? (resolveAction as ContextActionResolver<C, A, R>)(context, ...args) : null;
-}
-
-function makePipelineCommand<A extends unknown[]>(
-  ...stages: Array<(state: EditorState, ...args: A) => EditorState | null>
-): (state: EditorState, ...args: A) => EditorState | null {
-  return (state, ...args) => {
-    for (const stage of stages) {
-      const result = stage(state, ...args);
-
-      if (result) {
-        return result;
-      }
-    }
-
-    return null;
-  };
-}
-
-function deleteExpandedSelectionStage(state: EditorState) {
-  return hasExpandedSelection(state) ? deleteSelection(state) : null;
-}
-
-function deleteStructuralStage(state: EditorState, direction: "backward" | "forward") {
-  const ctx = resolveDeletionContext(state, direction);
-
-  return dispatch(state, resolveStructuralDelete(state.documentIndex, ctx));
 }
 
 function insertSoftLineBreakInline(state: EditorState) {
@@ -493,22 +437,8 @@ function createToggleMarkCommand(mark: ToggleMark) {
       resolveInlineRangeReplacement(context, (inlineContainer, startOffset, endOffset) =>
         toggleInlineMark(inlineContainer, startOffset, endOffset, mark),
       ),
-    { context: resolveInlineContext },
+    resolveInlineContext,
   );
-}
-
-function hasExpandedSelection(state: EditorState) {
-  const normalized = normalizeSelection(state.documentIndex, state.selection);
-
-  return (
-    normalized.start.regionId !== normalized.end.regionId ||
-    normalized.start.offset !== normalized.end.offset
-  );
-}
-
-function deleteCollapsedCharacter(state: EditorState, direction: "backward" | "forward") {
-  const action = resolveCharacterDelete(state, direction);
-  return dispatch(state, action);
 }
 
 function updateCommentThread(

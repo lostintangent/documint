@@ -1,5 +1,6 @@
 import { resolveRegion, type EditorSelection } from "../../selection";
 import { moveGraphemeOffset } from "../../../text/graphemes";
+import type { EditorRegion } from "../../index/types";
 import type { EditorState, EditorStateAction } from "../../types";
 import { resolveTextFadeAnimation } from "../animations";
 
@@ -49,8 +50,14 @@ export function resolveCharacterDelete(
     return null;
   }
 
+  const shouldAnimateFade =
+    direction === "backward" &&
+    (endOffset === region.text.length || hasSoftLineBreakAtOffset(region, endOffset));
+
   return {
-    animation: resolveTextFadeAnimation(region, startOffset, endOffset),
+    animation: shouldAnimateFade
+      ? resolveTextFadeAnimation(region, startOffset, endOffset)
+      : undefined,
     kind: "splice-text",
     range: {
       anchor: { regionId: region.id, offset: startOffset },
@@ -58,4 +65,8 @@ export function resolveCharacterDelete(
     },
     text: "",
   };
+}
+
+function hasSoftLineBreakAtOffset(region: EditorRegion, offset: number) {
+  return region.inlines.some((inline) => inline.kind === "lineBreak" && inline.start === offset);
 }

@@ -121,6 +121,21 @@ export function resolveHeadingDepthShift(
   };
 }
 
+export function resolveParagraphBlockquoteIndent(
+  ctx: RootTextBlockContext,
+): EditorStateAction | null {
+  if (ctx.block.type !== "paragraph") {
+    return null;
+  }
+
+  return {
+    kind: "splice-blocks",
+    blocks: [createBlockquoteBlock([ctx.block])],
+    rootIndex: ctx.rootIndex,
+    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, [0], ctx.offset),
+  };
+}
+
 // Builds the two-block split residue for a paragraph or heading.
 // Edge offsets (start/end) keep the original block intact and pad with
 // an empty paragraph on the open side. A mid-text split preserves the

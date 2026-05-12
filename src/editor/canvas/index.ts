@@ -70,6 +70,7 @@ import {
 import { paintActiveTableCellHighlightPass, type PaintRegionBounds } from "./painters/table";
 import {
   paintCanvasTextFades,
+  paintCanvasTextHighlights,
   paintCanvasLineText,
   paintCanvasTextPulses,
 } from "./painters/text";
@@ -395,9 +396,17 @@ function paintDocumentLineForeground({
     container,
     textLeft,
     textBaseline,
-    activeTextHighlights.get(containerPath) ?? [],
     defaultTextColor,
     resources,
+    theme,
+  );
+  paintCanvasTextHighlights(
+    context,
+    line,
+    container,
+    textLeft,
+    textBaseline,
+    activeTextHighlights.get(containerPath) ?? [],
     theme,
   );
   paintCanvasTextFades(

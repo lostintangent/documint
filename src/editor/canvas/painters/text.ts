@@ -1,6 +1,6 @@
 // Owns line text rendering: the per-inline text, inline code background,
-// strikethrough/underline decorations, and the two effect overlays that draw
-// directly into glyph space (text fades, text pulses). Inline
+// strikethrough/underline decorations, and effect overlays that draw directly
+// into glyph space (insert highlights, text fades, text pulses). Inline
 // images are drawn here too via a delegate so the inline iteration stays linear.
 
 import { measureLineOffsetLeft, type DocumentLayout } from "../../layout";
@@ -9,7 +9,6 @@ import type { DocumentResources, EditorTheme } from "@/types";
 import { resolveMarkedTextFont } from "../../text/fonts";
 import {
   resolveActiveTextHighlightForSegment,
-  resolveAnimatedTextColor,
   resolveTextFadeColor,
   resolveTextHighlightSegmentBoundaries,
   resolveTextPulseColor,
@@ -36,6 +35,7 @@ const textPulseRadiusGrowth = 4;
 const textPulseStrokeWidth = 1.5;
 const textDecorationMinimumWidth = 2;
 const textDecorationThickness = 1.25;
+const textHighlightMinimumVisibleAlpha = 0.02;
 
 export function paintCanvasLineText(
   context: CanvasRenderingContext2D,
@@ -43,7 +43,6 @@ export function paintCanvasLineText(
   container: EditorRegion | null,
   textLeft: number,
   textBaseline: number,
-  textHighlights: ActiveTextHighlight[],
   defaultColor: string,
   resources: DocumentResources,
   theme: EditorTheme,
@@ -104,8 +103,6 @@ export function paintCanvasLineText(
         start,
         end,
         theme.inlineCodeText,
-        textHighlights,
-        theme,
         {
           strikethrough: false,
           underline: false,
@@ -123,8 +120,6 @@ export function paintCanvasLineText(
       start,
       end,
       inline.link ? theme.linkText : defaultColor,
-      textHighlights,
-      theme,
       {
         strikethrough: inline.marks.includes("strikethrough"),
         underline: inline.marks.includes("underline") || Boolean(inline.link),
@@ -142,18 +137,12 @@ function paintTextInlineSegments(
   startOffset: number,
   endOffset: number,
   baseColor: string,
-  textHighlights: ActiveTextHighlight[],
-  theme: EditorTheme,
   decorations: {
     strikethrough: boolean;
     underline: boolean;
   },
 ) {
-  const segmentBoundaries = resolveTextHighlightSegmentBoundaries(
-    startOffset,
-    endOffset,
-    textHighlights,
-  ).filter((offset) => isTextGraphemeBoundary(containerText, startOffset, endOffset, offset));
+  const segmentBoundaries = [startOffset, endOffset];
 
   for (let index = 0; index < segmentBoundaries.length - 1; index += 1) {
     const segmentStart = segmentBoundaries[index]!;
@@ -175,14 +164,7 @@ function paintTextInlineSegments(
       segmentStart,
       segmentEnd,
     );
-    const activeHighlight = resolveActiveTextHighlightForSegment(
-      textHighlights,
-      segmentStart,
-      segmentEnd,
-    );
-    const textColor = resolveAnimatedTextColor(baseColor, activeHighlight, theme);
-
-    context.fillStyle = textColor;
+    context.fillStyle = baseColor;
     context.fillText(segmentText, segmentLeft, textBaseline);
 
     if (decorations.strikethrough) {
@@ -201,6 +183,99 @@ function paintTextInlineSegments(
         Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
         textDecorationThickness,
       );
+    }
+  }
+}
+
+export function paintCanvasTextHighlights(
+  context: CanvasRenderingContext2D,
+  line: DocumentLayout["lines"][number],
+  container: EditorRegion | null,
+  textLeft: number,
+  textBaseline: number,
+  textHighlights: ActiveTextHighlight[],
+  theme: EditorTheme,
+) {
+  if (!container || textHighlights.length === 0) {
+    return;
+  }
+
+  const visibleInlines = container.inlines.filter(
+    (inline) => inline.end > line.start && inline.start < line.end,
+  );
+
+  for (const inline of visibleInlines) {
+    if (inline.kind === "image" || inline.kind === "mention") {
+      continue;
+    }
+
+    const start = Math.max(line.start, inline.start);
+    const end = Math.min(line.end, inline.end);
+    const segmentText = container.text.slice(start, end);
+
+    if (segmentText.length === 0) {
+      continue;
+    }
+
+    const highlightBoundaries = resolveTextHighlightSegmentBoundaries(
+      start,
+      end,
+      textHighlights,
+    ).filter((offset) => isTextGraphemeBoundary(container.text, start, end, offset));
+
+    if (highlightBoundaries.length <= 2) {
+      const activeHighlight = resolveActiveTextHighlightForSegment(textHighlights, start, end);
+
+      if (!activeHighlight) {
+        continue;
+      }
+    }
+
+    const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
+    const inlineFont = resolveMarkedTextFont(line.font, inline.marks);
+    context.font = inlineFont;
+
+    for (let index = 0; index < highlightBoundaries.length - 1; index += 1) {
+      const highlightStart = highlightBoundaries[index]!;
+      const highlightEnd = highlightBoundaries[index + 1]!;
+      const activeHighlight = resolveActiveTextHighlightForSegment(
+        textHighlights,
+        highlightStart,
+        highlightEnd,
+      );
+
+      if (!activeHighlight || highlightEnd <= highlightStart) {
+        continue;
+      }
+
+      const alpha = 1 - activeHighlight.progress;
+
+      // Near-transparent overlays are visually indistinguishable from settled
+      // text, so skip the extra clipped full-run redraw at the fade tail.
+      if (alpha <= textHighlightMinimumVisibleAlpha) {
+        continue;
+      }
+
+      const { left: highlightLeft, right: highlightRight } = resolveLineSegmentBounds(
+        line,
+        textLeft,
+        highlightStart,
+        highlightEnd,
+      );
+
+      context.save();
+      context.beginPath();
+      context.rect(
+        highlightLeft,
+        line.top,
+        Math.max(0, highlightRight - highlightLeft),
+        line.height,
+      );
+      context.clip();
+      context.globalAlpha *= alpha;
+      context.fillStyle = theme.insertHighlightText;
+      context.fillText(segmentText, segmentLeft, textBaseline);
+      context.restore();
     }
   }
 }

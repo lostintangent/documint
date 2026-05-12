@@ -66,10 +66,9 @@
   display: block;
   width: 100%;
   outline: none;
-  /* Let the browser handle native pan (scrolling) on touch and eliminate the
-     historical 300ms tap delay. Double-tap zoom is suppressed on the canvas
-     (we want `dblclick` for word-select), but pinch-zoom and pan are kept. */
-  touch-action: manipulation;
+  /* Let the browser keep vertical scrolling and pinch-zoom while exposing
+     horizontal swipes to the editor's touch gesture handling. */
+  touch-action: pan-y pinch-zoom;
 }
 
 .documint-overlay-canvas {

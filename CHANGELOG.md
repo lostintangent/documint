@@ -1,3 +1,8 @@
+## 🗓️ v0.0.14 (05-12-26)
+
+- Added support for indenting/dedenting blocks via horizontal swipe gestures on mobile (which is the mobile equivalent of `Tab`/`Shift+Tab`)
+- Added support for tab-transforming a paragraph into a blockquote
+
 ## 🗓️ v0.0.13 (05-11-26)
 
 - Added support for brace completion when typing an opening `(`, `{`, or `[` character.

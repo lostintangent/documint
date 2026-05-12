@@ -1,10 +1,20 @@
 import { rebuildListBlock, type ListBlock } from "@/document";
 import type { DocumentIndex } from "../../index/types";
-import type { EditorStateAction } from "../../types";
-import type { DeletionContext, RootTextBlockContext } from "../../context";
-import { createRootPrimaryRegionTarget, previousRegionInFlow } from "../../selection";
+import type { EditorState, EditorStateAction } from "../../types";
+import {
+  resolveDeletionContext,
+  type DeletionContext,
+  type RootTextBlockContext,
+} from "../../context";
+import {
+  createRootPrimaryRegionTarget,
+  normalizeSelection,
+  previousRegionInFlow,
+} from "../../selection";
+import { resolveTextReplacement } from "../insertion/replace";
 import { regionPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
+import { resolveCharacterDelete } from "./character";
 
 // Structural delete dispatcher.
 //
@@ -30,6 +40,17 @@ import { resolveBlockDemotion } from "./block-demote";
 // Forward delete has no overrides today; the asymmetry is intentional
 // — there's no forward-direction analog of "demote the wrapper at the
 // start" or "join the two lists you're sitting between."
+export function resolveDeletion(
+  state: EditorState,
+  direction: "backward" | "forward",
+): EditorStateAction | null {
+  return (
+    resolveExpandedSelectionDelete(state) ??
+    resolveCharacterDelete(state, direction) ??
+    resolveStructuralDelete(state.documentIndex, resolveDeletionContext(state, direction))
+  );
+}
+
 export function resolveStructuralDelete(
   documentIndex: DocumentIndex,
   ctx: DeletionContext,
@@ -46,6 +67,19 @@ export function resolveStructuralDelete(
   }
 
   return resolveInFlowBoundaryDelete(documentIndex, ctx.region, ctx.empty, ctx.direction);
+}
+
+function resolveExpandedSelectionDelete(state: EditorState): EditorStateAction | null {
+  const normalized = normalizeSelection(state.documentIndex, state.selection);
+
+  if (
+    normalized.start.regionId === normalized.end.regionId &&
+    normalized.start.offset === normalized.end.offset
+  ) {
+    return null;
+  }
+
+  return resolveTextReplacement(state.documentIndex, state.selection, "");
 }
 
 function resolveBackwardOverride(

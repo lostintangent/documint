@@ -503,6 +503,28 @@ test("changes heading depth with tab and shift-tab", () => {
   expect(toMarkdown(h6State)).toBe("###### Heading\n");
 });
 
+test("indents a paragraph into a blockquote", () => {
+  let state = setup("Alpha\n");
+  const alpha = getRegion(state, "Alpha");
+
+  state = placeAt(state, alpha, 2);
+  state = indent(state) ?? state;
+
+  expect(toMarkdown(state)).toBe("> Alpha\n");
+  expect(state.selection.focus.offset).toBe(2);
+});
+
+test("indents only the active paragraph into a blockquote", () => {
+  let state = setup("Alpha\n\nBravo\n\nCharlie\n");
+  const bravo = getRegion(state, "Bravo");
+
+  state = placeAt(state, bravo, "Bravo".length);
+  state = indent(state) ?? state;
+
+  expect(toMarkdown(state)).toBe("Alpha\n\n> Bravo\n\nCharlie\n");
+  expect(state.selection.focus.offset).toBe("Bravo".length);
+});
+
 test("merges a non-empty quoted line with the previous line when backspacing at its start", () => {
   let quoteState = setup("> alpha\n");
   const alpha = getRegion(quoteState, "alpha");

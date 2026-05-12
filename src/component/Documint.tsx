@@ -524,6 +524,7 @@ function DocumintHost({
     autoScrollDuringDrag,
     canvasRef: contentCanvasRef,
     focusInput: input.focus,
+    isEditable,
     onActivity: cursor.markActivity,
     resolvePoint,
     storage: documentStorage,

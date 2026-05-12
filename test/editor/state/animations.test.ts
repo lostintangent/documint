@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { deleteBackward, insertLineBreak, insertText, setSelection } from "@/editor/state";
+import {
+  deleteBackward,
+  deleteForward,
+  insertLineBreak,
+  insertText,
+  setSelection,
+} from "@/editor/state";
 import {
   getEditorAnimationDuration,
   hasRunningEditorAnimations as hasRunningAnimations,
@@ -131,6 +137,57 @@ test("starts and expires text fade animations for single-character deletes", () 
       animation!.startedAt + getEditorAnimationDuration(animation!) + 10,
     ),
   ).toBe(false);
+});
+
+test("does not start text fade animations for forward deletes", () => {
+  const state = setup("alpha\n");
+  const region = getRegion(state, "alpha");
+  const result = deleteForward(placeAt(state, region, 0));
+
+  expect(result).not.toBeNull();
+  expect(result!.animations.some((animation) => animation.kind === "text-fade")).toBe(
+    false,
+  );
+});
+
+test("does not start text fade animations for backward deletes with trailing text", () => {
+  const state = setup("alpha\n");
+  const region = getRegion(state, "alpha");
+  const result = deleteBackward(placeAt(state, region, 2));
+
+  expect(result).not.toBeNull();
+  expect(result!.animations.some((animation) => animation.kind === "text-fade")).toBe(
+    false,
+  );
+});
+
+test("starts text fade animations for backward deletes immediately before a soft break", () => {
+  const state = setup("foo<br>bar\n");
+  const region = getRegion(state, "foo\nbar");
+  const result = deleteBackward(placeAt(state, region, 3));
+
+  expect(result).not.toBeNull();
+  expect(result!.animations).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: "text-fade",
+        regionPath: region.path,
+        startOffset: 2,
+        text: "o",
+      }),
+    ]),
+  );
+});
+
+test("does not start text fade animations when backspace removes a soft break", () => {
+  const state = setup("foo<br>bar\n");
+  const region = getRegion(state, "foo\nbar");
+  const result = deleteBackward(placeAt(state, region, 4));
+
+  expect(result).not.toBeNull();
+  expect(result!.animations.some((animation) => animation.kind === "text-fade")).toBe(
+    false,
+  );
 });
 
 test("does not start text fade animations for color emoji deletes", () => {

@@ -1,5 +1,7 @@
 import {
+  dedent,
   extendSelectionToPoint,
+  indent,
   resolveHoverTarget as resolveEditorHoverTarget,
   resolveWordSelection,
   setSelectionAtPoint,
@@ -40,6 +42,7 @@ type UsePointerOptions = {
   // Host callbacks the hook invokes.
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
   focusInput: FocusInput;
+  isEditable: boolean;
   onActivity: () => void;
   storage: DocumentStorage;
 };
@@ -69,6 +72,54 @@ type PointerController = {
 // Short delay before hiding a hover leaf when the pointer leaves, giving the
 // user time to move into the leaf itself without it flickering away.
 const HOVER_HIDE_DELAY_MS = 48;
+const MIN_HORIZONTAL_SWIPE_PX = 44;
+const MAX_HORIZONTAL_SWIPE_VERTICAL_PX = 32;
+const HORIZONTAL_SWIPE_RATIO = 1.6;
+const MAX_HORIZONTAL_SWIPE_DURATION_MS = 600;
+const SUPPRESSED_TOUCH_CLICK_DISTANCE_PX = 24;
+const SUPPRESSED_TOUCH_CLICK_DURATION_MS = 500;
+
+type TouchSwipe = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startedAt: number;
+  swiping: boolean;
+};
+
+type SuppressedTouchClick = {
+  expiresAt: number;
+  x: number;
+  y: number;
+};
+
+type SwipePoint = {
+  x: number;
+  y: number;
+  time: number;
+};
+
+export function resolveHorizontalSwipeDirection(
+  start: SwipePoint,
+  end: SwipePoint,
+): "left" | "right" | null {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+  const elapsed = end.time - start.time;
+
+  if (
+    absX < MIN_HORIZONTAL_SWIPE_PX ||
+    absY > MAX_HORIZONTAL_SWIPE_VERTICAL_PX ||
+    absX < absY * HORIZONTAL_SWIPE_RATIO ||
+    elapsed > MAX_HORIZONTAL_SWIPE_DURATION_MS
+  ) {
+    return null;
+  }
+
+  return dx < 0 ? "left" : "right";
+}
 
 /**
  * Owns all canvas pointer/click/dblclick interactions and hover state for
@@ -96,6 +147,7 @@ export function usePointer({
   autoScrollDuringDrag,
   canvasRef,
   focusInput,
+  isEditable,
   onActivity,
   resolvePoint,
   storage,
@@ -106,6 +158,8 @@ export function usePointer({
   const setEditorSelection = useEditorCommand(setSelection);
   const setEditorSelectionAtPoint = useEditorCommand(setSelectionAtPoint);
   const extendEditorSelectionToPoint = useEditorCommand(extendSelectionToPoint);
+  const indentCommand = useEditorCommand(indent);
+  const dedentCommand = useEditorCommand(dedent);
   const toggleTaskItem = useEditorCommand(toggleTask);
   const dragEditorSelection = useEditorCommand(updateSelectionFromDrag);
   const [hoverTarget, setHoverTarget] = useState<EditorHoverTarget | null>(null);
@@ -118,6 +172,9 @@ export function usePointer({
   const dragPointerIdRef = useRef<number | null>(null);
   const dragAnchorRef = useRef<EditorSelectionPoint | null>(null);
   const lastPointerTypeRef = useRef<string | null>(null);
+  const touchSwipeRef = useRef<TouchSwipe | null>(null);
+  const activeTouchPointerIdsRef = useRef<Set<number>>(new Set());
+  const suppressedTouchClickRef = useRef<SuppressedTouchClick | null>(null);
 
   /* Hover lifecycle */
 
@@ -234,6 +291,24 @@ export function usePointer({
     dragAnchorRef.current = null;
   });
 
+  const clearTouchSwipe = useEffectEvent(() => {
+    touchSwipeRef.current = null;
+  });
+
+  const suppressTouchClick = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
+    suppressedTouchClickRef.current = {
+      expiresAt: event.timeStamp + SUPPRESSED_TOUCH_CLICK_DURATION_MS,
+      x: event.clientX,
+      y: event.clientY,
+    };
+  });
+
+  const forgetTouchPointer = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === "touch") {
+      activeTouchPointerIdsRef.current.delete(event.pointerId);
+    }
+  });
+
   // pointerup and pointercancel collapse to the same response: release the
   // captured pointer and clear drag state. The browser fires pointercancel
   // when it preempts the gesture (e.g. native scroll on touch) and pointerup
@@ -241,6 +316,8 @@ export function usePointer({
   const endPointerGesture = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
     releaseCanvasPointer(event.pointerId);
     clearCanvasDrag();
+    clearTouchSwipe();
+    forgetTouchPointer(event);
   });
 
   /* Canvas event handlers */
@@ -254,6 +331,18 @@ export function usePointer({
     // virtual keyboard at the start of every scroll gesture. Task toggles,
     // caret placement, and focus all fire from `handleClick` instead.
     if (event.pointerType === "touch") {
+      activeTouchPointerIdsRef.current.add(event.pointerId);
+      if (activeTouchPointerIdsRef.current.size > 1) {
+        clearTouchSwipe();
+      } else if (isEditable && event.isPrimary) {
+        touchSwipeRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          startedAt: event.timeStamp,
+          swiping: false,
+        };
+      }
       return;
     }
 
@@ -294,6 +383,24 @@ export function usePointer({
   });
 
   const handlePointerMove = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
+    const touchSwipe = touchSwipeRef.current;
+    if (event.pointerType === "touch" && touchSwipe?.pointerId === event.pointerId) {
+      const dx = event.clientX - touchSwipe.startX;
+      const dy = event.clientY - touchSwipe.startY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (
+        absX >= MIN_HORIZONTAL_SWIPE_PX &&
+        absY <= MAX_HORIZONTAL_SWIPE_VERTICAL_PX &&
+        absX >= absY * HORIZONTAL_SWIPE_RATIO
+      ) {
+        touchSwipe.swiping = true;
+        event.preventDefault();
+      }
+      return;
+    }
+
     const anchor = dragAnchorRef.current;
     const point = resolvePoint(event);
     if (!point) return;
@@ -321,7 +428,62 @@ export function usePointer({
     }
   });
 
+  const handlePointerUp = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
+    const touchSwipe = touchSwipeRef.current;
+
+    if (event.pointerType === "touch" && touchSwipe?.pointerId === event.pointerId) {
+      const direction =
+        activeTouchPointerIdsRef.current.size === 1
+          ? resolveHorizontalSwipeDirection(
+              {
+                time: touchSwipe.startedAt,
+                x: touchSwipe.startX,
+                y: touchSwipe.startY,
+              },
+              {
+                time: event.timeStamp,
+                x: event.clientX,
+                y: event.clientY,
+              },
+            )
+          : null;
+
+      if (direction) {
+        event.preventDefault();
+        suppressTouchClick(event);
+        if (direction === "right") {
+          indentCommand();
+        } else {
+          dedentCommand();
+        }
+      } else if (touchSwipe.swiping) {
+        suppressTouchClick(event);
+      }
+    }
+
+    endPointerGesture(event);
+  });
+
   const handleClick = useEffectEvent((event: MouseEvent<HTMLCanvasElement>) => {
+    const suppressedTouchClick = suppressedTouchClickRef.current;
+
+    if (suppressedTouchClick) {
+      const dx = event.clientX - suppressedTouchClick.x;
+      const dy = event.clientY - suppressedTouchClick.y;
+      const isSuppressedClick =
+        event.timeStamp <= suppressedTouchClick.expiresAt &&
+        Math.hypot(dx, dy) <= SUPPRESSED_TOUCH_CLICK_DISTANCE_PX;
+
+      suppressedTouchClickRef.current = null;
+
+      if (isSuppressedClick) {
+        lastPointerTypeRef.current = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
+
     const wasTouchTap = lastPointerTypeRef.current === "touch";
     lastPointerTypeRef.current = null;
 
@@ -415,7 +577,7 @@ export function usePointer({
       onPointerDown: handlePointerDown,
       onPointerLeave: handlePointerLeave,
       onPointerMove: handlePointerMove,
-      onPointerUp: endPointerGesture,
+      onPointerUp: handlePointerUp,
     },
     cursor,
     leaf,
