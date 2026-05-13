@@ -10,6 +10,7 @@ import { paintCanvasEditorSurface } from "@/editor/canvas";
 import { createDocumentLayout } from "@/editor/layout";
 import { insertText, setSelection, type EditorState } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
+import type { EditorTheme } from "@/types";
 import { setup } from "../helpers";
 import {
   approximately,
@@ -419,11 +420,50 @@ test("right-aligns ordered list markers without moving list text", () => {
   expect(bulletMarker.textAlign).toBe("start");
 });
 
+test("uses explicit list marker text color when provided", () => {
+  const state = setup("- bullet\n");
+  const theme: EditorTheme = {
+    ...lightTheme,
+    listMarkerText: "#f97316",
+    paragraphText: "#14532d",
+  };
+  const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
+  const marker = findFillTextOperation(context.operations, "•");
+  const text = findFillTextOperation(context.operations, "bullet");
+
+  if (!marker || !text) {
+    throw new Error("Expected list marker and text paint operations");
+  }
+
+  expect(marker.fillStyle).toBe("#f97316");
+  expect(text.fillStyle).toBe("#14532d");
+});
+
+test("falls back to paragraph text color when list marker color is omitted", () => {
+  const state = setup("- bullet\n");
+  const theme: EditorTheme = {
+    ...lightTheme,
+    paragraphText: "#14532d",
+  };
+
+  const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
+  const marker = findFillTextOperation(context.operations, "•");
+  const text = findFillTextOperation(context.operations, "bullet");
+
+  if (!marker || !text) {
+    throw new Error("Expected list marker and text paint operations");
+  }
+
+  expect(marker.fillStyle).toBe("#14532d");
+  expect(text.fillStyle).toBe("#14532d");
+});
+
 function renderPaintOperations(
   state: EditorState,
   options: {
     height: number;
     textDecorations?: Parameters<typeof paintCanvasEditorSurface>[0]["textDecorations"];
+    theme?: EditorTheme;
     width: number;
   },
 ) {
@@ -449,7 +489,7 @@ function renderPaintOperations(
     resources: { images: new Map() },
     runtimeBlockMap: createRuntimeBlockMap(state.documentIndex.document.blocks),
     textDecorations: options.textDecorations,
-    theme: lightTheme,
+    theme: options.theme ?? lightTheme,
     viewportTop: 0,
     width: options.width,
   });

@@ -411,7 +411,16 @@ function paintDocumentLineForeground({
     activeThreadIndex,
     theme,
   );
-  paintListMarker(context, line, listMarker, textLeft, textBaseline, theme, blockPulse);
+  paintListMarker(
+    context,
+    line,
+    listMarker,
+    textLeft,
+    textBaseline,
+    defaultTextColor,
+    theme,
+    blockPulse,
+  );
   paintCanvasLineText(
     context,
     line,

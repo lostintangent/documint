@@ -98,7 +98,7 @@ export type EditorTheme = {
   leafShadow?: string;
   leafText: string;
   linkText: string;
-  listMarkerText: string;
+  listMarkerText?: string;
   mentionBackground?: string;
   mentionText?: string;
   paddingX: number;

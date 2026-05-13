@@ -33,6 +33,7 @@ export function paintListMarker(
   marker: EditorListItemMarker | null,
   textLeft: number,
   textBaseline: number,
+  defaultTextColor: string,
   theme: EditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
@@ -53,9 +54,11 @@ export function paintListMarker(
   if (marker.kind === "task") {
     paintTaskCheckbox(context, line, marker.checked, theme, pop);
   } else {
+    const markerTextColor = theme.listMarkerText ?? defaultTextColor;
+
     context.fillStyle = pop
-      ? resolveBlockPulseColor(theme.listMarkerText, pop, theme)
-      : theme.listMarkerText;
+      ? resolveBlockPulseColor(markerTextColor, pop, theme)
+      : markerTextColor;
 
     if (marker.kind === "ordered") {
       paintOrderedListMarker(context, marker.label, textLeft, textBaseline);
