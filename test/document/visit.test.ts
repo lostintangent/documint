@@ -2,9 +2,14 @@ import { expect, test } from "bun:test";
 import {
   createDocument,
   createBlockquoteBlock,
+  createCode,
   createParagraphTextBlock,
+  createLink,
+  createParagraphBlock,
+  createText,
   extractPlainTextFromInlineNodes,
   findBlockById,
+  visitBlockTree,
   visitDocument,
 } from "@/document";
 import { parseDocument } from "@/markdown";
@@ -68,6 +73,77 @@ test("supports skipping table-cell descendants during traversal", () => {
   });
 
   expect(visited).toEqual(["cell:A", "cell:one"]);
+});
+
+test("visits editable inline containers with their region paths", () => {
+  const snapshot = parseDocument(`# Title
+
+Paragraph.
+
+| A | B |
+| - | - |
+| one | two |
+`);
+  const visited: string[] = [];
+
+  visitDocument(snapshot, {
+    enterInlineContainer(nodes, context) {
+      visited.push(
+        `${context.kind}:${context.path}:${extractPlainTextFromInlineNodes([...nodes])}`,
+      );
+      return "skip";
+    },
+  });
+
+  expect(visited).toEqual([
+    "block:root.0.children:Title",
+    "block:root.1.children:Paragraph.",
+    "tableCell:root.2.rows.0.cells.0:A",
+    "tableCell:root.2.rows.0.cells.1:B",
+    "tableCell:root.2.rows.1.cells.0:one",
+    "tableCell:root.2.rows.1.cells.1:two",
+  ]);
+});
+
+test("supports visiting root block slices at their document root index", () => {
+  const snapshot = parseDocument(`First
+
+Second
+`);
+  const visited: string[] = [];
+
+  visitBlockTree(
+    [snapshot.blocks[1]!],
+    {
+      enterInlineContainer(_nodes, context) {
+        visited.push(context.path);
+      },
+    },
+    { startIndex: 1 },
+  );
+
+  expect(visited).toEqual(["root.1.children"]);
+});
+
+test("visits plain text with region paths and text-coordinate offsets", () => {
+  const snapshot = createDocument([
+    createParagraphBlock([
+      createText("plain "),
+      createText("bold", ["bold"]),
+      createCode("code"),
+      createLink({ children: [createText("link")], url: "https://example.com" }),
+      createText(" tail"),
+    ]),
+  ]);
+  const visited: string[] = [];
+
+  visitDocument(snapshot, {
+    enterPlainText(text, context) {
+      visited.push(`${context.path}:${context.startOffset}-${context.endOffset}:${text}`);
+    },
+  });
+
+  expect(visited).toEqual(["root.0.children:0-6:plain ", "root.0.children:18-23: tail"]);
 });
 
 test("supports stopping traversal once a semantic target has been found", () => {

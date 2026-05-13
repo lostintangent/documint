@@ -1,15 +1,22 @@
-// Owns text measurement for render layout. This module resolves block
-// typography, wraps editor text regions into measured lines, and produces
-// grapheme boundaries for caret placement and hit testing.
+// Owns text measurement for render layout. Pretext handles the normal text
+// wrapping paths; this module adapts Pretext cursors back to editor UTF-16
+// offsets, materializes caret/hit-test boundaries, and keeps the narrow local
+// fallback for inline images and unsupported rich hard breaks.
 
-import { layoutWithLines, prepareWithSegments, type PrepareOptions } from "@chenglou/pretext";
+import { prepareWithSegments, walkLineRanges, type PrepareOptions } from "@chenglou/pretext";
+import {
+  prepareRichInline,
+  walkRichInlineLineRanges,
+  type PreparedRichInline,
+  type RichInlineFragmentRange,
+  type RichInlineItem,
+} from "@chenglou/pretext/rich-inline";
 import type { Block, Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { EditorInline, EditorRegion } from "../../state";
-import { containsColorEmoji } from "../../text/emoji";
 import { splitGraphemes } from "../../text/graphemes";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./image";
-import { measureInlineMentionWidth } from "./mention";
+import { measureInlineMentionWidth, mentionHorizontalPadding } from "./mention";
 import {
   cacheLineBoundaries,
   cacheMeasuredLines,
@@ -40,6 +47,31 @@ type MeasuredTextSegment = {
   width: number;
 };
 
+type RichInlineMeasurementItem = {
+  leadingTrimLength: number;
+  run: EditorInline;
+};
+
+type InlineMeasurementProfile = {
+  hasHardBreak: boolean;
+  hasImage: boolean;
+  hasRichInline: boolean;
+};
+
+type TextCursor = { graphemeIndex: number; segmentIndex: number };
+
+// Pretext does not currently expose source-offset mapping for rich-inline
+// fragments, so this intentionally reads the prepared item table that backs
+// `RichInlineFragmentRange.itemIndex`. Keep this adapter narrow.
+type InternalPreparedRichInline = PreparedRichInline & {
+  itemsBySourceItemIndex: Array<
+    | {
+        prepared: ReturnType<typeof prepareWithSegments>;
+      }
+    | undefined
+  >;
+};
+
 const headingTypographyScale = [
   { fontSize: 32, lineHeight: 36 },
   { fontSize: 26, lineHeight: 32 },
@@ -51,11 +83,11 @@ const headingTypographyScale = [
 
 const SANS_SERIF_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const exactPrefixBoundaryGraphemeLimit = 32;
 
 let textMeasurementContext:
   | OffscreenCanvasRenderingContext2D
   | CanvasRenderingContext2D
-  | null
   | undefined;
 
 export function resolveTextBlockFont(block: Block | null) {
@@ -87,6 +119,22 @@ export function resolveTextBlockLineHeight(block: Block | null, fallback: number
 
 function resolveHeadingTypography(depth: number) {
   return headingTypographyScale[depth - 1] ?? headingTypographyScale.at(-1)!;
+}
+
+// Pretext handles grapheme-aware wrapping internally. This helper is only for
+// editor offset projection and local boundary materialization.
+function splitBoundaryUnits(text: string) {
+  return isAsciiText(text) ? text.split("") : splitGraphemes(text);
+}
+
+function isAsciiText(text: string) {
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) > 0x7f) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function measureTextContainerLines(
@@ -128,6 +176,9 @@ export function measureTextLineBoundaries(
   availableWidth: number,
   resources: DocumentResources,
 ): TextLineBoundary[] {
+  // Pretext returns line ranges and widths, but it does not currently expose
+  // every editor offset's x-position. Keep this boundary projection local so
+  // caret placement, hit testing, and decoration clipping share one cache.
   const cacheKey = `${resolveRegionMeasurementCacheIdentity(container, resources)}:${start}:${end}:${font}:${availableWidth}`;
   const cached = cache.lineBoundaries.get(cacheKey);
 
@@ -145,10 +196,6 @@ export function measureTextLineBoundaries(
   ];
   let width = 0;
   const visibleRuns = container.inlines.filter((run) => run.end > start && run.start < end);
-
-  if (visibleRuns.length === 0) {
-    return createFallbackLineBoundaries(text);
-  }
 
   for (const run of visibleRuns) {
     const segmentStart = Math.max(start, run.start);
@@ -168,9 +215,7 @@ export function measureTextLineBoundaries(
       continue;
     }
 
-    if (context) {
-      context.font = resolveInlineFont(font, run.marks);
-    }
+    context.font = resolveInlineFont(font, run.marks);
 
     if (isMentionInline(run)) {
       width += measureInlineMentionWidth(context, run.mention);
@@ -183,9 +228,9 @@ export function measureTextLineBoundaries(
       continue;
     }
 
-    for (const grapheme of splitGraphemes(segmentText)) {
-      width += measureGraphemeWidth(cache, context, grapheme);
-      offset += grapheme.length;
+    for (const advance of measureTextBoundaryAdvances(cache, context, segmentText)) {
+      width += advance.width;
+      offset += advance.length;
       boundaries.push({
         left: width,
         offset,
@@ -226,6 +271,7 @@ function createMeasuredTextLines(
   resources: DocumentResources,
 ) {
   const text = container.text;
+  const inlineProfile = resolveInlineMeasurementProfile(container);
 
   if (text.length === 0) {
     return [
@@ -239,7 +285,7 @@ function createMeasuredTextLines(
     ];
   }
 
-  if (requiresMeasuredInlineLayout(container)) {
+  if (requiresLocalInlineLayout(inlineProfile)) {
     return createInlineMeasuredTextLines(
       cache,
       container,
@@ -250,85 +296,54 @@ function createMeasuredTextLines(
     );
   }
 
-  try {
-    const prepared = prepareTextSegments(cache, text, font, resolveWhitespace(block));
-    const layout = layoutWithLines(prepared, availableWidth, lineHeight);
-
-    return layout.lines.map((line) => ({
-      end: cursorToOffset(prepared.segments, line.end),
-      height: lineHeight,
-      start: cursorToOffset(prepared.segments, line.start),
-      text: line.text,
-      width: line.width,
-    }));
-  } catch {
-    return createFallbackTextLines(text, availableWidth, lineHeight);
-  }
-}
-
-function cursorToOffset(
-  segments: string[],
-  cursor: { graphemeIndex: number; segmentIndex: number },
-) {
-  let offset = 0;
-
-  for (let index = 0; index < cursor.segmentIndex; index += 1) {
-    offset += segments[index]?.length ?? 0;
+  if (inlineProfile.hasRichInline) {
+    return createRichInlineMeasuredTextLines(
+      container,
+      font,
+      availableWidth,
+      lineHeight,
+    );
   }
 
-  const segment = segments[cursor.segmentIndex] ?? "";
-  const graphemes = splitGraphemes(segment);
+  const prepared = prepareTextSegments(cache, text, font, resolveWhitespace(block, inlineProfile));
+  const resolveOffset = createCursorOffsetResolver(prepared.segments);
+  const lines: MeasuredTextLine[] = [];
 
-  for (let index = 0; index < cursor.graphemeIndex; index += 1) {
-    offset += graphemes[index]?.length ?? 0;
-  }
+  walkLineRanges(prepared, availableWidth, (line) => {
+    const start = resolveOffset(line.start);
+    const end = resolveMeasuredLineEnd(text, start, resolveOffset(line.end));
 
-  return offset;
-}
-
-function createFallbackLineBoundaries(text: string) {
-  const boundaries: TextLineBoundary[] = [
-    {
-      left: 0,
-      offset: 0,
-    },
-  ];
-  let left = 0;
-  let offset = 0;
-
-  for (const grapheme of splitGraphemes(text)) {
-    left += 9;
-    offset += grapheme.length;
-    boundaries.push({
-      left,
-      offset,
-    });
-  }
-
-  return boundaries;
-}
-
-function createFallbackTextLines(text: string, availableWidth: number, lineHeight: number) {
-  const lineWidth = Math.max(1, Math.floor(availableWidth / 9));
-  const wrappedLines = wrapFallbackText(text, lineWidth);
-  let localOffset = 0;
-
-  return wrappedLines.map((lineText) => {
-    const start = localOffset;
-    const end = start + lineText.length;
-
-    localOffset = end;
-
-    return {
+    lines.push({
       end,
       height: lineHeight,
       start,
-      text: lineText,
-      width: lineText.length * 9,
-    };
+      text: text.slice(start, end),
+      width: line.width,
+    });
   });
+
+  if (inlineProfile.hasHardBreak && text.endsWith("\n")) {
+    lines.push({
+      end: text.length,
+      height: lineHeight,
+      start: text.length,
+      text: "",
+      width: 0,
+    });
+  }
+
+  return lines;
 }
 
+function resolveMeasuredLineEnd(text: string, start: number, end: number) {
+  return end > start && text[end - 1] === "\n" ? end - 1 : end;
+}
+
+// Local line layout is intentionally limited to cases Pretext does not model:
+// images are replaced elements whose width and height come from document
+// resources, while `rich-inline` currently only accepts text items plus
+// horizontal `extraWidth`; and rich inline content mixed with hard breaks needs
+// `pre-wrap` semantics, while `rich-inline` is a `white-space: normal` helper.
 function createInlineMeasuredTextLines(
   cache: CanvasRenderCache,
   container: EditorRegion,
@@ -360,6 +375,204 @@ function createInlineMeasuredTextLines(
   }
 
   return layoutSegmentsIntoLines(segments, container.text, availableWidth, lineHeight);
+}
+
+function createRichInlineMeasuredTextLines(
+  container: EditorRegion,
+  font: string,
+  availableWidth: number,
+  lineHeight: number,
+) {
+  const { items, measurementItems } = createRichInlineMeasurementItems(container, font);
+
+  if (items.length === 0) {
+    return [
+      {
+        end: 0,
+        height: lineHeight,
+        start: 0,
+        text: "",
+        width: 0,
+      },
+    ];
+  }
+
+  const prepared = prepareRichInline(items);
+  const internalPrepared = prepared as InternalPreparedRichInline;
+  const lines: MeasuredTextLine[] = [];
+
+  walkRichInlineLineRanges(prepared, availableWidth, (line) => {
+    const range = resolveRichInlineSourceRange(internalPrepared, measurementItems, line.fragments);
+
+    if (!range) {
+      return;
+    }
+
+    lines.push({
+      end: range.end,
+      height: lineHeight,
+      start: range.start,
+      text: container.text.slice(range.start, range.end),
+      width: line.width,
+    });
+  });
+
+  return lines.length > 0
+    ? lines
+    : [
+        {
+          end: 0,
+          height: lineHeight,
+          start: 0,
+          text: "",
+          width: 0,
+        },
+      ];
+}
+
+function createRichInlineMeasurementItems(container: EditorRegion, font: string) {
+  const items: RichInlineItem[] = [];
+  const measurementItems: RichInlineMeasurementItem[] = [];
+
+  for (const run of container.inlines) {
+    if (run.kind === "mention" && run.mention) {
+      items.push({
+        break: "never",
+        extraWidth: mentionHorizontalPadding * 2,
+        font: resolveInlineFont(font, run.marks),
+        text: `@${run.mention.name}`,
+      });
+      measurementItems.push({
+        leadingTrimLength: 0,
+        run,
+      });
+      continue;
+    }
+
+    items.push({
+      font: resolveInlineFont(font, run.marks),
+      text: run.text,
+    });
+    measurementItems.push({
+      leadingTrimLength: resolveLeadingCollapsibleLength(run.text),
+      run,
+    });
+  }
+
+  return {
+    items,
+    measurementItems,
+  };
+}
+
+function resolveRichInlineSourceRange(
+  prepared: InternalPreparedRichInline,
+  measurementItems: RichInlineMeasurementItem[],
+  fragments: RichInlineFragmentRange[],
+) {
+  let start: number | null = null;
+  let end: number | null = null;
+
+  for (const fragment of fragments) {
+    const fragmentStart = resolveRichInlineFragmentOffset(
+      prepared,
+      measurementItems,
+      fragment,
+      "start",
+    );
+    const fragmentEnd = resolveRichInlineFragmentOffset(
+      prepared,
+      measurementItems,
+      fragment,
+      "end",
+    );
+
+    if (fragmentStart === null || fragmentEnd === null) {
+      continue;
+    }
+
+    start = start === null ? fragmentStart : Math.min(start, fragmentStart);
+    end = end === null ? fragmentEnd : Math.max(end, fragmentEnd);
+  }
+
+  return start === null || end === null
+    ? null
+    : {
+        end,
+        start,
+      };
+}
+
+function resolveRichInlineFragmentOffset(
+  prepared: InternalPreparedRichInline,
+  measurementItems: RichInlineMeasurementItem[],
+  fragment: RichInlineFragmentRange,
+  side: "end" | "start",
+) {
+  const measurementItem = measurementItems[fragment.itemIndex];
+  const preparedItem = prepared.itemsBySourceItemIndex[fragment.itemIndex];
+
+  if (!measurementItem || !preparedItem) {
+    return null;
+  }
+
+  const { run } = measurementItem;
+
+  if (run.kind === "mention") {
+    return side === "start" ? run.start : run.end;
+  }
+
+  const cursor = side === "start" ? fragment.start : fragment.end;
+
+  return (
+    run.start +
+    measurementItem.leadingTrimLength +
+    createCursorOffsetResolver(preparedItem.prepared.segments)(cursor)
+  );
+}
+
+function createCursorOffsetResolver(segments: string[]) {
+  const segmentOffsets: number[] = [];
+  const graphemeOffsetsBySegment = new Map<number, number[]>();
+  let offset = 0;
+
+  for (const segment of segments) {
+    segmentOffsets.push(offset);
+    offset += segment.length;
+  }
+
+  return (cursor: TextCursor) => {
+    const segmentOffset = segmentOffsets[cursor.segmentIndex] ?? offset;
+
+    if (cursor.graphemeIndex === 0) {
+      return segmentOffset;
+    }
+
+    let graphemeOffsets = graphemeOffsetsBySegment.get(cursor.segmentIndex);
+
+    if (!graphemeOffsets) {
+      graphemeOffsets = createGraphemeOffsets(segments[cursor.segmentIndex] ?? "");
+      graphemeOffsetsBySegment.set(cursor.segmentIndex, graphemeOffsets);
+    }
+
+    return segmentOffset + (graphemeOffsets[cursor.graphemeIndex] ?? 0);
+  };
+}
+
+function createGraphemeOffsets(segment: string) {
+  const offsets = [0];
+  let offset = 0;
+
+  for (const grapheme of splitBoundaryUnits(segment)) {
+    offset += grapheme.length;
+    offsets.push(offset);
+  }
+
+  return offsets;
+}
+
+function resolveLeadingCollapsibleLength(text: string) {
+  return text.match(/^[ \t\n\f\r]+/)?.[0].length ?? 0;
 }
 
 // Greedy line-breaking over pre-measured inline segments. Consumes segments
@@ -480,7 +693,7 @@ function layoutSegmentsIntoLines(
 
 function flattenMeasuredInlineSegments(
   cache: CanvasRenderCache,
-  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null,
+  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   container: EditorRegion,
   font: string,
   availableWidth: number,
@@ -504,9 +717,7 @@ function flattenMeasuredInlineSegments(
       continue;
     }
 
-    if (context) {
-      context.font = resolveInlineFont(font, run.marks);
-    }
+    context.font = resolveInlineFont(font, run.marks);
 
     if (isMentionInline(run)) {
       segments.push({
@@ -522,7 +733,7 @@ function flattenMeasuredInlineSegments(
 
     let offset = run.start;
 
-    for (const grapheme of splitGraphemes(run.text)) {
+    for (const grapheme of splitBoundaryUnits(run.text)) {
       const start = offset;
       const end = start + grapheme.length;
 
@@ -541,19 +752,35 @@ function flattenMeasuredInlineSegments(
   return segments;
 }
 
-function requiresMeasuredInlineLayout(container: EditorRegion) {
-  // Hard line breaks need the measured path because the Pretext fast path
-  // runs with `whiteSpace: "normal"` and would collapse the `\n` segment
-  // that a `lineBreak` run contributes. The measured greedy line breaker
-  // in `layoutSegmentsIntoLines` already honors `\n` as a forced break.
-  return container.inlines.some(
-    (run) =>
-      run.kind === "image" ||
-      isMentionInline(run) ||
-      run.kind === "lineBreak" ||
-      runHasInlineFontMetrics(run) ||
-      containsColorEmoji(run.text),
-  );
+function resolveInlineMeasurementProfile(container: EditorRegion): InlineMeasurementProfile {
+  let hasHardBreak = false;
+  let hasImage = false;
+  let hasRichInline = false;
+
+  for (const run of container.inlines) {
+    if (run.kind === "image") {
+      hasImage = true;
+    } else if (run.kind === "lineBreak") {
+      hasHardBreak = true;
+    }
+
+    if (isMentionInline(run) || runHasInlineFontMetrics(run)) {
+      hasRichInline = true;
+    }
+  }
+
+  return {
+    hasHardBreak,
+    hasImage,
+    hasRichInline,
+  };
+}
+
+function requiresLocalInlineLayout(profile: InlineMeasurementProfile) {
+  // Inline images affect line height, which Pretext's inline helpers do not
+  // own. Rich inline content with hard breaks also stays local because
+  // `rich-inline` is intentionally normal-whitespace-only.
+  return profile.hasImage || (profile.hasHardBreak && profile.hasRichInline);
 }
 
 // Memoizes the per-region cache identity by the region's `inlines` array
@@ -669,20 +896,22 @@ function getTextMeasurementContext() {
         ? document.createElement("canvas")
         : null;
 
-  textMeasurementContext = canvas?.getContext("2d") ?? null;
+  const context = canvas?.getContext("2d");
 
-  return textMeasurementContext;
+  if (!context) {
+    throw new Error("Text measurement requires OffscreenCanvas or a DOM canvas context.");
+  }
+
+  textMeasurementContext = context;
+
+  return context;
 }
 
 function measureGraphemeWidth(
   cache: CanvasRenderCache,
-  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null,
+  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   grapheme: string,
 ) {
-  if (!context) {
-    return 9;
-  }
-
   const font = context.font;
   const fontCache = getOrCreateGraphemeWidthCache(cache, font);
   const cached = fontCache.get(grapheme);
@@ -698,42 +927,66 @@ function measureGraphemeWidth(
   return width;
 }
 
-function resolveWhitespace(block: Block | null): NonNullable<PrepareOptions["whiteSpace"]> {
-  return block?.type === "code" ? "pre-wrap" : "normal";
+function measureTextBoundaryAdvances(
+  cache: CanvasRenderCache,
+  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
+  text: string,
+) {
+  const graphemes = splitBoundaryUnits(text);
+
+  if (graphemes.length <= exactPrefixBoundaryGraphemeLimit) {
+    const advances: Array<{ length: number; width: number }> = [];
+    let prefixOffset = 0;
+    let previousWidth = 0;
+
+    for (const grapheme of graphemes) {
+      prefixOffset += grapheme.length;
+
+      const nextWidth = measureTextPrefixWidth(context, text, prefixOffset);
+
+      advances.push({
+        length: grapheme.length,
+        width: nextWidth - previousWidth,
+      });
+      previousWidth = nextWidth;
+    }
+
+    return advances;
+  }
+
+  const advances: Array<{ length: number; width: number }> = [];
+  let previousGrapheme: string | null = null;
+  let previousWidth = 0;
+
+  for (const grapheme of graphemes) {
+    const currentWidth = measureGraphemeWidth(cache, context, grapheme);
+
+    advances.push({
+      length: grapheme.length,
+      width:
+        previousGrapheme === null
+          ? currentWidth
+          : measureGraphemeWidth(cache, context, previousGrapheme + grapheme) - previousWidth,
+    });
+
+    previousGrapheme = grapheme;
+    previousWidth = currentWidth;
+  }
+
+  return advances;
 }
 
-function wrapFallbackText(text: string, charactersPerLine: number) {
-  if (text.length === 0) {
-    return [""];
-  }
+function measureTextPrefixWidth(
+  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
+  text: string,
+  offset: number,
+) {
+  return context.measureText(text.slice(0, offset)).width;
+}
 
-  const explicitLines = text.split("\n");
-  const wrapped: string[] = [];
-
-  for (const explicitLine of explicitLines) {
-    if (explicitLine.length === 0) {
-      wrapped.push("");
-      continue;
-    }
-
-    let remaining = explicitLine;
-
-    while (remaining.length > charactersPerLine) {
-      const slice = remaining.slice(0, charactersPerLine);
-      const breakIndex = slice.lastIndexOf(" ");
-
-      if (breakIndex <= 0) {
-        wrapped.push(slice);
-        remaining = remaining.slice(charactersPerLine);
-        continue;
-      }
-
-      wrapped.push(slice.slice(0, breakIndex));
-      remaining = remaining.slice(breakIndex + 1);
-    }
-
-    wrapped.push(remaining);
-  }
-
-  return wrapped;
+function resolveWhitespace(
+  block: Block | null,
+  profile: InlineMeasurementProfile,
+): NonNullable<PrepareOptions["whiteSpace"]> {
+  return block?.type === "code" || profile.hasHardBreak ? "pre-wrap" : "normal";
 }

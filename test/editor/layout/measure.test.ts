@@ -30,10 +30,9 @@ Paragraph text that wraps across multiple visual lines in the canvas layout.
 
 test("forces a wrap on inline line break runs even at large widths", () => {
   // A paragraph with an inline `<br>` must split into two layout lines no
-  // matter how wide the canvas is. The fast Pretext path doesn't honor `\n`
-  // as a hard break under `whiteSpace: "normal"`, so the layout has to
-  // route any region containing a `lineBreak` run through the measured
-  // path that emits a forced break on `\n` segments.
+  // matter how wide the canvas is. Plain text regions with `lineBreak` runs
+  // stay on the Pretext path, but switch to `whiteSpace: "pre-wrap"` so `\n`
+  // remains a hard break.
   const state = setup("foo<br>\nbar\n");
   const region = getRegion(state, "foo\nbar");
   const layout = createDocumentLayout(state.documentIndex, { width: 4000 });

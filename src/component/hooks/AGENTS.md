@@ -18,6 +18,7 @@ Cross-cutting conventions:
 - **`useViewport`** — Owns scroll state (top, height, content height), the scroll container ref, the lazy `EditorLayoutState` cache resolver, coordinate translation (pointer event → editor point), and drag-edge autoscroll. Exposes `viewportLayout`, `observeScrollContainer`, and `scrollTo` for the host. The `onScroll` event handler itself lives in `Documint.tsx` (`handleViewportScroll`) — it bridges this hook with `useRenderScheduler`, so it sits at the orchestration altitude that has access to both. Every scroll (native or programmatic) funnels through that single worker. Read by almost every other hook.
 - **`useTheme`** — System theme detection (`prefers-color-scheme`) and merging of host theme overrides. Exposes `preferredTheme` plus the inline custom-property bag carried through portaled overlays.
 - **`useImages`** — Async image-resource pipeline: decodes referenced URLs into `ImageBitmap`s for the canvas painter and handles paste-write back through host storage. Tracks loading state for the render-while-loading rAF loop.
+- **`useDecorations`** — Async host-provided text decoration pipeline: normalizes decoration props, schedules worker/root-scoped scans, drops stale results, and reconciles paint-only ranges without emitting authored markdown changes.
 
 ### Render scheduling
 

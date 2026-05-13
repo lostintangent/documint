@@ -125,3 +125,22 @@ export function App() {
   return <Documint content={content} onContentChanged={setContent} storage={storage} />;
 }
 ```
+
+## Text Decorations
+
+Use the `decorations` prop to style text that matches host-provided regular expressions. Decorations are worker-derived presentation ranges, update asynchronously as content changes, and are not serialized back to markdown. Link text keeps the theme link color when it overlaps a text-color decoration.
+
+```tsx
+import { useState } from "react";
+import { Documint, type DocumintDecoration } from "documint";
+
+const decorations: readonly DocumintDecoration[] = [
+  { pattern: /\blist\b/gi, color: "red", backgroundColor: "rgba(255, 0, 0, 0.12)" },
+];
+
+export function App() {
+  const [content, setContent] = useState("A list of things");
+
+  return <Documint content={content} onContentChanged={setContent} decorations={decorations} />;
+}
+```

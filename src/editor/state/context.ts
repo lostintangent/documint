@@ -1,8 +1,10 @@
 import {
+  childBlockPath,
   createListItemBlock,
   createParagraphTextBlock,
   findBlockById,
   rebuildListItemBlock,
+  rootBlockPath,
   type Block,
   type HeadingBlock,
   type Inline,
@@ -660,8 +662,5 @@ export function replaceListItemLeadingParagraphText(
 }
 
 export function resolveListItemPath(rootIndex: number, childIndices: number[]) {
-  return childIndices.reduce(
-    (path, childIndex) => `${path}.children.${childIndex}`,
-    `root.${rootIndex}`,
-  );
+  return childIndices.reduce(childBlockPath, rootBlockPath(rootIndex));
 }

@@ -9,6 +9,7 @@ import {
   type EditorSelectionPoint,
   type EditorState,
 } from "../../state";
+import { resolveWordRangeAtOffset } from "../../text/words";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import type { DocumentCaretTarget } from "./caret";
 import {
@@ -139,9 +140,9 @@ export function resolveWordSelectionAtPoint(
     return null;
   }
 
-  const range = resolveWordRange(container.text, resolveWordOffset(container.text, hit.offset));
+  const range = resolveWordRangeAtOffset(container.text, hit.offset);
 
-  if (range.start === range.end) {
+  if (!range) {
     return null;
   }
 
@@ -249,43 +250,4 @@ function findContainer(state: EditorState, regionId: string) {
 
 function resolveViewportTop(layout: DocumentLayout) {
   return layout.lines[0]?.top ?? 0;
-}
-
-type TextRange = {
-  end: number;
-  start: number;
-};
-
-function resolveWordRange(text: string, offset: number): TextRange {
-  let start = offset;
-  let end = offset;
-
-  while (start > 0 && isWordCharacter(text[start - 1])) {
-    start -= 1;
-  }
-
-  while (end < text.length && isWordCharacter(text[end])) {
-    end += 1;
-  }
-
-  return {
-    end,
-    start,
-  };
-}
-
-function resolveWordOffset(text: string, offset: number) {
-  if (offset < text.length && isWordCharacter(text[offset])) {
-    return offset;
-  }
-
-  if (offset > 0 && isWordCharacter(text[offset - 1])) {
-    return offset - 1;
-  }
-
-  return offset;
-}
-
-function isWordCharacter(character: string | undefined) {
-  return character !== undefined && /\w/.test(character);
 }

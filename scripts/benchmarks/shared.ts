@@ -9,6 +9,8 @@ export type BenchmarkRecord = {
 
 export type BenchmarkBudgetTree = {
   component: {
+    decorations_long: number;
+    decorations_medium: number;
     reconcile_selection_long: number;
     reconcile_transient_empty_paragraph_long: number;
   };

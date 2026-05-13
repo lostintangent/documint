@@ -9,6 +9,13 @@ import type {
   TableCell,
   TableRow,
 } from "./types";
+import {
+  childContainerPath,
+  indexedPath,
+  inlinePath,
+  tableCellPath,
+  tableRowPath,
+} from "./paths";
 
 export type VisitControl = "skip" | "stop" | void;
 
@@ -36,8 +43,26 @@ export type TableCellVisitContext = {
   table: TableBlock;
 };
 
+export type InlineContainerVisitContext = {
+  block: Block;
+  blockAncestors: readonly Block[];
+  container: Block | TableCell;
+  kind: "block" | "tableCell";
+  path: string;
+};
+
+export type PlainTextVisitContext = InlineContainerVisitContext & {
+  endOffset: number;
+  startOffset: number;
+};
+
 export type DocumentVisitor = {
   enterBlock?: (block: Block, context: BlockVisitContext) => VisitControl;
+  enterInlineContainer?: (
+    nodes: readonly Inline[],
+    context: InlineContainerVisitContext,
+  ) => VisitControl;
+  enterPlainText?: (text: string, context: PlainTextVisitContext) => VisitControl;
   leaveBlock?: (block: Block, context: BlockVisitContext) => VisitControl;
   enterInline?: (node: Inline, context: InlineVisitContext) => VisitControl;
   leaveInline?: (node: Inline, context: InlineVisitContext) => VisitControl;
@@ -54,6 +79,7 @@ type BlockTraversalOptions = {
   depth: number;
   parentBlock: Block | null;
   pathPrefix: string;
+  startIndex: number;
 };
 
 type InlineTraversalOptions = {
@@ -68,8 +94,17 @@ export function visitDocument(document: Document, visitor: DocumentVisitor) {
   visitBlocks(document.blocks, visitor, createTraversalState(), createRootBlockTraversalOptions());
 }
 
-export function visitBlockTree(blocks: Block[], visitor: DocumentVisitor) {
-  visitBlocks(blocks, visitor, createTraversalState(), createRootBlockTraversalOptions());
+export function visitBlockTree(
+  blocks: Block[],
+  visitor: DocumentVisitor,
+  options: { pathPrefix?: string; startIndex?: number } = {},
+) {
+  visitBlocks(
+    blocks,
+    visitor,
+    createTraversalState(),
+    createBlockTraversalOptions(options.pathPrefix ?? "root", options.startIndex ?? 0),
+  );
 }
 
 export function visitInlineTree(nodes: Inline[], visitor: DocumentVisitor) {
@@ -113,7 +148,7 @@ function visitBlocks(
       return;
     }
 
-    const path = `${options.pathPrefix}.${index}`;
+    const path = indexedPath(options.pathPrefix, options.startIndex + index);
     const context: BlockVisitContext = {
       blockAncestors: options.blockAncestors,
       depth: options.depth,
@@ -137,12 +172,12 @@ function visitBlocks(
           break;
         case "heading":
         case "paragraph":
-          visitInlines(block.children, visitor, state, {
+          visitInlineContainer(block.children, visitor, state, {
             block,
             blockAncestors: [...options.blockAncestors, block],
-            inlineAncestors: [],
-            parentInline: null,
-            pathPrefix: `${path}.children`,
+            container: block,
+            kind: "block",
+            path: childContainerPath(path),
           });
           break;
         case "table":
@@ -180,7 +215,7 @@ function visitInlines(
       return;
     }
 
-    const path = `${options.pathPrefix}.${index}`;
+    const path = inlinePath(options.pathPrefix, index);
     const context: InlineVisitContext = {
       block: options.block,
       blockAncestors: options.blockAncestors,
@@ -217,11 +252,19 @@ function createTraversalState(): TraversalState {
 }
 
 function createRootBlockTraversalOptions(): BlockTraversalOptions {
+  return createBlockTraversalOptions("root", 0);
+}
+
+function createBlockTraversalOptions(
+  pathPrefix: string,
+  startIndex: number,
+): BlockTraversalOptions {
   return {
     blockAncestors: [],
     depth: 0,
     parentBlock: null,
-    pathPrefix: "root",
+    pathPrefix,
+    startIndex,
   };
 }
 
@@ -237,7 +280,8 @@ function visitChildBlocks(
     blockAncestors: [...options.blockAncestors, parentBlock],
     depth: options.depth + 1,
     parentBlock,
-    pathPrefix: `${path}.children`,
+    pathPrefix: childContainerPath(path),
+    startIndex: 0,
   });
 }
 
@@ -254,7 +298,7 @@ function visitChildInlines(
     blockAncestors: options.blockAncestors,
     inlineAncestors: [...options.inlineAncestors, parentInline],
     parentInline,
-    pathPrefix: `${path}.children`,
+    pathPrefix: childContainerPath(path),
   });
 }
 
@@ -273,7 +317,7 @@ function visitTableCells(
         return;
       }
 
-      const path = `${options.pathPrefix}.rows.${rowIndex}.cells.${cellIndex}`;
+      const path = tableCellPath(tableRowPath(options.pathPrefix, rowIndex), cellIndex);
       const context: TableCellVisitContext = {
         blockAncestors: options.blockAncestors,
         cellIndex,
@@ -289,12 +333,12 @@ function visitTableCells(
       }
 
       if (enterResult !== "skip") {
-        visitInlines(cell.children, visitor, state, {
+        visitInlineContainer(cell.children, visitor, state, {
           block: table,
           blockAncestors: options.blockAncestors,
-          inlineAncestors: [],
-          parentInline: null,
-          pathPrefix: `${path}.children`,
+          container: cell,
+          kind: "tableCell",
+          path,
         });
       }
 
@@ -306,6 +350,98 @@ function visitTableCells(
         return;
       }
     }
+  }
+}
+
+function visitInlineContainer(
+  nodes: Inline[],
+  visitor: DocumentVisitor,
+  state: TraversalState,
+  options: InlineContainerVisitContext,
+) {
+  const enterResult = visitor.enterInlineContainer?.(nodes, options);
+
+  if (stopTraversal(enterResult, state) || enterResult === "skip") {
+    return;
+  }
+
+  visitPlainText(nodes, visitor, state, options);
+
+  if (state.stopped) {
+    return;
+  }
+
+  visitInlines(nodes, visitor, state, {
+    block: options.block,
+    blockAncestors: options.blockAncestors,
+    inlineAncestors: [],
+    parentInline: null,
+    pathPrefix: resolveInlineChildrenPath(options),
+  });
+}
+
+function resolveInlineChildrenPath(context: InlineContainerVisitContext) {
+  return context.kind === "tableCell" ? childContainerPath(context.path) : context.path;
+}
+
+function visitPlainText(
+  nodes: Inline[],
+  visitor: DocumentVisitor,
+  state: TraversalState,
+  options: InlineContainerVisitContext,
+) {
+  if (!visitor.enterPlainText) {
+    return;
+  }
+
+  let offset = 0;
+
+  for (const node of nodes) {
+    if (state.stopped) {
+      return;
+    }
+
+    if (node.type === "text") {
+      const startOffset = offset;
+      const endOffset = startOffset + node.text.length;
+
+      if (
+        node.marks.length === 0 &&
+        stopTraversal(
+          visitor.enterPlainText(node.text, {
+            ...options,
+            endOffset,
+            startOffset,
+          }),
+          state,
+        )
+      ) {
+        return;
+      }
+
+      offset = endOffset;
+      continue;
+    }
+
+    offset += inlineTextCoordinateLength(node);
+  }
+}
+
+function inlineTextCoordinateLength(node: Inline): number {
+  switch (node.type) {
+    case "lineBreak":
+      return "\n".length;
+    case "image":
+    case "mention":
+      return 1;
+    case "code":
+      return node.code.length;
+    case "raw":
+      return node.source.length;
+    case "text":
+      return node.text.length;
+    case "link":
+      return node.children.reduce((sum, child) => sum + inlineTextCoordinateLength(child), 0);
   }
 }
 
@@ -353,9 +489,8 @@ export type BlockMapContext = {
   // divider, raw, directive) returns the block unchanged. Identity-preserving
   // when nothing changed.
   recurse: () => Block;
-  // Path string to the current block, formatted as `${prefix}.${index}` and
-  // extended with `.children.${index}` at each level. Matches the convention
-  // used by `nodeId` and the visit* family above.
+  // Path string to the current block. Matches the convention used by `nodeId`
+  // and the visit* family above.
   path: string;
 };
 
@@ -374,11 +509,11 @@ export function mapBlockTree(
   const result: Block[] = [];
 
   for (const [index, block] of blocks.entries()) {
-    const path = `${pathPrefix}.${index}`;
+    const path = indexedPath(pathPrefix, index);
     const visited = visit(block, {
       parent,
       path,
-      recurse: () => recurseBlockChildren(block, visit, `${path}.children`),
+      recurse: () => recurseBlockChildren(block, visit, childContainerPath(path)),
     });
 
     if (visited === null) {

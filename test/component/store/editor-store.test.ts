@@ -25,6 +25,7 @@ describe("EditorStore", () => {
     expect(transition).toEqual(
       expect.objectContaining({
         documentChanged: true,
+        changedRootIndexes: [0],
         animationsChanged: true,
         source: "local",
       }),
@@ -40,6 +41,7 @@ describe("EditorStore", () => {
     expect(transition).toEqual(
       expect.objectContaining({
         documentChanged: false,
+        changedRootIndexes: [],
         animationsChanged: false,
         source: "local",
       }),
@@ -68,6 +70,7 @@ describe("EditorStore", () => {
     expect(transition).toEqual(
       expect.objectContaining({
         documentChanged: true,
+        changedRootIndexes: [0],
         source: "external",
       }),
     );

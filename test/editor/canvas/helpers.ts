@@ -14,6 +14,7 @@ export type RecordingOperation =
     }
   | {
       fillStyle: string | CanvasGradient | CanvasPattern;
+      globalCompositeOperation: GlobalCompositeOperation;
       globalAlpha: number;
       kind: "fillText";
       text: string;
@@ -34,12 +35,15 @@ export class RecordingCanvasContext {
   fillStyle: string | CanvasGradient | CanvasPattern = "";
   font = "";
   globalAlpha = 1;
+  globalCompositeOperation: GlobalCompositeOperation = "source-over";
   lineWidth = 1;
   operations: RecordingOperation[] = [];
+  private pendingRoundedRect: { height: number; width: number; x: number; y: number } | null = null;
   private stateStack: Array<{
     fillStyle: string | CanvasGradient | CanvasPattern;
     font: string;
     globalAlpha: number;
+    globalCompositeOperation: GlobalCompositeOperation;
     strokeStyle: string | CanvasGradient | CanvasPattern;
     textAlign: CanvasTextAlign;
     textBaseline: CanvasTextBaseline;
@@ -50,13 +54,27 @@ export class RecordingCanvasContext {
 
   arc() {}
 
-  beginPath() {}
+  beginPath() {
+    this.pendingRoundedRect = null;
+  }
 
   clearRect() {}
 
   clip() {}
 
-  fill() {}
+  fill() {
+    if (!this.pendingRoundedRect) {
+      return;
+    }
+
+    this.fillRect(
+      this.pendingRoundedRect.x,
+      this.pendingRoundedRect.y,
+      this.pendingRoundedRect.width,
+      this.pendingRoundedRect.height,
+    );
+    this.pendingRoundedRect = null;
+  }
 
   fillRect(x: number, y: number, width: number, height: number) {
     this.operations.push({
@@ -72,6 +90,7 @@ export class RecordingCanvasContext {
   fillText(text: string, x: number, y: number) {
     this.operations.push({
       fillStyle: this.fillStyle,
+      globalCompositeOperation: this.globalCompositeOperation,
       globalAlpha: this.globalAlpha,
       kind: "fillText",
       text,
@@ -82,6 +101,14 @@ export class RecordingCanvasContext {
   }
 
   lineTo() {}
+
+  measureText(text: string) {
+    return {
+      actualBoundingBoxAscent: 10,
+      actualBoundingBoxDescent: 3,
+      width: text.length * 8,
+    } as TextMetrics;
+  }
 
   moveTo() {}
 
@@ -97,18 +124,22 @@ export class RecordingCanvasContext {
     this.fillStyle = state.fillStyle;
     this.font = state.font;
     this.globalAlpha = state.globalAlpha;
+    this.globalCompositeOperation = state.globalCompositeOperation;
     this.strokeStyle = state.strokeStyle;
     this.textAlign = state.textAlign;
     this.textBaseline = state.textBaseline;
   }
 
-  roundRect() {}
+  roundRect(x: number, y: number, width: number, height: number) {
+    this.pendingRoundedRect = { height, width, x, y };
+  }
 
   save() {
     this.stateStack.push({
       fillStyle: this.fillStyle,
       font: this.font,
       globalAlpha: this.globalAlpha,
+      globalCompositeOperation: this.globalCompositeOperation,
       strokeStyle: this.strokeStyle,
       textAlign: this.textAlign,
       textBaseline: this.textBaseline,

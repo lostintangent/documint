@@ -18,6 +18,14 @@ import {
   type TableRow,
 } from "./types";
 import { mapBlockTree } from "./visit";
+import {
+  childBlockPath,
+  inlineChildPath,
+  rootBlockPath,
+  tableCellInlineChildPath,
+  tableCellPath,
+  tableRowPath,
+} from "./paths";
 
 export function createDocument(
   blocks: Block[],
@@ -296,14 +304,14 @@ export function replaceBlockChildren(block: Block, children: Block[]): Block | n
 }
 
 function normalizeRootBlock(block: Block, rootIndex: number) {
-  return normalizeBlockNode(block, `root.${rootIndex}`);
+  return normalizeBlockNode(block, rootBlockPath(rootIndex));
 }
 
 function normalizeBlockNode(node: Block, path: string): Block {
   switch (node.type) {
     case "blockquote": {
       const children = node.children.map((child, index) =>
-        normalizeBlockNode(child, `${path}.children.${index}`),
+        normalizeBlockNode(child, childBlockPath(path, index)),
       );
       const plainText = extractPlainTextFromBlockNodes(children);
 
@@ -334,7 +342,7 @@ function normalizeBlockNode(node: Block, path: string): Block {
       };
     case "heading": {
       const children = node.children.map((child, index) =>
-        normalizeInlineNode(child, `${path}.children.${index}`),
+        normalizeInlineNode(child, inlineChildPath(path, index)),
       );
       const plainText = extractPlainTextFromInlineNodes(children);
 
@@ -348,7 +356,7 @@ function normalizeBlockNode(node: Block, path: string): Block {
     }
     case "list": {
       const items = node.items.map((child, index) =>
-        normalizeBlockNode(child, `${path}.children.${index}`),
+        normalizeBlockNode(child, childBlockPath(path, index)),
       ) as Extract<Block, { type: "listItem" }>[];
       const plainText = items.map((child) => child.plainText).join("\n");
 
@@ -364,7 +372,7 @@ function normalizeBlockNode(node: Block, path: string): Block {
     }
     case "listItem": {
       const children = node.children.map((child, index) =>
-        normalizeBlockNode(child, `${path}.children.${index}`),
+        normalizeBlockNode(child, childBlockPath(path, index)),
       );
       const plainText = extractPlainTextFromBlockNodes(children);
 
@@ -379,7 +387,7 @@ function normalizeBlockNode(node: Block, path: string): Block {
     }
     case "paragraph": {
       const children = node.children.map((child, index) =>
-        normalizeInlineNode(child, `${path}.children.${index}`),
+        normalizeInlineNode(child, inlineChildPath(path, index)),
       );
       const plainText = extractPlainTextFromInlineNodes(children);
 
@@ -392,7 +400,7 @@ function normalizeBlockNode(node: Block, path: string): Block {
     }
     case "table": {
       const rows = node.rows.map((row, rowIndex) =>
-        normalizeTableRowNode(row, `${path}.rows.${rowIndex}`),
+        normalizeTableRowNode(row, tableRowPath(path, rowIndex)),
       );
       const plainText = rows
         .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
@@ -427,13 +435,13 @@ function normalizeTableRowNode(row: TableRow, path: string): TableRow {
   return {
     cells: row.cells.map((cell, cellIndex) => {
       const children = cell.children.map((child, index) =>
-        normalizeInlineNode(child, `${path}.cells.${cellIndex}.children.${index}`),
+        normalizeInlineNode(child, tableCellInlineChildPath(tableCellPath(path, cellIndex), index)),
       );
       const plainText = extractPlainTextFromInlineNodes(children);
 
       return {
         children,
-        id: nodeId("tableCell", `${path}.cells.${cellIndex}`, plainText),
+        id: nodeId("tableCell", tableCellPath(path, cellIndex), plainText),
         plainText,
       };
     }),
@@ -472,7 +480,7 @@ function normalizeInlineNode(node: Inline, path: string): Inline {
       };
     case "link": {
       const children = node.children.map((child, index) =>
-        normalizeInlineNode(child, `${path}.children.${index}`),
+        normalizeInlineNode(child, inlineChildPath(path, index)),
       );
       const plainText = extractPlainTextFromInlineNodes(children);
 

@@ -210,8 +210,7 @@ test("paints insert highlights as a glyph overlay without splitting text runs", 
   );
   const insertedCharacterPaint = textOperations.find((operation) => operation.text === "!");
   const baseTextPaint = textOperations.find(
-    (operation) =>
-      operation.text === "alpha!" && operation.fillStyle === lightTheme.paragraphText,
+    (operation) => operation.text === "alpha!" && operation.fillStyle === lightTheme.paragraphText,
   );
   const highlightOverlayPaint = textOperations.find(
     (operation) =>
@@ -223,6 +222,165 @@ test("paints insert highlights as a glyph overlay without splitting text runs", 
   expect(highlightOverlayPaint).toBeDefined();
   expect(highlightOverlayPaint?.globalAlpha).toBeGreaterThan(0);
   expect(highlightOverlayPaint?.globalAlpha).toBeLessThanOrEqual(1);
+});
+
+test("paints text color decorations as a glyph overlay without splitting text runs", () => {
+  const state = setup("alpha beta\n");
+  const container = state.documentIndex.regions[0];
+
+  if (!container) {
+    throw new Error("Expected paragraph region");
+  }
+
+  const { context } = renderPaintOperations(state, {
+    height: 180,
+    textDecorations: new Map([
+      [
+        container.path,
+        [
+          {
+            color: "#c026d3",
+            endOffset: 10,
+            path: container.path,
+            startOffset: 6,
+          },
+        ],
+      ],
+    ]),
+    width: 240,
+  });
+  const textOperations = context.operations.filter(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillText" }> =>
+      operation.kind === "fillText",
+  );
+  const splitDecorationPaint = textOperations.find((operation) => operation.text === "beta");
+  const baseTextPaint = textOperations.find(
+    (operation) =>
+      operation.text === "alpha beta" &&
+      operation.fillStyle === lightTheme.paragraphText &&
+      operation.globalCompositeOperation === "source-over",
+  );
+  const decorationMaskPaint = textOperations.find(
+    (operation) =>
+      operation.text === "alpha beta" && operation.globalCompositeOperation === "destination-out",
+  );
+  const decorationOverlayPaint = textOperations.find(
+    (operation) =>
+      operation.text === "alpha beta" &&
+      operation.fillStyle === "#c026d3" &&
+      operation.globalCompositeOperation === "source-over",
+  );
+
+  expect(splitDecorationPaint).toBeUndefined();
+  expect(baseTextPaint).toBeDefined();
+  expect(decorationMaskPaint).toBeDefined();
+  expect(decorationOverlayPaint).toBeDefined();
+});
+
+test("paints text color decorations in table cells", () => {
+  const state = setup(`| A | B |
+| --- | --- |
+| Cell target | Other |
+`);
+  const container = state.documentIndex.regions.find((region) => region.text === "Cell target");
+
+  if (!container) {
+    throw new Error("Expected table cell region");
+  }
+
+  const { context } = renderPaintOperations(state, {
+    height: 240,
+    textDecorations: new Map([
+      [
+        container.path,
+        [
+          {
+            color: "#c026d3",
+            endOffset: 11,
+            path: container.path,
+            startOffset: 5,
+          },
+        ],
+      ],
+    ]),
+    width: 360,
+  });
+  const decorationOverlayPaint = context.operations.find((operation) => {
+    return (
+      operation.kind === "fillText" &&
+      operation.text === "Cell target" &&
+      operation.fillStyle === "#c026d3" &&
+      operation.globalCompositeOperation === "source-over"
+    );
+  });
+
+  expect(decorationOverlayPaint).toBeDefined();
+});
+
+test("paints decoration background colors behind text", () => {
+  let state = setup("alpha TODO\n");
+  const container = state.documentIndex.regions[0];
+
+  if (!container) {
+    throw new Error("Expected paragraph region");
+  }
+
+  state = setSelection(state, {
+    anchor: { regionId: container.id, offset: 6 },
+    focus: { regionId: container.id, offset: 10 },
+  });
+
+  const { context, layout } = renderPaintOperations(state, {
+    height: 180,
+    textDecorations: new Map([
+      [
+        container.path,
+        [
+          {
+            backgroundColor: "#fde047",
+            color: "#111827",
+            endOffset: 10,
+            path: container.path,
+            startOffset: 6,
+          },
+        ],
+      ],
+    ]),
+    width: 240,
+  });
+  const backgroundPaintIndex = context.operations.findIndex(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#fde047",
+  );
+  const baseTextPaintIndex = context.operations.findIndex(
+    (operation) =>
+      operation.kind === "fillText" &&
+      operation.text === "alpha TODO" &&
+      operation.fillStyle === lightTheme.paragraphText,
+  );
+  const selectionPaintIndex = context.operations.findIndex(
+    (operation) =>
+      operation.kind === "fillRect" && operation.fillStyle === lightTheme.selectionBackground,
+  );
+  const textOverlayPaintIndex = context.operations.findIndex(
+    (operation) =>
+      operation.kind === "fillText" &&
+      operation.text === "alpha TODO" &&
+      operation.fillStyle === "#111827",
+  );
+
+  const line = layout.lines[0];
+  const backgroundPaint = context.operations[backgroundPaintIndex];
+
+  if (!line || !backgroundPaint || backgroundPaint.kind !== "fillRect") {
+    throw new Error("Expected decoration background paint");
+  }
+
+  expect(backgroundPaintIndex).toBeGreaterThanOrEqual(0);
+  expect(selectionPaintIndex).toBeGreaterThan(backgroundPaintIndex);
+  expect(baseTextPaintIndex).toBeGreaterThan(backgroundPaintIndex);
+  expect(textOverlayPaintIndex).toBeGreaterThan(baseTextPaintIndex);
+  expect(backgroundPaint.y).toBeGreaterThanOrEqual(line.top);
+  expect(backgroundPaint.height).toBeLessThan(line.height);
 });
 
 test("right-aligns ordered list markers without moving list text", () => {
@@ -265,6 +423,7 @@ function renderPaintOperations(
   state: EditorState,
   options: {
     height: number;
+    textDecorations?: Parameters<typeof paintCanvasEditorSurface>[0]["textDecorations"];
     width: number;
   },
 ) {
@@ -289,6 +448,7 @@ function renderPaintOperations(
     },
     resources: { images: new Map() },
     runtimeBlockMap: createRuntimeBlockMap(state.documentIndex.document.blocks),
+    textDecorations: options.textDecorations,
     theme: lightTheme,
     viewportTop: 0,
     width: options.width,

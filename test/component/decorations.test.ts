@@ -1,0 +1,170 @@
+import { describe, expect, test } from "bun:test";
+import {
+  createCode,
+  createHeadingTextBlock,
+  createLink,
+  createParagraphBlock,
+  createParagraphTextBlock,
+  createTableBlock,
+  createTableCell,
+  createTableRow,
+  createText,
+} from "@/document";
+import { resolveBlockDecorationRanges } from "@/component/decorations/ranges";
+import { resolveDecorationRulesKey, serializeDecorationRules } from "@/component/decorations/rules";
+
+describe("resolveBlockDecorationRanges", () => {
+  test("returns no ranges when there are no rules", () => {
+    const block = createParagraphTextBlock("hello");
+
+    expect(resolveBlockDecorationRanges(block, 0, [])).toEqual([]);
+  });
+
+  test("resolves matching ranges without mutating the block", () => {
+    const block = createParagraphTextBlock("hello world");
+    const before = structuredClone(block);
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "tomato", pattern: /world/ }])).toEqual(
+      [{ color: "tomato", endOffset: 11, path: "root.0.children", startOffset: 6 }],
+    );
+    expect(block).toEqual(before);
+  });
+
+  test("decorates the first captured group when a rule includes captures", () => {
+    const block = createParagraphTextBlock("Task (123) and (456)");
+
+    expect(
+      resolveBlockDecorationRanges(block, 0, [
+        { color: "gray", pattern: /\((\d+)\)/ },
+      ]),
+    ).toEqual([
+      { color: "gray", endOffset: 9, path: "root.0.children", startOffset: 6 },
+      { color: "gray", endOffset: 19, path: "root.0.children", startOffset: 16 },
+    ]);
+  });
+
+  test("skips capture rules when no capture participates", () => {
+    const block = createParagraphTextBlock("Task () and (123)");
+
+    expect(
+      resolveBlockDecorationRanges(block, 0, [
+        { color: "gray", pattern: /\((\d+)?\)/ },
+      ]),
+    ).toEqual([{ color: "gray", endOffset: 16, path: "root.0.children", startOffset: 13 }]);
+  });
+
+  test("does not match styled text or across styled text boundaries", () => {
+    const block = createParagraphBlock([createText("al", ["bold"]), createText("pha", ["italic"])]);
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "#f00", pattern: /alpha/ }])).toEqual(
+      [],
+    );
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "#f00", pattern: /al/ }])).toEqual([]);
+  });
+
+  test("earlier overlapping rules win and later rules only fill unclaimed ranges", () => {
+    const block = createParagraphTextBlock("abcde");
+
+    expect(
+      resolveBlockDecorationRanges(block, 0, [
+        { color: "red", pattern: /abc/ },
+        { color: "blue", pattern: /bcd/ },
+      ]),
+    ).toEqual([
+      { color: "red", endOffset: 3, path: "root.0.children", startOffset: 0 },
+      { color: "blue", endOffset: 4, path: "root.0.children", startOffset: 3 },
+    ]);
+  });
+
+  test("resolves text and background color styles independently", () => {
+    const block = createParagraphTextBlock("todo item");
+
+    expect(
+      resolveBlockDecorationRanges(block, 0, [
+        { backgroundColor: "yellow", pattern: /todo item/ },
+        { color: "black", pattern: /todo/ },
+      ]),
+    ).toEqual([
+      {
+        backgroundColor: "yellow",
+        color: "black",
+        endOffset: 4,
+        path: "root.0.children",
+        startOffset: 0,
+      },
+      {
+        backgroundColor: "yellow",
+        endOffset: 9,
+        path: "root.0.children",
+        startOffset: 4,
+      },
+    ]);
+  });
+
+  test("does not match across inline code boundaries and preserves later offsets", () => {
+    const block = createParagraphBlock([
+      createText("foo"),
+      createCode("bar"),
+      createText("baz target"),
+    ]);
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /foobaz/ }])).toEqual(
+      [],
+    );
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
+      { color: "red", endOffset: 16, path: "root.0.children", startOffset: 10 },
+    ]);
+  });
+
+  test("skips link text and preserves later offsets", () => {
+    const block = createParagraphBlock([
+      createText("before "),
+      createLink({ children: [createText("pha")], url: "https://example.com" }),
+      createText(" target"),
+    ]);
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /pha/ }])).toEqual([]);
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
+      { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
+    ]);
+  });
+
+  test("includes headings and table cells", () => {
+    const heading = createHeadingTextBlock({ depth: 2, text: "Heading target" });
+    const table = createTableBlock({
+      align: [null],
+      rows: [createTableRow([createTableCell([createText("Cell target")])])],
+    });
+
+    expect(
+      resolveBlockDecorationRanges(heading, 0, [{ color: "purple", pattern: /target/ }]),
+    ).toEqual([{ color: "purple", endOffset: 14, path: "root.0.children", startOffset: 8 }]);
+    expect(
+      resolveBlockDecorationRanges(table, 1, [{ color: "purple", pattern: /target/ }]),
+    ).toEqual([
+      {
+        color: "purple",
+        endOffset: 11,
+        path: "root.1.rows.0.cells.0",
+        startOffset: 5,
+      },
+    ]);
+  });
+
+  test("ignores zero-length matches", () => {
+    const block = createParagraphTextBlock("hello");
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /\b/ }])).toEqual([]);
+  });
+});
+
+describe("decoration rules", () => {
+  test("ignore rules without styles at scheduling and worker boundaries", () => {
+    const rules = [{ pattern: /TODO/ }, { backgroundColor: "yellow", pattern: /TODO/ }];
+
+    expect(resolveDecorationRulesKey(rules)).toBe("TODO:::yellow");
+    expect(serializeDecorationRules(rules)).toEqual([
+      { backgroundColor: "yellow", flags: "", source: "TODO" },
+    ]);
+  });
+});

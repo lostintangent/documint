@@ -78,6 +78,7 @@ import { DocumentStorage } from "./lib/storage";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
 import { resolveMarkdownLineDiff } from "./lib/markdown-line-diff";
 import { DocumintSsr } from "./Ssr";
+import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations";
 import {
   activeCommentThreadIndexValue,
   commentStateValue,
@@ -96,6 +97,8 @@ import {
 } from "./store";
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
+export type { DocumintDecoration } from "./hooks/useDecorations";
+
 export type DocumintProps = {
   content: string;
   className?: string;
@@ -103,6 +106,7 @@ export type DocumintProps = {
   actions?: DocumintActions;
   theme?: DocumintTheme;
   keybindings?: EditorKeybinding[];
+  decorations?: readonly DocumintDecoration[];
   presence?: DocumentPresence[];
   storage?: DocumintStorage;
   users?: DocumentUser[];
@@ -179,6 +183,7 @@ function DocumintHost({
   className,
   content,
   keybindings,
+  decorations,
   onCommentChanged,
   onContentChanged,
   onUserMentioned,
@@ -288,6 +293,11 @@ function DocumintHost({
   const userPresence = useMemo(() => joinUsersAndPresence(users, presence), [users, presence]);
   const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
   const readCurrentState = () => store.editor.getState();
+  const { scheduleDecorationsForTransition, textDecorations } = useDecorations({
+    contentDocument,
+    decorations,
+    store,
+  });
   const selectionActions = normalizeDocumintActions(actions?.selection);
   const resolveSelectedText = () => {
     const fragment = copySelection(store.editor.getState());
@@ -317,6 +327,12 @@ function DocumintHost({
       if (!transition.documentChanged) {
         return;
       }
+
+      if (transition.reason === "reconciliation") {
+        return;
+      }
+
+      scheduleDecorationsForTransition(transition);
 
       const nextDocument = getDocument(transition.next);
       const nextContent = serializeDocument(nextDocument);
@@ -435,6 +451,7 @@ function DocumintHost({
       normalizedSelection: normalizedSel,
       now: performance.now(),
       resources: renderResources,
+      textDecorations,
       theme: preferredTheme,
       width,
     });
@@ -569,7 +586,7 @@ function DocumintHost({
   //   - `scheduleFullPaint()` — paint content + overlay (cached layout).
   //     For state changes that move the caret AND change content (selection).
   //   - `scheduleContentPaint()` — paint only the content layer.
-  //     For changes that only restyle content (comment highlights, animations).
+  //     For changes that only restyle content (decorations, comment highlights, animations).
   //   - `scheduleOverlayPaint()` — paint only the overlay layer.
   //     For cursor blink and presence updates. Wired inline to
   //     `useCursor.onVisibilityChange` and reactive presence changes.
@@ -611,11 +628,16 @@ function DocumintHost({
     selectionContext.block?.blockId,
   ]);
 
-  // Comment-highlight changes — content layer only, no overlay impact.
+  // Decorations and comment-highlight changes — content layer only, no overlay impact.
   // (See note on the selection effect above for the future overlay move.)
   useEffect(() => {
     scheduleContentPaint();
-  }, [activeCommentThreadIndex, commentState.liveRanges, hoveredCommentThreadIndex]);
+  }, [
+    activeCommentThreadIndex,
+    commentState.liveRanges,
+    hoveredCommentThreadIndex,
+    textDecorations,
+  ]);
 
   // Presence changes affect only the overlay canvas and DOM overlay.
   useEffect(() => {

@@ -6,5 +6,6 @@ export * from "./anchors";
 export * from "./build";
 export * from "./comments";
 export * from "./document";
+export * from "./paths";
 export * from "./types";
 export * from "./visit";

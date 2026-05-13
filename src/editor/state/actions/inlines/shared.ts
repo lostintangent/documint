@@ -2,6 +2,7 @@
 // machinery that turns a `(container, range, nextChildren)` triple into an
 // `InlineContainerReplacement` the reducer can apply.
 import {
+  childContainerPath,
   createCode,
   createTableCell as createDocumentTableCell,
   createText,
@@ -71,7 +72,7 @@ export function createInlineContainerReplacement(
         block: rebuildTextBlock(inlineContainer.block, nextChildren),
         blockId: inlineContainer.block.id,
         selection: createRangeSelectionTarget(
-          `${inlineContainer.path}.children`,
+          childContainerPath(inlineContainer.path),
           startOffset,
           endOffset,
         ),

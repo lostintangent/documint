@@ -1,3 +1,4 @@
+import "../../test/setup-canvas";
 import { buildSyntheticLongFixture, readBenchmarkFixtureMarkdown } from "@test/utils";
 import { parseDocument } from "@/markdown";
 import { createComponentBenchmarks } from "./component";
@@ -83,7 +84,10 @@ function createBenchmarks() {
       mediumMarkdown,
       xlargeMarkdown,
     }),
-    ...createComponentBenchmarks(manifest.benchmarks.component),
+    ...createComponentBenchmarks(manifest.benchmarks.component, {
+      longSnapshot,
+      mediumSnapshot,
+    }),
     ...createEditorBenchmarks(manifest.benchmarks.editor, {
       blockquoteTransitionSnapshot,
       hugeSnapshot,

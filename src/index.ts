@@ -8,6 +8,7 @@ export {
   type CommentChange,
   type DocumintAction,
   type DocumintActions,
+  type DocumintDecoration,
   type EditorKeybinding,
   type DocumintProps,
   type DocumintTheme,

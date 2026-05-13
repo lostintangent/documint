@@ -1,3 +1,7 @@
+## 🗓️ v0.0.15 (05-13-26)
+
+- Introduced support for text decorations, which allow an embedder to specify regex-based decorations that are applied asynchronously as the user edits.
+
 ## 🗓️ v0.0.14 (05-12-26)
 
 - Added support for indenting/dedenting blocks via horizontal swipe gestures on mobile (which is the mobile equivalent of `Tab`/`Shift+Tab`)

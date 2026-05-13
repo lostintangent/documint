@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -27,7 +27,7 @@
     "benchmark": "bun run scripts/benchmarks/index.ts"
   },
   "devDependencies": {
-    "@chenglou/pretext": "^0.0.6",
+    "@chenglou/pretext": "0.0.7",
     "@types/bun": "latest",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

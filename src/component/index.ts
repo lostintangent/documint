@@ -3,6 +3,7 @@ export {
   type CommentChange,
   type DocumintAction,
   type DocumintActions,
+  type DocumintDecoration,
   type DocumintProps,
   type DocumintTheme,
   type UserMentionEvent,

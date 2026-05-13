@@ -28,6 +28,12 @@ export {
 
 // Canvas
 export { paintContent, paintOverlay } from "./canvas";
+export type {
+  TextDecoration,
+  TextDecorationIndex,
+  TextDecorationRootUpdate,
+} from "./text/decorations";
+export { reconcileTextDecorationIndex } from "./text/decorations";
 export { createCanvasRenderCache } from "./canvas/lib/cache";
 export { hasRunningEditorAnimations as hasRunningAnimations } from "./canvas/lib/animations";
 

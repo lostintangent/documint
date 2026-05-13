@@ -7,6 +7,7 @@ import {
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
   resolveLinkHitAtPoint,
+  resolveWordSelectionAtPoint,
   resolveSelectionHit,
 } from "@/editor/layout";
 import { parseDocument } from "@/markdown";
@@ -208,6 +209,36 @@ test("resolves a click on the trailing empty line below a soft break to its post
 
   expect(hit?.regionId).toBe(region.id);
   expect(hit?.offset).toBe(region.text.length);
+});
+
+test("resolves word selection with shared unicode word boundaries", () => {
+  const state = setup("hello 世界\n");
+  const region = getRegion(state, "hello 世界");
+  const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+  const caret = measureCaretTarget(layout, state.documentIndex, {
+    regionId: region.id,
+    offset: 7,
+  });
+
+  if (!caret) {
+    throw new Error("Expected caret target inside unicode word");
+  }
+
+  expect(
+    resolveWordSelectionAtPoint(layout, state, {
+      x: caret.left,
+      y: caret.top + caret.height / 2,
+    }),
+  ).toEqual({
+    anchor: {
+      offset: 6,
+      regionId: region.id,
+    },
+    focus: {
+      offset: 8,
+      regionId: region.id,
+    },
+  });
 });
 
 test("hit-tests the correct table column within the same row band", () => {

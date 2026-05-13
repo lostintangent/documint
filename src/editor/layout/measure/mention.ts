@@ -8,13 +8,9 @@ export const mentionHorizontalPadding = 4;
 export const mentionMinimumWidth = 18;
 
 export function measureInlineMentionWidth(
-  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null,
+  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   mention: RuntimeMentionAttributes,
 ) {
-  if (!context) {
-    return Math.max(mentionMinimumWidth, mention.name.length * 8 + mentionHorizontalPadding * 2);
-  }
-
   return Math.max(
     mentionMinimumWidth,
     context.measureText(`@${mention.name}`).width + mentionHorizontalPadding * 2,

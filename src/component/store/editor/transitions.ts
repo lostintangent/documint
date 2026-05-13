@@ -10,6 +10,7 @@ export type EditorStateTransition = {
   source: EditorStateTransitionSource;
   reason: EditorTransitionReason;
   documentChanged: boolean;
+  changedRootIndexes: readonly number[];
   animationsChanged: boolean;
 };
 
@@ -36,12 +37,26 @@ function createTransition(
   next: EditorState,
   reason: EditorTransitionReason,
 ): EditorTransition {
+  const documentChanged = previous.documentIndex !== next.documentIndex;
+
   return {
     previous,
     next,
     source: reason === "external" ? "external" : "local",
     reason,
-    documentChanged: previous.documentIndex !== next.documentIndex,
+    documentChanged,
+    changedRootIndexes: documentChanged ? resolveChangedRootIndexes(previous, next) : [],
     animationsChanged: previous.animations !== next.animations && next.animations.length > 0,
   };
+}
+
+function resolveChangedRootIndexes(previous: EditorState, next: EditorState) {
+  const previousBlocks = previous.documentIndex.document.blocks;
+  const nextBlocks = next.documentIndex.document.blocks;
+
+  if (previousBlocks.length !== nextBlocks.length) {
+    return nextBlocks.map((_, index) => index);
+  }
+
+  return nextBlocks.flatMap((block, index) => (block === previousBlocks[index] ? [] : [index]));
 }

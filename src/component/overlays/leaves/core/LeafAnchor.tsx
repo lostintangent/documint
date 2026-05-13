@@ -18,16 +18,24 @@ type LeafAnchorProps = {
   children: ReactNode;
 };
 
-type Placement = "above" | "below";
+type LeafAnchorPlacement = {
+  horizontalOffset: number;
+  verticalPlacement: "above" | "below";
+};
+
+const DEFAULT_PLACEMENT: LeafAnchorPlacement = {
+  horizontalOffset: 0,
+  verticalPlacement: "below",
+};
 
 export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const [placement, setPlacement] = useState<Placement>("below");
+  const [placement, setPlacement] = useState<LeafAnchorPlacement>(DEFAULT_PLACEMENT);
 
-  // Flip the leaf above the anchor when below would overflow the visible
-  // viewport (cursor near doc bottom, iOS keyboard up, etc.). Identity-
-  // checked setState, so steady-state ResizeObserver fires don't churn
-  // renders unless the placement actually changes.
+  // Flip the leaf above the anchor and horizontally shift it when it would
+  // overflow the visible viewport (cursor near doc edges, iOS keyboard up, etc.).
+  // Equality-checked setState keeps steady-state ResizeObserver fires from
+  // churning renders unless placement actually changes.
   useLayoutEffect(() => {
     const shell = shellRef.current;
     if (!shell || typeof window === "undefined") {
@@ -35,21 +43,17 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
     }
 
     const evaluatePlacement = () => {
-      const shellHeight = shell.getBoundingClientRect().height;
-      const visualVp = window.visualViewport;
-      const visibleHeight = visualVp?.height ?? window.innerHeight;
-      const visualOffsetTop = visualVp?.offsetTop ?? 0;
-      // `anchor.top` is doc-absolute; convert to visible-viewport-relative
-      // to ask "is there room below?".
-      const anchorScreenTop = anchor.top - window.scrollY - visualOffsetTop;
-      const spaceBelow = visibleHeight - anchorScreenTop;
+      const shellBounds = shell.getBoundingClientRect();
+      const nextPlacement = resolveLeafPlacement(anchor, shellBounds);
 
-      setPlacement(shellHeight + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below");
+      setPlacement((current) =>
+        arePlacementsEqual(current, nextPlacement) ? current : nextPlacement,
+      );
     };
 
     evaluatePlacement();
 
-    // Re-evaluate on the two inputs that change the decision: shell height
+    // Re-evaluate on the two inputs that change the decision: shell size
     // (content resize) and screen space (visual viewport / window resize).
     // Page scroll deliberately doesn't — the leaf moves with the page
     // anyway, and flipping mid-scroll would be jarring.
@@ -63,19 +67,19 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
       window.visualViewport?.removeEventListener("resize", evaluatePlacement);
       window.removeEventListener("resize", evaluatePlacement);
     };
-  }, [anchor.top]);
+  }, [anchor.left, anchor.top]);
 
   return (
     <OverlayPortal>
       <div
         className="documint-leaf-anchor"
         data-bridge={anchor.bridge}
-        data-placement={placement}
+        data-placement={placement.verticalPlacement}
         onPointerEnter={anchor.onPointerEnter}
         onPointerLeave={anchor.onPointerLeave}
         style={
           {
-            left: `${anchor.left}px`,
+            left: `${anchor.left + placement.horizontalOffset}px`,
             top: `${anchor.top}px`,
             "--documint-leaf-anchor-height": `${anchor.anchorHeight}px`,
             "--documint-leaf-bridge-height": `${LEAF_BRIDGE_HEIGHT}px`,
@@ -89,5 +93,62 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
         </div>
       </div>
     </OverlayPortal>
+  );
+}
+
+function resolveLeafPlacement(
+  anchor: LeafResolution,
+  shellBounds: DOMRect,
+): LeafAnchorPlacement {
+  const visualVp = window.visualViewport;
+  const visibleWidth = visualVp?.width ?? window.innerWidth;
+  const visibleHeight = visualVp?.height ?? window.innerHeight;
+  const visualOffsetLeft = visualVp?.offsetLeft ?? 0;
+  const visualOffsetTop = visualVp?.offsetTop ?? 0;
+  // Anchor coordinates are doc-absolute; convert to visible-viewport
+  // relative to ask where the shell fits.
+  const anchorScreenLeft = anchor.left - window.scrollX - visualOffsetLeft;
+  const anchorScreenTop = anchor.top - window.scrollY - visualOffsetTop;
+  const spaceBelow = visibleHeight - anchorScreenTop;
+
+  return {
+    horizontalOffset: resolveHorizontalOffset({
+      anchorScreenLeft,
+      shellWidth: shellBounds.width,
+      visibleWidth,
+    }),
+    verticalPlacement:
+      shellBounds.height + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below",
+  };
+}
+
+function resolveHorizontalOffset({
+  anchorScreenLeft,
+  shellWidth,
+  visibleWidth,
+}: {
+  anchorScreenLeft: number;
+  shellWidth: number;
+  visibleWidth: number;
+}): number {
+  const spaceRight = visibleWidth - anchorScreenLeft;
+
+  if (shellWidth <= spaceRight) {
+    return 0;
+  }
+
+  return Math.max(
+    -anchorScreenLeft,
+    Math.min(-shellWidth / 2, visibleWidth - anchorScreenLeft - shellWidth),
+  );
+}
+
+function arePlacementsEqual(
+  left: LeafAnchorPlacement,
+  right: LeafAnchorPlacement,
+): boolean {
+  return (
+    left.horizontalOffset === right.horizontalOffset &&
+    left.verticalPlacement === right.verticalPlacement
   );
 }

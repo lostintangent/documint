@@ -13,13 +13,21 @@ const completionItemBaseClass = "documint-leaf-menu-item documint-completion-ite
 export function CompletionLeaf({ activeIndex, matches, onHover, onSelect }: CompletionLeafProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Keep the active item in view when navigating with the keyboard.
+  // Keep keyboard navigation visible without `scrollIntoView`, which can
+  // scroll outer page ancestors horizontally on mobile Safari.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const child = container.children[activeIndex];
     if (child instanceof HTMLElement) {
-      child.scrollIntoView({ block: "nearest" });
+      const childBounds = child.getBoundingClientRect();
+      const containerBounds = container.getBoundingClientRect();
+
+      if (childBounds.top < containerBounds.top) {
+        container.scrollTop -= containerBounds.top - childBounds.top;
+      } else if (childBounds.bottom > containerBounds.bottom) {
+        container.scrollTop += childBounds.bottom - containerBounds.bottom;
+      }
     }
   }, [activeIndex]);
 

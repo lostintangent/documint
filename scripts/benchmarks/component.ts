@@ -1,5 +1,6 @@
 import { reconcileExternalContentChange } from "@/component/lib/reconciliation";
-import { createParagraphTextBlock, spliceDocument } from "@/document";
+import { resolveBlockDecorationRanges } from "@/component/decorations/ranges";
+import { createParagraphTextBlock, spliceDocument, type Document } from "@/document";
 import {
   createEditorState,
   createRootPrimaryRegionTarget,
@@ -10,12 +11,39 @@ import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
 
+const decorationRules = [
+  { color: "#d00", pattern: /\b(?:document|list|table|text|item)\b/gi },
+  { color: "#06c", pattern: /\b(?:heading|code|link)\b/gi },
+] as const;
+
 export function createComponentBenchmarks(
   budgets: BenchmarkBudgetTree["component"],
+  fixtures: {
+    longSnapshot: Document;
+    mediumSnapshot: Document;
+  },
 ): BenchmarkRecord[] {
   const fixture = createLongReconciliationFixture(1200);
 
   return [
+    runBenchmark(
+      "component_decorations_medium",
+      100,
+      budgets.decorations_medium,
+      () =>
+        void fixtures.mediumSnapshot.blocks.forEach((block, rootIndex) =>
+          resolveBlockDecorationRanges(block, rootIndex, decorationRules),
+        ),
+    ),
+    runBenchmark(
+      "component_decorations_long",
+      50,
+      budgets.decorations_long,
+      () =>
+        void fixtures.longSnapshot.blocks.forEach((block, rootIndex) =>
+          resolveBlockDecorationRanges(block, rootIndex, decorationRules),
+        ),
+    ),
     runBenchmark(
       "component_reconcile_selection_long",
       200,

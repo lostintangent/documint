@@ -5,6 +5,7 @@ import {
   type DocumentPresence,
   type DocumentUser,
   type DocumintActions,
+  type DocumintDecoration,
   type DocumintStorage,
   type UserMentionEvent,
 } from "documint";
@@ -35,6 +36,10 @@ function createInMemoryStorage(): DocumintStorage {
 }
 
 const storage = createInMemoryStorage();
+const playgroundDecorations: readonly DocumintDecoration[] = [
+  { backgroundColor: "#fde047", color: "#111827", pattern: /\bTODO\b/g },
+  { color: "#6b7280", pattern: /\((\d+)\)/g },
+];
 
 const actions: DocumintActions = {
   selection: {
@@ -173,6 +178,7 @@ export function Playground() {
               users={users}
               presence={presence}
               storage={storage}
+              decorations={playgroundDecorations}
             />
           </div>
         </div>

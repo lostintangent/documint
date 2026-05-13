@@ -117,6 +117,8 @@
   ],
   "benchmarks": {
     "component": {
+      "decorations_medium": 0.25,
+      "decorations_long": 15,
       "reconcile_selection_long": 0.25,
       "reconcile_transient_empty_paragraph_long": 1.5
     },

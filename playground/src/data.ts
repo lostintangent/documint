@@ -18,18 +18,18 @@ Hit Shift+Enter to insert a soft line break<br>that wraps to a new line without 
 
 > A sample blockquote should still read naturally in the default fixture.
 
-## Lists
+## Lists TODO
 
 It supports unordered lists for quick notes and simple grouping.
 
-- one
-- two
-- three
+- one (1)
+- two (2)
+- three (3)
 
 It also supports ordered lists when sequence matters.
 
 1. First ordered step
-2. Second ordered step
+2. TODO Second ordered step
 
 ---
 

@@ -1,10 +1,16 @@
 // DocumentIndex construction: builds the flattened runtime representation
 // (roots, blocks, regions, indexes) from a Document.
 import {
+  childBlockPath,
+  childContainerPath,
   createDocument,
   createParagraphTextBlock,
   replaceDocumentBlock,
+  rootBlockPath,
   resolveCommentThread,
+  sourcePath,
+  tableCellPath,
+  tableRowPath,
   type Block,
   type Document,
   type Inline,
@@ -106,13 +112,13 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
       case "listItem":
         for (const [index, child] of block.children.entries()) {
           blockEntry.childBlockIds.push(child.id);
-          visitBlock(child, `${path}.children.${index}`, depth + 1, block.id);
+          visitBlock(child, childBlockPath(path, index), depth + 1, block.id);
         }
         break;
       case "code": {
         appendRegion(
           block,
-          `${path}.source`,
+          sourcePath(path),
           [
             {
               end: block.source.length,
@@ -135,13 +141,13 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
       }
       case "heading":
       case "paragraph":
-        appendRegion(block, `${path}.children`, flattenInlineNodes(block.children), block.id);
+        appendRegion(block, childContainerPath(path), flattenInlineNodes(block.children), block.id);
         blockEntry.regionIds.push(regions.at(-1)!.id);
         break;
       case "list":
         for (const [index, child] of block.items.entries()) {
           blockEntry.childBlockIds.push(child.id);
-          visitBlock(child, `${path}.children.${index}`, depth + 1, block.id);
+          visitBlock(child, childBlockPath(path, index), depth + 1, block.id);
         }
         break;
       case "table":
@@ -149,7 +155,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
           for (const [cellIndex, cell] of row.cells.entries()) {
             appendRegion(
               block,
-              `${path}.rows.${rowIndex}.cells.${cellIndex}`,
+              tableCellPath(tableRowPath(path, rowIndex), cellIndex),
               flattenInlineNodes(cell.children),
               cell.id,
               { cellIndex, rowIndex },
@@ -175,7 +181,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
       case "raw":
         appendRegion(
           block,
-          `${path}.source`,
+          sourcePath(path),
           [
             {
               end: block.source.length,
@@ -200,7 +206,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
     blockEntry.end = position;
   }
 
-  visitBlock(rootBlock, `root.${rootIndex}`, 0, null);
+  visitBlock(rootBlock, rootBlockPath(rootIndex), 0, null);
 
   return {
     blockRange: {

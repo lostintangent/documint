@@ -1,6 +1,7 @@
 import { rmSync } from "fs";
 import { BuildOutput } from "bun";
 import tailwindPlugin from "bun-plugin-tailwind";
+import decorationWorkerPlugin from "./decoration-worker-plugin";
 
 // Build modes:
 //
@@ -56,6 +57,7 @@ const libraryBuild =
         sourcemap: mode === "dev" ? "external" : "none",
         splitting: false,
         external: ["react", "react-dom", "react/jsx-runtime"],
+        plugins: [decorationWorkerPlugin],
         ...(mode === "prod" && { minify: true }),
         define,
       })
@@ -119,7 +121,7 @@ if (mode !== "prod") {
   const playgroundBuild = await Bun.build({
     entrypoints: ["playground/index.html"],
     outdir: "dist/playground",
-    plugins: [tailwindPlugin],
+    plugins: [decorationWorkerPlugin, tailwindPlugin],
     sourcemap: mode === "dev" ? "external" : "none",
     ...(mode === "playground" && { compile: true }),
     ...(mode === "playground" && { minify: true }),

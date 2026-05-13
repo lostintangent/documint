@@ -11,9 +11,6 @@ type CanvasFontMetrics = {
 const fallbackMetricsSample = "Hg";
 const minimumFallbackEmHeight = 12;
 
-// Approximate ascent/descent split when canvas metrics are unavailable.
-const FALLBACK_ASCENT_RATIO = 0.8;
-const FALLBACK_MIN_DESCENT = 2;
 let cachedFontMetrics: Map<string, CanvasFontMetrics> | null = null;
 
 export function resolveCanvasFontSize(font: string) {
@@ -37,20 +34,6 @@ export function resolveCanvasFontMetrics(font: string): CanvasFontMetrics {
     Math.round(resolveCanvasFontSize(font)),
   );
 
-  if (!context) {
-    const fallbackMetrics = {
-      ascent: Math.round(fallbackEmHeight * FALLBACK_ASCENT_RATIO),
-      descent: Math.max(
-        FALLBACK_MIN_DESCENT,
-        fallbackEmHeight - Math.round(fallbackEmHeight * FALLBACK_ASCENT_RATIO),
-      ),
-      emHeight: fallbackEmHeight,
-    };
-
-    cachedFontMetrics.set(font, fallbackMetrics);
-    return fallbackMetrics;
-  }
-
   context.font = font;
   const measurement = context.measureText(fallbackMetricsSample);
   const measuredAscent = Math.round(measurement.actualBoundingBoxAscent || 0);
@@ -58,8 +41,7 @@ export function resolveCanvasFontMetrics(font: string): CanvasFontMetrics {
   const measuredHeight = measuredAscent + measuredDescent;
   const emHeight = Math.max(fallbackEmHeight, measuredHeight);
   const ascent = measuredHeight > 0 ? measuredAscent : Math.round(emHeight * 0.8);
-  const descent =
-    measuredHeight > 0 ? measuredDescent : Math.max(FALLBACK_MIN_DESCENT, emHeight - ascent);
+  const descent = measuredHeight > 0 ? measuredDescent : Math.max(2, emHeight - ascent);
   const metrics = {
     ascent,
     descent,
@@ -86,13 +68,12 @@ export function resolveCanvasCenteredTextBaseline(lineHeight: number, font: stri
 let textMeasurementContext:
   | OffscreenCanvasRenderingContext2D
   | CanvasRenderingContext2D
-  | null
   | undefined;
 
 export function measureCanvasTextWidth(text: string, font: string) {
   const context = getTextMeasurementContext();
 
-  if (!context || text.length === 0) {
+  if (text.length === 0) {
     return 0;
   }
 
@@ -112,7 +93,13 @@ function getTextMeasurementContext() {
         ? document.createElement("canvas")
         : null;
 
-  textMeasurementContext = canvas?.getContext("2d") ?? null;
+  const context = canvas?.getContext("2d");
+
+  if (!context) {
+    throw new Error("Canvas font metrics require OffscreenCanvas or a DOM canvas context.");
+  }
+
+  textMeasurementContext = context;
 
   return textMeasurementContext;
 }

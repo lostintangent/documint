@@ -7,6 +7,7 @@ import { measureLineOffsetLeft, type DocumentLayout } from "../../layout";
 import type { EditorRegion } from "../../state";
 import type { DocumentResources, EditorTheme } from "@/types";
 import { resolveMarkedTextFont } from "../../text/fonts";
+import type { TextDecoration } from "../../text/decorations";
 import {
   resolveActiveTextHighlightForSegment,
   resolveTextFadeColor,
@@ -33,6 +34,11 @@ const inlineCodeBackgroundTopInset = 2;
 const textPulseBaseRadius = 4;
 const textPulseRadiusGrowth = 4;
 const textPulseStrokeWidth = 1.5;
+const textDecorationBackgroundBottomPadding = 0;
+const textDecorationBackgroundCornerRadius = 3;
+const textDecorationBackgroundHorizontalPadding = 1;
+const textDecorationBackgroundTopPadding = 2;
+const textDecorationBackgroundVerticalNudge = -1;
 const textDecorationMinimumWidth = 2;
 const textDecorationThickness = 1.25;
 const textHighlightMinimumVisibleAlpha = 0.02;
@@ -142,49 +148,225 @@ function paintTextInlineSegments(
     underline: boolean;
   },
 ) {
-  const segmentBoundaries = [startOffset, endOffset];
+  const segmentText = containerText.slice(startOffset, endOffset);
 
-  for (let index = 0; index < segmentBoundaries.length - 1; index += 1) {
-    const segmentStart = segmentBoundaries[index]!;
-    const segmentEnd = segmentBoundaries[index + 1]!;
+  if (segmentText.length === 0) {
+    return;
+  }
 
-    if (segmentEnd <= segmentStart) {
+  const { left: segmentLeft, right: segmentRight } = resolveLineSegmentBounds(
+    line,
+    textLeft,
+    startOffset,
+    endOffset,
+  );
+  context.fillStyle = baseColor;
+  context.fillText(segmentText, segmentLeft, textBaseline);
+
+  if (decorations.strikethrough) {
+    context.fillRect(
+      segmentLeft,
+      resolveStrikethroughTop(textBaseline, line.height, context.font),
+      Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
+      textDecorationThickness,
+    );
+  }
+
+  if (decorations.underline) {
+    context.fillRect(
+      segmentLeft,
+      resolveCanvasTextDecorationTop(textBaseline, line.height, context.font),
+      Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
+      textDecorationThickness,
+    );
+  }
+}
+
+export function paintCanvasTextDecorations(
+  context: CanvasRenderingContext2D,
+  line: DocumentLayout["lines"][number],
+  container: EditorRegion | null,
+  textLeft: number,
+  textBaseline: number,
+  textDecorations: readonly TextDecoration[],
+  phase: "background" | "overlay",
+) {
+  if (!container || textDecorations.length === 0) {
+    return;
+  }
+
+  const lineDecorations = textDecorations.filter(
+    (decoration) => decoration.endOffset > line.start && decoration.startOffset < line.end,
+  );
+
+  if (lineDecorations.length === 0) {
+    return;
+  }
+
+  const visibleInlines = container.inlines.filter(
+    (inline) => inline.end > line.start && inline.start < line.end,
+  );
+
+  for (const inline of visibleInlines) {
+    if (
+      inline.kind === "image" ||
+      inline.kind === "mention" ||
+      inline.kind === "code" ||
+      inline.link
+    ) {
       continue;
     }
 
-    const segmentText = containerText.slice(segmentStart, segmentEnd);
+    const start = Math.max(line.start, inline.start);
+    const end = Math.min(line.end, inline.end);
+    const segmentText = container.text.slice(start, end);
 
     if (segmentText.length === 0) {
       continue;
     }
 
-    const { left: segmentLeft, right: segmentRight } = resolveLineSegmentBounds(
-      line,
-      textLeft,
-      segmentStart,
-      segmentEnd,
+    const segmentDecorations = lineDecorations.filter(
+      (decoration) => decoration.endOffset > start && decoration.startOffset < end,
     );
-    context.fillStyle = baseColor;
-    context.fillText(segmentText, segmentLeft, textBaseline);
 
-    if (decorations.strikethrough) {
-      context.fillRect(
-        segmentLeft,
-        resolveStrikethroughTop(textBaseline, line.height, context.font),
-        Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
-        textDecorationThickness,
-      );
+    if (segmentDecorations.length === 0) {
+      continue;
     }
 
-    if (decorations.underline) {
-      context.fillRect(
-        segmentLeft,
-        resolveCanvasTextDecorationTop(textBaseline, line.height, context.font),
-        Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
-        textDecorationThickness,
+    const decorationBoundaries = resolveTextDecorationBoundaries(start, end, segmentDecorations);
+
+    const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
+    context.font = resolveMarkedTextFont(line.font, inline.marks);
+
+    for (let index = 0; index < decorationBoundaries.length - 1; index += 1) {
+      const decorationStart = decorationBoundaries[index]!;
+      const decorationEnd = decorationBoundaries[index + 1]!;
+      const textDecoration = resolveTextDecorationForSegment(
+        segmentDecorations,
+        decorationStart,
+        decorationEnd,
       );
+
+      if (!textDecoration || decorationEnd <= decorationStart) {
+        continue;
+      }
+
+      const { left: decorationLeft, right: decorationRight } = resolveLineSegmentBounds(
+        line,
+        textLeft,
+        decorationStart,
+        decorationEnd,
+      );
+
+      if (phase === "background") {
+        if (textDecoration.backgroundColor) {
+          const backgroundBounds = resolveTextDecorationBackgroundBounds(
+            context,
+            decorationLeft,
+            decorationRight,
+            textBaseline,
+          );
+          context.fillStyle = textDecoration.backgroundColor;
+          paintRoundedRect(
+            context,
+            backgroundBounds.left,
+            backgroundBounds.top,
+            backgroundBounds.width,
+            backgroundBounds.height,
+            textDecorationBackgroundCornerRadius,
+          );
+        }
+      } else if (textDecoration.color) {
+        paintClippedTextOverlay(context, {
+          color: textDecoration.color,
+          eraseExistingGlyphs: true,
+          height: line.height,
+          left: decorationLeft,
+          text: segmentText,
+          textBaseline,
+          textLeft: segmentLeft,
+          top: line.top,
+          width: Math.max(0, decorationRight - decorationLeft),
+        });
+      }
     }
   }
+}
+
+function resolveTextDecorationBoundaries(
+  startOffset: number,
+  endOffset: number,
+  textDecorations: readonly TextDecoration[],
+) {
+  if (textDecorations.length === 0) return [startOffset, endOffset];
+
+  const boundaries = new Set([startOffset, endOffset]);
+
+  for (const decoration of textDecorations) {
+    if (decoration.endOffset <= startOffset || decoration.startOffset >= endOffset) {
+      continue;
+    }
+
+    boundaries.add(Math.max(startOffset, decoration.startOffset));
+    boundaries.add(Math.min(endOffset, decoration.endOffset));
+  }
+
+  return [...boundaries].sort((a, b) => a - b);
+}
+
+function resolveTextDecorationForSegment(
+  textDecorations: readonly TextDecoration[],
+  startOffset: number,
+  endOffset: number,
+) {
+  return (
+    textDecorations.find(
+      (decoration) => decoration.startOffset < endOffset && decoration.endOffset > startOffset,
+    ) ?? null
+  );
+}
+
+function resolveTextDecorationBackgroundBounds(
+  context: CanvasRenderingContext2D,
+  left: number,
+  right: number,
+  textBaseline: number,
+) {
+  const fontMetrics = resolveCanvasFontMetrics(context.font);
+  const paddedLeft = left - textDecorationBackgroundHorizontalPadding;
+  const paddedRight = right + textDecorationBackgroundHorizontalPadding;
+
+  return {
+    height:
+      fontMetrics.ascent +
+      fontMetrics.descent +
+      textDecorationBackgroundTopPadding +
+      textDecorationBackgroundBottomPadding,
+    left: paddedLeft,
+    top:
+      textBaseline -
+      fontMetrics.ascent -
+      textDecorationBackgroundTopPadding +
+      textDecorationBackgroundVerticalNudge,
+    width: Math.max(0, paddedRight - paddedLeft),
+  };
+}
+
+function paintRoundedRect(
+  context: CanvasRenderingContext2D,
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  context.beginPath();
+  context.roundRect(left, top, width, height, Math.min(radius, width / 2, height / 2));
+  context.fill();
 }
 
 export function paintCanvasTextHighlights(
@@ -263,19 +445,17 @@ export function paintCanvasTextHighlights(
         highlightEnd,
       );
 
-      context.save();
-      context.beginPath();
-      context.rect(
-        highlightLeft,
-        line.top,
-        Math.max(0, highlightRight - highlightLeft),
-        line.height,
-      );
-      context.clip();
-      context.globalAlpha *= alpha;
-      context.fillStyle = theme.insertHighlightText;
-      context.fillText(segmentText, segmentLeft, textBaseline);
-      context.restore();
+      paintClippedTextOverlay(context, {
+        alpha,
+        color: theme.insertHighlightText,
+        height: line.height,
+        left: highlightLeft,
+        text: segmentText,
+        textBaseline,
+        textLeft: segmentLeft,
+        top: line.top,
+        width: Math.max(0, highlightRight - highlightLeft),
+      });
     }
   }
 }
@@ -357,9 +537,7 @@ export function paintCanvasTextPulses(
     );
     const radius = Math.max(
       textPulseBaseRadius,
-      (right - left) / 2 +
-        textPulseBaseRadius +
-        textPulseRadiusGrowth * pulse.progress,
+      (right - left) / 2 + textPulseBaseRadius + textPulseRadiusGrowth * pulse.progress,
     );
     const { ascent, descent } = resolveCanvasFontMetrics(line.font);
     const glyphCenterY = textBaseline - Math.max(1, ascent * 0.42) + Math.max(0.5, descent * 0.15);
@@ -425,4 +603,51 @@ function resolveLineSegmentBounds(
     left: textLeft + (measureLineOffsetLeft(line, startOffset - line.start) - line.left),
     right: textLeft + (measureLineOffsetLeft(line, endOffset - line.start) - line.left),
   };
+}
+
+function paintClippedTextOverlay(
+  context: CanvasRenderingContext2D,
+  {
+    alpha = 1,
+    color,
+    eraseExistingGlyphs = false,
+    height,
+    left,
+    text,
+    textBaseline,
+    textLeft,
+    top,
+    width,
+  }: {
+    alpha?: number;
+    color: string;
+    eraseExistingGlyphs?: boolean;
+    height: number;
+    left: number;
+    text: string;
+    textBaseline: number;
+    textLeft: number;
+    top: number;
+    width: number;
+  },
+) {
+  if (width <= 0 || alpha <= 0) {
+    return;
+  }
+
+  context.save();
+  context.beginPath();
+  context.rect(left, top, width, height);
+  context.clip();
+
+  if (eraseExistingGlyphs) {
+    context.globalCompositeOperation = "destination-out";
+    context.fillText(text, textLeft, textBaseline);
+  }
+
+  context.globalCompositeOperation = "source-over";
+  context.globalAlpha *= alpha;
+  context.fillStyle = color;
+  context.fillText(text, textLeft, textBaseline);
+  context.restore();
 }

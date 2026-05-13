@@ -36,6 +36,7 @@ import {
 } from "../layout";
 import type { EditorState, NormalizedEditorSelection } from "../state";
 import type { DocumentResources, EditorTheme } from "@/types";
+import type { TextDecorationIndex } from "../text/decorations";
 import {
   resolveActiveBlockFlashes,
   resolveActiveTextFades,
@@ -69,6 +70,7 @@ import {
 } from "./painters/selection";
 import { paintActiveTableCellHighlightPass, type PaintRegionBounds } from "./painters/table";
 import {
+  paintCanvasTextDecorations,
   paintCanvasTextFades,
   paintCanvasTextHighlights,
   paintCanvasLineText,
@@ -79,6 +81,8 @@ export type CanvasSelectionRange = {
   end: { regionId: string; offset: number };
   start: { regionId: string; offset: number };
 };
+
+const emptyTextDecorationIndex: TextDecorationIndex = new Map();
 
 // Re-export painter entry points used outside this folder (tests, primarily).
 // External callers should not reach into painters/ directly.
@@ -100,6 +104,7 @@ export function paintContent(
     normalizedSelection: NormalizedEditorSelection;
     now?: number;
     resources?: DocumentResources | null;
+    textDecorations?: TextDecorationIndex;
     theme: EditorTheme;
     width: number;
   },
@@ -119,6 +124,7 @@ export function paintContent(
     now: options.now,
     resources: options.resources ?? { images: new Map() },
     runtimeBlockMap: viewport.blockMap,
+    textDecorations: options.textDecorations ?? emptyTextDecorationIndex,
     theme: options.theme,
     viewportTop: viewport.paintTop,
     width: options.width,
@@ -175,6 +181,7 @@ export function paintCanvasEditorSurface({
   now = getPaintTime(),
   resources,
   runtimeBlockMap,
+  textDecorations = emptyTextDecorationIndex,
   theme,
   viewportTop,
   width,
@@ -193,6 +200,7 @@ export function paintCanvasEditorSurface({
   now?: number;
   resources: DocumentResources;
   runtimeBlockMap: Map<string, Block>;
+  textDecorations?: TextDecorationIndex;
   theme: EditorTheme;
   viewportTop: number;
   width: number;
@@ -295,6 +303,7 @@ export function paintCanvasEditorSurface({
       resources,
       runtimeBlockMap,
       selectionRegionOrderRange,
+      textDecorations,
       theme,
       width,
     });
@@ -326,6 +335,7 @@ function paintDocumentLineForeground({
   resources,
   runtimeBlockMap,
   selectionRegionOrderRange,
+  textDecorations,
   theme,
   width,
 }: {
@@ -344,6 +354,7 @@ function paintDocumentLineForeground({
   resources: DocumentResources;
   runtimeBlockMap: Map<string, Block>;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
+  textDecorations: TextDecorationIndex;
   theme: EditorTheme;
   width: number;
 }) {
@@ -353,9 +364,7 @@ function paintDocumentLineForeground({
   const containerPath = container?.path ?? "";
   const listItemEntry = findBlockAncestor(editorState, line.blockId, "listItem");
   const listMarker = listItemEntry ? resolveListItemMarker(editorState, listItemEntry.id) : null;
-  const blockPulse = listItemEntry
-    ? (activeBlockPulses.get(listItemEntry.path) ?? null)
-    : null;
+  const blockPulse = listItemEntry ? (activeBlockPulses.get(listItemEntry.path) ?? null) : null;
   const textLeft = line.left + resolveLineContentInset(editorState, line);
   const textBaseline = resolveCanvasLineTextBaseline(line);
   const defaultTextColor =
@@ -373,6 +382,19 @@ function paintDocumentLineForeground({
     theme,
     width,
   );
+  const lineTextDecorations = textDecorations.size > 0 ? textDecorations.get(containerPath) : null;
+
+  if (lineTextDecorations) {
+    paintCanvasTextDecorations(
+      context,
+      line,
+      container,
+      textLeft,
+      textBaseline,
+      lineTextDecorations,
+      "background",
+    );
+  }
   paintSelectionHighlight(
     context,
     editorState,
@@ -400,6 +422,17 @@ function paintDocumentLineForeground({
     resources,
     theme,
   );
+  if (lineTextDecorations) {
+    paintCanvasTextDecorations(
+      context,
+      line,
+      container,
+      textLeft,
+      textBaseline,
+      lineTextDecorations,
+      "overlay",
+    );
+  }
   paintCanvasTextHighlights(
     context,
     line,
