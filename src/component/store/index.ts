@@ -41,4 +41,4 @@ export {
 export { publishedViewportValue } from "./viewport/values";
 export { documentIndexValue, editorStateValue, imageUrlsValue } from "./editor/values";
 export type { EditorStateTransition } from "./editor/transitions";
-export { presenceValue } from "./presence";
+export { presenceActiveCommentThreadColorsValue, presenceValue } from "./presence";

@@ -43,13 +43,14 @@ export function projectAnchorContainersToEditor(documentIndex: DocumentIndex) {
 export {
   createCommentThreadForSelection,
   getCommentState,
+  hasActiveCommentHighlightsInViewport,
   updateCommentThreadsForRegionEdit,
   type EditorCommentRange,
   type EditorCommentState,
 } from "./comments";
 
 export {
-  resolvePresenceCursors,
+  resolvePresenceTargets,
   type EditorPresence,
   type EditorPresenceViewport,
   type EditorPresenceViewportStatus,

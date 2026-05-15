@@ -10,8 +10,13 @@
 //   3. `LeafAnchor` renders the resolution; the kind discriminator picks
 //      the leaf-specific React component (LinkLeaf, AnnotationLeaf, …).
 
-import { isResolvedCommentThread, type Mark } from "@/document";
-import type { EditorCommentState, EditorHoverTarget, EditorSelectionPoint } from "@/editor";
+import { isResolvedCommentThread } from "@/document";
+import type {
+  EditorCommentState,
+  EditorHoverTarget,
+  EditorSelectionPoint,
+  SelectionFormatting,
+} from "@/editor";
 import type { PointerEventHandler } from "react";
 import type { CompletionItem } from "../../../completions/completions";
 
@@ -82,7 +87,7 @@ export type TableLeaf = LeafBase & {
 // toolbar (formatting marks + add-comment trigger). Promoting this leaf
 // after a comment is added produces a `ThreadLeaf`.
 export type AnnotationLeaf = LeafBase & {
-  activeMarks: readonly Mark[];
+  formatting: SelectionFormatting;
   kind: "annotation";
   selection: {
     endOffset: number;

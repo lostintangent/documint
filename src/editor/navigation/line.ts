@@ -11,12 +11,8 @@ import {
   type CaretTarget,
   type DocumentLayout,
 } from "../layout";
-import {
-  nextRegionInFlow,
-  previousRegionInFlow,
-  setSelectionPoint,
-  type EditorState,
-} from "../state";
+import { setSelectionPoint, type EditorState } from "../state";
+import { nextRegionInFlow, previousRegionInFlow } from "./flow";
 import { moveGraphemeOffset } from "../text/graphemes";
 
 // Small rightward nudge when hit-testing at a caret's visual X to avoid

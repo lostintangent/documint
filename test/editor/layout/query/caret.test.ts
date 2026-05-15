@@ -32,11 +32,7 @@ Paragraph for caret metrics.
 });
 
 test("advances the active caret across collapsed trailing spaces", () => {
-  const state = createEditorState(
-    createDocument([
-      createParagraphTextBlock("alpha "),
-    ]),
-  );
+  const state = createEditorState(createDocument([createParagraphTextBlock("alpha ")]));
   const layout = createDocumentLayout(state.documentIndex, {
     width: 320,
   });

@@ -4,12 +4,14 @@
 
 export type DocumintDecoration = {
   backgroundColor?: string;
+  pulse?: boolean;
   color?: string;
   pattern: RegExp;
 };
 
 export type SerializedDecorationRule = {
   backgroundColor?: string;
+  pulse?: boolean;
   color?: string;
   flags: string;
   source: string;
@@ -22,8 +24,9 @@ export function hasDecorationRuleStyle(rule: DocumintDecoration) {
 export function serializeDecorationRules(
   rules: readonly DocumintDecoration[],
 ): SerializedDecorationRule[] {
-  return rules.filter(hasDecorationRuleStyle).map(({ backgroundColor, color, pattern }) => ({
+  return rules.filter(hasDecorationRuleStyle).map(({ backgroundColor, pulse, color, pattern }) => ({
     backgroundColor,
+    ...(backgroundColor && pulse && { pulse: true }),
     color,
     flags: pattern.flags.replace(/g|y/g, ""),
     source: pattern.source,
@@ -33,8 +36,9 @@ export function serializeDecorationRules(
 export function deserializeDecorationRules(
   rules: readonly SerializedDecorationRule[],
 ): DocumintDecoration[] {
-  return rules.map(({ backgroundColor, color, flags, source }) => ({
+  return rules.map(({ backgroundColor, pulse, color, flags, source }) => ({
     backgroundColor,
+    ...(backgroundColor && pulse && { pulse: true }),
     color,
     // Force global so we can iterate all matches; strip sticky (y) semantics.
     pattern: new RegExp(source, flags.includes("g") ? flags : `${flags}g`),
@@ -47,8 +51,10 @@ export function resolveDecorationRulesKey(rules: readonly DocumintDecoration[]):
   return rules
     .filter(hasDecorationRuleStyle)
     .map(
-      ({ backgroundColor, color, pattern }) =>
-        `${pattern.source}:${pattern.flags}:${color ?? ""}:${backgroundColor ?? ""}`,
+      ({ backgroundColor, pulse, color, pattern }) =>
+        `${pattern.source}:${pattern.flags}:${color ?? ""}:${backgroundColor ?? ""}:${
+          backgroundColor && pulse ? 1 : 0
+        }`,
     )
     .join("|");
 }

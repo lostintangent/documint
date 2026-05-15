@@ -24,24 +24,15 @@ export {
   createBlockPrimaryRegionTarget,
   createRegionTarget,
   createRootPrimaryRegionTarget,
-  firstInFlowRegionOfRoot,
   getCaretTextContext,
   getSelectionContext,
-  getSelectionMarks,
+  getSelectionFormatting,
   getSelectionRange,
-  isContainerBlock,
-  isInertBlock,
-  nextBlockInFlow,
-  nextRegionInFlow,
   normalizeSelection,
-  previousBlockInFlow,
-  previousRegionInFlow,
   resolveImageAtSelection,
   resolveRegionByPath,
   resolveTableCellRegion,
   resolveSelectionTarget,
-  targetNextRegionInFlow,
-  targetPreviousRegionInFlow,
 } from "./selection";
 
 export type {
@@ -51,6 +42,7 @@ export type {
   EditorSelectionRange,
   NormalizedEditorSelection,
   SelectionContext,
+  SelectionFormatting,
   SelectionTarget,
 } from "./selection";
 
@@ -76,7 +68,7 @@ export {
 
 export type { EditorState } from "./types";
 
-export type { TextRangeTarget } from "./context";
+export type { TextRangeTarget } from "./commands/context";
 
 // Commands
 export * from "./commands";

@@ -50,6 +50,30 @@ test("defaults document comment metadata", () => {
   expect(document.comments).toEqual([]);
 });
 
+test("assigns runtime ids to comment threads", () => {
+  const block = createParagraphTextBlock("Review this paragraph");
+  const container = listAnchorContainers(createDocument([block]))[0];
+
+  if (!container) {
+    throw new Error("Expected anchor container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 0, "Review".length),
+    body: "Looks good.",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: "Review",
+  });
+  const document = createDocument([block], [thread]);
+  const resolved = document.comments[0];
+
+  expect(resolved?.id).toBe(thread.id);
+  expect(resolved?.id).toMatch(/^commentThread-/);
+  expect(createDocument([block], [{ ...thread, id: "" }]).comments[0]?.id).toMatch(
+    /^commentThread-/,
+  );
+});
+
 test("preserves semantic document blocks without cached source metadata", () => {
   const document = createTestDocument([
     createHeadingTextBlock({

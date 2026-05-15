@@ -154,6 +154,34 @@ describe("Tables", () => {
   });
 });
 
+describe("Comments", () => {
+  test("omits runtime comment thread ids from markdown output", () => {
+    const document = parseDocument(`Paragraph with a comment.
+
+:::documint-comments
+[
+  {
+    "anchor": {
+      "prefix": "Paragraph",
+      "suffix": " with a comment."
+    },
+    "comments": [
+      {
+        "body": "Reviewing this.",
+        "updatedAt": "2026-04-05T12:00:00.000Z"
+      }
+    ],
+    "quote": " with "
+  }
+]
+:::
+`);
+
+    expect(document.comments[0]?.id).toMatch(/^commentThread-/);
+    expect(serializeDocument(document)).not.toContain('"id"');
+  });
+});
+
 describe("Front matter", () => {
   test("emits front matter cleanly when the document has no body blocks", () => {
     expectRoundTrip("---\ntitle: Stub\n---\n");

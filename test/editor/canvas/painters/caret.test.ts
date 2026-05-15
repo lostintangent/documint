@@ -32,6 +32,7 @@ test("paints resolved presence cursors on the overlay canvas", () => {
           prefix: "alpha",
         },
         color: "#0ea5e9",
+        commentThreadIndex: null,
         cursorPoint: {
           regionId: container.id,
           offset: 5,
@@ -64,6 +65,7 @@ test("skips unresolved presence cursors during overlay paint", () => {
           prefix: "missing",
         },
         color: "#0ea5e9",
+        commentThreadIndex: null,
         cursorPoint: null,
         id: "user",
         username: "User",

@@ -6,7 +6,9 @@ This sample shows the core Documint editing surface in one short document.
 
 It stays rendered like a document, then turns locally editable when you activate a block or span.
 
-Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, and [links](https://example.com) inside the active span.
+The word sparkle uses an animated decoration so the playground can exercise paint-only effects.
+
+Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inline code\`, and [links](https://example.com) inside the active span.
 
 Hit Shift+Enter to insert a soft line break<br>that wraps to a new line without starting a new block.
 

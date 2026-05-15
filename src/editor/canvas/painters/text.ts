@@ -4,9 +4,9 @@
 // images are drawn here too via a delegate so the inline iteration stays linear.
 
 import { measureLineOffsetLeft, type DocumentLayout } from "../../layout";
-import type { EditorRegion } from "../../state";
+import type { EditorInline, EditorRegion } from "../../state";
 import type { DocumentResources, EditorTheme } from "@/types";
-import { resolveMarkedTextFont } from "../../text/fonts";
+import { resolveInlineTextFont, resolveMarkedTextFont } from "../../text/fonts";
 import type { TextDecoration } from "../../text/decorations";
 import {
   resolveActiveTextHighlightForSegment,
@@ -17,28 +17,28 @@ import {
   type ActiveTextHighlight,
   type ActiveTextPulse,
 } from "../lib/animations";
+import { blendCanvasColors } from "../lib/colors";
+import { resolveCanvasCenteredTextBaseline, resolveCanvasFontMetrics } from "../lib/fonts";
 import {
-  resolveCanvasCenteredTextBaseline,
-  resolveCanvasCenteredTextTop,
-  resolveCanvasFontMetrics,
-} from "../lib/fonts";
+  resolveRestingPulseAlpha,
+  resolveRestingPulseProgress,
+  restingPulseMinimumAlpha,
+} from "../lib/pulse";
 import { paintInlineImage } from "./image";
 import { paintInlineMention } from "./mention";
 import { splitGraphemes } from "../../text/graphemes";
 
-const inlineCodeBackgroundBottomInset = 6;
-const inlineCodeBackgroundHorizontalPadding = 3;
-const inlineCodeBackgroundMinimumHeight = 12;
-const inlineCodeBackgroundMinimumWidth = 10;
-const inlineCodeBackgroundTopInset = 2;
 const textPulseBaseRadius = 4;
 const textPulseRadiusGrowth = 4;
 const textPulseStrokeWidth = 1.5;
-const textDecorationBackgroundBottomPadding = 0;
-const textDecorationBackgroundCornerRadius = 3;
-const textDecorationBackgroundHorizontalPadding = 1;
-const textDecorationBackgroundTopPadding = 2;
-const textDecorationBackgroundVerticalNudge = -1;
+const editableTextBackgroundGeometry = {
+  bottomPadding: 1,
+  cornerRadius: 0,
+  horizontalPadding: 1,
+  topPadding: 2,
+  verticalNudge: -1,
+} as const;
+const decorationPulseTextMaximumBaseBlend = 0.72;
 const textDecorationMinimumWidth = 2;
 const textDecorationThickness = 1.25;
 const textHighlightMinimumVisibleAlpha = 0.02;
@@ -84,7 +84,7 @@ export function paintCanvasLineText(
       start,
       end,
     );
-    const inlineFont = resolveMarkedTextFont(line.font, inline.marks);
+    const inlineFont = resolveInlineTextFont(line.font, inline.marks, inline.inlineCode);
     context.font = inlineFont;
 
     if (inline.kind === "image") {
@@ -99,7 +99,14 @@ export function paintCanvasLineText(
     }
 
     if (inline.kind === "code") {
-      paintInlineCodeBackground(context, line, inlineFont, theme, segmentLeft, segmentRight);
+      paintTextBackground(
+        context,
+        segmentLeft,
+        segmentRight,
+        textBaseline,
+        theme.inlineCodeBackground,
+        editableTextBackgroundGeometry,
+      );
       paintTextInlineSegments(
         context,
         line,
@@ -182,7 +189,7 @@ function paintTextInlineSegments(
   }
 }
 
-export function paintCanvasTextDecorations(
+export function paintTextDecorations(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   container: EditorRegion | null,
@@ -190,14 +197,14 @@ export function paintCanvasTextDecorations(
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
   phase: "background" | "overlay",
+  decorationAnimationTime: number,
+  baseTextColor: string,
 ) {
   if (!container || textDecorations.length === 0) {
     return;
   }
 
-  const lineDecorations = textDecorations.filter(
-    (decoration) => decoration.endOffset > line.start && decoration.startOffset < line.end,
-  );
+  const lineDecorations = resolveOverlappingTextDecorations(textDecorations, line.start, line.end);
 
   if (lineDecorations.length === 0) {
     return;
@@ -208,12 +215,7 @@ export function paintCanvasTextDecorations(
   );
 
   for (const inline of visibleInlines) {
-    if (
-      inline.kind === "image" ||
-      inline.kind === "mention" ||
-      inline.kind === "code" ||
-      inline.link
-    ) {
+    if (!canPaintTextDecoration(inline)) {
       continue;
     }
 
@@ -225,9 +227,7 @@ export function paintCanvasTextDecorations(
       continue;
     }
 
-    const segmentDecorations = lineDecorations.filter(
-      (decoration) => decoration.endOffset > start && decoration.startOffset < end,
-    );
+    const segmentDecorations = resolveOverlappingTextDecorations(lineDecorations, start, end);
 
     if (segmentDecorations.length === 0) {
       continue;
@@ -258,39 +258,37 @@ export function paintCanvasTextDecorations(
         decorationEnd,
       );
 
-      if (phase === "background") {
-        if (textDecoration.backgroundColor) {
-          const backgroundBounds = resolveTextDecorationBackgroundBounds(
-            context,
-            decorationLeft,
-            decorationRight,
-            textBaseline,
-          );
-          context.fillStyle = textDecoration.backgroundColor;
-          paintRoundedRect(
-            context,
-            backgroundBounds.left,
-            backgroundBounds.top,
-            backgroundBounds.width,
-            backgroundBounds.height,
-            textDecorationBackgroundCornerRadius,
-          );
-        }
-      } else if (textDecoration.color) {
-        paintClippedTextOverlay(context, {
-          color: textDecoration.color,
-          eraseExistingGlyphs: true,
-          height: line.height,
-          left: decorationLeft,
-          text: segmentText,
-          textBaseline,
-          textLeft: segmentLeft,
-          top: line.top,
-          width: Math.max(0, decorationRight - decorationLeft),
-        });
-      }
+      paintTextDecorationSegment(context, {
+        baseTextColor,
+        decoration: textDecoration,
+        decorationAnimationTime,
+        height: line.height,
+        left: decorationLeft,
+        phase,
+        right: decorationRight,
+        text: segmentText,
+        textBaseline,
+        textLeft: segmentLeft,
+        top: line.top,
+      });
     }
   }
+}
+
+function canPaintTextDecoration(inline: EditorInline) {
+  return (
+    inline.kind !== "image" && inline.kind !== "mention" && inline.kind !== "code" && !inline.link
+  );
+}
+
+function resolveOverlappingTextDecorations(
+  textDecorations: readonly TextDecoration[],
+  startOffset: number,
+  endOffset: number,
+) {
+  return textDecorations.filter(
+    (decoration) => decoration.endOffset > startOffset && decoration.startOffset < endOffset,
+  );
 }
 
 function resolveTextDecorationBoundaries(
@@ -326,31 +324,177 @@ function resolveTextDecorationForSegment(
   );
 }
 
-function resolveTextDecorationBackgroundBounds(
+function paintTextDecorationSegment(
+  context: CanvasRenderingContext2D,
+  {
+    baseTextColor,
+    decoration,
+    decorationAnimationTime,
+    height,
+    left,
+    phase,
+    right,
+    text,
+    textBaseline,
+    textLeft,
+    top,
+  }: {
+    baseTextColor: string;
+    decoration: TextDecoration;
+    decorationAnimationTime: number;
+    height: number;
+    left: number;
+    phase: "background" | "overlay";
+    right: number;
+    text: string;
+    textBaseline: number;
+    textLeft: number;
+    top: number;
+  },
+) {
+  if (phase === "background") {
+    if (!decoration.backgroundColor) {
+      return;
+    }
+
+    paintDecorationBackground(context, {
+      color: decoration.backgroundColor,
+      decorationAnimationTime,
+      left,
+      pulse: decoration.pulse === true,
+      right,
+      textBaseline,
+    });
+    return;
+  }
+
+  if (!decoration.color) {
+    return;
+  }
+
+  paintClippedTextOverlay(context, {
+    color: resolveDecorationTextColor(decoration, decorationAnimationTime, baseTextColor),
+    eraseExistingGlyphs: true,
+    height,
+    left,
+    text,
+    textBaseline,
+    textLeft,
+    top,
+    width: Math.max(0, right - left),
+  });
+}
+
+function paintDecorationBackground(
+  context: CanvasRenderingContext2D,
+  {
+    color,
+    decorationAnimationTime,
+    left,
+    pulse,
+    right,
+    textBaseline,
+  }: {
+    color: string;
+    decorationAnimationTime: number;
+    left: number;
+    pulse: boolean;
+    right: number;
+    textBaseline: number;
+  },
+) {
+  if (!pulse) {
+    paintTextBackground(context, left, right, textBaseline, color, editableTextBackgroundGeometry);
+    return;
+  }
+
+  context.save();
+  context.globalAlpha *= resolveRestingPulseAlpha(
+    decorationAnimationTime,
+    restingPulseMinimumAlpha,
+  );
+  paintTextBackground(context, left, right, textBaseline, color, editableTextBackgroundGeometry);
+  context.restore();
+}
+
+function resolveDecorationTextColor(
+  decoration: TextDecoration,
+  decorationAnimationTime: number,
+  baseTextColor: string,
+) {
+  if (!decoration.pulse || !decoration.backgroundColor) {
+    return decoration.color ?? baseTextColor;
+  }
+
+  const pulseProgress = resolveRestingPulseProgress(decorationAnimationTime);
+  const blendProgress = (1 - pulseProgress) * decorationPulseTextMaximumBaseBlend;
+
+  return blendCanvasColors(decoration.color ?? baseTextColor, baseTextColor, blendProgress);
+}
+
+function paintTextBackground(
   context: CanvasRenderingContext2D,
   left: number,
   right: number,
   textBaseline: number,
+  color: string,
+  geometry: TextBackgroundGeometry,
+) {
+  const backgroundBounds = resolveTextBackgroundBounds(
+    context,
+    left,
+    right,
+    textBaseline,
+    geometry,
+  );
+
+  context.fillStyle = color;
+  if (geometry.cornerRadius <= 0) {
+    context.fillRect(
+      backgroundBounds.left,
+      backgroundBounds.top,
+      backgroundBounds.width,
+      backgroundBounds.height,
+    );
+    return;
+  }
+
+  paintRoundedRect(
+    context,
+    backgroundBounds.left,
+    backgroundBounds.top,
+    backgroundBounds.width,
+    backgroundBounds.height,
+    geometry.cornerRadius,
+  );
+}
+
+function resolveTextBackgroundBounds(
+  context: CanvasRenderingContext2D,
+  left: number,
+  right: number,
+  textBaseline: number,
+  geometry: TextBackgroundGeometry,
 ) {
   const fontMetrics = resolveCanvasFontMetrics(context.font);
-  const paddedLeft = left - textDecorationBackgroundHorizontalPadding;
-  const paddedRight = right + textDecorationBackgroundHorizontalPadding;
+  const paddedLeft = left - geometry.horizontalPadding;
+  const paddedRight = right + geometry.horizontalPadding;
 
   return {
-    height:
-      fontMetrics.ascent +
-      fontMetrics.descent +
-      textDecorationBackgroundTopPadding +
-      textDecorationBackgroundBottomPadding,
+    height: fontMetrics.ascent + fontMetrics.descent + geometry.topPadding + geometry.bottomPadding,
     left: paddedLeft,
-    top:
-      textBaseline -
-      fontMetrics.ascent -
-      textDecorationBackgroundTopPadding +
-      textDecorationBackgroundVerticalNudge,
+    top: textBaseline - fontMetrics.ascent - geometry.topPadding + geometry.verticalNudge,
     width: Math.max(0, paddedRight - paddedLeft),
   };
 }
+
+type TextBackgroundGeometry = {
+  bottomPadding: number;
+  cornerRadius: number;
+  horizontalPadding: number;
+  topPadding: number;
+  verticalNudge: number;
+};
 
 function paintRoundedRect(
   context: CanvasRenderingContext2D,
@@ -414,7 +558,7 @@ export function paintCanvasTextHighlights(
     }
 
     const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
-    const inlineFont = resolveMarkedTextFont(line.font, inline.marks);
+    const inlineFont = resolveInlineTextFont(line.font, inline.marks, inline.inlineCode);
     context.font = inlineFont;
 
     for (let index = 0; index < highlightBoundaries.length - 1; index += 1) {
@@ -548,33 +692,6 @@ export function paintCanvasTextPulses(
     context.arc((left + right) / 2, glyphCenterY, radius, 0, Math.PI * 2);
     context.stroke();
   }
-}
-
-function paintInlineCodeBackground(
-  context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  font: string,
-  theme: EditorTheme,
-  segmentLeft: number,
-  segmentRight: number,
-) {
-  const lineTextTop = resolveCanvasCenteredTextTop(line.height, font);
-  const top = line.top + lineTextTop + inlineCodeBackgroundTopInset;
-  const height = Math.max(
-    inlineCodeBackgroundMinimumHeight,
-    line.height - lineTextTop - inlineCodeBackgroundBottomInset,
-  );
-
-  context.fillStyle = theme.inlineCodeBackground;
-  context.fillRect(
-    segmentLeft - inlineCodeBackgroundHorizontalPadding,
-    top,
-    Math.max(
-      inlineCodeBackgroundMinimumWidth,
-      segmentRight - segmentLeft + inlineCodeBackgroundHorizontalPadding * 2,
-    ),
-    height,
-  );
 }
 
 function resolveStrikethroughTop(textBaseline: number, lineHeight: number, font: string) {

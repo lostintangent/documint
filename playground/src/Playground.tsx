@@ -38,6 +38,7 @@ function createInMemoryStorage(): DocumintStorage {
 const storage = createInMemoryStorage();
 const playgroundDecorations: readonly DocumintDecoration[] = [
   { backgroundColor: "#fde047", color: "#111827", pattern: /\bTODO\b/g },
+  { backgroundColor: "#38bdf8", pulse: true, color: "#082f49", pattern: /\bsparkle\b/g },
   { color: "#6b7280", pattern: /\((\d+)\)/g },
 ];
 
@@ -66,6 +67,7 @@ export function Playground() {
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
   const [lastHostEvent, setLastHostEvent] = useState<PlaygroundHostEvent | null>(null);
   const [hostEventVisible, setHostEventVisible] = useState(false);
+  const [commentThreadIds, setCommentThreadIds] = useState<string[]>([]);
 
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
@@ -85,6 +87,7 @@ export function Playground() {
 
     setFixtureId(nextFixture.id);
     setContent(nextFixture.markdown);
+    setCommentThreadIds([]);
     setLastHostEvent(null);
     setHostEventVisible(false);
   };
@@ -110,7 +113,11 @@ export function Playground() {
   };
 
   const handleCommentChanged = (change: CommentChange) => {
-    const fields: PlaygroundHostEvent["fields"] = [["thread", change.threadIndex]];
+    setCommentThreadIds((current) => {
+      return current.includes(change.threadId) ? current : [...current, change.threadId];
+    });
+
+    const fields: PlaygroundHostEvent["fields"] = [["thread", change.threadId]];
     if (change.kind !== "deleted") {
       fields.push(["mentions", change.mentionedUserIds.length]);
     }
@@ -146,6 +153,7 @@ export function Playground() {
           <ThemePopover onThemeIdChange={setThemeId} themeId={themeId} />
 
           <UsersPopover
+            commentThreadIds={commentThreadIds}
             content={content}
             onPresenceChange={setPresence}
             onUsersChange={setUsers}

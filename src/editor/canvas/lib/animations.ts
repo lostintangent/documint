@@ -71,11 +71,12 @@ export function hasRunningEditorAnimations(state: EditorState, now?: number) {
 }
 
 export function resolveActiveTextHighlights(state: EditorState, now: number) {
-  return collectActiveAnimations<
+  return collectActiveAnimations<"text-highlight", TextHighlightAnimation, ActiveTextHighlight>(
+    state,
+    now,
     "text-highlight",
-    TextHighlightAnimation,
-    ActiveTextHighlight
-  >(state, now, "text-highlight", (a) => a.regionPath);
+    (a) => a.regionPath,
+  );
 }
 
 export function resolveActiveBlockFlashes(state: EditorState, now: number) {
@@ -88,19 +89,21 @@ export function resolveActiveBlockFlashes(state: EditorState, now: number) {
 }
 
 export function resolveActiveTextFades(state: EditorState, now: number) {
-  return collectActiveAnimations<
+  return collectActiveAnimations<"text-fade", TextFadeAnimation, ActiveTextFade>(
+    state,
+    now,
     "text-fade",
-    TextFadeAnimation,
-    ActiveTextFade
-  >(state, now, "text-fade", (a) => a.regionPath);
+    (a) => a.regionPath,
+  );
 }
 
 export function resolveActiveTextPulses(state: EditorState, now: number) {
-  return collectActiveAnimations<
+  return collectActiveAnimations<"text-pulse", TextPulseAnimation, ActiveTextPulse>(
+    state,
+    now,
     "text-pulse",
-    TextPulseAnimation,
-    ActiveTextPulse
-  >(state, now, "text-pulse", (a) => a.regionPath);
+    (a) => a.regionPath,
+  );
 }
 
 export function resolveActiveBlockPulses(state: EditorState, now: number) {
@@ -155,10 +158,7 @@ export function resolveAnimatedTextColor(
   return blendCanvasColors(theme.insertHighlightText, baseColor, textHighlight.progress);
 }
 
-export function resolveTextFadeColor(
-  baseColor: string,
-  textFade: ActiveTextFade,
-) {
+export function resolveTextFadeColor(baseColor: string, textFade: ActiveTextFade) {
   return blendCanvasColors(baseColor, transparentCanvasColor, textFade.progress);
 }
 
@@ -173,15 +173,8 @@ export function resolveActiveBlockFlashColor(
   );
 }
 
-export function resolveTextPulseColor(
-  textPulse: ActiveTextPulse,
-  theme: EditorTheme,
-) {
-  return blendCanvasColors(
-    theme.insertHighlightText,
-    transparentCanvasColor,
-    textPulse.progress,
-  );
+export function resolveTextPulseColor(textPulse: ActiveTextPulse, theme: EditorTheme) {
+  return blendCanvasColors(theme.insertHighlightText, transparentCanvasColor, textPulse.progress);
 }
 
 export function resolveBlockPulseScale(pop: ActiveBlockPulse) {
@@ -280,5 +273,5 @@ function easeOutCubic(t: number) {
 }
 
 function getEditorAnimationTime() {
-  return typeof performance !== "undefined" ? performance.now() : Date.now();
+  return performance.now();
 }

@@ -2,7 +2,7 @@
 
 This sub-system owns the closed, immutable, format-agnostic semantic document model. It defines `Document` and all block/inline node types as discriminated unions, provides deterministic ID generation and `plainText` extraction during canonical construction, and exposes a typed visitor for tree traversal. The data model is intentionally closed — node types don't change at runtime — so exhaustive switches are the primary extension mechanism. Every other subsystem builds on this model without modifying it.
 
-The document layer also owns the **anchor algebra**: the content-addressable position vocabulary and primitives that comments, presence cursors, and selection rebase compose into their own policies.
+The document layer also owns the **anchor algebra**: the content-addressable position vocabulary and primitives that comments, presence targets, and selection rebase compose into their own policies.
 
 ### Key Areas
 

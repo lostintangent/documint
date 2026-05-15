@@ -19,6 +19,7 @@ Cross-cutting conventions:
 - **`useTheme`** — System theme detection (`prefers-color-scheme`) and merging of host theme overrides. Exposes `preferredTheme` plus the inline custom-property bag carried through portaled overlays.
 - **`useImages`** — Async image-resource pipeline: decodes referenced URLs into `ImageBitmap`s for the canvas painter and handles paste-write back through host storage. Tracks loading state for the render-while-loading rAF loop.
 - **`useDecorations`** — Async host-provided text decoration pipeline: normalizes decoration props, schedules worker/root-scoped scans, drops stale results, and reconciles paint-only ranges without emitting authored markdown changes.
+- **`usePresence`** — Host presence bridge: joins `users` with `presence`, then reads store-derived view models for overlay text cursors and content-layer comment-thread presence colors. Keeps `Documint.tsx` out of presence resolution details.
 
 ### Render scheduling
 
@@ -29,7 +30,8 @@ Cross-cutting conventions:
 - **`useInput`** — Bridges the hidden textarea: keystrokes, IME composition, clipboard, paste, keybinding dispatch, and the textarea positioning that lets iOS auto-scroll the focused caret above the virtual keyboard.
 - **`usePointer`** — Pointer events on the canvas: hit testing via `useViewport`'s coord translator, hover target debouncing, cursor styling, drag-to-select, click-to-toggle-task. Produces a hover leaf candidate.
 - **`useSelection`** — Selection drag, selection range handles, and the selection-mode leaf candidate (comment-create over a range, expanded thread). Keeps the input textarea positioned at the focus.
-- **`useCursor`** — Caret blink, store-derived cursor-leaf candidate (insertion menu, table menu, contextual link/comment under the caret), focus visibility (auto-scroll to keep the caret on-screen), the `markActivity` signal other hooks call to keep the caret solid through interaction, and store-derived `caretInViewport` used to suspend the blink interval when the caret scrolls off-screen.
+- **`useIdle`** — Shared interaction clock. `useInput`, `usePointer`, and `useSelection` mark activity here; while active, cursor blink stays solid and decoration-only animation continuation pauses so input-triggered paints take priority.
+- **`useCursor`** — Caret blink, store-derived cursor-leaf candidate (insertion menu, table menu, contextual link/comment under the caret), focus visibility (auto-scroll to keep the caret on-screen), and store-derived `caretInViewport` used to suspend the blink interval when the caret scrolls off-screen.
 
 ### Specialized
 

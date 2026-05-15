@@ -1,7 +1,7 @@
 import {
   getCommentState,
   getSelectionContext,
-  getSelectionMarks,
+  getSelectionFormatting,
   getSelectionRange,
   measureCaretTarget,
   measureInlineImageBounds,
@@ -18,8 +18,9 @@ import {
   type CaretTarget,
   type InlineBounds,
   type NormalizedEditorSelection,
+  type SelectionFormatting,
 } from "@/editor";
-import { isResolvedCommentThread, type Mark } from "@/document";
+import { isResolvedCommentThread } from "@/document";
 import type { DocumentResources, DocumentUser } from "@/types";
 import {
   equalDocumentCompletions,
@@ -87,8 +88,8 @@ export type PointerView = {
 };
 
 export type SelectionView = {
+  formatting: SelectionFormatting;
   handles: SelectionHandles;
-  marks: readonly Mark[];
   normalized: NormalizedEditorSelection;
   range: SelectionRange;
   viewport: EditorLayoutState | null;
@@ -112,6 +113,10 @@ const equalSelectionHandles = equalNullableBy<NonNullable<SelectionHandles>>((ha
   handles.end.left,
   handles.end.top,
 ]);
+
+function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting) {
+  return a.code === b.code && equalMarks(a.marks, b.marks);
+}
 
 export const commentStateValue = computedValue(
   [editorStateValue] as const,
@@ -145,10 +150,10 @@ const selectionRangeValue = computedValue(
   equalSelectionRanges,
 );
 
-const selectionMarksValue = computedValue(
+const selectionFormattingValue = computedValue(
   [editorStateValue] as const,
-  (_store, state) => getSelectionMarks(state),
-  equalMarks,
+  (_store, state) => getSelectionFormatting(state),
+  equalSelectionFormatting,
 );
 
 const selectionHandlesValue = computedValue(
@@ -164,25 +169,30 @@ const selectionHandlesValue = computedValue(
 );
 
 export const selectionViewValue: DocumintStoreValue<SelectionView> = recordValue({
+  formatting: selectionFormattingValue,
   handles: selectionHandlesValue,
-  marks: selectionMarksValue,
   normalized: normalizedSelectionValue,
   range: selectionRangeValue,
   viewport: publishedViewportValue,
 });
 
 export const selectionLeafValue = parameterizedComputedValue(
-  [selectionRangeValue, selectionMarksValue, selectionHandlesValue, commentThreadsValue] as const,
+  [
+    selectionRangeValue,
+    selectionFormattingValue,
+    selectionHandlesValue,
+    commentThreadsValue,
+  ] as const,
   (
     _store,
     [promotedThread]: readonly [PromotedSelectionThread | null],
     selectionRange,
-    activeMarks,
+    formatting,
     handles,
     threads,
   ): SelectionLeaf | null => {
     return resolveSelectionLeaf({
-      activeMarks,
+      formatting,
       handles,
       promotedThread,
       selectionRange,
@@ -414,10 +424,10 @@ const selectionLeafVerticalNudge = 2;
 function resolveAnnotationLeaf(
   selection: NonNullable<SelectionRange>,
   handles: NonNullable<SelectionHandles>,
-  activeMarks: readonly Mark[],
+  formatting: SelectionFormatting,
 ): AnnotationLeaf {
   return {
-    activeMarks,
+    formatting,
     // Anchor row comes from selection-end (the leaf renders below the
     // entire selected range).
     anchor: { regionId: selection.regionId, offset: selection.endOffset },
@@ -432,13 +442,13 @@ function resolveAnnotationLeaf(
 }
 
 function resolveSelectionLeaf({
-  activeMarks,
+  formatting,
   handles,
   promotedThread,
   selectionRange,
   threads,
 }: {
-  activeMarks: readonly Mark[];
+  formatting: SelectionFormatting;
   handles: SelectionHandles;
   promotedThread: PromotedSelectionThread | null;
   selectionRange: SelectionRange;
@@ -461,7 +471,7 @@ function resolveSelectionLeaf({
     };
   }
 
-  return resolveAnnotationLeaf(selectionRange, handles, activeMarks);
+  return resolveAnnotationLeaf(selectionRange, handles, formatting);
 }
 
 function areSelectionRangesEqual(
@@ -485,7 +495,7 @@ function equalSelectionLeaves(previous: SelectionLeaf | null, next: SelectionLea
       return (
         next.kind === "annotation" &&
         areLeafBasesEqual(previous, next) &&
-        equalMarks(previous.activeMarks, next.activeMarks) &&
+        equalSelectionFormatting(previous.formatting, next.formatting) &&
         areSelectionRangesEqual(previous.selection, next.selection)
       );
     case "thread":

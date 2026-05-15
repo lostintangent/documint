@@ -11,7 +11,7 @@ import {
   normalizedSelectionValue,
 } from "@/component/store/editor/computed-values";
 import { documentIndexValue, editorStateValue } from "@/component/store/editor/values";
-import { presenceValue } from "@/component/store/presence";
+import { presenceActiveCommentThreadColorsValue, presenceValue } from "@/component/store/presence";
 import { getDocument } from "@/editor";
 import { addComment, insertText, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
@@ -180,6 +180,38 @@ describe("computed values", () => {
     });
     expect(presence?.viewport).toBeNull();
     expect(presenceValue.read(store, undefined)).toBeUndefined();
+  });
+
+  test("derives presence-active comment thread colors", () => {
+    let state = setup("alpha beta\n");
+    const region = getRegion(state, "alpha beta");
+    state = setSelection(state, {
+      anchor: { regionId: region.id, offset: 0 },
+      focus: { regionId: region.id, offset: "alpha".length },
+    });
+    state =
+      addComment(
+        state,
+        { endOffset: "alpha".length, regionId: region.id, startOffset: 0 },
+        "Working here",
+      ) ?? state;
+    const store = createStore(getDocument(state));
+    const threadId = getDocument(state).comments[0]?.id;
+
+    if (!threadId) {
+      throw new Error("Expected comment thread id");
+    }
+
+    expect(
+      presenceActiveCommentThreadColorsValue.read(store, [
+        {
+          color: "#f97316",
+          cursor: { threadId },
+          id: "user",
+          username: "User",
+        },
+      ]),
+    ).toEqual(new Map([[0, "#f97316"]]));
   });
 
   test("derives document completion from the active editor selection", () => {

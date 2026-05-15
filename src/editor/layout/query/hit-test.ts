@@ -2,13 +2,8 @@
 // Given a click/drag point, finds the line and offset the user landed on,
 // including inert-block redirects, drag focus, and word selection.
 
-import {
-  isInertBlock,
-  nextBlockInFlow,
-  type DocumentIndex,
-  type EditorSelectionPoint,
-  type EditorState,
-} from "../../state";
+import { type DocumentIndex, type EditorSelectionPoint, type EditorState } from "../../state";
+import { isInertBlock, nextBlockInFlow } from "../../navigation/flow";
 import { resolveWordRangeAtOffset } from "../../text/words";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import type { DocumentCaretTarget } from "./caret";

@@ -1,11 +1,11 @@
-import { resolvePresenceCursors, resolvePresenceViewport, type EditorPresence } from "@/editor";
+import { resolvePresenceTargets, resolvePresenceViewport, type EditorPresence } from "@/editor";
 import type { DocumentUserPresence } from "@/types";
 import { createParameterizedStoreComputedValue } from "./core/computed";
 import { equalArrayBy } from "./core/equality";
 import { documentIndexValue } from "./editor/values";
 import { publishedViewportValue } from "./viewport/values";
 
-const presenceCursorsValue = createParameterizedStoreComputedValue(
+const presenceTargetsValue = createParameterizedStoreComputedValue(
   [documentIndexValue] as const,
   (
     _store,
@@ -16,7 +16,7 @@ const presenceCursorsValue = createParameterizedStoreComputedValue(
       return undefined;
     }
 
-    return resolvePresenceCursors(documentIndex, userPresence);
+    return resolvePresenceTargets(documentIndex, userPresence);
   },
   equalPresence,
 );
@@ -29,15 +29,38 @@ export const presenceValue = createParameterizedStoreComputedValue(
     documentIndex,
     viewport,
   ): EditorPresence[] | undefined => {
-    const cursors = presenceCursorsValue.read(store, userPresence);
+    const targets = presenceTargetsValue.read(store, userPresence);
 
-    if (!cursors) {
+    if (!targets) {
       return undefined;
     }
 
-    return viewport ? resolvePresenceViewport(documentIndex, viewport, cursors) : cursors;
+    return viewport ? resolvePresenceViewport(documentIndex, viewport, targets) : targets;
   },
   equalPresence,
+);
+
+export const presenceActiveCommentThreadColorsValue = createParameterizedStoreComputedValue(
+  [documentIndexValue] as const,
+  (
+    store,
+    [userPresence]: readonly [DocumentUserPresence[] | undefined],
+  ): ReadonlyMap<number, string | null> => {
+    const presence = presenceTargetsValue.read(store, userPresence);
+    const activeThreadColors = new Map<number, string | null>();
+
+    for (const presenceItem of presence ?? []) {
+      if (
+        presenceItem.commentThreadIndex != null &&
+        !activeThreadColors.has(presenceItem.commentThreadIndex)
+      ) {
+        activeThreadColors.set(presenceItem.commentThreadIndex, presenceItem.color ?? null);
+      }
+    }
+
+    return activeThreadColors;
+  },
+  equalNumberStringMaps,
 );
 
 function equalPresence(previous: EditorPresence[] | undefined, next: EditorPresence[] | undefined) {
@@ -53,6 +76,7 @@ const equalPresenceItems = equalArrayBy((previous: EditorPresence, next: EditorP
     previous.fullName === next.fullName &&
     previous.avatarUrl === next.avatarUrl &&
     previous.color === next.color &&
+    previous.commentThreadIndex === next.commentThreadIndex &&
     equalCursorPoints(previous.cursorPoint, next.cursorPoint) &&
     equalPresenceViewports(previous.viewport, next.viewport)
   );
@@ -80,4 +104,20 @@ function equalPresenceViewports(
   }
 
   return next.status !== "unresolved" && previous.scrollTop === next.scrollTop;
+}
+
+function equalNumberStringMaps(
+  previous: ReadonlyMap<number, string | null>,
+  next: ReadonlyMap<number, string | null>,
+) {
+  if (previous === next) return true;
+  if (previous.size !== next.size) return false;
+
+  for (const [key, value] of previous) {
+    if (next.get(key) !== value) {
+      return false;
+    }
+  }
+
+  return true;
 }

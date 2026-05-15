@@ -52,7 +52,11 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
 function serializeCommentDirective(comments: Document["comments"]) {
   return renderDirective({
     attributes: "",
-    body: JSON.stringify(comments, null, 2),
+    body: JSON.stringify(comments.map(serializeCommentThread), null, 2),
     name: commentDirectiveName,
   });
+}
+
+function serializeCommentThread({ id: _id, ...thread }: Document["comments"][number]) {
+  return thread;
 }

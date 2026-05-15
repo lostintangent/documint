@@ -1,3 +1,8 @@
+## 🗓️ v0.0.16 (05-15-26)
+
+- Added support for presence indicators to be anchored to comment threads, in addition to text positions.
+- Added a new `pulse` property to the decoration API, which allows embedders to indicate a background decoration should pulse.
+
 ## 🗓️ v0.0.15 (05-13-26)
 
 - Introduced support for text decorations, which allow an embedder to specify regex-based decorations that are applied asynchronously as the user edits.

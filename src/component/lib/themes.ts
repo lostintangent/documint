@@ -78,7 +78,7 @@ export const darkTheme: EditorTheme = {
   imagePlaceholderText: "rgba(226, 232, 240, 0.62)",
   imageSurfaceBackground: "rgba(15, 23, 42, 0.92)",
   imageSurfaceBorder: "rgba(56, 189, 248, 0.28)",
-  inlineCodeBackground: "rgba(148, 163, 184, 0.16)",
+  inlineCodeBackground: "rgba(251, 191, 36, 0.16)",
   inlineCodeText: "#fdba74",
   insertHighlightText: "#60a5fa",
   leafAccent: "#93c5fd",

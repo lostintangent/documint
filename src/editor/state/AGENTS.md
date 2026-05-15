@@ -41,37 +41,40 @@ Context is optional, but the ownership stays consistent:
 
 ### Key Areas
 
-- **Commands** (`commands.ts`) - Owns the public editing API over `EditorState`: typing, deletion, formatting, structural edits, clipboard, undo/redo, and table/list operations. Commands should read semantically: resolve context, call an action resolver, then dispatch.
+- **Commands** (`commands/`) - Owns the public editing API over `EditorState` plus command-facing implementation machinery. `index.ts` is the public command surface; `context.ts` resolves semantic command context; `actions/` contains focused action factories for edit families such as text insertion, inline mutation, lists, tables, block transforms, deletion, and input rules. Commands should read semantically: resolve context, call an action resolver, then dispatch.
 
 - **Index** (`index/`) - Owns the hot-path editing projection from `Document` to `DocumentIndex`: roots, regions, paths, block metadata, and the helpers needed to rebuild that projection incrementally after edits.
 
-- **Selection** (`selection.ts`) - Owns selection primitives, normalization, selection targets, target resolution, and selection-derived read queries such as active marks. Use selection targets for post-edit destinations that need to resolve against the rebuilt document.
-
-- **Context** (`context.ts`) - Owns semantic command context resolution from `EditorState`: block, inline, range, deletion, list item, table cell, and related editing views. It may also expose shared structural lookup helpers used by actions, kept under a separate section.
+- **Selection** (`selection/`) - Owns selection primitives, normalization, selection targets, target resolution, and selection-derived read queries such as active formatting. `index.ts` contains core selection types and normalization; `target.ts` contains post-edit selection target creation/resolution; `query.ts` contains read-only selection projections; `formatting.ts` contains active inline-formatting inspection. Use selection targets for post-edit destinations that need to resolve against the rebuilt document.
 
 - **Fragments** (`fragments/`) - Owns editor-state policy for document `Fragment` values. `extract.ts` turns a selection into a `Fragment`, `paste.ts` resolves a `Fragment` into an editor action, `context.ts` resolves fragment-specific context, and `blocks.ts` owns shared structural fragment slicing.
 
-- **Actions** (`actions/`) - Owns focused action factories for edit families such as text insertion, inline mutation, lists, tables, block transforms, deletion, and input rules. Actions return `EditorStateAction | null`; they do not dispatch and should not inspect `EditorState` directly.
-
 - **Reducer** (`reducer/`) - Owns the concrete state transition machinery. It applies actions, rewrites document structure, updates undo/redo state, and preserves anchor/selection consistency through edits. Low-level mutation primitives for document/index substructures live here; fragment extraction may reuse the inline primitives so copied slices preserve the same inline semantics as text edits.
 
-- **Animations** (`animations.ts`) - Owns transient animation descriptor types,
+- **Animations** (`animations/`) - Owns transient animation descriptor types,
   action-intent materialization, lifecycle pruning, and selection-driven
-  animation helpers such as active-block flash.
+  animation helpers such as active-block flash. `intents.ts` owns the semantic
+  animation intent helpers used by actions and fragment policy; action modules
+  should import those helpers rather than hosting animation query logic.
 
 ### Design Notes
 
-- Context resolvers are command-facing APIs. They take `EditorState` as their
+- Command context resolvers are command-facing APIs. They take `EditorState` as their
   first argument, optionally receive command payload needed for lookup, and
   return semantic facts such as `BlockContext`, `InlineContext`, or
   `TableCellContext`. Keep context resolvers general-purpose and named in
   editor/document-index terms; do not round-trip command payloads like names,
   URLs, or widths through context.
 
-- Actions are action factories, not state resolvers. They should usually take
+- Command actions are action factories, not state resolvers. They should usually take
   resolved context plus the mutation payload and return an `EditorStateAction`
   (or `null`). If an action wants to inspect `EditorState` or repeatedly resolve
   selection/index facts, the command context is probably too thin.
+
+- Selection-derived UI queries belong in `selection/query.ts` or
+  `selection/formatting.ts`, not in action modules. Inline action modules should
+  stay focused on producing inline mutations such as mark toggles, code toggles,
+  link edits, images, and mentions.
 
 - Context-backed commands pass only the resolved context and explicit command
   payload to their action resolver. Plain state-backed commands may still read
@@ -82,11 +85,9 @@ Context is optional, but the ownership stays consistent:
   selected URLs, image widths, or explicit replacement ranges. Do not pass
   current-region facts redundantly when selection/context can derive them.
 
-- `context.ts` may also export shared structural lookup/build helpers used by
-  actions, but those helpers should be clearly separated from command context
-  resolvers. If a function answers "can this command run here?", it is a
-  command context resolver. If it answers "where is this structural object in
-  the document index?", it is a shared structural helper.
+- Shared structural lookup/build helpers may live in `commands/context.ts` only
+  when they are command-specific. Inline-region helpers currently live in
+  `commands/inlines.ts` with the rest of the inline command machinery.
 
 - Prefer resolving context once, then routing semantically, instead of re-deriving selection facts ad hoc in every command.
 

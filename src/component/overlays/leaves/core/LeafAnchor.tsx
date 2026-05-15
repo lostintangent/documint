@@ -96,10 +96,7 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   );
 }
 
-function resolveLeafPlacement(
-  anchor: LeafResolution,
-  shellBounds: DOMRect,
-): LeafAnchorPlacement {
+function resolveLeafPlacement(anchor: LeafResolution, shellBounds: DOMRect): LeafAnchorPlacement {
   const visualVp = window.visualViewport;
   const visibleWidth = visualVp?.width ?? window.innerWidth;
   const visibleHeight = visualVp?.height ?? window.innerHeight;
@@ -117,8 +114,7 @@ function resolveLeafPlacement(
       shellWidth: shellBounds.width,
       visibleWidth,
     }),
-    verticalPlacement:
-      shellBounds.height + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below",
+    verticalPlacement: shellBounds.height + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below",
   };
 }
 
@@ -143,10 +139,7 @@ function resolveHorizontalOffset({
   );
 }
 
-function arePlacementsEqual(
-  left: LeafAnchorPlacement,
-  right: LeafAnchorPlacement,
-): boolean {
+function arePlacementsEqual(left: LeafAnchorPlacement, right: LeafAnchorPlacement): boolean {
   return (
     left.horizontalOffset === right.horizontalOffset &&
     left.verticalPlacement === right.verticalPlacement

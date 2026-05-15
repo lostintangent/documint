@@ -19,6 +19,16 @@ import {
 } from "./line";
 import { moveCaretVerticallyInTable } from "./table";
 
+export {
+  firstInFlowRegionOfRoot,
+  isContainerBlock,
+  isInertBlock,
+  nextBlockInFlow,
+  nextRegionInFlow,
+  previousBlockInFlow,
+  previousRegionInFlow,
+} from "./flow";
+
 export function moveCaretHorizontally(state: EditorState, delta: -1 | 1, extendSelection = false) {
   return moveCaretHorizontallyInFlow(state, delta, extendSelection);
 }

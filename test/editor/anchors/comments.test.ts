@@ -5,7 +5,7 @@ import {
   extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
-import { getCommentState } from "@/editor/anchors";
+import { getCommentState, hasActiveCommentHighlightsInViewport } from "@/editor/anchors";
 import {
   createCanvasRenderCache,
   addComment as addEditorComment,
@@ -47,6 +47,60 @@ test("maps durable comment anchors to live canvas ranges", () => {
   expect(commentState.liveRanges[0]?.endOffset).toBeGreaterThan(
     commentState.liveRanges[0]?.startOffset ?? 0,
   );
+});
+
+test("detects only unresolved presence-active comment highlights as animated", () => {
+  const renderCache = createCanvasRenderCache();
+  const snapshot = parseDocument("Review surface anchors survive.\n");
+  const container = listAnchorContainers(snapshot)[0];
+
+  if (!container) {
+    throw new Error("Expected review container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 7, 14),
+    body: "Highlight anchors",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, 7, 14),
+  });
+  const unresolvedState = createEditorState({
+    ...snapshot,
+    comments: [thread],
+  });
+  const unresolvedViewport = prepareLayout(
+    unresolvedState,
+    { height: 320, top: 0, width: 520 },
+    renderCache,
+  );
+  const unresolvedCommentState = getCommentState(unresolvedState.documentIndex);
+
+  expect(
+    hasActiveCommentHighlightsInViewport(
+      unresolvedViewport,
+      unresolvedCommentState.liveRanges,
+      new Map([[0, "#f97316"]]),
+    ),
+  ).toBe(true);
+
+  const resolvedState = createEditorState({
+    ...snapshot,
+    comments: [{ ...thread, resolvedAt: "2026-04-05T13:00:00.000Z" }],
+  });
+  const resolvedViewport = prepareLayout(
+    resolvedState,
+    { height: 320, top: 0, width: 520 },
+    renderCache,
+  );
+  const resolvedCommentState = getCommentState(resolvedState.documentIndex);
+
+  expect(
+    hasActiveCommentHighlightsInViewport(
+      resolvedViewport,
+      resolvedCommentState.liveRanges,
+      new Map([[0, "#f97316"]]),
+    ),
+  ).toBe(false);
 });
 
 test("resolves link hover targets with overlapping comment metadata", () => {

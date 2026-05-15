@@ -2,13 +2,15 @@
  * Anchor algebra: the content-addressable position vocabulary used across the
  * codebase.
  *
- * Comments, presence cursors, and selection rebase across document snapshots
+ * Comments, presence targets, and selection rebase across document snapshots
  * all need to express "this position in the document, identified by its
  * surrounding text" — durably, so a position can be re-found after edits,
  * parses, and reformats.
  *
  * This module owns the primitives those consumers share:
- *   - Vocabulary: the `Anchor` descriptor and its container/match/resolution types.
+ *   - Vocabulary: text anchors plus thin indirect anchors such as comment
+ *     thread anchors, and the container/match/resolution types used by the
+ *     text-anchor algebra.
  *   - Discovery: enumerate the text containers an anchor can attach to.
  *   - Construction: capture a content-addressable fingerprint around a range.
  *   - Search: enumerate substring matches, prefix/suffix ranges, and verify
@@ -31,7 +33,7 @@ const ANCHOR_KINDS = ["text", "code", "tableCell"] as const;
 
 type AnchorKind = (typeof ANCHOR_KINDS)[number];
 
-// The implicit kind for an `Anchor` with no `kind` set. Keeping a default
+// The implicit kind for a `TextAnchor` with no `kind` set. Keeping a default
 // lets the common case stay out of the persisted payload entirely.
 export const DEFAULT_ANCHOR_KIND: AnchorKind = "text";
 
@@ -64,15 +66,27 @@ export function anchorKindForBlockType(blockType: string): AnchorKind | null {
 
 // --- Anchor types ---
 
-// A content-addressable position descriptor. `prefix` and `suffix` are short
+// A content-addressable text position descriptor. `prefix` and `suffix` are short
 // snapshots of the surrounding text; together they let a consumer re-find
 // the anchored span after the document changes. `kind` constrains the search
 // to a container family; an absent `kind` means `DEFAULT_ANCHOR_KIND`.
-export type Anchor = {
+export type TextAnchor = {
   kind?: AnchorKind;
   prefix?: string;
   suffix?: string;
 };
+
+// Indirect anchor form used by presence: resolve through the comment thread's
+// own text anchor, then treat that thread as presence-active.
+export type CommentThreadAnchor = {
+  threadId: string;
+};
+
+export type Anchor = TextAnchor | CommentThreadAnchor;
+
+export function isCommentThreadAnchor(anchor: Anchor): anchor is CommentThreadAnchor {
+  return "threadId" in anchor;
+}
 
 // A text region an anchor can attach to. `id` is the underlying block or
 // table-cell id. `containerOrdinal` is the position among containers in
@@ -84,7 +98,7 @@ export type AnchorContainer = {
   text: string;
 };
 
-// Where an `Anchor` resolved to in a current `Document` snapshot.
+// Where a `TextAnchor` resolved to in a current `Document` snapshot.
 export type AnchorMatch = {
   containerId: string;
   containerKind: AnchorKind;
@@ -186,7 +200,7 @@ export function createAnchorFromContainer(
   container: AnchorContainer,
   startOffset: number,
   endOffset: number,
-): Anchor {
+): TextAnchor {
   const normalizedStart = clamp(startOffset, 0, container.text.length);
   const normalizedEnd = clamp(endOffset, normalizedStart, container.text.length);
   const { prefix, suffix } = captureContextWindows(container.text, normalizedStart, normalizedEnd);
@@ -216,7 +230,7 @@ export function extractQuoteFromContainer(
 
 // Enumerate every starting index of `query` in `text`. Substrate for
 // content-addressable anchor resolution: thread reattachment, selection
-// rebase, presence cursor placement. Returns `[]` for an empty query so
+// rebase, presence target placement. Returns `[]` for an empty query so
 // callers can treat "no signal" descriptors uniformly.
 export function findOccurrences(text: string, query: string): number[] {
   if (query.length === 0) {

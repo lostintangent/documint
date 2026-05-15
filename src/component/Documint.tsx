@@ -28,6 +28,8 @@ import {
   deleteThread,
   editComment,
   getDocument,
+  hasActiveCommentHighlightsInViewport,
+  hasAnimatedDecorationsInViewport,
   insertTable,
   insertTableColumn,
   insertTableRow,
@@ -38,10 +40,6 @@ import {
   removeLink,
   replyToThread,
   resolveThread,
-  toggleBold,
-  toggleItalic,
-  toggleStrikethrough,
-  toggleUnderline,
   updateLink,
   type EditorPresence,
   type TextRangeTarget,
@@ -59,11 +57,13 @@ import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
 import type { LeafResolution } from "./overlays/leaves/core/shared";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
+import { useIdle } from "./hooks/useIdle";
 import { useCursor } from "./hooks/useCursor";
 import { useDocumentCompletions } from "./completions/useDocumentCompletions";
 import { useImageHandles } from "./hooks/useImageHandles";
 import { useImages } from "./hooks/useImages";
 import { usePointer } from "./hooks/usePointer";
+import { usePresence } from "./hooks/usePresence";
 import { useInput } from "./hooks/useInput";
 import { useRenderScheduler } from "./hooks/useRenderScheduler";
 import { useSelection } from "./hooks/useSelection";
@@ -73,7 +73,6 @@ import { prepareCanvasLayer } from "./lib/canvas";
 import { emitDiagnostic } from "./lib/diagnostics";
 import { type EditorKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
-import { joinUsersAndPresence } from "./lib/presence";
 import { DocumentStorage } from "./lib/storage";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
 import { resolveMarkdownLineDiff } from "./lib/markdown-line-diff";
@@ -87,7 +86,6 @@ import {
   DocumintStoreProvider,
   editorStateValue,
   normalizedSelectionValue,
-  presenceValue,
   selectionContextValue,
   type DocumintStore,
   type EditorStateTransition,
@@ -138,7 +136,7 @@ export type CommentChange =
       comment: Comment;
       mentionedUserIds: string[];
       thread: CommentThread;
-      threadIndex: number;
+      threadId: string;
     }
   | {
       kind: "edited";
@@ -146,13 +144,13 @@ export type CommentChange =
       previousBody: string;
       mentionedUserIds: string[];
       thread: CommentThread;
-      threadIndex: number;
+      threadId: string;
     }
   | {
       kind: "deleted";
       comment: Comment;
       thread: CommentThread;
-      threadIndex: number;
+      threadId: string;
     };
 
 export type UserMentionEvent = {
@@ -290,7 +288,7 @@ function DocumintHost({
     enabled: isEditable,
     onMentionAccepted: emitUserMentioned,
   });
-  const userPresence = useMemo(() => joinUsersAndPresence(users, presence), [users, presence]);
+  const { activeCommentThreadColors, resolvedPresence } = usePresence({ presence, users });
   const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
   const readCurrentState = () => store.editor.getState();
   const { scheduleDecorationsForTransition, textDecorations } = useDecorations({
@@ -357,10 +355,6 @@ function DocumintHost({
   const removeLinkCommand = useEditorCommand(removeLink);
   const updateLinkCommand = useEditorCommand(updateLink);
   const addCommentCommand = useEditorCommand(addComment);
-  const toggleBoldCommand = useEditorCommand(toggleBold);
-  const toggleItalicCommand = useEditorCommand(toggleItalic);
-  const toggleStrikethroughCommand = useEditorCommand(toggleStrikethrough);
-  const toggleUnderlineCommand = useEditorCommand(toggleUnderline);
   const deleteCommentCommand = useEditorCommand(deleteComment);
   const deleteThreadCommand = useEditorCommand(deleteThread);
   const editCommentCommand = useEditorCommand(editComment);
@@ -390,7 +384,7 @@ function DocumintHost({
       comment,
       mentionedUserIds: extractMentionedUserIds(comment.body, completionSources),
       thread,
-      threadIndex,
+      threadId: thread.id,
     });
   };
 
@@ -404,13 +398,19 @@ function DocumintHost({
       previousBody,
       mentionedUserIds: extractMentionedUserIds(comment.body, completionSources),
       thread,
-      threadIndex,
+      threadId: thread.id,
     });
   };
 
-  const emitCommentDeleted = (threadIndex: number, thread: CommentThread, comment: Comment) => {
-    emitCommentChanged({ kind: "deleted", comment, thread, threadIndex });
+  const emitCommentDeleted = (thread: CommentThread, comment: Comment) => {
+    emitCommentChanged({ kind: "deleted", comment, thread, threadId: thread.id });
   };
+
+  const idle = useIdle({
+    onIdle: () => {
+      scheduleContentPaint();
+    },
+  });
 
   /* Paint callbacks */
   //
@@ -441,15 +441,19 @@ function DocumintHost({
 
     const { context, devicePixelRatio, height, width } = preparedLayer;
 
+    const now = performance.now();
+
     paintContent(editorState, viewportState, context, {
       activeBlockId: selectionContext.block?.blockId ?? null,
       activeRegionId: editorState.selection.focus.regionId,
       activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentThreadIndex,
+      contentPulseTime: idle.resolveAnimationTime(now),
       devicePixelRatio,
       height,
       liveCommentRanges: commentState.liveRanges,
       normalizedSelection: normalizedSel,
-      now: performance.now(),
+      presenceActiveThreadColors: activeCommentThreadColors,
+      now,
       resources: renderResources,
       textDecorations,
       theme: preferredTheme,
@@ -498,6 +502,18 @@ function DocumintHost({
 
   const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
     useRenderScheduler({
+      hasRunningOptionalContentAnimations: () => {
+        const viewportState = viewportLayout.peek();
+        return viewportState
+          ? hasAnimatedDecorationsInViewport(editorState, viewportState, textDecorations) ||
+              hasActiveCommentHighlightsInViewport(
+                viewportState,
+                commentState.liveRanges,
+                activeCommentThreadColors,
+              )
+          : false;
+      },
+      isActive: idle.isActive,
       renderContent,
       renderOverlay,
       renderViewport,
@@ -516,6 +532,7 @@ function DocumintHost({
   });
 
   const cursor = useCursor({
+    activeAt: idle.activeAt,
     getScrollTop,
     isEditable,
     layoutWidth,
@@ -531,7 +548,7 @@ function DocumintHost({
     enableTouchKeyDown: documentCompletions.leaf !== null,
     inputRef,
     keybindings,
-    onActivity: cursor.markActivity,
+    onActivity: idle.markActive,
     onBeforeInput: documentCompletions.handleBeforeInput,
     onKeyDown: documentCompletions.handleKeyDown,
     onImagePaste: images.persistImage,
@@ -542,14 +559,13 @@ function DocumintHost({
     canvasRef: contentCanvasRef,
     focusInput: input.focus,
     isEditable,
-    onActivity: cursor.markActivity,
+    onActivity: idle.markActive,
     resolvePoint,
     storage: documentStorage,
   });
   const hoveredCommentThreadIndex =
     pointer.leaf?.kind === "thread" ? pointer.leaf.threadIndex : null;
 
-  const resolvedPresence = useStoreValue(presenceValue, userPresence);
   const scrollToPresence = useEffectEvent((target: EditorPresence) => {
     if (!target.viewport || target.viewport.status === "unresolved") {
       return;
@@ -569,7 +585,7 @@ function DocumintHost({
     autoScrollDuringDrag,
     focusInput: input.focus,
     isEditable,
-    onActivity: cursor.markActivity,
+    onActivity: idle.markActive,
     resolvePoint,
   });
 
@@ -588,8 +604,8 @@ function DocumintHost({
   //   - `scheduleContentPaint()` — paint only the content layer.
   //     For changes that only restyle content (decorations, comment highlights, animations).
   //   - `scheduleOverlayPaint()` — paint only the overlay layer.
-  //     For cursor blink and presence updates. Wired inline to
-  //     `useCursor.onVisibilityChange` and reactive presence changes.
+  //     For cursor blink and text-cursor presence updates. Wired inline to
+  //     `useCursor.onVisibilityChange` and reactive resolved presence changes.
   //
   // Other render triggers in the host live where they're naturally wired:
   //   - `handleViewportScroll` → `scheduleFullRender()` on scroll (native or
@@ -636,10 +652,13 @@ function DocumintHost({
     activeCommentThreadIndex,
     commentState.liveRanges,
     hoveredCommentThreadIndex,
+    activeCommentThreadColors,
     textDecorations,
   ]);
 
-  // Presence changes affect only the overlay canvas and DOM overlay.
+  // Resolved text-cursor presence affects only the overlay canvas and DOM
+  // overlay. Comment-thread presence colors are handled by the content-layer
+  // effect above because they paint comment rules.
   useEffect(() => {
     scheduleOverlayPaint();
   }, [resolvedPresence]);
@@ -791,8 +810,8 @@ function DocumintHost({
 
         return (
           <AnnotationLeaf
-            activeMarks={activeLeaf.activeMarks}
             canEdit={isEditable}
+            formatting={activeLeaf.formatting}
             link={null}
             mode="create"
             completionSources={completionSources}
@@ -807,18 +826,6 @@ function DocumintHost({
 
               selection.promoteLeafToThread(threadIndex, true);
               emitCommentAdded(threadIndex);
-            }}
-            onToggleBold={() => {
-              toggleBoldCommand();
-            }}
-            onToggleItalic={() => {
-              toggleItalicCommand();
-            }}
-            onToggleStrikethrough={() => {
-              toggleStrikethroughCommand();
-            }}
-            onToggleUnderline={() => {
-              toggleUnderlineCommand();
             }}
             actions={annotationActions}
           />
@@ -840,7 +847,7 @@ function DocumintHost({
               const transition = deleteCommentCommand(threadIndex, commentIndex);
               if (!transition) return;
               if (thread && comment) {
-                emitCommentDeleted(threadIndex, thread, comment);
+                emitCommentDeleted(thread, comment);
               }
             }}
             onDeleteThread={() => {
@@ -851,7 +858,7 @@ function DocumintHost({
               if (!transition) return;
               if (thread) {
                 for (const comment of thread.comments) {
-                  emitCommentDeleted(threadIndex, thread, comment);
+                  emitCommentDeleted(thread, comment);
                 }
               }
             }}
@@ -879,14 +886,7 @@ function DocumintHost({
           />
         );
       case "completion":
-        return (
-          <CompletionLeaf
-            activeIndex={activeLeaf.activeIndex}
-            matches={activeLeaf.matches}
-            onHover={activeLeaf.onHover}
-            onSelect={activeLeaf.onSelect}
-          />
-        );
+        return <CompletionLeaf {...activeLeaf} />;
     }
   };
 

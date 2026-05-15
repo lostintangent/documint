@@ -12,6 +12,7 @@ import {
 /* Hook surface */
 
 type UseCursorOptions = {
+  activeAt: number | null;
   isEditable: boolean;
   layoutWidth: number;
   scrollContentHeight: number;
@@ -33,7 +34,6 @@ type CursorController = {
   caretInViewport: boolean;
   leaf: CursorLeaf | null;
   isVisible: () => boolean;
-  markActivity: () => void;
 };
 
 type FocusVisibilityRequest = {
@@ -45,9 +45,6 @@ type FocusVisibilityRequest = {
 };
 
 /* Constants */
-
-// How long the caret stays solid after a keystroke before blinking resumes.
-const CARET_IDLE_DELAY_MS = 600;
 
 // Interval between caret visibility toggles once blinking starts.
 const CARET_BLINK_INTERVAL_MS = 530;
@@ -61,13 +58,11 @@ const FOCUS_VISIBILITY_PADDING = 24;
  * signals, and keeping the caret visible in the viewport.
  *
  * What this hook owns:
- *   - Caret blink lifecycle: solid for `CARET_IDLE_DELAY_MS` after any
- *     activity, then blinking at `CARET_BLINK_INTERVAL_MS`. Disabled when a
- *     range is selected, and suspended when the caret is off-viewport.
+ *   - Caret blink lifecycle: solid while the shared idle clock is active,
+ *     then blinking at `CARET_BLINK_INTERVAL_MS`. Disabled when a range is
+ *     selected, and suspended when the caret is off-viewport.
  *   - Store-derived cursor view data: the contextual leaf, caret viewport
  *     status, and measured caret target.
- *   - `markActivity()` — the activity signal other hooks call to keep the
- *     caret solid during typing, scrolling, and pointer interactions.
  *   - Focus visibility: when the caret moves out of the visible viewport
  *     (via typing, navigation, or layout changes), scroll just enough to
  *     bring it back. Dedupes against repeat triggers for the same logical
@@ -81,15 +76,15 @@ const FOCUS_VISIBILITY_PADDING = 24;
  *     pointer hover and selection leaves; the host arbitrates priority).
  *   - The host calls `isVisible()` from its overlay paint pass to decide
  *     whether to draw the caret on the current frame.
- *   - The host wires `markActivity` into other hooks (`useInput`,
- *     `usePointer`, `useSelection`) so any user action keeps the caret
- *     solid for a moment before blinking resumes.
+ *   - The host passes the shared idle clock state so any user action
+ *     keeps the caret solid for a moment before blinking resumes.
  *   - The host provides `onVisibilityChange` (typically a render scheduler
  *     callback) so blink ticks can repaint the overlay canvas.
  *   - The host provides `scrollTo` and viewport metrics so this hook can
  *     keep the caret in view without the host owning that logic.
  */
 export function useCursor({
+  activeAt,
   getScrollTop,
   isEditable,
   layoutWidth,
@@ -108,19 +103,12 @@ export function useCursor({
     normalizedSel.start.regionId === normalizedSel.end.regionId &&
     normalizedSel.start.offset === normalizedSel.end.offset;
   const cursorVisibleRef = useRef(true);
-  const lastActivityAtRef = useRef(0);
   const lastFocusVisibilityRequestRef = useRef<FocusVisibilityRequest | null>(null);
 
-  /* Activity + visibility */
+  /* Visibility */
 
   const requestVisibilityPaint = useEffectEvent(() => {
     onVisibilityChange();
-  });
-
-  const markActivity = useEffectEvent(() => {
-    lastActivityAtRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
-    cursorVisibleRef.current = true;
-    requestVisibilityPaint();
   });
 
   /* Focus visibility */
@@ -189,30 +177,23 @@ export function useCursor({
   /* Caret blink loop */
 
   // Restart whenever the blink eligibility flips: collapsed↔ranged selection
-  // (`shouldBlinkCaret`) and on/off-viewport (`caretInViewport`). The blink
-  // is suspended when the caret is off-screen — the canvas painter clips
-  // to the visible region anyway, so the timer ticks would just schedule
-  // overlay paints that produce no pixels.
+  // (`shouldBlinkCaret`), on/off-viewport (`caretInViewport`), and
+  // active/idle input. During activity the caret stays solid and no blink
+  // interval runs.
   useEffect(() => {
     cursorVisibleRef.current = true;
     requestVisibilityPaint();
 
-    if (!shouldBlinkCaret || !caretInViewport || typeof window === "undefined") {
+    if (
+      !shouldBlinkCaret ||
+      !caretInViewport ||
+      activeAt !== null ||
+      typeof window === "undefined"
+    ) {
       return;
     }
 
     const intervalId = window.setInterval(() => {
-      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-
-      if (now - lastActivityAtRef.current < CARET_IDLE_DELAY_MS) {
-        if (!cursorVisibleRef.current) {
-          cursorVisibleRef.current = true;
-          requestVisibilityPaint();
-        }
-
-        return;
-      }
-
       cursorVisibleRef.current = !cursorVisibleRef.current;
       requestVisibilityPaint();
     }, CARET_BLINK_INTERVAL_MS);
@@ -220,7 +201,7 @@ export function useCursor({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [shouldBlinkCaret, caretInViewport]);
+  }, [shouldBlinkCaret, caretInViewport, activeAt]);
 
   /* Public API */
 
@@ -228,7 +209,6 @@ export function useCursor({
     caretInViewport,
     leaf,
     isVisible: () => cursorVisibleRef.current,
-    markActivity,
   };
 }
 

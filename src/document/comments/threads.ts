@@ -2,13 +2,14 @@
  * Immutable CRUD operations and queries for comment threads.
  */
 
-import type { Anchor } from "../anchors";
+import type { TextAnchor } from "../anchors";
+import { nodeId } from "../document";
 import type { Comment, CommentThread } from "./types";
 
 export function createCommentThread(options: {
   quote: string;
   body: string;
-  anchor: Anchor;
+  anchor: TextAnchor;
   createdAt?: string;
 }): CommentThread {
   const createdAt = options.createdAt ?? new Date().toISOString();
@@ -18,6 +19,7 @@ export function createCommentThread(options: {
   });
 
   return {
+    id: createCommentThreadId(options.anchor, options.quote, options.body, createdAt),
     comments: [comment],
     quote: options.quote,
     anchor: options.anchor,
@@ -122,6 +124,20 @@ export function getCommentThreadUpdatedAt(thread: CommentThread): string | null 
   return thread.comments.reduce(
     (latest, comment) => (comment.updatedAt > latest ? comment.updatedAt : latest),
     thread.comments[0]!.updatedAt,
+  );
+}
+
+export function createCommentThreadId(
+  anchor: TextAnchor,
+  quote: string,
+  body: string,
+  updatedAt: string,
+  path = "comments",
+) {
+  return nodeId(
+    "commentThread",
+    path,
+    `${anchor.kind ?? ""}:${anchor.prefix ?? ""}:${anchor.suffix ?? ""}:${quote}:${body}:${updatedAt}`,
   );
 }
 

@@ -9,10 +9,11 @@
  *     host's own caret (`useCursor`) to gate the leaf overlay and the blink
  *     interval when the user's cursor scrolls off-screen.
  *
- * The geometric core (`resolveExtentViewportStatus`) is shared between them.
+ * The geometric core (`resolvePositionInViewport`) is shared with other
+ * viewport-gated content, including animated text decorations.
  */
 
-import { measureCaretTarget, type EditorLayoutState } from "../layout";
+import { measureCaretTarget, resolvePositionInViewport, type EditorLayoutState } from "../layout";
 import type { DocumentIndex, EditorSelectionPoint } from "../state";
 import type { EditorState } from "../state/types";
 import type {
@@ -67,11 +68,11 @@ export function resolveCursorViewportStatus(
   point: EditorSelectionPoint,
 ): EditorPresenceViewportStatus {
   const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
-  const extent = resolveCursorExtent(documentIndex, viewport, point);
-  if (!extent) {
+  const position = resolveCursorPosition(documentIndex, viewport, point);
+  if (!position) {
     return "unresolved";
   }
-  return resolveExtentViewportStatus(viewport, extent);
+  return resolvePositionInViewport(viewport, position);
 }
 
 /* Internals */
@@ -85,18 +86,18 @@ function resolveEditorPresenceViewport(
     return { status: "unresolved" };
   }
 
-  const extent = resolveCursorExtent(documentIndex, viewport, presence.cursorPoint);
-  if (!extent) {
+  const position = resolveCursorPosition(documentIndex, viewport, presence.cursorPoint);
+  if (!position) {
     return { status: "unresolved" };
   }
 
   return {
-    scrollTop: resolvePresenceCursorScrollTop(viewport, extent),
-    status: resolveExtentViewportStatus(viewport, extent),
+    scrollTop: resolvePresenceCursorScrollTop(viewport, position),
+    status: resolvePositionInViewport(viewport, position),
   };
 }
 
-function resolveCursorExtent(
+function resolveCursorPosition(
   documentIndex: DocumentIndex,
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
@@ -108,28 +109,10 @@ function resolveCursorExtent(
   return viewport.estimateRegionBounds(point.regionId);
 }
 
-function resolveExtentViewportStatus(
-  viewport: EditorLayoutState,
-  extent: { bottom: number; top: number },
-): "above" | "below" | "visible" {
-  const viewportTop = viewport.viewport.top;
-  const viewportBottom = viewportTop + viewport.viewport.height;
-
-  if (extent.bottom < viewportTop) {
-    return "above";
-  }
-
-  if (extent.top > viewportBottom) {
-    return "below";
-  }
-
-  return "visible";
-}
-
-function resolvePresenceCursorScrollTop(viewport: EditorLayoutState, extent: { top: number }) {
+function resolvePresenceCursorScrollTop(viewport: EditorLayoutState, position: { top: number }) {
   const maxScrollTop = Math.max(0, viewport.totalHeight - viewport.viewport.height);
   const targetTop =
-    extent.top - Math.min(presenceViewportScrollMargin, viewport.viewport.height / 4);
+    position.top - Math.min(presenceViewportScrollMargin, viewport.viewport.height / 4);
 
   return Math.max(0, Math.min(maxScrollTop, targetTop));
 }

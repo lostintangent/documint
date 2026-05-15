@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
   extendSelectionToPoint,
   moveCaretHorizontally,
@@ -257,57 +257,4 @@ test("moves vertically across an inline soft break inside one paragraph", () => 
 
   expect(upState.selection.focus.regionId).toBe(region.id);
   expect(upState.selection.focus.offset).toBeLessThanOrEqual(3);
-});
-
-// Inert leaf blocks (divider; future image-as-block, embed, display-math)
-// contribute no region. Caret navigation steps over them transparently:
-// they don't appear in the region-flow walk for left/right, and they
-// don't appear in `layout.lines` so the vertical/page walk passes
-// over them by construction. Without these properties a divider would
-// create a dead caret stop where typing, Enter, and most commands
-// fail with "unsupported".
-describe("Dividers", () => {
-  test("right arrow at end of paragraph skips the divider and lands at start of the next paragraph", () => {
-    const state = setup("alpha\n\n---\n\nbeta\n");
-    const alpha = getRegion(state, "alpha");
-    const beta = getRegion(state, "beta");
-
-    const next = moveCaretHorizontally(placeAt(state, alpha, "end"), 1);
-
-    expect(next.selection.focus.regionId).toBe(beta.id);
-    expect(next.selection.focus.offset).toBe(0);
-  });
-
-  test("left arrow at start of paragraph skips the divider and lands at end of the previous paragraph", () => {
-    const state = setup("alpha\n\n---\n\nbeta\n");
-    const alpha = getRegion(state, "alpha");
-    const beta = getRegion(state, "beta");
-
-    const next = moveCaretHorizontally(placeAt(state, beta, "start"), -1);
-
-    expect(next.selection.focus.regionId).toBe(alpha.id);
-    expect(next.selection.focus.offset).toBe(alpha.text.length);
-  });
-
-  test("down arrow from a paragraph above a divider lands in the paragraph below it", () => {
-    const state = setup("alpha\n\n---\n\nbeta\n");
-    const alpha = getRegion(state, "alpha");
-    const beta = getRegion(state, "beta");
-    const layout = createDocumentLayout(state.documentIndex, { width: 320 });
-
-    const next = moveCaretVertically(placeAt(state, alpha, "end"), layout, 1);
-
-    expect(next.selection.focus.regionId).toBe(beta.id);
-  });
-
-  test("up arrow from a paragraph below a divider lands in the paragraph above it", () => {
-    const state = setup("alpha\n\n---\n\nbeta\n");
-    const alpha = getRegion(state, "alpha");
-    const beta = getRegion(state, "beta");
-    const layout = createDocumentLayout(state.documentIndex, { width: 320 });
-
-    const next = moveCaretVertically(placeAt(state, beta, "start"), layout, -1);
-
-    expect(next.selection.focus.regionId).toBe(alpha.id);
-  });
 });

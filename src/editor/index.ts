@@ -28,12 +28,17 @@ export {
 
 // Canvas
 export { paintContent, paintOverlay } from "./canvas";
+export { hasActiveCommentHighlightsInViewport } from "./anchors";
 export type {
   TextDecoration,
   TextDecorationIndex,
   TextDecorationRootUpdate,
 } from "./text/decorations";
-export { reconcileTextDecorationIndex } from "./text/decorations";
+export {
+  hasAnimatedDecorations,
+  hasAnimatedDecorationsInViewport,
+  reconcileTextDecorationIndex,
+} from "./text/decorations";
 export { createCanvasRenderCache } from "./canvas/lib/cache";
 export { hasRunningEditorAnimations as hasRunningAnimations } from "./canvas/lib/animations";
 
@@ -43,7 +48,7 @@ export {
   createEditorState,
   getCaretTextContext,
   getSelectionContext,
-  getSelectionMarks,
+  getSelectionFormatting,
   getSelectionRange,
   normalizeSelection,
   resolveImageAtSelection,
@@ -56,6 +61,7 @@ export {
   type EditorState,
   type NormalizedEditorSelection,
   type SelectionContext,
+  type SelectionFormatting,
   type TextRangeTarget,
 } from "./state";
 
@@ -95,7 +101,7 @@ export * from "./state/commands";
 export {
   getCommentState,
   resolveCursorViewportStatus,
-  resolvePresenceCursors,
+  resolvePresenceTargets,
   resolvePresenceViewport,
   type EditorCommentState,
   type EditorPresence,

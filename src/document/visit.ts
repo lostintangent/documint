@@ -9,13 +9,7 @@ import type {
   TableCell,
   TableRow,
 } from "./types";
-import {
-  childContainerPath,
-  indexedPath,
-  inlinePath,
-  tableCellPath,
-  tableRowPath,
-} from "./paths";
+import { childContainerPath, indexedPath, inlinePath, tableCellPath, tableRowPath } from "./paths";
 
 export type VisitControl = "skip" | "stop" | void;
 

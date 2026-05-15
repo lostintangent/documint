@@ -3,10 +3,12 @@
 // ranges against the current editor document index so paint can read ranges by
 // editor region path.
 
+import { findVisibleLineRange, resolvePositionInViewport, type EditorLayoutState } from "../layout";
 import type { EditorState } from "../state";
 
 export type TextDecoration = {
   backgroundColor?: string;
+  pulse?: boolean;
   color?: string;
   endOffset: number;
   path: string;
@@ -48,6 +50,7 @@ export function reconcileTextDecorationIndex(
           {
             ...(range.backgroundColor && { backgroundColor: range.backgroundColor }),
             ...(range.color && { color: range.color }),
+            ...(range.backgroundColor && range.pulse && { pulse: true }),
             endOffset: range.endOffset,
             path: range.path,
             startOffset: range.startOffset,
@@ -104,12 +107,14 @@ function sameRootDecorations(
 function sameDecorations(
   a: readonly {
     backgroundColor?: string;
+    pulse?: boolean;
     color?: string;
     endOffset: number;
     startOffset: number;
   }[],
   b: readonly {
     backgroundColor?: string;
+    pulse?: boolean;
     color?: string;
     endOffset: number;
     startOffset: number;
@@ -121,8 +126,73 @@ function sameDecorations(
     return (
       decoration.color === candidate.color &&
       decoration.backgroundColor === candidate.backgroundColor &&
+      Boolean(decoration.backgroundColor && decoration.pulse) ===
+        Boolean(candidate.backgroundColor && candidate.pulse) &&
       decoration.endOffset === candidate.endOffset &&
       decoration.startOffset === candidate.startOffset
     );
   });
+}
+
+export function hasAnimatedDecorations(index: TextDecorationIndex): boolean {
+  for (const decorations of index.values()) {
+    if (decorations.some((decoration) => decoration.backgroundColor && decoration.pulse)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function hasAnimatedDecorationsInViewport(
+  state: EditorState,
+  viewport: EditorLayoutState,
+  index: TextDecorationIndex,
+): boolean {
+  if (index.size === 0) {
+    return false;
+  }
+
+  const { endIndex, startIndex } = findVisibleLineRange(
+    viewport.layout,
+    viewport.viewport.top,
+    viewport.viewport.height,
+  );
+
+  for (let lineIndex = startIndex; lineIndex < endIndex; lineIndex += 1) {
+    const line = viewport.layout.lines[lineIndex];
+    if (!line) {
+      continue;
+    }
+
+    if (
+      resolvePositionInViewport(viewport, {
+        bottom: line.top + line.height,
+        top: line.top,
+      }) !== "visible"
+    ) {
+      continue;
+    }
+
+    const regionPath = state.documentIndex.regionIndex.get(line.regionId)?.path ?? null;
+    const decorations = regionPath ? index.get(regionPath) : null;
+
+    if (decorations?.some((decoration) => isAnimatedDecorationOnLine(decoration, line))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isAnimatedDecorationOnLine(
+  decoration: TextDecoration,
+  line: EditorLayoutState["layout"]["lines"][number],
+) {
+  return (
+    decoration.pulse === true &&
+    Boolean(decoration.backgroundColor) &&
+    decoration.endOffset > line.start &&
+    decoration.startOffset < line.end
+  );
 }

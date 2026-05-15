@@ -1,12 +1,16 @@
+import { getCommentThreadUpdatedAt, isResolvedCommentThread, type CommentThread } from "@/document";
 import {
-  getCommentThreadUpdatedAt,
-  isResolvedCommentThread,
-  type CommentThread,
-  type Mark,
-} from "@/document";
+  toggleBold,
+  toggleCode,
+  toggleItalic,
+  toggleStrikethrough,
+  toggleUnderline,
+  type SelectionFormatting,
+} from "@/editor";
 import {
   Bold,
   Check,
+  Code,
   Italic,
   MessageSquarePlus,
   Pencil,
@@ -17,6 +21,7 @@ import {
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
+import { useEditorCommand } from "../../store";
 import { LeafInput } from "./core/LeafInput";
 import { LeafOutput } from "./core/LeafOutput";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
@@ -33,13 +38,9 @@ type AnnotationLeafBaseProps = {
 };
 
 type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
-  activeMarks: readonly Mark[];
+  formatting: SelectionFormatting;
   mode: "create";
   onCreateThread: (body: string) => void;
-  onToggleBold: () => void;
-  onToggleItalic: () => void;
-  onToggleStrikethrough: () => void;
-  onToggleUnderline: () => void;
   actions?: readonly DocumintAction<void>[];
 };
 
@@ -58,6 +59,10 @@ type AnnotationLeafProps = AnnotationCreateLeafProps | AnnotationThreadLeafProps
 
 const defaultCreateExpanded = false;
 const createToThreadTransitionMs = 220;
+const defaultFormatting: SelectionFormatting = {
+  code: false,
+  marks: [],
+};
 const noop = () => {};
 
 export function AnnotationLeaf(props: AnnotationLeafProps) {
@@ -95,11 +100,14 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const deleteComment = threadProps?.onDeleteComment ?? noop;
   const deleteThread = threadProps?.onDeleteThread ?? noop;
   const toggleResolved = threadProps?.onToggleResolved ?? noop;
-  const activeMarks = createProps?.activeMarks ?? [];
-  const toggleBold = createProps?.onToggleBold ?? noop;
-  const toggleItalic = createProps?.onToggleItalic ?? noop;
-  const toggleStrikethrough = createProps?.onToggleStrikethrough ?? noop;
-  const toggleUnderline = createProps?.onToggleUnderline ?? noop;
+  const formatting = createProps?.formatting ?? defaultFormatting;
+  const activeCode = formatting.code;
+  const activeFormattingMarks = formatting.marks;
+  const toggleBoldCommand = useEditorCommand(toggleBold);
+  const toggleCodeCommand = useEditorCommand(toggleCode);
+  const toggleItalicCommand = useEditorCommand(toggleItalic);
+  const toggleStrikethroughCommand = useEditorCommand(toggleStrikethrough);
+  const toggleUnderlineCommand = useEditorCommand(toggleUnderline);
   const actions = createProps?.actions ?? [];
   const composerPlaceholder = canEdit
     ? createMode
@@ -260,32 +268,44 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
             />
             <LeafToolbar.Divider />
             <LeafToolbar.Button
-              active={activeMarks.includes("bold")}
+              active={activeFormattingMarks.includes("bold")}
               className="documint-comment-leaf-create-mark"
+              disabled={activeCode}
               icon={Bold}
               label="Bold"
-              onClick={toggleBold}
+              onClick={toggleBoldCommand}
             />
             <LeafToolbar.Button
-              active={activeMarks.includes("italic")}
+              active={activeFormattingMarks.includes("italic")}
               className="documint-comment-leaf-create-mark"
+              disabled={activeCode}
               icon={Italic}
               label="Italic"
-              onClick={toggleItalic}
+              onClick={toggleItalicCommand}
             />
             <LeafToolbar.Button
-              active={activeMarks.includes("underline")}
+              active={activeFormattingMarks.includes("underline")}
               className="documint-comment-leaf-create-mark"
+              disabled={activeCode}
               icon={Underline}
               label="Underline"
-              onClick={toggleUnderline}
+              onClick={toggleUnderlineCommand}
+            />
+            <LeafToolbar.Divider />
+            <LeafToolbar.Button
+              active={activeCode}
+              className="documint-comment-leaf-create-mark"
+              icon={Code}
+              label="Code"
+              onClick={toggleCodeCommand}
             />
             <LeafToolbar.Button
-              active={activeMarks.includes("strikethrough")}
+              active={activeFormattingMarks.includes("strikethrough")}
               className="documint-comment-leaf-create-mark"
+              disabled={activeCode}
               icon={Strikethrough}
               label="Strikethrough"
-              onClick={toggleStrikethrough}
+              onClick={toggleStrikethroughCommand}
             />
             {actions.length > 0
               ? [

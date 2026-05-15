@@ -1,7 +1,19 @@
 import { expect, test } from "bun:test";
-import { createCanvasRenderCache, prepareLayout, resolvePresenceViewport } from "@/editor";
 import {
-  resolvePresenceCursors,
+  createCanvasRenderCache,
+  createEditorState,
+  prepareLayout,
+  resolvePresenceViewport,
+} from "@/editor";
+import {
+  createAnchorFromContainer,
+  createCommentThread,
+  createDocument,
+  createParagraphTextBlock,
+  listAnchorContainers,
+} from "@/document";
+import {
+  resolvePresenceTargets,
   type EditorPresence,
   type EditorPresenceViewport,
 } from "@/editor/anchors";
@@ -20,7 +32,7 @@ Markdown is the persistence boundary.
 
 Only the active region reveals source-like editing affordances.
 `);
-  const [afterCursor, beforeCursor] = resolvePresenceCursors(state.documentIndex, [
+  const [afterCursor, beforeCursor] = resolvePresenceTargets(state.documentIndex, [
     {
       cursor: {
         prefix: "Markdown is the persistence boundary.",
@@ -60,7 +72,7 @@ test("uses prefix and suffix together to disambiguate repeated text", () => {
 
 alpha beta delta
 `);
-  const [cursor] = resolvePresenceCursors(state.documentIndex, [
+  const [cursor] = resolvePresenceTargets(state.documentIndex, [
     {
       cursor: {
         prefix: "alpha beta",
@@ -83,7 +95,7 @@ alpha beta delta
 
 test("preserves exact presence anchor text when matching", () => {
   const state = setup("alpha beta\n");
-  const [exactCursor, trimmedCursor] = resolvePresenceCursors(state.documentIndex, [
+  const [exactCursor, trimmedCursor] = resolvePresenceTargets(state.documentIndex, [
     {
       cursor: {
         prefix: "alpha ",
@@ -104,12 +116,55 @@ test("preserves exact presence anchor text when matching", () => {
   expect(trimmedCursor?.cursorPoint).toBeNull();
 });
 
+test("resolves comment thread anchors as active threads without projecting a cursor", () => {
+  const block = createParagraphTextBlock("alpha comment target");
+  const baseDocument = createDocument([block]);
+  const container = listAnchorContainers(baseDocument)[0];
+
+  if (!container) {
+    throw new Error("Expected anchor container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 6, "alpha comment".length),
+    body: "Working here",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: "comment",
+  });
+  const state = createEditorState(createDocument([block], [thread]));
+  const [presence] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: { threadId: thread.id },
+      id: "agent",
+      username: "Agent",
+    },
+  ]);
+
+  expect(presence?.commentThreadIndex).toBe(0);
+  expect(presence?.cursorPoint).toBeNull();
+});
+
+test("leaves missing comment thread anchors unresolved", () => {
+  const block = createParagraphTextBlock("comment target suffix");
+  const state = createEditorState(createDocument([block]));
+  const [presence] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: { threadId: "missing-thread" },
+      id: "agent",
+      username: "Agent",
+    },
+  ]);
+
+  expect(presence?.commentThreadIndex).toBeNull();
+  expect(presence?.cursorPoint).toBeNull();
+});
+
 test("leaves ambiguous or missing targets unresolved", () => {
   const state = setup(`repeat
 
 repeat
 `);
-  const [ambiguousCursor, missingCursor] = resolvePresenceCursors(state.documentIndex, [
+  const [ambiguousCursor, missingCursor] = resolvePresenceTargets(state.documentIndex, [
     {
       cursor: {
         prefix: "repeat",
@@ -186,6 +241,7 @@ test("keeps unresolved presence visible without a scroll target", () => {
   expect(
     resolvePresenceViewport(state, viewport, [
       {
+        commentThreadIndex: null,
         cursorPoint: null,
         id: "unresolved",
         username: "Unresolved",
@@ -194,6 +250,7 @@ test("keeps unresolved presence visible without a scroll target", () => {
     ]),
   ).toEqual([
     {
+      commentThreadIndex: null,
       cursorPoint: null,
       id: "unresolved",
       username: "Unresolved",
@@ -213,6 +270,7 @@ function createPresenceViewportFixture() {
 
 function createResolvedCursor(username: string, region: EditorRegion): EditorPresence {
   return {
+    commentThreadIndex: null,
     cursorPoint: {
       offset: 0,
       regionId: region.id,

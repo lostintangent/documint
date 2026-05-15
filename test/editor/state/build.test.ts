@@ -36,9 +36,7 @@ test("rebuilds a root model against a normalized replacement root", () => {
 alpha
 `);
   const original = createEditorRoot(snapshot.blocks[1]!, 1);
-  const nextDocument = spliceDocument(snapshot, 1, 1, [
-    createParagraphTextBlock("omega"),
-  ]);
+  const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
   const rebuilt = rebuildEditorRoot(original, nextDocument.blocks[1]!);
 
   expect(rebuilt.rootIndex).toBe(1);
@@ -55,9 +53,7 @@ beta
 `);
   const model = createDocumentIndex(snapshot);
   const runtime = createDocumentIndex(snapshot);
-  const nextDocument = spliceDocument(snapshot, 1, 1, [
-    createParagraphTextBlock("alphabet"),
-  ]);
+  const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("alphabet")]);
   const replacedModel = spliceDocumentIndex(model, nextDocument, 1, 1);
   const replaced = spliceDocumentIndex(runtime, nextDocument, 1, 1);
 
@@ -94,9 +90,7 @@ test("preserves the document-level imageUrls reference across edits that don't t
 alpha
 `);
   const index = createDocumentIndex(snapshot);
-  const nextDocument = spliceDocument(snapshot, 1, 1, [
-    createParagraphTextBlock("alphabet"),
-  ]);
+  const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("alphabet")]);
   const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
   // The image-bearing root is reused (sibling edit), so its imageUrls

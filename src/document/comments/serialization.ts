@@ -4,7 +4,7 @@
  * this module only validates and shapes one thread at a time.
  */
 
-import { isAnchorKind, normalizeAnchorKind, type Anchor } from "../anchors";
+import { isAnchorKind, normalizeAnchorKind, type TextAnchor } from "../anchors";
 import type { Comment, CommentThread } from "./types";
 
 export function parseCommentThread(candidate: unknown): CommentThread | null {
@@ -28,6 +28,7 @@ export function parseCommentThread(candidate: unknown): CommentThread | null {
   }
 
   return {
+    id: "",
     quote,
     anchor,
     comments,
@@ -52,7 +53,7 @@ function parseComment(candidate: unknown): Comment | null {
   };
 }
 
-function parseCommentAnchor(candidate: unknown): Anchor | null {
+function parseCommentAnchor(candidate: unknown): TextAnchor | null {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     return null;
   }

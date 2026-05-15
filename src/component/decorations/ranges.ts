@@ -7,6 +7,7 @@ import { hasDecorationRuleStyle, type DocumintDecoration } from "./rules";
 
 export type DecorationRange = {
   backgroundColor?: string;
+  pulse?: boolean;
   color?: string;
   endOffset: number;
   path: string;
@@ -15,6 +16,7 @@ export type DecorationRange = {
 
 type DecorationStyle = {
   backgroundColor?: string;
+  pulse?: boolean;
   color?: string;
 };
 
@@ -56,9 +58,13 @@ export function resolveBlockDecorationRanges(
 }
 
 function compileRules(rules: readonly DocumintDecoration[]): CompiledRule[] {
-  return rules.filter(hasDecorationRuleStyle).map(({ backgroundColor, color, pattern }) => ({
+  return rules.filter(hasDecorationRuleStyle).map(({ backgroundColor, pulse, color, pattern }) => ({
     regex: new RegExp(pattern.source, ensureDecorationFlags(pattern.flags)),
-    style: { backgroundColor, color },
+    style: {
+      backgroundColor,
+      ...(backgroundColor && pulse && { pulse: true }),
+      color,
+    },
   }));
 }
 
@@ -87,6 +93,9 @@ function resolveStyleRanges(text: string, rules: CompiledRule[]): StyleRange[] {
         }
         if (style.backgroundColor && !current.backgroundColor) {
           current.backgroundColor = style.backgroundColor;
+          if (style.pulse) {
+            current.pulse = true;
+          }
         }
       }
     }
@@ -121,6 +130,7 @@ function rangeStyle(style: DecorationStyle): DecorationStyle {
   return {
     ...(style.backgroundColor && { backgroundColor: style.backgroundColor }),
     ...(style.color && { color: style.color }),
+    ...(style.backgroundColor && style.pulse && { pulse: true }),
   };
 }
 
@@ -159,6 +169,7 @@ function hasDecorationStyle(style: DecorationStyle) {
 function sameDecorationStyle(a: DecorationStyle | null, b: DecorationStyle | null) {
   return (
     (a?.color ?? null) === (b?.color ?? null) &&
-    (a?.backgroundColor ?? null) === (b?.backgroundColor ?? null)
+    (a?.backgroundColor ?? null) === (b?.backgroundColor ?? null) &&
+    Boolean(a?.backgroundColor && a.pulse) === Boolean(b?.backgroundColor && b.pulse)
   );
 }

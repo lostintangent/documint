@@ -56,9 +56,7 @@ export function paintListMarker(
   } else {
     const markerTextColor = theme.listMarkerText ?? defaultTextColor;
 
-    context.fillStyle = pop
-      ? resolveBlockPulseColor(markerTextColor, pop, theme)
-      : markerTextColor;
+    context.fillStyle = pop ? resolveBlockPulseColor(markerTextColor, pop, theme) : markerTextColor;
 
     if (marker.kind === "ordered") {
       paintOrderedListMarker(context, marker.label, textLeft, textBaseline);

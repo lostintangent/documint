@@ -7,12 +7,14 @@ export type RecordingOperation =
   | {
       kind: "fillRect";
       fillStyle: string | CanvasGradient | CanvasPattern;
+      globalAlpha: number;
       height: number;
       width: number;
       x: number;
       y: number;
     }
   | {
+      font: string;
       fillStyle: string | CanvasGradient | CanvasPattern;
       globalCompositeOperation: GlobalCompositeOperation;
       globalAlpha: number;
@@ -79,6 +81,7 @@ export class RecordingCanvasContext {
   fillRect(x: number, y: number, width: number, height: number) {
     this.operations.push({
       fillStyle: this.fillStyle,
+      globalAlpha: this.globalAlpha,
       height,
       kind: "fillRect",
       width,
@@ -89,6 +92,7 @@ export class RecordingCanvasContext {
 
   fillText(text: string, x: number, y: number) {
     this.operations.push({
+      font: this.font,
       fillStyle: this.fillStyle,
       globalCompositeOperation: this.globalCompositeOperation,
       globalAlpha: this.globalAlpha,

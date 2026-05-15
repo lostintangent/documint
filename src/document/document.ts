@@ -34,7 +34,7 @@ export function createDocument(
 ): Document {
   return {
     blocks: blocks.map((block, index) => normalizeRootBlock(block, index)),
-    comments,
+    comments: normalizeCommentThreads(comments),
     frontMatter,
   };
 }
@@ -77,11 +77,30 @@ export function spliceCommentThreads(
     blocks: document.blocks,
     comments: [
       ...document.comments.slice(0, index),
-      ...threads,
+      ...normalizeCommentThreads(threads, index),
       ...document.comments.slice(index + count),
     ],
     frontMatter: document.frontMatter,
   };
+}
+
+function normalizeCommentThreads(threads: CommentThread[], startIndex = 0) {
+  return threads.map((thread, index) => {
+    if (thread.id) {
+      return thread;
+    }
+
+    const firstComment = thread.comments[0];
+
+    return {
+      ...thread,
+      id: nodeId(
+        "commentThread",
+        `comments.${startIndex + index}`,
+        `${thread.anchor.kind ?? ""}:${thread.anchor.prefix ?? ""}:${thread.anchor.suffix ?? ""}:${thread.quote}:${firstComment?.body ?? ""}:${firstComment?.updatedAt ?? ""}`,
+      ),
+    };
+  });
 }
 
 // Walks the block tree to find the block with the matching id, calls

@@ -6,7 +6,8 @@
 // before content that should be visible.
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import { isContainerBlock, isInertBlock, type DocumentIndex, type EditorRegion } from "../../state";
+import { isContainerBlock, isInertBlock } from "../../navigation/flow";
+import type { DocumentIndex, EditorRegion } from "../../state";
 import {
   createCanvasRenderCache,
   getViewportPlan,

@@ -11,10 +11,11 @@ import {
   type RichInlineFragmentRange,
   type RichInlineItem,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, Mark } from "@/document";
+import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { EditorInline, EditorRegion } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
+import { codeTextFont, resolveInlineTextFont } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./image";
 import { measureInlineMentionWidth, mentionHorizontalPadding } from "./mention";
 import {
@@ -99,7 +100,7 @@ export function resolveTextBlockFont(block: Block | null) {
 
   switch (block?.type) {
     case "code":
-      return "15px ui-monospace, SFMono-Regular, Menlo, monospace";
+      return codeTextFont;
     default:
       return `16px ${SANS_SERIF_STACK}`;
   }
@@ -215,7 +216,7 @@ export function measureTextLineBoundaries(
       continue;
     }
 
-    context.font = resolveInlineFont(font, run.marks);
+    context.font = resolveInlineTextFont(font, run.marks, run.inlineCode);
 
     if (isMentionInline(run)) {
       width += measureInlineMentionWidth(context, run.mention);
@@ -297,12 +298,7 @@ function createMeasuredTextLines(
   }
 
   if (inlineProfile.hasRichInline) {
-    return createRichInlineMeasuredTextLines(
-      container,
-      font,
-      availableWidth,
-      lineHeight,
-    );
+    return createRichInlineMeasuredTextLines(container, font, availableWidth, lineHeight);
   }
 
   const prepared = prepareTextSegments(cache, text, font, resolveWhitespace(block, inlineProfile));
@@ -439,7 +435,7 @@ function createRichInlineMeasurementItems(container: EditorRegion, font: string)
       items.push({
         break: "never",
         extraWidth: mentionHorizontalPadding * 2,
-        font: resolveInlineFont(font, run.marks),
+        font: resolveInlineTextFont(font, run.marks, run.inlineCode),
         text: `@${run.mention.name}`,
       });
       measurementItems.push({
@@ -450,7 +446,7 @@ function createRichInlineMeasurementItems(container: EditorRegion, font: string)
     }
 
     items.push({
-      font: resolveInlineFont(font, run.marks),
+      font: resolveInlineTextFont(font, run.marks, run.inlineCode),
       text: run.text,
     });
     measurementItems.push({
@@ -717,7 +713,7 @@ function flattenMeasuredInlineSegments(
       continue;
     }
 
-    context.font = resolveInlineFont(font, run.marks);
+    context.font = resolveInlineTextFont(font, run.marks, run.inlineCode);
 
     if (isMentionInline(run)) {
       segments.push({
@@ -861,27 +857,13 @@ function hashMeasurementText(text: string) {
 }
 
 function runHasInlineFontMetrics(run: EditorInline) {
-  return run.marks.includes("italic") || run.marks.includes("bold");
+  return run.inlineCode || run.marks.includes("italic") || run.marks.includes("bold");
 }
 
 function isMentionInline(
   run: EditorInline,
 ): run is EditorInline & { mention: NonNullable<EditorInline["mention"]> } {
   return Boolean(run.mention);
-}
-
-function resolveInlineFont(font: string, marks: Mark[]) {
-  const parts: string[] = [];
-
-  if (marks.includes("italic")) {
-    parts.push("italic");
-  }
-
-  if (marks.includes("bold")) {
-    parts.push("700");
-  }
-
-  return parts.length > 0 ? `${parts.join(" ")} ${font}` : font;
 }
 
 function getTextMeasurementContext() {

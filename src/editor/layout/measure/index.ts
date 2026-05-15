@@ -3,7 +3,8 @@
 // or whole-document height estimation.
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import { isContainerBlock, isInertBlock, type DocumentIndex, type EditorRegion } from "../../state";
+import { isContainerBlock, isInertBlock } from "../../navigation/flow";
+import type { DocumentIndex, EditorRegion } from "../../state";
 import { createCanvasRenderCache, type CanvasRenderCache } from "../../canvas/lib/cache";
 import {
   defaultDocumentLayoutOptions,

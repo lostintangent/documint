@@ -762,11 +762,7 @@ function createRuntimeEditableDocument(document: Document): Document {
     return document;
   }
 
-  return createDocument(
-    [createParagraphTextBlock("")],
-    document.comments,
-    document.frontMatter,
-  );
+  return createDocument([createParagraphTextBlock("")], document.comments, document.frontMatter);
 }
 
 function collapseRuntimeEditableDocument(document: Document): Document {

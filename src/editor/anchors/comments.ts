@@ -23,6 +23,7 @@ import {
   type CommentThread,
 } from "@/document";
 import { resolveRegionByPath, type DocumentIndex, type EditorRegion } from "../state";
+import { findVisibleLineRange, resolvePositionInViewport, type EditorLayoutState } from "../layout";
 import type { EditorState } from "../state/types";
 import { projectAnchorContainersToEditor } from "./index";
 import { remapEditedRange } from "./remap";
@@ -132,6 +133,53 @@ export function getCommentState(stateOrIndex: EditorState | DocumentIndex): Edit
     liveRanges,
     threads: resolvedThreads,
   };
+}
+
+export function hasActiveCommentHighlightsInViewport(
+  viewport: EditorLayoutState,
+  liveRanges: readonly EditorCommentRange[],
+  activeThreadColors: ReadonlyMap<number, string | null>,
+) {
+  if (liveRanges.length === 0 || activeThreadColors.size === 0) {
+    return false;
+  }
+
+  const { endIndex, startIndex } = findVisibleLineRange(
+    viewport.layout,
+    viewport.viewport.top,
+    viewport.viewport.height,
+  );
+
+  for (let lineIndex = startIndex; lineIndex < endIndex; lineIndex += 1) {
+    const line = viewport.layout.lines[lineIndex];
+    if (!line) {
+      continue;
+    }
+
+    if (
+      resolvePositionInViewport(viewport, {
+        bottom: line.top + line.height,
+        top: line.top,
+      }) !== "visible"
+    ) {
+      continue;
+    }
+
+    if (
+      liveRanges.some(
+        (range) =>
+          !range.resolved &&
+          activeThreadColors.has(range.threadIndex) &&
+          range.regionId === line.regionId &&
+          range.endOffset > line.start &&
+          range.startOffset < line.end,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // --- Edit-time repair ---

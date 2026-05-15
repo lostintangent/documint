@@ -23,6 +23,8 @@ describe("decoration root result reconciliation", () => {
       ranges: [
         {
           color: "red",
+          backgroundColor: "gold",
+          pulse: true,
           endOffset: 6,
           path: "root.0.children",
           startOffset: 2,
@@ -38,6 +40,8 @@ describe("decoration root result reconciliation", () => {
     expect([...next!.values()]).toEqual([
       [
         {
+          backgroundColor: "gold",
+          pulse: true,
           color: "red",
           endOffset: 6,
           path: documentIndex.regions[0]!.path,

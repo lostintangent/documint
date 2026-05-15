@@ -38,6 +38,8 @@ export {
   resolveBoundaryOffset,
 } from "./lookup";
 
+export { resolvePositionInViewport, type ViewportPositionStatus } from "./position";
+
 export {
   measureInlineImageBounds,
   resolveHoverTargetAtPoint,

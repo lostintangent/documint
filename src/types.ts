@@ -119,13 +119,15 @@ export type EditorTheme = {
 //   - `users` is the roster Documint shows in mention completion (`@`). It
 //     includes everyone the host wants mentionable, whether or not they're
 //     currently in the document.
-//   - `presence` is who's actively in the document right now and where their
-//     cursor is. Each entry is foreign-keyed to a user via `userId`.
+//   - `presence` is who's actively in the document right now and what
+//     document target they are associated with. Each entry is foreign-keyed
+//     to a user via `userId`.
 //
 // Internally the two are joined into `DocumentUserPresence`, then resolved
 // against the document and viewport into `EditorPresence` (in `@/editor`),
-// which feeds the canvas (paints remote carets) and the DOM presence overlay
-// (renders scroll-to-cursor arrow buttons for off-screen presences).
+// which feeds the canvas (paints remote carets and comment-thread presence
+// rules) and the DOM presence overlay (renders scroll-to-cursor arrow buttons
+// for off-screen text presences).
 
 /**
  * A user known to the host. The full set is the mention roster; the subset
@@ -139,13 +141,12 @@ export type DocumentUser = {
 };
 
 /**
- * One user's live cursor in the document. `userId` foreign-keys into the
- * `users` roster; entries without a matching user are silently dropped.
+ * One user's live document presence. `userId` foreign-keys into the `users`
+ * roster; entries without a matching user are silently dropped.
  *
- * `cursor` is a content-addressable anchor (prefix/suffix). The editor
- * resolves it against the current document; if the anchor matches zero or
- * more than one place, the cursor is treated as unresolved and rendered as
- * an "unknown location" indicator rather than guessed.
+ * `cursor` is either a content-addressable text anchor (prefix/suffix) or a
+ * comment-thread anchor (`{ threadId }`). The editor resolves comment-thread
+ * anchors to a presence-active comment rule instead of a remote caret.
  */
 export type DocumentPresence = {
   userId: string;

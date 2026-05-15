@@ -60,7 +60,9 @@ export {
   resolveTargetAtSelectionPoint,
   resolveTaskCheckboxBounds,
   resolveTaskCheckboxHitAtPoint,
+  resolvePositionInViewport,
   resolveWordSelectionAtPoint,
+  type ViewportPositionStatus,
 } from "./query";
 
 export {

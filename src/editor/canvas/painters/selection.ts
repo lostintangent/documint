@@ -8,6 +8,7 @@ import { resolveLineVisualLeft, type DocumentLayout } from "../../layout";
 import type { EditorState } from "../../state";
 import type { EditorTheme } from "@/types";
 import type { CanvasSelectionRange } from "..";
+import { resolveRestingPulseAlpha, restingPulseMinimumAlpha } from "../lib/pulse";
 
 const selectionMinimumWidth = 2;
 const selectionVerticalInset = 1;
@@ -67,15 +68,19 @@ export function paintSelectionHighlight(
     return;
   }
 
+  const { left, width } = resolveLineRangeRect(
+    editorState,
+    line,
+    overlapStart,
+    overlapEnd,
+    selectionMinimumWidth,
+  );
+
   context.fillStyle = theme.selectionBackground;
   context.fillRect(
-    resolveLineVisualLeft(editorState, line, overlapStart - line.start),
+    left,
     line.top + selectionVerticalInset,
-    Math.max(
-      selectionMinimumWidth,
-      resolveLineVisualLeft(editorState, line, overlapEnd - line.start) -
-        resolveLineVisualLeft(editorState, line, overlapStart - line.start),
-    ),
+    width,
     line.height - selectionVerticalTrim,
   );
 }
@@ -86,6 +91,8 @@ export function paintCanvasCommentHighlights(
   line: DocumentLayout["lines"][number],
   liveCommentRanges: EditorCommentRange[],
   activeThreadIndex: number | null,
+  presenceActiveThreadColors: ReadonlyMap<number, string | null>,
+  contentPulseTime: number,
   theme: EditorTheme,
 ) {
   for (const range of liveCommentRanges) {
@@ -100,23 +107,57 @@ export function paintCanvasCommentHighlights(
       continue;
     }
 
-    context.fillStyle = resolveCommentHighlightColor(range, activeThreadIndex, theme);
+    context.fillStyle = resolveCommentHighlightColor(
+      range,
+      activeThreadIndex,
+      presenceActiveThreadColors,
+      theme,
+    );
+    const shouldPulse = !range.resolved && presenceActiveThreadColors.has(range.threadIndex);
+    const { left, width } = resolveLineRangeRect(
+      editorState,
+      line,
+      overlapStart,
+      overlapEnd,
+      commentHighlightMinimumWidth,
+    );
+
+    if (shouldPulse) {
+      context.save();
+      context.globalAlpha *= resolveRestingPulseAlpha(contentPulseTime, restingPulseMinimumAlpha);
+    }
     context.fillRect(
-      resolveLineVisualLeft(editorState, line, overlapStart - line.start),
+      left,
       line.top + line.height - commentHighlightBottomInset,
-      Math.max(
-        commentHighlightMinimumWidth,
-        resolveLineVisualLeft(editorState, line, overlapEnd - line.start) -
-          resolveLineVisualLeft(editorState, line, overlapStart - line.start),
-      ),
+      width,
       commentHighlightThickness,
     );
+    if (shouldPulse) {
+      context.restore();
+    }
   }
+}
+
+function resolveLineRangeRect(
+  editorState: EditorState,
+  line: DocumentLayout["lines"][number],
+  startOffset: number,
+  endOffset: number,
+  minimumWidth: number,
+) {
+  const left = resolveLineVisualLeft(editorState, line, startOffset - line.start);
+  const right = resolveLineVisualLeft(editorState, line, endOffset - line.start);
+
+  return {
+    left,
+    width: Math.max(minimumWidth, right - left),
+  };
 }
 
 function resolveCommentHighlightColor(
   range: EditorCommentRange,
   activeThreadIndex: number | null,
+  presenceActiveThreadColors: ReadonlyMap<number, string | null>,
   theme: EditorTheme,
 ) {
   if (range.resolved) {
@@ -127,5 +168,7 @@ function resolveCommentHighlightColor(
 
   return range.threadIndex === activeThreadIndex
     ? theme.commentHighlightActive
-    : theme.commentHighlight;
+    : presenceActiveThreadColors.has(range.threadIndex)
+      ? (presenceActiveThreadColors.get(range.threadIndex) ?? theme.leafAccent)
+      : theme.commentHighlight;
 }

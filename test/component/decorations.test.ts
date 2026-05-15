@@ -34,9 +34,7 @@ describe("resolveBlockDecorationRanges", () => {
     const block = createParagraphTextBlock("Task (123) and (456)");
 
     expect(
-      resolveBlockDecorationRanges(block, 0, [
-        { color: "gray", pattern: /\((\d+)\)/ },
-      ]),
+      resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /\((\d+)\)/ }]),
     ).toEqual([
       { color: "gray", endOffset: 9, path: "root.0.children", startOffset: 6 },
       { color: "gray", endOffset: 19, path: "root.0.children", startOffset: 16 },
@@ -47,9 +45,7 @@ describe("resolveBlockDecorationRanges", () => {
     const block = createParagraphTextBlock("Task () and (123)");
 
     expect(
-      resolveBlockDecorationRanges(block, 0, [
-        { color: "gray", pattern: /\((\d+)?\)/ },
-      ]),
+      resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /\((\d+)?\)/ }]),
     ).toEqual([{ color: "gray", endOffset: 16, path: "root.0.children", startOffset: 13 }]);
   });
 
@@ -97,6 +93,34 @@ describe("resolveBlockDecorationRanges", () => {
         endOffset: 9,
         path: "root.0.children",
         startOffset: 4,
+      },
+    ]);
+  });
+
+  test("keeps pulse behavior attached to the winning background style", () => {
+    const block = createParagraphTextBlock("sparkle TODO");
+
+    expect(
+      resolveBlockDecorationRanges(block, 0, [
+        { backgroundColor: "gold", pulse: true, pattern: /sparkle TODO/ },
+        { backgroundColor: "yellow", pattern: /TODO/ },
+        { color: "black", pattern: /TODO/ },
+      ]),
+    ).toEqual([
+      {
+        backgroundColor: "gold",
+        pulse: true,
+        endOffset: 8,
+        path: "root.0.children",
+        startOffset: 0,
+      },
+      {
+        backgroundColor: "gold",
+        pulse: true,
+        color: "black",
+        endOffset: 12,
+        path: "root.0.children",
+        startOffset: 8,
       },
     ]);
   });
@@ -162,9 +186,18 @@ describe("decoration rules", () => {
   test("ignore rules without styles at scheduling and worker boundaries", () => {
     const rules = [{ pattern: /TODO/ }, { backgroundColor: "yellow", pattern: /TODO/ }];
 
-    expect(resolveDecorationRulesKey(rules)).toBe("TODO:::yellow");
+    expect(resolveDecorationRulesKey(rules)).toBe("TODO:::yellow:0");
     expect(serializeDecorationRules(rules)).toEqual([
       { backgroundColor: "yellow", flags: "", source: "TODO" },
+    ]);
+  });
+
+  test("preserves animated background decoration styles across the worker boundary", () => {
+    const rules = [{ backgroundColor: "gold", pulse: true, pattern: /sparkle/ }];
+
+    expect(resolveDecorationRulesKey(rules)).toBe("sparkle:::gold:1");
+    expect(serializeDecorationRules(rules)).toEqual([
+      { backgroundColor: "gold", pulse: true, flags: "", source: "sparkle" },
     ]);
   });
 });

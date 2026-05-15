@@ -8,16 +8,12 @@ import {
   extractPlainTextFromInlineNodes,
   type Fragment,
 } from "@/document";
-import { resolveInlineContext, type InlineContext } from "../context";
+import { resolveInlineContext, type InlineContext } from "../commands/context";
 import type { DocumentIndex, EditorRegion } from "../index/types";
-import {
-  normalizeSelection,
-  resolveRegion,
-  type EditorSelection,
-} from "../selection";
+import { normalizeSelection, resolveRegion, type EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
-import { resolveTextHighlightAnimation } from "../actions/animations";
-import { insertInlines } from "../actions/inlines";
+import { resolveTextHighlightAnimation } from "../animations/intents";
+import { insertInlines } from "../commands/actions/inlines";
 
 type FragmentDestinationContext = {
   prefersVerbatimFallback: boolean;

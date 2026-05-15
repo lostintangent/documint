@@ -19,7 +19,8 @@ font metrics, render caches, and pixel placement stay in `canvas` or `layout`.
   testing maps pointer coordinates to an editor offset, then asks this module
   for the word range so geometry stays separate from text segmentation policy.
 
-- `fonts.ts` - Owns pure font-string resolution from document marks. Layout uses
+- `fonts.ts` - Owns pure font-string resolution from document marks and code
+  text policy. Layout uses
   it before measurement and canvas uses it before painting, keeping measured and
   rendered text styles in sync without moving canvas metrics or paint policy
   into this subsystem.

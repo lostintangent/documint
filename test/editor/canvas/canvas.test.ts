@@ -1,12 +1,12 @@
 // Integration tests for the canvas paint pipeline. Each test drives
-// `paintCanvasEditorSurface` end to end with a recording context and asserts
+// `paintContentLayer` end to end with a recording context and asserts
 // against the resulting operation sequence — covering pass ordering, pixel
 // geometry, and inter-painter interactions that are hard to verify in
 // isolation.
 
 import { expect, test } from "bun:test";
 import type { Block } from "@/document";
-import { paintCanvasEditorSurface } from "@/editor/canvas";
+import { paintContentLayer } from "@/editor/canvas";
 import { createDocumentLayout } from "@/editor/layout";
 import { insertText, setSelection, type EditorState } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
@@ -384,6 +384,270 @@ test("paints decoration background colors behind text", () => {
   expect(backgroundPaint.height).toBeLessThan(line.height);
 });
 
+test("pulses animated decoration backgrounds with paint-time alpha", () => {
+  const state = setup("alpha sparkle\n");
+  const container = state.documentIndex.regions[0];
+
+  if (!container) {
+    throw new Error("Expected paragraph region");
+  }
+
+  const textDecorations = new Map([
+    [
+      container.path,
+      [
+        {
+          backgroundColor: "#facc15",
+          pulse: true,
+          color: "#713f12",
+          endOffset: 13,
+          path: container.path,
+          startOffset: 6,
+        },
+      ],
+    ],
+  ]);
+  const { context } = renderPaintOperations(state, {
+    height: 180,
+    now: 550,
+    textDecorations,
+    width: 240,
+  });
+  const pulsingBackground = context.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
+  );
+  const pulsingTextOverlay = context.operations.find(
+    (operation) =>
+      operation.kind === "fillText" &&
+      operation.text.includes("sparkle") &&
+      operation.fillStyle !== lightTheme.paragraphText &&
+      operation.globalCompositeOperation === "source-over",
+  );
+
+  if (!pulsingBackground || pulsingBackground.kind !== "fillRect") {
+    throw new Error("Expected pulsing decoration background");
+  }
+  if (!pulsingTextOverlay || pulsingTextOverlay.kind !== "fillText") {
+    throw new Error("Expected pulsing decoration text color");
+  }
+
+  expect(pulsingBackground.globalAlpha).toBeCloseTo(0.71);
+  expect(pulsingTextOverlay.globalAlpha).toBe(1);
+  expect(pulsingTextOverlay.globalCompositeOperation).toBe("source-over");
+  expect(pulsingTextOverlay.fillStyle).not.toBe("#713f12");
+  expect(pulsingTextOverlay.fillStyle).not.toBe(lightTheme.paragraphText);
+
+  const { context: transparentContext } = renderPaintOperations(state, {
+    height: 180,
+    now: 1100,
+    textDecorations,
+    width: 240,
+  });
+  const transparentTextOverlay = transparentContext.operations.find(
+    (operation) =>
+      operation.kind === "fillText" &&
+      operation.text.includes("sparkle") &&
+      operation.fillStyle !== lightTheme.paragraphText &&
+      operation.globalCompositeOperation === "source-over",
+  );
+  const transparentBackground = transparentContext.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
+  );
+
+  if (!transparentBackground || transparentBackground.kind !== "fillRect") {
+    throw new Error("Expected pulsing decoration background at pulse floor");
+  }
+  if (!transparentTextOverlay || transparentTextOverlay.kind !== "fillText") {
+    throw new Error("Expected pulsing decoration text color at pulse floor");
+  }
+
+  expect(transparentBackground.globalAlpha).toBeCloseTo(0.42);
+  expect(transparentTextOverlay.globalAlpha).toBe(1);
+  expect(transparentTextOverlay.fillStyle).not.toBe("#713f12");
+  expect(transparentTextOverlay.fillStyle).not.toBe(lightTheme.paragraphText);
+
+  const { context: pausedContext } = renderPaintOperations(state, {
+    contentPulseTime: 1100,
+    height: 180,
+    now: 1650,
+    textDecorations,
+    width: 240,
+  });
+  const pausedBackground = pausedContext.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
+  );
+
+  if (!pausedBackground || pausedBackground.kind !== "fillRect") {
+    throw new Error("Expected paused decoration background");
+  }
+
+  expect(pausedBackground.globalAlpha).toBeCloseTo(0.42);
+
+  const { context: resumedContext } = renderPaintOperations(state, {
+    contentPulseTime: 1100,
+    height: 180,
+    now: 2200,
+    textDecorations,
+    width: 240,
+  });
+  const resumedBackground = resumedContext.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
+  );
+
+  if (!resumedBackground || resumedBackground.kind !== "fillRect") {
+    throw new Error("Expected resumed decoration background");
+  }
+
+  expect(resumedBackground.globalAlpha).toBeCloseTo(pausedBackground.globalAlpha);
+});
+
+test("pulses presence-active comment highlights with the content pulse clock", () => {
+  const state = setup("alpha comment\n");
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected paragraph region");
+  }
+
+  const { context } = renderPaintOperations(state, {
+    contentPulseTime: 1100,
+    height: 180,
+    liveCommentRanges: [
+      {
+        endOffset: 13,
+        regionId: region.id,
+        resolution: { match: null, repair: null, status: "stale" },
+        resolved: false,
+        startOffset: 6,
+        threadIndex: 2,
+      },
+    ],
+    presenceActiveThreadColors: new Map([[2, "#f97316"]]),
+    width: 240,
+  });
+  const commentHighlight = context.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#f97316",
+  );
+
+  if (!commentHighlight || commentHighlight.kind !== "fillRect") {
+    throw new Error("Expected presence-pulsed comment highlight");
+  }
+
+  expect(commentHighlight.globalAlpha).toBeCloseTo(0.42);
+});
+
+test("falls back to the leaf accent when presence has no color", () => {
+  const state = setup("alpha comment\n");
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected paragraph region");
+  }
+
+  const { context } = renderPaintOperations(state, {
+    height: 180,
+    liveCommentRanges: [
+      {
+        endOffset: 13,
+        regionId: region.id,
+        resolution: { match: null, repair: null, status: "stale" },
+        resolved: false,
+        startOffset: 6,
+        threadIndex: 2,
+      },
+    ],
+    presenceActiveThreadColors: new Map([[2, null]]),
+    width: 240,
+  });
+  const commentHighlight = context.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === lightTheme.leafAccent,
+  );
+
+  expect(commentHighlight).toEqual(expect.objectContaining({ kind: "fillRect" }));
+});
+
+test("paints inline code background with text background geometry", () => {
+  const state = setup("alpha `TODO` beta\n");
+  const { context, layout } = renderPaintOperations(state, {
+    height: 180,
+    width: 240,
+  });
+  const backgroundPaintIndex = context.operations.findIndex(
+    (operation) =>
+      operation.kind === "fillRect" && operation.fillStyle === lightTheme.inlineCodeBackground,
+  );
+  const codeTextPaintIndex = context.operations.findIndex(
+    (operation) =>
+      operation.kind === "fillText" &&
+      operation.text === "TODO" &&
+      operation.fillStyle === lightTheme.inlineCodeText,
+  );
+  const line = layout.lines[0];
+  const backgroundPaint = context.operations[backgroundPaintIndex];
+  const codeTextPaint = context.operations[codeTextPaintIndex];
+
+  if (!line || !backgroundPaint || backgroundPaint.kind !== "fillRect") {
+    throw new Error("Expected inline code background paint");
+  }
+
+  if (!codeTextPaint || codeTextPaint.kind !== "fillText") {
+    throw new Error("Expected inline code text paint");
+  }
+
+  expect(backgroundPaintIndex).toBeGreaterThanOrEqual(0);
+  expect(codeTextPaintIndex).toBeGreaterThan(backgroundPaintIndex);
+  expect(codeTextPaint.font).toContain("ui-monospace");
+  expect(backgroundPaint.y).toBeGreaterThanOrEqual(line.top);
+  expect(backgroundPaint.height).toBeLessThan(line.height);
+});
+
+test("keeps inline code and decoration background heights visually aligned", () => {
+  const state = setup("alpha `TODO` beta\n");
+  const container = state.documentIndex.regions[0];
+
+  if (!container) {
+    throw new Error("Expected paragraph region");
+  }
+
+  const { context } = renderPaintOperations(state, {
+    height: 180,
+    textDecorations: new Map([
+      [
+        container.path,
+        [
+          {
+            backgroundColor: "#fde047",
+            endOffset: 4,
+            path: container.path,
+            startOffset: 0,
+          },
+        ],
+      ],
+    ]),
+    width: 240,
+  });
+  const decorationBackground = context.operations.find(
+    (operation) => operation.kind === "fillRect" && operation.fillStyle === "#fde047",
+  );
+  const inlineCodeBackground = context.operations.find(
+    (operation) =>
+      operation.kind === "fillRect" && operation.fillStyle === lightTheme.inlineCodeBackground,
+  );
+
+  if (
+    !decorationBackground ||
+    decorationBackground.kind !== "fillRect" ||
+    !inlineCodeBackground ||
+    inlineCodeBackground.kind !== "fillRect"
+  ) {
+    throw new Error("Expected text background paints");
+  }
+
+  expect(Math.abs(inlineCodeBackground.height - decorationBackground.height)).toBeLessThanOrEqual(
+    1,
+  );
+});
+
 test("right-aligns ordered list markers without moving list text", () => {
   const orderedListMarkerGap = 8;
   const state = setup(`
@@ -461,8 +725,12 @@ test("falls back to paragraph text color when list marker color is omitted", () 
 function renderPaintOperations(
   state: EditorState,
   options: {
+    contentPulseTime?: number;
     height: number;
-    textDecorations?: Parameters<typeof paintCanvasEditorSurface>[0]["textDecorations"];
+    liveCommentRanges?: Parameters<typeof paintContentLayer>[0]["liveCommentRanges"];
+    now?: number;
+    presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
+    textDecorations?: Parameters<typeof paintContentLayer>[0]["textDecorations"];
     theme?: EditorTheme;
     width: number;
   },
@@ -470,22 +738,25 @@ function renderPaintOperations(
   const layout = createDocumentLayout(state.documentIndex, { width: options.width });
   const context = new RecordingCanvasContext();
 
-  paintCanvasEditorSurface({
+  paintContentLayer({
     activeBlockId:
       state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.blockId ?? null,
     activeRegionId: state.selection.focus.regionId,
     activeThreadIndex: null,
     containerLineBounds: new Map(layout.regionBounds),
+    contentPulseTime: options.contentPulseTime,
     context: context as unknown as CanvasRenderingContext2D,
     devicePixelRatio: 1,
     editorState: state,
     height: options.height,
     layout,
-    liveCommentRanges: [],
+    liveCommentRanges: options.liveCommentRanges ?? [],
     normalizedSelection: {
       end: state.selection.focus,
       start: state.selection.anchor,
     },
+    presenceActiveThreadColors: options.presenceActiveThreadColors,
+    now: options.now,
     resources: { images: new Map() },
     runtimeBlockMap: createRuntimeBlockMap(state.documentIndex.document.blocks),
     textDecorations: options.textDecorations,

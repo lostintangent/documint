@@ -193,6 +193,33 @@ describe("Comment appendix extraction", () => {
     expect(document.comments[2]?.quote).toBe("Table cell anchors");
   });
 
+  test("lets document normalization own parsed comment thread ids", () => {
+    const document = parseDocument(`Paragraph with a comment.
+
+:::documint-comments
+[
+  {
+    "id": "persisted-comment-id",
+    "anchor": {
+      "prefix": "Paragraph",
+      "suffix": " with a comment."
+    },
+    "comments": [
+      {
+        "body": "Reviewing this.",
+        "updatedAt": "2026-04-05T12:00:00.000Z"
+      }
+    ],
+    "quote": " with "
+  }
+]
+:::
+`);
+
+    expect(document.comments[0]?.id).toMatch(/^commentThread-/);
+    expect(document.comments[0]?.id).not.toBe("persisted-comment-id");
+  });
+
   test("drops misplaced comment appendices from document content", () => {
     const document = parseDocument(`:::documint-comments
 []

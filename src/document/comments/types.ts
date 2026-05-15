@@ -1,9 +1,10 @@
-import type { Anchor, AnchorResolution } from "../anchors";
+import type { AnchorResolution, TextAnchor } from "../anchors";
 
 export type CommentThread = {
+  id: string;
   quote: string;
   comments: Comment[];
-  anchor: Anchor;
+  anchor: TextAnchor;
   resolvedAt?: string;
 };
 
@@ -18,7 +19,7 @@ export type Comment = {
 // has been re-located. Callers writing this back into a thread keep its
 // quote/anchor representation in sync with the snapshot.
 export type CommentRepair = {
-  anchor: Anchor;
+  anchor: TextAnchor;
   quote: string;
 };
 

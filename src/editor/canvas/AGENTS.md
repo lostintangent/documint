@@ -26,7 +26,7 @@ Visible-range scoping uses `findVisibleBlockRange` and `findVisibleLineRange` fr
 
 ### Key Areas
 
-- `index.ts` - Owns `paintContent`, `paintOverlay`, and the per-frame orchestrator (`paintCanvasEditorSurface`) that runs the staged pipeline.
+- `index.ts` - Owns `paintContent`, `paintOverlay`, and the per-frame orchestrator (`paintContentLayer`) that runs the staged pipeline.
 
 - `painters/` - Per-stage pixel-drawing modules. Each owns one visual concern: text runs and inline marks, list markers, selection highlights, table chrome, block backgrounds and rules, image rendering, caret and presence cursors. No painter knows about the schedule order — that's the orchestrator's job.
 

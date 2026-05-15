@@ -22,6 +22,7 @@ export function useUsers(content: string) {
   const [manualAvatarUrl, setManualAvatarUrl] = useState("");
   const [manualAnchorPrefix, setManualAnchorPrefix] = useState("");
   const [manualAnchorSuffix, setManualAnchorSuffix] = useState("");
+  const [manualThreadId, setManualThreadId] = useState("");
   const [manualColor, setManualColor] = useState("#0ea5e9");
   const [manualEntries, setManualEntries] = useState<ManualEntry[]>([]);
   const [autoMode, setAutoMode] = useState(false);
@@ -47,6 +48,7 @@ export function useUsers(content: string) {
     setManualAvatarUrl("");
     setManualAnchorPrefix("");
     setManualAnchorSuffix("");
+    setManualThreadId("");
     setAutoPresence(null);
   }, []);
 
@@ -90,12 +92,15 @@ export function useUsers(content: string) {
       setName: setManualName,
       setPrefix: setManualAnchorPrefix,
       setSuffix: setManualAnchorSuffix,
+      setThreadId: setManualThreadId,
       suffix: manualAnchorSuffix,
+      threadId: manualThreadId,
       addEntry() {
         const name = manualName.trim();
         const avatarUrl = manualAvatarUrl.trim();
         const prefix = manualAnchorPrefix.trim();
         const suffix = manualAnchorSuffix.trim();
+        const threadId = manualThreadId.trim();
 
         if (name.length === 0) {
           return;
@@ -103,12 +108,13 @@ export function useUsers(content: string) {
 
         setManualEntries((current) => [
           ...current,
-          createManualEntry(name, avatarUrl, prefix, suffix, manualColor, current.length),
+          createManualEntry(name, avatarUrl, prefix, suffix, threadId, manualColor, current.length),
         ]);
         setManualName("");
         setManualAvatarUrl("");
         setManualAnchorPrefix("");
         setManualAnchorSuffix("");
+        setManualThreadId("");
       },
     },
     manualEntries: {
@@ -126,6 +132,7 @@ function createManualEntry(
   avatarUrl: string,
   prefix: string,
   suffix: string,
+  threadId: string,
   color: string,
   index: number,
 ): ManualEntry {
@@ -137,7 +144,7 @@ function createManualEntry(
   }
 
   const presence: DocumentPresence = { userId: id, color };
-  const cursor = createPresenceCursor(prefix, suffix);
+  const cursor = createPresenceCursor(prefix, suffix, threadId);
 
   if (cursor) {
     presence.cursor = cursor;
@@ -146,7 +153,15 @@ function createManualEntry(
   return { user, presence };
 }
 
-function createPresenceCursor(prefix: string, suffix: string): DocumentPresence["cursor"] {
+function createPresenceCursor(
+  prefix: string,
+  suffix: string,
+  threadId: string,
+): DocumentPresence["cursor"] {
+  if (threadId.length > 0) {
+    return { threadId };
+  }
+
   if (prefix.length === 0 && suffix.length === 0) {
     return undefined;
   }
@@ -163,6 +178,10 @@ export function describeEntry(user: DocumentUser, presence: DocumentPresence | n
 
   if (!cursor) {
     return name;
+  }
+
+  if ("threadId" in cursor) {
+    return `${name}: comment ${cursor.threadId}`;
   }
 
   if (cursor.prefix && cursor.suffix) {

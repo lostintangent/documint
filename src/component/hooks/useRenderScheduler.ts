@@ -3,6 +3,10 @@ import { hasRunningAnimations } from "@/editor";
 import { useDocumintStore } from "../store";
 
 type UseRenderSchedulerOptions = {
+  /** Whether optional content-layer animations should keep rAF paints running. */
+  hasRunningOptionalContentAnimations?: () => boolean;
+  /** Whether active user input should pause optional paint-only animations. */
+  isActive?: () => boolean;
   /** Repaint the content layer using the cached viewport layout. */
   renderContent: () => void;
   /** Repaint the overlay layer (cursor, presence). */
@@ -68,15 +72,17 @@ function createPendingRenderRequests(): PendingRenderRequests {
  *     Heavier modes subsume lighter ones (full render > full paint > layer
  *     paints). Independent layer paints (content-only + overlay-only) can
  *     both fire in the same frame.
- *   - **Animation continuation.** After any layout-aware frame, the
- *     scheduler asks the editor whether animations are still running and
- *     self-schedules a follow-up content paint if so. All editor animations
- *     are content-layer effects, so the continuation never repaints overlay.
+ *   - **Animation continuation.** After any layout-aware or content frame,
+ *     the scheduler asks whether content-layer animations are still running
+ *     and self-schedules a follow-up content paint if so. These animations
+ *     never affect overlay, so the continuation never repaints overlay.
  *   - **Lifecycle.** Any in-flight rAF is cancelled on unmount.
  *
  * On the server, paint callbacks are dispatched synchronously.
  */
 export function useRenderScheduler({
+  hasRunningOptionalContentAnimations,
+  isActive,
   renderContent,
   renderOverlay,
   renderViewport,
@@ -174,10 +180,21 @@ export function useRenderScheduler({
   });
 
   // After any layout-aware or content frame, keep the loop ticking while
-  // the editor has running animations. Overlay-only frames don't trigger
-  // continuation: animations live on the content layer.
+  // the content layer has running animations. Overlay-only frames don't
+  // trigger continuation: animations live on the content layer.
   const scheduleAnimationContinuation = useEffectEvent(() => {
-    if (!hasRunningAnimations(store.editor.getState(), performance.now())) {
+    const hasRunningEditorAnimations = hasRunningAnimations(
+      store.editor.getState(),
+      performance.now(),
+    );
+
+    if (hasRunningEditorAnimations) {
+      pendingRef.current.contentPaint = true;
+      requestFrame();
+      return;
+    }
+
+    if (isActive?.() === true || hasRunningOptionalContentAnimations?.() !== true) {
       return;
     }
 

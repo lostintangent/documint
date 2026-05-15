@@ -10,6 +10,7 @@ import {
 } from "./PlaygroundPopover";
 
 type UsersPopoverProps = {
+  commentThreadIds: readonly string[];
   content: string;
   onUsersChange: (users: DocumentUser[]) => void;
   onPresenceChange: (presence: DocumentPresence[]) => void;
@@ -36,6 +37,7 @@ const fieldInputClassName =
   "w-full rounded-xl border border-border/[0.14] bg-background/[0.9] px-3 py-2";
 
 export function UsersPopover({
+  commentThreadIds,
   content,
   onUsersChange,
   onPresenceChange,
@@ -104,10 +106,28 @@ export function UsersPopover({
         </label>
 
         <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Prefix</span>
+          <span className={fieldCaptionClassName}>Comment thread ID</span>
           <input
             className={fieldInputClassName}
             disabled={auto.enabled}
+            list="documint-playground-comment-thread-ids"
+            onChange={(event) => manualForm.setThreadId(event.target.value)}
+            placeholder="Optional thread target"
+            type="text"
+            value={manualForm.threadId}
+          />
+          <datalist id="documint-playground-comment-thread-ids">
+            {commentThreadIds.map((threadId) => (
+              <option key={threadId} value={threadId} />
+            ))}
+          </datalist>
+        </label>
+
+        <label className={fieldLabelClassName}>
+          <span className={fieldCaptionClassName}>Prefix</span>
+          <input
+            className={fieldInputClassName}
+            disabled={auto.enabled || manualForm.threadId.trim().length > 0}
             onChange={(event) => manualForm.setPrefix(event.target.value)}
             placeholder="Caret appears after this text"
             type="text"
@@ -119,7 +139,7 @@ export function UsersPopover({
           <span className={fieldCaptionClassName}>Suffix</span>
           <input
             className={fieldInputClassName}
-            disabled={auto.enabled}
+            disabled={auto.enabled || manualForm.threadId.trim().length > 0}
             onChange={(event) => manualForm.setSuffix(event.target.value)}
             placeholder="Caret appears before this text"
             type="text"

@@ -1,14 +1,21 @@
 /**
- * Editor-side resolution of host-provided presence cursors.
+ * Editor-side resolution of host-provided presence targets.
  *
- * Presence is ephemeral overlay state — a remote user's caret, provided by
- * the host as a content-addressable anchor. This module owns the semantic
- * step of placing each cursor in the current document via the shared anchor
- * algebra; geometric measurement (where it shows up in the viewport) is left
- * to layout/paint.
+ * Presence is ephemeral collaboration state provided by the host as a
+ * content-addressable anchor. Text anchors resolve to remote cursor points;
+ * comment-thread anchors resolve to active thread indices so the comment rule
+ * can carry the user's presence color. Geometric measurement is left to
+ * layout/paint.
  */
 
-import { findContextRanges, findOccurrences, type Anchor, type AnchorContainer } from "@/document";
+import {
+  findContextRanges,
+  findOccurrences,
+  isCommentThreadAnchor,
+  type Anchor,
+  type AnchorContainer,
+  type TextAnchor,
+} from "@/document";
 import type { DocumentUserPresence } from "@/types";
 import type { DocumentIndex, EditorSelectionPoint } from "../state";
 import { projectAnchorContainersToEditor } from "./index";
@@ -26,6 +33,7 @@ export type EditorPresenceViewport =
 export type EditorPresenceViewportStatus = EditorPresenceViewport["status"];
 
 export type EditorPresence = DocumentUserPresence & {
+  commentThreadIndex: number | null;
   cursorPoint: EditorSelectionPoint | null;
   viewport: EditorPresenceViewport | null;
 };
@@ -37,11 +45,10 @@ type PresenceMatch = {
 
 // --- Public API ---
 
-// Resolve each host-provided presence into an editor-side cursor point.
-// Cursors that don't resolve unambiguously (no match, or multiple equally
-// good matches) come back with `cursorPoint: null` so the caller can hide
-// them rather than guess.
-export function resolvePresenceCursors(
+// Resolve each host-provided presence into editor-side targets. Text anchors
+// produce cursor points; comment-thread anchors produce active thread indices
+// without projecting a cursor.
+export function resolvePresenceTargets(
   documentIndex: DocumentIndex,
   presence: DocumentUserPresence[],
 ): EditorPresence[] {
@@ -54,24 +61,61 @@ export function resolvePresenceCursors(
 
   return presence.map((presenceItem) => ({
     ...presenceItem,
-    cursorPoint: resolvePresenceCursorPoint(presenceItem, semanticContainers, containerProjection),
+    ...resolvePresenceTarget(presenceItem, semanticContainers, containerProjection, documentIndex),
     viewport: null,
   }));
 }
 
 // --- Internal helpers ---
 
-function resolvePresenceCursorPoint(
+function resolvePresenceTarget(
   presence: DocumentUserPresence,
   semanticContainers: AnchorContainer[],
   containerProjection: ReturnType<typeof projectAnchorContainersToEditor>,
+  documentIndex: DocumentIndex,
 ) {
   if (!presence.cursor) {
-    return null;
+    return {
+      commentThreadIndex: null,
+      cursorPoint: null,
+    };
   }
 
-  const candidateContainers = filterAnchorContainers(semanticContainers, presence.cursor);
-  const matches = collectAnchorMatches(candidateContainers, presence.cursor);
+  if (isCommentThreadAnchor(presence.cursor)) {
+    return resolveCommentThreadPresenceTarget(presence.cursor, documentIndex);
+  }
+
+  return {
+    commentThreadIndex: null,
+    cursorPoint: resolvePresenceCursorPoint(
+      presence.cursor,
+      semanticContainers,
+      containerProjection,
+    ),
+  };
+}
+
+function resolveCommentThreadPresenceTarget(
+  anchor: Extract<Anchor, { threadId: string }>,
+  documentIndex: DocumentIndex,
+) {
+  const threadIndex = documentIndex.document.comments.findIndex(
+    (thread) => thread.id === anchor.threadId,
+  );
+
+  return {
+    commentThreadIndex: threadIndex >= 0 ? threadIndex : null,
+    cursorPoint: null,
+  };
+}
+
+function resolvePresenceCursorPoint(
+  anchor: TextAnchor,
+  semanticContainers: AnchorContainer[],
+  containerProjection: ReturnType<typeof projectAnchorContainersToEditor>,
+) {
+  const candidateContainers = filterAnchorContainers(semanticContainers, anchor);
+  const matches = collectAnchorMatches(candidateContainers, anchor);
 
   if (matches.length !== 1) {
     return null;
@@ -90,7 +134,7 @@ function resolvePresenceCursorPoint(
   };
 }
 
-function filterAnchorContainers(containers: AnchorContainer[], anchor: Anchor) {
+function filterAnchorContainers(containers: AnchorContainer[], anchor: TextAnchor) {
   return anchor.kind
     ? containers.filter((container) => container.containerKind === anchor.kind)
     : containers;
@@ -99,7 +143,7 @@ function filterAnchorContainers(containers: AnchorContainer[], anchor: Anchor) {
 // Dispatch on which side of the anchor descriptor is present. Presence does
 // not score; it requires an unambiguous match, so each branch returns raw
 // candidates and the caller filters by `length === 1`.
-function collectAnchorMatches(containers: AnchorContainer[], anchor: Anchor) {
+function collectAnchorMatches(containers: AnchorContainer[], anchor: TextAnchor) {
   if (anchor.prefix && anchor.suffix) {
     return collectBetweenTextMatches(containers, anchor.prefix, anchor.suffix);
   }

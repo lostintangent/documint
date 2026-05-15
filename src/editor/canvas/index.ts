@@ -16,9 +16,10 @@
 // per-line backgrounds for adjacent text blocks are already down, and
 // before stage 3 so active-cell highlights for tables sit on top.
 //
-// The per-line foreground sub-pipeline (`paintDocumentLineForeground`):
-//   active-block bg → selection → comments → list marker → text runs
-//   → text fades → text pulses
+// The per-line foreground sub-pipeline (`paintContentLine`):
+//   active-block bg → decoration backgrounds → selection → comments
+//   → list marker → text runs → decoration text overlays → text fades
+//   → text pulses
 //
 // Pixel-drawing modules live in painters/. Shared building blocks
 // (animations, color blending, font metrics, render cache) live in lib/.
@@ -70,11 +71,11 @@ import {
 } from "./painters/selection";
 import { paintActiveTableCellHighlightPass, type PaintRegionBounds } from "./painters/table";
 import {
-  paintCanvasTextDecorations,
   paintCanvasTextFades,
   paintCanvasTextHighlights,
   paintCanvasLineText,
   paintCanvasTextPulses,
+  paintTextDecorations,
 } from "./painters/text";
 
 export type CanvasSelectionRange = {
@@ -83,6 +84,7 @@ export type CanvasSelectionRange = {
 };
 
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
+const emptyPresenceThreadColors: ReadonlyMap<number, string | null> = new Map();
 
 // Re-export painter entry points used outside this folder (tests, primarily).
 // External callers should not reach into painters/ directly.
@@ -98,10 +100,12 @@ export function paintContent(
     activeBlockId: string | null;
     activeRegionId: string | null;
     activeThreadIndex: number | null;
+    contentPulseTime?: number;
     devicePixelRatio: number;
     height: number;
     liveCommentRanges: EditorCommentRange[];
     normalizedSelection: NormalizedEditorSelection;
+    presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
     now?: number;
     resources?: DocumentResources | null;
     textDecorations?: TextDecorationIndex;
@@ -109,10 +113,11 @@ export function paintContent(
     width: number;
   },
 ): void {
-  paintCanvasEditorSurface({
+  paintContentLayer({
     activeBlockId: options.activeBlockId,
     activeRegionId: options.activeRegionId,
     activeThreadIndex: options.activeThreadIndex,
+    contentPulseTime: options.contentPulseTime,
     containerLineBounds: viewport.regionBounds,
     context,
     devicePixelRatio: options.devicePixelRatio,
@@ -121,6 +126,7 @@ export function paintContent(
     layout: viewport.layout,
     liveCommentRanges: options.liveCommentRanges,
     normalizedSelection: options.normalizedSelection,
+    presenceActiveThreadColors: options.presenceActiveThreadColors ?? emptyPresenceThreadColors,
     now: options.now,
     resources: options.resources ?? { images: new Map() },
     runtimeBlockMap: viewport.blockMap,
@@ -166,7 +172,7 @@ export function paintOverlay(
 // Viewport-level orchestrator. Owns the staging order; delegates each stage's
 // work to a sibling module. Intentionally exported so tests can drive it
 // without going through the React surface.
-export function paintCanvasEditorSurface({
+export function paintContentLayer({
   activeBlockId,
   activeRegionId,
   activeThreadIndex,
@@ -179,6 +185,8 @@ export function paintCanvasEditorSurface({
   liveCommentRanges,
   normalizedSelection,
   now = getPaintTime(),
+  contentPulseTime = now,
+  presenceActiveThreadColors = emptyPresenceThreadColors,
   resources,
   runtimeBlockMap,
   textDecorations = emptyTextDecorationIndex,
@@ -190,6 +198,7 @@ export function paintCanvasEditorSurface({
   activeRegionId: string | null;
   activeThreadIndex: number | null;
   containerLineBounds: Map<string, PaintRegionBounds>;
+  contentPulseTime?: number;
   context: CanvasRenderingContext2D;
   devicePixelRatio: number;
   editorState: EditorState;
@@ -197,6 +206,7 @@ export function paintCanvasEditorSurface({
   layout: DocumentLayout;
   liveCommentRanges: EditorCommentRange[];
   normalizedSelection: CanvasSelectionRange;
+  presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
   now?: number;
   resources: DocumentResources;
   runtimeBlockMap: Map<string, Block>;
@@ -287,9 +297,10 @@ export function paintCanvasEditorSurface({
   // Stage 4: per-line foreground (text, decorations, markers, effects).
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    paintDocumentLineForeground({
+    paintContentLine({
       activeBlockId,
       activeBlockFlashes,
+      contentPulseTime,
       activeTextFades,
       activeTextHighlights,
       activeBlockPulses,
@@ -300,6 +311,7 @@ export function paintCanvasEditorSurface({
       line,
       liveCommentRanges,
       normalizedSelection,
+      presenceActiveThreadColors,
       resources,
       runtimeBlockMap,
       selectionRegionOrderRange,
@@ -319,9 +331,10 @@ export function paintCanvasEditorSurface({
 
 // Per-line foreground sub-pipeline. Intentionally short and linear — each call
 // is a single visual concern, ordered by z-stack.
-function paintDocumentLineForeground({
+function paintContentLine({
   activeBlockId,
   activeBlockFlashes,
+  contentPulseTime,
   activeTextFades,
   activeTextHighlights,
   activeBlockPulses,
@@ -332,6 +345,7 @@ function paintDocumentLineForeground({
   line,
   liveCommentRanges,
   normalizedSelection,
+  presenceActiveThreadColors,
   resources,
   runtimeBlockMap,
   selectionRegionOrderRange,
@@ -341,6 +355,7 @@ function paintDocumentLineForeground({
 }: {
   activeBlockId: string | null;
   activeBlockFlashes: Map<string, ActiveBlockFlash>;
+  contentPulseTime: number;
   activeTextFades: Map<string, ActiveTextFade[]>;
   activeTextHighlights: Map<string, ActiveTextHighlight[]>;
   activeBlockPulses: Map<string, ActiveBlockPulse>;
@@ -351,6 +366,7 @@ function paintDocumentLineForeground({
   line: DocumentLayout["lines"][number];
   liveCommentRanges: EditorCommentRange[];
   normalizedSelection: CanvasSelectionRange;
+  presenceActiveThreadColors: ReadonlyMap<number, string | null>;
   resources: DocumentResources;
   runtimeBlockMap: Map<string, Block>;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
@@ -385,7 +401,7 @@ function paintDocumentLineForeground({
   const lineTextDecorations = textDecorations.size > 0 ? textDecorations.get(containerPath) : null;
 
   if (lineTextDecorations) {
-    paintCanvasTextDecorations(
+    paintTextDecorations(
       context,
       line,
       container,
@@ -393,6 +409,8 @@ function paintDocumentLineForeground({
       textBaseline,
       lineTextDecorations,
       "background",
+      contentPulseTime,
+      defaultTextColor,
     );
   }
   paintSelectionHighlight(
@@ -409,6 +427,8 @@ function paintDocumentLineForeground({
     line,
     liveCommentRanges,
     activeThreadIndex,
+    presenceActiveThreadColors,
+    contentPulseTime,
     theme,
   );
   paintListMarker(
@@ -432,7 +452,7 @@ function paintDocumentLineForeground({
     theme,
   );
   if (lineTextDecorations) {
-    paintCanvasTextDecorations(
+    paintTextDecorations(
       context,
       line,
       container,
@@ -440,6 +460,8 @@ function paintDocumentLineForeground({
       textBaseline,
       lineTextDecorations,
       "overlay",
+      contentPulseTime,
+      defaultTextColor,
     );
   }
   paintCanvasTextHighlights(
@@ -489,5 +511,5 @@ function resolveCanvasTextColor(block: Block | null, theme: EditorTheme) {
 }
 
 function getPaintTime() {
-  return typeof performance !== "undefined" ? performance.now() : Date.now();
+  return performance.now();
 }
