@@ -15,21 +15,21 @@ export function createStore(initialDocument: Document): DocumintStore {
   };
 }
 
-export { DocumintStoreProvider, useDocumintStore, useEditorCommand, useStoreValue } from "./react";
+export { DocumintStoreProvider, useDocumintStore, useEditorCommand, useSprig } from "./react";
 export {
-  activeCommentThreadIndexValue,
-  caretInViewportValue,
-  caretTargetValue,
-  commentStateValue,
-  completionSourcesValue,
-  cursorLeafValue,
-  documentCompletionValue,
-  imageAtCursorValue,
-  normalizedSelectionValue,
-  pointerViewValue,
-  selectionContextValue,
-  selectionLeafValue,
-  selectionViewValue,
+  activeCommentIndexSprig,
+  caretInViewportSprig,
+  caretTargetSprig,
+  commentStateSprig,
+  completionSourcesSprig,
+  cursorLeafSprig,
+  documentCompletionSprig,
+  imageAtCursorSprig,
+  normalizedSelectionSprig,
+  pointerViewSprig,
+  selectionContextSprig,
+  selectionLeafSprig,
+  selectionViewSprig,
   type CursorLeaf,
   type DocumentCompletion,
   type ImageAtCursor,
@@ -37,8 +37,13 @@ export {
   type PointerView,
   type PromotedSelectionThread,
   type SelectionLeaf,
-} from "./editor/computed-values";
-export { publishedViewportValue } from "./viewport/values";
-export { documentIndexValue, editorStateValue, imageUrlsValue } from "./editor/values";
+} from "./editor/computed-sprigs";
+export { publishedViewportSprig } from "./viewport/sprigs";
+export {
+  documentIndexSprig,
+  editorStateSprig,
+  imageUrlsSprig,
+  selectionSprig,
+} from "./editor/sprigs";
 export type { EditorStateTransition } from "./editor/transitions";
-export { presenceActiveCommentThreadColorsValue, presenceValue } from "./presence";
+export { commentPresenceColorsSprig, resolvedPresenceSprig } from "./presence";

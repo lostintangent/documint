@@ -1,10 +1,10 @@
 import type {
+  EditorCommentRange,
   EditorCommentState,
   EditorSelectionPoint,
   NormalizedEditorSelection,
   SelectionContext,
 } from "@/editor";
-import type { Mark } from "@/document";
 
 export type Equality<T> = (a: T, b: T) => boolean;
 
@@ -12,13 +12,39 @@ export function defaultEquality<T>(a: T, b: T) {
   return Object.is(a, b);
 }
 
+// Equality by extracting a tuple of primitive fields and comparing them
+// element-wise. The reader function runs twice per call (once per side) and
+// each call allocates one small tuple — appropriate for sprig-equality
+// granularity, not for inner paint loops.
+export function equalBy<T>(readParts: (value: T) => readonly unknown[]): Equality<T> {
+  return (a, b) => {
+    if (a === b) return true;
+    const aParts = readParts(a);
+    const bParts = readParts(b);
+    if (aParts.length !== bParts.length) return false;
+    for (let index = 0; index < aParts.length; index += 1) {
+      if (!Object.is(aParts[index], bParts[index])) return false;
+    }
+    return true;
+  };
+}
+
+// Nullable variant of `equalBy`. Short-circuits when either side is nullish.
 export function equalNullableBy<T>(
   readParts: (value: T) => readonly unknown[],
 ): Equality<T | null> {
+  return equalNullable(equalBy(readParts));
+}
+
+// Wrap any non-nullable equality so it accepts `null` / `undefined`.
+// Two nullish values are equal; one nullish and one non-nullish is not.
+export function equalNullable<T>(
+  equalNonNull: Equality<T>,
+): Equality<T | null | undefined> {
   return (a, b) => {
     if (a === b) return true;
     if (!a || !b) return false;
-    return equalArrays(readParts(a), readParts(b));
+    return equalNonNull(a, b);
   };
 }
 
@@ -30,9 +56,48 @@ export function equalArrayBy<T>(equalItem: Equality<T>): Equality<readonly T[]> 
   };
 }
 
-export function equalSelectionPoints(a: EditorSelectionPoint, b: EditorSelectionPoint) {
-  return a.regionId === b.regionId && a.offset === b.offset;
+// Equality for maps with the same key set. Defaults to `Object.is` on values;
+// pass a custom `equalValue` for nested-structure values.
+export function equalMapBy<K, V>(
+  equalValue: Equality<V> = defaultEquality,
+): Equality<ReadonlyMap<K, V>> {
+  return (a, b) => {
+    if (a === b) return true;
+    if (a.size !== b.size) return false;
+    for (const [key, value] of a) {
+      if (!b.has(key)) return false;
+      if (!equalValue(value, b.get(key) as V)) return false;
+    }
+    return true;
+  };
 }
+
+// Equality for plain-object records with string keys. Defaults to `Object.is`
+// on values; pass a custom `equalValue` for nested-structure values.
+export function equalRecordBy<V>(
+  equalValue: Equality<V> = defaultEquality,
+): Equality<Record<string, V>> {
+  return (a, b) => {
+    if (a === b) return true;
+    const aKeys = Object.keys(a);
+    if (aKeys.length !== Object.keys(b).length) return false;
+    for (const key of aKeys) {
+      if (!Object.hasOwn(b, key)) return false;
+      if (!equalValue(a[key]!, b[key]!)) return false;
+    }
+    return true;
+  };
+}
+
+// Array equality that compares items by reference identity (`Object.is`).
+// Used for arrays whose elements are themselves immutable structures
+// (marks, comment threads), where structural equality reduces to identity.
+export const equalArraysByIdentity = equalArrayBy(defaultEquality);
+
+export const equalSelectionPoints = equalBy<EditorSelectionPoint>((point) => [
+  point.regionId,
+  point.offset,
+]);
 
 export function equalNormalizedSelections(
   a: NormalizedEditorSelection,
@@ -50,23 +115,12 @@ export function equalSelectionContexts(a: SelectionContext, b: SelectionContext)
 }
 
 export function equalCommentStates(a: EditorCommentState, b: EditorCommentState) {
-  return (
-    equalCommentThreads(a.threads, b.threads) && equalCommentRanges(a.liveRanges, b.liveRanges)
-  );
+  return equalArraysByIdentity(a.threads, b.threads) && equalCommentRanges(a.ranges, b.ranges);
 }
 
-export function equalMarks(a: readonly Mark[], b: readonly Mark[]) {
-  return equalArrays(a, b);
-}
-
-function equalSelectionBlockContexts(a: SelectionContext["block"], b: SelectionContext["block"]) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-
-  return (
-    a.blockId === b.blockId && a.depth === b.depth && a.nodeType === b.nodeType && a.text === b.text
-  );
-}
+const equalSelectionBlockContexts = equalNullableBy<NonNullable<SelectionContext["block"]>>(
+  (block) => [block.blockId, block.depth, block.nodeType, block.text],
+);
 
 function equalSelectionSpans(a: SelectionContext["span"], b: SelectionContext["span"]) {
   if (a === b) return true;
@@ -76,7 +130,7 @@ function equalSelectionSpans(a: SelectionContext["span"], b: SelectionContext["s
     case "link":
       return b.kind === "link" && a.url === b.url;
     case "marks":
-      return b.kind === "marks" && equalArrays(a.marks, b.marks);
+      return b.kind === "marks" && equalArraysByIdentity(a.marks, b.marks);
     case "none":
       return true;
   }
@@ -84,31 +138,12 @@ function equalSelectionSpans(a: SelectionContext["span"], b: SelectionContext["s
   return false;
 }
 
-function equalCommentThreads(a: EditorCommentState["threads"], b: EditorCommentState["threads"]) {
-  return equalArrays(a, b);
-}
+const equalCommentRange = equalBy<EditorCommentRange>((range) => [
+  range.endOffset,
+  range.regionId,
+  range.resolved,
+  range.startOffset,
+  range.threadIndex,
+]);
 
-function equalCommentRanges(
-  a: EditorCommentState["liveRanges"],
-  b: EditorCommentState["liveRanges"],
-) {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-
-  return a.every((range, index) => {
-    const next = b[index]!;
-    return (
-      range.endOffset === next.endOffset &&
-      range.regionId === next.regionId &&
-      range.resolved === next.resolved &&
-      range.startOffset === next.startOffset &&
-      range.threadIndex === next.threadIndex
-    );
-  });
-}
-
-function equalArrays<T>(a: readonly T[], b: readonly T[]) {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  return a.every((value, index) => Object.is(value, b[index]));
-}
+export const equalCommentRanges = equalArrayBy(equalCommentRange);

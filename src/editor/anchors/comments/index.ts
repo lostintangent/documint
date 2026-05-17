@@ -3,11 +3,12 @@
  *
  * Comments themselves live on the semantic `Document` (anchored against text);
  * this module is the bridge between that semantic state and the runtime
- * `EditorState`. It owns three operations:
+ * `EditorState`. It owns four operations:
  *
- *   - Capture: build a thread from a live editor selection.
+ *   - Capture: build a thread from an editor selection.
  *   - Projection: resolve every persisted thread against the current snapshot
- *     and emit live runtime ranges plus repaired thread copies.
+ *     and emit runtime ranges plus repaired thread copies.
+ *   - Viewport geometry: resolve a comment range to document-space bounds.
  *   - Edit-time repair: optimistically remap thread anchors during inline
  *     edits so threads stay sticky to their text without a full re-resolve.
  */
@@ -22,10 +23,15 @@ import {
   type CommentResolution,
   type CommentThread,
 } from "@/document";
-import { resolveRegionByPath, type DocumentIndex, type EditorRegion } from "../state";
-import { findVisibleLineRange, resolvePositionInViewport, type EditorLayoutState } from "../layout";
-import type { EditorState } from "../state/types";
-import { projectAnchorContainersToEditor } from "./index";
+import { resolveRegionByPath, type DocumentIndex, type EditorRegion } from "../../state";
+import {
+  findLineEntryForRegionOffset,
+  findVisibleLineRange,
+  resolvePositionInViewport,
+  type EditorLayoutState,
+} from "../../layout";
+import type { EditorState } from "../../state/types";
+import { projectAnchorContainersToEditor } from "../index";
 import { remapEditedRange } from "./remap";
 
 // --- Types ---
@@ -40,13 +46,13 @@ export type EditorCommentRange = {
 };
 
 export type EditorCommentState = {
-  liveRanges: EditorCommentRange[];
+  ranges: EditorCommentRange[];
   threads: CommentThread[];
 };
 
 // --- Capture ---
 
-// Build a `CommentThread` from a live selection inside the editor. Returns
+// Build a `CommentThread` from the current editor selection. Returns
 // `null` if the body is empty, the selection is collapsed, or the selected
 // region isn't an anchorable kind (e.g. a list-item marker region).
 export function createCommentThreadForSelection(
@@ -81,8 +87,8 @@ export function createCommentThreadForSelection(
 // --- Projection ---
 
 // Resolve every persisted thread against the current document snapshot and
-// emit live runtime ranges plus repaired thread copies. Threads whose anchors
-// don't resolve are silently dropped from `liveRanges` while their persisted
+// emit runtime ranges plus repaired thread copies. Threads whose anchors
+// don't resolve are silently dropped from `ranges` while their persisted
 // `threads` entry stays untouched, ready to repair when the document
 // changes again.
 export function getCommentState(state: EditorState): EditorCommentState;
@@ -92,7 +98,7 @@ export function getCommentState(stateOrIndex: EditorState | DocumentIndex): Edit
   const containerProjection = projectAnchorContainersToEditor(documentIndex);
   const threads = documentIndex.document.comments;
   const resolvedThreads = [...threads];
-  const liveRanges: EditorCommentRange[] = [];
+  const ranges: EditorCommentRange[] = [];
 
   for (const [threadIndex, thread] of threads.entries()) {
     const resolution = resolveCommentThread(thread, documentIndex.document);
@@ -119,7 +125,7 @@ export function getCommentState(stateOrIndex: EditorState | DocumentIndex): Edit
       };
     }
 
-    liveRanges.push({
+    ranges.push({
       endOffset: resolution.match.endOffset,
       resolution,
       regionId: runtimeContainer.id,
@@ -130,17 +136,17 @@ export function getCommentState(stateOrIndex: EditorState | DocumentIndex): Edit
   }
 
   return {
-    liveRanges,
+    ranges,
     threads: resolvedThreads,
   };
 }
 
 export function hasActiveCommentHighlightsInViewport(
   viewport: EditorLayoutState,
-  liveRanges: readonly EditorCommentRange[],
+  ranges: readonly EditorCommentRange[],
   activeThreadColors: ReadonlyMap<number, string | null>,
 ) {
-  if (liveRanges.length === 0 || activeThreadColors.size === 0) {
+  if (ranges.length === 0 || activeThreadColors.size === 0) {
     return false;
   }
 
@@ -166,7 +172,7 @@ export function hasActiveCommentHighlightsInViewport(
     }
 
     if (
-      liveRanges.some(
+      ranges.some(
         (range) =>
           !range.resolved &&
           activeThreadColors.has(range.threadIndex) &&
@@ -182,10 +188,107 @@ export function hasActiveCommentHighlightsInViewport(
   return false;
 }
 
+// Return the index (into `Document.comments`) of the comment whose range
+// either contains the collapsed caret or overlaps the active (non-collapsed)
+// selection. Selections can cross regions, so positions are compared in
+// document order via the `regionOrderIndex` already maintained on
+// `DocumentIndex`.
+export function resolveActiveCommentIndex(
+  state: EditorState,
+  ranges: readonly EditorCommentRange[],
+): number | null {
+  if (ranges.length === 0) {
+    return null;
+  }
+
+  const { regionOrderIndex } = state.documentIndex;
+  const { anchor, focus } = state.selection;
+
+  const orientation = compareDocumentPositions(regionOrderIndex, anchor, focus);
+  const isCollapsed = orientation === 0;
+  const [start, end] = orientation <= 0 ? [anchor, focus] : [focus, anchor];
+
+  for (const range of ranges) {
+    const rangeStart = { regionId: range.regionId, offset: range.startOffset };
+    const rangeEnd = { regionId: range.regionId, offset: range.endOffset };
+
+    if (isCollapsed) {
+      // Caret-in-range: rangeStart ≤ caret ≤ rangeEnd in document order.
+      if (
+        compareDocumentPositions(regionOrderIndex, rangeStart, start) <= 0 &&
+        compareDocumentPositions(regionOrderIndex, start, rangeEnd) <= 0
+      ) {
+        return range.threadIndex;
+      }
+      continue;
+    }
+
+    // Open-interval overlap: max(selStart, rangeStart) < min(selEnd, rangeEnd).
+    const overlapStart =
+      compareDocumentPositions(regionOrderIndex, start, rangeStart) >= 0 ? start : rangeStart;
+    const overlapEnd =
+      compareDocumentPositions(regionOrderIndex, end, rangeEnd) <= 0 ? end : rangeEnd;
+    if (compareDocumentPositions(regionOrderIndex, overlapStart, overlapEnd) < 0) {
+      return range.threadIndex;
+    }
+  }
+
+  return null;
+}
+
+// Lexicographic comparator on `(regionOrder, offset)`. Used to interleave
+// selection points with comment-range bounds when the selection spans
+// regions. Unknown regions fall back to `-1` so they sort before any known
+// region — that matches the behavior of the prior packed-number scheme.
+function compareDocumentPositions(
+  regionOrderIndex: ReadonlyMap<string, number>,
+  a: { regionId: string; offset: number },
+  b: { regionId: string; offset: number },
+): number {
+  const aRegion = regionOrderIndex.get(a.regionId) ?? -1;
+  const bRegion = regionOrderIndex.get(b.regionId) ?? -1;
+  return aRegion !== bRegion ? aRegion - bRegion : a.offset - b.offset;
+}
+
+export function resolveCommentThreadViewportPosition(
+  viewport: EditorLayoutState,
+  ranges: readonly EditorCommentRange[],
+  threadIndex: number,
+): { bottom: number; top: number } | null {
+  const range =
+    ranges.find((candidate) => {
+      return candidate.threadIndex === threadIndex;
+    }) ?? null;
+
+  if (!range) {
+    return null;
+  }
+
+  const startLine = findLineEntryForRegionOffset(
+    viewport.layout,
+    range.regionId,
+    range.startOffset,
+  )?.line;
+  const endLine = findLineEntryForRegionOffset(
+    viewport.layout,
+    range.regionId,
+    Math.max(range.startOffset, range.endOffset - 1),
+  )?.line;
+
+  if (startLine && endLine) {
+    return {
+      bottom: Math.max(startLine.top + startLine.height, endLine.top + endLine.height),
+      top: Math.min(startLine.top, endLine.top),
+    };
+  }
+
+  return viewport.estimateRegionBounds(range.regionId);
+}
+
 // --- Edit-time repair ---
 
 // Optimistically keep comments sticky within an edited region by remapping
-// each affected thread's live range through the splice math. General
+// each affected thread's comment range through the splice math. General
 // resolution still runs against the next document snapshot via
 // `getCommentState`; this fast path just minimizes anchor drift for inline
 // edits where prefix/suffix context is about to shift.
@@ -209,8 +312,8 @@ export function updateCommentThreadsForRegionEdit(
   }
 
   const currentCommentState = getCommentState(documentIndex);
-  const liveRangesByThreadIndex = new Map(
-    currentCommentState.liveRanges.map((range) => [range.threadIndex, range]),
+  const rangesByThreadIndex = new Map(
+    currentCommentState.ranges.map((range) => [range.threadIndex, range]),
   );
   const currentContainer = toAnchorContainer(documentIndex, region);
   const nextRegion = resolveRegionByPath(nextDocumentIndex, region.path);
@@ -225,10 +328,10 @@ export function updateCommentThreadsForRegionEdit(
       return thread;
     }
 
-    const liveRange = liveRangesByThreadIndex.get(threadIndex);
-    const repairedMatch = liveRange?.resolution.match ?? null;
+    const currentRange = rangesByThreadIndex.get(threadIndex);
+    const repairedMatch = currentRange?.resolution.match ?? null;
 
-    if (!liveRange || !repairedMatch || repairedMatch.containerId !== currentContainer.id) {
+    if (!currentRange || !repairedMatch || repairedMatch.containerId !== currentContainer.id) {
       return thread;
     }
 

@@ -15,7 +15,7 @@ export {
   measureLayoutCaretTarget as measureCaretTarget,
   measureLayoutVisualCaretTarget as measureVisualCaretTarget,
   measureInlineImageBounds,
-  prepareLayout,
+  createEditorLayoutState,
   resolveLayoutDragFocus as resolveDragFocus,
   resolveLayoutSelectionHit as resolveSelectionHit,
   resolveLayoutWordSelection as resolveWordSelection,
@@ -39,8 +39,8 @@ export {
   hasAnimatedDecorationsInViewport,
   reconcileTextDecorationIndex,
 } from "./text/decorations";
-export { createCanvasRenderCache } from "./canvas/lib/cache";
-export { hasRunningEditorAnimations as hasRunningAnimations } from "./canvas/lib/animations";
+export { createLayoutCache } from "./layout/state/cache";
+export { hasRunningEditorAnimations as hasRunningAnimations } from "./state";
 
 // State lifecycle, selection, and commands
 export {
@@ -67,7 +67,7 @@ export {
 
 import {
   resolveLayoutHoverTarget,
-  resolveLayoutTargetAtSelection,
+  resolveTargetAtOffset,
   type EditorLayoutState,
   type EditorPoint,
 } from "./layout";
@@ -79,19 +79,19 @@ export function resolveHoverTarget(
   viewport: EditorLayoutState,
   point: EditorPoint,
 ) {
-  return resolveLayoutHoverTarget(state, viewport, point, getCommentState(state).liveRanges);
+  return resolveLayoutHoverTarget(state, viewport, point, getCommentState(state).ranges);
 }
 
-export function resolveTargetAtSelection(
-  state: EditorState,
-  viewport: EditorLayoutState,
-  selectionPoint: EditorSelectionPoint,
-) {
-  return resolveLayoutTargetAtSelection(
+// Offset-based sibling of `resolveHoverTarget`. The callers we have here
+// (selection-driven UI surfacing) don't have a layout point, just a known
+// (regionId, offset), so this skips hit-test and goes straight to the
+// state/anchors lookup.
+export function resolveTargetAtSelection(state: EditorState, selectionPoint: EditorSelectionPoint) {
+  return resolveTargetAtOffset(
     state,
-    viewport,
-    selectionPoint,
-    getCommentState(state).liveRanges,
+    selectionPoint.regionId,
+    selectionPoint.offset,
+    getCommentState(state).ranges,
   );
 }
 
@@ -100,9 +100,11 @@ export * from "./state/commands";
 // Annotations
 export {
   getCommentState,
+  resolveActiveCommentIndex,
   resolveCursorViewportStatus,
   resolvePresenceTargets,
   resolvePresenceViewport,
+  type EditorCommentRange,
   type EditorCommentState,
   type EditorPresence,
   type EditorPresenceViewport,

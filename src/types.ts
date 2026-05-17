@@ -101,8 +101,8 @@ export type EditorTheme = {
   listMarkerText?: string;
   mentionBackground?: string;
   mentionText?: string;
-  paddingX: number;
-  paddingY: number;
+  paddingX?: number;
+  paddingY?: number;
   paragraphText: string;
   selectionBackground: string;
   selectionHandleBackground: string;

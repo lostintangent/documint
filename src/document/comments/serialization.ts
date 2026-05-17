@@ -4,7 +4,7 @@
  * this module only validates and shapes one thread at a time.
  */
 
-import { isAnchorKind, normalizeAnchorKind, type TextAnchor } from "../anchors";
+import { isAnchorKind, normalizeAnchorKind, type TextAnchor } from "../query/anchors";
 import type { Comment, CommentThread } from "./types";
 
 export function parseCommentThread(candidate: unknown): CommentThread | null {

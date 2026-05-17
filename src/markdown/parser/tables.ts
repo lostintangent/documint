@@ -9,7 +9,7 @@ import {
   sliceIndentedContent,
   type MarkdownLineCursor,
 } from "./index";
-import { parseInlineMarkdown } from "./inlines";
+import { parseInlines } from "./inlines";
 
 const tableAlignmentCell = /^:?-+:?$/;
 
@@ -44,24 +44,34 @@ export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
   return createTableBlock({
     align,
     rows: rows.map((row) =>
-      createTableRow(row.map((cell) => createTableCell(parseInlineMarkdown(cell)))),
+      createTableRow(row.map((cell) => createTableCell(parseInlines(cell)))),
     ),
   });
 }
 
 export function looksLikeAlignmentRow(line: string) {
-  const cells = splitTableRow(line);
+  // Verify the row shape before splitting so the speculative path
+  // (`interruptsParagraph` on an ordinary paragraph line) bails without
+  // allocating split/map intermediates.
+  if (!looksLikeTableRow(line)) {
+    return false;
+  }
 
+  const cells = splitTableRow(line);
   return cells.length > 0 && cells.every((cell) => tableAlignmentCell.test(cell.trim()));
 }
 
-// --- Internal helpers ---
-
-function looksLikeTableRow(line: string) {
+// Cheap header-line check shared with `parser/blocks.ts` for the
+// table reader's dispatcher gate. The full table detection still requires
+// the next line to be an alignment row — that confirmation lives in
+// `readTable`.
+export function looksLikeTableRow(line: string) {
   const trimmed = line.trim();
 
   return trimmed.startsWith("|") && trimmed.endsWith("|");
 }
+
+// --- Internal helpers ---
 
 function parseAlignmentRow(line: string) {
   return splitTableRow(line).map((cell) => {
@@ -83,17 +93,15 @@ function parseAlignmentRow(line: string) {
   });
 }
 
+// Caller must have already verified `line` is a pipe-fenced row via
+// `looksLikeTableRow`. Returns the trimmed cell list. Every call site —
+// `readTable` (twice), `looksLikeAlignmentRow`, `parseAlignmentRow` —
+// pre-gates with `looksLikeTableRow` (directly or transitively), so the
+// boundary check that used to live here was always redundant on the path
+// that reached it.
 function splitTableRow(line: string) {
-  const trimmed = line.trim();
-
-  // Real table rows are pipe-fenced. Bail without allocating for the common
-  // case where this is called speculatively from `shouldParagraphStop` on an
-  // ordinary paragraph line.
-  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) {
-    return [];
-  }
-
-  return trimmed
+  return line
+    .trim()
     .slice(1, -1)
     .split("|")
     .map((cell) => cell.trim());

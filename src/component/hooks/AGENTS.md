@@ -1,38 +1,21 @@
 # Component Hooks
 
-Each hook in this folder owns one orchestration concern between `Documint.tsx` and the framework-agnostic editor engine. There's no editing logic here — only the wiring between user actions, browser APIs, editor state, and paint. Pure logic stays in [`src/editor`](../../editor/AGENTS.md); side effects (scroll observers, resize observers, focus, pointer capture, intervals) live here.
+The hooks subsystem owns browser lifetimes and interaction translation between `Documint.tsx` and the framework-agnostic editor engine. Hooks observe DOM/browser APIs, translate user activity into editor/store/render calls, and expose declarative candidates back to the host component.
 
-Cross-cutting conventions:
+Hooks should not own editing semantics. Pure editor behavior belongs in `src/editor`; durable derived view models belong in the component store; hooks own effects, refs, observers, timers, gestures, and browser integration.
 
-- Host callbacks consumed by other hooks or wired into JSX use `useEffectEvent` so the call sites read the latest closure without re-binding.
-- **Never put a `useEffectEvent` result in a `useEffect`/`useLayoutEffect`/`useMemo` dep array.** Its returned-function identity isn't reliably stable across renders, so including it would re-fire the effect or bust the memo every render. The contract is that the body always reads the latest closure when _invoked_ — call it inside the effect and omit it from deps.
-- `useViewport` owns the lazy `EditorLayoutState` cache through the viewport store; other hooks read the exposed `viewportLayout` handle rather than recomputing layout themselves.
-- `useCursor`, `useSelection`, and `usePointer` each surface a leaf candidate independently; `Documint.resolveVisibleLeafPresentation` arbitrates between them. See [Leaf overlay coordination](../AGENTS.md#leaf-overlay-coordination) in the parent.
-- Hooks coordinate browser events and lifetimes on top of semantic `@/editor`
-  APIs. If a hook starts combining raw layout queries, document-index lookups,
-  comment live ranges, and editor mutations into one interaction, move that
-  composition into a named editor API or a store-derived view model.
+## Design Principles
 
-### State and lifetime
+- **Hooks coordinate effects, not semantics.** If a hook starts composing raw layout queries, document-index lookups, comments, and editor mutations, raise that composition into an editor API or store-derived view model.
+- **Use sprigs for durable derivations.** If a hook mostly reads state, derives a value, compares it, and stores it locally, move that derivation into the component store.
+- **Do not depend on `useEffectEvent` identity.** Never put a `useEffectEvent` result in an effect, layout-effect, or memo dependency array; invoke it inside the effect and omit it from deps.
+- **Viewport layout has one owner.** `useViewport` owns the lazy layout handle. Other hooks read the exposed handle rather than recomputing layout.
+- **Leaf UI and idle state are shared contracts.** Hooks emit leaf candidates for `Documint` to arbitrate, and interaction hooks mark `useIdle` so caret blink and optional animation continuation respond consistently. `useIdle` also owns the ambient animation clock that paint can freeze during activity and resume without phase jumps.
 
-- **`useViewport`** — Owns scroll state (top, height, content height), the scroll container ref, the lazy `EditorLayoutState` cache resolver, coordinate translation (pointer event → editor point), and drag-edge autoscroll. Exposes `viewportLayout`, `observeScrollContainer`, and `scrollTo` for the host. The `onScroll` event handler itself lives in `Documint.tsx` (`handleViewportScroll`) — it bridges this hook with `useRenderScheduler`, so it sits at the orchestration altitude that has access to both. Every scroll (native or programmatic) funnels through that single worker. Read by almost every other hook.
-- **`useTheme`** — System theme detection (`prefers-color-scheme`) and merging of host theme overrides. Exposes `preferredTheme` plus the inline custom-property bag carried through portaled overlays.
-- **`useImages`** — Async image-resource pipeline: decodes referenced URLs into `ImageBitmap`s for the canvas painter and handles paste-write back through host storage. Tracks loading state for the render-while-loading rAF loop.
-- **`useDecorations`** — Async host-provided text decoration pipeline: normalizes decoration props, schedules worker/root-scoped scans, drops stale results, and reconciles paint-only ranges without emitting authored markdown changes.
-- **`usePresence`** — Host presence bridge: joins `users` with `presence`, then reads store-derived view models for overlay text cursors and content-layer comment-thread presence colors. Keeps `Documint.tsx` out of presence resolution details.
+## Subsystem Map
 
-### Render scheduling
-
-- **`useRenderScheduler`** — Coalesced `requestAnimationFrame` scheduler. Exposes four intents whose names encode cost and scope (`scheduleFullRender`, `scheduleFullPaint`, `scheduleContentPaint`, `scheduleOverlayPaint`). See [Render loop](../AGENTS.md#render-loop) in the parent for full semantics.
-
-### User interaction
-
-- **`useInput`** — Bridges the hidden textarea: keystrokes, IME composition, clipboard, paste, keybinding dispatch, and the textarea positioning that lets iOS auto-scroll the focused caret above the virtual keyboard.
-- **`usePointer`** — Pointer events on the canvas: hit testing via `useViewport`'s coord translator, hover target debouncing, cursor styling, drag-to-select, click-to-toggle-task. Produces a hover leaf candidate.
-- **`useSelection`** — Selection drag, selection range handles, and the selection-mode leaf candidate (comment-create over a range, expanded thread). Keeps the input textarea positioned at the focus.
-- **`useIdle`** — Shared interaction clock. `useInput`, `usePointer`, and `useSelection` mark activity here; while active, cursor blink stays solid and decoration-only animation continuation pauses so input-triggered paints take priority.
-- **`useCursor`** — Caret blink, store-derived cursor-leaf candidate (insertion menu, table menu, contextual link/comment under the caret), focus visibility (auto-scroll to keep the caret on-screen), and store-derived `caretInViewport` used to suspend the blink interval when the caret scrolls off-screen.
-
-### Specialized
-
-- **`useImageHandles`** — Resize-handle gesture lifecycle for the inline image at the cursor. Reads the store-derived `imageAtCursorValue`; owns pointer capture and resize commands.
+- `useViewport` owns scroll state, viewport dimensions, lazy layout resolution, pointer coordinates, drag-edge autoscroll, and programmatic scrolling.
+- `useRenderScheduler` owns coalesced rAF paint scheduling and render/paint intents.
+- `useInput` owns the hidden textarea bridge: keyboard, IME, clipboard, paste, keybindings, focus, and textarea positioning.
+- `usePointer`, `useSelection`, and `useCursor` own pointer, range, caret, blink, and leaf-candidate interaction lifetimes.
+- `useImages`, `useImageHandles`, `useDecorations`, `usePresence`, `useTheme`, and `useIdle` own their named host/browser concerns.

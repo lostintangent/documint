@@ -50,9 +50,9 @@ export function resolveDeletion(
 
 export function resolveStructuralDelete(
   documentIndex: DocumentIndex,
-  ctx: DeletionContext,
+  ctx: DeletionContext | null,
 ): EditorStateAction | null {
-  if (ctx.kind === "unsupported" || !ctx.atBoundary) {
+  if (!ctx || !ctx.atBoundary) {
     return null;
   }
 
@@ -80,7 +80,7 @@ function resolveExpandedSelectionDelete(state: EditorState): EditorStateAction |
 }
 
 function resolveBackwardOverride(
-  ctx: Exclude<DeletionContext, { kind: "unsupported" }>,
+  ctx: DeletionContext,
   documentIndex: DocumentIndex,
 ): EditorStateAction | null {
   const demoted = resolveBlockDemotion(documentIndex, ctx.region);

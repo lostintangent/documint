@@ -2,14 +2,12 @@ import { expect, test } from "bun:test";
 import {
   deleteBackward,
   deleteForward,
+  getEditorAnimationDuration,
+  hasRunningEditorAnimations as hasRunningAnimations,
   insertLineBreak,
   insertText,
   setSelection,
 } from "@/editor/state";
-import {
-  getEditorAnimationDuration,
-  hasRunningEditorAnimations as hasRunningAnimations,
-} from "@/editor/canvas/lib/animations";
 import { getRegion, placeAt, setup } from "../../helpers";
 
 test("starts and expires text highlight animations for typed text", () => {

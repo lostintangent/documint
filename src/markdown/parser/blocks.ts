@@ -23,12 +23,16 @@ import {
   type MarkdownOptions,
 } from "../shared";
 import { currentLine, isBlankLine, sliceIndentedContent, type MarkdownLineCursor } from "./index";
-import { parseInlineMarkdown } from "./inlines";
-import { looksLikeAlignmentRow, readTable } from "./tables";
+import { parseInlines } from "./inlines";
+import { looksLikeAlignmentRow, looksLikeTableRow, readTable } from "./tables";
 
 // A line indented more than this many spaces past the enclosing container's
 // indent terminates the current parse pass — that lets nested containers stop
-// slurping when the user has clearly fallen out of them.
+// slurping when the user has clearly fallen out of them. The choice of `3`
+// mirrors CommonMark's four-space rule for indented code blocks: anything
+// indented `baseIndent + 4` or more would, in a CommonMark engine, switch into
+// indented-code parsing, so we hand back to the caller at that threshold even
+// though Documint itself doesn't emit indented code blocks.
 const maxContainerIndentSlack = 3;
 
 // --- Block-kind matchers, grouped by reader ---
@@ -90,25 +94,113 @@ export function parseBlocks(
 }
 
 function readNextBlock(cursor: MarkdownLineCursor, baseIndent: number, options: MarkdownOptions) {
-  return (
-    readBlockquote(cursor, baseIndent, options) ??
-    readFencedCode(cursor, baseIndent) ??
-    readContainerDirective(cursor, baseIndent) ??
-    readHeading(cursor, baseIndent) ??
-    readDivider(cursor, baseIndent) ??
-    readTable(cursor, baseIndent) ??
-    readList(cursor, baseIndent, options) ??
-    readRawHtmlBlock(cursor, baseIndent) ??
-    readParagraph(cursor, baseIndent)
-  );
+  const line = currentLine(cursor);
+  const content = sliceIndentedContent(line, baseIndent);
+
+  // Fast-reject: paragraph lines (anything starting with a non-trigger char)
+  // skip the eight-entry reader walk and go straight to `readParagraph`.
+  const first = content[0];
+  if (first === undefined || !blockTriggerLeadChars.includes(first)) {
+    return readParagraph(cursor, baseIndent);
+  }
+
+  for (const reader of blockReaders) {
+    if (reader.canStart(line, content, baseIndent)) {
+      const block = reader.read(cursor, baseIndent, options);
+      if (block) {
+        return block;
+      }
+    }
+  }
+
+  return readParagraph(cursor, baseIndent);
 }
+
+// Single source of truth for "what kinds of lines can start a block." Both
+// the dispatcher (`readNextBlock`) and the paragraph-interrupt predicate
+// (`interruptsParagraph`) read from this table, so adding a block kind
+// requires touching exactly one entry. The dispatcher tries readers in
+// order; each `read` may decline (return null) if its full gate fails, in
+// which case the dispatcher continues. `readParagraph` is the catch-all.
+//
+// `leadChars` is the set of first-line characters this reader's `canStart`
+// may fire on. The union across readers feeds `blockTriggerLeadChars` (the
+// fast-reject used by dispatcher, paragraph-interrupt, and the serializer's
+// paragraph escape) so the set can't drift from the predicates that consume
+// it.
+//
+// Tables are the one asymmetric case: their dispatcher gate needs the next
+// line (the alignment row) to confirm, while the paragraph-interrupt
+// heuristic only sees the current line — hence `interruptsParagraph` is the
+// weaker "looks like an alignment divider" check.
+type BlockReader = {
+  leadChars: string;
+  canStart(line: string, content: string, baseIndent: number): boolean;
+  interruptsParagraph?: (line: string, content: string, baseIndent: number) => boolean;
+  read(cursor: MarkdownLineCursor, baseIndent: number, options: MarkdownOptions): Block | null;
+};
+
+const blockReaders: BlockReader[] = [
+  {
+    leadChars: blockquoteMarker,
+    canStart: (_line, content) => content.startsWith(blockquoteMarker),
+    read: readBlockquote,
+  },
+  {
+    leadChars: "`",
+    canStart: (_line, content) => fencedCodeOpening.test(content),
+    read: readFencedCode,
+  },
+  {
+    leadChars: ":",
+    canStart: (_line, content) => containerDirectiveOpening.test(content),
+    read: readContainerDirective,
+  },
+  {
+    leadChars: "#",
+    canStart: (_line, content) => atxHeading.test(content),
+    read: readHeading,
+  },
+  {
+    leadChars: "*-_",
+    canStart: (_line, content) => isDivider(content.trim()),
+    read: readDivider,
+  },
+  {
+    leadChars: "|",
+    canStart: (_line, content) => looksLikeTableRow(content),
+    interruptsParagraph: (_line, content) => looksLikeAlignmentRow(content),
+    read: readTable,
+  },
+  {
+    leadChars: "-+*0123456789",
+    canStart: (line, _content, baseIndent) => readListMarker(line, baseIndent) !== null,
+    read: readList,
+  },
+  {
+    leadChars: "<",
+    canStart: (_line, content) => looksLikeSimpleHtmlBlock(content.trim()),
+    read: readRawHtml,
+  },
+];
+
+// Union of every reader's `leadChars`, deduplicated. Built once at module
+// load and consumed by:
+//   - the dispatcher (`readNextBlock`) fast-reject,
+//   - the paragraph-interrupt (`interruptsParagraph`) fast-reject,
+//   - the serializer's paragraph-line escape fast-reject (imported across
+//     the subsystem boundary).
+// Order isn't significant — every consumer uses `.includes(char)`.
+export const blockTriggerLeadChars = [
+  ...new Set(blockReaders.flatMap((reader) => [...reader.leadChars])),
+].join("");
 
 // --- Block readers, in dispatcher order ---
 // Each returns a parsed Block on a successful match (advancing the cursor past
 // every consumed line) or `null` to let the dispatcher try the next reader.
 // `readParagraph` is the catch-all and never returns null. Per-reader helpers
 // live immediately below their reader; helpers shared with other readers (and
-// with `shouldParagraphStop`) live in the low-level utilities section.
+// with `interruptsParagraph`) live in the low-level utilities section.
 
 function readBlockquote(cursor: MarkdownLineCursor, baseIndent: number, options: MarkdownOptions) {
   const firstLine = currentLine(cursor);
@@ -237,7 +329,7 @@ function readHeading(cursor: MarkdownLineCursor, baseIndent: number) {
 
   cursor.index += 1;
   return createHeadingBlock({
-    children: parseInlineMarkdown(match[2].replace(headingClosingSequence, "")),
+    children: parseInlines(match[2].replace(headingClosingSequence, "")),
     depth: match[1].length as 1 | 2 | 3 | 4 | 5 | 6,
   });
 }
@@ -337,6 +429,22 @@ type ParsedListMarker = {
 };
 
 function readListMarker(line: string, baseIndent: number): ParsedListMarker | null {
+  // Fast-reject: only `-`, `+`, `*`, or a digit at the expected indent
+  // column can lead a list marker. The regex below would otherwise scan
+  // the whole line for every continuation/non-marker line inside
+  // `readList`'s loop. The dispatcher's per-line fast-reject already
+  // protects the entry point; this guards the inner callers.
+  const candidate = line[baseIndent];
+  if (
+    candidate === undefined ||
+    (candidate !== "-" &&
+      candidate !== "+" &&
+      candidate !== "*" &&
+      !(candidate >= "0" && candidate <= "9"))
+  ) {
+    return null;
+  }
+
   const match = listMarker.exec(line);
 
   if (!match || match[1].length !== baseIndent) {
@@ -381,7 +489,7 @@ function parseListItemChildren(lines: string[], options: MarkdownOptions) {
   return [createParagraphBlock([])];
 }
 
-function readRawHtmlBlock(cursor: MarkdownLineCursor, baseIndent: number) {
+function readRawHtml(cursor: MarkdownLineCursor, baseIndent: number) {
   const line = sliceIndentedContent(currentLine(cursor), baseIndent).trim();
 
   if (!looksLikeSimpleHtmlBlock(line)) {
@@ -412,7 +520,7 @@ function readParagraph(cursor: MarkdownLineCursor, baseIndent: number) {
 
     const content = sliceIndentedContent(line, baseIndent);
 
-    if (lines.length > 0 && shouldParagraphStop(line, content, baseIndent)) {
+    if (lines.length > 0 && interruptsParagraph(line, content, baseIndent)) {
       break;
     }
 
@@ -420,22 +528,24 @@ function readParagraph(cursor: MarkdownLineCursor, baseIndent: number) {
     cursor.index += 1;
   }
 
-  return createParagraphBlock(parseInlineMarkdown(lines.join(lineFeed)));
+  return createParagraphBlock(parseInlines(lines.join(lineFeed)));
 }
 
-function shouldParagraphStop(line: string, content: string, baseIndent: number) {
-  // Paragraphs slurp lines until the next line could start any other block
-  // kind — keep this list aligned with the readers in `readNextBlock`.
-  const trimmed = content.trim();
-  return (
-    content.startsWith(blockquoteMarker) ||
-    fencedCodeOpening.test(content) ||
-    containerDirectiveOpening.test(content) ||
-    atxHeading.test(content) ||
-    isDivider(trimmed) ||
-    looksLikeAlignmentRow(content) ||
-    readListMarker(line, baseIndent) !== null ||
-    looksLikeSimpleHtmlBlock(trimmed)
+function interruptsParagraph(line: string, content: string, baseIndent: number) {
+  // Fast-reject: paragraph slurp continues through lines whose first
+  // character can't possibly start a sibling block. Same lead-char set the
+  // dispatcher uses; mirrors the early-out in `readNextBlock`.
+  const first = content[0];
+  if (first === undefined || !blockTriggerLeadChars.includes(first)) {
+    return false;
+  }
+
+  // Driven by the same `blockReaders` table the dispatcher uses, so the two
+  // can never drift out of sync. `interruptsParagraph` overrides the gate
+  // for readers that interpret paragraph-interrupt differently than their
+  // dispatcher entry (today: tables).
+  return blockReaders.some((reader) =>
+    (reader.interruptsParagraph ?? reader.canStart)(line, content, baseIndent),
   );
 }
 
@@ -443,10 +553,10 @@ function shouldParagraphStop(line: string, content: string, baseIndent: number) 
 // Block-specific line helpers for indent measurement, slicing, and line-shape
 // recognition. The recognition helpers (`isDivider`,
 // `looksLikeSimpleHtmlBlock`) are shared between their reader and the
-// paragraph-stop predicate, which is why they live here rather than adjacent
-// to a single reader. Cursor-bound helpers (`currentLine`, `isBlankLine`,
-// `sliceIndentedContent`) live in `./index` since they're shared with the
-// table parser.
+// paragraph-interrupt predicate, which is why they live here rather than
+// adjacent to a single reader. Cursor-bound helpers (`currentLine`,
+// `isBlankLine`, `sliceIndentedContent`) live in `./index` since they're
+// shared with the table parser.
 
 function countIndent(line: string) {
   let indent = 0;

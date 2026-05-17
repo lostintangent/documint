@@ -130,8 +130,9 @@ The current support claims are backed by these files:
 - [serializer/blocks.ts](./serializer/blocks.ts): block-level markdown emission from `Document`
 - [serializer/inlines.ts](./serializer/inlines.ts): inline markdown emission
 - [serializer/tables.ts](./serializer/tables.ts): canonical pipe-table emission
-- [../../test/markdown/parse.test.ts](../../test/markdown/parse.test.ts): focused parse behavior
-- [../../test/markdown/policy.test.ts](../../test/markdown/policy.test.ts): markdown-specific policy behavior
+- [../../test/markdown/parser.test.ts](../../test/markdown/parser.test.ts): focused parse behavior
+- [../../test/markdown/serializer.test.ts](../../test/markdown/serializer.test.ts): focused emission and canonicalization behavior
+- [../../test/markdown/fragment.test.ts](../../test/markdown/fragment.test.ts): clipboard-fragment classification and persistence-boundary isolation
 - [../../test/markdown/roundtrip.test.ts](../../test/markdown/roundtrip.test.ts): canonical round-tripping over goldens
 - [../../test/goldens](../../test/goldens): scenario fixtures
 

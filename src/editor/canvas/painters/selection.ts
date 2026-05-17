@@ -5,9 +5,8 @@
 
 import type { EditorCommentRange } from "../../anchors";
 import { resolveLineVisualLeft, type DocumentLayout } from "../../layout";
-import type { EditorState } from "../../state";
+import type { EditorState, NormalizedEditorSelection } from "../../state";
 import type { EditorTheme } from "@/types";
-import type { CanvasSelectionRange } from "..";
 import { resolveRestingPulseAlpha, restingPulseMinimumAlpha } from "../lib/pulse";
 
 const selectionMinimumWidth = 2;
@@ -24,7 +23,7 @@ export type SelectionRegionOrderRange = {
 
 export function resolveSelectionRegionOrderRange(
   editorState: EditorState,
-  normalizedSelection: CanvasSelectionRange,
+  normalizedSelection: NormalizedEditorSelection,
 ): SelectionRegionOrderRange | null {
   const regionOrderIndex = editorState.documentIndex.regionOrderIndex;
   const start = regionOrderIndex.get(normalizedSelection.start.regionId);
@@ -37,7 +36,7 @@ export function paintSelectionHighlight(
   context: CanvasRenderingContext2D,
   editorState: EditorState,
   line: DocumentLayout["lines"][number],
-  normalizedSelection: CanvasSelectionRange,
+  normalizedSelection: NormalizedEditorSelection,
   selectionRegionOrderRange: SelectionRegionOrderRange | null,
   theme: EditorTheme,
 ) {
@@ -85,17 +84,17 @@ export function paintSelectionHighlight(
   );
 }
 
-export function paintCanvasCommentHighlights(
+export function paintCommentHighlights(
   context: CanvasRenderingContext2D,
   editorState: EditorState,
   line: DocumentLayout["lines"][number],
-  liveCommentRanges: EditorCommentRange[],
+  commentRanges: EditorCommentRange[],
   activeThreadIndex: number | null,
   presenceActiveThreadColors: ReadonlyMap<number, string | null>,
-  contentPulseTime: number,
+  ambientAnimationTime: number,
   theme: EditorTheme,
 ) {
-  for (const range of liveCommentRanges) {
+  for (const range of commentRanges) {
     if (range.regionId !== line.regionId) {
       continue;
     }
@@ -124,7 +123,7 @@ export function paintCanvasCommentHighlights(
 
     if (shouldPulse) {
       context.save();
-      context.globalAlpha *= resolveRestingPulseAlpha(contentPulseTime, restingPulseMinimumAlpha);
+      context.globalAlpha *= resolveRestingPulseAlpha(ambientAnimationTime, restingPulseMinimumAlpha);
     }
     context.fillRect(
       left,

@@ -6,8 +6,8 @@ import {
   moveCaretToLineBoundary,
   moveCaretVertically,
 } from "@/editor/navigation";
-import { createDocumentLayout } from "@/editor/layout";
-import { createCanvasRenderCache, prepareLayout, resolveSelectionHit } from "@/editor";
+import { measureLayoutSlice } from "@/editor/layout/measure";
+import { createLayoutCache, createEditorLayoutState, resolveSelectionHit } from "@/editor";
 import { getRegion, placeAt, setup } from "../helpers";
 
 test("moves left to the previous container when the caret is at the start", () => {
@@ -101,7 +101,7 @@ test("extends horizontal selections by grapheme clusters", () => {
 test("extends the selection to the start of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");
-  const layout = createDocumentLayout(state.documentIndex, { width: 90 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 90 });
   const nextState = moveCaretToLineBoundary(placeAt(state, container, "end"), layout, "Home", true);
 
   expect(nextState.selection.anchor.regionId).toBe(container.id);
@@ -114,7 +114,7 @@ test("extends the selection to the start of the current line", () => {
 test("extends the selection to the end of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");
-  const layout = createDocumentLayout(state.documentIndex, { width: 90 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 90 });
   const nextState = moveCaretToLineBoundary(
     placeAt(state, container, "start"),
     layout,
@@ -134,7 +134,7 @@ test("moves vertically between table cells in the same column", () => {
   const beta = getRegion(state, "beta");
   const headerB = getRegion(state, "B");
   const delta = getRegion(state, "delta");
-  const layout = createDocumentLayout(state.documentIndex, { width: 420 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
   const upState = moveCaretVertically(placeAt(state, beta, 2), layout, -1);
 
   expect(upState.selection.focus.regionId).toBe(headerB.id);
@@ -150,7 +150,7 @@ test("moves out of a table when there is no row above or below", () => {
   const beta = getRegion(state, "beta");
   const before = getRegion(state, "before");
   const after = getRegion(state, "after");
-  const layout = createDocumentLayout(state.documentIndex, { width: 420 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
   const upState = moveCaretVertically(placeAt(state, headerB, 1), layout, -1);
   const downState = moveCaretVertically(placeAt(state, beta, 1), layout, 1);
 
@@ -162,7 +162,7 @@ test("extends the selection vertically across a region boundary while keeping th
   const state = setup("alpha\n\nbeta\n\ngamma");
   const first = getRegion(state, "alpha");
   const second = getRegion(state, "beta");
-  const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
   const nextState = moveCaretVertically(placeAt(state, first, 2), layout, 1, true);
 
   expect(nextState.selection.anchor.regionId).toBe(first.id);
@@ -174,10 +174,10 @@ test("extends the selection to a viewport point while keeping the anchor", () =>
   const state = setup("Hello world\n");
   const region = getRegion(state, "Hello world");
   const placed = placeAt(state, region, 0);
-  const viewport = prepareLayout(
+  const viewport = createEditorLayoutState(
     placed,
     { height: 320, top: 0, width: 520 },
-    createCanvasRenderCache(),
+    createLayoutCache(),
   );
   const line = viewport.layout.lines[0];
 
@@ -246,7 +246,7 @@ test("moves vertically across an inline soft break inside one paragraph", () => 
   // for `\n` segments.
   const state = setup("foo<br>bar\n");
   const region = getRegion(state, "foo\nbar");
-  const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
   const downState = moveCaretVertically(placeAt(state, region, 1), layout, 1);
 
   expect(downState.selection.focus.regionId).toBe(region.id);

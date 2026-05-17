@@ -14,8 +14,12 @@ import {
 // Most recent N diagnostic events to keep in memory. The popover is
 // inspection-time tooling; older events are dropped silently.
 const MAX_ENTRIES = 200;
+const FPS_KIND = "documint:fps";
+const FPS_STALE_CLEAR_MS = 1_250;
+const FPS_HEALTHY_RATIO = 0.9;
 
 type Entry = Diagnostic & { id: number };
+type FpsReading = { cap: number; capPending: boolean; value: number };
 
 const clearButtonClassName = `${popoverControlClassName} rounded-[0.6rem] px-[0.6rem] py-1 text-[0.8rem]`;
 const diagnosticListClassName = "grid min-h-0 content-start gap-[0.4rem] overflow-y-auto";
@@ -45,7 +49,7 @@ export function DiagnosticsPopover() {
     <PlaygroundPopover
       ariaLabel="Input diagnostics"
       flyoutClassName={diagnosticFlyoutClassName}
-      icon={<Activity size={16} strokeWidth={2.1} />}
+      icon={<DiagnosticsIcon fps={entries.fps} />}
       size="lg"
       showSwatch={false}
     >
@@ -71,11 +75,36 @@ export function DiagnosticsPopover() {
   );
 }
 
-function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
+function DiagnosticsIcon({ fps }: { fps: FpsReading | null }) {
+  return fps === null ? <Activity size={16} strokeWidth={2.1} /> : <FpsIcon fps={fps} />;
+}
+
+function FpsIcon({ fps }: { fps: FpsReading }) {
+  if (fps.capPending) {
+    return <Activity size={16} strokeWidth={2.1} />;
+  }
+
+  const statusClassName =
+    fps.value >= fps.cap * FPS_HEALTHY_RATIO
+      ? "border-emerald-500/35 bg-emerald-50 text-emerald-700"
+      : "border-red-500/35 bg-red-50 text-red-700";
+
   return (
-    <div className={`${diagnosticEntryClassName} ${getDiagnosticKindClassName(diagnostic.kind)}`}>
+    <span
+      className={`font-controls inline-flex h-[1.3rem] min-w-[1.3rem] items-center justify-center rounded-full border px-[0.18rem] text-[0.58rem] leading-none font-semibold tabular-nums ${statusClassName}`}
+    >
+      {fps.value}
+    </span>
+  );
+}
+
+function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
+  const displayKind = formatDiagnosticKind(diagnostic.kind);
+
+  return (
+    <div className={`${diagnosticEntryClassName} ${getDiagnosticKindClassName(displayKind)}`}>
       <div className={diagnosticEntryHeaderClassName}>
-        <span className="font-semibold text-slate-900">{diagnostic.kind}</span>
+        <span className="font-semibold text-slate-900">{displayKind}</span>
         <span className="text-muted">{formatTime(diagnostic.ts)}</span>
       </div>
       <pre className={diagnosticDetailClassName}>{formatDetail(diagnostic.detail)}</pre>
@@ -89,11 +118,36 @@ function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
 // markup.
 function useDiagnosticEntries() {
   const [list, setList] = useState<Entry[]>([]);
+  const [fps, setFps] = useState<FpsReading | null>(null);
   const idRef = useRef(0);
+  const fpsClearTimeoutRef = useRef<number | null>(null);
+
+  const clearFpsTimeout = () => {
+    if (fpsClearTimeoutRef.current === null) {
+      return;
+    }
+    window.clearTimeout(fpsClearTimeoutRef.current);
+    fpsClearTimeoutRef.current = null;
+  };
 
   useEffect(() => {
     const handler = (event: Event) => {
       const { kind, detail, ts } = (event as CustomEvent<Diagnostic>).detail;
+
+      if (kind === FPS_KIND) {
+        const nextFps = parseFpsReading(detail);
+        if (nextFps === null) {
+          return;
+        }
+        setFps(nextFps);
+        clearFpsTimeout();
+        fpsClearTimeoutRef.current = window.setTimeout(() => {
+          setFps(null);
+          fpsClearTimeoutRef.current = null;
+        }, FPS_STALE_CLEAR_MS);
+        return;
+      }
+
       idRef.current += 1;
       const entry: Entry = { id: idRef.current, kind, detail, ts };
       setList((prev) => {
@@ -102,13 +156,27 @@ function useDiagnosticEntries() {
       });
     };
     window.addEventListener(DIAGNOSTIC_EVENT, handler);
-    return () => window.removeEventListener(DIAGNOSTIC_EVENT, handler);
+    return () => {
+      window.removeEventListener(DIAGNOSTIC_EVENT, handler);
+      clearFpsTimeout();
+    };
   }, []);
 
   return {
     clear: () => setList([]),
+    fps,
     list,
   };
+}
+
+function parseFpsReading(detail: Record<string, unknown>): FpsReading | null {
+  const cap = detail.cap;
+  const capPending = detail.capPending;
+  const value = detail.value;
+  if (typeof cap !== "number" || typeof capPending !== "boolean" || typeof value !== "number") {
+    return null;
+  }
+  return { cap: Math.round(cap), capPending, value: Math.round(value) };
 }
 
 // Pin the log scroll to the bottom whenever a new entry arrives. Returns
@@ -130,6 +198,10 @@ function formatDetail(detail: Record<string, unknown>) {
   return Object.entries(detail)
     .map(([key, value]) => `${key}: ${formatValue(value)}`)
     .join("\n");
+}
+
+function formatDiagnosticKind(kind: string) {
+  return kind.replace(/^documint:/, "");
 }
 
 function getDiagnosticKindClassName(kind: string) {

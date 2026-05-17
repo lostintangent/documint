@@ -1,10 +1,11 @@
 /**
- * Geometric projection of a cursor against the prepared viewport. Decides
- * whether a cursor sits above, below, or inside the visible scroll window.
+ * Geometric projection of a presence target against the prepared viewport.
+ * Decides whether a text cursor or comment thread sits above, below, or
+ * inside the visible scroll window.
  *
  * Two consumers:
  *   - `resolvePresenceViewport` — runs over the full presence list and adds a
- *     scroll target so the host can scroll to an off-screen remote cursor.
+ *     scroll target so the host can scroll to an off-screen remote presence.
  *   - `resolveCursorViewportStatus` — single-cursor status check. Used by the
  *     host's own caret (`useCursor`) to gate the leaf overlay and the blink
  *     interval when the user's cursor scrolls off-screen.
@@ -13,14 +14,15 @@
  * viewport-gated content, including animated text decorations.
  */
 
-import { measureCaretTarget, resolvePositionInViewport, type EditorLayoutState } from "../layout";
-import type { DocumentIndex, EditorSelectionPoint } from "../state";
-import type { EditorState } from "../state/types";
-import type {
-  EditorPresence,
-  EditorPresenceViewport,
-  EditorPresenceViewportStatus,
-} from "./presence";
+import {
+  measureCaretTarget,
+  resolvePositionInViewport,
+  type EditorLayoutState,
+} from "../../layout";
+import type { DocumentIndex, EditorSelectionPoint } from "../../state";
+import type { EditorState } from "../../state/types";
+import { resolveCommentThreadViewportPosition, type EditorCommentRange } from "../comments";
+import type { EditorPresence, EditorPresenceViewport, EditorPresenceViewportStatus } from ".";
 
 const presenceViewportScrollMargin = 48;
 
@@ -30,16 +32,19 @@ export function resolvePresenceViewport(
   state: EditorState,
   viewport: EditorLayoutState,
   presence: EditorPresence[],
+  commentRanges: readonly EditorCommentRange[],
 ): EditorPresence[];
 export function resolvePresenceViewport(
   documentIndex: DocumentIndex,
   viewport: EditorLayoutState,
   presence: EditorPresence[],
+  commentRanges: readonly EditorCommentRange[],
 ): EditorPresence[];
 export function resolvePresenceViewport(
   stateOrIndex: EditorState | DocumentIndex,
   viewport: EditorLayoutState,
   presence: EditorPresence[],
+  commentRanges: readonly EditorCommentRange[],
 ): EditorPresence[] {
   const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
   if (presence.length === 0) {
@@ -48,7 +53,7 @@ export function resolvePresenceViewport(
 
   return presence.map((presenceItem) => ({
     ...presenceItem,
-    viewport: resolveEditorPresenceViewport(documentIndex, viewport, presenceItem),
+    viewport: resolveEditorPresenceViewport(documentIndex, viewport, commentRanges, presenceItem),
   }));
 }
 
@@ -80,19 +85,20 @@ export function resolveCursorViewportStatus(
 function resolveEditorPresenceViewport(
   documentIndex: DocumentIndex,
   viewport: EditorLayoutState,
+  commentRanges: readonly EditorCommentRange[],
   presence: EditorPresence,
 ): EditorPresenceViewport {
-  if (!presence.cursorPoint) {
-    return { status: "unresolved" };
-  }
-
-  const position = resolveCursorPosition(documentIndex, viewport, presence.cursorPoint);
+  const position = presence.cursorPoint
+    ? resolveCursorPosition(documentIndex, viewport, presence.cursorPoint)
+    : presence.commentThreadIndex != null
+      ? resolveCommentThreadViewportPosition(viewport, commentRanges, presence.commentThreadIndex)
+      : null;
   if (!position) {
     return { status: "unresolved" };
   }
 
   return {
-    scrollTop: resolvePresenceCursorScrollTop(viewport, position),
+    scrollTop: resolvePresenceTargetScrollTop(viewport, position),
     status: resolvePositionInViewport(viewport, position),
   };
 }
@@ -109,7 +115,7 @@ function resolveCursorPosition(
   return viewport.estimateRegionBounds(point.regionId);
 }
 
-function resolvePresenceCursorScrollTop(viewport: EditorLayoutState, position: { top: number }) {
+function resolvePresenceTargetScrollTop(viewport: EditorLayoutState, position: { top: number }) {
   const maxScrollTop = Math.max(0, viewport.totalHeight - viewport.viewport.height);
   const targetTop =
     position.top - Math.min(presenceViewportScrollMargin, viewport.viewport.height / 4);

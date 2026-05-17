@@ -11,11 +11,13 @@
  */
 
 import { isPlainTextBlocks, type Fragment } from "@/document";
-import { parseDocument } from "./parser";
+import { parseFragmentBlocks } from "./parser";
 import { serializeBlocks, serializeInlines } from "./serializer";
 
 /**
  * Parses clipboard markdown, classifying the result for paste routing:
+ *   - Empty source → `text` with `""`, so paste is a no-op at the inline
+ *     altitude instead of a structural splice of nothing.
  *   - Plain text (single unmarked paragraph) → `text`, the inline-replace
  *     fast path.
  *   - Marked inlines (single paragraph with marks/links/images/breaks) →
@@ -27,7 +29,7 @@ export function parseFragment(source: string): Fragment {
     return { kind: "text", text: "" };
   }
 
-  const { blocks } = parseDocument(source);
+  const blocks = parseFragmentBlocks(source);
 
   if (isPlainTextBlocks(blocks)) {
     return { kind: "text", text: blocks[0]?.plainText ?? "" };

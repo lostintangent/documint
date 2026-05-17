@@ -5,7 +5,7 @@ import type { EditorTheme } from "@/types";
 import type { DocumentLayout } from "../../layout";
 import type { EditorInline } from "../../state";
 import { mentionHorizontalPadding } from "../../layout/measure/mention";
-import { resolveCanvasCenteredTextBaseline, resolveCanvasFontMetrics } from "../lib/fonts";
+import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/measure";
 
 const mentionCornerRadius = 5;
 const mentionVerticalNudge = -1;
@@ -24,8 +24,8 @@ export function paintInlineMention(
     return;
   }
 
-  const baseline = line.top + resolveCanvasCenteredTextBaseline(line.height, context.font);
-  const metrics = resolveCanvasFontMetrics(context.font);
+  const baseline = line.top + resolveCenteredTextBaseline(line.height, context.font);
+  const metrics = resolveFontMetrics(context.font);
   const top = baseline - metrics.ascent - mentionVerticalPadding + mentionVerticalNudge;
   const height = metrics.ascent + metrics.descent + mentionVerticalPadding * 2;
   const width = Math.max(0, right - left);

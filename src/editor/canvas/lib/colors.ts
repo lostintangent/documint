@@ -5,8 +5,8 @@
 export const transparentCanvasColor = "rgba(0, 0, 0, 0)";
 
 export function blendCanvasColors(fromColor: string, toColor: string, progress: number) {
-  const from = resolveCanvasColor(fromColor);
-  const to = resolveCanvasColor(toColor);
+  const from = resolveColor(fromColor);
+  const to = resolveColor(toColor);
 
   return `rgba(${roundColorChannel(mixColorChannel(from[0], to[0], progress))}, ${roundColorChannel(
     mixColorChannel(from[1], to[1], progress),
@@ -21,7 +21,7 @@ const colorCache = new Map<string, [number, number, number, number]>([
   [transparentCanvasColor, [0, 0, 0, 0]],
 ]);
 
-function resolveCanvasColor(color: string): [number, number, number, number] {
+function resolveColor(color: string): [number, number, number, number] {
   const cached = colorCache.get(color);
 
   if (cached) {

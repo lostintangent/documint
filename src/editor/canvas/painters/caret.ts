@@ -9,16 +9,15 @@ import {
   resolveCaretVisualLeft,
   type DocumentLayout,
 } from "../../layout";
-import type { EditorState } from "../../state";
+import type { EditorState, NormalizedEditorSelection } from "../../state";
 import type { EditorTheme } from "@/types";
-import type { CanvasSelectionRange } from "..";
-import { resolveCanvasCenteredTextTop, resolveCanvasFontMetrics } from "../lib/fonts";
+import { resolveCenteredTextTop, resolveFontMetrics } from "../../text/measure";
 
 const caretOpticalTopInset = 1;
 const caretStrokeWidth = 2;
 const caretVerticalInset = 2;
 
-export function paintCanvasCaretOverlay({
+export function paintCaretOverlay({
   context,
   devicePixelRatio,
   editorState,
@@ -36,7 +35,7 @@ export function paintCanvasCaretOverlay({
   editorState: EditorState;
   height: number;
   layout: DocumentLayout;
-  normalizedSelection: CanvasSelectionRange;
+  normalizedSelection: NormalizedEditorSelection;
   presence?: EditorPresence[];
   showCaret: boolean;
   theme: EditorTheme;
@@ -55,7 +54,7 @@ export function paintCanvasCaretOverlay({
   context.translate(0, -viewportTop);
 
   if (shouldPaintUserCaret) {
-    paintCanvasCaret(context, editorState, layout, {
+    paintCaret(context, editorState, layout, {
       color: theme.caret,
       offset: editorState.selection.focus.offset,
       regionId: editorState.selection.focus.regionId,
@@ -68,7 +67,7 @@ export function paintCanvasCaretOverlay({
         continue;
       }
 
-      paintCanvasCaret(context, editorState, layout, {
+      paintCaret(context, editorState, layout, {
         color: presenceItem.color ?? theme.leafAccent,
         offset: presenceItem.cursorPoint.offset,
         regionId: presenceItem.cursorPoint.regionId,
@@ -79,7 +78,7 @@ export function paintCanvasCaretOverlay({
   context.restore();
 }
 
-function paintCanvasCaret(
+function paintCaret(
   context: CanvasRenderingContext2D,
   editorState: EditorState,
   layout: DocumentLayout,
@@ -99,13 +98,13 @@ function paintCanvasCaret(
   }
 
   const caretLeft = resolveCaretVisualLeft(editorState, layout, caret);
-  const metrics = resolveCanvasCaretPaintMetrics(layout, caret);
+  const metrics = resolveCaretPaintMetrics(layout, caret);
 
   context.fillStyle = target.color;
   context.fillRect(caretLeft, metrics.top, caretStrokeWidth, metrics.height);
 }
 
-function resolveCanvasCaretPaintMetrics(
+function resolveCaretPaintMetrics(
   layout: DocumentLayout,
   caret: NonNullable<ReturnType<typeof measureCaretTarget>>,
 ) {
@@ -113,13 +112,13 @@ function resolveCanvasCaretPaintMetrics(
   const font =
     line?.font ??
     '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  const { ascent, descent } = resolveCanvasFontMetrics(font);
+  const { ascent, descent } = resolveFontMetrics(font);
   const glyphHeight = Math.max(1, ascent + descent);
   const height = Math.min(caret.height - caretVerticalInset, glyphHeight);
   const top = line
     ? Math.max(
         line.top,
-        line.top + resolveCanvasCenteredTextTop(line.height, font) - caretOpticalTopInset,
+        line.top + resolveCenteredTextTop(line.height, font) - caretOpticalTopInset,
       )
     : caret.top + Math.max(0, Math.floor((caret.height - height) / 2));
 

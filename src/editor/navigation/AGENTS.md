@@ -1,17 +1,19 @@
 # Navigation
 
-This subsystem owns document-flow and layout-aware caret/selection navigation. It bridges semantic movement intent ("arrow up", "page down", "Home", click this point, drag from this anchor") to concrete `EditorState` selection updates.
+The navigation subsystem owns document-flow and layout-aware caret/selection movement. It translates semantic movement intent such as arrow keys, page movement, Home/End, click placement, and drag extension into concrete `EditorState` selection updates.
 
-Navigation sits above pure state selection semantics and below React/browser interaction handling. It may measure or hit-test prepared layout, then applies selection updates through state primitives. It does not own text mutation, DOM events, canvas paint, or browser gesture policy.
+Navigation sits above state selection primitives and below browser interaction handling. It may measure or hit-test prepared layout, then applies selection updates through state APIs. It does not own text mutation, DOM events, canvas paint, or gesture policy.
 
-Keyboard-style movement functions take an `extendSelection` parameter so move-vs-extend share one code path. Vertical motion uses a table-first, flow-fallback chain; horizontal motion crosses region boundaries naturally through document flow. The flow helpers are also shared by deletion, layout planning, and hit testing so every subsystem agrees on which regions and leaf blocks participate in editable/visual flow.
+## Design Principles
 
-### Key Areas
+- **Movement updates selection only.** Navigation should return `EditorState` selection changes or no-ops; text edits belong in state commands.
+- **Flow is shared semantics.** `flow.ts` defines which regions and leaf blocks participate in editable/visual flow so navigation, deletion, layout, and hit testing agree.
+- **Layout is an input.** Vertical movement, point placement, and drag selection may use prepared layout and hit testing, but navigation does not create layout.
+- **Table movement overrides ordinary flow first.** Vertical table moves should prefer same-column cell targets before falling back to line/document flow.
 
-- `index.ts` - Owns the public navigation API: keyboard movement, point placement, point extension, and drag selection. Each entry point measures or hit-tests against layout, then applies a semantic selection update.
+## Subsystem Map
 
-- `flow.ts` - Owns document-flow primitives: previous/next editable regions, previous/next leaf blocks, first editable region in a root, and inert/container block classification. These helpers are pure lookups over `DocumentIndex`; they do not mutate state or inspect layout.
-
-- `line.ts` - Owns line-based motion semantics for ordinary document flow: horizontal step within a region or across region boundaries, vertical motion to the line above/below at the same visual X, viewport-page motion, and Home/End within a wrapped line.
-
-- `table.ts` - Owns table-specific vertical overrides: up/down moves between table cells in the same column, with a fallback to the surrounding document flow when the caret exits the table top or bottom.
+- `index.ts` owns the public navigation API.
+- `flow.ts` owns editable/visual document-flow primitives.
+- `line.ts` owns line-based horizontal, vertical, page, and Home/End movement.
+- `table.ts` owns table-specific vertical movement and exit fallback.

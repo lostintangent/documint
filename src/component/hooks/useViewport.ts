@@ -1,6 +1,6 @@
 import {
-  createCanvasRenderCache,
-  prepareLayout,
+  createLayoutCache,
+  createEditorLayoutState as buildEditorLayoutState,
   type EditorPoint,
   type EditorLayoutState,
   type EditorState,
@@ -18,7 +18,7 @@ import {
 } from "react";
 import { resolvePointerPointInScrollContainer } from "../lib/pointer";
 import { useDocumintStore } from "../store";
-import type { ViewportLayoutHandle } from "../store/viewport/store";
+import type { EditorLayoutHandle } from "../store/viewport/store";
 
 type ViewportMetrics = {
   height: number;
@@ -71,7 +71,7 @@ export type ViewportController = {
   state: {
     layoutWidth: number;
     scrollContentHeight: number;
-    viewportLayout: ViewportLayoutHandle;
+    viewportLayout: EditorLayoutHandle;
     viewportHeight: number;
     viewportTop: number;
   };
@@ -110,7 +110,7 @@ export type ViewportController = {
  *   - Read `state.viewportLayout.get()` from the viewport-render path
  *     (recomputes if invalidated, returns cached otherwise). Lighter paint
  *     paths (content-only, overlay-only) read the cached layout via
- *     `state.viewportLayout.peek()`.
+ *     `state.viewportLayout.peekCached()`.
  *   - Read `state.viewportLayout` (the store-backed viewport handle) and share
  *     it with the other hooks (usePointer, useInput, useSelection).
  *   - Wire `actions.resolvePoint` and `actions.autoScrollDuringDrag` into
@@ -121,7 +121,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   /* Internal state */
 
   const store = useDocumintStore();
-  const renderCacheRef = useRef(createCanvasRenderCache());
+  const layoutCacheRef = useRef(createLayoutCache());
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportMetricsRef = useRef<ViewportMetrics>({ height: 240, top: 0 });
   const [surfaceWidth, setSurfaceWidth] = useState(0);
@@ -135,11 +135,11 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // Plain closure (not `useEffectEvent`) because layout may be computed during
   // host render when the cache was invalidated since the last paint and a
   // consumer reads `.get()` before the next rAF rebuilds it.
-  const createEditorLayoutState = (): EditorLayoutState => {
+  const resolveEditorLayoutState = (): EditorLayoutState => {
     const currentState = store.editor.getState();
     const viewport = viewportMetricsRef.current;
 
-    return prepareLayout(
+    return buildEditorLayoutState(
       currentState,
       {
         height: viewport.height,
@@ -148,12 +148,12 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
         top: viewport.top,
         width: layoutWidth,
       },
-      renderCacheRef.current,
+      layoutCacheRef.current,
       renderResources,
     );
   };
 
-  store.viewport.setViewportResolver(createEditorLayoutState);
+  store.viewport.setViewportResolver(resolveEditorLayoutState);
 
   const viewportLayout = store.viewport;
 
@@ -212,21 +212,13 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // Decide whether the cached layout can be reused after an editor state
   // transition. The cache survives:
   //   - state changes that don't touch the document (e.g. selection moves);
-  //   - state changes whose new selection focus lives inside a region the
-  //     cached layout already knows about — the visible area is still valid
-  //     and the next paint will refresh it anyway.
-  // Anything else invalidates so the next read reflects the new structure.
+  //   - selection-only state changes, because they don't affect layout;
+  //   - initial state publication, because there is no previous geometry.
+  // Document changes always invalidate immediately so any imperative layout
+  // read after the transition resolves against the new structure.
   const reconcileEditorState = useEffectEvent(
     (prevState: EditorState | null, nextState: EditorState) => {
-      const documentChanged =
-        prevState !== null && prevState.documentIndex !== nextState.documentIndex;
-      const cachedViewportState = viewportLayout.peek();
-      const canReuse =
-        !documentChanged ||
-        !cachedViewportState ||
-        cachedViewportState.layout.regionLineIndices.has(nextState.selection.focus.regionId);
-
-      if (!canReuse) {
+      if (shouldInvalidateViewportAfterEditorTransition(prevState, nextState)) {
         viewportLayout.invalidate();
       }
     },
@@ -352,4 +344,11 @@ function readViewportMetrics(scrollContainer: HTMLDivElement): ViewportMetrics {
 
 function resolveScrollContentHeight(viewportState: EditorLayoutState, viewportHeight: number) {
   return Math.max(viewportHeight, Math.ceil(viewportState.totalHeight + 24));
+}
+
+export function shouldInvalidateViewportAfterEditorTransition(
+  prevState: EditorState | null,
+  nextState: EditorState,
+) {
+  return prevState !== null && prevState.documentIndex !== nextState.documentIndex;
 }

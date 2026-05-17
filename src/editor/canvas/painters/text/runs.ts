@@ -1,0 +1,174 @@
+// Owns per-line text run rendering. Walks the visible inlines on a line and
+// dispatches each by `kind`: images and mentions go to their dedicated
+// painters; inline code paints a code background plus monospace glyphs;
+// everything else paints as styled text with strikethrough/underline as
+// needed. Image and mention dispatch lives here so the inline iteration
+// stays linear — the alternative would split inline visibility resolution
+// across three files.
+
+import type { DocumentLayout } from "../../../layout";
+import { findInlinesInSpan, type EditorRegion } from "../../../state";
+import type { DocumentResources, EditorTheme } from "@/types";
+import { resolveInlineTextFont } from "../../../text/fonts";
+import { paintInlineImage } from "../image";
+import { paintInlineMention } from "../mention";
+import {
+  editableTextBackgroundGeometry,
+  paintTextBackground,
+  resolveLineSegmentBounds,
+  resolveStrikethroughTop,
+  resolveUnderlineTop,
+  textDecorationMinimumWidth,
+  textDecorationThickness,
+} from "./glyphs";
+
+export function paintLineText(
+  context: CanvasRenderingContext2D,
+  line: DocumentLayout["lines"][number],
+  container: EditorRegion | null,
+  textLeft: number,
+  textBaseline: number,
+  defaultColor: string,
+  resources: DocumentResources,
+  theme: EditorTheme,
+  ambientAnimationTime: number,
+) {
+  if (!container) {
+    context.fillStyle = defaultColor;
+    context.fillText(line.text, textLeft, textBaseline);
+    return;
+  }
+
+  const visibleInlines = findInlinesInSpan(container.inlines, line.start, line.end);
+
+  if (visibleInlines.length === 0) {
+    context.fillStyle = defaultColor;
+    context.fillText(line.text, textLeft, textBaseline);
+    return;
+  }
+
+  for (const inline of visibleInlines) {
+    const start = Math.max(line.start, inline.start);
+    const end = Math.min(line.end, inline.end);
+    const segmentText = container.text.slice(start, end);
+
+    if (segmentText.length === 0) {
+      continue;
+    }
+
+    const { left: segmentLeft, right: segmentRight } = resolveLineSegmentBounds(
+      line,
+      textLeft,
+      start,
+      end,
+    );
+    const inlineFont = resolveInlineTextFont(line.font, inline.marks, inline.inlineCode);
+    context.font = inlineFont;
+
+    if (inline.kind === "image") {
+      const imageWidth = Math.max(24, segmentRight - segmentLeft);
+      paintInlineImage(
+        context,
+        line,
+        inline,
+        resources,
+        theme,
+        segmentLeft,
+        imageWidth,
+        ambientAnimationTime,
+      );
+      continue;
+    }
+
+    if (inline.kind === "mention") {
+      paintInlineMention(context, line, inline, theme, segmentLeft, segmentRight);
+      continue;
+    }
+
+    if (inline.kind === "code") {
+      paintTextBackground(
+        context,
+        segmentLeft,
+        segmentRight,
+        textBaseline,
+        theme.inlineCodeBackground,
+        editableTextBackgroundGeometry,
+      );
+      paintInlineSegment(
+        context,
+        line,
+        container.text,
+        textLeft,
+        textBaseline,
+        start,
+        end,
+        theme.inlineCodeText,
+        { strikethrough: false, underline: false },
+      );
+      continue;
+    }
+
+    paintInlineSegment(
+      context,
+      line,
+      container.text,
+      textLeft,
+      textBaseline,
+      start,
+      end,
+      inline.link ? theme.linkText : defaultColor,
+      {
+        strikethrough: inline.marks.includes("strikethrough"),
+        underline: inline.marks.includes("underline") || Boolean(inline.link),
+      },
+    );
+  }
+}
+
+function paintInlineSegment(
+  context: CanvasRenderingContext2D,
+  line: DocumentLayout["lines"][number],
+  containerText: string,
+  textLeft: number,
+  textBaseline: number,
+  startOffset: number,
+  endOffset: number,
+  baseColor: string,
+  decorations: {
+    strikethrough: boolean;
+    underline: boolean;
+  },
+) {
+  const segmentText = containerText.slice(startOffset, endOffset);
+
+  if (segmentText.length === 0) {
+    return;
+  }
+
+  const { left: segmentLeft, right: segmentRight } = resolveLineSegmentBounds(
+    line,
+    textLeft,
+    startOffset,
+    endOffset,
+  );
+  context.fillStyle = baseColor;
+  context.fillText(segmentText, segmentLeft, textBaseline);
+
+  if (decorations.strikethrough) {
+    context.fillRect(
+      segmentLeft,
+      resolveStrikethroughTop(textBaseline, line.height, context.font),
+      Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
+      textDecorationThickness,
+    );
+  }
+
+  if (decorations.underline) {
+    context.fillRect(
+      segmentLeft,
+      resolveUnderlineTop(textBaseline, line.height, context.font),
+      Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
+      textDecorationThickness,
+    );
+  }
+}

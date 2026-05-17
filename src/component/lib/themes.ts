@@ -1,5 +1,13 @@
 import type { EditorTheme } from "@/types";
 
+const DEFAULT_THEME_PADDING_X = 16;
+const DEFAULT_THEME_PADDING_Y = 18;
+
+export type ResolvedEditorTheme = EditorTheme & {
+  paddingX: number;
+  paddingY: number;
+};
+
 export const lightTheme: EditorTheme = {
   activeBlockBackground: "#fff1c7",
   activeBlockFlash: "rgba(245, 158, 11, 0.28)",
@@ -41,8 +49,6 @@ export const lightTheme: EditorTheme = {
   leafShadow: "0 14px 40px rgba(15, 23, 42, 0.16)",
   leafText: "#1f2937",
   linkText: "#1d4ed8",
-  paddingX: 16,
-  paddingY: 12,
   paragraphText: "#1f2937",
   selectionBackground: "rgba(125, 211, 252, 0.35)",
   selectionHandleBackground: "#fcfbf7",
@@ -93,8 +99,6 @@ export const darkTheme: EditorTheme = {
   leafShadow: "0 18px 44px rgba(2, 6, 23, 0.42), 0 0 0 1px rgba(148, 163, 184, 0.06)",
   leafText: "#dbe4f0",
   linkText: "#93c5fd",
-  paddingX: 16,
-  paddingY: 12,
   paragraphText: "#dbe4f0",
   selectionBackground: "rgba(56, 189, 248, 0.28)",
   selectionHandleBackground: "#0b1220",
@@ -183,3 +187,11 @@ export const midnightTheme: EditorTheme = {
   tableBorder: "rgba(139, 92, 246, 0.34)",
   tableHeaderBackground: "rgba(49, 46, 129, 0.94)",
 };
+
+export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
+  return {
+    ...theme,
+    paddingX: theme.paddingX ?? DEFAULT_THEME_PADDING_X,
+    paddingY: theme.paddingY ?? DEFAULT_THEME_PADDING_Y,
+  };
+}

@@ -1,20 +1,19 @@
-// Owns vertical gap policy between adjacent leaf blocks. Both the exact
-// layout pass (`measure/`) and the viewport planner (`plan/`) call into this
-// to compute spacing between blocks; keeping the policy here keeps the two
-// passes in sync.
+// Owns vertical gap policy between adjacent laid-out blocks. Both exact layout
+// (`measure/`) and large-document estimation call into this so the two paths
+// stay in sync.
 
 import type { Block } from "@/document";
 import type { DocumentIndex, EditorBlock } from "../../state";
 
 const h1HeadingRuleTrailingGap = 24;
-const h2HeadingRuleTrailingGap = 16;
+const h2HeadingRuleOuterGap = 16;
 const LIST_SIBLING_GAP = 6;
 const BLOCKQUOTE_SIBLING_GAP = 10;
 const SAME_BLOCK_GAP = 4;
 
-// Vertical gap between two adjacent leaf blocks (text, table, inert),
+// Vertical gap between two adjacent laid-out blocks (text, table, inert),
 // keyed by their shared ancestry.
-export function resolveLeafBlockGap(
+export function resolveBlockGap(
   runtimeBlocks: Map<string, EditorBlock>,
   blockMap: Map<string, Block>,
   currentBlockId: string,
@@ -33,11 +32,15 @@ export function resolveLeafBlockGap(
     return SAME_BLOCK_GAP;
   }
 
-  return fallbackGap + resolveHeadingTrailingGap(blockMap.get(currentBlockId));
+  return (
+    fallbackGap +
+    resolveHeadingTrailingGap(blockMap.get(currentBlockId)) +
+    resolveHeadingLeadingGap(blockMap.get(nextBlockId))
+  );
 }
 
 // Region-indexed wrapper kept for callers that walk regions instead of
-// blocks. Internally delegates to `resolveLeafBlockGap`.
+// blocks. Internally delegates to `resolveBlockGap`.
 export function resolveContainerGap(
   runtimeBlocks: Map<string, EditorBlock>,
   blockMap: Map<string, Block>,
@@ -52,7 +55,7 @@ export function resolveContainerGap(
     return fallbackGap;
   }
 
-  return resolveLeafBlockGap(runtimeBlocks, blockMap, current.blockId, next.blockId, fallbackGap);
+  return resolveBlockGap(runtimeBlocks, blockMap, current.blockId, next.blockId, fallbackGap);
 }
 
 function resolveHeadingTrailingGap(block: Block | undefined) {
@@ -64,7 +67,11 @@ function resolveHeadingTrailingGap(block: Block | undefined) {
     return h1HeadingRuleTrailingGap;
   }
 
-  return block.depth === 2 ? h2HeadingRuleTrailingGap : 0;
+  return block.depth === 2 ? h2HeadingRuleOuterGap : 0;
+}
+
+function resolveHeadingLeadingGap(block: Block | undefined) {
+  return block?.type === "heading" && block.depth === 2 ? h2HeadingRuleOuterGap : 0;
 }
 
 function shareAncestorType(

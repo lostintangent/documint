@@ -1,27 +1,24 @@
 # Layout
 
-This sub-system owns editor geometry. It turns `DocumentIndex` into pixel-positioned line, region, and block geometry for what's on screen, while using cheap whole-document estimation for scrolling and viewport planning.
+The layout subsystem owns editor geometry. It turns `EditorState` into an `EditorLayoutState`: positioned lines, regions, blocks, total scroll height, paint overscan, off-screen bounds, and queryable geometry for caret, hit testing, navigation, anchors, and canvas paint.
 
-The core invariant is that visible content always uses exact layout — estimation exists to avoid full-document layout cost, not to weaken on-screen correctness. The estimate path and the exact path walk blocks the same way and apply the same gap policy; they must stay in sync. Measurement results are cached at multiple layers with cache keys that include text hashes, image resource signatures, and layout options, so any change to measurement inputs must also update the relevant cache key.
+Small/common documents use exact full-document layout. Large documents use whole-document height estimation to choose a virtualized visible slice, then measure that slice exactly.
 
-The pipeline is: `DocumentIndex` → `plan/` decides what to build → `measure/` builds it → `query/` answers questions about the result.
+## Design Principles
 
-The three main types layer in the same direction. `measure/` produces `DocumentLayout` — bare positioned geometry. `plan/` wraps it as `ViewportLayout` — geometry plus viewport-aware metadata (total height, off-screen region estimation). `index.ts` packages that as `EditorLayoutState` — the type the editor consumes, carrying paint-ready metadata on top.
+- **Visible geometry is exact.** Estimation is only a large-document optimization. Anything visible, selected, or hit-testable must have exact measured geometry, even when pinned outside the ordinary viewport slice.
+- **Document space is the shared coordinate system.** Line/block Y values are positions in the full document, even when measured from a virtualized slice.
+- **Exact and estimated paths must agree.** Both paths must walk blocks the same way and use the same gap, inset, image, and table policies. If one policy changes, update the other.
+- **Cache keys are correctness.** Prepared text, measured lines, boundaries, heights, grapheme widths, and virtual layouts all depend on text, resources, and layout options.
+- **Refinement is the cache write-back boundary.** Virtualized layout may update cached estimated heights after exact slice measurement; other layout work treats cache reads as memoization.
+- **Hit testing is layered.** Prefer line containment, then block-padding fallback, then inert-leaf redirect through document flow when geometry alone cannot answer.
+- **Measurement details stay behind layout/text APIs.** Browser-backed text metrics and resource-dependent image sizes are inputs to measurement, not reasons for callers to inspect DOM or duplicate layout math.
 
-### Caching
+## Subsystem Map
 
-Layout is the most expensive thing the editor does per keystroke, so the work is heavily cached in a per-editor `CanvasRenderCache` (defined in `canvas/lib/cache.ts`). The cache holds prepared text segments, measured lines, line boundaries, container heights, and viewport plans — keyed so that unchanged regions skip rehashing on edits. Region identity is reference-stable through the `{...region, start, end}` shifts the indexer makes, which is what keeps cache hit rates high during typing. Any change to measurement inputs must update the relevant cache key, or stale geometry will leak across frames.
-
-Above the cache, the `EditorLayoutState` itself is reused across cheap paint frames. The layout pipeline runs only when invalidated — document edits, scroll, or surface resize. Selection moves, animation ticks, and caret blinks skip it entirely. See [`src/component`](../../component/AGENTS.md) for the scheduler.
-
-### Key Areas
-
-- `index.ts` - Owns the public layout API and `prepareLayout`, the top-level orchestrator that packages a planner result into the `EditorLayoutState` the rest of the editor consumes.
-
-- `lib/` - Owns cross-cutting building blocks: layout options and defaults, the spacing/gap policy that both build paths share, and the small set of rect/extent types every folder reuses. No subsystem logic — just shapes and constants.
-
-- `measure/` - Owns the exact-layout pass: given a `DocumentIndex` slice, walks blocks in document order and produces a positioned `DocumentLayout` with line, region, and block geometry. Per-block-type measurement primitives (text typography and wrapping, image sizing, table cell measurement) sit alongside the composer that orchestrates them.
-
-- `plan/` - Owns viewport-aware orchestration: cheap whole-document height estimation, visible slice selection with overscan and pinned regions, exact composition for that slice, and coordinate shifting into document space. This is the planner the editor drives each frame.
-
-- `query/` - Owns read operations against a prepared `DocumentLayout`: pointer hit-testing, caret target measurement, visible-range lookups, link/hover/checkbox targeting, and the visual geometry helpers shared with paint and navigation.
+- `index.ts` exposes the layout API and editor-facing adapters.
+- `lib/` owns shared geometry, options, marker insets, and spacing policy.
+- `state/` owns `createEditorLayoutState` and the per-editor `LayoutCache`.
+- `measure/` owns exact layout composition for text, images, tables, lines, regions, and blocks.
+- `virtualize/` owns large-document estimation, visible slice selection, pinned regions, exact slice measurement, and refinement.
+- `query/` owns reads over prepared geometry: visible ranges, caret measurement, hit testing, and interaction targets.

@@ -6,7 +6,7 @@
  */
 
 import { defragmentTextInlines, type Inline, type Mark } from "@/document";
-import { underlineCloseTag, underlineOpenTag } from "../shared";
+import { inlineMarkSpecs } from "../shared";
 
 // --- Escape patterns ---
 // Mirror the inverse-escape patterns in `parser/inlines.ts`. The serializer
@@ -16,6 +16,11 @@ import { underlineCloseTag, underlineOpenTag } from "../shared";
 const markdownTextEscapePattern = /([\\`*_[\]])/g;
 const markdownDestinationEscapePattern = /([\\)&])/g;
 const markdownTitleEscapePattern = /(["\\])/g;
+// Fast-reject probe for text-node escape: if a string contains none of the
+// markdown metacharacters (including `@` for mention defense), neither of
+// the replaces in `escapeMarkdownText` would have anything to do — and
+// plain prose, the dominant input, hits this case.
+const markdownTextMetaProbe = /[\\`*_[\]@]/;
 
 export function serializeInlines(nodes: Inline[]): string {
   const normalized = defragmentTextInlines(nodes);
@@ -46,22 +51,46 @@ function serializeInline(node: Inline, nextNode?: Inline): string {
   }
 }
 
+// Per-mark emit lookup derived from `inlineMarkSpecs` at module load. Seeded
+// with every `Mark` key up front so V8 settles on a single stable hidden
+// class — the property access in `applyMarks` then JITs to a constant-time
+// inline-cached load, matching the switch it replaces. Seeding also makes
+// the seed object the place TypeScript catches a new `Mark` union member:
+// adding one breaks this declaration until a key is added.
+const inlineMarkEmit: Record<Mark, readonly [string, string]> = {
+  bold: ["", ""],
+  italic: ["", ""],
+  strikethrough: ["", ""],
+  underline: ["", ""],
+};
+for (const spec of inlineMarkSpecs) {
+  inlineMarkEmit[spec.mark] = spec.emit;
+}
+
+// Reduce wraps `marks[0]` innermost and the last mark outermost. The parser
+// builds the `marks` array by appending each mark as it descends into a
+// nested delimited range (`[...marks, spec.mark]` in `parseInlineRange`), so
+// the outer-most delimiter in the source ends up first in the array. The
+// reverse mapping here — first-in-array becomes innermost-on-emit — is what
+// makes the round trip stable for nested marks like `***foo***`.
 function applyMarks(value: string, marks: Mark[]) {
+  if (marks.length === 0) {
+    return value;
+  }
   return marks.reduce((current, mark) => {
-    switch (mark) {
-      case "bold":
-        return `**${current}**`;
-      case "italic":
-        return `*${current}*`;
-      case "strikethrough":
-        return `~~${current}~~`;
-      case "underline":
-        return `${underlineOpenTag}${current}${underlineCloseTag}`;
-    }
+    const [open, close] = inlineMarkEmit[mark];
+    return `${open}${current}${close}`;
   }, value);
 }
 
 function serializeInlineCode(value: string) {
+  // Fast path: typical inline-code content has no embedded backticks, so a
+  // single backtick suffices as the fence and no padding is needed. Skips
+  // the full-string scan that the variable-fence-width code below performs.
+  if (!value.includes("`")) {
+    return `\`${value}\``;
+  }
+
   let widestFence = 0;
   let currentFence = 0;
 
@@ -79,8 +108,7 @@ function serializeInlineCode(value: string) {
     currentFence = 0;
   }
 
-  const fenceWidth = widestFence > 0 ? widestFence + 1 : 1;
-  const fence = "`".repeat(fenceWidth);
+  const fence = "`".repeat(widestFence + 1);
   const padded = value.startsWith("`") || value.endsWith("`") ? ` ${value} ` : value;
   return `${fence}${padded}${fence}`;
 }
@@ -108,6 +136,13 @@ function serializeLinkDestination(url: string, title: string | null) {
 // --- Low-level utilities ---
 
 function escapeMarkdownText(value: string, nextNode?: Inline) {
+  // Fast-reject: plain prose contains none of the meta characters and
+  // skipping both replaces is the biggest single per-keystroke win in
+  // the serializer.
+  if (!markdownTextMetaProbe.test(value)) {
+    return value;
+  }
+
   const escaped = value.replace(markdownTextEscapePattern, "\\$1").replace(/@(?=\[)/g, "\\@");
   return nextNode?.type === "link" && escaped.endsWith("@")
     ? `${escaped.slice(0, -1)}\\@`

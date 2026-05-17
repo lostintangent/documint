@@ -1,27 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { createStore } from "@/component/store";
+import { createParameterizedSprig, createComputedSprig } from "@/component/store/core/computed";
 import {
-  createParameterizedStoreComputedValue,
-  createStoreComputedValue,
-} from "@/component/store/core/computed";
-import {
-  activeCommentThreadIndexValue,
-  completionSourcesValue,
-  documentCompletionValue,
-  normalizedSelectionValue,
-} from "@/component/store/editor/computed-values";
-import { documentIndexValue, editorStateValue } from "@/component/store/editor/values";
-import { presenceActiveCommentThreadColorsValue, presenceValue } from "@/component/store/presence";
-import { getDocument } from "@/editor";
+  activeCommentIndexSprig,
+  completionSourcesSprig,
+  cursorLeafSprig,
+  documentCompletionSprig,
+  normalizedSelectionSprig,
+} from "@/component/store/editor/computed-sprigs";
+import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/sprigs";
+import { commentPresenceColorsSprig, resolvedPresenceSprig } from "@/component/store/presence";
+import { createLayoutCache, getDocument, createEditorLayoutState } from "@/editor";
 import { addComment, insertText, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
 
-describe("computed values", () => {
+describe("computed sprigs", () => {
   test("caches one derived value per dependency snapshot", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
     let computeCount = 0;
-    const computed = createStoreComputedValue([editorStateValue] as const, (_store, state) => {
+    const computed = createComputedSprig([editorStateSprig], (_store, state) => {
       computeCount += 1;
       return state.selection.focus;
     });
@@ -39,24 +37,24 @@ describe("computed values", () => {
     const region = getRegion(store.editor.getState(), "alpha");
     let notifications = 0;
 
-    normalizedSelectionValue.subscribe(store, () => {
+    normalizedSelectionSprig.subscribe(store, () => {
       notifications += 1;
     });
 
-    store.editor.apply(setSelection(store.editor.getState(), { regionId: region.id, offset: 2 }));
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
 
     expect(notifications).toBe(1);
-    expect(normalizedSelectionValue.read(store).start.offset).toBe(2);
+    expect(normalizedSelectionSprig.read(store).start.offset).toBe(2);
   });
 
   test("does not notify when the derived output is equal", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
     const region = getRegion(store.editor.getState(), "alpha");
-    store.editor.replace(placeAt(store.editor.getState(), region, "end"), "external");
+    store.editor.replace(placeAt(store.editor.getState(), region, "end"));
     let notifications = 0;
-    const imageUrlSet = createStoreComputedValue(
-      [editorStateValue] as const,
+    const imageUrlSet = createComputedSprig(
+      [editorStateSprig],
       (_store, state) => new Set(state.documentIndex.imageUrls),
       equalStringSets,
     );
@@ -65,7 +63,7 @@ describe("computed values", () => {
       notifications += 1;
     });
     const previous = imageUrlSet.read(store);
-    store.editor.apply(insertText(store.editor.getState(), "!"));
+    store.editor.command(insertText, "!");
 
     expect(imageUrlSet.read(store)).toBe(previous);
     expect(notifications).toBe(0);
@@ -76,14 +74,14 @@ describe("computed values", () => {
     const store = createStore(getDocument(state));
     const region = getRegion(store.editor.getState(), "alpha");
     let computeCount = 0;
-    const computed = createStoreComputedValue([editorStateValue] as const, (_store, state) => {
+    const computed = createComputedSprig([editorStateSprig], (_store, state) => {
       computeCount += 1;
       return state.selection.focus.offset;
     });
 
     computed.subscribe(store, () => {});
     computed.subscribe(store, () => {});
-    store.editor.apply(setSelection(store.editor.getState(), { regionId: region.id, offset: 2 }));
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
 
     expect(computeCount).toBe(2);
   });
@@ -93,12 +91,12 @@ describe("computed values", () => {
     const store = createStore(getDocument(state));
     const region = getRegion(store.editor.getState(), "alpha");
     let notifications = 0;
-    const unsubscribe = normalizedSelectionValue.subscribe(store, () => {
+    const unsubscribe = normalizedSelectionSprig.subscribe(store, () => {
       notifications += 1;
     });
 
     unsubscribe();
-    store.editor.apply(setSelection(store.editor.getState(), { regionId: region.id, offset: 2 }));
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
 
     expect(notifications).toBe(0);
   });
@@ -109,41 +107,38 @@ describe("computed values", () => {
     const region = getRegion(store.editor.getState(), "alpha");
     let computeCount = 0;
     let notifications = 0;
-    const computed = createStoreComputedValue(
-      [documentIndexValue] as const,
-      (documintStore, documentIndex) => {
-        computeCount += 1;
-        return {
-          focusOffset: documintStore.editor.getState().selection.focus.offset,
-          regionCount: documentIndex.regions.length,
-        };
-      },
-    );
+    const computed = createComputedSprig([documentIndexSprig], (documintStore, documentIndex) => {
+      computeCount += 1;
+      return {
+        focusOffset: documintStore.editor.getState().selection.focus.offset,
+        regionCount: documentIndex.regions.length,
+      };
+    });
 
     computed.subscribe(store, () => {
       notifications += 1;
     });
     const previous = computed.read(store);
 
-    store.editor.apply(setSelection(store.editor.getState(), { regionId: region.id, offset: 2 }));
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
 
     expect(computed.read(store)).toBe(previous);
     expect(computeCount).toBe(1);
     expect(notifications).toBe(0);
 
-    store.editor.apply(insertText(store.editor.getState(), "!"));
+    store.editor.command(insertText, "!");
 
     expect(computed.read(store)).not.toBe(previous);
     expect(computeCount).toBe(2);
     expect(notifications).toBe(1);
   });
 
-  test("treats parameterized computed value params as dependencies", () => {
+  test("treats parameterized sprig params as dependencies", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
     let computeCount = 0;
-    const computed = createParameterizedStoreComputedValue(
-      [documentIndexValue] as const,
+    const computed = createParameterizedSprig(
+      [documentIndexSprig],
       (_documintStore, [label]: readonly [string], documentIndex) => {
         computeCount += 1;
         return `${label}:${documentIndex.regions.length}`;
@@ -163,7 +158,7 @@ describe("computed values", () => {
   test("derives parameterized presence from host input", () => {
     const state = setup("alpha beta\n");
     const store = createStore(getDocument(state));
-    const resolvedPresence = presenceValue.read(store, [
+    const resolvedPresence = resolvedPresenceSprig.read(store, [
       {
         cursor: {
           prefix: "alpha",
@@ -179,10 +174,10 @@ describe("computed values", () => {
       regionId: getRegion(state, "alpha beta").id,
     });
     expect(presence?.viewport).toBeNull();
-    expect(presenceValue.read(store, undefined)).toBeUndefined();
+    expect(resolvedPresenceSprig.read(store, undefined)).toBeUndefined();
   });
 
-  test("derives presence-active comment thread colors", () => {
+  test("derives comment-thread presence colors", () => {
     let state = setup("alpha beta\n");
     const region = getRegion(state, "alpha beta");
     state = setSelection(state, {
@@ -203,7 +198,7 @@ describe("computed values", () => {
     }
 
     expect(
-      presenceActiveCommentThreadColorsValue.read(store, [
+      commentPresenceColorsSprig.read(store, [
         {
           color: "#f97316",
           cursor: { threadId },
@@ -218,12 +213,10 @@ describe("computed values", () => {
     const state = setup("Hello @Ja\n");
     const store = createStore(getDocument(state));
     const region = getRegion(store.editor.getState(), "Hello @Ja");
-    store.editor.apply(
-      setSelection(store.editor.getState(), { regionId: region.id, offset: region.text.length }),
-    );
+    store.editor.command(setSelection, { regionId: region.id, offset: region.text.length });
 
     expect(
-      documentCompletionValue.read(store, [
+      documentCompletionSprig.read(store, [
         {
           trigger: "@",
           items: [
@@ -246,7 +239,7 @@ describe("computed values", () => {
     const state = setup("Hello\n");
     const store = createStore(getDocument(state));
 
-    const sources = completionSourcesValue.read(store, [
+    const sources = completionSourcesSprig.read(store, [
       { id: "u-zoe", username: "zoe" },
       { id: "u-amy", username: "amy", fullName: "Amy Adams" },
     ]);
@@ -261,7 +254,7 @@ describe("computed values", () => {
     expect(sources[1]?.trigger).toBe(":");
     expect(sources[1]?.items.some((item) => item.label === "sparkles")).toBe(true);
 
-    expect(completionSourcesValue.read(store, undefined).map((source) => source.trigger)).toEqual([
+    expect(completionSourcesSprig.read(store, undefined).map((source) => source.trigger)).toEqual([
       ":",
     ]);
   });
@@ -269,7 +262,7 @@ describe("computed values", () => {
   test("preserves parameterized presence output when resolved semantics are equal", () => {
     const state = setup("alpha beta\n");
     const store = createStore(getDocument(state));
-    const first = presenceValue.read(store, [
+    const first = resolvedPresenceSprig.read(store, [
       {
         cursor: {
           prefix: "alpha",
@@ -278,7 +271,7 @@ describe("computed values", () => {
         username: "User",
       },
     ]);
-    const second = presenceValue.read(store, [
+    const second = resolvedPresenceSprig.read(store, [
       {
         cursor: {
           prefix: "alpha",
@@ -309,7 +302,43 @@ describe("computed values", () => {
     );
     const store = createStore(getDocument(commented ?? state));
 
-    expect(activeCommentThreadIndexValue.read(store)).toBe(0);
+    expect(activeCommentIndexSprig.read(store)).toBe(0);
+  });
+
+  test("prefers cursor link leaves over table leaves", () => {
+    const state = setup("| Label |\n| --- |\n| [Docs](https://example.com) |\n");
+    const region = getRegion(state, "Docs");
+    const selected = placeAt(state, region, 1);
+    const store = createStore(getDocument(selected));
+    const viewport = createViewport(selected);
+
+    store.editor.replace(selected);
+    store.viewport.observeViewport(viewport);
+
+    expect(cursorLeafSprig.read(store, true)?.kind).toBe("link");
+  });
+
+  test("prefers cursor comment leaves over table leaves", () => {
+    let state = setup("| Label |\n| --- |\n| Review target |\n");
+    const region = getRegion(state, "Review target");
+    state =
+      addComment(
+        state,
+        {
+          endOffset: "Review".length,
+          regionId: region.id,
+          startOffset: 0,
+        },
+        "note",
+      ) ?? state;
+    state = placeAt(state, getRegion(state, "Review target"), 2);
+    const store = createStore(getDocument(state));
+    const viewport = createViewport(state);
+
+    store.editor.replace(state);
+    store.viewport.observeViewport(viewport);
+
+    expect(cursorLeafSprig.read(store, true)?.kind).toBe("thread");
   });
 });
 
@@ -324,4 +353,19 @@ function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   }
 
   return true;
+}
+
+function createViewport(state: ReturnType<typeof setup>) {
+  return createEditorLayoutState(
+    state,
+    {
+      height: 320,
+      paddingX: 0,
+      paddingY: 0,
+      top: 0,
+      width: 640,
+    },
+    createLayoutCache(),
+    null,
+  );
 }

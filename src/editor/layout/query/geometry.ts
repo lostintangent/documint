@@ -1,9 +1,10 @@
 // Owns visual geometry helpers shared by paint, navigation, and hit-testing.
 // Given a prepared `DocumentLayout` plus editor state, these resolve content
-// insets (e.g. list-marker indent), ancestry lookups, and small per-line
-// metric helpers (visual-left, task checkbox bounds).
+// insets (e.g. list-marker indent) and small per-line metric helpers
+// (visual-left, task checkbox bounds). Ancestry walks live in `editor/state`
+// (`findAncestorBlockEntry`) — layout consumes them as a primitive.
 
-import type { EditorListItemMarker, EditorState } from "../../state";
+import { findAncestorBlockEntry, type EditorListItemMarker, type EditorState } from "../../state";
 import {
   LIST_MARKER_TEXT_INSET,
   TASK_CHECKBOX_SIZE,
@@ -21,7 +22,7 @@ export function resolveLineVisualLeft(
 }
 
 export function resolveLineContentInset(state: EditorState, line: DocumentLayout["lines"][number]) {
-  const listItemEntry = findBlockAncestor(state, line.blockId, "listItem");
+  const listItemEntry = findAncestorBlockEntry(state.documentIndex, line.blockId, "listItem");
 
   if (!listItemEntry) {
     return 0;
@@ -38,26 +39,6 @@ export function resolveTaskCheckboxBounds(line: DocumentLayoutLine) {
     size: TASK_CHECKBOX_SIZE,
     top: line.top + 3,
   };
-}
-
-export function findBlockAncestor(
-  state: EditorState,
-  blockId: string,
-  type: EditorState["documentIndex"]["blocks"][number]["type"],
-) {
-  let current = state.documentIndex.blockIndex.get(blockId) ?? null;
-
-  while (current) {
-    if (current.type === type) {
-      return current;
-    }
-
-    const parentBlockId = current.parentBlockId;
-
-    current = parentBlockId ? (state.documentIndex.blockIndex.get(parentBlockId) ?? null) : null;
-  }
-
-  return null;
 }
 
 export function resolveListItemMarker(

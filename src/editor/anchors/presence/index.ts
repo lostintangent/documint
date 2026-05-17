@@ -4,8 +4,8 @@
  * Presence is ephemeral collaboration state provided by the host as a
  * content-addressable anchor. Text anchors resolve to remote cursor points;
  * comment-thread anchors resolve to active thread indices so the comment rule
- * can carry the user's presence color. Geometric measurement is left to
- * layout/paint.
+ * can carry the user's presence color. Viewport projection lives in
+ * `viewport.ts`.
  */
 
 import {
@@ -17,14 +17,14 @@ import {
   type TextAnchor,
 } from "@/document";
 import type { DocumentUserPresence } from "@/types";
-import type { DocumentIndex, EditorSelectionPoint } from "../state";
-import { projectAnchorContainersToEditor } from "./index";
+import type { DocumentIndex, EditorSelectionPoint } from "../../state";
+import { projectAnchorContainersToEditor } from "../index";
 
 // --- Types ---
 
 // Where a presence sits relative to the prepared viewport. `scrollTop` is the
-// y-position the host would scroll to to bring this cursor into view; it only
-// exists when the cursor was geometrically resolvable, so `unresolved` lacks
+// y-position the host would scroll to to bring this target into view; it only
+// exists when the target was geometrically resolvable, so `unresolved` lacks
 // it by construction.
 export type EditorPresenceViewport =
   | { status: "unresolved" }

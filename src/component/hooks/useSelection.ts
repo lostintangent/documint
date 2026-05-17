@@ -7,10 +7,10 @@ import {
 } from "@/editor";
 import { type HTMLAttributes, type PointerEvent, useEffectEvent, useRef, useState } from "react";
 import {
-  selectionLeafValue,
-  selectionViewValue,
+  selectionLeafSprig,
+  selectionViewSprig,
   useEditorCommand,
-  useStoreValue,
+  useSprig,
   type PromotedSelectionThread,
   type SelectionLeaf,
 } from "../store";
@@ -78,8 +78,8 @@ export function useSelection({
   /* Derived selection state */
 
   const [promotedThread, setPromotedThread] = useState<PromotedSelectionThread | null>(null);
-  const selection = useStoreValue(selectionViewValue);
-  const selectionLeaf = useStoreValue(selectionLeafValue, promotedThread);
+  const selection = useSprig(selectionViewSprig);
+  const selectionLeaf = useSprig(selectionLeafSprig, promotedThread);
   const setEditorSelection = useEditorCommand(setSelection);
   const dragSelectionHandle = useEditorCommand(updateSelectionFromDrag);
 

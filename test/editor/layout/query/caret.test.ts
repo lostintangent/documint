@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { createDocument, createParagraphTextBlock } from "@/document";
 import { createDocumentIndex, createEditorState } from "@/editor/state";
-import { createDocumentLayout, measureCaretTarget, resolveCaretVisualLeft } from "@/editor/layout";
+import { measureCaretTarget, resolveCaretVisualLeft } from "@/editor/layout";
+import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 
 test("measures caret geometry for a container offset", () => {
@@ -11,7 +12,7 @@ test("measures caret geometry for a container offset", () => {
 Paragraph for caret metrics.
 `),
   );
-  const layout = createDocumentLayout(runtime, {
+  const layout = measureLayoutSlice(runtime, {
     width: 220,
   });
   const paragraphContainer = runtime.regions[1];
@@ -33,7 +34,7 @@ Paragraph for caret metrics.
 
 test("advances the active caret across collapsed trailing spaces", () => {
   const state = createEditorState(createDocument([createParagraphTextBlock("alpha ")]));
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
   const paragraphContainer = state.documentIndex.regions[0];

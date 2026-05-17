@@ -12,4 +12,12 @@ export {
   replyToCommentThread,
 } from "./threads";
 
-export type { Comment, CommentResolution, CommentThread } from "./types";
+export { isCommentThreadAnchor } from "./types";
+
+export type {
+  Anchor,
+  Comment,
+  CommentResolution,
+  CommentThread,
+  CommentThreadAnchor,
+} from "./types";

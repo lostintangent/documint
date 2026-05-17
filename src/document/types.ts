@@ -3,6 +3,13 @@ import type { CommentThread } from "./comments";
 export type Document = {
   blocks: Block[];
   comments: CommentThread[];
+  /**
+   * Markdown-only round-trip slot for the leading `---`-fenced front matter,
+   * preserved verbatim. Treat as opaque metadata: the document engine never
+   * reads it. Intentionally an unparsed string until there is a concrete
+   * reason to model YAML/TOML structurally — once we do, this becomes a
+   * `metadata: Record<string, unknown>` slot owned at the document layer.
+   */
   frontMatter?: string;
 };
 

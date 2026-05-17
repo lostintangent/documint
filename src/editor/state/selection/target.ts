@@ -1,7 +1,7 @@
 // Declarative selection targets and target resolution. Actions produce these
 // stable references, and the reducer materializes them after document edits.
 
-import { findBlockById, getBlockChildren, type Block } from "@/document";
+import { getBlockChildren, type Block } from "@/document";
 import { createTableCellRegionKey } from "../index/shared";
 import type { DocumentIndex } from "../index/types";
 import type { EditorSelection } from "./index";
@@ -24,11 +24,6 @@ export type SelectionTarget =
       kind: "region";
       offset: number | "end";
       regionId: string;
-    }
-  | {
-      blockId: string;
-      kind: "block-primary-region";
-      offset: number | "end";
     }
   | {
       kind: "region-path";
@@ -78,20 +73,6 @@ export function createRegionTarget(regionId: string, offset: number | "end" = 0)
     kind: "region",
     offset,
     regionId,
-  };
-}
-
-// Targets the primary region of a block by id, regardless of where that block
-// currently sits in the tree. Useful when a caller knows the surviving block id
-// after an edit but its path or region id may have shifted.
-export function createBlockPrimaryRegionTarget(
-  blockId: string,
-  offset: number | "end" = 0,
-): SelectionTarget {
-  return {
-    blockId,
-    kind: "block-primary-region",
-    offset,
   };
 }
 
@@ -156,15 +137,6 @@ export function resolveSelectionTarget(
 
   if (selection.kind === "region") {
     const region = documentIndex.regionIndex.get(selection.regionId) ?? null;
-
-    return region
-      ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
-      : null;
-  }
-
-  if (selection.kind === "block-primary-region") {
-    const block = findBlockById(documentIndex.document, selection.blockId);
-    const region = block ? resolvePrimaryRegion(documentIndex, block) : null;
 
     return region
       ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))

@@ -19,9 +19,11 @@ export type {
   RuntimeMentionAttributes,
 } from "./index/types";
 
+// Inline selectors
+export { findInlinesInSpan } from "./inlines";
+
 // Selection
 export {
-  createBlockPrimaryRegionTarget,
   createRegionTarget,
   createRootPrimaryRegionTarget,
   getCaretTextContext,
@@ -47,6 +49,11 @@ export type {
 } from "./selection";
 
 // Animations
+export {
+  getEditorAnimationDuration,
+  hasRunningEditorAnimations,
+} from "./animations";
+
 export type {
   ActiveBlockFlashAnimation,
   TextFadeAnimation,
@@ -68,7 +75,7 @@ export {
 
 export type { EditorState } from "./types";
 
-export type { TextRangeTarget } from "./commands/context";
+export { findAncestorBlockEntry, type TextRangeTarget } from "./commands/context";
 
 // Commands
 export * from "./commands";

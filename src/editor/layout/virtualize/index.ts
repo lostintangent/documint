@@ -1,103 +1,104 @@
-// Owns viewport-aware layout orchestration. This module estimates whole-document
-// height cheaply, chooses the visible region slice, and runs exact layout only
-// for that slice before shifting it into document coordinates. The planner can
-// tolerate cheap text underestimation within overscan, but structural
-// overestimation is dangerous because it can stop the exact viewport slice
-// before content that should be visible.
+// Owns large-document layout virtualization: whole-document height estimates,
+// viewport slice selection, exact slice measurement, and refinement of cached
+// estimates from measured geometry.
+
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { isContainerBlock, isInertBlock } from "../../navigation/flow";
-import type { DocumentIndex, EditorRegion } from "../../state";
+import type { DocumentIndex, EditorRegion, EditorState } from "../../state";
 import {
-  createCanvasRenderCache,
-  getViewportPlan,
-  setViewportPlan,
-  type CanvasRenderCache,
-  type CanvasViewportPlan,
-} from "../../canvas/lib/cache";
+  getVirtualLayout,
+  setVirtualLayout,
+  type LayoutCache,
+  type VirtualLayout,
+} from "../state/cache";
 import { resolveListMarkerInset } from "../lib/geometry";
-import {
-  resolveDocumentLayoutOptions,
-  type DocumentLayoutOptions,
-  type PartialDocumentLayoutOptions,
-} from "../lib/options";
-import { resolveLeafBlockGap } from "../lib/spacing";
-import { buildDocumentBlockMap, createDocumentLayout, type DocumentLayout } from "../measure";
+import type { DocumentLayoutOptions } from "../lib/options";
+import { resolveBlockGap } from "../lib/spacing";
+import { measureLayoutSlice, type DocumentLayout } from "../measure";
 import { TABLE_CELL_PADDING_X, TABLE_CELL_PADDING_Y, TABLE_MIN_WIDTH } from "../measure/table";
 import { resolveTextBlockLineHeight } from "../measure/text";
 import { estimateContainerHeight, estimateTableCellHeight } from "./estimate";
+import { refineVirtualLayoutWithMeasuredSlice } from "./refine";
 import {
   expandViewportSliceToBlockBoundaries,
-  findViewportPlanEntryIndexAtOrAfter,
-  shiftDocumentLayout,
+  findVirtualLayoutEntryIndexAtOrAfter,
   updateMeasuredContainerHeights,
 } from "./slice";
 
-export type CanvasViewport = {
+type VirtualizedViewport = {
   height: number;
   overscan: number;
   top: number;
 };
 
-export type ViewportLayout = {
+export type VirtualizedLayoutSlice = {
   estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
   layout: DocumentLayout;
   totalHeight: number;
-  viewport: CanvasViewport;
 };
 
-export function createViewportLayout(
-  documentIndex: DocumentIndex,
-  options: PartialDocumentLayoutOptions,
-  viewport: CanvasViewport,
-  pinnedContainerIds: string[] = [],
-  cache = createCanvasRenderCache(),
-  resources: DocumentResources | null = null,
-): ViewportLayout {
-  // Resolve options once at this public boundary; every internal helper
-  // takes a full `DocumentLayoutOptions` so plan / estimate / cache key
-  // can never silently disagree with measure on a default value.
-  const resolvedOptions = resolveDocumentLayoutOptions(options);
-  const resolvedResources: DocumentResources = resources ?? { images: new Map() };
-  const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
-  // documentIndex.blockIndex is already `Map<string, EditorBlock>` keyed by
-  // block id — exactly what we need. Reusing it skips a per-call O(N) Map
-  // rebuild that contributed measurable cost on long-doc keystrokes.
-  const runtimeBlocks = documentIndex.blockIndex;
-  const pinned = new Set(pinnedContainerIds);
+export function createVirtualizedLayoutSlice({
+  blockMap,
+  cache,
+  documentIndex,
+  options,
+  resources,
+  runtimeBlocks,
+  state,
+  viewport,
+}: {
+  blockMap: Map<string, Block>;
+  cache: LayoutCache;
+  documentIndex: DocumentIndex;
+  options: DocumentLayoutOptions;
+  resources: DocumentResources;
+  runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>;
+  state: EditorState;
+  viewport: VirtualizedViewport;
+}): VirtualizedLayoutSlice {
   const expandedTop = Math.max(0, viewport.top - viewport.overscan);
   const expandedBottom = viewport.top + viewport.height + viewport.overscan;
-  const plan = getOrCreateViewportPlan(
+  const virtualLayout = getOrCreateVirtualLayout(
     cache,
     documentIndex,
     blockMap,
     runtimeBlocks,
-    resolvedOptions,
-    resolvedResources,
+    options,
+    resources,
   );
-  let sliceStartIndex = findViewportPlanEntryIndexAtOrAfter(plan, expandedTop);
-  let sliceEndIndex = findViewportPlanEntryIndexAtOrAfter(plan, expandedBottom);
+  let sliceStartIndex = findVirtualLayoutEntryIndexAtOrAfter(virtualLayout, expandedTop);
+  let sliceEndIndex = findVirtualLayoutEntryIndexAtOrAfter(virtualLayout, expandedBottom);
 
   if (sliceStartIndex > 0) {
-    const previous = plan.entries[sliceStartIndex - 1];
+    const previous = virtualLayout.entries[sliceStartIndex - 1];
 
     if (previous && previous.bottom > expandedTop) {
       sliceStartIndex -= 1;
     }
   }
 
-  if (sliceEndIndex < plan.entries.length) {
-    const next = plan.entries[sliceEndIndex];
+  if (sliceEndIndex < virtualLayout.entries.length) {
+    const next = virtualLayout.entries[sliceEndIndex];
 
     if (next && next.top < expandedBottom) {
       sliceEndIndex += 1;
     }
   }
 
-  for (const regionId of pinned) {
-    const index = plan.containerIndices.get(regionId);
+  const pinTop = Math.max(0, expandedTop - viewport.overscan);
+  const pinBottom = expandedBottom + viewport.overscan;
+  const pinned = new Set([state.selection.anchor.regionId, state.selection.focus.regionId]);
 
-    if (index === undefined) {
+  for (const regionId of pinned) {
+    const index = virtualLayout.containerIndices.get(regionId);
+    const bounds = virtualLayout.estimateRegionBounds(regionId);
+
+    if (index === undefined || !bounds) {
+      continue;
+    }
+
+    if (bounds.bottom < pinTop || bounds.top > pinBottom) {
       continue;
     }
 
@@ -105,84 +106,90 @@ export function createViewportLayout(
     sliceEndIndex = Math.max(sliceEndIndex, index + 1);
   }
 
+  let layout: DocumentLayout;
+
   if (!Number.isFinite(sliceStartIndex) || !Number.isFinite(sliceEndIndex)) {
-    return {
-      estimateRegionBounds: plan.estimateRegionBounds,
-      layout: createDocumentLayout(
-        {
-          ...documentIndex,
-          regions: [],
-        },
-        resolvedOptions,
-        cache,
-        resolvedResources,
-      ),
-      totalHeight: plan.totalHeight,
-      viewport,
-    };
+    layout = measureLayoutSlice(
+      {
+        ...documentIndex,
+        regions: [],
+      },
+      options,
+      cache,
+      resources,
+      blockMap,
+    );
+  } else {
+    const expandedSlice = expandViewportSliceToBlockBoundaries(
+      documentIndex,
+      runtimeBlocks,
+      virtualLayout.containerIndices,
+      sliceStartIndex,
+      sliceEndIndex,
+    );
+    const sliceTop = virtualLayout.entries[expandedSlice.startIndex]?.top ?? options.paddingY;
+    // Seed measurement at the slice's document-space top so geometry is
+    // produced directly in document coordinates — no post-shift needed.
+    // Override `height` with the full-document estimate so consumers that
+    // read `layout.height` (scrollbars, paint extents) see the doc height,
+    // not the slice height.
+    const sliceLayout = measureLayoutSlice(
+      {
+        ...documentIndex,
+        regions: documentIndex.regions.slice(expandedSlice.startIndex, expandedSlice.endIndex),
+      },
+      options,
+      cache,
+      resources,
+      blockMap,
+      sliceTop,
+    );
+
+    layout = { ...sliceLayout, height: virtualLayout.totalHeight };
+
+    updateMeasuredContainerHeights(cache, documentIndex, layout, options, resources);
+
+    if (refineVirtualLayoutWithMeasuredSlice(virtualLayout, documentIndex, layout)) {
+      layout = {
+        ...layout,
+        height: virtualLayout.totalHeight,
+      };
+    }
   }
 
-  const expandedSlice = expandViewportSliceToBlockBoundaries(
-    documentIndex,
-    runtimeBlocks,
-    plan.containerIndices,
-    sliceStartIndex,
-    sliceEndIndex,
-  );
-  const sliceTop = plan.entries[expandedSlice.startIndex]?.top ?? resolvedOptions.paddingY;
-  const sliceLayout = createDocumentLayout(
-    {
-      ...documentIndex,
-      regions: documentIndex.regions.slice(expandedSlice.startIndex, expandedSlice.endIndex),
-    },
-    resolvedOptions,
-    cache,
-    resolvedResources,
-  );
-  const shiftedLayout = shiftDocumentLayout(sliceLayout, sliceTop, plan.totalHeight);
-
-  updateMeasuredContainerHeights(
-    cache,
-    documentIndex,
-    shiftedLayout,
-    resolvedOptions,
-    resolvedResources,
-  );
-
   return {
-    estimateRegionBounds: plan.estimateRegionBounds,
-    layout: shiftedLayout,
-    totalHeight: plan.totalHeight,
-    viewport,
+    estimateRegionBounds: virtualLayout.estimateRegionBounds,
+    layout,
+    totalHeight: virtualLayout.totalHeight,
   };
 }
 
-function getOrCreateViewportPlan(
-  cache: CanvasRenderCache,
+function getOrCreateVirtualLayout(
+  cache: LayoutCache,
   documentIndex: DocumentIndex,
   blockMap: Map<string, Block>,
   runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  const cacheKey = createViewportPlanCacheKey(documentIndex, options, resources);
-  const cached = getViewportPlan(cache, documentIndex, cacheKey);
+  const cacheKey = createVirtualLayoutCacheKey(documentIndex, options, resources);
+  const cached = getVirtualLayout(cache, documentIndex, cacheKey);
 
   if (cached) {
     return cached;
   }
 
-  // Plan walks blocks (mirroring `createDocumentLayout`). Inert leaf
+  // Estimation walks blocks (mirroring `measureLayoutSlice`). Inert leaf
   // blocks contribute fixed height to `totalHeight` so subsequent regions
   // land at Y positions consistent with what layout actually produces.
-  // They have no plan entry — the entries array stays 1:1 with
+  // They have no virtual-layout entry — the entries array stays 1:1 with
   // `documentIndex.regions`. Container blocks (blockquote, list,
   // listItem) are skipped here just as in layout — their leaf descendants
   // emit the actual entries.
   let totalHeight = options.paddingY;
   // Sparse array — entries[i] corresponds to documentIndex.regions[i]; slots
   // for inert leaves (which have no region) are never written.
-  const entries: CanvasViewportPlan["entries"] = [];
+  const entries: VirtualLayout["entries"] = [];
   const containerIndices = new Map<string, number>();
   let regionCursor = 0;
   let previousLaidOutBlockId: string | null = null;
@@ -195,7 +202,7 @@ function getOrCreateViewportPlan(
     if (!isInert && blockEntry.regionIds.length === 0) continue;
 
     if (previousLaidOutBlockId !== null) {
-      totalHeight += resolveLeafBlockGap(
+      totalHeight += resolveBlockGap(
         runtimeBlocks,
         blockMap,
         previousLaidOutBlockId,
@@ -207,7 +214,7 @@ function getOrCreateViewportPlan(
     if (isInert) {
       totalHeight += options.lineHeight;
     } else if (block.type === "table") {
-      const result = appendTablePlanEntries({
+      const result = appendTableEstimateEntries({
         block,
         containerIndices,
         entries,
@@ -222,11 +229,7 @@ function getOrCreateViewportPlan(
         totalHeight = result.totalHeight;
       }
     } else {
-      const listInset = resolveListMarkerInset(
-        documentIndex.blockIndex,
-        documentIndex.listItemMarkers,
-        blockEntry.id,
-      );
+      const listInset = resolveListMarkerInset(documentIndex, blockEntry.id);
       for (const _regionId of blockEntry.regionIds) {
         const container = documentIndex.regions[regionCursor];
         if (!container) {
@@ -254,7 +257,7 @@ function getOrCreateViewportPlan(
     previousLaidOutBlockId = blockEntry.id;
   }
 
-  return setViewportPlan(cache, documentIndex, cacheKey, {
+  return setVirtualLayout(cache, documentIndex, cacheKey, {
     containerIndices,
     entries,
     estimateRegionBounds(regionId) {
@@ -266,7 +269,7 @@ function getOrCreateViewportPlan(
   });
 }
 
-function appendTablePlanEntries({
+function appendTableEstimateEntries({
   block,
   containerIndices,
   entries,
@@ -278,7 +281,7 @@ function appendTablePlanEntries({
 }: {
   block: Extract<Block, { type: "table" }>;
   containerIndices: Map<string, number>;
-  entries: CanvasViewportPlan["entries"];
+  entries: VirtualLayout["entries"];
   index: number;
   options: DocumentLayoutOptions;
   runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>;
@@ -372,7 +375,7 @@ function collectTableRowRegions(regions: DocumentIndex["regions"], startIndex: n
   return rows;
 }
 
-function createViewportPlanCacheKey(
+function createVirtualLayoutCacheKey(
   documentIndex: DocumentIndex,
   options: DocumentLayoutOptions,
   resources: DocumentResources,

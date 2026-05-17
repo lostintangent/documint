@@ -6,7 +6,15 @@ import {
   sortCompletionSources,
   tokenizeTriggers,
   type CompletionSource,
+  type TriggerSegment,
 } from "@/component/completions/completions";
+
+type TokenizeTriggersRow = {
+  name: string;
+  input: string;
+  sources: CompletionSource[] | undefined;
+  expected: TriggerSegment[];
+};
 
 const userSource: CompletionSource = {
   trigger: "@",
@@ -149,77 +157,96 @@ const emojiSource: CompletionSource = {
 };
 
 describe("tokenizeTriggers", () => {
-  test("returns a single text segment when no triggers are present", () => {
-    expect(tokenizeTriggers("nothing to see here", [userSource])).toEqual([
-      { kind: "text", text: "nothing to see here" },
-    ]);
-  });
+  const rows: TokenizeTriggersRow[] = [
+    {
+      name: "returns a single text segment when no triggers are present",
+      input: "nothing to see here",
+      sources: [userSource],
+      expected: [{ kind: "text", text: "nothing to see here" }],
+    },
+    {
+      name: "tokenizes a mention at the start of the body",
+      input: "@Jane shipped it",
+      sources: [userSource],
+      expected: [
+        { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
+        { kind: "text", text: " shipped it" },
+      ],
+    },
+    {
+      name: "tokenizes a mention after whitespace",
+      input: "hi @John!",
+      sources: [userSource],
+      expected: [
+        { kind: "text", text: "hi " },
+        { kind: "token", trigger: "@", label: "John", id: "u-john" },
+        { kind: "text", text: "!" },
+      ],
+    },
+    {
+      name: "tokenizes mentions after newline and tab boundaries",
+      input: "first\n@Jane\t@John",
+      sources: [userSource],
+      expected: [
+        { kind: "text", text: "first\n" },
+        { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
+        { kind: "text", text: "\t" },
+        { kind: "token", trigger: "@", label: "John", id: "u-john" },
+      ],
+    },
+    {
+      name: "prefers the longest matching label",
+      input: "@Jane Doe wrote this",
+      sources: [userSource],
+      expected: [
+        { kind: "token", trigger: "@", label: "Jane Doe", id: "u-jane-doe" },
+        { kind: "text", text: " wrote this" },
+      ],
+    },
+    {
+      name: "does not match a trigger embedded inside a word",
+      input: "email@Jane.com",
+      sources: [userSource],
+      expected: [{ kind: "text", text: "email@Jane.com" }],
+    },
+    {
+      name: "does not partially match a longer word after a trigger",
+      input: "@JaneDoe and :smilewide",
+      sources: [userSource, emojiSource],
+      expected: [{ kind: "text", text: "@JaneDoe and :smilewide" }],
+    },
+    {
+      name: "does not match a trigger immediately after punctuation",
+      input: "(@Jane) and /@John",
+      sources: [userSource],
+      expected: [{ kind: "text", text: "(@Jane) and /@John" }],
+    },
+    {
+      name: "ignores triggers that don't match any source item",
+      input: "@Unknown person",
+      sources: [userSource],
+      expected: [{ kind: "text", text: "@Unknown person" }],
+    },
+    {
+      name: "tokenizes multiple trigger sources independently",
+      input: "Ping @Jane then :smile",
+      sources: [userSource, emojiSource],
+      expected: [
+        { kind: "text", text: "Ping " },
+        { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
+        { kind: "text", text: " then " },
+        { kind: "token", trigger: ":", label: "smile", id: "emoji-smile" },
+      ],
+    },
+    {
+      name: "returns a single text segment when no sources are provided",
+      input: "@Jane",
+      sources: undefined,
+      expected: [{ kind: "text", text: "@Jane" }],
+    },
+  ];
 
-  test("tokenizes a mention at the start of the body", () => {
-    expect(tokenizeTriggers("@Jane shipped it", [userSource])).toEqual([
-      { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-      { kind: "text", text: " shipped it" },
-    ]);
-  });
-
-  test("tokenizes a mention after whitespace", () => {
-    expect(tokenizeTriggers("hi @John!", [userSource])).toEqual([
-      { kind: "text", text: "hi " },
-      { kind: "token", trigger: "@", label: "John", id: "u-john" },
-      { kind: "text", text: "!" },
-    ]);
-  });
-
-  test("tokenizes mentions after newline and tab boundaries", () => {
-    expect(tokenizeTriggers("first\n@Jane\t@John", [userSource])).toEqual([
-      { kind: "text", text: "first\n" },
-      { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-      { kind: "text", text: "\t" },
-      { kind: "token", trigger: "@", label: "John", id: "u-john" },
-    ]);
-  });
-
-  test("prefers the longest matching label", () => {
-    expect(tokenizeTriggers("@Jane Doe wrote this", [userSource])).toEqual([
-      { kind: "token", trigger: "@", label: "Jane Doe", id: "u-jane-doe" },
-      { kind: "text", text: " wrote this" },
-    ]);
-  });
-
-  test("does not match a trigger embedded inside a word", () => {
-    expect(tokenizeTriggers("email@Jane.com", [userSource])).toEqual([
-      { kind: "text", text: "email@Jane.com" },
-    ]);
-  });
-
-  test("does not partially match a longer word after a trigger", () => {
-    expect(tokenizeTriggers("@JaneDoe and :smilewide", [userSource, emojiSource])).toEqual([
-      { kind: "text", text: "@JaneDoe and :smilewide" },
-    ]);
-  });
-
-  test("does not match a trigger immediately after punctuation", () => {
-    expect(tokenizeTriggers("(@Jane) and /@John", [userSource])).toEqual([
-      { kind: "text", text: "(@Jane) and /@John" },
-    ]);
-  });
-
-  test("ignores triggers that don't match any source item", () => {
-    expect(tokenizeTriggers("@Unknown person", [userSource])).toEqual([
-      { kind: "text", text: "@Unknown person" },
-    ]);
-  });
-
-  test("tokenizes multiple trigger sources independently", () => {
-    expect(tokenizeTriggers("Ping @Jane then :smile", [userSource, emojiSource])).toEqual([
-      { kind: "text", text: "Ping " },
-      { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-      { kind: "text", text: " then " },
-      { kind: "token", trigger: ":", label: "smile", id: "emoji-smile" },
-    ]);
-  });
-
-  test("returns a single text segment when no sources are provided", () => {
-    expect(tokenizeTriggers("@Jane", undefined)).toEqual([{ kind: "text", text: "@Jane" }]);
+  test.each(rows)("$name", ({ input, sources, expected }) => {
+    expect(tokenizeTriggers(input, sources)).toEqual(expected);
   });
 });

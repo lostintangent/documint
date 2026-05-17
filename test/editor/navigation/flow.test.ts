@@ -6,7 +6,7 @@ import {
   nextBlockInFlow,
   previousBlockInFlow,
 } from "@/editor/navigation";
-import { createDocumentLayout } from "@/editor/layout";
+import { measureLayoutSlice } from "@/editor/layout/measure";
 import { getRegion, placeAt, setup } from "../helpers";
 
 describe("Inert leaf blocks", () => {
@@ -49,7 +49,7 @@ describe("Inert leaf blocks", () => {
     const state = setup("alpha\n\n---\n\nbeta\n");
     const alpha = getRegion(state, "alpha");
     const beta = getRegion(state, "beta");
-    const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+    const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
 
     const next = moveCaretVertically(placeAt(state, alpha, "end"), layout, 1);
 
@@ -60,7 +60,7 @@ describe("Inert leaf blocks", () => {
     const state = setup("alpha\n\n---\n\nbeta\n");
     const alpha = getRegion(state, "alpha");
     const beta = getRegion(state, "beta");
-    const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+    const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
 
     const next = moveCaretVertically(placeAt(state, beta, "start"), layout, -1);
 

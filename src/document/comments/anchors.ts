@@ -15,7 +15,6 @@
  * verification) lives in `src/document/anchors.ts`.
  */
 
-import type { Document } from "../types";
 import {
   clamp,
   createAnchorFromContainer,
@@ -29,7 +28,8 @@ import {
   type AnchorContainer,
   type AnchorMatch,
   type AnchorResolutionStatus,
-} from "../anchors";
+} from "../query/anchors";
+import type { Document } from "../types";
 import type { CommentResolution, CommentThread } from "./types";
 
 // --- Scoring weights ---
@@ -43,6 +43,14 @@ const EXACT_CONTEXT_MATCH_SCORE = 48;
 const CONTEXT_REPAIR_MATCH_SCORE = 64;
 const MAX_LENGTH_SIMILARITY_SCORE = 32;
 
+// Cap on the per-candidate character-prefix/suffix comparison. Comparing
+// long quotes against many candidates inside a paragraph with repeated text
+// (e.g. a header that appears every few lines) is otherwise O(C·M·Q); the
+// cap bounds the tail. 64 is comfortably larger than the surrounding
+// `CONTEXT_WINDOW` of 24, so it never cuts inside a region the prefix/suffix
+// fingerprint already covered.
+const MAX_SIMILARITY_COMPARE_LENGTH = 64;
+
 type AnchorMatchCandidate = {
   container: AnchorContainer;
   endOffset: number;
@@ -52,7 +60,15 @@ type AnchorMatchCandidate = {
 
 // --- Public API ---
 
-export function resolveCommentThread(thread: CommentThread, snapshot: Document): CommentResolution {
+// Resolve a thread against the current snapshot. Pass `previousMatch` when the
+// caller knows where the thread resolved last time — equal-score ties prefer
+// the prior location, which keeps threads stable across snapshots that
+// introduce duplicate matches (e.g. a heading repeated by a copy/paste).
+export function resolveCommentThread(
+  thread: CommentThread,
+  snapshot: Document,
+  previousMatch: AnchorMatch | null = null,
+): CommentResolution {
   const anchorKind = thread.anchor.kind ?? DEFAULT_ANCHOR_KIND;
   const containers = listAnchorContainers(snapshot).filter(
     (container) => container.containerKind === anchorKind,
@@ -60,13 +76,13 @@ export function resolveCommentThread(thread: CommentThread, snapshot: Document):
   const exactCandidates = collectExactQuoteCandidates(thread, containers);
 
   if (exactCandidates.length > 0) {
-    return finalizeResolution(thread, exactCandidates, null);
+    return finalizeResolution(thread, exactCandidates, null, previousMatch);
   }
 
   const contextCandidates = collectContextResolutionCandidates(thread, containers);
 
   if (contextCandidates.length > 0) {
-    return finalizeResolution(thread, contextCandidates, "repaired");
+    return finalizeResolution(thread, contextCandidates, "repaired", previousMatch);
   }
 
   return {
@@ -184,18 +200,14 @@ function finalizeResolution(
   thread: CommentThread,
   candidates: AnchorMatchCandidate[],
   forceStatus: AnchorResolutionStatus | null,
+  previousMatch: AnchorMatch | null,
 ): CommentResolution {
-  const [first, second] = candidates;
+  const winner = pickWinningCandidate(candidates, previousMatch);
 
-  if (!first) {
-    return {
-      match: null,
-      repair: null,
-      status: "stale",
-    };
-  }
-
-  if (second && first.score === second.score) {
+  // Callers only invoke `finalizeResolution` with a non-empty candidate list,
+  // so a null winner means the leader is genuinely ambiguous — multiple equal
+  // top scores, none of which match the prior location.
+  if (!winner) {
     return {
       match: null,
       repair: null,
@@ -204,14 +216,14 @@ function finalizeResolution(
   }
 
   const repairedAnchor = createAnchorFromContainer(
-    first.container,
-    first.startOffset,
-    first.endOffset,
+    winner.container,
+    winner.startOffset,
+    winner.endOffset,
   );
   const repairedQuote = extractQuoteFromContainer(
-    first.container,
-    first.startOffset,
-    first.endOffset,
+    winner.container,
+    winner.startOffset,
+    winner.endOffset,
   );
   const status =
     forceStatus ??
@@ -222,13 +234,51 @@ function finalizeResolution(
       : "repaired");
 
   return {
-    match: toAnchorMatch(first.container, first.startOffset, first.endOffset),
+    match: toAnchorMatch(winner.container, winner.startOffset, winner.endOffset),
     repair: {
       anchor: repairedAnchor,
       quote: repairedQuote,
     },
     status,
   };
+}
+
+// Pick the highest-scoring candidate, falling back to `previousMatch` as the
+// tiebreaker when the top score is shared. Returns `null` if the leader is
+// genuinely ambiguous (multiple equal scores, none matching the prior
+// location) or if there are no candidates at all.
+function pickWinningCandidate(
+  candidates: AnchorMatchCandidate[],
+  previousMatch: AnchorMatch | null,
+): AnchorMatchCandidate | null {
+  const [first, second] = candidates;
+
+  if (!first) {
+    return null;
+  }
+
+  if (!second || first.score !== second.score) {
+    return first;
+  }
+
+  // Tie at the top: prefer the candidate that matches the previous match
+  // exactly. Stability across snapshots is worth more than the tied score
+  // since "the previous answer" carries information the score doesn't.
+  if (previousMatch) {
+    const tied = candidates.filter((candidate) => candidate.score === first.score);
+    const priorMatch = tied.find(
+      (candidate) =>
+        candidate.container.id === previousMatch.containerId &&
+        candidate.startOffset === previousMatch.startOffset &&
+        candidate.endOffset === previousMatch.endOffset,
+    );
+
+    if (priorMatch) {
+      return priorMatch;
+    }
+  }
+
+  return null;
 }
 
 function toAnchorMatch(
@@ -291,34 +341,36 @@ function scoreContextCandidate(
     const candidateText = container.text.slice(startOffset, endOffset);
 
     if (candidateText.length > 0) {
-      score += sharedCharacterPrefixLength(thread.quote, candidateText);
-      score += sharedCharacterSuffixLength(thread.quote, candidateText);
+      const cap = MAX_SIMILARITY_COMPARE_LENGTH;
+      score += sharedCharacterPrefixLength(thread.quote, candidateText, cap);
+      score += sharedCharacterSuffixLength(thread.quote, candidateText, cap);
     }
   }
 
   return score;
 }
 
-// Count the leading characters two strings share. Comment-specific
-// similarity metric for tiebreaking fuzzy match candidates.
-function sharedCharacterPrefixLength(left: string, right: string) {
+// Count the leading characters two strings share, up to `cap`. Comment-
+// specific similarity metric for tiebreaking fuzzy match candidates.
+function sharedCharacterPrefixLength(left: string, right: string, cap: number): number {
+  const limit = Math.min(cap, left.length, right.length);
   let length = 0;
 
-  while (length < left.length && length < right.length && left[length] === right[length]) {
+  while (length < limit && left[length] === right[length]) {
     length += 1;
   }
 
   return length;
 }
 
-// Count the trailing characters two strings share. See
+// Count the trailing characters two strings share, up to `cap`. See
 // `sharedCharacterPrefixLength`.
-function sharedCharacterSuffixLength(left: string, right: string) {
+function sharedCharacterSuffixLength(left: string, right: string, cap: number): number {
+  const limit = Math.min(cap, left.length, right.length);
   let length = 0;
 
   while (
-    length < left.length &&
-    length < right.length &&
+    length < limit &&
     left[left.length - 1 - length] === right[right.length - 1 - length]
   ) {
     length += 1;

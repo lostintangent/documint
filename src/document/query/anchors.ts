@@ -20,8 +20,8 @@
  * these primitives. This module never picks a winner — it returns candidates.
  */
 
-import { extractPlainTextFromInlineNodes } from "./document";
-import type { Document } from "./types";
+import type { Document } from "../types";
+import { extractPlainTextFromInlineNodes } from "./text";
 import { visitDocument } from "./visit";
 
 // --- Anchor kinds ---
@@ -65,6 +65,11 @@ export function anchorKindForBlockType(blockType: string): AnchorKind | null {
 }
 
 // --- Anchor types ---
+//
+// Substrate-level vocabulary. `TextAnchor` is the content-addressable form
+// every consumer composes their own policy around. The indirect forms layered
+// on top — e.g. `CommentThreadAnchor` from `src/document/comments` — live in
+// their owning domains so the substrate stays free of domain identifiers.
 
 // A content-addressable text position descriptor. `prefix` and `suffix` are short
 // snapshots of the surrounding text; together they let a consumer re-find
@@ -75,18 +80,6 @@ export type TextAnchor = {
   prefix?: string;
   suffix?: string;
 };
-
-// Indirect anchor form used by presence: resolve through the comment thread's
-// own text anchor, then treat that thread as presence-active.
-export type CommentThreadAnchor = {
-  threadId: string;
-};
-
-export type Anchor = TextAnchor | CommentThreadAnchor;
-
-export function isCommentThreadAnchor(anchor: Anchor): anchor is CommentThreadAnchor {
-  return "threadId" in anchor;
-}
 
 // A text region an anchor can attach to. `id` is the underlying block or
 // table-cell id. `containerOrdinal` is the position among containers in
@@ -248,7 +241,9 @@ export function findOccurrences(text: string, query: string): number[] {
     }
 
     occurrences.push(matchIndex);
-    searchIndex = matchIndex + Math.max(1, query.length);
+    // `query.length >= 1` is guaranteed by the early return above, so no
+    // `Math.max(1, …)` floor is needed to make progress on each iteration.
+    searchIndex = matchIndex + query.length;
   }
 
   return occurrences;

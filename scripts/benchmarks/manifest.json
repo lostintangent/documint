@@ -124,14 +124,14 @@
     },
     "markdown": {
       "markdown_to_document_comments": 0.1,
-      "markdown_to_document_short": 0.05,
-      "markdown_to_document_medium": 0.2,
-      "markdown_to_document": 10,
-      "markdown_to_document_rich": 0.1,
-      "document_to_markdown_comments": 0.06,
-      "document_to_markdown_short": 0.02,
-      "document_to_markdown_medium": 0.08,
-      "document_to_markdown": 2.5,
+      "markdown_to_document_short": 0.04,
+      "markdown_to_document_medium": 0.14,
+      "markdown_to_document": 8,
+      "markdown_to_document_rich": 0.08,
+      "document_to_markdown_comments": 0.05,
+      "document_to_markdown_short": 0.015,
+      "document_to_markdown_medium": 0.06,
+      "document_to_markdown": 1.8,
       "document_to_markdown_rich": 0.03
     },
     "layout": {

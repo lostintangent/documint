@@ -619,18 +619,18 @@ describe("Undo / redo", () => {
 describe("Comments — clipboard repair", () => {
   test("copy never disturbs threads on the source state", () => {
     const state = withCommentOn(setup("Hello world\n"), "Hello world", "world");
-    const before = liveCommentTexts(state);
+    const before = resolvedCommentTexts(state);
 
     copySelection(selectIn(state, getRegion(state, "Hello world"), 0, 5));
 
-    expect(liveCommentTexts(state)).toEqual(before);
+    expect(resolvedCommentTexts(state)).toEqual(before);
   });
 
   test("structural paste in a different root preserves the thread", () => {
     const seeded = withCommentOn(setup("alpha\n\nbeta\n"), "beta", "beta");
     const next = pasteFragment(placeCaret(seeded, "alpha", "start"), parseFragment("- new\n"))!;
 
-    expect(liveCommentTexts(next)).toEqual(["beta"]);
+    expect(resolvedCommentTexts(next)).toEqual(["beta"]);
   });
 
   test("structural paste before a commented offset shifts the anchor correctly", () => {
@@ -638,7 +638,7 @@ describe("Comments — clipboard repair", () => {
     // Paste italic at offset 0 — content ahead of the comment shifts.
     const next = pasteFragment(placeCaret(seeded, "Hello world", "start"), parseFragment("*X*"))!;
 
-    expect(liveCommentTexts(next)).toEqual(["world"]);
+    expect(resolvedCommentTexts(next)).toEqual(["world"]);
   });
 
   test("cross-region delete preserves a thread anchored before the cut range", () => {
@@ -649,7 +649,7 @@ describe("Comments — clipboard repair", () => {
     });
     const cut = deleteSelection(selected)!;
 
-    expect(liveCommentTexts(cut)).toEqual(["alpha"]);
+    expect(resolvedCommentTexts(cut)).toEqual(["alpha"]);
   });
 
   test("clipboard markdown does not carry comment threads", () => {
@@ -774,14 +774,14 @@ function withCommentOn(state: EditorState, regionText: string, quote: string): E
   return next;
 }
 
-// Quotes of the threads that currently resolve to a live range in `state`,
+// Quotes of the threads that currently resolve to a comment range in `state`,
 // preserving thread order. Threads that no longer match any container are
 // implicitly excluded — that's the "did the comment survive the edit?" check.
-function liveCommentTexts(state: EditorState): string[] {
+function resolvedCommentTexts(state: EditorState): string[] {
   const commentState = getCommentState(state);
-  const liveByIndex = new Map(commentState.liveRanges.map((range) => [range.threadIndex, range]));
+  const rangesByIndex = new Map(commentState.ranges.map((range) => [range.threadIndex, range]));
 
   return commentState.threads
-    .map((thread, index) => (liveByIndex.has(index) ? thread.quote : null))
+    .map((thread, index) => (rangesByIndex.has(index) ? thread.quote : null))
     .filter((quote): quote is string => quote !== null);
 }

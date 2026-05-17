@@ -1,22 +1,22 @@
 import { expect, test } from "bun:test";
-import { createCanvasRenderCache, prepareLayout, resolveHoverTarget } from "@/editor";
+import { createLayoutCache, createEditorLayoutState, resolveHoverTarget } from "@/editor";
 import { createDocumentIndex } from "@/editor/state";
 import {
-  createDocumentLayout,
+  hitTestDocumentLayout,
   measureCaretTarget,
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
   resolveLinkHitAtPoint,
   resolveWordSelectionAtPoint,
-  resolveSelectionHit,
 } from "@/editor/layout";
+import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import type { DocumentResources } from "@/types";
 import { getRegion, setup } from "../../helpers";
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
   const runtime = createDocumentIndex(parseDocument(`Paragraph with semantic offsets.\n`));
-  const layout = createDocumentLayout(runtime, {
+  const layout = measureLayoutSlice(runtime, {
     width: 320,
   });
   const paragraphContainer = runtime.regions[0];
@@ -25,7 +25,7 @@ test("hit-tests canvas layout coordinates back to semantic offsets", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const hit = resolveSelectionHit(layout, runtime, {
+  const hit = hitTestDocumentLayout(layout, runtime, {
     x: measureCaretTarget(layout, runtime, {
       regionId: paragraphContainer.id,
       offset: 10,
@@ -41,7 +41,7 @@ test("hit-tests the second line of a multi-line wrapped paragraph", () => {
   const state = setup(
     `This is a long paragraph that will wrap to multiple lines when laid out at a narrow width for testing.\n`,
   );
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 200,
   });
   const container = state.documentIndex.regions[0];
@@ -71,7 +71,7 @@ test("hit-tests the second line of a multi-line wrapped paragraph", () => {
 
 test("resolves link hits from document-space coordinates over linked text", () => {
   const state = setup("[alpha](https://example.com) tail\n");
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
   const line = layout.lines[0];
@@ -90,7 +90,7 @@ test("resolves link hits from document-space coordinates over linked text", () =
 
 test("resolves drag focus to the anchor start above the prepared layout", () => {
   const state = setup("alpha beta\n");
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
   const region = state.documentIndex.regions[0];
@@ -121,7 +121,7 @@ test("resolves drag focus to the anchor start above the prepared layout", () => 
 
 test("resolves drag focus into a different region instead of clamping to the anchor", () => {
   const state = setup("alpha\n\nbeta\n");
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
   const [firstRegion, secondRegion] = state.documentIndex.regions;
@@ -157,7 +157,7 @@ test("resolves drag focus into a different region instead of clamping to the anc
 
 test("resolves drag focus to the anchor end below the prepared layout", () => {
   const state = setup("alpha beta\n");
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
   const region = state.documentIndex.regions[0];
@@ -194,7 +194,7 @@ test("resolves a click on the trailing empty line below a soft break to its post
   // would leave the caret unable to follow the user's click.
   const state = setup("foo<br>\n");
   const region = getRegion(state, "foo\n");
-  const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
 
   const trailingLine = layout.lines.find((line) => line.regionId === region.id && line.text === "");
 
@@ -202,7 +202,7 @@ test("resolves a click on the trailing empty line below a soft break to its post
     throw new Error("Expected a trailing empty line for the soft break");
   }
 
-  const hit = resolveSelectionHit(layout, state.documentIndex, {
+  const hit = hitTestDocumentLayout(layout, state.documentIndex, {
     x: trailingLine.left + 4,
     y: trailingLine.top + trailingLine.height / 2,
   });
@@ -214,7 +214,7 @@ test("resolves a click on the trailing empty line below a soft break to its post
 test("resolves word selection with shared unicode word boundaries", () => {
   const state = setup("hello 世界\n");
   const region = getRegion(state, "hello 世界");
-  const layout = createDocumentLayout(state.documentIndex, { width: 320 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
   const caret = measureCaretTarget(layout, state.documentIndex, {
     regionId: region.id,
     offset: 7,
@@ -248,7 +248,7 @@ test("hit-tests the correct table column within the same row band", () => {
 | Editor | stable | 640 |
 `),
   );
-  const layout = createDocumentLayout(runtime, {
+  const layout = measureLayoutSlice(runtime, {
     width: 640,
   });
   const headerValue = layout.lines.find((line) => line.text === "Wide host");
@@ -263,7 +263,7 @@ test("hit-tests the correct table column within the same row band", () => {
     throw new Error("Expected table cell bounds");
   }
 
-  const hit = resolveSelectionHit(layout, runtime, {
+  const hit = hitTestDocumentLayout(layout, runtime, {
     x: extent.left + 8,
     y: headerValue.top + 4,
   });
@@ -278,7 +278,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
 | One | Two three four five six seven |
 `),
   );
-  const layout = createDocumentLayout(runtime, {
+  const layout = measureLayoutSlice(runtime, {
     width: 360,
   });
   const shortCellLine = layout.lines.find((line) => line.text === "One");
@@ -293,7 +293,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
     throw new Error("Expected short cell bounds");
   }
 
-  const hit = resolveSelectionHit(layout, runtime, {
+  const hit = hitTestDocumentLayout(layout, runtime, {
     x: extent.left + 8,
     y: extent.bottom - 6,
   });
@@ -319,7 +319,7 @@ test("hit-tests image runs as atomic before-or-after caret stops", () => {
       ],
     ]),
   };
-  const layout = createDocumentLayout(runtime, { width: 520 }, undefined, resources);
+  const layout = measureLayoutSlice(runtime, { width: 520 }, undefined, resources);
   const line = layout.lines[0];
   const paragraph = runtime.regions[0];
 
@@ -346,11 +346,11 @@ test("hit-tests image runs as atomic before-or-after caret stops", () => {
     throw new Error("Expected image caret targets");
   }
 
-  const leftHit = resolveSelectionHit(layout, runtime, {
+  const leftHit = hitTestDocumentLayout(layout, runtime, {
     x: beforeImage.left + (afterImage.left - beforeImage.left) * 0.25,
     y: line.top + line.height / 2,
   });
-  const rightHit = resolveSelectionHit(layout, runtime, {
+  const rightHit = hitTestDocumentLayout(layout, runtime, {
     x: beforeImage.left + (afterImage.left - beforeImage.left) * 0.75,
     y: line.top + line.height / 2,
   });
@@ -360,9 +360,9 @@ test("hit-tests image runs as atomic before-or-after caret stops", () => {
 });
 
 test("resolves task-toggle hover targets ahead of text hits", () => {
-  const renderCache = createCanvasRenderCache();
+  const layoutCache = createLayoutCache();
   const state = setup("- [ ] Review task\n");
-  const viewport = prepareLayout(state, { height: 320, top: 0, width: 520 }, renderCache);
+  const viewport = createEditorLayoutState(state, { height: 320, top: 0, width: 520 }, layoutCache);
   const line = viewport.layout.lines[0];
   const listItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
 
@@ -385,7 +385,7 @@ test("clicks on an inert leaf block redirect to the start of the next region in 
   // facing pointer handler uses (`usePointer` → `resolveSelectionHit`
   // → `resolveLayoutSelectionHit` → `resolveEditorHitAtPoint`).
   const state = setup("First paragraph.\n\n---\n\nSecond paragraph.\n");
-  const layout = createDocumentLayout(state.documentIndex, { width: 480 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 480 });
   const dividerBlock = layout.blocks.find((b) => b.type === "divider");
   const second = getRegion(state, "Second paragraph.");
 

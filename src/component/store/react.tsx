@@ -7,7 +7,7 @@ import {
 } from "react";
 import type { EditorState } from "@/editor";
 import type { DocumintStore } from ".";
-import type { DocumintStoreValue } from "./core/values";
+import type { DocumintSprig } from "./core/sprigs";
 
 const DocumintStoreContext = createContext<DocumintStore | null>(null);
 
@@ -39,16 +39,16 @@ export function useEditorCommand<A extends unknown[]>(
   return useCallback((...args: A) => editor.command(command, ...args), [editor, command]);
 }
 
-export function useStoreValue<T, Params extends readonly unknown[]>(
-  value: DocumintStoreValue<T, Params>,
+export function useSprig<T, Params extends readonly unknown[]>(
+  sprig: DocumintSprig<T, Params>,
   ...params: Params
 ) {
   const store = useDocumintStore();
   const subscribe = useCallback(
-    (listener: () => void) => value.subscribe(store, listener, ...params),
-    [store, value, ...params],
+    (listener: () => void) => sprig.subscribe(store, listener, ...params),
+    [store, sprig, ...params],
   );
-  const getSnapshot = useCallback(() => value.read(store, ...params), [store, value, ...params]);
+  const getSnapshot = useCallback(() => sprig.read(store, ...params), [store, sprig, ...params]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

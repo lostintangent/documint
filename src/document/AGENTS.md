@@ -1,19 +1,29 @@
 # Document
 
-This sub-system owns the closed, immutable, format-agnostic semantic document model. It defines `Document` and all block/inline node types as discriminated unions, provides deterministic ID generation and `plainText` extraction during canonical construction, and exposes a typed visitor for tree traversal. The data model is intentionally closed — node types don't change at runtime — so exhaustive switches are the primary extension mechanism. Every other subsystem builds on this model without modifying it.
+The document subsystem owns Documint's closed, immutable, format-agnostic semantic model. It defines `Document`, block nodes, inline nodes, fragments, structural paths, canonical IDs, plain-text projections, document queries, and comment threads as anchored annotations.
 
-The document layer also owns the **anchor algebra**: the content-addressable position vocabulary and primitives that comments, presence targets, and selection rebase compose into their own policies.
+This is the semantic truth layer. Markdown creates it, editor indexing projects it, and component code should never bypass it by inventing parallel document semantics.
 
-### Key Areas
+## Design Principles
 
-- `types.ts` - Owns the semantic vocabulary: `Document`, block nodes, inline nodes, marks, and related model types.
+- **The schema is closed and semantic.** Node types do not change at runtime. Add explicit union variants and exhaustive handling instead of storing editor-specific side channels in document data.
+- **Canonicalization happens at construction boundaries.** Builders create raw shapes, while `createDocument`/`spliceDocument` assign structural IDs, normalize `plainText`, and clean up post-mutation details.
+- **Reference identity carries meaning.** No-op transforms return the original array, and `spliceDocument` preserves unchanged root identity outside the edited range.
+- **Comments are document data with content-addressable anchors.** Threads live on `Document.comments`, but their runtime ranges are resolved later by document/editor anchor code. Thread IDs use one recipe for created and parsed documents so save/reload preserves identity.
+- **Comment timestamps are inputs when determinism matters.** Thread helpers default timestamps for convenience, but callers can provide `createdAt`, `updatedAt`, or `resolvedAt` to make comment mutations deterministic.
 
-- `document.ts` - Owns canonical document operations: `createDocument(...)` for full construction, `spliceDocument(...)` for incremental root-level edits, and shared semantic helpers such as `nodeId(...)`, plain-text extraction, and block-tree accessors.
+## Subsystem Map
 
-- `build.ts` - Owns semantic node builders and rebuild helpers that keep semantic node shape and derived fields such as `plainText` correct for core node families. Builders do not assign canonical IDs; `createDocument(...)` and `spliceDocument(...)` normalize IDs from canonical tree paths.
+- `types.ts` defines the closed document, fragment, block, inline, and mark unions.
+- `paths.ts` and `containers.ts` define structural coordinates and container-block policy.
+- `build/` owns builders, construction/splice APIs, normalization, canonicalization, IDs, and `plainText`.
+- `query/` owns traversal, lookup, plain-text projection, and anchor algebra.
+- `comments/` owns persisted thread shape, immutable thread CRUD, serialization, and quote/context resolution.
 
-- `visit.ts` - Owns typed semantic tree traversal: visitor types and walkers for blocks, inline nodes, and table cells, plus small queries built on the shared walker (`findBlockById`, `mapBlockTree`).
+## Anchors
 
-- `anchors.ts` - Owns the anchor algebra: the content-addressable position vocabulary, container discovery, and fingerprint capture/search/verification primitives consumed by comments, presence, and selection rebase.
+The anchor algebra in `query/anchors.ts` is the shared substrate for comments, presence, and selection rebase. It describes text positions by surrounding content, not by editor runtime offsets.
 
-- `comments/` - Owns comment threads as anchored annotations on the document: persisted thread shape, immutable thread CRUD, defensive parsing of untrusted payloads, and the quote/context-based resolution policy that scores threads against the current snapshot using the shared anchor algebra.
+Anchor containers are single semantic text containers: paragraph/heading text, code source, or a table cell's inline text. Anchors never span containers. `listAnchorContainers` returns containers in document order with a stable ordinal; consumers layer their own scoring or affinity policy on top of the candidate search primitives.
+
+Do not conflate anchor offsets with the visitor's `enterPlainText` offsets. The visitor uses editor selection-offset space, where atomic inline stops such as line breaks, images, and mentions count as one character.

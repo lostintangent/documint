@@ -1,28 +1,23 @@
 # Editor
 
-This sub-system owns the framework-agnostic editing engine. Its internal pipeline is:
+The editor subsystem owns Documint's framework-agnostic editing engine. It projects semantic `Document` snapshots into runtime `EditorState`, mutates that state through commands and selection changes, prepares `EditorLayoutState` geometry, answers navigation/hit-test/anchor queries, and paints prepared state to canvas.
 
-`Document -> EditorState -> EditorLayoutState -> canvas 2D drawing calls`
+This is the capability layer. It owns editing semantics, geometry algorithms, and paint logic. `src/component` owns when those capabilities run and how browser/React lifetimes are wired around them.
 
-Six subsystems sit on that pipeline. **State** owns the projection from `Document` to `EditorState` and all editing mutations. **Navigation** translates keyboard intent into selection updates. **Layout** turns `EditorState` into positioned geometry packaged as `EditorLayoutState`. **Canvas** paints from that geometry. **Anchors** keeps content-addressable positions (comment threads, presence targets) live across edits, sitting alongside the pipeline rather than inside it. **Text** owns pure text semantics that multiple subsystems must agree on, such as grapheme boundaries and code/marked font-string resolution.
+## Design Principles
 
-The important boundary is that `src/editor` owns the capabilities in that pipeline, while [`src/component`](../component/AGENTS.md) owns orchestration of when they run. In other words:
+- **Editor is not the host.** React lifecycle, DOM event wiring, canvas mounting, image loading, and scheduling belong in `src/component`; expose named editor APIs when host code needs engine behavior.
+- **State changes are immutable.** Commands and navigation return new `EditorState` values or the original state for no-op transitions. Selection-only changes preserve `documentIndex`.
+- **Layout is explicit and cache-aware.** Layout receives state, options, resources, viewport, and a host-owned cache. The returned `EditorLayoutState` is the immutable geometry snapshot paint and queries consume.
+- **Public APIs should raise altitude.** Prefer adding one semantic editor capability over making component code pass hidden dependency bundles through raw subsystem internals.
+- **Shared policy has one owner.** Text movement, anchor projection, geometry, and paint policy should live in the subsystem that can make all consumers agree.
 
-- `src/editor` does not own React lifecycle, DOM measurement, or canvas mounting.
-- `src/component` does not own editing semantics, geometry algorithms, or paint logic.
+## Subsystem Map
 
-### Key Areas
-
-- **Barrel** (`index.ts`) - The public API surface. Re-exports from all subsystems and defines cross-subsystem query adapters (`getCommentState`, `getSelectionContext`, `getSelectionFormatting`, `normalizeSelection`, `resolvePresenceViewport`) that destructure `EditorState` before delegating.
-
-- **State** ([`state/`](state/AGENTS.md)) - Owns the `Document` -> `EditorState` projection, editor state with undo/redo, and all semantic editing operations: text replacement, inline formatting, block-level edits, list operations, table mutations, input rules, and structural rewrites. Commands and their context/action implementation live in `state/commands/`. Internally, `EditorState` wraps a `DocumentIndex` that denormalizes the document for efficient lookup, but consumers interact with `EditorState` directly.
-
-- **Navigation** ([`navigation/`](navigation/AGENTS.md)) - Owns caret motion, range extension, and document-flow primitives. Translates keyboard intent ("arrow up", "page down", "Home") into selection updates, and defines the shared in-flow region/block model used by navigation, deletion, layout planning, and hit testing. Vertical motion uses a table-first, flow-fallback chain so table cells move by row before falling through to ordinary line-based motion.
-
-- **Layout** ([`layout/`](layout/AGENTS.md)) - Owns the `EditorState` -> `EditorLayoutState` projection and all editor geometry: viewport planning, line layout, hit testing, caret measurement, and measurement caching. The composition entry point is `prepareLayout`, with `resolveLayout*` and `measureLayout*` adapters for callers that want to interrogate or measure against the prepared layout state.
-
-- **Canvas** ([`canvas/`](canvas/AGENTS.md)) - Owns canvas-specific code: immediate-mode painting from prepared layout plus editor/runtime inputs (selection, comments, presence, animations, theme), and shared canvas-measurement primitives (font metrics, prepared-text cache) that both paint and layout consume. Includes `paintContent` and `paintOverlay` wrappers that translate `EditorLayoutState` into raw paint params.
-
-- **Anchors** ([`anchors/`](anchors/AGENTS.md)) - Owns editor-side runtime support for the document layer's anchor algebra: projecting persisted comment threads against the current snapshot, resolving host-provided presence targets, and edit-time offset remap that keeps anchored state sticky during inline edits.
-
-- **Text** ([`text/`](text/AGENTS.md)) - Owns pure text semantics shared by multiple editor subsystems. Grapheme helpers keep layout measurement, navigation, and deletion aligned on user-visible character boundaries; font helpers keep layout measurement and canvas painting aligned on mark/code-derived font strings. Single-owner text policy stays with that owner until it becomes shared editor semantics.
+- `index.ts` is the public editor surface and cross-subsystem adapter layer.
+- [`state/`](state/AGENTS.md) owns `Document → EditorState`, indexes, commands, selection, history, fragments, and animation descriptors.
+- [`navigation/`](navigation/AGENTS.md) owns caret motion, range extension, document flow, and layout-aware movement.
+- [`layout/`](layout/AGENTS.md) owns `EditorState → EditorLayoutState`, measurement, virtualization, hit testing, and layout queries.
+- [`canvas/`](canvas/AGENTS.md) owns immediate-mode paint from prepared state/layout inputs.
+- [`anchors/`](anchors/AGENTS.md) owns editor-side projection and repair of document anchors.
+- [`text/`](text/AGENTS.md) owns shared text semantics needed by multiple editor subsystems.

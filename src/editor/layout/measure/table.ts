@@ -10,7 +10,7 @@ import {
   resolveTextBlockFont,
   resolveTextBlockLineHeight,
 } from "./text";
-import type { CanvasRenderCache } from "../../canvas/lib/cache";
+import type { LayoutCache } from "../state/cache";
 
 type TableRowCell = {
   cellIndex: number;
@@ -41,7 +41,7 @@ export function layoutTable(
   blockExtents: Map<string, LayoutBlockExtent>,
   regionBounds: DocumentLayout["regionBounds"],
   regions: DocumentIndex["regions"],
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
   left: number,
   top: number,
@@ -145,7 +145,7 @@ function collectTableRowCells(regions: DocumentIndex["regions"]) {
 
 function measureTableRowCells(
   cells: TableRowCell[],
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
   columnWidth: number,
   TABLE_CELL_PADDING_X: number,

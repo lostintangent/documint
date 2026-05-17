@@ -4,7 +4,7 @@
 import { describe, test } from "bun:test";
 import { expectStableRoundTrip } from "./helpers";
 
-const stableFixtures = [
+const stableFixtures: string[] = [
   "test/goldens/sample.md",
   "test/goldens/article.md",
   "test/goldens/headings.md",
@@ -25,14 +25,12 @@ const stableFixtures = [
   "test/goldens/comments-review.md",
   "test/goldens/frontmatter.md",
   "test/goldens/line-breaks.md",
-] as const;
+];
 
 describe("Goldens", () => {
-  for (const fixturePath of stableFixtures) {
-    test(`round-trips canonically for ${fixturePath}`, async () => {
-      const source = await Bun.file(fixturePath).text();
+  test.each(stableFixtures)("round-trips canonically for %s", async (fixturePath) => {
+    const source = await Bun.file(fixturePath).text();
 
-      expectStableRoundTrip(source);
-    });
-  }
+    expectStableRoundTrip(source);
+  });
 });

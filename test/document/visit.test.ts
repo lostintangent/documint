@@ -176,14 +176,10 @@ test("finds nested blocks through document queries", () => {
     throw new Error("Expected nested paragraph id");
   }
 
-  const resolvedFromDocument = findBlockById(snapshot, nestedParagraphId);
-  const resolvedFromBlocks = findBlockById(snapshot.blocks, nestedParagraphId);
+  const resolved = findBlockById(snapshot.blocks, nestedParagraphId);
 
-  expect(resolvedFromDocument?.id).toBe(nestedParagraphId);
-  expect(resolvedFromDocument?.type).toBe("paragraph");
-  expect(resolvedFromDocument?.plainText).toBe("Inside");
-  expect(resolvedFromBlocks?.id).toBe(nestedParagraphId);
-  expect(resolvedFromBlocks?.type).toBe("paragraph");
-  expect(resolvedFromBlocks?.plainText).toBe("Inside");
-  expect(findBlockById(snapshot, "missing-block")).toBeNull();
+  expect(resolved?.id).toBe(nestedParagraphId);
+  expect(resolved?.type).toBe("paragraph");
+  expect(resolved?.plainText).toBe("Inside");
+  expect(findBlockById(snapshot.blocks, "missing-block")).toBeNull();
 });

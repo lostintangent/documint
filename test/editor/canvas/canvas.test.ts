@@ -1,14 +1,20 @@
 // Integration tests for the canvas paint pipeline. Each test drives
-// `paintContentLayer` end to end with a recording context and asserts
-// against the resulting operation sequence — covering pass ordering, pixel
+// `paintContent` end to end with a recording context and asserts against
+// the resulting operation sequence — covering pass ordering, pixel
 // geometry, and inter-painter interactions that are hard to verify in
 // isolation.
 
 import { expect, test } from "bun:test";
-import type { Block } from "@/document";
-import { paintContentLayer } from "@/editor/canvas";
-import { createDocumentLayout } from "@/editor/layout";
-import { insertText, setSelection, type EditorState } from "@/editor/state";
+import { paintContent } from "@/editor/canvas";
+import { createEditorLayoutState } from "@/editor/layout";
+import type { EditorCommentRange } from "@/editor/anchors";
+import type { TextDecorationIndex } from "@/editor/text/decorations";
+import {
+  insertText,
+  normalizeSelection,
+  setSelection,
+  type EditorState,
+} from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
 import type { EditorTheme } from "@/types";
 import { setup } from "../helpers";
@@ -467,7 +473,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
   expect(transparentTextOverlay.fillStyle).not.toBe(lightTheme.paragraphText);
 
   const { context: pausedContext } = renderPaintOperations(state, {
-    contentPulseTime: 1100,
+    ambientAnimationTime: 1100,
     height: 180,
     now: 1650,
     textDecorations,
@@ -484,7 +490,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
   expect(pausedBackground.globalAlpha).toBeCloseTo(0.42);
 
   const { context: resumedContext } = renderPaintOperations(state, {
-    contentPulseTime: 1100,
+    ambientAnimationTime: 1100,
     height: 180,
     now: 2200,
     textDecorations,
@@ -501,7 +507,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
   expect(resumedBackground.globalAlpha).toBeCloseTo(pausedBackground.globalAlpha);
 });
 
-test("pulses presence-active comment highlights with the content pulse clock", () => {
+test("pulses presence-active comment highlights with the ambient animation clock", () => {
   const state = setup("alpha comment\n");
   const region = state.documentIndex.regions[0];
 
@@ -510,9 +516,9 @@ test("pulses presence-active comment highlights with the content pulse clock", (
   }
 
   const { context } = renderPaintOperations(state, {
-    contentPulseTime: 1100,
+    ambientAnimationTime: 1100,
     height: 180,
-    liveCommentRanges: [
+    commentRanges: [
       {
         endOffset: 13,
         regionId: region.id,
@@ -546,7 +552,7 @@ test("falls back to the leaf accent when presence has no color", () => {
 
   const { context } = renderPaintOperations(state, {
     height: 180,
-    liveCommentRanges: [
+    commentRanges: [
       {
         endOffset: 13,
         regionId: region.id,
@@ -725,68 +731,42 @@ test("falls back to paragraph text color when list marker color is omitted", () 
 function renderPaintOperations(
   state: EditorState,
   options: {
-    contentPulseTime?: number;
+    ambientAnimationTime?: number;
     height: number;
-    liveCommentRanges?: Parameters<typeof paintContentLayer>[0]["liveCommentRanges"];
+    commentRanges?: EditorCommentRange[];
     now?: number;
     presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
-    textDecorations?: Parameters<typeof paintContentLayer>[0]["textDecorations"];
+    textDecorations?: TextDecorationIndex;
     theme?: EditorTheme;
     width: number;
   },
 ) {
-  const layout = createDocumentLayout(state.documentIndex, { width: options.width });
+  const layoutState = createEditorLayoutState(state, {
+    height: options.height,
+    top: 0,
+    width: options.width,
+  });
   const context = new RecordingCanvasContext();
 
-  paintContentLayer({
+  paintContent(state, layoutState, context as unknown as CanvasRenderingContext2D, {
     activeBlockId:
       state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.blockId ?? null,
     activeRegionId: state.selection.focus.regionId,
     activeThreadIndex: null,
-    containerLineBounds: new Map(layout.regionBounds),
-    contentPulseTime: options.contentPulseTime,
-    context: context as unknown as CanvasRenderingContext2D,
+    ambientAnimationTime: options.ambientAnimationTime,
     devicePixelRatio: 1,
-    editorState: state,
     height: options.height,
-    layout,
-    liveCommentRanges: options.liveCommentRanges ?? [],
-    normalizedSelection: {
-      end: state.selection.focus,
-      start: state.selection.anchor,
-    },
+    commentRanges: options.commentRanges ?? [],
+    normalizedSelection: normalizeSelection(state),
     presenceActiveThreadColors: options.presenceActiveThreadColors,
     now: options.now,
-    resources: { images: new Map() },
-    runtimeBlockMap: createRuntimeBlockMap(state.documentIndex.document.blocks),
     textDecorations: options.textDecorations,
     theme: options.theme ?? lightTheme,
-    viewportTop: 0,
     width: options.width,
   });
 
   return {
     context,
-    layout,
+    layout: layoutState.layout,
   };
-}
-
-function createRuntimeBlockMap(blocks: Block[]) {
-  const entries = new Map<string, Block>();
-
-  const visit = (candidateBlocks: Block[]) => {
-    for (const block of candidateBlocks) {
-      entries.set(block.id, block);
-
-      if (block.type === "blockquote" || block.type === "listItem") {
-        visit(block.children);
-      } else if (block.type === "list") {
-        visit(block.items);
-      }
-    }
-  };
-
-  visit(blocks);
-
-  return entries;
 }

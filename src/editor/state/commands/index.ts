@@ -256,7 +256,8 @@ export const indent = makeCommand((ctx) => {
       return resolveHeadingDepthShift(ctx, 1) ?? resolveParagraphBlockquoteIndent(ctx);
     case "listItem":
       return resolveListItemIndent(ctx);
-    default:
+    case "code":
+    case "blockquoteTextBlock":
       return null;
   }
 }, resolveBlockContext);
@@ -269,7 +270,8 @@ export const dedent = makeCommand((ctx) => {
       return resolveHeadingDepthShift(ctx, -1);
     case "listItem":
       return resolveListItemDedent(ctx);
-    default:
+    case "code":
+    case "blockquoteTextBlock":
       return null;
   }
 }, resolveBlockContext);

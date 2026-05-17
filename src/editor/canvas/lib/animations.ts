@@ -1,16 +1,20 @@
 // Owns paint-time animation helpers. The editor model stores transient effect
-// state; this module turns that state into render-local data and color blends
-// that the main paint orchestrator can apply while drawing text.
+// descriptors (in `state/animations`); this module turns those descriptors
+// into render-local data (per-frame `progress`) and the color blends the
+// main paint orchestrator applies while drawing text. The duration table and
+// `hasRunningEditorAnimations` predicate live in `state/animations` because
+// they are model-lifetime policy, not paint policy.
 
 import type { EditorTheme } from "@/types";
-import type {
-  ActiveBlockFlashAnimation,
-  TextFadeAnimation,
-  EditorState,
-  EditorAnimation,
-  TextHighlightAnimation,
-  BlockPulseAnimation,
-  TextPulseAnimation,
+import {
+  getEditorAnimationDuration,
+  type ActiveBlockFlashAnimation,
+  type TextFadeAnimation,
+  type EditorState,
+  type EditorAnimation,
+  type TextHighlightAnimation,
+  type BlockPulseAnimation,
+  type TextPulseAnimation,
 } from "../../state";
 import { blendCanvasColors, transparentCanvasColor } from "./colors";
 
@@ -34,41 +38,12 @@ export type ActiveTextPulse = TextPulseAnimation & {
   progress: number;
 };
 
-const activeBlockFlashDurationMs = 300;
-const textFadeDurationMs = 180;
-const textHighlightDurationMs = 1000;
-const blockPulseDurationMs = 500;
-const textPulseDurationMs = 140;
-
 // List marker pop reaches full scale in the first half of its duration,
 // then blends color back to the base in the second half.
 const LIST_MARKER_POP_MIN_SCALE = 0.1;
 const LIST_MARKER_POP_SCALE_RANGE = 0.9;
 const LIST_MARKER_POP_SCALE_SPEED = 2;
 const LIST_MARKER_POP_COLOR_SPEED = 2;
-
-export function getEditorAnimationDuration(animation: EditorAnimation) {
-  switch (animation.kind) {
-    case "active-block-flash":
-      return activeBlockFlashDurationMs;
-    case "text-fade":
-      return textFadeDurationMs;
-    case "text-highlight":
-      return textHighlightDurationMs;
-    case "block-pulse":
-      return blockPulseDurationMs;
-    case "text-pulse":
-      return textPulseDurationMs;
-  }
-}
-
-export function hasRunningEditorAnimations(state: EditorState, now?: number) {
-  const animationTime = now ?? getEditorAnimationTime();
-
-  return state.animations.some(
-    (animation) => animationTime - animation.startedAt < getEditorAnimationDuration(animation),
-  );
-}
 
 export function resolveActiveTextHighlights(state: EditorState, now: number) {
   return collectActiveAnimations<"text-highlight", TextHighlightAnimation, ActiveTextHighlight>(
@@ -112,37 +87,6 @@ export function resolveActiveBlockPulses(state: EditorState, now: number) {
     now,
     "block-pulse",
     (a) => a.blockPath,
-  );
-}
-
-export function resolveTextHighlightSegmentBoundaries(
-  startOffset: number,
-  endOffset: number,
-  textHighlights: ActiveTextHighlight[],
-) {
-  const boundaries = new Set<number>([startOffset, endOffset]);
-
-  for (const highlight of textHighlights) {
-    if (highlight.endOffset <= startOffset || highlight.startOffset >= endOffset) {
-      continue;
-    }
-
-    boundaries.add(Math.max(startOffset, highlight.startOffset));
-    boundaries.add(Math.min(endOffset, highlight.endOffset));
-  }
-
-  return [...boundaries].sort((left, right) => left - right);
-}
-
-export function resolveActiveTextHighlightForSegment(
-  textHighlights: ActiveTextHighlight[],
-  startOffset: number,
-  endOffset: number,
-) {
-  return (
-    textHighlights.find(
-      (highlight) => highlight.startOffset < endOffset && highlight.endOffset > startOffset,
-    ) ?? null
   );
 }
 
@@ -270,8 +214,4 @@ function collectActiveAnimation<
 
 function easeOutCubic(t: number) {
   return 1 - (1 - t) * (1 - t) * (1 - t);
-}
-
-function getEditorAnimationTime() {
-  return performance.now();
 }

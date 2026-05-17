@@ -31,8 +31,5 @@ export function resolveLineBreakAction(ctx: BlockContext): EditorStateAction | n
 
     case "rootTextBlock":
       return resolveRootTextBlockSplit(ctx, ctx.offset);
-
-    case "unsupported":
-      return null;
   }
 }

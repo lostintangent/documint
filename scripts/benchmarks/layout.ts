@@ -1,6 +1,4 @@
-import { createDocumentIndex } from "@/editor/state";
-import { createCanvasRenderCache } from "@/editor/canvas/lib/cache";
-import { createDocumentLayout, createViewportLayout } from "@/editor/layout";
+import { createEditorLayoutState, createEditorState, createLayoutCache } from "@/editor";
 import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
@@ -14,14 +12,11 @@ export function createLayoutBenchmarks(
     xlargeMarkdown: string;
   },
 ): BenchmarkRecord[] {
-  const longRuntime = createDocumentIndex(parseDocument(fixtures.longMarkdown));
-  const xlargeRuntime = createDocumentIndex(parseDocument(fixtures.xlargeMarkdown));
-  const hugeRuntime = createDocumentIndex(parseDocument(fixtures.hugeMarkdown));
-  const renderCache = createCanvasRenderCache();
-  const scrollViewport = {
-    height: 720,
-    overscan: 720,
-  };
+  const longState = createEditorState(parseDocument(fixtures.longMarkdown));
+  const xlargeState = createEditorState(parseDocument(fixtures.xlargeMarkdown));
+  const hugeState = createEditorState(parseDocument(fixtures.hugeMarkdown));
+  const layoutCache = createLayoutCache();
+  const scrollViewport = { height: 720 };
   const scrollStepTop = 720;
   const scrollOffsets = [0, 720, 1440, 2160, 2880, 3600];
 
@@ -31,18 +26,14 @@ export function createLayoutBenchmarks(
       100,
       budgets.canvas,
       () =>
-        void createViewportLayout(
-          longRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          longState,
           {
             height: 720,
-            overscan: 720,
             top: 0,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         ),
     ),
     runBenchmark(
@@ -50,18 +41,14 @@ export function createLayoutBenchmarks(
       50,
       budgets.canvas_xlarge,
       () =>
-        void createViewportLayout(
-          xlargeRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          xlargeState,
           {
             height: 720,
-            overscan: 720,
             top: 0,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         ),
     ),
     runBenchmark(
@@ -69,33 +56,26 @@ export function createLayoutBenchmarks(
       30,
       budgets.canvas_huge,
       () =>
-        void createViewportLayout(
-          hugeRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          hugeState,
           {
             height: 720,
-            overscan: 720,
             top: 0,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         ),
     ),
     runBenchmark("layout_scroll", 100, budgets.scroll, () => {
       for (const top of scrollOffsets) {
-        void createViewportLayout(
-          longRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          longState,
           {
             ...scrollViewport,
             top,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         );
       }
     }),
@@ -104,32 +84,26 @@ export function createLayoutBenchmarks(
       200,
       budgets.scroll_step,
       () =>
-        void createViewportLayout(
-          longRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          longState,
           {
             ...scrollViewport,
             top: scrollStepTop,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         ),
     ),
     runBenchmark("layout_scroll_xlarge", 50, budgets.scroll_xlarge, () => {
       for (const top of scrollOffsets) {
-        void createViewportLayout(
-          xlargeRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          xlargeState,
           {
             ...scrollViewport,
             top,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         );
       }
     }),
@@ -138,32 +112,26 @@ export function createLayoutBenchmarks(
       100,
       budgets.scroll_step_xlarge,
       () =>
-        void createViewportLayout(
-          xlargeRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          xlargeState,
           {
             ...scrollViewport,
             top: scrollStepTop,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         ),
     ),
     runBenchmark("layout_scroll_huge", 30, budgets.scroll_huge, () => {
       for (const top of scrollOffsets) {
-        void createViewportLayout(
-          hugeRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          hugeState,
           {
             ...scrollViewport,
             top,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         );
       }
     }),
@@ -172,29 +140,27 @@ export function createLayoutBenchmarks(
       50,
       budgets.scroll_step_huge,
       () =>
-        void createViewportLayout(
-          hugeRuntime,
-          {
-            width: 420,
-          },
+        void createEditorLayoutState(
+          hugeState,
           {
             ...scrollViewport,
             top: scrollStepTop,
+            width: 420,
           },
-          [],
-          renderCache,
+          layoutCache,
         ),
     ),
-    // Unsliced full-document layout. Exercises the per-region bounds
-    // bookkeeping at full-doc scale so we can spot regressions in that
-    // path; the viewport benchmarks above only ever build the visible
-    // slice and won't expose O(N) → O(N²) drift in region bookkeeping.
+    // Tall-viewport layout. Uses the public editor layout entrypoint while
+    // forcing a viewport large enough to exercise more measured geometry than
+    // the ordinary scroll benchmarks.
     runBenchmark(
       "layout_full_document_long",
       30,
       budgets.full_document_long,
       () =>
-        void createDocumentLayout(longRuntime, {
+        void createEditorLayoutState(longState, {
+          height: 100_000,
+          top: 0,
           width: 420,
         }),
     ),
@@ -203,7 +169,9 @@ export function createLayoutBenchmarks(
       20,
       budgets.full_document_xlarge,
       () =>
-        void createDocumentLayout(xlargeRuntime, {
+        void createEditorLayoutState(xlargeState, {
+          height: 100_000,
+          top: 0,
           width: 420,
         }),
     ),
@@ -212,7 +180,9 @@ export function createLayoutBenchmarks(
       10,
       budgets.full_document_huge,
       () =>
-        void createDocumentLayout(hugeRuntime, {
+        void createEditorLayoutState(hugeState, {
+          height: 100_000,
+          top: 0,
           width: 420,
         }),
     ),

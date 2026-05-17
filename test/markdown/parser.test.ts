@@ -6,20 +6,18 @@ import { parseDocument, serializeDocument } from "@/markdown";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
 
 describe("Inline parsing", () => {
-  test("does not treat intra-word underscores as italic delimiters", () => {
-    const document = parseDocument("snake_case_identifier\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-
-    expect(paragraph.children).toHaveLength(1);
-    const text = expectInlineAt(paragraph.children, 0, "text");
-
-    expect(text.text).toBe("snake_case_identifier");
-    expect(text.marks).toEqual([]);
-  });
-
-  test("parses <br> as a hard line break", () => {
-    const document = parseDocument("a<br>b\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
+  // --- Hard line breaks ---
+  // All four CommonMark encodings produce a `lineBreak` inline between the
+  // surrounding `a` and `b` text runs. The `<br>\n` case additionally
+  // consumes the trailing newline so authored `<br>\n` (a common line-wrap
+  // convention) doesn't leave a soft break.
+  test.each([
+    ["bare <br>", "a<br>b\n"],
+    ["<br>\\n (trailing newline absorbed)", "a<br>\nb\n"],
+    ["two-or-more trailing spaces", "a  \nb\n"],
+    ["backslash-newline", "a\\\nb\n"],
+  ])("parses %s as a hard line break", (_label, source) => {
+    const paragraph = expectBlockAt(parseDocument(source), 0, "paragraph");
 
     expect(paragraph.children).toHaveLength(3);
     expect(expectInlineAt(paragraph.children, 0, "text").text).toBe("a");
@@ -27,61 +25,42 @@ describe("Inline parsing", () => {
     expect(expectInlineAt(paragraph.children, 2, "text").text).toBe("b");
   });
 
-  test("eats a trailing newline after <br> so authored line wraps don't leave a soft break", () => {
-    const document = parseDocument("a<br>\nb\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-
-    expect(paragraph.children).toHaveLength(3);
-    expect(expectInlineAt(paragraph.children, 0, "text").text).toBe("a");
-    expectInlineAt(paragraph.children, 1, "lineBreak");
-    // No leading `\n` on this text run — the parser consumed the newline
-    // immediately following `<br>`.
-    expect(expectInlineAt(paragraph.children, 2, "text").text).toBe("b");
-  });
-
-  test("accepts the self-closing and case-insensitive <br> spellings", () => {
-    for (const spelling of ["<br/>", "<br />", "<BR>", "<Br/>"]) {
-      const document = parseDocument(`a${spelling}b\n`);
-      const paragraph = expectBlockAt(document, 0, "paragraph");
+  test.each([["<br/>"], ["<br />"], ["<BR>"], ["<Br/>"]])(
+    "accepts %s as a self-closing / case-insensitive <br> spelling",
+    (spelling) => {
+      const paragraph = expectBlockAt(parseDocument(`a${spelling}b\n`), 0, "paragraph");
 
       expect(paragraph.children).toHaveLength(3);
       expectInlineAt(paragraph.children, 1, "lineBreak");
-    }
-  });
-
-  test("parses two-or-more trailing spaces before a newline as a hard line break", () => {
-    const document = parseDocument("a  \nb\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-
-    expect(paragraph.children).toHaveLength(3);
-    expect(expectInlineAt(paragraph.children, 0, "text").text).toBe("a");
-    expectInlineAt(paragraph.children, 1, "lineBreak");
-    expect(expectInlineAt(paragraph.children, 2, "text").text).toBe("b");
-  });
-
-  test("parses backslash-newline as a hard line break", () => {
-    const document = parseDocument("a\\\nb\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-
-    expect(paragraph.children).toHaveLength(3);
-    expect(expectInlineAt(paragraph.children, 0, "text").text).toBe("a");
-    expectInlineAt(paragraph.children, 1, "lineBreak");
-    expect(expectInlineAt(paragraph.children, 2, "text").text).toBe("b");
-  });
+    },
+  );
 
   test("treats a bare intra-paragraph newline as a soft break, not a hard break", () => {
-    const document = parseDocument("a\nb\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-
     // A soft break is preserved as a literal `\n` inside the text run; the
     // layout's whitespace handling is what collapses it visually. There must
     // be no `lineBreak` inline produced.
+    const paragraph = expectBlockAt(parseDocument("a\nb\n"), 0, "paragraph");
+
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
   });
 
+  // --- Mentions ---
+  test("parses user mentions as semantic inline nodes", () => {
+    const paragraph = expectBlockAt(
+      parseDocument("Hello @[Jane Doe](user-123)!\n"),
+      0,
+      "paragraph",
+    );
+    const mention = expectInlineAt(paragraph.children, 1, "mention");
+
+    expect(mention.name).toBe("Jane Doe");
+    expect(mention.userId).toBe("user-123");
+    expect(paragraph.plainText).toBe("Hello @Jane Doe!");
+  });
+
+  // --- Edge cases that mimic hard-break / mark syntax but aren't ---
   test("preserves <br>-like tags that aren't actually `<br>` as raw HTML", () => {
-    const document = parseDocument("a<bridge>b\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
+    const paragraph = expectBlockAt(parseDocument("a<bridge>b\n"), 0, "paragraph");
 
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
     expect(paragraph.children.some((child) => child.type === "raw")).toBe(true);
@@ -90,20 +69,49 @@ describe("Inline parsing", () => {
   test("does not treat an escaped backslash followed by newline as a hard break", () => {
     // `\\\\\n` in source = two literal backslashes + newline. The first
     // backslash escapes the second, leaving the `\n` as a soft break.
-    const document = parseDocument("a\\\\\nb\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
+    const paragraph = expectBlockAt(parseDocument("a\\\\\nb\n"), 0, "paragraph");
 
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
   });
 
-  test("parses user mentions as semantic inline nodes", () => {
-    const document = parseDocument("Hello @[Jane Doe](user-123)!\n");
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-    const mention = expectInlineAt(paragraph.children, 1, "mention");
+  test("does not treat intra-word underscores as italic delimiters", () => {
+    const paragraph = expectBlockAt(parseDocument("snake_case_identifier\n"), 0, "paragraph");
+    const text = expectInlineAt(paragraph.children, 0, "text");
 
-    expect(mention.name).toBe("Jane Doe");
-    expect(mention.userId).toBe("user-123");
-    expect(paragraph.plainText).toBe("Hello @Jane Doe!");
+    expect(paragraph.children).toHaveLength(1);
+    expect(text.text).toBe("snake_case_identifier");
+    expect(text.marks).toEqual([]);
+  });
+});
+
+describe("Backslash escapes", () => {
+  // Directly exercises `readGenericEscapeToken`. Round-trip coverage in
+  // `serializer.test.ts` exercises the escapable paths through the
+  // `Paragraph block-start escapes` table; these tests lock down the
+  // non-escapable and trailing-`\` branches that round-trip can't reach.
+
+  test.each([
+    ["\\#", "#"],
+    ["\\>", ">"],
+    ["\\:", ":"],
+    ["\\\\", "\\"],
+  ])("unescapes `%s` to plain text `%s`", (escaped, unescaped) => {
+    const paragraph = expectBlockAt(parseDocument(`${escaped}foo\n`), 0, "paragraph");
+    expect(paragraph.plainText).toBe(`${unescaped}foo`);
+  });
+
+  test("preserves a backslash before an unrecognized character as literal `\\X`", () => {
+    // CommonMark allows only ASCII punctuation to be escaped. `\a` is not a
+    // recognized escape, so both characters survive into the text node.
+    const paragraph = expectBlockAt(parseDocument("a\\bc\n"), 0, "paragraph");
+    expect(paragraph.plainText).toBe("a\\bc");
+  });
+
+  test("preserves a trailing backslash at end of input as literal `\\`", () => {
+    // The reader returns null when `\` has no following character, so the
+    // dispatcher's default one-char advance leaves it as text.
+    const paragraph = expectBlockAt(parseDocument("foo\\\n"), 0, "paragraph");
+    expect(paragraph.plainText).toBe("foo\\");
   });
 });
 

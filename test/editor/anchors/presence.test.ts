@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
-  createCanvasRenderCache,
+  createLayoutCache,
   createEditorState,
-  prepareLayout,
+  createEditorLayoutState,
   resolvePresenceViewport,
 } from "@/editor";
 import {
@@ -10,9 +10,11 @@ import {
   createCommentThread,
   createDocument,
   createParagraphTextBlock,
+  extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
 import {
+  getCommentState,
   resolvePresenceTargets,
   type EditorPresence,
   type EditorPresenceViewport,
@@ -186,68 +188,179 @@ repeat
 });
 
 test("resolves presence viewport state", () => {
-  const renderCache = createCanvasRenderCache();
+  const layoutCache = createLayoutCache();
   const state = setup(createPresenceViewportFixture());
   const firstRegion = requireRegion(state.documentIndex.regions[0]);
   const lastRegion = requireRegion(state.documentIndex.regions.at(-1));
-  const topViewport = prepareLayout(
+  const topViewport = createEditorLayoutState(
     state,
     {
       height: 120,
       top: 0,
       width: 420,
     },
-    renderCache,
+    layoutCache,
   );
-  const [visiblePresence, belowPresence] = resolvePresenceViewport(state, topViewport, [
-    createResolvedCursor("visible", firstRegion),
-    createResolvedCursor("below", lastRegion),
-  ]);
+  const [visiblePresence, belowPresence] = resolvePresenceViewport(
+    state,
+    topViewport,
+    [createResolvedCursor("visible", firstRegion), createResolvedCursor("below", lastRegion)],
+    [],
+  );
 
   expect(visiblePresence?.viewport?.status).toBe("visible");
   expect(belowPresence?.viewport?.status).toBe("below");
   expect(scrollTopOf(belowPresence?.viewport)).toBeGreaterThan(0);
 
-  const lowerViewport = prepareLayout(
+  const lowerViewport = createEditorLayoutState(
     state,
     {
       height: 120,
       top: Math.max(120, topViewport.totalHeight - 180),
       width: 420,
     },
-    renderCache,
+    layoutCache,
   );
-  const [abovePresence] = resolvePresenceViewport(state, lowerViewport, [
-    createResolvedCursor("above", firstRegion),
-  ]);
+  const [abovePresence] = resolvePresenceViewport(
+    state,
+    lowerViewport,
+    [createResolvedCursor("above", firstRegion)],
+    [],
+  );
 
   expect(abovePresence?.viewport?.status).toBe("above");
   expect(scrollTopOf(abovePresence?.viewport)).toBe(0);
 });
 
-test("keeps unresolved presence visible without a scroll target", () => {
-  const renderCache = createCanvasRenderCache();
-  const state = setup(createPresenceViewportFixture());
-  const viewport = prepareLayout(
+test("resolves comment thread presence viewport state", () => {
+  const layoutCache = createLayoutCache();
+  const blocks = Array.from({ length: 24 }, (_, index) => {
+    return createParagraphTextBlock(`Presence viewport comment paragraph ${index}.`);
+  });
+  const baseDocument = createDocument(blocks);
+  const containers = listAnchorContainers(baseDocument);
+  const firstContainer = containers[0];
+  const lastContainer = containers.at(-1);
+
+  if (!firstContainer || !lastContainer) {
+    throw new Error("Expected comment anchor containers");
+  }
+
+  const firstThread = createCommentThread({
+    anchor: createAnchorFromContainer(
+      firstContainer,
+      firstContainer.text.indexOf("paragraph"),
+      firstContainer.text.length - 1,
+    ),
+    body: "Working here",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(
+      firstContainer,
+      firstContainer.text.indexOf("paragraph"),
+      firstContainer.text.length - 1,
+    ),
+  });
+  const lastThread = createCommentThread({
+    anchor: createAnchorFromContainer(
+      lastContainer,
+      lastContainer.text.indexOf("paragraph"),
+      lastContainer.text.length - 1,
+    ),
+    body: "Working there",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(
+      lastContainer,
+      lastContainer.text.indexOf("paragraph"),
+      lastContainer.text.length - 1,
+    ),
+  });
+  const state = createEditorState(createDocument(blocks, [firstThread, lastThread]));
+  const commentRanges = getCommentState(state).ranges;
+  const topViewport = createEditorLayoutState(
     state,
     {
       height: 120,
       top: 0,
       width: 420,
     },
-    renderCache,
+    layoutCache,
+  );
+  const [visiblePresence, belowPresence] = resolvePresenceViewport(
+    state,
+    topViewport,
+    resolvePresenceTargets(state.documentIndex, [
+      {
+        cursor: { threadId: firstThread.id },
+        id: "visible",
+        username: "Visible",
+      },
+      {
+        cursor: { threadId: lastThread.id },
+        id: "below",
+        username: "Below",
+      },
+    ]),
+    commentRanges,
+  );
+
+  expect(visiblePresence?.viewport?.status).toBe("visible");
+  expect(belowPresence?.viewport?.status).toBe("below");
+  expect(scrollTopOf(belowPresence?.viewport)).toBeGreaterThan(0);
+
+  const lowerViewport = createEditorLayoutState(
+    state,
+    {
+      height: 120,
+      top: Math.max(120, topViewport.totalHeight - 180),
+      width: 420,
+    },
+    layoutCache,
+  );
+  const [abovePresence] = resolvePresenceViewport(
+    state,
+    lowerViewport,
+    resolvePresenceTargets(state.documentIndex, [
+      {
+        cursor: { threadId: firstThread.id },
+        id: "above",
+        username: "Above",
+      },
+    ]),
+    commentRanges,
+  );
+
+  expect(abovePresence?.viewport?.status).toBe("above");
+  expect(scrollTopOf(abovePresence?.viewport)).toBe(0);
+});
+
+test("keeps unresolved presence visible without a scroll target", () => {
+  const layoutCache = createLayoutCache();
+  const state = setup(createPresenceViewportFixture());
+  const viewport = createEditorLayoutState(
+    state,
+    {
+      height: 120,
+      top: 0,
+      width: 420,
+    },
+    layoutCache,
   );
 
   expect(
-    resolvePresenceViewport(state, viewport, [
-      {
-        commentThreadIndex: null,
-        cursorPoint: null,
-        id: "unresolved",
-        username: "Unresolved",
-        viewport: null,
-      },
-    ]),
+    resolvePresenceViewport(
+      state,
+      viewport,
+      [
+        {
+          commentThreadIndex: null,
+          cursorPoint: null,
+          id: "unresolved",
+          username: "Unresolved",
+          viewport: null,
+        },
+      ],
+      [],
+    ),
   ).toEqual([
     {
       commentThreadIndex: null,

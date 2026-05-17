@@ -6,8 +6,8 @@
 // orchestrator collects across the visible range and then paints once.
 
 import type { Block } from "@/document";
-import { findBlockAncestor, resolveLineContentInset, type DocumentLayout } from "../../layout";
-import type { EditorState } from "../../state";
+import { resolveLineContentInset, type DocumentLayout } from "../../layout";
+import { findAncestorBlockEntry, type EditorState } from "../../state";
 import type { EditorTheme } from "@/types";
 import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../lib/animations";
 import { paintTableCellChrome, type PaintRegionBounds } from "./table";
@@ -50,7 +50,7 @@ export type VisibleBlockquoteRegion = {
 // the code block fill or the table cell chrome. Only fires on the first line
 // of the container so we don't repaint the same rectangle for every wrapped
 // line in the cell or fence.
-export function paintCanvasLineContainerBackground(
+export function paintLineContainerBackground(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   block: Block | null,
@@ -124,7 +124,7 @@ export function paintActiveBlockBackground(
 export function resolveVisibleHeadingRules(
   layout: DocumentLayout,
   editorState: EditorState,
-  runtimeBlockMap: Map<string, Block>,
+  blockSnapshots: Map<string, Block>,
   startIndex: number,
   endIndex: number,
   width: number,
@@ -133,7 +133,7 @@ export function resolveVisibleHeadingRules(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    const block = runtimeBlockMap.get(line.blockId);
+    const block = blockSnapshots.get(line.blockId);
 
     if (block?.type !== "heading" || (block.depth !== 1 && block.depth !== 2)) {
       continue;
@@ -249,7 +249,11 @@ export function resolveVisibleBlockquoteRegions(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    const blockquoteEntry = findBlockAncestor(editorState, line.blockId, "blockquote");
+    const blockquoteEntry = findAncestorBlockEntry(
+      editorState.documentIndex,
+      line.blockId,
+      "blockquote",
+    );
 
     if (!blockquoteEntry) {
       continue;

@@ -1,20 +1,18 @@
 # Anchors
 
-This sub-system owns the editor-side runtime support for the document layer's anchor algebra. The algebra itself — content-addressable position vocabulary, fingerprint capture/search/verification — lives in [`src/document`](../../document/AGENTS.md). Anchors here is what consumes that algebra to keep comment threads, presence targets, and other anchored data live as the document changes.
+The anchors subsystem owns editor-side runtime support for the document anchor algebra. The document layer defines the content-addressable vocabulary and search primitives; this layer projects those anchors into editor runtime state, layout, and viewport behavior.
 
-Two costs drive the design:
+Anchors sit alongside the editor pipeline rather than inside one stage. They keep comments, presence, and other anchored data attached to the current document snapshot as content changes.
 
-- **Full re-resolve** is correct but expensive: it walks the document looking for fingerprint matches. Used when projecting persisted threads against a fresh document snapshot.
-- **Edit-time remap** is cheap but local: when we know exactly what was edited, we can shift anchored offsets through the splice math directly, no fingerprint search needed. Used during typing to keep threads sticky without paying the full algebra cost per keystroke.
+## Design Principles
 
-### Key Areas
+- **Document owns the algebra; editor owns projection.** Anchor vocabulary and semantic resolution live in `src/document`; this subsystem maps matches to runtime regions, ranges, cursors, and viewport statuses.
+- **Anchors are not selections.** Anchor offsets are semantic container offsets; editor selections are runtime region offsets. Convert deliberately at the boundary.
+- **Use the cheapest correct repair path.** Full re-resolve is correct but walks the document; edit-time remap is local and cheap when the edit range and inserted/deleted lengths are known.
+- **Unresolved is a valid state.** Presence targets and comment ranges may fail to resolve against the current snapshot; callers should preserve source data and omit only the runtime projection.
 
-- `index.ts` - Owns the cross-anchored-state projection helper (`projectAnchorContainersToEditor`) plus the public re-exports for comments, presence, and presence-viewport.
+## Subsystem Map
 
-- `comments.ts` - Owns editor-side comment-thread state: capturing a thread from a live editor selection, projecting persisted threads against a snapshot to produce live runtime ranges, and edit-time repair via `remap.ts`.
-
-- `presence.ts` - Owns resolution of host-provided presence targets. Text anchors project remote carets to current document offsets; comment-thread anchors mark threads as presence-active without producing carets. Geometric placement for caret targets is delegated to layout.
-
-- `presence-viewport.ts` - Owns the small geometric layer on top of presence: computing whether a remote cursor sits above, below, or inside the current viewport, and the scroll-top that would bring it into view.
-
-- `remap.ts` - Owns the cheap edit-time remap primitive: translates a stable `(start, end)` range through a known text edit. The complement to fingerprint-based resolution.
+- `index.ts` owns `projectAnchorContainersToEditor` and public re-exports.
+- `comments/` owns comment capture, runtime range projection, viewport geometry, active-thread lookup, and edit-time repair.
+- `presence/` owns host-provided presence target resolution and viewport projection.

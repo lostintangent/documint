@@ -9,7 +9,6 @@ import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import type { DocumentCaretTarget } from "./caret";
 import {
   findDocumentLayoutLineAtPoint,
-  findNearestDocumentLayoutLineForRegion,
   measureCanvasLineOffsetLeft,
   resolveBoundaryOffset,
 } from "./lookup";
@@ -24,7 +23,7 @@ export type DocumentHitTestResult = DocumentCaretTarget & {
 // `resolveEditorHitAtPoint` layers those on top.
 export function hitTestDocumentLayout(
   layout: DocumentLayout,
-  _documentIndex: DocumentIndex,
+  documentIndex: DocumentIndex,
   point: { x: number; y: number },
 ): DocumentHitTestResult | null {
   const lineEntry = findDocumentLayoutLineAtPoint(layout, point);
@@ -34,9 +33,13 @@ export function hitTestDocumentLayout(
   }
 
   const { index: lineIndex, line } = lineEntry;
-  const container = layout.regionMetrics.get(line.regionId);
+  // The line came from this layout, so its region is in scope; the lookup
+  // is here to read the region's full text length for the offset clamp
+  // (clicking past the end of the last line should land at the region's
+  // end, not the line's).
+  const region = documentIndex.regionIndex.get(line.regionId);
 
-  if (!container) {
+  if (!region) {
     return null;
   }
 
@@ -49,7 +52,7 @@ export function hitTestDocumentLayout(
     height: line.height,
     left: measureCanvasLineOffsetLeft(line, offset),
     lineIndex,
-    offset: Math.min(container.textLength, line.start + offset),
+    offset: Math.min(region.text.length, line.start + offset),
     top: line.top,
   };
 }
@@ -69,7 +72,7 @@ export function resolveEditorHitAtPoint(
   // original click x is meaningless because the click landed on an inert
   // block whose chrome the line doesn't belong to.
   const offsetX = result.snapToLineStart ? result.line.left : point.x;
-  return resolveHitOnLine(layout, state, result.line, offsetX);
+  return resolveHitOnLine(state, result.line, offsetX);
 }
 
 export function resolveHitBelowLayout(
@@ -83,7 +86,7 @@ export function resolveHitBelowLayout(
     return null;
   }
 
-  return resolveHitOnLine(layout, state, lastLine, point.x);
+  return resolveHitOnLine(state, lastLine, point.x);
 }
 
 // Resolves the focus point of a mouse drag. The focus follows the pointer's
@@ -156,21 +159,16 @@ export function resolveWordSelectionAtPoint(
 // Resolves a horizontal position on an already-identified line to a selection
 // hit. This avoids re-resolving the line from coordinates, which can land on
 // the wrong line when Y falls exactly on a line boundary.
-function resolveHitOnLine(
-  layout: DocumentLayout,
-  state: EditorState,
-  line: DocumentLayoutLine,
-  x: number,
-) {
-  const container = layout.regionMetrics.get(line.regionId);
+function resolveHitOnLine(state: EditorState, line: DocumentLayoutLine, x: number) {
+  const region = state.documentIndex.regionIndex.get(line.regionId);
 
-  if (!container) {
+  if (!region) {
     return null;
   }
 
   const localX = Math.max(0, x - resolveLineContentInset(state, line) - line.left);
   const offset = resolveBoundaryOffset(line.boundaries, localX);
-  const resolvedOffset = Math.min(container.textLength, line.start + offset);
+  const resolvedOffset = Math.min(region.text.length, line.start + offset);
 
   return {
     regionId: line.regionId,
@@ -194,18 +192,9 @@ function resolveLayoutLineAtPoint(
   state: EditorState,
   point: { x: number; y: number },
 ): LayoutLineHit | null {
-  for (const [regionId, extent] of layout.regionBounds) {
-    if (
-      point.x >= extent.left &&
-      point.x <= extent.right &&
-      point.y >= extent.top &&
-      point.y <= extent.bottom
-    ) {
-      const line = findNearestDocumentLayoutLineForRegion(layout, regionId, point.y)?.line ?? null;
-      return line ? { line } : null;
-    }
-  }
-
+  // `findDocumentLayoutLineAtPoint` already does region-containment + a
+  // Y-based fallback with X disambiguation; this function layers the
+  // block-padding and inert-redirect policies on top.
   const lineHit = findDocumentLayoutLineAtPoint(layout, point)?.line ?? null;
 
   if (lineHit) {

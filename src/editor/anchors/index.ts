@@ -44,6 +44,8 @@ export {
   createCommentThreadForSelection,
   getCommentState,
   hasActiveCommentHighlightsInViewport,
+  resolveActiveCommentIndex,
+  resolveCommentThreadViewportPosition,
   updateCommentThreadsForRegionEdit,
   type EditorCommentRange,
   type EditorCommentState,
@@ -56,4 +58,4 @@ export {
   type EditorPresenceViewportStatus,
 } from "./presence";
 
-export { resolveCursorViewportStatus, resolvePresenceViewport } from "./presence-viewport";
+export { resolveCursorViewportStatus, resolvePresenceViewport } from "./presence/viewport";

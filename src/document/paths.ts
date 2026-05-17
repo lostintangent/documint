@@ -22,22 +22,10 @@ export function childBlockPath(parentPath: string, childIndex: number) {
   return indexedPath(childContainerPath(parentPath), childIndex);
 }
 
-export function inlineChildPath(containerPath: string, childIndex: number) {
-  return childBlockPath(containerPath, childIndex);
-}
-
-export function inlinePath(inlineContainerPath: string, childIndex: number) {
-  return indexedPath(inlineContainerPath, childIndex);
-}
-
 export function tableRowPath(tablePath: string, rowIndex: number) {
   return `${tablePath}.rows.${rowIndex}`;
 }
 
 export function tableCellPath(rowPath: string, cellIndex: number) {
   return `${rowPath}.cells.${cellIndex}`;
-}
-
-export function tableCellInlineChildPath(cellPath: string, childIndex: number) {
-  return inlinePath(childContainerPath(cellPath), childIndex);
 }

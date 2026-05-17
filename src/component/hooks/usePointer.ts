@@ -23,10 +23,10 @@ import {
 import type { FocusInput } from "./useInput";
 import type { DocumentStorage } from "../lib/storage";
 import {
-  pointerViewValue,
+  pointerViewSprig,
   useDocumintStore,
   useEditorCommand,
-  useStoreValue,
+  useSprig,
   type PointerLeaf,
 } from "../store";
 
@@ -163,7 +163,7 @@ export function usePointer({
   const toggleTaskItem = useEditorCommand(toggleTask);
   const dragEditorSelection = useEditorCommand(updateSelectionFromDrag);
   const [hoverTarget, setHoverTarget] = useState<EditorHoverTarget | null>(null);
-  const { cursor, leaf } = useStoreValue(pointerViewValue, hoverTarget);
+  const { cursor, leaf } = useSprig(pointerViewSprig, hoverTarget);
   const hideTimeoutRef = useRef<number | null>(null);
   const isLeafHoveredRef = useRef(false);
   // Drag-to-select uses pointer capture; `lastPointerTypeRef` lets `click`

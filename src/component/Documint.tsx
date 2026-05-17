@@ -79,19 +79,19 @@ import { resolveMarkdownLineDiff } from "./lib/markdown-line-diff";
 import { DocumintSsr } from "./Ssr";
 import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations";
 import {
-  activeCommentThreadIndexValue,
-  commentStateValue,
-  completionSourcesValue,
+  activeCommentIndexSprig,
+  commentStateSprig,
+  completionSourcesSprig,
   createStore,
   DocumintStoreProvider,
-  editorStateValue,
-  normalizedSelectionValue,
-  selectionContextValue,
+  editorStateSprig,
+  normalizedSelectionSprig,
+  selectionContextSprig,
   type DocumintStore,
   type EditorStateTransition,
   useDocumintStore,
   useEditorCommand,
-  useStoreValue,
+  useSprig,
 } from "./store";
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
@@ -197,7 +197,7 @@ function DocumintHost({
   const lastEmittedContentRef = useRef(content);
   const canonicalContentRef = useRef("");
   const store = useDocumintStore();
-  const editorState = useStoreValue(editorStateValue);
+  const editorState = useSprig(editorStateSprig);
 
   const [hasMountedCanvases, setHasMountedCanvases] = useState(false);
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
@@ -241,16 +241,15 @@ function DocumintHost({
     scrollTo,
   } = viewportActions;
 
-  const { layoutWidth, scrollContentHeight, viewportLayout, viewportHeight, viewportTop } =
-    viewportState;
+  const { layoutWidth, viewportLayout, viewportHeight, viewportTop } = viewportState;
 
   const { scrollContainer: scrollContainerRef } = viewportRefs;
 
-  const selectionContext = useStoreValue(selectionContextValue);
-  const commentState = useStoreValue(commentStateValue);
-  const normalizedSel = useStoreValue(normalizedSelectionValue);
+  const selectionContext = useSprig(selectionContextSprig);
+  const commentState = useSprig(commentStateSprig);
+  const normalizedSel = useSprig(normalizedSelectionSprig);
   const isEditable = Boolean(onContentChanged);
-  const completionSources = useStoreValue(completionSourcesValue, users);
+  const completionSources = useSprig(completionSourcesSprig, users);
   const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
     return isEditable ? completionSources : undefined;
   }, [completionSources, isEditable]);
@@ -288,8 +287,8 @@ function DocumintHost({
     enabled: isEditable,
     onMentionAccepted: emitUserMentioned,
   });
-  const { activeCommentThreadColors, resolvedPresence } = usePresence({ presence, users });
-  const activeCommentThreadIndex = useStoreValue(activeCommentThreadIndexValue);
+  const { commentPresenceColors, resolvedPresence } = usePresence({ presence, users });
+  const activeCommentIndex = useSprig(activeCommentIndexSprig);
   const readCurrentState = () => store.editor.getState();
   const { scheduleDecorationsForTransition, textDecorations } = useDecorations({
     contentDocument,
@@ -323,10 +322,6 @@ function DocumintHost({
       }
 
       if (!transition.documentChanged) {
-        return;
-      }
-
-      if (transition.reason === "reconciliation") {
         return;
       }
 
@@ -416,7 +411,7 @@ function DocumintHost({
   //
   // The render scheduler dispatches into one of these per mode:
   //   - `renderContent` / `renderOverlay` read the cached layout via
-  //     `viewportLayout.peek()` — they paint with whatever layout is
+  //     `viewportLayout.peekCached()` — they paint with whatever layout is
   //     currently cached, no recompute.
   //   - `renderViewport` reads via `viewportLayout.get()`, which returns
   //     the cached layout or recomputes if it was invalidated by an
@@ -424,7 +419,7 @@ function DocumintHost({
   //     affecting effect below). The layout cost is paid here, not on
   //     the lighter paint paths.
 
-  const renderContent = useEffectEvent((viewportState = viewportLayout.peek()) => {
+  const renderContent = useEffectEvent((viewportState = viewportLayout.peekCached()) => {
     if (!viewportState) {
       return;
     }
@@ -446,13 +441,13 @@ function DocumintHost({
     paintContent(editorState, viewportState, context, {
       activeBlockId: selectionContext.block?.blockId ?? null,
       activeRegionId: editorState.selection.focus.regionId,
-      activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentThreadIndex,
-      contentPulseTime: idle.resolveAnimationTime(now),
+      activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
+      ambientAnimationTime: idle.resolveAnimationTime(now),
       devicePixelRatio,
       height,
-      liveCommentRanges: commentState.liveRanges,
+      commentRanges: commentState.ranges,
       normalizedSelection: normalizedSel,
-      presenceActiveThreadColors: activeCommentThreadColors,
+      presenceActiveThreadColors: commentPresenceColors,
       now,
       resources: renderResources,
       textDecorations,
@@ -461,7 +456,7 @@ function DocumintHost({
     });
   });
 
-  const renderOverlay = useEffectEvent((viewportState = viewportLayout.peek()) => {
+  const renderOverlay = useEffectEvent((viewportState = viewportLayout.peekCached()) => {
     if (!viewportState) {
       return;
     }
@@ -503,13 +498,13 @@ function DocumintHost({
   const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
     useRenderScheduler({
       hasRunningOptionalContentAnimations: () => {
-        const viewportState = viewportLayout.peek();
+        const viewportState = viewportLayout.peekCached();
         return viewportState
           ? hasAnimatedDecorationsInViewport(editorState, viewportState, textDecorations) ||
               hasActiveCommentHighlightsInViewport(
                 viewportState,
-                commentState.liveRanges,
-                activeCommentThreadColors,
+                commentState.ranges,
+                commentPresenceColors,
               )
           : false;
       },
@@ -537,7 +532,6 @@ function DocumintHost({
     isEditable,
     layoutWidth,
     onVisibilityChange: scheduleOverlayPaint,
-    scrollContentHeight,
     scrollTo,
     viewportHeight,
   });
@@ -649,10 +643,10 @@ function DocumintHost({
   useEffect(() => {
     scheduleContentPaint();
   }, [
-    activeCommentThreadIndex,
-    commentState.liveRanges,
+    activeCommentIndex,
+    commentState.ranges,
     hoveredCommentThreadIndex,
-    activeCommentThreadColors,
+    commentPresenceColors,
     textDecorations,
   ]);
 
@@ -923,7 +917,7 @@ function DocumintHost({
     );
     const nextState = reconciliation.state;
     const nextViewportTop = reconciliation.didReconcile ? getScrollTop() : 0;
-    store.editor.replace(nextState, "external");
+    store.editor.replace(nextState);
 
     lastEmittedContentRef.current = content;
     canonicalContentRef.current = canonicalContent;

@@ -27,6 +27,7 @@ type PaintBox = {
 };
 
 type ImagePlaceholderBox = PaintBox & {
+  ambientAnimationTime: number;
   status: "error" | "loading";
 };
 
@@ -38,6 +39,7 @@ export function paintInlineImage(
   theme: EditorTheme,
   left: number,
   width: number,
+  ambientAnimationTime: number,
 ) {
   const resource = inline.image ? resources.images.get(inline.image.url) : null;
   const imageHeight = resolvePaintedImageHeight(inline, resources, width);
@@ -51,6 +53,7 @@ export function paintInlineImage(
   } else {
     paintImagePlaceholder(context, theme, {
       ...box,
+      ambientAnimationTime,
       status: resource?.status === "error" ? "error" : "loading",
     });
   }
@@ -74,7 +77,7 @@ function paintImagePlaceholder(
   context.clip();
 
   if (box.status === "loading") {
-    paintImageLoadingShimmer(context, theme, box);
+    paintImageLoadingShimmer(context, theme, box, box.ambientAnimationTime);
   }
 
   context.strokeStyle = theme.imagePlaceholderIcon;
@@ -110,13 +113,14 @@ function paintImageLoadingShimmer(
   context: CanvasRenderingContext2D,
   theme: EditorTheme,
   box: PaintBox,
+  ambientAnimationTime: number,
 ) {
   const shimmerWidth = Math.max(
     imageLoadingShimmerMinimumWidth,
     Math.round(box.width * imageLoadingShimmerWidthScale),
   );
   const travelWidth = box.width + shimmerWidth * 2;
-  const progress = (performance.now() % imageLoadingCycleMs) / imageLoadingCycleMs;
+  const progress = (ambientAnimationTime % imageLoadingCycleMs) / imageLoadingCycleMs;
   const shimmerLeft = box.left - shimmerWidth + travelWidth * progress;
   const gradient = context.createLinearGradient(
     shimmerLeft,

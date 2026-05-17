@@ -27,6 +27,9 @@ import { useEffect, type RefObject } from "react";
  *   if (process.env.NODE_ENV !== "production") {
  *     useDiagnostics(inputRef);
  *   }
+ *   if (process.env.NODE_ENV !== "production") {
+ *     recordFpsFrame(durationMs);
+ *   }
  *
  * Why the inline literal (rather than aliasing to a named constant): Bun's
  * minifier substitutes `process.env.NODE_ENV` at every textual occurrence,
@@ -36,9 +39,9 @@ import { useEffect, type RefObject } from "react";
  * gives reliable DCE.
  *
  * In production the entire gated block is stripped — including the
- * `emitDiagnostic` call, the kind string, and the `detail` object
- * literal. The `emitDiagnostic` and `useDiagnostics` symbols themselves
- * tree-shake away because nothing references them.
+ * diagnostic call, the kind string, and the `detail` object literal.
+ * The exported diagnostic helpers themselves tree-shake away because
+ * nothing references them.
  *
  * # Wiring
  *
@@ -56,10 +59,29 @@ export const DIAGNOSTIC_EVENT = "documint:diagnostic";
 
 /** Wire-format payload of a diagnostic event. */
 export type Diagnostic = {
+  /** Namespaced diagnostic kind, e.g. `documint:beforeinput`. */
   kind: string;
   detail: Record<string, unknown>;
   ts: number;
 };
+
+const DIAGNOSTIC_KIND_PREFIX = "documint:";
+const FPS_SMOOTHING_ALPHA = 0.18;
+const FPS_EMIT_INTERVAL_MS = 250;
+const FPS_IDLE_RESET_MS = 1_250;
+const FPS_MATERIAL_CHANGE = 3;
+const DEFAULT_FRAME_BUDGET_FPS = 60;
+const FRAME_BUDGET_SAMPLE_COUNT = 45;
+const FRAME_BUDGET_BUCKETS = [30, 60, 90, 120, 144, 165, 240] as const;
+
+let fpsLastEmitAt: number | null = null;
+let fpsLastFrameAt: number | null = null;
+let fpsLastRoundedValue: number | null = null;
+let fpsSmoothedDurationMs: number | null = null;
+let frameBudgetSampleDeltas: number[] | null = null;
+let frameBudgetSampling = false;
+let frameBudgetFps = DEFAULT_FRAME_BUDGET_FPS;
+let frameBudgetReady = false;
 
 /**
  * Emit a diagnostic event for any subscribed tool to render. Always wrap
@@ -70,16 +92,128 @@ export type Diagnostic = {
  * `console.log` so the diagnostic isn't silently dropped.
  */
 export function emitDiagnostic(kind: string, detail: Record<string, unknown>) {
+  const namespacedKind = namespaceDiagnosticKind(kind);
+
   if (typeof window === "undefined") {
     // eslint-disable-next-line no-console
-    console.log(`[diag ${kind}]`, detail);
+    console.log(`[diag ${namespacedKind}]`, detail);
     return;
   }
   window.dispatchEvent(
     new CustomEvent<Diagnostic>(DIAGNOSTIC_EVENT, {
-      detail: { kind, detail, ts: Date.now() },
+      detail: { kind: namespacedKind, detail, ts: Date.now() },
     }),
   );
+}
+
+function namespaceDiagnosticKind(kind: string) {
+  return kind.startsWith(DIAGNOSTIC_KIND_PREFIX) ? kind : `${DIAGNOSTIC_KIND_PREFIX}${kind}`;
+}
+
+/**
+ * Record the cost of one completed scheduler frame for dev FPS
+ * instrumentation. The emitted FPS is an estimated render capacity from
+ * recent frame cost, capped to the active rAF cadence estimate so sparse
+ * input streams don't look slow just because the browser requested fewer
+ * frames.
+ */
+export function recordFpsFrame(durationMs: number) {
+  const now = performance.now();
+  if (fpsLastFrameAt !== null && now - fpsLastFrameAt > FPS_IDLE_RESET_MS) {
+    resetFpsTracking();
+  }
+  fpsLastFrameAt = now;
+
+  if (durationMs <= 0) {
+    return;
+  }
+
+  fpsSmoothedDurationMs =
+    fpsSmoothedDurationMs === null
+      ? durationMs
+      : fpsSmoothedDurationMs + FPS_SMOOTHING_ALPHA * (durationMs - fpsSmoothedDurationMs);
+
+  const frameBudget = getFrameBudgetFps();
+  const roundedValue = Math.round(Math.min(frameBudget, 1000 / fpsSmoothedDurationMs));
+  const shouldEmit =
+    fpsLastEmitAt === null ||
+    now - fpsLastEmitAt >= FPS_EMIT_INTERVAL_MS ||
+    fpsLastRoundedValue === null ||
+    Math.abs(roundedValue - fpsLastRoundedValue) >= FPS_MATERIAL_CHANGE;
+
+  if (!shouldEmit) {
+    return;
+  }
+
+  fpsLastEmitAt = now;
+  fpsLastRoundedValue = roundedValue;
+  emitDiagnostic("fps", { cap: frameBudget, capPending: !frameBudgetReady, value: roundedValue });
+}
+
+function resetFpsTracking() {
+  fpsLastEmitAt = null;
+  fpsLastFrameAt = null;
+  fpsLastRoundedValue = null;
+  fpsSmoothedDurationMs = null;
+}
+
+function getFrameBudgetFps() {
+  if (!frameBudgetSampling) {
+    sampleFrameBudget();
+  }
+  return frameBudgetFps;
+}
+
+function sampleFrameBudget() {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    return;
+  }
+
+  frameBudgetSampling = true;
+  frameBudgetSampleDeltas = [];
+  let lastTimestamp: number | null = null;
+
+  const sample = (timestamp: number) => {
+    if (lastTimestamp !== null && frameBudgetSampleDeltas !== null) {
+      const deltaMs = timestamp - lastTimestamp;
+      if (deltaMs > 0 && deltaMs < 100) {
+        frameBudgetSampleDeltas.push(deltaMs);
+      }
+    }
+    lastTimestamp = timestamp;
+
+    if (
+      frameBudgetSampleDeltas !== null &&
+      frameBudgetSampleDeltas.length >= FRAME_BUDGET_SAMPLE_COUNT
+    ) {
+      frameBudgetFps = snapFrameBudgetFps(1000 / median(frameBudgetSampleDeltas));
+      frameBudgetReady = true;
+      frameBudgetSampleDeltas = null;
+      return;
+    }
+
+    window.requestAnimationFrame(sample);
+  };
+
+  window.requestAnimationFrame(sample);
+}
+
+function median(values: number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 1000 / DEFAULT_FRAME_BUDGET_FPS;
+}
+
+function snapFrameBudgetFps(fps: number) {
+  let nearest: number = FRAME_BUDGET_BUCKETS[0];
+  let nearestDistance = Math.abs(fps - nearest);
+  for (const bucket of FRAME_BUDGET_BUCKETS) {
+    const distance = Math.abs(fps - bucket);
+    if (distance < nearestDistance) {
+      nearest = bucket;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
 /**

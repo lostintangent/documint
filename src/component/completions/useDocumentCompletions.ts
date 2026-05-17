@@ -7,9 +7,9 @@ import {
   type DocumentCompletion,
 } from "./document-completions";
 import {
-  documentCompletionValue,
+  documentCompletionSprig,
   useEditorCommand,
-  useStoreValue,
+  useSprig,
   type EditorStateTransition,
 } from "../store";
 import type { CompletionLeaf } from "../overlays/leaves/core/shared";
@@ -33,8 +33,8 @@ export function useDocumentCompletions({
     userId: string;
   }) => void;
 }): DocumentCompletionsController {
-  const activeCompletion = useStoreValue(
-    documentCompletionValue,
+  const activeCompletion = useSprig(
+    documentCompletionSprig,
     enabled ? completionSources : undefined,
   );
   const insertMentionCommand = useEditorCommand(insertMention);

@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { createCanvasRenderCache } from "@/editor/canvas/lib/cache";
+import { createLayoutCache } from "@/editor/layout/state/cache";
 import { createDocumentIndex, insertLineBreak, setSelection, toggleBold } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
-import { createDocumentLayout, measureCaretTarget } from "@/editor/layout";
+import { measureCaretTarget } from "@/editor/layout";
+import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import type { DocumentResources } from "@/types";
 import { getRegion, setup } from "../helpers";
@@ -14,10 +15,10 @@ test("wraps runtime text into deterministic canvas layout lines", () => {
 Paragraph text that wraps across multiple visual lines in the canvas layout.
 `),
   );
-  const wideLayout = createDocumentLayout(runtime, {
+  const wideLayout = measureLayoutSlice(runtime, {
     width: 420,
   });
-  const narrowLayout = createDocumentLayout(runtime, {
+  const narrowLayout = measureLayoutSlice(runtime, {
     width: 140,
   });
 
@@ -35,7 +36,7 @@ test("forces a wrap on inline line break runs even at large widths", () => {
   // remains a hard break.
   const state = setup("foo<br>\nbar\n");
   const region = getRegion(state, "foo\nbar");
-  const layout = createDocumentLayout(state.documentIndex, { width: 4000 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 4000 });
   const containerLines = layout.lines.filter((line) => line.regionId === region.id);
 
   expect(containerLines.length).toBe(2);
@@ -51,7 +52,7 @@ test("materializes a trailing empty line when the region ends on a soft break", 
   // an explicit empty trailing line so the caret has a target.
   const state = setup("foo<br>\n");
   const region = getRegion(state, "foo\n");
-  const layout = createDocumentLayout(state.documentIndex, { width: 4000 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 4000 });
   const containerLines = layout.lines.filter((line) => line.regionId === region.id);
 
   expect(containerLines.length).toBe(2);
@@ -66,7 +67,7 @@ test("lays out table cells side by side within the same row", () => {
 | One  | Two   |
 `),
   );
-  const layout = createDocumentLayout(runtime, {
+  const layout = measureLayoutSlice(runtime, {
     width: 420,
   });
   const headerName = layout.lines.find((line) => line.text === "Name");
@@ -84,7 +85,7 @@ test("lays out table cells side by side within the same row", () => {
 });
 
 test("reuses cached sibling table measurements when one cell changes", () => {
-  const cache = createCanvasRenderCache();
+  const cache = createLayoutCache();
   const runtime = createDocumentIndex(
     parseDocument(`| Name | Value |
 | ---- | ----- |
@@ -97,7 +98,7 @@ test("reuses cached sibling table measurements when one cell changes", () => {
     throw new Error("Expected editable table cell");
   }
 
-  createDocumentLayout(
+  measureLayoutSlice(
     runtime,
     {
       width: 420,
@@ -120,7 +121,7 @@ test("reuses cached sibling table measurements when one cell changes", () => {
     "Label",
   );
 
-  createDocumentLayout(
+  measureLayoutSlice(
     replaced.documentIndex,
     {
       width: 420,
@@ -135,7 +136,7 @@ test("keeps an empty layout line and caret target for inserted empty blocks", ()
   let state = setup("# Heading\n");
   state = insertLineBreak(state) ?? state;
 
-  const layout = createDocumentLayout(state.documentIndex, {
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 420,
   });
   const activeRegionId = state.selection.focus.regionId;
@@ -148,8 +149,35 @@ test("keeps an empty layout line and caret target for inserted empty blocks", ()
   expect(caret?.offset).toBe(0);
 });
 
+test("uses matching outer spacing around h2 heading rules", () => {
+  const runtime = createDocumentIndex(
+    parseDocument(`Before
+
+## Heading
+
+After
+`),
+  );
+  const layout = measureLayoutSlice(runtime, {
+    width: 420,
+  });
+  const beforeLine = layout.lines.find((line) => line.text === "Before");
+  const headingLine = layout.lines.find((line) => line.text === "Heading");
+  const afterLine = layout.lines.find((line) => line.text === "After");
+
+  if (!beforeLine || !headingLine || !afterLine) {
+    throw new Error("Expected heading spacing fixture lines");
+  }
+
+  const leadingGap = headingLine.top - (beforeLine.top + beforeLine.height);
+  const trailingGap = afterLine.top - (headingLine.top + headingLine.height);
+
+  expect(leadingGap).toBe(trailingGap);
+  expect(leadingGap).toBeGreaterThan(layout.options.blockGap);
+});
+
 test("recomputes cached line boundaries when inline mark state changes", () => {
-  const cache = createCanvasRenderCache();
+  const cache = createLayoutCache();
   let state = setup("WWWWW WWWWW WWWWW");
   const container = state.documentIndex.regions[0];
 
@@ -157,7 +185,7 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const plainLayout = createDocumentLayout(
+  const plainLayout = measureLayoutSlice(
     state.documentIndex,
     {
       width: 180,
@@ -178,7 +206,7 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
   });
   state = toggleBold(state) ?? state;
 
-  const markedLayout = createDocumentLayout(
+  const markedLayout = measureLayoutSlice(
     state.documentIndex,
     {
       width: 180,
@@ -194,7 +222,7 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
 test("treats emoji variation sequences as single caret boundary units", () => {
   const state = setup("a ✈️b\n");
   const region = getRegion(state, "a ✈️b");
-  const layout = createDocumentLayout(state.documentIndex, { width: 420 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
   const line = layout.lines.find((line) => line.regionId === region.id);
 
   if (!line) {
@@ -208,7 +236,7 @@ test("wraps repeated color emoji without losing text past the line edge", () => 
   const emojiText = `x ${"🔥".repeat(30)}`;
   const state = setup(`${emojiText}\n`);
   const region = getRegion(state, emojiText);
-  const layout = createDocumentLayout(state.documentIndex, { width: 220 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 220 });
   const lines = layout.lines.filter((line) => line.regionId === region.id);
   const availableWidth = layout.width - layout.options.paddingX * 2;
 
@@ -218,12 +246,12 @@ test("wraps repeated color emoji without losing text past the line edge", () => 
 });
 
 test("does not reuse cached lines across different astral symbols", () => {
-  const cache = createCanvasRenderCache();
+  const cache = createLayoutCache();
   const first = createDocumentIndex(parseDocument("😀\n"));
   const second = createDocumentIndex(parseDocument("😁\n"));
 
-  createDocumentLayout(first, { width: 420 }, cache);
-  const secondLayout = createDocumentLayout(second, { width: 420 }, cache);
+  measureLayoutSlice(first, { width: 420 }, cache);
+  const secondLayout = measureLayoutSlice(second, { width: 420 }, cache);
 
   expect(secondLayout.lines[0]?.text).toBe("😁");
 });
@@ -231,7 +259,7 @@ test("does not reuse cached lines across different astral symbols", () => {
 test("treats user mentions as single caret boundary units", () => {
   const state = setup("Hi @[Jane Doe](user-123)!\n");
   const region = getRegion(state, "Hi ￼!");
-  const layout = createDocumentLayout(state.documentIndex, { width: 420 });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
   const line = layout.lines.find((line) => line.regionId === region.id);
 
   if (!line) {
@@ -265,12 +293,12 @@ test("uses authored image width when laying out image runs", () => {
       ],
     ]),
   };
-  const layout = createDocumentLayout(
+  const layout = measureLayoutSlice(
     runtime,
     {
       width: 420,
     },
-    createCanvasRenderCache(),
+    createLayoutCache(),
     resources,
   );
 

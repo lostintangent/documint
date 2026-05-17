@@ -2,19 +2,26 @@ import type { EditorLayoutState } from "@/editor";
 
 export type LayoutListener = () => void;
 
-export type ViewportLayoutHandle = {
+export type EditorLayoutHandle = {
+  // Return the current layout, computing it if the cache is empty.
   get: () => EditorLayoutState;
-  peek: () => EditorLayoutState | null;
+  // Return the cached layout without recomputing. Cheap paint paths use
+  // this to skip the recompute cost on frames that can reuse the cache.
+  peekCached: () => EditorLayoutState | null;
 };
 
-// Owns the lazy viewport layout cache and publishes completed viewport renders
-// to reactive consumers. `get()` may compute a fresh layout;
-// `observeViewport` marks that layout as the latest rendered snapshot and
-// notifies subscribers.
-export type ViewportStore = ViewportLayoutHandle & {
+// Owns the lazy viewport layout cache and publishes completed viewport
+// renders to reactive consumers. Two distinct frames live here:
+//
+//   - `cachedViewport` — the eager cache, recomputed via the host's
+//     resolver when invalidated. Hot paths read it via `get()` / `peekCached()`.
+//   - `publishedViewport` — the last frame `observeViewport()` saw the
+//     renderer paint. Reactive consumers subscribe to this; it updates
+//     once per painted frame, not per cache invalidation.
+export type ViewportStore = EditorLayoutHandle & {
   invalidate: () => void;
   observeViewport: (viewport: EditorLayoutState) => void;
-  peekPublishedViewport: () => EditorLayoutState | null;
+  peekPublished: () => EditorLayoutState | null;
   setViewportResolver: (resolve: () => EditorLayoutState) => void;
   subscribe: (listener: LayoutListener) => () => void;
 };
@@ -57,7 +64,7 @@ export function createViewportStore(): ViewportStore {
       cachedViewport = null;
     },
 
-    peek() {
+    peekCached() {
       return cachedViewport;
     },
 
@@ -65,7 +72,7 @@ export function createViewportStore(): ViewportStore {
       publish(viewport);
     },
 
-    peekPublishedViewport() {
+    peekPublished() {
       return publishedViewport;
     },
 

@@ -36,9 +36,13 @@ function createInMemoryStorage(): DocumintStorage {
 }
 
 const storage = createInMemoryStorage();
+const demoUser: DocumentUser = {
+  id: "demo",
+  username: "demo",
+};
 const playgroundDecorations: readonly DocumintDecoration[] = [
   { backgroundColor: "#fde047", color: "#111827", pattern: /\bTODO\b/g },
-  { backgroundColor: "#38bdf8", pulse: true, color: "#082f49", pattern: /\bsparkle\b/g },
+  { backgroundColor: "#38bdf8", pulse: true, color: "#082f49", pattern: /\blesson\b/g },
   { color: "#6b7280", pattern: /\((\d+)\)/g },
 ];
 
@@ -77,6 +81,7 @@ export function Playground() {
 
   const activeThemeOption = getThemeOption(themeId);
   const activeTheme = activeThemeOption.theme;
+  const mentionUsers = users.some((user) => user.id === demoUser.id) ? users : [demoUser, ...users];
 
   const handleFixtureChange = (nextFixtureId: string) => {
     const nextFixture = fixtureOptions.find((candidate) => candidate.id === nextFixtureId);
@@ -183,7 +188,7 @@ export function Playground() {
               onContentChanged={setContent}
               onUserMentioned={handleUserMentioned}
               theme={activeTheme ?? undefined}
-              users={users}
+              users={mentionUsers}
               presence={presence}
               storage={storage}
               decorations={playgroundDecorations}

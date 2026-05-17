@@ -67,13 +67,15 @@ export type CodeBlockContext = TextContextFacts & {
 
 export type TableCellTextContext = TextContextFacts & TableCellContext;
 
+// A classifiable structural context for the current selection. `null` from
+// the resolver means "the selection didn't classify into any known shape" —
+// callers short-circuit to no-op.
 export type BlockContext =
   | ({ kind: "code" } & CodeBlockContext)
   | ({ kind: "tableCell" } & TableCellTextContext)
   | ({ kind: "listItem" } & ListItemContext)
   | ({ kind: "blockquoteTextBlock" } & BlockquoteTextBlockContext)
-  | ({ kind: "rootTextBlock" } & RootTextBlockContext)
-  | { kind: "unsupported" };
+  | ({ kind: "rootTextBlock" } & RootTextBlockContext);
 
 export type DeletionDirection = "backward" | "forward";
 
@@ -97,12 +99,7 @@ export type DeletionContext =
       direction: DeletionDirection;
       nextSibling: Block | null;
       previousSibling: Block | null;
-    } & BlockquoteTextBlockContext & { kind: "blockquoteTextBlock" })
-  | {
-      atBoundary: false;
-      direction: DeletionDirection;
-      kind: "unsupported";
-    };
+    } & BlockquoteTextBlockContext & { kind: "blockquoteTextBlock" });
 
 // --- Command context resolvers ---
 
@@ -160,18 +157,18 @@ export function resolveInlineContext(state: EditorState): InlineContext | null {
   return range ? resolveInlineContextFromTextRange(state, range) : null;
 }
 
-export function resolveBlockContext(state: EditorState): BlockContext {
+export function resolveBlockContext(state: EditorState): BlockContext | null {
   return resolveBlockContextFromSelection(state.documentIndex, state.selection);
 }
 
 function resolveBlockContextFromSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): BlockContext {
+): BlockContext | null {
   const region = documentIndex.regionIndex.get(selection.anchor.regionId);
 
   if (!region) {
-    return { kind: "unsupported" };
+    return null;
   }
 
   if (region.blockType === "code") {
@@ -184,7 +181,7 @@ function resolveBlockContextFromSelection(
           selection,
           ...resolveTextContextFacts(documentIndex, region, selection),
         }
-      : { kind: "unsupported" };
+      : null;
   }
 
   const tableCellContext = resolveTableCellContextFromRegion(documentIndex, region.id, selection);
@@ -218,17 +215,21 @@ function resolveBlockContextFromSelection(
     return { kind: "rootTextBlock", ...rootTextBlockContext };
   }
 
-  return { kind: "unsupported" };
+  return null;
 }
 
 export function resolveDeletionContext(
   state: EditorState,
   direction: DeletionDirection,
-): DeletionContext {
+): DeletionContext | null {
   const { documentIndex, selection } = state;
   const ctx = resolveBlockContextFromSelection(documentIndex, selection);
-  const atBoundary =
-    ctx.kind === "unsupported" ? false : direction === "backward" ? ctx.atStart : ctx.atEnd;
+
+  if (!ctx) {
+    return null;
+  }
+
+  const atBoundary = direction === "backward" ? ctx.atStart : ctx.atEnd;
 
   switch (ctx.kind) {
     case "rootTextBlock":
@@ -260,8 +261,12 @@ export function resolveDeletionContext(
         previousSibling: ctx.quote.children[ctx.childIndex - 1] ?? null,
         nextSibling: ctx.quote.children[ctx.childIndex + 1] ?? null,
       };
-    default:
-      return { kind: "unsupported", direction, atBoundary: false };
+    case "code":
+    case "tableCell":
+      // No structural deletion semantic for code blocks or table cells —
+      // backspace/forward-delete inside these is handled by the
+      // character-delete or in-region splice paths upstream.
+      return null;
   }
 }
 

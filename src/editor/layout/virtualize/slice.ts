@@ -1,28 +1,24 @@
-// Owns the slice-picking and post-exact processing the planner does once the
-// plan exists: find the visible window in plan space, expand it so tables
-// stay whole, shift the slice's local coordinates back into document space,
-// and feed the measured heights back into the estimation cache so the next
-// plan pass uses real numbers for previously-visible regions.
+// Owns large-document slice picking and post-exact processing: find the visible
+// window in estimate space, expand it so tables stay whole, and feed measured
+// heights back into the cache so subsequent estimates use real numbers for
+// visible regions. The slice is measured directly in document space (via
+// `measureLayoutSlice`'s `startY`), so no coordinate shift is needed here.
 
 import type { DocumentResources } from "@/types";
 import type { DocumentIndex } from "../../state";
-import {
-  cacheMeasuredContainerHeight,
-  type CanvasRenderCache,
-  type CanvasViewportPlan,
-} from "../../canvas/lib/cache";
+import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
 import { resolveListMarkerInset } from "../lib/geometry";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { DocumentLayout } from "../measure";
 import { createContainerHeightCacheKey } from "./estimate";
 
-export function findViewportPlanEntryIndexAtOrAfter(plan: CanvasViewportPlan, y: number) {
+export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayout, y: number) {
   let low = 0;
-  let high = plan.entries.length;
+  let high = virtualLayout.entries.length;
 
   while (low < high) {
     const middle = (low + high) >> 1;
-    const entry = plan.entries[middle]!;
+    const entry = virtualLayout.entries[middle]!;
 
     if (entry.bottom <= y) {
       low = middle + 1;
@@ -72,39 +68,8 @@ export function expandViewportSliceToBlockBoundaries(
   };
 }
 
-export function shiftDocumentLayout(
-  layout: DocumentLayout,
-  topOffset: number,
-  totalHeight: number,
-): DocumentLayout {
-  return {
-    ...layout,
-    blocks: layout.blocks.map((block) => ({
-      ...block,
-      bottom: block.bottom + topOffset,
-      top: block.top + topOffset,
-    })),
-    regionBounds: new Map(
-      [...layout.regionBounds.entries()].map(([regionId, extent]) => [
-        regionId,
-        {
-          bottom: extent.bottom + topOffset,
-          left: extent.left,
-          right: extent.right,
-          top: extent.top + topOffset,
-        },
-      ]),
-    ),
-    height: totalHeight,
-    lines: layout.lines.map((line) => ({
-      ...line,
-      top: line.top + topOffset,
-    })),
-  };
-}
-
 export function updateMeasuredContainerHeights(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   documentIndex: DocumentIndex,
   layout: DocumentLayout,
   options: DocumentLayoutOptions,
@@ -113,16 +78,10 @@ export function updateMeasuredContainerHeights(
   for (const [regionId, extent] of layout.regionBounds) {
     const height = extent.bottom - extent.top;
     const container = documentIndex.regionIndex.get(regionId);
-    // Mirror the inset the planner applied when estimating this region —
+    // Mirror the inset applied when estimating this region —
     // otherwise the cache key for the measured height won't match the
     // cache key the next estimate pass looks up, defeating the cache.
-    const listInset = container
-      ? resolveListMarkerInset(
-          documentIndex.blockIndex,
-          documentIndex.listItemMarkers,
-          container.blockId,
-        )
-      : 0;
+    const listInset = container ? resolveListMarkerInset(documentIndex, container.blockId) : 0;
 
     cacheMeasuredContainerHeight(
       cache,

@@ -1,41 +1,29 @@
 // Owns the top-level canvas paint pipeline. The editor mounts two stacked
 // canvases — content and overlay — and this module is the single entry point
-// each frame. The pipeline is staged so that backgrounds, foregrounds, and
-// rules paint in a fixed z-order regardless of what runs inside each line.
+// each frame, exporting `paintContent` and `paintOverlay`. Tests drive the
+// same surface as the host.
 //
-// Stages, in order:
-//   1.  clear + base background
-//   2.  per-visible-line block backgrounds     (delegated to painters/block-chrome.ts)
-//   2b. inert block chrome                     (delegated to painters/block-chrome.ts)
-//   3.  active table cell highlight pass       (delegated to painters/table.ts)
-//   4.  per-visible-line foreground            (sub-pipeline below)
-//   5.  heading rules + blockquote rules       (delegated to painters/block-chrome.ts)
-//
-// Stage 2b paints standalone block-level chrome (the divider rule today;
-// future image-as-block, embed, display-math). It runs after stage 2 so
-// per-line backgrounds for adjacent text blocks are already down, and
-// before stage 3 so active-cell highlights for tables sit on top.
-//
-// The per-line foreground sub-pipeline (`paintContentLine`):
-//   active-block bg → decoration backgrounds → selection → comments
-//   → list marker → text runs → decoration text overlays → text fades
-//   → text pulses
-//
-// Pixel-drawing modules live in painters/. Shared building blocks
-// (animations, color blending, font metrics, render cache) live in lib/.
+// See AGENTS.md in this folder for the pipeline z-order, the two-clock model
+// (`now` vs `ambientAnimationTime`), the block-snapshots-vs-block-index
+// distinction, and the cache lifetimes. The stages are commented in line
+// below so they're greppable from the code; AGENTS.md is the source of
+// truth for ordering rationale.
 
 import type { Block } from "@/document";
 import type { EditorCommentRange, EditorPresence } from "../anchors";
 import type { EditorLayoutState } from "../layout";
 import {
-  findBlockAncestor,
   findVisibleBlockRange,
   findVisibleLineRange,
   resolveLineContentInset,
   resolveListItemMarker,
   type DocumentLayout,
 } from "../layout";
-import type { EditorState, NormalizedEditorSelection } from "../state";
+import {
+  findAncestorBlockEntry,
+  type EditorState,
+  type NormalizedEditorSelection,
+} from "../state";
 import type { DocumentResources, EditorTheme } from "@/types";
 import type { TextDecorationIndex } from "../text/decorations";
 import {
@@ -50,45 +38,36 @@ import {
   type ActiveBlockPulse,
   type ActiveTextPulse,
 } from "./lib/animations";
-import { resolveCanvasCenteredTextBaseline } from "./lib/fonts";
+import { resolveCenteredTextBaseline } from "../text/measure";
 import {
   activeLineVerticalBleed,
   paintActiveBlockBackground,
   paintBlockquoteRules,
-  paintCanvasLineContainerBackground,
+  paintLineContainerBackground,
   paintHeadingRules,
   paintInertBlock,
   resolveVisibleBlockquoteRegions,
   resolveVisibleHeadingRules,
 } from "./painters/block-chrome";
-import { paintCanvasCaretOverlay } from "./painters/caret";
+import { paintCaretOverlay } from "./painters/caret";
 import { paintListMarker } from "./painters/list";
 import {
-  paintCanvasCommentHighlights,
+  paintCommentHighlights,
   paintSelectionHighlight,
   resolveSelectionRegionOrderRange,
   type SelectionRegionOrderRange,
 } from "./painters/selection";
 import { paintActiveTableCellHighlightPass, type PaintRegionBounds } from "./painters/table";
 import {
-  paintCanvasTextFades,
-  paintCanvasTextHighlights,
-  paintCanvasLineText,
-  paintCanvasTextPulses,
+  paintTextFades,
+  paintTextHighlights,
+  paintLineText,
+  paintTextPulses,
   paintTextDecorations,
 } from "./painters/text";
 
-export type CanvasSelectionRange = {
-  end: { regionId: string; offset: number };
-  start: { regionId: string; offset: number };
-};
-
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
 const emptyPresenceThreadColors: ReadonlyMap<number, string | null> = new Map();
-
-// Re-export painter entry points used outside this folder (tests, primarily).
-// External callers should not reach into painters/ directly.
-export { paintCanvasCaretOverlay } from "./painters/caret";
 
 // Editor-facing entry point for the content canvas. Thin wrapper that pulls
 // pieces off the viewport snapshot and forwards into the orchestrator.
@@ -100,10 +79,10 @@ export function paintContent(
     activeBlockId: string | null;
     activeRegionId: string | null;
     activeThreadIndex: number | null;
-    contentPulseTime?: number;
+    ambientAnimationTime?: number;
     devicePixelRatio: number;
     height: number;
-    liveCommentRanges: EditorCommentRange[];
+    commentRanges: EditorCommentRange[];
     normalizedSelection: NormalizedEditorSelection;
     presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
     now?: number;
@@ -117,19 +96,19 @@ export function paintContent(
     activeBlockId: options.activeBlockId,
     activeRegionId: options.activeRegionId,
     activeThreadIndex: options.activeThreadIndex,
-    contentPulseTime: options.contentPulseTime,
-    containerLineBounds: viewport.regionBounds,
+    ambientAnimationTime: options.ambientAnimationTime,
+    containerLineBounds: viewport.layout.regionBounds,
     context,
     devicePixelRatio: options.devicePixelRatio,
     editorState: state,
     height: options.height,
     layout: viewport.layout,
-    liveCommentRanges: options.liveCommentRanges,
+    commentRanges: options.commentRanges,
     normalizedSelection: options.normalizedSelection,
     presenceActiveThreadColors: options.presenceActiveThreadColors ?? emptyPresenceThreadColors,
     now: options.now,
     resources: options.resources ?? { images: new Map() },
-    runtimeBlockMap: viewport.blockMap,
+    blockSnapshots: viewport.blockMap,
     textDecorations: options.textDecorations ?? emptyTextDecorationIndex,
     theme: options.theme,
     viewportTop: viewport.paintTop,
@@ -154,7 +133,7 @@ export function paintOverlay(
     width: number;
   },
 ): void {
-  paintCanvasCaretOverlay({
+  paintCaretOverlay({
     context,
     devicePixelRatio: options.devicePixelRatio,
     editorState: state,
@@ -170,9 +149,9 @@ export function paintOverlay(
 }
 
 // Viewport-level orchestrator. Owns the staging order; delegates each stage's
-// work to a sibling module. Intentionally exported so tests can drive it
-// without going through the React surface.
-export function paintContentLayer({
+// work to a sibling module. Private — `paintContent` is the only entry; tests
+// drive through it the same way the host does.
+function paintContentLayer({
   activeBlockId,
   activeRegionId,
   activeThreadIndex,
@@ -182,13 +161,13 @@ export function paintContentLayer({
   editorState,
   height,
   layout,
-  liveCommentRanges,
+  commentRanges,
   normalizedSelection,
   now = getPaintTime(),
-  contentPulseTime = now,
+  ambientAnimationTime = now,
   presenceActiveThreadColors = emptyPresenceThreadColors,
   resources,
-  runtimeBlockMap,
+  blockSnapshots,
   textDecorations = emptyTextDecorationIndex,
   theme,
   viewportTop,
@@ -198,18 +177,18 @@ export function paintContentLayer({
   activeRegionId: string | null;
   activeThreadIndex: number | null;
   containerLineBounds: Map<string, PaintRegionBounds>;
-  contentPulseTime?: number;
+  ambientAnimationTime?: number;
   context: CanvasRenderingContext2D;
   devicePixelRatio: number;
   editorState: EditorState;
   height: number;
   layout: DocumentLayout;
-  liveCommentRanges: EditorCommentRange[];
-  normalizedSelection: CanvasSelectionRange;
+  commentRanges: EditorCommentRange[];
+  normalizedSelection: NormalizedEditorSelection;
   presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
   now?: number;
   resources: DocumentResources;
-  runtimeBlockMap: Map<string, Block>;
+  blockSnapshots: Map<string, Block>;
   textDecorations?: TextDecorationIndex;
   theme: EditorTheme;
   viewportTop: number;
@@ -244,19 +223,19 @@ export function paintContentLayer({
   const visibleHeadingRules = resolveVisibleHeadingRules(
     layout,
     editorState,
-    runtimeBlockMap,
+    blockSnapshots,
     startIndex,
     endIndex,
     width,
   );
 
-  // Stage 2: per-line block backgrounds (code fences, table cell chrome).
+  // Stage 2: per-visible-line block backgrounds (code fences, table cell chrome).
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    paintCanvasLineContainerBackground(
+    paintLineContainerBackground(
       context,
       line,
-      runtimeBlockMap.get(line.blockId) ?? null,
+      blockSnapshots.get(line.blockId) ?? null,
       containerLineBounds.get(line.regionId) ?? null,
       editorState.documentIndex.tableCellIndex.get(line.regionId) ?? null,
       theme,
@@ -264,10 +243,10 @@ export function paintContentLayer({
     );
   }
 
-  // Stage 2b: inert block chrome (divider rule today; future image-as-block,
+  // Stage 3: inert block chrome (divider rule today; future image-as-block,
   // embed, display-math). Iterates the visible slice of `layout.blocks` and
   // dispatches by `block.type`. Text blocks no-op here — their chrome paints
-  // via stage 2 (code/table) or stage 5 (heading/blockquote rules).
+  // via stage 2 (code/table) or stage 6 (heading/blockquote rules).
   const visibleBlockRange = findVisibleBlockRange(layout, viewportTop, height);
   paintInertBlock(
     context,
@@ -278,7 +257,7 @@ export function paintContentLayer({
     width,
   );
 
-  // Stage 3: active table cell band, painted after backgrounds and before
+  // Stage 4: active table cell band, painted after backgrounds and before
   // foregrounds so the cell highlight sits behind text but on top of borders.
   paintActiveTableCellHighlightPass({
     activeBlockFlashes,
@@ -294,13 +273,13 @@ export function paintContentLayer({
     verticalBleed: activeLineVerticalBleed,
   });
 
-  // Stage 4: per-line foreground (text, decorations, markers, effects).
+  // Stage 5: per-visible-line foreground (text, decorations, markers, effects).
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
     paintContentLine({
       activeBlockId,
       activeBlockFlashes,
-      contentPulseTime,
+      ambientAnimationTime,
       activeTextFades,
       activeTextHighlights,
       activeBlockPulses,
@@ -309,11 +288,11 @@ export function paintContentLayer({
       context,
       editorState,
       line,
-      liveCommentRanges,
+      commentRanges,
       normalizedSelection,
       presenceActiveThreadColors,
       resources,
-      runtimeBlockMap,
+      blockSnapshots,
       selectionRegionOrderRange,
       textDecorations,
       theme,
@@ -321,7 +300,7 @@ export function paintContentLayer({
     });
   }
 
-  // Stage 5: rules (heading underline, blockquote bar) painted last so they
+  // Stage 6: rules (heading underline, blockquote bar) painted last so they
   // sit on top of any foreground that bled into their geometry.
   paintHeadingRules(context, visibleHeadingRules, theme);
   paintBlockquoteRules(context, visibleBlockquoteRegions, theme);
@@ -334,7 +313,7 @@ export function paintContentLayer({
 function paintContentLine({
   activeBlockId,
   activeBlockFlashes,
-  contentPulseTime,
+  ambientAnimationTime,
   activeTextFades,
   activeTextHighlights,
   activeBlockPulses,
@@ -343,11 +322,11 @@ function paintContentLine({
   context,
   editorState,
   line,
-  liveCommentRanges,
+  commentRanges,
   normalizedSelection,
   presenceActiveThreadColors,
   resources,
-  runtimeBlockMap,
+  blockSnapshots,
   selectionRegionOrderRange,
   textDecorations,
   theme,
@@ -355,7 +334,7 @@ function paintContentLine({
 }: {
   activeBlockId: string | null;
   activeBlockFlashes: Map<string, ActiveBlockFlash>;
-  contentPulseTime: number;
+  ambientAnimationTime: number;
   activeTextFades: Map<string, ActiveTextFade[]>;
   activeTextHighlights: Map<string, ActiveTextHighlight[]>;
   activeBlockPulses: Map<string, ActiveBlockPulse>;
@@ -364,27 +343,27 @@ function paintContentLine({
   context: CanvasRenderingContext2D;
   editorState: EditorState;
   line: DocumentLayout["lines"][number];
-  liveCommentRanges: EditorCommentRange[];
-  normalizedSelection: CanvasSelectionRange;
+  commentRanges: EditorCommentRange[];
+  normalizedSelection: NormalizedEditorSelection;
   presenceActiveThreadColors: ReadonlyMap<number, string | null>;
   resources: DocumentResources;
-  runtimeBlockMap: Map<string, Block>;
+  blockSnapshots: Map<string, Block>;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
   textDecorations: TextDecorationIndex;
   theme: EditorTheme;
   width: number;
 }) {
-  const snapshotBlock = runtimeBlockMap.get(line.blockId) ?? null;
+  const snapshotBlock = blockSnapshots.get(line.blockId) ?? null;
   const runtimeBlockPath = editorState.documentIndex.blockIndex.get(line.blockId)?.path ?? null;
   const container = editorState.documentIndex.regionIndex.get(line.regionId) ?? null;
   const containerPath = container?.path ?? "";
-  const listItemEntry = findBlockAncestor(editorState, line.blockId, "listItem");
+  const listItemEntry = findAncestorBlockEntry(editorState.documentIndex, line.blockId, "listItem");
   const listMarker = listItemEntry ? resolveListItemMarker(editorState, listItemEntry.id) : null;
   const blockPulse = listItemEntry ? (activeBlockPulses.get(listItemEntry.path) ?? null) : null;
   const textLeft = line.left + resolveLineContentInset(editorState, line);
-  const textBaseline = resolveCanvasLineTextBaseline(line);
+  const textBaseline = resolveLineTextBaseline(line);
   const defaultTextColor =
-    snapshotBlock?.type === "code" ? theme.codeText : resolveCanvasTextColor(snapshotBlock, theme);
+    snapshotBlock?.type === "code" ? theme.codeText : resolveTextColor(snapshotBlock, theme);
 
   context.font = line.font;
 
@@ -409,7 +388,7 @@ function paintContentLine({
       textBaseline,
       lineTextDecorations,
       "background",
-      contentPulseTime,
+      ambientAnimationTime,
       defaultTextColor,
     );
   }
@@ -421,14 +400,14 @@ function paintContentLine({
     selectionRegionOrderRange,
     theme,
   );
-  paintCanvasCommentHighlights(
+  paintCommentHighlights(
     context,
     editorState,
     line,
-    liveCommentRanges,
+    commentRanges,
     activeThreadIndex,
     presenceActiveThreadColors,
-    contentPulseTime,
+    ambientAnimationTime,
     theme,
   );
   paintListMarker(
@@ -441,7 +420,7 @@ function paintContentLine({
     theme,
     blockPulse,
   );
-  paintCanvasLineText(
+  paintLineText(
     context,
     line,
     container,
@@ -450,6 +429,7 @@ function paintContentLine({
     defaultTextColor,
     resources,
     theme,
+    ambientAnimationTime,
   );
   if (lineTextDecorations) {
     paintTextDecorations(
@@ -460,11 +440,11 @@ function paintContentLine({
       textBaseline,
       lineTextDecorations,
       "overlay",
-      contentPulseTime,
+      ambientAnimationTime,
       defaultTextColor,
     );
   }
-  paintCanvasTextHighlights(
+  paintTextHighlights(
     context,
     line,
     container,
@@ -473,7 +453,7 @@ function paintContentLine({
     activeTextHighlights.get(containerPath) ?? [],
     theme,
   );
-  paintCanvasTextFades(
+  paintTextFades(
     context,
     line,
     container,
@@ -482,7 +462,7 @@ function paintContentLine({
     activeTextFades.get(containerPath) ?? [],
     defaultTextColor,
   );
-  paintCanvasTextPulses(
+  paintTextPulses(
     context,
     line,
     container,
@@ -493,11 +473,11 @@ function paintContentLine({
   );
 }
 
-function resolveCanvasLineTextBaseline(line: DocumentLayout["lines"][number]) {
-  return line.top + resolveCanvasCenteredTextBaseline(line.height, line.font);
+function resolveLineTextBaseline(line: DocumentLayout["lines"][number]) {
+  return line.top + resolveCenteredTextBaseline(line.height, line.font);
 }
 
-function resolveCanvasTextColor(block: Block | null, theme: EditorTheme) {
+function resolveTextColor(block: Block | null, theme: EditorTheme) {
   switch (block?.type) {
     case "heading":
       return theme.headingText;

@@ -27,11 +27,11 @@ export const defaultDocumentLayoutOptions: Omit<DocumentLayoutOptions, "width"> 
 };
 
 // Fill in any unspecified fields with the canonical defaults. Public entry
-// points (createDocumentLayout, createViewportLayout) call this once at
+// points (measureLayoutSlice, createEditorLayoutState) call this once at
 // the boundary and pass `DocumentLayoutOptions` to every internal helper —
 // so internal code never has to repeat `?? defaultValue` fallbacks at each
 // read site, and a default change can never silently desync between
-// measure / plan / estimate / cache key.
+// measure / estimate / cache key.
 export function resolveDocumentLayoutOptions(
   options: PartialDocumentLayoutOptions,
 ): DocumentLayoutOptions {

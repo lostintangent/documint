@@ -1,9 +1,14 @@
-// Semantic node builders and rebuild helpers. These own semantic node shape and
-// derived fields such as plain-text projections. Canonical document IDs come
-// from `createDocument(...)` and `spliceDocument(...)`.
+// Semantic node builders and rebuild helpers. Builders set `id: ""` as a
+// placeholder; the canonical id is assigned by `createDocument` /
+// `spliceDocument` from each node's structural path. Builders are otherwise
+// canonical: every derived field (`plainText` on blocks, default property
+// values) is computed here, so a builder's output is immediately usable as
+// the corresponding node type minus the deferred id assignment.
 
-import { extractPlainTextFromBlockNodes, extractPlainTextFromInlineNodes } from "./document";
-
+import {
+  extractPlainTextFromBlockNodes,
+  extractPlainTextFromInlineNodes,
+} from "../query/text";
 import type {
   Block,
   BlockquoteBlock,
@@ -27,19 +32,13 @@ import type {
   TableCell,
   TableRow,
   Text,
-} from "./types";
-
-const preNormalizationFields = {
-  id: "",
-} as const;
+} from "../types";
 
 export function createParagraphBlock(children: Inline[]): ParagraphBlock {
-  const plainText = extractPlainTextFromInlineNodes(children);
-
   return {
     children,
-    ...preNormalizationFields,
-    plainText,
+    id: "",
+    plainText: extractPlainTextFromInlineNodes(children),
     type: "paragraph",
   };
 }
@@ -52,13 +51,11 @@ export function createHeadingBlock(options: {
   children: Inline[];
   depth: HeadingBlock["depth"];
 }): HeadingBlock {
-  const plainText = extractPlainTextFromInlineNodes(options.children);
-
   return {
     children: options.children,
     depth: options.depth,
-    ...preNormalizationFields,
-    plainText,
+    id: "",
+    plainText: extractPlainTextFromInlineNodes(options.children),
     type: "heading",
   };
 }
@@ -75,8 +72,8 @@ export function createHeadingTextBlock(options: {
 
 export function createText(text: string, marks: Mark[] = []): Text {
   return {
+    id: "",
     marks,
-    ...preNormalizationFields,
     text,
     type: "text",
   };
@@ -84,7 +81,7 @@ export function createText(text: string, marks: Mark[] = []): Text {
 
 export function createLineBreak(): LineBreak {
   return {
-    ...preNormalizationFields,
+    id: "",
     type: "lineBreak",
   };
 }
@@ -92,7 +89,7 @@ export function createLineBreak(): LineBreak {
 export function createCode(code: string): Code {
   return {
     code,
-    ...preNormalizationFields,
+    id: "",
     type: "code",
   };
 }
@@ -104,7 +101,7 @@ export function createLink(options: {
 }): Link {
   return {
     children: options.children,
-    ...preNormalizationFields,
+    id: "",
     title: options.title ?? null,
     type: "link",
     url: options.url,
@@ -117,23 +114,20 @@ export function createImage(options: {
   url: string;
   width?: number | null;
 }): Image {
-  const alt = options.alt ?? null;
-  const width = options.width ?? null;
-
   return {
-    alt,
-    ...preNormalizationFields,
+    alt: options.alt ?? null,
+    id: "",
     title: options.title ?? null,
     type: "image",
     url: options.url,
-    width,
+    width: options.width ?? null,
   };
 }
 
 export function createMention(options: { name: string; userId: string }): Mention {
   return {
+    id: "",
     name: options.name,
-    ...preNormalizationFields,
     type: "mention",
     userId: options.userId,
   };
@@ -141,8 +135,8 @@ export function createMention(options: { name: string; userId: string }): Mentio
 
 export function createRaw(options: { originalType: string; source: string }): Raw {
   return {
+    id: "",
     originalType: options.originalType,
-    ...preNormalizationFields,
     source: options.source,
     type: "raw",
   };
@@ -153,13 +147,11 @@ export function createListItemBlock(options: {
   children: Block[];
   spread?: boolean;
 }): ListItemBlock {
-  const plainText = extractPlainTextFromBlockNodes(options.children);
-
   return {
     checked: options.checked ?? null,
     children: options.children,
-    ...preNormalizationFields,
-    plainText,
+    id: "",
+    plainText: extractPlainTextFromBlockNodes(options.children),
     spread: options.spread ?? false,
     type: "listItem",
   };
@@ -171,13 +163,11 @@ export function createListBlock(options: {
   spread?: boolean;
   start?: number | null;
 }): ListBlock {
-  const plainText = options.items.map((item) => item.plainText).join("\n");
-
   return {
+    id: "",
     items: options.items,
-    ...preNormalizationFields,
     ordered: options.ordered,
-    plainText,
+    plainText: options.items.map((item) => item.plainText).join("\n"),
     spread: options.spread ?? false,
     start: options.start ?? null,
     type: "list",
@@ -185,12 +175,10 @@ export function createListBlock(options: {
 }
 
 export function createBlockquoteBlock(children: Block[]): BlockquoteBlock {
-  const plainText = extractPlainTextFromBlockNodes(children);
-
   return {
     children,
-    ...preNormalizationFields,
-    plainText,
+    id: "",
+    plainText: extractPlainTextFromBlockNodes(children),
     type: "blockquote",
   };
 }
@@ -201,9 +189,9 @@ export function createCodeBlock(options: {
   source: string;
 }): CodeBlock {
   return {
+    id: "",
     language: options.language ?? null,
     meta: options.meta ?? null,
-    ...preNormalizationFields,
     plainText: options.source,
     source: options.source,
     type: "code",
@@ -211,19 +199,17 @@ export function createCodeBlock(options: {
 }
 
 export function createTableCell(children: Inline[]): TableCell {
-  const plainText = extractPlainTextFromInlineNodes(children);
-
   return {
     children,
-    ...preNormalizationFields,
-    plainText,
+    id: "",
+    plainText: extractPlainTextFromInlineNodes(children),
   };
 }
 
 export function createTableRow(cells: TableCell[]): TableRow {
   return {
     cells,
-    ...preNormalizationFields,
+    id: "",
   };
 }
 
@@ -231,14 +217,12 @@ export function createTableBlock(options: {
   align?: TableBlock["align"];
   rows: TableRow[];
 }): TableBlock {
-  const plainText = options.rows
-    .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
-    .join("\n");
-
   return {
     align: options.align ?? [],
-    plainText,
-    ...preNormalizationFields,
+    id: "",
+    plainText: options.rows
+      .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
+      .join("\n"),
     rows: options.rows,
     type: "table",
   };
@@ -246,16 +230,16 @@ export function createTableBlock(options: {
 
 export function createDividerBlock(): DividerBlock {
   return {
+    id: "",
     plainText: "",
-    ...preNormalizationFields,
     type: "divider",
   };
 }
 
 export function createRawBlock(options: { originalType: string; source: string }): RawBlock {
   return {
+    id: "",
     originalType: options.originalType,
-    ...preNormalizationFields,
     plainText: options.source,
     source: options.source,
     type: "raw",
@@ -270,40 +254,11 @@ export function createDirectiveBlock(options: {
   return {
     attributes: options.attributes,
     body: options.body,
-    ...preNormalizationFields,
+    id: "",
     name: options.name,
     plainText: options.body,
     type: "directive",
   };
-}
-
-// Restore the canonical form after a mutation that fragmented adjacent
-// text inlines — e.g. removing a link spreads its children into the parent
-// (text inside + text outside become adjacent), merging two paragraphs
-// concatenates their children at the seam, and inline splices generate
-// new text runs adjacent to existing same-mark ones. Without this pass
-// the tree would carry pointless `[text("foo"), text("bar")]` runs in
-// place of `[text("foobar")]`. Only adjacent text inlines with identical
-// marks are merged; other inline kinds pass through.
-export function defragmentTextInlines(nodes: Inline[]) {
-  const defragmented: Inline[] = [];
-
-  for (const node of nodes) {
-    const previous = defragmented.at(-1);
-
-    if (
-      previous?.type === "text" &&
-      node.type === "text" &&
-      previous.marks.join(",") === node.marks.join(",")
-    ) {
-      defragmented[defragmented.length - 1] = createText(previous.text + node.text, previous.marks);
-      continue;
-    }
-
-    defragmented.push(node);
-  }
-
-  return defragmented;
 }
 
 export function rebuildTextBlock(block: HeadingBlock | ParagraphBlock, children: Inline[]) {

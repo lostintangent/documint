@@ -5,7 +5,7 @@
 // trailing whitespace that the line wrapping collapsed.
 
 import type { DocumentIndex, EditorState } from "../../state";
-import { measureCanvasTextWidth } from "../../canvas/lib/fonts";
+import { measureTextWidth } from "../../text/measure";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./lookup";
 import { resolveLineContentInset } from "./geometry";
@@ -24,12 +24,9 @@ export function measureDocumentCaretTarget(
   _documentIndex: DocumentIndex,
   target: { regionId: string; offset: number },
 ): DocumentCaretTarget | null {
-  const container = layout.regionMetrics.get(target.regionId);
-
-  if (!container) {
-    return null;
-  }
-
+  // No separate presence check — `findDocumentLayoutLineForRegionOffset`
+  // returns null for any regionId that isn't in this layout's region/line
+  // index, which is the same condition the old `regionMetrics.get` covered.
   const line = findDocumentLayoutLineForRegionOffset(layout, target.regionId, target.offset);
 
   if (!line) {
@@ -85,5 +82,5 @@ function resolveCollapsedTrailingSpaceWidth(
     return 0;
   }
 
-  return measureCanvasTextWidth(hiddenTrailingText, line.font);
+  return measureTextWidth(hiddenTrailingText, line.font);
 }

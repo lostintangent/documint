@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createViewportStore } from "@/component/store/viewport/store";
 import type { EditorLayoutState } from "@/editor";
-import { prepareLayout, createCanvasRenderCache } from "@/editor";
+import { createEditorLayoutState, createLayoutCache } from "@/editor";
 import { setup } from "@test/editor/helpers";
 
 describe("ViewportStore", () => {
@@ -20,24 +20,24 @@ describe("ViewportStore", () => {
       notifications += 1;
     });
 
-    expect(store.peek()).toBeNull();
+    expect(store.peekCached()).toBeNull();
     expect(store.get()).toBe(first);
     expect(store.get()).toBe(first);
     expect(resolveCount).toBe(1);
 
     store.observeViewport(first);
-    expect(store.peek()).toBe(first);
-    expect(store.peekPublishedViewport()).toBe(first);
+    expect(store.peekCached()).toBe(first);
+    expect(store.peekPublished()).toBe(first);
     expect(notifications).toBe(1);
 
     store.invalidate();
-    expect(store.peek()).toBeNull();
-    expect(store.peekPublishedViewport()).toBe(first);
+    expect(store.peekCached()).toBeNull();
+    expect(store.peekPublished()).toBe(first);
     expect(store.get()).toBe(second);
 
     store.observeViewport(second);
-    expect(store.peek()).toBe(second);
-    expect(store.peekPublishedViewport()).toBe(second);
+    expect(store.peekCached()).toBe(second);
+    expect(store.peekPublished()).toBe(second);
     expect(notifications).toBe(2);
   });
 });
@@ -49,7 +49,7 @@ function createViewport({
   state?: ReturnType<typeof setup>;
   top: number;
 }) {
-  return prepareLayout(
+  return createEditorLayoutState(
     state,
     {
       height: 240,
@@ -58,7 +58,7 @@ function createViewport({
       top,
       width: 480,
     },
-    createCanvasRenderCache(),
+    createLayoutCache(),
     null,
   ) as EditorLayoutState;
 }

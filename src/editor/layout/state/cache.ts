@@ -1,12 +1,12 @@
-// Owns per-editor render caches for measured layout artifacts. The render
-// pipeline can reuse these across viewport/layout passes without leaking that
-// lifetime into the editor model or relying on process-global state.
+// Owns per-editor caches for layout measurement artifacts. The component host
+// keeps one cache per editor instance and threads it through layout calls,
+// without leaking that lifetime into the immutable editor model.
 
 import type { PreparedTextWithSegments } from "@chenglou/pretext";
 import type { DocumentIndex } from "../../state";
-import type { LineBoundary } from "../../layout";
+import type { DocumentLineBoundary as LineBoundary } from "../measure";
 
-export type CanvasViewportPlan = {
+export type VirtualLayout = {
   containerIndices: Map<string, number>;
   entries: Array<{
     bottom: number;
@@ -16,7 +16,7 @@ export type CanvasViewportPlan = {
   totalHeight: number;
 };
 
-export type CanvasRenderCache = {
+export type LayoutCache = {
   graphemeWidths: Map<string, Map<string, number>>;
   lineBoundaries: Map<string, LineBoundary[]>;
   measuredContainerHeights: Map<string, number>;
@@ -31,7 +31,7 @@ export type CanvasRenderCache = {
     }>
   >;
   preparedText: Map<string, PreparedTextWithSegments>;
-  viewportPlans: WeakMap<DocumentIndex, Map<string, CanvasViewportPlan>>;
+  virtualLayouts: WeakMap<DocumentIndex, Map<string, VirtualLayout>>;
 };
 
 const MAX_PREPARED_TEXT_ENTRIES = 256;
@@ -40,19 +40,19 @@ const MAX_LINE_BOUNDARY_ENTRIES = 1024;
 const MAX_MEASURED_CONTAINER_HEIGHT_ENTRIES = 1024;
 const MAX_GRAPHEME_FONT_ENTRIES = 64;
 
-export function createCanvasRenderCache(): CanvasRenderCache {
+export function createLayoutCache(): LayoutCache {
   return {
     graphemeWidths: new Map(),
     lineBoundaries: new Map(),
     measuredContainerHeights: new Map(),
     measuredLines: new Map(),
     preparedText: new Map(),
-    viewportPlans: new WeakMap(),
+    virtualLayouts: new WeakMap(),
   };
 }
 
 export function cachePreparedText(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   key: string,
   value: PreparedTextWithSegments,
 ) {
@@ -60,7 +60,7 @@ export function cachePreparedText(
 }
 
 export function cacheMeasuredLines(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   key: string,
   value: Array<{
     end: number;
@@ -73,11 +73,11 @@ export function cacheMeasuredLines(
   return cacheBoundedValue(cache.measuredLines, key, value, MAX_MEASURED_LINE_ENTRIES);
 }
 
-export function cacheLineBoundaries(cache: CanvasRenderCache, key: string, value: LineBoundary[]) {
+export function cacheLineBoundaries(cache: LayoutCache, key: string, value: LineBoundary[]) {
   return cacheBoundedValue(cache.lineBoundaries, key, value, MAX_LINE_BOUNDARY_ENTRIES);
 }
 
-export function cacheMeasuredContainerHeight(cache: CanvasRenderCache, key: string, value: number) {
+export function cacheMeasuredContainerHeight(cache: LayoutCache, key: string, value: number) {
   return cacheBoundedValue(
     cache.measuredContainerHeights,
     key,
@@ -86,7 +86,7 @@ export function cacheMeasuredContainerHeight(cache: CanvasRenderCache, key: stri
   );
 }
 
-export function getOrCreateGraphemeWidthCache(cache: CanvasRenderCache, font: string) {
+export function getOrCreateGraphemeWidthCache(cache: LayoutCache, font: string) {
   const existing = cache.graphemeWidths.get(font);
 
   if (existing) {
@@ -99,24 +99,20 @@ export function getOrCreateGraphemeWidthCache(cache: CanvasRenderCache, font: st
   return next;
 }
 
-export function getViewportPlan(
-  cache: CanvasRenderCache,
-  documentIndex: DocumentIndex,
-  key: string,
-) {
-  return cache.viewportPlans.get(documentIndex)?.get(key) ?? null;
+export function getVirtualLayout(cache: LayoutCache, documentIndex: DocumentIndex, key: string) {
+  return cache.virtualLayouts.get(documentIndex)?.get(key) ?? null;
 }
 
-export function setViewportPlan(
-  cache: CanvasRenderCache,
+export function setVirtualLayout(
+  cache: LayoutCache,
   documentIndex: DocumentIndex,
   key: string,
-  value: CanvasViewportPlan,
+  value: VirtualLayout,
 ) {
-  const current = cache.viewportPlans.get(documentIndex) ?? new Map<string, CanvasViewportPlan>();
+  const current = cache.virtualLayouts.get(documentIndex) ?? new Map<string, VirtualLayout>();
 
   current.set(key, value);
-  cache.viewportPlans.set(documentIndex, current);
+  cache.virtualLayouts.set(documentIndex, current);
 
   return value;
 }

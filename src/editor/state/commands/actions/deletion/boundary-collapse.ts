@@ -214,8 +214,8 @@ function resolveMergeCollapse(
   victim: EditorRegion,
   absorber: EditorRegion,
 ): EditorStateAction | null {
-  const absorberBlock = findBlockById(documentIndex.document, absorber.blockId);
-  const victimBlock = findBlockById(documentIndex.document, victim.blockId);
+  const absorberBlock = findBlockById(documentIndex.document.blocks, absorber.blockId);
+  const victimBlock = findBlockById(documentIndex.document.blocks, victim.blockId);
 
   if (!absorberBlock || (absorberBlock.type !== "paragraph" && absorberBlock.type !== "heading")) {
     return null;

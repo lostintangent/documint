@@ -1,48 +1,46 @@
 import { expect, test } from "bun:test";
 import { resolveEditorCommand, type EditorKeybinding } from "@/component/lib/keybindings";
 
-test("maps modifier shortcuts to semantic editor commands", () => {
-  expect(resolveEditorCommand(createKeyboardEvent("b", { metaKey: true }))).toBe("toggleBold");
-  expect(resolveEditorCommand(createKeyboardEvent("i", { metaKey: true }))).toBe("toggleItalic");
-  expect(resolveEditorCommand(createKeyboardEvent("u", { metaKey: true }))).toBe("toggleUnderline");
-  expect(resolveEditorCommand(createKeyboardEvent("e", { metaKey: true }))).toBe("toggleCode");
-  expect(
-    resolveEditorCommand(createKeyboardEvent("ArrowUp", { altKey: true, shiftKey: true })),
-  ).toBe("moveListItemUp");
-  expect(
-    resolveEditorCommand(createKeyboardEvent("ArrowDown", { altKey: true, shiftKey: true })),
-  ).toBe("moveListItemDown");
-  expect(resolveEditorCommand(createKeyboardEvent("z", { metaKey: true }))).toBe("undo");
-  expect(resolveEditorCommand(createKeyboardEvent("z", { metaKey: true, shiftKey: true }))).toBe(
-    "redo",
-  );
-  expect(resolveEditorCommand(createKeyboardEvent("y", { ctrlKey: true }))).toBe("redo");
+// --- Modifier shortcuts ---
+// Each row is `[label, key, modifiers, expectedCommand]`. The label is the
+// only thing surfaced in the test name; the modifier object is consumed by
+// `createKeyboardEvent` so the test body stays uniform.
+test.each([
+  ["bold", "b", { metaKey: true }, "toggleBold"],
+  ["italic", "i", { metaKey: true }, "toggleItalic"],
+  ["underline", "u", { metaKey: true }, "toggleUnderline"],
+  ["inline code", "e", { metaKey: true }, "toggleCode"],
+  ["move list item up", "ArrowUp", { altKey: true, shiftKey: true }, "moveListItemUp"],
+  ["move list item down", "ArrowDown", { altKey: true, shiftKey: true }, "moveListItemDown"],
+  ["undo", "z", { metaKey: true }, "undo"],
+  ["redo via meta+shift+z", "z", { metaKey: true, shiftKey: true }, "redo"],
+  ["redo via ctrl+y", "y", { ctrlKey: true }, "redo"],
+] as const)("resolves the modifier shortcut for %s", (_label, key, modifiers, command) => {
+  expect(resolveEditorCommand(createKeyboardEvent(key, modifiers))).toBe(command);
 });
 
-test("maps structural editor keys", () => {
-  expect(resolveEditorCommand(createKeyboardEvent("Enter"))).toBe("insertLineBreak");
-  expect(resolveEditorCommand(createKeyboardEvent("Backspace"))).toBe("deleteBackward");
-  expect(resolveEditorCommand(createKeyboardEvent("Home"))).toBe("moveToLineStart");
-  expect(resolveEditorCommand(createKeyboardEvent("End"))).toBe("moveToLineEnd");
-  expect(resolveEditorCommand(createKeyboardEvent("Tab"))).toBe("indent");
-  expect(resolveEditorCommand(createKeyboardEvent("Tab", { shiftKey: true }))).toBe("dedent");
-  expect(resolveEditorCommand(createKeyboardEvent("ArrowLeft", { metaKey: true }))).toBe(
-    "moveToLineStart",
-  );
-  expect(resolveEditorCommand(createKeyboardEvent("ArrowRight", { metaKey: true }))).toBe(
-    "moveToLineEnd",
-  );
-  expect(
-    resolveEditorCommand(createKeyboardEvent("ArrowLeft", { metaKey: true, shiftKey: true })),
-  ).toBe("moveToLineStart");
-  expect(
-    resolveEditorCommand(createKeyboardEvent("ArrowRight", { metaKey: true, shiftKey: true })),
-  ).toBe("moveToLineEnd");
+// --- Structural keys ---
+test.each([
+  ["Enter", "Enter", {}, "insertLineBreak"],
+  ["Backspace", "Backspace", {}, "deleteBackward"],
+  ["Home", "Home", {}, "moveToLineStart"],
+  ["End", "End", {}, "moveToLineEnd"],
+  ["Tab", "Tab", {}, "indent"],
+  ["Shift+Tab", "Tab", { shiftKey: true }, "dedent"],
+  ["meta+ArrowLeft", "ArrowLeft", { metaKey: true }, "moveToLineStart"],
+  ["meta+ArrowRight", "ArrowRight", { metaKey: true }, "moveToLineEnd"],
+  ["meta+shift+ArrowLeft", "ArrowLeft", { metaKey: true, shiftKey: true }, "moveToLineStart"],
+  ["meta+shift+ArrowRight", "ArrowRight", { metaKey: true, shiftKey: true }, "moveToLineEnd"],
+] as const)("resolves the structural key %s", (_label, key, modifiers, command) => {
+  expect(resolveEditorCommand(createKeyboardEvent(key, modifiers))).toBe(command);
 });
 
-test("ignores unsupported keyboard shortcuts", () => {
-  expect(resolveEditorCommand(createKeyboardEvent("x", { metaKey: true }))).toBeNull();
-  expect(resolveEditorCommand(createKeyboardEvent("b"))).toBeNull();
+// --- Unsupported shortcuts return null ---
+test.each([
+  ["meta+x has no mapping", "x", { metaKey: true }],
+  ["plain `b` without a modifier is not toggleBold", "b", {}],
+] as const)("returns null when %s", (_label, key, modifiers) => {
+  expect(resolveEditorCommand(createKeyboardEvent(key, modifiers))).toBeNull();
 });
 
 test("resolves commands against a caller-provided keybinding set", () => {

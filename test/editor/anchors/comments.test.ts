@@ -5,23 +5,27 @@ import {
   extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
-import { getCommentState, hasActiveCommentHighlightsInViewport } from "@/editor/anchors";
 import {
-  createCanvasRenderCache,
+  getCommentState,
+  hasActiveCommentHighlightsInViewport,
+  resolveActiveCommentIndex,
+} from "@/editor/anchors";
+import {
+  createLayoutCache,
   addComment as addEditorComment,
   createEditorState,
   getDocument,
   insertSoftLineBreak,
   insertText,
   measureCaretTarget,
-  prepareLayout,
+  createEditorLayoutState,
   resolveHoverTarget,
   setSelection,
 } from "@/editor";
 import { parseDocument } from "@/markdown";
-import { setup } from "../helpers";
+import { getRegion, setup } from "../helpers";
 
-test("maps durable comment anchors to live canvas ranges", () => {
+test("maps durable comment anchors to runtime comment ranges", () => {
   const snapshot = parseDocument("Review surface anchors survive.\n");
   const container = listAnchorContainers(snapshot)[0];
 
@@ -42,15 +46,15 @@ test("maps durable comment anchors to live canvas ranges", () => {
   const commentState = getCommentState(state.documentIndex);
 
   expect(commentState.threads).toHaveLength(1);
-  expect(commentState.liveRanges[0]?.threadIndex).toBe(0);
-  expect(commentState.liveRanges[0]?.startOffset).toBeGreaterThanOrEqual(0);
-  expect(commentState.liveRanges[0]?.endOffset).toBeGreaterThan(
-    commentState.liveRanges[0]?.startOffset ?? 0,
+  expect(commentState.ranges[0]?.threadIndex).toBe(0);
+  expect(commentState.ranges[0]?.startOffset).toBeGreaterThanOrEqual(0);
+  expect(commentState.ranges[0]?.endOffset).toBeGreaterThan(
+    commentState.ranges[0]?.startOffset ?? 0,
   );
 });
 
 test("detects only unresolved presence-active comment highlights as animated", () => {
-  const renderCache = createCanvasRenderCache();
+  const layoutCache = createLayoutCache();
   const snapshot = parseDocument("Review surface anchors survive.\n");
   const container = listAnchorContainers(snapshot)[0];
 
@@ -68,17 +72,17 @@ test("detects only unresolved presence-active comment highlights as animated", (
     ...snapshot,
     comments: [thread],
   });
-  const unresolvedViewport = prepareLayout(
+  const unresolvedViewport = createEditorLayoutState(
     unresolvedState,
     { height: 320, top: 0, width: 520 },
-    renderCache,
+    layoutCache,
   );
   const unresolvedCommentState = getCommentState(unresolvedState.documentIndex);
 
   expect(
     hasActiveCommentHighlightsInViewport(
       unresolvedViewport,
-      unresolvedCommentState.liveRanges,
+      unresolvedCommentState.ranges,
       new Map([[0, "#f97316"]]),
     ),
   ).toBe(true);
@@ -87,24 +91,24 @@ test("detects only unresolved presence-active comment highlights as animated", (
     ...snapshot,
     comments: [{ ...thread, resolvedAt: "2026-04-05T13:00:00.000Z" }],
   });
-  const resolvedViewport = prepareLayout(
+  const resolvedViewport = createEditorLayoutState(
     resolvedState,
     { height: 320, top: 0, width: 520 },
-    renderCache,
+    layoutCache,
   );
   const resolvedCommentState = getCommentState(resolvedState.documentIndex);
 
   expect(
     hasActiveCommentHighlightsInViewport(
       resolvedViewport,
-      resolvedCommentState.liveRanges,
+      resolvedCommentState.ranges,
       new Map([[0, "#f97316"]]),
     ),
   ).toBe(false);
 });
 
 test("resolves link hover targets with overlapping comment metadata", () => {
-  const renderCache = createCanvasRenderCache();
+  const layoutCache = createLayoutCache();
   const document = parseDocument("Paragraph with [link](https://example.com).\n");
   const container = listAnchorContainers(document)[0];
 
@@ -122,14 +126,14 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     ...document,
     comments: [thread],
   });
-  const viewport = prepareLayout(
+  const viewport = createEditorLayoutState(
     state,
     {
       height: 320,
       top: 0,
       width: 520,
     },
-    renderCache,
+    layoutCache,
   );
   const region = state.documentIndex.regions[0];
 
@@ -318,4 +322,108 @@ test("keeps same-region comments sticky while typing inside the anchored quote",
     prefix: "a",
     suffix: "d",
   });
+});
+
+test("resolveActiveCommentIndex returns null when no ranges exist", () => {
+  const state = setup("alpha beta\n");
+
+  expect(resolveActiveCommentIndex(state, [])).toBeNull();
+});
+
+test("resolveActiveCommentIndex returns the thread covering a collapsed caret", () => {
+  let state = setup("alpha beta\n");
+  const region = getRegion(state, "alpha beta");
+  const commented = addEditorComment(
+    state,
+    { regionId: region.id, startOffset: 0, endOffset: 5 },
+    "note",
+  );
+
+  if (!commented) {
+    throw new Error("Expected comment to be added");
+  }
+
+  state = setSelection(commented, { regionId: region.id, offset: 3 });
+  const { ranges } = getCommentState(state);
+
+  expect(resolveActiveCommentIndex(state, ranges)).toBe(0);
+});
+
+test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed caret", () => {
+  let state = setup("alpha beta\n");
+  const region = getRegion(state, "alpha beta");
+  const commented = addEditorComment(
+    state,
+    { regionId: region.id, startOffset: 1, endOffset: 4 },
+    "note",
+  );
+
+  if (!commented) {
+    throw new Error("Expected comment to be added");
+  }
+
+  const { ranges } = getCommentState(commented);
+  const atStart = setSelection(commented, { regionId: region.id, offset: 1 });
+  const atEnd = setSelection(commented, { regionId: region.id, offset: 4 });
+  const justBefore = setSelection(commented, { regionId: region.id, offset: 0 });
+  const justAfter = setSelection(commented, { regionId: region.id, offset: 5 });
+
+  expect(resolveActiveCommentIndex(atStart, ranges)).toBe(0);
+  expect(resolveActiveCommentIndex(atEnd, ranges)).toBe(0);
+  expect(resolveActiveCommentIndex(justBefore, ranges)).toBeNull();
+  expect(resolveActiveCommentIndex(justAfter, ranges)).toBeNull();
+});
+
+test("resolveActiveCommentIndex uses an open-interval overlap for ranged selections", () => {
+  let state = setup("alpha beta\n");
+  const region = getRegion(state, "alpha beta");
+  const commented = addEditorComment(
+    state,
+    { regionId: region.id, startOffset: 2, endOffset: 5 },
+    "note",
+  );
+
+  if (!commented) {
+    throw new Error("Expected comment to be added");
+  }
+
+  const { ranges } = getCommentState(commented);
+
+  // Touching the comment range at its end-boundary with a positive-length
+  // selection: no shared interior, so no thread is reported.
+  const touching = setSelection(commented, {
+    anchor: { regionId: region.id, offset: 5 },
+    focus: { regionId: region.id, offset: 8 },
+  });
+  // Overlap by one character: shared interior, thread is reported.
+  const overlapping = setSelection(commented, {
+    anchor: { regionId: region.id, offset: 4 },
+    focus: { regionId: region.id, offset: 8 },
+  });
+
+  expect(resolveActiveCommentIndex(touching, ranges)).toBeNull();
+  expect(resolveActiveCommentIndex(overlapping, ranges)).toBe(0);
+});
+
+test("resolveActiveCommentIndex resolves selections that span regions", () => {
+  let state = setup("alpha\n\nbeta\n");
+  const alpha = getRegion(state, "alpha");
+  const beta = getRegion(state, "beta");
+  const commented = addEditorComment(
+    state,
+    { regionId: beta.id, startOffset: 0, endOffset: 2 },
+    "note",
+  );
+
+  if (!commented) {
+    throw new Error("Expected comment to be added");
+  }
+
+  const { ranges } = getCommentState(commented);
+  state = setSelection(commented, {
+    anchor: { regionId: alpha.id, offset: 0 },
+    focus: { regionId: beta.id, offset: 1 },
+  });
+
+  expect(resolveActiveCommentIndex(state, ranges)).toBe(0);
 });

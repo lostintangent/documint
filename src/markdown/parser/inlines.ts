@@ -12,7 +12,13 @@ import {
   defragmentTextInlines,
 } from "@/document";
 import type { Inline, Mark } from "@/document";
-import { lineFeed, underlineCloseTag, underlineOpenTag } from "../shared";
+import {
+  inlineMarkSpecs,
+  lineFeed,
+  underlineCloseTag,
+  underlineOpenTag,
+  type InlineMarkDelimiter,
+} from "../shared";
 
 // --- Single-character markers ---
 // Each begins a construct without a paired closing delimiter: an escape applies
@@ -34,24 +40,41 @@ const linkDestinationClosing = ")";
 const wordCharacter = /[\p{L}\p{N}]/u;
 const textDirectiveNameStart = /[A-Za-z]/;
 const textDirectiveNameCharacter = /[-A-Za-z0-9_]/;
+// Sticky (`/y`) regex: `lastIndex` is set per call so the match is anchored
+// at the current parse offset without slicing. Parsing is synchronous and
+// single-threaded, so the shared `lastIndex` is safe — `readImageWidth`
+// resets it at the top of every call.
 const imageWidthAttribute = /\{width=([1-9]\d*)\}/y;
-const markdownTextEscape = /\\([\\`*_[\]{}()#+\-.!~|@])/g;
+// The set of characters that survive a backslash escape in inline text.
+// Both the post-flush unescape regex (`markdownTextEscape`) and the
+// dispatcher-time existence check (`readGenericEscapeToken`) derive from
+// this single class. `>` and `:` are present so the serializer can escape
+// block-start prefixes (`> `, `:::name`) at paragraph line start without
+// those backslashes surviving as literal text on the next round trip.
+const escapableCharacterClass = "\\\\`*_[\\]{}()#+\\-.!~|@>:";
+const markdownTextEscape = new RegExp(`\\\\([${escapableCharacterClass}])`, "g");
+const escapableCharacter = new RegExp(`[${escapableCharacterClass}]`);
 const markdownDestinationEscape = /\\(.)/g;
 
 // --- Inline mark delimiters ---
-// Order matters: longer delimiters must precede their shorter prefixes (e.g.
-// `**` before `*`) so they win the first-match in readDelimitedMarkToken.
-const inlineMarkDelimiters = [
-  { delimiter: "**", mark: "bold", requireWordBoundary: false },
-  { delimiter: "~~", mark: "strikethrough", requireWordBoundary: false },
-  { delimiter: "*", mark: "italic", requireWordBoundary: false },
-  { delimiter: "_", mark: "italic", requireWordBoundary: true },
-] as const;
-const inlineMarkLeadingCharacters = new Set<string>(
-  inlineMarkDelimiters.map((spec) => spec.delimiter[0]),
-);
+// Flattened from `inlineMarkSpecs` in `../shared` so the dialect has a
+// single source of truth for the parser ↔ serializer mark vocabulary. The
+// sort is stable (ES2019+) and length-desc, so longer delimiters precede
+// their shorter prefixes — `**` matches before `*` — and equal-length
+// delimiters keep their source order (`*` before `_`).
+type ParsedInlineMarkDelimiter = InlineMarkDelimiter & { mark: Mark };
 
-export function parseInlineMarkdown(source: string): Inline[] {
+const inlineMarkDelimiters: ReadonlyArray<ParsedInlineMarkDelimiter> = inlineMarkSpecs
+  .flatMap((spec) =>
+    spec.delimiters.map<ParsedInlineMarkDelimiter>((d) => ({
+      mark: spec.mark,
+      delimiter: d.delimiter,
+      requireWordBoundary: d.requireWordBoundary,
+    })),
+  )
+  .sort((left, right) => right.delimiter.length - left.delimiter.length);
+
+export function parseInlines(source: string): Inline[] {
   return parseInlineRange(source, 0, source.length, []);
 }
 
@@ -75,14 +98,6 @@ function parseInlineRange(source: string, start: number, end: number, marks: Mar
       continue;
     }
 
-    // Skip past escapes so the escaped character isn't dispatched as a
-    // delimiter. The escape itself is stripped later by unescapeMarkdownText
-    // when the surrounding text run is flushed.
-    if (source[index] === escapeMarker) {
-      index += Math.min(2, end - index);
-      continue;
-    }
-
     index += 1;
   }
 
@@ -100,39 +115,70 @@ type InlineToken = {
   trimLeading?: number;
 };
 
+type InlineTokenReader = (
+  source: string,
+  index: number,
+  end: number,
+  marks: Mark[],
+) => InlineToken | null;
+
+// Order matters within a given lead character: the more specific reader
+// runs first (for `<`, hard-break then underline then catchall raw HTML;
+// for `\`, the line-break shape before the generic escape).
+const inlineTokenReaders: ReadonlyArray<{
+  leadChars: ReadonlyArray<string>;
+  read: InlineTokenReader;
+}> = [
+  { leadChars: [directiveMarker], read: readInlineDirectiveToken },
+  { leadChars: ["<"], read: readLineBreakHtmlToken },
+  { leadChars: ["<"], read: readUnderlineToken },
+  { leadChars: ["<"], read: readRawHtmlToken },
+  { leadChars: [escapeMarker], read: readBackslashLineBreakToken },
+  { leadChars: [escapeMarker], read: readGenericEscapeToken },
+  { leadChars: [lineFeed], read: readTrailingSpaceLineBreakToken },
+  { leadChars: [inlineCodeMarker], read: readInlineCodeToken },
+  { leadChars: ["!"], read: readImageToken },
+  { leadChars: ["@"], read: readMentionToken },
+  { leadChars: [linkOpening], read: readLinkToken },
+  {
+    leadChars: inlineMarkDelimiters.map((spec) => spec.delimiter[0]),
+    read: readDelimitedMarkToken,
+  },
+];
+
+const inlineReadersByLeadChar = buildInlineLeadCharIndex();
+
+function buildInlineLeadCharIndex(): Map<string, InlineTokenReader[]> {
+  const index = new Map<string, InlineTokenReader[]>();
+  for (const { leadChars, read } of inlineTokenReaders) {
+    for (const char of leadChars) {
+      const list = index.get(char);
+      if (list) {
+        list.push(read);
+      } else {
+        index.set(char, [read]);
+      }
+    }
+  }
+  return index;
+}
+
 function readInlineToken(
   source: string,
   index: number,
   end: number,
   marks: Mark[],
 ): InlineToken | null {
-  const character = source[index];
-
-  switch (character) {
-    case directiveMarker:
-      return readInlineDirectiveToken(source, index, end);
-    case "<":
-      return (
-        readLineBreakHtmlToken(source, index, end) ??
-        readUnderlineToken(source, index, end, marks) ??
-        readRawHtmlToken(source, index, end)
-      );
-    case escapeMarker:
-      return readBackslashLineBreakToken(source, index, end);
-    case lineFeed:
-      return readTrailingSpaceLineBreakToken(source, index);
-    case inlineCodeMarker:
-      return readInlineCodeToken(source, index, end);
-    case "!":
-      return readImageToken(source, index, end);
-    case "@":
-      return readMentionToken(source, index, end);
-    case linkOpening:
-      return readLinkToken(source, index, end, marks);
+  const readers = inlineReadersByLeadChar.get(source[index] ?? "");
+  if (!readers) {
+    return null;
   }
 
-  if (character !== undefined && inlineMarkLeadingCharacters.has(character)) {
-    return readDelimitedMarkToken(source, index, end, marks);
+  for (const read of readers) {
+    const token = read(source, index, end, marks);
+    if (token) {
+      return token;
+    }
   }
 
   return null;
@@ -234,8 +280,8 @@ function readLineBreakHtmlToken(source: string, index: number, end: number) {
 
 function readBackslashLineBreakToken(source: string, index: number, end: number) {
   if (source[index] !== escapeMarker || source[index + 1] !== lineFeed || index + 1 >= end) {
-    // Returning null lets the dispatcher's regular escape-skip handle any
-    // other backslash sequence; we only intercept `\\\n`.
+    // Anything else falls through to `readGenericEscapeToken`, which knows
+    // how to consume a generic backslash escape.
     return null;
   }
 
@@ -245,6 +291,28 @@ function readBackslashLineBreakToken(source: string, index: number, end: number)
   };
 }
 
+// Emits the unescaped X for recognized escapes, the literal `\X` otherwise
+// (so `\a` round-trips as `\a`). Trailing `\` at end of input returns null
+// so the dispatcher's default one-char advance preserves it as literal text.
+function readGenericEscapeToken(source: string, index: number, end: number, marks: Mark[]) {
+  if (source[index] !== escapeMarker || index + 1 >= end) {
+    return null;
+  }
+
+  const escaped = source[index + 1]!;
+  const text = escapableCharacter.test(escaped) ? escaped : source.slice(index, index + 2);
+
+  return {
+    end: index + 2,
+    nodes: [createText(text, marks)],
+  };
+}
+
+// Unique among the token readers: this one peeks BEHIND `index` (at the two
+// characters already in the text buffer) to decide whether the current `\n`
+// closes a trailing-spaces hard break. The buffered spaces are then stripped
+// retroactively via `trimLeading` on the returned token — see the dispatcher
+// loop in `parseInlineRange`.
 function readTrailingSpaceLineBreakToken(source: string, index: number) {
   if (
     source[index] !== lineFeed ||
@@ -490,14 +558,18 @@ function readDelimitedMarkToken(source: string, index: number, end: number, mark
 // Buffer plain-text spans between tokens. Adjacent same-mark runs are
 // collapsed by `defragmentTextInlines` from the document subsystem when the
 // range finishes parsing, so a parsed paragraph contains the smallest set of
-// inline nodes possible.
+// inline nodes possible. No unescape pass here — backslash escapes are
+// consumed inline by `readGenericEscapeToken` before they can reach the
+// buffer. `unescapeMarkdownText` is still used directly by the image alt
+// and mention name readers, which consume their bracketed payloads verbatim
+// instead of routing through `parseInlineRange`.
 
 function flushText(nodes: Inline[], value: string, marks: Mark[]) {
   if (value.length === 0) {
     return;
   }
 
-  nodes.push(createText(unescapeMarkdownText(value), marks));
+  nodes.push(createText(value, marks));
 }
 
 // --- Low-level utilities ---

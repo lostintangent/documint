@@ -10,7 +10,6 @@ export {
 } from "./caret";
 
 export {
-  findBlockAncestor,
   resolveLineContentInset,
   resolveLineVisualLeft,
   resolveListItemMarker,
@@ -29,13 +28,11 @@ export {
 export {
   findDocumentLayoutBlockRange,
   findDocumentLayoutLineAtPoint,
-  findDocumentLayoutLineAtY,
   findDocumentLayoutLineEntryForRegionOffset,
   findDocumentLayoutLineForRegionOffset,
   findDocumentLayoutLineRange,
   findNearestDocumentLayoutLineForRegion,
   measureCanvasLineOffsetLeft,
-  resolveBoundaryOffset,
 } from "./lookup";
 
 export { resolvePositionInViewport, type ViewportPositionStatus } from "./position";
@@ -44,10 +41,8 @@ export {
   measureInlineImageBounds,
   resolveHoverTargetAtPoint,
   resolveLinkHitAtPoint,
-  resolveTargetAtSelectionPoint,
+  resolveTargetAtOffset,
   resolveTaskCheckboxHitAtPoint,
-  type CanvasCheckboxHit,
-  type CanvasLinkHit,
   type EditorHoverTarget,
   type InlineBounds,
 } from "./targets";

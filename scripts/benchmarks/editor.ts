@@ -18,8 +18,7 @@ import {
 } from "@/editor/state";
 import { parseFragment, serializeFragment } from "@/markdown";
 import {
-  createDocumentLayout,
-  createViewportLayout,
+  createEditorLayoutState,
   findLineEntryForRegionOffset,
   findLineForRegionOffset,
   measureCaretTarget,
@@ -27,7 +26,7 @@ import {
   resolveEditorHitAtPoint,
   type DocumentLayout,
 } from "@/editor/layout";
-import { createCanvasRenderCache } from "@/editor/canvas/lib/cache";
+import { createLayoutCache } from "@/editor";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
 
@@ -66,9 +65,8 @@ export function createEditorBenchmarks(
   // Full-frame fixtures: a viewport + render cache shared by the
   // typing/backspace-with-layout benchmarks below. The viewport matches
   // the layout-only benchmarks so the layout slice is comparable.
-  const fullFrameViewport = { height: 720, overscan: 720, top: 0 };
-  const fullFrameLayoutOptions = { width: 420 };
-  const fullFrameRenderCache = createCanvasRenderCache();
+  const fullFrameLayoutOptions = { height: 720, top: 0, width: 420 };
+  const fullFrameLayoutCache = createLayoutCache();
 
   return [
     // --- Import / export lifecycle ---
@@ -122,13 +120,7 @@ export function createEditorBenchmarks(
     runBenchmark("editor_typing_long_full_frame", 100, budgets.typing_long_full_frame, () => {
       const nextState = insertText(longEditingState, " updated");
       if (!nextState) throw new Error("insertText returned null");
-      void createViewportLayout(
-        nextState.documentIndex,
-        fullFrameLayoutOptions,
-        fullFrameViewport,
-        [],
-        fullFrameRenderCache,
-      );
+      void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
     }),
     runBenchmark("editor_typing_code", 200, budgets.typing_code, () => {
       const editorState = selectCanvasText(
@@ -163,13 +155,7 @@ export function createEditorBenchmarks(
     runBenchmark("editor_backspace_long_full_frame", 100, budgets.backspace_long_full_frame, () => {
       const nextState = deleteBackward(longEditingState);
       if (!nextState) return;
-      void createViewportLayout(
-        nextState.documentIndex,
-        fullFrameLayoutOptions,
-        fullFrameViewport,
-        [],
-        fullFrameRenderCache,
-      );
+      void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
     }),
 
     // --- Enter (insertLineBreak) ---
@@ -371,14 +357,16 @@ function selectMiddleTextRegion(snapshot: Parameters<typeof createEditorState>[0
 
 function createLongInteractionFixture(snapshot: Parameters<typeof createEditorState>[0]) {
   const state = selectMiddleTextRegion(snapshot);
-  const renderCache = createCanvasRenderCache();
-  const layout = createDocumentLayout(
-    state.documentIndex,
+  const layoutCache = createLayoutCache();
+  const layout = createEditorLayoutState(
+    state,
     {
+      height: 100_000,
+      top: 0,
       width: 420,
     },
-    renderCache,
-  );
+    layoutCache,
+  ).layout;
   const line = findCurrentLine(state, layout);
 
   if (!line) {

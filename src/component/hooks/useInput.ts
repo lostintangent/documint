@@ -48,10 +48,10 @@ import { parseFragment, serializeFragment } from "@/markdown";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
 import {
-  editorStateValue,
+  editorStateSprig,
   useDocumintStore,
   useEditorCommand,
-  useStoreValue,
+  useSprig,
   type EditorStateTransition,
 } from "../store";
 
@@ -190,7 +190,7 @@ export function useInput({
   /* Internal state */
 
   const store = useDocumintStore();
-  const editorState = useStoreValue(editorStateValue);
+  const editorState = useSprig(editorStateSprig);
   const isTouchPrimary = useIsTouchPrimary();
   const readCurrentState = () => store.editor.getState();
   // When `primingRef.current === true`, the bridge is in the middle of

@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 import { hasRunningAnimations } from "@/editor";
+import { recordFpsFrame } from "../lib/diagnostics";
 import { useDocumintStore } from "../store";
 
 type UseRenderSchedulerOptions = {
@@ -138,15 +139,15 @@ export function useRenderScheduler({
       return;
     }
 
-    frameIdRef.current = window.requestAnimationFrame(() => {
-      flushRenderRequests();
+    frameIdRef.current = window.requestAnimationFrame((frameTimestamp) => {
+      flushRenderRequests(frameTimestamp);
     });
   });
 
   // The rAF callback. Drains pending bits and dispatches in priority order:
   // full render subsumes everything; full paint subsumes both layer paints;
   // content-only and overlay-only paints fire independently if both pending.
-  const flushRenderRequests = useEffectEvent(() => {
+  const flushRenderRequests = useEffectEvent((frameTimestamp: number) => {
     frameIdRef.current = null;
 
     const pending = pendingRef.current;
@@ -156,9 +157,14 @@ export function useRenderScheduler({
     const shouldOverlayPaint = pending.overlayPaint;
 
     pendingRef.current = createPendingRenderRequests();
+    const renderStartedAt =
+      process.env.NODE_ENV !== "production" ? performance.now() : frameTimestamp;
 
     if (shouldFullRender) {
       renderViewport();
+      if (process.env.NODE_ENV !== "production") {
+        recordFpsFrame(performance.now() - renderStartedAt);
+      }
       scheduleAnimationContinuation();
       return;
     }
@@ -166,9 +172,14 @@ export function useRenderScheduler({
     if (shouldFullPaint) {
       renderContent();
       renderOverlay();
+      if (process.env.NODE_ENV !== "production") {
+        recordFpsFrame(performance.now() - renderStartedAt);
+      }
       scheduleAnimationContinuation();
       return;
     }
+
+    const painted = shouldContentPaint || shouldOverlayPaint;
 
     if (shouldContentPaint) {
       renderContent();
@@ -176,6 +187,12 @@ export function useRenderScheduler({
     }
     if (shouldOverlayPaint) {
       renderOverlay();
+    }
+
+    if (painted) {
+      if (process.env.NODE_ENV !== "production") {
+        recordFpsFrame(performance.now() - renderStartedAt);
+      }
     }
   });
 

@@ -1,16 +1,26 @@
 import { darkTheme, lightTheme, midnightTheme, mintTheme, type EditorTheme } from "documint";
 
-const sampleMarkdown = `# Sample Document
+const sampleMarkdown = `# 🎓 Tutorial Document
 
-This sample shows the core Documint editing surface in one short document.
+Welcome to Documint 👋, a canvas-based markdown editor for rich documents with formatting, tables, images, comments, mentions, and custom decorations.
 
-It stays rendered like a document, then turns locally editable when you activate a block or span.
+Use the theme control in the upper right to preview how hosts can recolor the editor surface.
 
-The word sparkle uses an animated decoration so the playground can exercise paint-only effects.
+As you edit the document, the markdown updates on the right; you can also edit that markdown directly to update the document.
 
-Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inline code\`, and [links](https://example.com) inside the active span.
+## ✍️ Formatting
+
+Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inline code\`, and [links](https://example.com) inline.
+
+Select text and paste a URL to turn the selection into a link.
+
+---
+
+Use three dashes to insert a horizontal divider, as seen above.
 
 Hit Shift+Enter to insert a soft line break<br>that wraps to a new line without starting a new block.
+
+## 📊 Tables
 
 | Block | Status | Width | Notes |
 | :---- | :----- | ----: | :---- |
@@ -18,145 +28,45 @@ Hit Shift+Enter to insert a soft line break<br>that wraps to a new line without 
 | Table | active | 320 | edits locally |
 | Comments | anchored | 3 | remain durable |
 
-> A sample blockquote should still read naturally in the default fixture.
-
-## Lists TODO
+## ✅ Lists
 
 It supports unordered lists for quick notes and simple grouping.
 
-- one (1)
-- two (2)
-- three (3)
+- one
+- two
+- three
 
 It also supports ordered lists when sequence matters.
 
 1. First ordered step
-2. TODO Second ordered step
-
----
+2. Second ordered step
 
 And it even supports task lists with clickable checkboxes.
 
 - [ ] task one
 - [x] task two
 
-:::documint-comments
-[
-  {
-    "quote": "active span",
-    "anchor": {
-      "prefix": "e, and links inside the ",
-      "suffix": "."
-    },
-    "comments": [
-      {
-        "body": "Verify the default sample carries one visible comment thread.",
-        "updatedAt": "2026-04-17T12:00:00.000Z"
-      }
-    ]
-  }
-]
-:::
-`;
-
-const nestedListTortureMarkdown = `# Nested List Torture
-
-- alpha
-  - beta
-    - [ ] task child
-    - [x] shipped child
-  - gamma
-- delta
-
-1. ordered root
-   1. nested ordered
-   2. nested ordered two
-      - mixed bullet
-      - mixed bullet two
-2. ordered tail
-`;
-
-const blockquoteTransitionMarkdown = `# Blockquote And List Transitions
-
-> quoted intro
->
-> - [ ] task in quote
-> - nested list transition
->
-> closing line
-
-After the quote, keep writing in a paragraph.
-
----
-
-- start in a list
-- backspace at block start to lift out
-`;
-
-const longStructuralMarkdown = `# Long Structural Editing
-
-${Array.from({ length: 14 }, (_, index) => {
-  const section = index + 1;
-
-  return `## Section ${section}
-
-Paragraph ${section} should stay stable while list structure changes around it.
-
-- bullet ${section}.1
-- bullet ${section}.2
-  - nested ${section}.2.a
-  - nested ${section}.2.b
-- [ ] task ${section}.3
-
-> quote ${section}
->
-> 1. ordered ${section}.a
-> 2. ordered ${section}.b
-`;
-}).join("\n")}`;
-
-const richImagesMarkdown = `# Rich Images
+## 🖼️ Images
 
 Inline images stay semantic while rendering like real content.
+
+Select and resize an image below with the handles, or paste an image to insert a new one.
 
 ![Editor shell](https://dummyimage.com/960x540/0f172a/f8fafc.png&text=Editor+Shell "Wide host")
 ![Narrow host](https://dummyimage.com/640x360/1e293b/e2e8f0.png&text=Narrow+Host "Constrained width")
 ![Diagnostics](https://dummyimage.com/720x360/0f766e/f0fdfa.png&text=Diagnostics)
-`;
 
-const richTablesMarkdown = `# Rich Tables
+## 💬 Block Quotes
 
-| Layer | Narrow host | Wide host | Notes |
-| :---- | :---------- | --------: | :---- |
-| Editor | stable | 640 | keeps selection intact |
-| Table | scrolls | 960 | preserves GFM alignment |
-| Images | wraps inline | 720 | keeps alt/title metadata |
-`;
+> A sample blockquote should still read naturally in the default fixture.
+>
+> Block quotes can contain multiple lines while remaining editable as structured content.
 
-const richMixedMarkdown = `# Mixed Rich Content
+## 📝 Comments
 
-Lead paragraph before rich content.
+Comments stay anchored to quoted text as the document changes.
 
-\`\`\`ts title=commands.ts
-export const enter = "splitStructuralBlock";
-\`\`\`
-
-| Surface | Behavior | Width |
-| :------ | :------- | ----: |
-| code | local activation | 320 |
-| table | horizontal overflow | 280 |
-
-Paragraph with ![Inline preview](https://example.com/inline-preview.png "Host-fit") after the table.
-
-> A blockquote after rich content should still feel normal.
-
-- [ ] task after table
-- bullet after image
-`;
-
-const reviewThreadsMarkdown = `# Review Surface
-
-The review surface keeps comment anchors durable across edits and markdown reloads.
+Select text to add a new comment, or use an existing thread to add replies.
 
 - List feedback should stay attached during structural edits.
 - Secondary bullet remains unannotated.
@@ -165,21 +75,26 @@ The review surface keeps comment anchors durable across edits and markdown reloa
 | ------------ | -------------------------------------------- |
 | Review queue | Table cell anchors should stay attached too. |
 
+## 🙋 Mentions
+
+At-mention available users directly in the document, like @[demo](demo).
+
+Use the Users control in the upper right to add more mentionable users while testing the playground.
+
+## 🎨 Decorations
+
+Hosts can define decorations from text patterns and use them to apply custom foreground colors, background colors, or pulse animations.
+
+- one (1)
+- two (2)
+- three (3)
+
+The numbered markers above use a foreground color decoration, while TODO uses a highlighted background.
+
+The word lesson uses a pulsing decoration so the playground can exercise paint-only animation without changing editor state.
+
 :::documint-comments
 [
-  {
-    "quote": "review surface",
-    "anchor": {
-      "prefix": "The ",
-      "suffix": " keeps comment anchors d"
-    },
-    "comments": [
-      {
-        "body": "Focus the durable anchor claim.",
-        "updatedAt": "2026-04-05T12:00:00.000Z"
-      }
-    ]
-  },
   {
     "quote": "List feedback",
     "anchor": {
@@ -209,89 +124,77 @@ The review surface keeps comment anchors durable across edits and markdown reloa
 :::
 `;
 
-const overlappingCommentsMarkdown = `# Overlapping Threads
-
-The review surface keeps comment anchors durable and reviewable for overlap tests.
-
-:::documint-comments
-[
-  {
-    "quote": "review surface",
-    "anchor": {
-      "prefix": "The ",
-      "suffix": " keeps comment anchors d"
-    },
-    "comments": [
-      {
-        "body": "Overlap A",
-        "updatedAt": "2026-04-05T12:00:00.000Z"
-      }
-    ]
-  },
-  {
-    "quote": "surface keeps",
-    "anchor": {
-      "prefix": "The review ",
-      "suffix": " comment anchors durable"
-    },
-    "comments": [
-      {
-        "body": "Overlap B",
-        "updatedAt": "2026-04-05T12:01:00.000Z"
-      }
-    ]
-  }
-]
-:::
-`;
+const scrollingTestMarkdown = createRealisticLongMarkdown(80, "Scrolling Test");
 
 export const fixtureOptions = [
   {
     id: "sample",
-    label: "Sample fixture",
+    label: "Tutorial document",
     markdown: sampleMarkdown,
   },
   {
-    id: "nested-lists",
-    label: "Nested list torture",
-    markdown: nestedListTortureMarkdown,
+    id: "blank",
+    label: "Blank document",
+    markdown: "",
   },
   {
-    id: "blockquote-transitions",
-    label: "Blockquote transitions",
-    markdown: blockquoteTransitionMarkdown,
-  },
-  {
-    id: "long-structural",
-    label: "Long structural doc",
-    markdown: longStructuralMarkdown,
-  },
-  {
-    id: "rich-images",
-    label: "Image-rich doc",
-    markdown: richImagesMarkdown,
-  },
-  {
-    id: "rich-tables",
-    label: "Wide-table doc",
-    markdown: richTablesMarkdown,
-  },
-  {
-    id: "rich-mixed",
-    label: "Mixed rich doc",
-    markdown: richMixedMarkdown,
-  },
-  {
-    id: "review-threads",
-    label: "Seeded review doc",
-    markdown: reviewThreadsMarkdown,
-  },
-  {
-    id: "overlap-threads",
-    label: "Overlapping threads",
-    markdown: overlappingCommentsMarkdown,
+    id: "scrolling",
+    label: "Scrolling test",
+    markdown: scrollingTestMarkdown,
   },
 ] as const;
+
+function createRealisticLongMarkdown(sectionCount: number, title: string) {
+  const sections = Array.from({ length: sectionCount }, (_, index) => {
+    const sectionNumber = index + 1;
+    const list =
+      sectionNumber % 3 === 0
+        ? [
+            "",
+            "- Capture the current behavior in a short note.",
+            "- Follow up with the next concrete decision.",
+            "- Keep enough context nearby that future edits remain clear.",
+          ]
+        : [];
+    const quote =
+      sectionNumber % 7 === 0
+        ? [
+            "",
+            "> This note is here to keep block quote layout represented without turning the fixture into a stress test.",
+          ]
+        : [];
+    const table =
+      sectionNumber % 15 === 0
+        ? [
+            "",
+            "| Topic | Owner | Status |",
+            "| ----- | ----- | ------ |",
+            `| Section ${sectionNumber} | Demo | Active |`,
+            "| Follow-up | Demo | Open |",
+          ]
+        : [];
+
+    return [
+      `## Section ${sectionNumber}`,
+      "",
+      `This section is intentionally ordinary prose. It has enough text to wrap in the editor, but it avoids adversarial character patterns so it behaves like a realistic note, proposal, or design document.`,
+      "",
+      `The second paragraph adds a little more body copy for scrolling and editing tests. It mentions TODO and lesson so the playground decorations still appear in long documents.`,
+      ...list,
+      ...quote,
+      ...table,
+    ].join("\n");
+  });
+
+  return [
+    `# ${title}`,
+    "",
+    "Use this fixture to test realistic long-document scrolling, editing, decorations, and occasional structured blocks.",
+    "",
+    ...sections,
+    "",
+  ].join("\n");
+}
 
 const sunriseTheme: EditorTheme = {
   ...lightTheme,

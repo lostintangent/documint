@@ -13,7 +13,7 @@ import {
 } from "@chenglou/pretext/rich-inline";
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import type { EditorInline, EditorRegion } from "../../state";
+import { findInlinesInSpan, type EditorInline, type EditorRegion } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import { codeTextFont, resolveInlineTextFont } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./image";
@@ -23,8 +23,8 @@ import {
   cacheMeasuredLines,
   cachePreparedText,
   getOrCreateGraphemeWidthCache,
-  type CanvasRenderCache,
-} from "../../canvas/lib/cache";
+  type LayoutCache,
+} from "../state/cache";
 
 export type TextLineBoundary = {
   left: number;
@@ -139,7 +139,7 @@ function isAsciiText(text: string) {
 }
 
 export function measureTextContainerLines(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   container: EditorRegion,
   font: string,
   block: Block | null,
@@ -168,7 +168,7 @@ export function measureTextContainerLines(
 }
 
 export function measureTextLineBoundaries(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   container: EditorRegion,
   start: number,
   end: number,
@@ -196,7 +196,7 @@ export function measureTextLineBoundaries(
     },
   ];
   let width = 0;
-  const visibleRuns = container.inlines.filter((run) => run.end > start && run.start < end);
+  const visibleRuns = findInlinesInSpan(container.inlines, start, end);
 
   for (const run of visibleRuns) {
     const segmentStart = Math.max(start, run.start);
@@ -243,7 +243,7 @@ export function measureTextLineBoundaries(
 }
 
 function prepareTextSegments(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   text: string,
   font: string,
   whiteSpace: NonNullable<PrepareOptions["whiteSpace"]>,
@@ -263,7 +263,7 @@ function prepareTextSegments(
 }
 
 function createMeasuredTextLines(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   container: EditorRegion,
   font: string,
   block: Block | null,
@@ -341,7 +341,7 @@ function resolveMeasuredLineEnd(text: string, start: number, end: number) {
 // horizontal `extraWidth`; and rich inline content mixed with hard breaks needs
 // `pre-wrap` semantics, while `rich-inline` is a `white-space: normal` helper.
 function createInlineMeasuredTextLines(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   container: EditorRegion,
   font: string,
   availableWidth: number,
@@ -688,7 +688,7 @@ function layoutSegmentsIntoLines(
 }
 
 function flattenMeasuredInlineSegments(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   container: EditorRegion,
   font: string,
@@ -890,7 +890,7 @@ function getTextMeasurementContext() {
 }
 
 function measureGraphemeWidth(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   grapheme: string,
 ) {
@@ -910,7 +910,7 @@ function measureGraphemeWidth(
 }
 
 function measureTextBoundaryAdvances(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   text: string,
 ) {

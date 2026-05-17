@@ -1,61 +1,45 @@
 # Documint (Architecture + Contribution Guidelines)
 
-The core rendering lifecycle of content is: `markdown → Document → EditorState → EditorLayoutState → canvas pixels`.
+## Architectural overview
 
-Each transition has its own cadence. `markdown ↔ Document` runs at file boundaries (load, save, clipboard). `Document → EditorState` produces a new immutable state per mutation or selection move. `EditorState → EditorLayoutState` is lazily recomputed when its layout-affecting inputs change — document structure the cache can't cover, scroll, or surface resize — so selection-only updates, animation ticks, and caret blinks reuse the cached layout state and skip straight to paint.
+Documint is a layered editor built around a functional core with explicit edge effects. Content flows through one main pipeline:
 
-Common interactions in terms of that pipeline:
+`markdown → Document → EditorState → EditorLayoutState → canvas pixels`
 
-| Interaction              | `EditorState`              | `EditorLayoutState`     | Paint             |
-| ------------------------ | -------------------------- | ----------------------- | ----------------- |
-| Document load / replace  | new (new `documentIndex`)  | fresh                   | content + overlay |
-| Text or structural edit  | new (new `documentIndex`)  | invalidated, recomputed | content + overlay |
-| Selection or caret move  | new (same `documentIndex`) | reused from cache       | content + overlay |
-| Animation start          | new (same `documentIndex`) | reused from cache       | content + overlay |
-| Animation in-flight tick | unchanged                  | reused from cache       | content + overlay |
-| Scroll                   | unchanged                  | invalidated, recomputed | content + overlay |
-| Surface resize           | unchanged                  | invalidated, recomputed | content + overlay |
-| Caret blink (idle)       | unchanged                  | reused from cache       | overlay only      |
+Each layer owns one transition and builds on the immutable output of the layer before it: markdown produces semantic `Document` values; document/indexing produces runtime `EditorState`; layout produces geometry in `EditorLayoutState`; canvas paint consumes state, layout, resources, theme, and time to produce pixels. Lower layers should not reach upward for orchestration concerns, and higher layers should not re-implement lower-layer semantics.
 
-The asymmetry that matters for performance: edits, scroll, and resize recompute layout; selection moves, animations, and caret blinks reuse it. That's why animations stay smooth during typing — the cache survives, and per-frame ticks are pure paint with no state churn (animations carry only `{ kind, startedAt, ...identifiers }` in `EditorState` and let paint compute the current frame from `now`).
+The durable values (`Document`, `EditorState`, `EditorLayoutState`) are immutable snapshots. Mutations return new snapshots with structural sharing: unchanged roots, indexes, selections, and layout artifacts keep reference identity whenever possible so downstream caches can prove what did not change. Most subsystems are pure transformations or queries over those snapshots and should answer entirely from their provided inputs.
 
-### Render loop
+Effects are explicit boundaries. DOM/canvas measurement, `requestAnimationFrame`, browser events, image loading, mutable layout caches, and canvas drawing are owned by `src/component` or clearly marked browser-facing helpers. Clock-bearing APIs should accept caller-provided time for deterministic callers, even when they provide convenience defaults. The engine may consume those inputs, but it should not smuggle long-lived mutable state into `Document`, `EditorState`, or `EditorLayoutState`.
 
-Paint runs inside a coalesced `requestAnimationFrame` scheduler. There are no idle ticks — frames fire only in response to:
+## Subsystems
 
-1. **User interactions** — typing, selection moves, drag, scroll, resize, theme change.
-2. **In-flight animations** — the scheduler self-schedules content paints while animations are running. Pure paint, no state churn.
-3. **Caret blink** — every 530ms, repaint just the overlay layer. The cheapest path.
+Each subsystem has its own `AGENTS.md` for local rules and ownership. Use this map to choose the correct layer, then read that subsystem guide before editing.
 
-See [`src/component`](src/component/AGENTS.md) for the schedule intents, coalescing rules, and which host effects trigger which paint mode.
-
-At the repo root, think in terms of altitude and orchestration:
-
-- `src/document` owns semantic document truth.
-- `src/editor` owns the framework-agnostic editing engine capabilities that operate on that truth: projection, mutation, geometry, hit testing, and immediate-mode paint.
-- `src/component` owns browser and React orchestration: when editor state changes, when layout is prepared, and when content/overlay canvases repaint.
-
-Each subsystem has its own `AGENTS.md` with the lower-level boundaries and ownership.
-
-- [`src/document`](src/document/AGENTS.md) - Closed, immutable semantic document model, including comment threads as anchored annotations.
-- [`src/markdown`](src/markdown/AGENTS.md) - Markdown parsing and serialization boundary, implemented as a bespoke direct `markdown → Document → markdown` pipeline.
-- [`src/editor`](src/editor/AGENTS.md) - Framework-agnostic editing engine: `Document` → `EditorState` → `EditorLayoutState` → canvas.
-- [`src/component`](src/component/AGENTS.md) - React host: content bridging, browser lifecycle, and leaf UI.
-- `playground` - Dogfooding app for exercising real browser behavior.
-- `scripts` - Build, packaging, and benchmark automation.
+- [`src/document`](src/document/AGENTS.md) - Semantic document truth: immutable block/inline trees, canonical IDs, plain-text projections, paths, queries, and comment threads as anchored annotations.
+- [`src/markdown`](src/markdown/AGENTS.md) - File and clipboard boundary: direct `markdown → Document → markdown` parsing, serialization, fragments, front matter, tables, and comment directives.
+- [`src/editor`](src/editor/AGENTS.md) - Framework-agnostic editor engine: document indexing, state, commands, selection, navigation, anchors, layout, hit testing, text measurement, and canvas paint.
+- [`src/component`](src/component/AGENTS.md) - React/browser host: content bridging, orchestration, effects, image loading, render scheduling, hooks, overlays, and leaf UI.
+- `playground` - Dogfooding app for real browser behavior.
+- `scripts` - Build, packaging, benchmark, and automation scripts.
 - `test` - Unit tests, golden fixtures, and benchmark support.
+
+## Runtime cadence
+
+The pipeline stages run at different cadences. `markdown ↔ Document` happens at file and clipboard boundaries. `Document → EditorState` creates a new immutable state for mutations and selection moves. `EditorState → EditorLayoutState` is lazily recomputed only when layout-affecting inputs change: edits the cache cannot cover, scroll, or surface resize.
+
+Selection moves, animation ticks, and caret blinks reuse cached layout. Animations store descriptors such as `{ kind, startedAt, ...identifiers }`; paint resolves the current frame from `now`. The component host owns the coalesced `requestAnimationFrame` scheduler: interactions request paints, in-flight animations self-schedule content paints, and the 530ms caret blink repaints only the overlay.
 
 ## Writing great code
 
-- Start with the correct layer. Keep logic in the lowest correct subsystem and own it there completely instead of smearing one behavior across component, editor, markdown, and document layers.
-- Use immutable data with structural sharing throughout. `Document`, `EditorState`, and `EditorLayoutState` are immutable values; mutations produce new values that share unchanged structure with the previous one. A selection move keeps the same `documentIndex` reference, which is exactly what lets the `EditorLayoutState` cache survive across the change. Pure-function transformations are easy to test in isolation and safe to cache against by reference identity.
-- Push side effects to the edge. The editor engine — `Document`, `EditorState`, layout, query — is pure data and pure functions. Canvas pixels, DOM events, rAF scheduling, and `now` all live in [`src/component`](src/component/AGENTS.md), which owns the render loop. User input enters at the edge, flows inward as data transformations, then exits at the edge as paint calls. Concentrating side effects this way is what makes the engine testable without DOM stubs and lets the same immutable state drive multiple paint passes per frame.
-- Favor declarative data over imperative APIs, without over-abstracting. Animations are descriptors paint resolves at frame time, not callbacks. Commands are state-to-state transforms, not setter sequences. Spacing, typography, and gap policies live in tables and small policy objects. The goal is clearer data flow, not indirection for its own sake — don't add a layer just to be pure.
-- Prefer small, semantic public APIs. Export capabilities in terms of what they mean, not how they are implemented.
-- Make files read clearly from top to bottom. Put the main entrypoint first, then the supporting helpers in dependency order.
-- Use concise module comments when they help a reader understand the file’s role. Skip boilerplate commentary.
-- Choose semantic names for functions, types, and variables. Avoid names that overfit the current implementation detail.
-- Keep helper modules only when they earn their keep through clearer ownership, reuse, or simpler reading.
+- Start with the correct layer and keep behavior owned there.
+- Preserve immutable data and structural sharing; selection moves should keep the same `documentIndex`, and unchanged roots/layout artifacts should keep identity when possible.
+- Keep model changes and queries deterministic over their inputs where practical. Thread clocks, resources, caches, and browser effects in explicitly when determinism matters.
+- Favor declarative data over imperative APIs without over-abstracting: animations are descriptors, commands are state-to-state transforms, and layout/paint policies belong in tables or small policy objects.
+- Prefer small, semantic public APIs that describe what they mean, not how they are implemented.
+- Make files read top-to-bottom: main entrypoint first, helpers in dependency order.
+- Use comments only for file roles, non-obvious invariants, or complex logic.
+- Choose semantic names and add helper modules only when they clarify ownership, reuse, or reading.
 
 ## Writing great tests
 
@@ -63,13 +47,13 @@ Each subsystem has its own `AGENTS.md` with the lower-level boundaries and owner
 - Prefer focused unit coverage over broad UI smoke tests.
 - Use markdown golden tests to protect round-trip stability.
 - Add or update benchmark coverage when changing layout, paint, viewport planning, or other hot paths.
-- Verify the real browser behavior in the playground after meaningful UI changes, especially for input, scrolling, resize, and paint issues.
-- Group tests logically with `describe` blocks, ordered common-case-first → edge-case-last; order the tests within each group the same way.
-- Helpers belong in the lowest subsystem they apply to (`test/document/`, `test/markdown/`, `test/editor/`); higher subsystems import from lower ones, never the other way around.
+- Verify real browser behavior in the playground after meaningful UI changes, especially for input, scrolling, resize, and paint issues.
+- Group tests logically with `describe` blocks, ordered common-case-first → edge-case-last; order tests within each group the same way.
+- Put helpers in the lowest subsystem they apply to (`test/document/`, `test/markdown/`, `test/editor/`). Higher subsystems may import from lower ones, never the other way around.
 
 ## Definition of done
 
-1. The change works in the playground.
+1. The change works in the playground when browser behavior is involved.
 2. Relevant unit and golden tests pass.
 3. Markdown import/export stability is preserved.
 4. Undo/redo, selection, and comments are not corrupted.

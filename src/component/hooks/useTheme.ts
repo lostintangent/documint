@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { EditorTheme } from "@/types";
 import type { DocumintTheme } from "../Documint";
-import { darkTheme, lightTheme } from "../lib/themes";
+import { darkTheme, lightTheme, resolveEditorTheme, type ResolvedEditorTheme } from "../lib/themes";
 
 type DocumintThemePair = {
+  dark: ResolvedEditorTheme;
+  light: ResolvedEditorTheme;
+};
+
+type InputDocumintThemePair = {
   dark: EditorTheme;
   light: EditorTheme;
 };
 
 export function useTheme(theme: DocumintTheme | undefined) {
   const themePair = useMemo(() => resolveThemePair(theme), [theme]);
-  const [preferredTheme, setPreferredTheme] = useState<EditorTheme>(themePair.light);
+  const [preferredTheme, setPreferredTheme] = useState<ResolvedEditorTheme>(themePair.light);
   const themeStyles = useMemo(() => createThemeStyles(preferredTheme), [preferredTheme]);
 
   useEffect(() => {
@@ -47,25 +52,30 @@ export function useTheme(theme: DocumintTheme | undefined) {
   };
 }
 
-function isThemePair(theme: DocumintTheme): theme is DocumintThemePair {
+function isThemePair(theme: DocumintTheme): theme is InputDocumintThemePair {
   return "light" in theme && "dark" in theme;
 }
 
 function resolveThemePair(theme: DocumintTheme | undefined): DocumintThemePair {
   if (!theme) {
     return {
-      dark: darkTheme,
-      light: lightTheme,
+      dark: resolveEditorTheme(darkTheme),
+      light: resolveEditorTheme(lightTheme),
     };
   }
 
   if (isThemePair(theme)) {
-    return theme;
+    return {
+      dark: resolveEditorTheme(theme.dark),
+      light: resolveEditorTheme(theme.light),
+    };
   }
 
+  const resolvedTheme = resolveEditorTheme(theme);
+
   return {
-    dark: theme,
-    light: theme,
+    dark: resolvedTheme,
+    light: resolvedTheme,
   };
 }
 

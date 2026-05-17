@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createEditorValue } from "@/component/store/core/values";
+import { createEditorStateSprig } from "@/component/store/core/sprigs";
 import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 import { createViewportStore } from "@/component/store/viewport/store";
@@ -14,7 +14,7 @@ describe("EditorStore", () => {
     const transitions: EditorStateTransition[] = [];
 
     store.subscribe((transition) => transitions.push(transition));
-    const transition = store.apply(insertText(store.getState(), "!"));
+    const transition = store.command(insertText, "!");
 
     expect(transition).not.toBeNull();
     if (!transition) {
@@ -36,7 +36,7 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createEditorStore(state);
-    const transition = store.apply(setSelection(state, { regionId: region.id, offset: 2 }));
+    const transition = store.command(setSelection, { regionId: region.id, offset: 2 });
 
     expect(transition).toEqual(
       expect.objectContaining({
@@ -57,15 +57,15 @@ describe("EditorStore", () => {
       publishCount += 1;
     });
 
-    expect(store.apply(null)).toBeNull();
-    expect(store.apply(state)).toBeNull();
+    expect(store.command(() => null)).toBeNull();
+    expect(store.command((currentState) => currentState)).toBeNull();
     expect(publishCount).toBe(0);
   });
 
-  test("replaces external content with an explicit source", () => {
+  test("replaces external content with an external source", () => {
     const store = createEditorStore(setup("alpha\n"));
     const next = setup("beta\n");
-    const transition = store.replace(next, "external");
+    const transition = store.replace(next);
 
     expect(transition).toEqual(
       expect.objectContaining({
@@ -77,88 +77,86 @@ describe("EditorStore", () => {
     expect(store.getState()).toBe(next);
   });
 
-  test("notifies value subscribers only when the selected source changes", () => {
+  test("source sprigs notify only when the selected slice changes", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
-    const store = createEditorStore(state);
+    const store = createDocumintStore(state);
+    const documentSprig = createEditorStateSprig((editorState) => editorState.documentIndex);
+    const focusSprig = createEditorStateSprig((editorState) => editorState.selection.focus);
     let documentNotifications = 0;
     let focusNotifications = 0;
 
-    store.subscribeValue(
-      (editorState) => editorState.documentIndex,
-      () => {
-        documentNotifications += 1;
-      },
-    );
-    store.subscribeValue(
-      (editorState) => editorState.selection.focus,
-      () => {
-        focusNotifications += 1;
-      },
-    );
+    documentSprig.subscribe(store, () => {
+      documentNotifications += 1;
+    });
+    focusSprig.subscribe(store, () => {
+      focusNotifications += 1;
+    });
 
-    store.apply(setSelection(state, { regionId: region.id, offset: 2 }));
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
 
     expect(documentNotifications).toBe(0);
     expect(focusNotifications).toBe(1);
   });
 
-  test("unsubscribes value subscribers", () => {
+  test("source sprig subscribers can unsubscribe", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
-    const store = createEditorStore(state);
+    const store = createDocumintStore(state);
+    const focusSprig = createEditorStateSprig((editorState) => editorState.selection.focus);
     let notifications = 0;
-    const unsubscribe = store.subscribeValue(
-      (editorState) => editorState.selection.focus,
-      () => {
-        notifications += 1;
-      },
-    );
-
-    unsubscribe();
-    store.apply(setSelection(state, { regionId: region.id, offset: 2 }));
-
-    expect(notifications).toBe(0);
-  });
-
-  test("uses value equality to ignore equivalent values", () => {
-    const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const store = createEditorStore(state);
-    let notifications = 0;
-
-    store.subscribeValue(
-      (editorState) => new Set(editorState.documentIndex.imageUrls),
-      () => {
-        notifications += 1;
-      },
-      equalStringSets,
-    );
-
-    store.apply(setSelection(state, { regionId: region.id, offset: 2 }));
-
-    expect(notifications).toBe(0);
-  });
-
-  test("exposes editor-backed store values", () => {
-    const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const store = { editor: createEditorStore(state), viewport: createViewportStore() };
-    const focusValue = createEditorValue((editorState) => editorState.selection.focus);
-    let notifications = 0;
-
-    focusValue.subscribe(store, () => {
+    const unsubscribe = focusSprig.subscribe(store, () => {
       notifications += 1;
     });
 
-    expect(focusValue.read(store)).toEqual({ regionId: region.id, offset: 0 });
+    unsubscribe();
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
 
-    store.editor.apply(setSelection(state, { regionId: region.id, offset: 2 }));
+    expect(notifications).toBe(0);
+  });
 
-    expect(focusValue.read(store)).toEqual({ regionId: region.id, offset: 2 });
+  test("source sprigs use custom equality to suppress equivalent updates", () => {
+    const state = setup("alpha\n");
+    const region = getRegion(state, "alpha");
+    const store = createDocumintStore(state);
+    const imageUrlsSprig = createEditorStateSprig(
+      (editorState) => new Set(editorState.documentIndex.imageUrls),
+      equalStringSets,
+    );
+    let notifications = 0;
+
+    imageUrlsSprig.subscribe(store, () => {
+      notifications += 1;
+    });
+
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+
+    expect(notifications).toBe(0);
+  });
+
+  test("source sprig reads project the current editor state", () => {
+    const state = setup("alpha\n");
+    const region = getRegion(state, "alpha");
+    const store = createDocumintStore(state);
+    const focusSprig = createEditorStateSprig((editorState) => editorState.selection.focus);
+    let notifications = 0;
+
+    focusSprig.subscribe(store, () => {
+      notifications += 1;
+    });
+
+    expect(focusSprig.read(store)).toEqual({ regionId: region.id, offset: 0 });
+
+    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+
+    expect(focusSprig.read(store)).toEqual({ regionId: region.id, offset: 2 });
     expect(notifications).toBe(1);
   });
 });
+
+function createDocumintStore(state: ReturnType<typeof setup>) {
+  return { editor: createEditorStore(state), viewport: createViewportStore() };
+}
 
 function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   if (a === b) return true;

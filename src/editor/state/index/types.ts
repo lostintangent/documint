@@ -102,7 +102,6 @@ export type DocumentIndex = {
   blocks: EditorBlock[];
   commentContainerIndex: Map<string, number[]>;
   document: Document;
-  engine: "canvas";
   // Union of image URLs across every root. Reference-stable when the URL
   // set is unchanged (value-compared against the previous index), so
   // consumers can use it directly as a React `useEffect` dep without

@@ -1,95 +1,17 @@
 import { resolvePresenceTargets, resolvePresenceViewport, type EditorPresence } from "@/editor";
 import type { DocumentUserPresence } from "@/types";
-import { createParameterizedStoreComputedValue } from "./core/computed";
-import { equalArrayBy } from "./core/equality";
-import { documentIndexValue } from "./editor/values";
-import { publishedViewportValue } from "./viewport/values";
+import { createParameterizedSprig } from "./core/computed";
+import { equalArrayBy, equalMapBy, equalNullable, equalNullableBy } from "./core/equality";
+import { commentStateSprig } from "./editor/computed-sprigs";
+import { documentIndexSprig } from "./editor/sprigs";
+import { publishedViewportSprig } from "./viewport/sprigs";
 
-const presenceTargetsValue = createParameterizedStoreComputedValue(
-  [documentIndexValue] as const,
-  (
-    _store,
-    [userPresence]: readonly [DocumentUserPresence[] | undefined],
-    documentIndex,
-  ): EditorPresence[] | undefined => {
-    if (!userPresence?.length) {
-      return undefined;
-    }
+/* Equality */
 
-    return resolvePresenceTargets(documentIndex, userPresence);
-  },
-  equalPresence,
-);
-
-export const presenceValue = createParameterizedStoreComputedValue(
-  [documentIndexValue, publishedViewportValue] as const,
-  (
-    store,
-    [userPresence]: readonly [DocumentUserPresence[] | undefined],
-    documentIndex,
-    viewport,
-  ): EditorPresence[] | undefined => {
-    const targets = presenceTargetsValue.read(store, userPresence);
-
-    if (!targets) {
-      return undefined;
-    }
-
-    return viewport ? resolvePresenceViewport(documentIndex, viewport, targets) : targets;
-  },
-  equalPresence,
-);
-
-export const presenceActiveCommentThreadColorsValue = createParameterizedStoreComputedValue(
-  [documentIndexValue] as const,
-  (
-    store,
-    [userPresence]: readonly [DocumentUserPresence[] | undefined],
-  ): ReadonlyMap<number, string | null> => {
-    const presence = presenceTargetsValue.read(store, userPresence);
-    const activeThreadColors = new Map<number, string | null>();
-
-    for (const presenceItem of presence ?? []) {
-      if (
-        presenceItem.commentThreadIndex != null &&
-        !activeThreadColors.has(presenceItem.commentThreadIndex)
-      ) {
-        activeThreadColors.set(presenceItem.commentThreadIndex, presenceItem.color ?? null);
-      }
-    }
-
-    return activeThreadColors;
-  },
-  equalNumberStringMaps,
-);
-
-function equalPresence(previous: EditorPresence[] | undefined, next: EditorPresence[] | undefined) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-  return equalPresenceItems(previous, next);
-}
-
-const equalPresenceItems = equalArrayBy((previous: EditorPresence, next: EditorPresence) => {
-  return (
-    previous.id === next.id &&
-    previous.username === next.username &&
-    previous.fullName === next.fullName &&
-    previous.avatarUrl === next.avatarUrl &&
-    previous.color === next.color &&
-    previous.commentThreadIndex === next.commentThreadIndex &&
-    equalCursorPoints(previous.cursorPoint, next.cursorPoint) &&
-    equalPresenceViewports(previous.viewport, next.viewport)
-  );
-});
-
-function equalCursorPoints(
-  previous: EditorPresence["cursorPoint"],
-  next: EditorPresence["cursorPoint"],
-) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-  return previous.offset === next.offset && previous.regionId === next.regionId;
-}
+const equalCursorPoints = equalNullableBy<NonNullable<EditorPresence["cursorPoint"]>>((point) => [
+  point.offset,
+  point.regionId,
+]);
 
 function equalPresenceViewports(
   previous: EditorPresence["viewport"],
@@ -106,18 +28,84 @@ function equalPresenceViewports(
   return next.status !== "unresolved" && previous.scrollTop === next.scrollTop;
 }
 
-function equalNumberStringMaps(
-  previous: ReadonlyMap<number, string | null>,
-  next: ReadonlyMap<number, string | null>,
-) {
-  if (previous === next) return true;
-  if (previous.size !== next.size) return false;
+const equalPresenceItems = equalArrayBy((previous: EditorPresence, next: EditorPresence) => {
+  return (
+    previous.id === next.id &&
+    previous.username === next.username &&
+    previous.fullName === next.fullName &&
+    previous.avatarUrl === next.avatarUrl &&
+    previous.color === next.color &&
+    previous.commentThreadIndex === next.commentThreadIndex &&
+    equalCursorPoints(previous.cursorPoint, next.cursorPoint) &&
+    equalPresenceViewports(previous.viewport, next.viewport)
+  );
+});
 
-  for (const [key, value] of previous) {
-    if (next.get(key) !== value) {
-      return false;
+const equalPresence = equalNullable(equalPresenceItems);
+
+/* Sprigs */
+
+const presenceTargetsSprig = createParameterizedSprig(
+  [documentIndexSprig],
+  (
+    _store,
+    [userPresence]: readonly [DocumentUserPresence[] | undefined],
+    documentIndex,
+  ): EditorPresence[] | undefined => {
+    if (!userPresence?.length) {
+      return undefined;
     }
-  }
 
-  return true;
-}
+    return resolvePresenceTargets(documentIndex, userPresence);
+  },
+  equalPresence,
+);
+
+export const resolvedPresenceSprig = createParameterizedSprig(
+  [documentIndexSprig, publishedViewportSprig],
+  (
+    store,
+    [userPresence]: readonly [DocumentUserPresence[] | undefined],
+    documentIndex,
+    viewport,
+  ): EditorPresence[] | undefined => {
+    const targets = presenceTargetsSprig.read(store, userPresence);
+
+    if (!targets) {
+      return undefined;
+    }
+
+    if (!viewport) {
+      return targets;
+    }
+
+    const commentRanges = targets.some((presenceItem) => {
+      return presenceItem.commentThreadIndex != null;
+    })
+      ? commentStateSprig.read(store).ranges
+      : [];
+
+    return resolvePresenceViewport(documentIndex, viewport, targets, commentRanges);
+  },
+  equalPresence,
+);
+
+export const commentPresenceColorsSprig = createParameterizedSprig(
+  [documentIndexSprig],
+  (
+    store,
+    [userPresence]: readonly [DocumentUserPresence[] | undefined],
+  ): ReadonlyMap<number, string | null> => {
+    const presence = presenceTargetsSprig.read(store, userPresence);
+    const colors = new Map<number, string | null>();
+
+    for (const presenceItem of presence ?? []) {
+      if (presenceItem.commentThreadIndex != null && !colors.has(presenceItem.commentThreadIndex)) {
+        colors.set(presenceItem.commentThreadIndex, presenceItem.color ?? null);
+      }
+    }
+
+    return colors;
+  },
+  equalMapBy<number, string | null>(),
+);

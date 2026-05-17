@@ -13,7 +13,6 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
 `);
   const runtime = createDocumentIndex(snapshot);
 
-  expect(runtime.engine).toBe("canvas");
   expect(runtime.blocks.map((block) => block.type)).toEqual([
     "heading",
     "paragraph",

@@ -19,7 +19,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { type DocumentImageResource, type DocumentResources } from "@/types";
 import type { DocumentStorage } from "../lib/storage";
-import { imageUrlsValue, useStoreValue } from "../store";
+import { imageUrlsSprig, useSprig } from "../store";
 
 export type ImagesApi = {
   resources: DocumentResources | null;
@@ -27,7 +27,7 @@ export type ImagesApi = {
 };
 
 export function useImages(storage: DocumentStorage): ImagesApi {
-  const imageUrls = useStoreValue(imageUrlsValue);
+  const imageUrls = useSprig(imageUrlsSprig);
   const [imageResources, setImageResources] = useState<Map<string, DocumentImageResource>>(
     new Map(),
   );

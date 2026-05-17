@@ -2,8 +2,8 @@
  * Immutable CRUD operations and queries for comment threads.
  */
 
-import type { TextAnchor } from "../anchors";
-import { nodeId } from "../document";
+import { structuralId } from "../build/normalize";
+import type { TextAnchor } from "../query/anchors";
 import type { Comment, CommentThread } from "./types";
 
 export function createCommentThread(options: {
@@ -112,7 +112,7 @@ export function markCommentThreadAsResolved(
   };
 }
 
-export function isResolvedCommentThread(thread: CommentThread) {
+export function isResolvedCommentThread(thread: CommentThread): boolean {
   return thread.resolvedAt != null;
 }
 
@@ -133,18 +133,17 @@ export function createCommentThreadId(
   body: string,
   updatedAt: string,
   path = "comments",
-) {
-  return nodeId(
-    "commentThread",
-    path,
-    `${anchor.kind ?? ""}:${anchor.prefix ?? ""}:${anchor.suffix ?? ""}:${quote}:${body}:${updatedAt}`,
-  );
+): string {
+  // Seed recipe lives here so the build/ layer doesn't have to know about
+  // comment-domain field shapes. Order of segments is part of the persisted
+  // id contract — changing it invalidates every existing thread id.
+  const seed = `${anchor.kind ?? ""}:${anchor.prefix ?? ""}:${anchor.suffix ?? ""}:${quote}:${body}:${updatedAt}`;
+  return structuralId("commentThread", path, seed);
 }
 
 function createComment(options: { body: string; updatedAt?: string }): Comment {
-  const updatedAt = options.updatedAt ?? new Date().toISOString();
   return {
     body: options.body,
-    updatedAt,
+    updatedAt: options.updatedAt ?? new Date().toISOString(),
   };
 }

@@ -5,10 +5,11 @@ import {
   childContainerPath,
   createDocument,
   createParagraphTextBlock,
-  replaceDocumentBlock,
-  rootBlockPath,
+  mapBlockTree,
   resolveCommentThread,
+  rootBlockPath,
   sourcePath,
+  spliceDocument,
   tableCellPath,
   tableRowPath,
   type Block,
@@ -358,7 +359,6 @@ function appendDocumentIndexRoot(
         ? model.commentContainerIndex
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
-    engine: "canvas",
     imageUrls: appendDocumentImageUrls(model.imageUrls, positionedRoot.imageUrls),
     length: positionedRoot.end,
     listItemMarkers:
@@ -391,6 +391,10 @@ export function replaceIndexedDocument(model: DocumentIndex, document: Document)
   return createResolvedDocumentIndex(document, model.roots, model);
 }
 
+// Replace a single block (by id) inside the document, rebuilding the
+// containing root via the shared `mapBlockTree` primitive and committing
+// the change with `spliceDocument`. Uses `blockIndex` to skip the cross-root
+// scan — the block index already knows which root holds the target.
 export function replaceEditorBlock(
   documentIndex: DocumentIndex,
   targetBlockId: string,
@@ -402,12 +406,26 @@ export function replaceEditorBlock(
     return null;
   }
 
-  return replaceDocumentBlock(
-    documentIndex.document,
-    targetBlockId,
-    replacer,
-    blockEntry.rootIndex,
-  );
+  const rootBlock = documentIndex.document.blocks[blockEntry.rootIndex];
+
+  if (!rootBlock) {
+    return null;
+  }
+
+  let found = false;
+  const nextRoots = mapBlockTree([rootBlock], (block, { recurse }) => {
+    if (block.id === targetBlockId) {
+      found = true;
+      return replacer(block);
+    }
+    return recurse();
+  });
+
+  if (!found) {
+    return null;
+  }
+
+  return spliceDocument(documentIndex.document, blockEntry.rootIndex, 1, nextRoots);
 }
 
 function createResolvedDocumentIndex(
@@ -428,7 +446,6 @@ function createResolvedDocumentIndex(
         ? previousModel.commentContainerIndex
         : createCommentContainerIndex(document),
     document,
-    engine: "canvas",
     imageUrls: createDocumentImageUrls(roots, previousModel?.imageUrls),
     length: roots.at(-1)?.end ?? 0,
     listItemMarkers:

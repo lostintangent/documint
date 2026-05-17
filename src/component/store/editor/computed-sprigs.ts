@@ -7,6 +7,7 @@ import {
   measureInlineImageBounds,
   measureVisualCaretTarget,
   normalizeSelection,
+  resolveActiveCommentIndex,
   resolveCursorViewportStatus,
   resolveImageAtSelection,
   resolveTargetAtSelection,
@@ -38,22 +39,19 @@ import {
   type TableLeaf,
   type ThreadLeaf,
 } from "../../overlays/leaves/core/shared";
-import {
-  createParameterizedStoreComputedValue as parameterizedComputedValue,
-  createStoreRecordValue as recordValue,
-  createStoreComputedValue as computedValue,
-} from "../core/computed";
+import { createComputedSprig, createParameterizedSprig, createRecordSprig } from "../core/computed";
 import {
   equalArrayBy,
+  equalArraysByIdentity,
+  equalCommentRanges,
   equalCommentStates,
   equalNullableBy,
-  equalMarks,
   equalNormalizedSelections,
   equalSelectionContexts,
 } from "../core/equality";
-import type { DocumintStoreValue } from "../core/values";
-import { publishedViewportValue } from "../viewport/values";
-import { editorStateValue } from "./values";
+import type { DocumintSprig } from "../core/sprigs";
+import { publishedViewportSprig } from "../viewport/sprigs";
+import { documentIndexSprig, editorStateSprig, selectionSprig } from "./sprigs";
 
 export type { DocumentCompletion } from "../../completions/document-completions";
 
@@ -64,7 +62,7 @@ type SelectionHandles = {
   start: { left: number; top: number };
 } | null;
 
-type CommentLiveRanges = ReturnType<typeof getCommentState>["liveRanges"];
+type CommentRanges = ReturnType<typeof getCommentState>["ranges"];
 type ContextualLeaf = LinkLeaf | ThreadLeaf;
 
 export type PromotedSelectionThread = {
@@ -114,50 +112,67 @@ const equalSelectionHandles = equalNullableBy<NonNullable<SelectionHandles>>((ha
   handles.end.top,
 ]);
 
+const equalCaretTargets = equalNullableBy<CaretTarget>((target) => [
+  target.blockId,
+  target.regionId,
+  target.height,
+  target.left,
+  target.offset,
+  target.top,
+]);
+
+const equalImageAtCursors = equalNullableBy<ImageAtCursor>((target) => [
+  target.maxWidth,
+  target.bounds.left,
+  target.bounds.top,
+  target.bounds.width,
+  target.bounds.height,
+]);
+
 function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting) {
-  return a.code === b.code && equalMarks(a.marks, b.marks);
+  return a.code === b.code && equalArraysByIdentity(a.marks, b.marks);
 }
 
-export const commentStateValue = computedValue(
-  [editorStateValue] as const,
+export const commentStateSprig = createComputedSprig(
+  [editorStateSprig],
   (_store, state) => getCommentState(state),
   equalCommentStates,
 );
 
-const commentThreadsValue = computedValue(
-  [commentStateValue] as const,
+const commentThreadsSprig = createComputedSprig(
+  [commentStateSprig],
   (_store, commentState) => commentState.threads,
   equalArrayBy(Object.is),
 );
 
-const commentLiveRangesValue = computedValue(
-  [commentStateValue] as const,
-  (_store, commentState) => commentState.liveRanges,
-  equalCommentLiveRanges,
+const commentRangesSprig = createComputedSprig(
+  [commentStateSprig],
+  (_store, commentState) => commentState.ranges,
+  equalCommentRanges,
 );
 
 /* Selection */
 
-export const normalizedSelectionValue = computedValue(
-  [editorStateValue] as const,
-  (_store, state) => normalizeSelection(state),
+export const normalizedSelectionSprig = createComputedSprig(
+  [documentIndexSprig, selectionSprig],
+  (_store, documentIndex, selection) => normalizeSelection(documentIndex, selection),
   equalNormalizedSelections,
 );
 
-const selectionRangeValue = computedValue(
-  [editorStateValue] as const,
+const selectionRangeSprig = createComputedSprig(
+  [editorStateSprig],
   (_store, state) => getSelectionRange(state),
   equalSelectionRanges,
 );
 
-const selectionFormattingValue = computedValue(
-  [editorStateValue] as const,
+const selectionFormattingSprig = createComputedSprig(
+  [editorStateSprig],
   (_store, state) => getSelectionFormatting(state),
   equalSelectionFormatting,
 );
 
-const selectionHandlesValue = computedValue(
-  [editorStateValue, normalizedSelectionValue, publishedViewportValue] as const,
+const selectionHandlesSprig = createComputedSprig(
+  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
   (_store, state, normalizedSelection, viewport) => {
     if (!viewport) {
       return null;
@@ -168,21 +183,16 @@ const selectionHandlesValue = computedValue(
   equalSelectionHandles,
 );
 
-export const selectionViewValue: DocumintStoreValue<SelectionView> = recordValue({
-  formatting: selectionFormattingValue,
-  handles: selectionHandlesValue,
-  normalized: normalizedSelectionValue,
-  range: selectionRangeValue,
-  viewport: publishedViewportValue,
+export const selectionViewSprig: DocumintSprig<SelectionView> = createRecordSprig({
+  formatting: selectionFormattingSprig,
+  handles: selectionHandlesSprig,
+  normalized: normalizedSelectionSprig,
+  range: selectionRangeSprig,
+  viewport: publishedViewportSprig,
 });
 
-export const selectionLeafValue = parameterizedComputedValue(
-  [
-    selectionRangeValue,
-    selectionFormattingValue,
-    selectionHandlesValue,
-    commentThreadsValue,
-  ] as const,
+export const selectionLeafSprig = createParameterizedSprig(
+  [selectionRangeSprig, selectionFormattingSprig, selectionHandlesSprig, commentThreadsSprig],
   (
     _store,
     [promotedThread]: readonly [PromotedSelectionThread | null],
@@ -204,14 +214,14 @@ export const selectionLeafValue = parameterizedComputedValue(
 
 /* Cursor */
 
-export const cursorLeafValue = parameterizedComputedValue(
+export const cursorLeafSprig = createParameterizedSprig(
   [
-    editorStateValue,
-    normalizedSelectionValue,
-    publishedViewportValue,
-    commentThreadsValue,
-    commentLiveRangesValue,
-  ] as const,
+    editorStateSprig,
+    normalizedSelectionSprig,
+    publishedViewportSprig,
+    commentThreadsSprig,
+    commentRangesSprig,
+  ],
   (
     _store,
     [isEditable]: readonly [boolean],
@@ -219,7 +229,7 @@ export const cursorLeafValue = parameterizedComputedValue(
     normalizedSelection,
     viewport,
     threads,
-    liveRanges,
+    ranges,
   ): CursorLeaf | null => {
     if (!viewport) {
       return null;
@@ -227,7 +237,7 @@ export const cursorLeafValue = parameterizedComputedValue(
 
     return resolveCursorLeaf({
       isEditable,
-      liveRanges,
+      ranges,
       normalizedSelection,
       state,
       threads,
@@ -237,8 +247,8 @@ export const cursorLeafValue = parameterizedComputedValue(
   equalCursorLeaves,
 );
 
-export const caretInViewportValue = computedValue(
-  [editorStateValue, normalizedSelectionValue, publishedViewportValue] as const,
+export const caretInViewportSprig = createComputedSprig(
+  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
   (_store, state, normalizedSelection, viewport): boolean => {
     if (!viewport) {
       return true;
@@ -249,8 +259,8 @@ export const caretInViewportValue = computedValue(
   },
 );
 
-export const caretTargetValue = computedValue(
-  [editorStateValue, normalizedSelectionValue, publishedViewportValue] as const,
+export const caretTargetSprig = createComputedSprig(
+  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
   (_store, state, normalizedSelection, viewport): CaretTarget | null => {
     if (!viewport) {
       return null;
@@ -261,8 +271,8 @@ export const caretTargetValue = computedValue(
   equalCaretTargets,
 );
 
-export const documentCompletionValue = parameterizedComputedValue(
-  [editorStateValue] as const,
+export const documentCompletionSprig = createParameterizedSprig(
+  [editorStateSprig],
   (
     _store,
     [completionSources]: readonly [CompletionSource[] | undefined],
@@ -273,48 +283,34 @@ export const documentCompletionValue = parameterizedComputedValue(
   equalDocumentCompletions,
 );
 
-export const completionSourcesValue = parameterizedComputedValue(
-  [] as const,
+export const completionSourcesSprig = createParameterizedSprig(
+  [],
   (_store, [users]: readonly [readonly DocumentUser[] | undefined]): CompletionSource[] => {
     const mentionSource = createMentionCompletionSource(users);
     return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
   },
-  equalCompletionSourceLists,
+  equalArrayBy(equalCompletionSources),
 );
-
-function equalCompletionSourceLists(
-  previous: CompletionSource[] | null | undefined,
-  next: CompletionSource[] | null | undefined,
-) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-
-  return (
-    previous.length === next.length &&
-    previous.every((source, index) => equalCompletionSources(source, next[index]))
-  );
-}
 
 /* Pointer */
 
-export const pointerViewValue = parameterizedComputedValue(
-  [editorStateValue, publishedViewportValue, commentThreadsValue, commentLiveRangesValue] as const,
+export const pointerViewSprig = createParameterizedSprig(
+  [editorStateSprig, commentThreadsSprig, commentRangesSprig],
   (
     _store,
     [hoverTarget]: readonly [EditorHoverTarget | null],
     state,
-    viewport,
     threads,
-    liveRanges,
+    ranges,
   ): PointerView => {
     const target =
-      hoverTarget?.kind === "link" && viewport
-        ? resolveTargetAtSelection(state, viewport, {
+      hoverTarget?.kind === "link"
+        ? resolveTargetAtSelection(state, {
             regionId: hoverTarget.regionId,
             offset: resolveLinkInteriorOffset(hoverTarget),
           })
         : hoverTarget;
-    const leaf = resolveContextualLeaf(target, threads, liveRanges);
+    const leaf = resolveContextualLeaf(target, threads, ranges);
     const cursor =
       hoverTarget?.kind === "task-toggle" || leaf?.kind === "link" ? "pointer" : "text";
 
@@ -325,16 +321,16 @@ export const pointerViewValue = parameterizedComputedValue(
 
 /* Host */
 
-export const selectionContextValue = computedValue(
-  [editorStateValue] as const,
+export const selectionContextSprig = createComputedSprig(
+  [editorStateSprig],
   (_store, state) => getSelectionContext(state),
   equalSelectionContexts,
 );
 
 /* Images */
 
-export const imageAtCursorValue = parameterizedComputedValue(
-  [editorStateValue, normalizedSelectionValue, publishedViewportValue] as const,
+export const imageAtCursorSprig = createParameterizedSprig(
+  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
   (
     _store,
     [resources]: readonly [DocumentResources | null],
@@ -373,19 +369,6 @@ function resolveImageAtCursor(
     : null;
 
   return bounds ? { bounds, inline: imageInline, maxWidth } : null;
-}
-
-function equalImageAtCursors(previous: ImageAtCursor | null, next: ImageAtCursor | null) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-
-  return (
-    previous.maxWidth === next.maxWidth &&
-    previous.bounds.left === next.bounds.left &&
-    previous.bounds.top === next.bounds.top &&
-    previous.bounds.width === next.bounds.width &&
-    previous.bounds.height === next.bounds.height
-  );
 }
 
 function resolveSelectionHandles(
@@ -505,14 +488,14 @@ function equalSelectionLeaves(previous: SelectionLeaf | null, next: SelectionLea
 
 function resolveCursorLeaf({
   isEditable,
-  liveRanges,
+  ranges,
   normalizedSelection,
   state,
   threads,
   viewport,
 }: {
   isEditable: boolean;
-  liveRanges: CommentLiveRanges;
+  ranges: CommentRanges;
   normalizedSelection: NormalizedEditorSelection;
   state: EditorState;
   threads: ReturnType<typeof getCommentState>["threads"];
@@ -530,17 +513,23 @@ function resolveCursorLeaf({
     return insertionLeaf;
   }
 
+  const contextualLeaf = resolveContextualLeaf(
+    resolveTargetAtSelection(state, focus),
+    threads,
+    ranges,
+  );
+
+  if (contextualLeaf) {
+    return contextualLeaf;
+  }
+
   const tableLeaf = isEditable ? resolveTableLeaf(state, viewport) : null;
 
   if (tableLeaf) {
     return tableLeaf;
   }
 
-  return resolveContextualLeaf(
-    resolveTargetAtSelection(state, viewport, focus),
-    threads,
-    liveRanges,
-  );
+  return null;
 }
 
 function resolveTableLeaf(state: EditorState, viewport: EditorLayoutState): TableLeaf | null {
@@ -631,36 +620,6 @@ function equalCursorLeaves(previous: CursorLeaf | null, next: CursorLeaf | null)
   }
 }
 
-function equalCommentLiveRanges(previous: CommentLiveRanges, next: CommentLiveRanges) {
-  if (previous === next) return true;
-  if (previous.length !== next.length) return false;
-
-  return previous.every((range, index) => {
-    const nextRange = next[index]!;
-    return (
-      range.endOffset === nextRange.endOffset &&
-      range.regionId === nextRange.regionId &&
-      range.resolved === nextRange.resolved &&
-      range.startOffset === nextRange.startOffset &&
-      range.threadIndex === nextRange.threadIndex
-    );
-  });
-}
-
-function equalCaretTargets(previous: CaretTarget | null, next: CaretTarget | null) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-
-  return (
-    previous.blockId === next.blockId &&
-    previous.regionId === next.regionId &&
-    previous.height === next.height &&
-    previous.left === next.left &&
-    previous.offset === next.offset &&
-    previous.top === next.top
-  );
-}
-
 function resolveLinkInteriorOffset(target: Extract<EditorHoverTarget, { kind: "link" }>) {
   return target.startOffset < target.endOffset ? target.startOffset + 1 : target.startOffset;
 }
@@ -702,81 +661,7 @@ function equalContextualLeaves(previous: ContextualLeaf, next: ContextualLeaf) {
   }
 }
 
-export const activeCommentThreadIndexValue = computedValue(
-  [editorStateValue, commentStateValue] as const,
-  (_store, state, commentState) => resolveActiveCommentThreadIndex(state, commentState.liveRanges),
+export const activeCommentIndexSprig = createComputedSprig(
+  [editorStateSprig, commentStateSprig],
+  (_store, state, commentState) => resolveActiveCommentIndex(state, commentState.ranges),
 );
-
-function resolveActiveCommentThreadIndex(
-  state: {
-    documentIndex: {
-      regions: Array<{
-        id: string;
-      }>;
-    };
-    selection: {
-      anchor: {
-        offset: number;
-        regionId: string;
-      };
-      focus: {
-        offset: number;
-        regionId: string;
-      };
-    };
-  },
-  liveRanges: Array<{
-    endOffset: number;
-    regionId: string;
-    startOffset: number;
-    threadIndex: number;
-  }>,
-) {
-  const regionOrderIndex = new Map(
-    state.documentIndex.regions.map((region, index) => [region.id, index]),
-  );
-  const anchorOrder = resolveSelectionPointOrder(
-    regionOrderIndex,
-    state.selection.anchor.regionId,
-    state.selection.anchor.offset,
-  );
-  const focusOrder = resolveSelectionPointOrder(
-    regionOrderIndex,
-    state.selection.focus.regionId,
-    state.selection.focus.offset,
-  );
-  const [selectionStart, selectionEnd] =
-    anchorOrder <= focusOrder ? [anchorOrder, focusOrder] : [focusOrder, anchorOrder];
-  const isCollapsed = anchorOrder === focusOrder;
-
-  for (const range of liveRanges) {
-    const rangeStart = resolveSelectionPointOrder(
-      regionOrderIndex,
-      range.regionId,
-      range.startOffset,
-    );
-    const rangeEnd = resolveSelectionPointOrder(regionOrderIndex, range.regionId, range.endOffset);
-
-    if (isCollapsed) {
-      if (selectionStart >= rangeStart && selectionStart <= rangeEnd) {
-        return range.threadIndex;
-      }
-
-      continue;
-    }
-
-    if (Math.max(selectionStart, rangeStart) < Math.min(selectionEnd, rangeEnd)) {
-      return range.threadIndex;
-    }
-  }
-
-  return null;
-}
-
-function resolveSelectionPointOrder(
-  regionOrderIndex: Map<string, number>,
-  regionId: string,
-  offset: number,
-) {
-  return (regionOrderIndex.get(regionId) ?? -1) * 1_000_000 + offset;
-}

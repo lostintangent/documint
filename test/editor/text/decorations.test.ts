@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import {
-  createCanvasRenderCache,
+  createLayoutCache,
   hasAnimatedDecorations,
   hasAnimatedDecorationsInViewport,
-  prepareLayout,
+  createEditorLayoutState,
 } from "@/editor";
 import { getRegion, setup } from "../helpers";
 
@@ -49,8 +49,8 @@ test("detects animated text decorations", () => {
 test("detects animated text decorations in the visible viewport", () => {
   const state = setup("alpha\n\nbeta\n\nsparkle\n\nomega\n");
   const region = getRegion(state, "sparkle");
-  const renderCache = createCanvasRenderCache();
-  const viewport = prepareLayout(state, { height: 400, top: 0, width: 320 }, renderCache);
+  const layoutCache = createLayoutCache();
+  const viewport = createEditorLayoutState(state, { height: 400, top: 0, width: 320 }, layoutCache);
   const targetLine = viewport.layout.lines.find((line) => line.regionId === region.id);
 
   if (!targetLine) {
@@ -92,10 +92,10 @@ test("detects animated text decorations in the visible viewport", () => {
   );
   expect(hasAnimatedDecorationsInViewport(state, targetViewport, textDecorations)).toBe(true);
 
-  const scrolledViewport = prepareLayout(
+  const scrolledViewport = createEditorLayoutState(
     state,
     { height: targetLine.height, top: targetLine.top, width: 320 },
-    renderCache,
+    layoutCache,
   );
 
   expect(hasAnimatedDecorationsInViewport(state, scrolledViewport, textDecorations)).toBe(true);

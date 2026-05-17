@@ -1,12 +1,12 @@
-// Owns the cheap per-unit height estimates the planner uses for whole-document
-// height. Estimation tolerates text underestimation within overscan but not
-// structural overestimation: the exact pass must always be free to extend
-// past the planner's predicted bottom.
+// Owns cheap per-region height estimates for large-document virtualization.
+// Estimation tolerates text underestimation within overscan but not structural
+// overestimation: the exact pass must always be free to extend past the
+// estimated bottom.
 
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { EditorRegion } from "../../state";
-import type { CanvasRenderCache } from "../../canvas/lib/cache";
+import type { LayoutCache } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
 import { estimateLayout } from "../measure";
 import {
@@ -17,7 +17,7 @@ import {
 } from "../measure/text";
 
 export function estimateContainerHeight(
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   container: EditorRegion,
   block: Block | null,
   depth: number,

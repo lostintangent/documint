@@ -2,9 +2,26 @@
 // mutations. Action resolvers declare semantic animation intent; the reducer
 // materializes that intent after the edit has produced the next immutable
 // state. Paint resolves the resulting descriptors frame-by-frame.
+//
+// State owns the model-lifetime half of animations: the descriptor types,
+// the duration table that drives pruning, and the running-animations
+// predicate the host uses to gate frame scheduling. Paint-time resolution
+// (mapping descriptors to per-frame `{ ...descriptor, progress }` values and
+// blending colors) lives in `canvas/lib/animations`.
 
-import { getEditorAnimationDuration } from "../../canvas/lib/animations";
 import type { AnimationIntent, EditorState } from "../types";
+
+// --- Duration table ---
+//
+// Animation durations are model-lifetime policy: the reducer prunes by them
+// and the host schedules frames by them. Paint also reads them to compute
+// per-frame `progress`, but the source of truth is here.
+
+const activeBlockFlashDurationMs = 300;
+const textFadeDurationMs = 180;
+const textHighlightDurationMs = 1000;
+const blockPulseDurationMs = 500;
+const textPulseDurationMs = 140;
 
 // --- Animation types ---
 
@@ -49,6 +66,29 @@ export type TextPulseAnimation = {
   regionPath: string;
   startedAt: number;
 };
+
+export function getEditorAnimationDuration(animation: EditorAnimation) {
+  switch (animation.kind) {
+    case "active-block-flash":
+      return activeBlockFlashDurationMs;
+    case "text-fade":
+      return textFadeDurationMs;
+    case "text-highlight":
+      return textHighlightDurationMs;
+    case "block-pulse":
+      return blockPulseDurationMs;
+    case "text-pulse":
+      return textPulseDurationMs;
+  }
+}
+
+export function hasRunningEditorAnimations(state: EditorState, now?: number) {
+  const animationTime = now ?? getEditorAnimationTime();
+
+  return state.animations.some(
+    (animation) => animationTime - animation.startedAt < getEditorAnimationDuration(animation),
+  );
+}
 
 // --- Intent materialization ---
 

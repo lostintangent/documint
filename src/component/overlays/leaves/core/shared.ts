@@ -143,7 +143,7 @@ export type CompletionLeaf = LeafBase & {
 export function resolveContextualLeaf(
   target: EditorHoverTarget | null,
   threads: EditorCommentState["threads"],
-  liveRanges: EditorCommentState["liveRanges"],
+  ranges: EditorCommentState["ranges"],
 ): ThreadLeaf | LinkLeaf | null {
   if (!target || target.kind === "task-toggle") {
     return null;
@@ -153,7 +153,7 @@ export function resolveContextualLeaf(
     const thread = threads[target.commentThreadIndex] ?? null;
     // Comment leaves anchor to the start of the comment range, not the
     // hover point.
-    const range = liveRanges.find((entry) => entry.threadIndex === target.commentThreadIndex);
+    const range = ranges.find((entry) => entry.threadIndex === target.commentThreadIndex);
     if (!thread || !range) {
       return null;
     }

@@ -2,66 +2,69 @@
 // `Document`. Compound-fixture round-trips live in `roundtrip.test.ts`.
 
 import { describe, expect, test } from "bun:test";
-import { insertLineBreak } from "@/editor/state";
-import { createDocumentFromEditorState, createEditorState, setSelection } from "@/editor/state";
+import {
+  createDocument,
+  createListBlock,
+  createListItemBlock,
+  createParagraphBlock,
+  createText,
+} from "@/document";
 import { parseDocument, serializeDocument } from "@/markdown";
 import { expectBlockAt } from "../document/helpers";
-import { expectRoundTrip } from "./helpers";
+import { expectRoundTrip, expectStableRoundTrip } from "./helpers";
 
 describe("Inline canonicalization", () => {
+  // --- Marks ---
   test("canonicalizes underscore italic to asterisks", () => {
-    const document = parseDocument("_foo_\n");
-
-    expect(serializeDocument(document)).toBe("*foo*\n");
+    expect(serializeDocument(parseDocument("_foo_\n"))).toBe("*foo*\n");
   });
 
   test("emits underline marks as ins html", () => {
     expectRoundTrip("Paragraph with <ins>underline</ins> text.\n");
   });
 
+  test("defensively escapes intra-word underscores so the next parse stays plain text", () => {
+    // The serializer escapes literal underscores to `\_`; reparsing strips
+    // the backslashes; the second serialize emits the escaped form again.
+    // Locks down that the escape doesn't run away across round trips.
+    expect(serializeDocument(parseDocument("snake_case_identifier\n"))).toBe(
+      "snake\\_case\\_identifier\n",
+    );
+    expectStableRoundTrip("snake\\_case\\_identifier\n");
+  });
+
   test("preserves unmatched ins html as authored markdown", () => {
     expectRoundTrip("Paragraph with <ins>unfinished underline text.\n");
   });
 
-  test("emits hard line breaks as canonical <br> tags", () => {
-    // All three CommonMark hard-break inputs canonicalize to bare `<br>`.
-    // We don't append `\n` because that would break table cells (which
-    // must stay single-line) and inflate diffs in any context where the
-    // surrounding parser doesn't reflow paragraph lines.
-    expect(serializeDocument(parseDocument("a<br>b\n"))).toBe("a<br>b\n");
-    expect(serializeDocument(parseDocument("a<br>\nb\n"))).toBe("a<br>b\n");
-    expect(serializeDocument(parseDocument("a  \nb\n"))).toBe("a<br>b\n");
-    expect(serializeDocument(parseDocument("a\\\nb\n"))).toBe("a<br>b\n");
+  // --- Line breaks ---
+  // All four hard-break input forms canonicalize to a bare `<br>`. Omitting
+  // a trailing `\n` keeps table cells single-line and avoids inflating
+  // diffs in any renderer that doesn't reflow paragraph lines.
+  test.each([
+    ["bare <br>", "a<br>b\n"],
+    ["<br>\\n (parser absorbs trailing newline)", "a<br>\nb\n"],
+    ["two-or-more trailing spaces", "a  \nb\n"],
+    ["backslash-newline", "a\\\nb\n"],
+  ])("emits %s as canonical <br>", (_label, source) => {
+    expect(serializeDocument(parseDocument(source))).toBe("a<br>b\n");
   });
 
   test("preserves bare intra-paragraph newlines as soft breaks", () => {
     // Soft breaks must not be promoted to `<br>` on serialize — that would
     // change the rendering in every external markdown renderer.
-    const serialized = serializeDocument(parseDocument("a\nb\n"));
-
-    expect(serialized).not.toContain("<br>");
+    expect(serializeDocument(parseDocument("a\nb\n"))).not.toContain("<br>");
   });
 
-  test("defensively escapes intra-word underscores so the next parse stays plain text", () => {
-    // Stabilizes after one round trip: the serializer escapes literal
-    // underscores to `\_`; reparsing strips the backslashes; the second
-    // serialize emits the escaped form again. Locks down that the escape
-    // doesn't run away across repeated round trips.
-    const serialized = serializeDocument(parseDocument("snake_case_identifier\n"));
-
-    expect(serialized).toBe("snake\\_case\\_identifier\n");
-    expect(serializeDocument(parseDocument(serialized))).toBe(serialized);
-  });
-
+  // --- Mentions ---
   test("preserves user mention identity through markdown export", () => {
     expectRoundTrip("Hello @[Jane Doe](user-123).\n");
   });
 
   test("defensively escapes plain text that looks like a user mention", () => {
-    const serialized = serializeDocument(parseDocument("Literal \\@[Jane Doe](user-123).\n"));
-
-    expect(serialized).toBe("Literal \\@[Jane Doe](user-123).\n");
-    expect(serializeDocument(parseDocument(serialized))).toBe(serialized);
+    // `\@[label](dest)` must survive a round trip as itself — otherwise
+    // the reparse would promote the escaped text to a real mention.
+    expectStableRoundTrip("Literal \\@[Jane Doe](user-123).\n");
   });
 });
 
@@ -83,31 +86,28 @@ describe("Lists", () => {
     expectRoundTrip(source, { preserveOrderedListStart: true });
   });
 
-  test("preserves empty task list markers produced by an editor split", () => {
-    // Constructed via the editor's line-break path to verify the serializer
-    // preserves empty checkbox items that didn't come from parsed source.
-    // This is the only test in the markdown subsystem that crosses into the
-    // editor; it exists because the editor can produce Document shapes the
-    // parser never would, and the serializer needs to handle them too.
-    const editorState = createEditorState(parseDocument("- [ ] alpha\n"));
-    const container = editorState.documentIndex.regions.find((entry) => entry.text === "alpha");
-
-    if (!container) {
-      throw new Error("Expected task container");
-    }
-
-    const splitState = insertLineBreak(
-      setSelection(editorState, {
-        regionId: container.id,
-        offset: container.text.length,
+  test("preserves empty task list markers", () => {
+    // A task list whose second item has no content is a shape the parser
+    // would never produce on its own (an empty `- [ ]` line is normalized
+    // through the list parser into an empty-paragraph child), but the
+    // editor's structural-split path can — pressing Enter at the end of a
+    // task item creates exactly this Document. The serializer must keep
+    // both checkbox markers intact.
+    const document = createDocument([
+      createListBlock({
+        items: [
+          createListItemBlock({
+            checked: false,
+            children: [createParagraphBlock([createText("alpha")])],
+          }),
+          createListItemBlock({
+            checked: false,
+            children: [createParagraphBlock([])],
+          }),
+        ],
+        ordered: false,
       }),
-    );
-
-    if (!splitState) {
-      throw new Error("Expected structural split to succeed");
-    }
-
-    const document = createDocumentFromEditorState(splitState);
+    ]);
 
     expect(serializeDocument(document)).toBe("- [ ] alpha\n- [ ] \n");
   });
@@ -193,5 +193,35 @@ describe("Unsupported preservation", () => {
     const source = await Bun.file("test/goldens/unsupported-html.md").text();
 
     expectRoundTrip(source);
+  });
+});
+
+describe("Paragraph block-start escapes", () => {
+  // A paragraph whose first child text begins with a block-trigger sequence
+  // must escape that sequence on emit, otherwise the next parse would
+  // promote the line to a different block kind. The canonical form below is
+  // the escaped output; round-tripping it confirms both that the serializer
+  // applied the escape and that the parser's unescape covers each trigger.
+  test.each([
+    ["blockquote marker", "\\> not a quote\n"],
+    ["ATX heading", "\\# not a heading\n"],
+    ["bullet marker (-)", "\\- not a list\n"],
+    ["bullet marker (*)", "\\* not a list\n"],
+    ["bullet marker (+)", "\\+ not a list\n"],
+    ["ordered list marker", "1\\. not a list\n"],
+    ["container directive", "\\:::callout\n"],
+  ])("round-trips a paragraph that would otherwise reparse as %s", (_label, canonical) => {
+    expectRoundTrip(canonical);
+  });
+
+  test("leaves intra-line block-start characters alone", () => {
+    // The escapes are line-start only; embedded `>`, `#`, etc. stay plain.
+    expectRoundTrip("Text with > inside and 1. mid-line markers.\n");
+  });
+
+  test("does not escape bold delimiters as bullet markers", () => {
+    // `**bold**` shares its lead character with bullet `*` but has no
+    // following space, so the parser would never read it as a list.
+    expectRoundTrip("**bold** at line start.\n");
   });
 });

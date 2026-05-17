@@ -1,11 +1,11 @@
 import type { CaretTarget } from "@/editor";
 import { useEffect, useEffectEvent, useRef } from "react";
 import {
-  caretInViewportValue,
-  caretTargetValue,
-  cursorLeafValue,
-  normalizedSelectionValue,
-  useStoreValue,
+  caretInViewportSprig,
+  caretTargetSprig,
+  cursorLeafSprig,
+  normalizedSelectionSprig,
+  useSprig,
   type CursorLeaf,
 } from "../store";
 
@@ -15,7 +15,6 @@ type UseCursorOptions = {
   activeAt: number | null;
   isEditable: boolean;
   layoutWidth: number;
-  scrollContentHeight: number;
   viewportHeight: number;
 
   // Host callbacks the hook invokes.
@@ -40,7 +39,6 @@ type FocusVisibilityRequest = {
   layoutWidth: number;
   offset: number;
   regionId: string;
-  scrollContentHeight: number;
   viewportHeight: number;
 };
 
@@ -89,16 +87,15 @@ export function useCursor({
   isEditable,
   layoutWidth,
   onVisibilityChange,
-  scrollContentHeight,
   scrollTo,
   viewportHeight,
 }: UseCursorOptions): CursorController {
   /* Internal state */
 
-  const normalizedSel = useStoreValue(normalizedSelectionValue);
-  const leaf = useStoreValue(cursorLeafValue, isEditable);
-  const caretInViewport = useStoreValue(caretInViewportValue);
-  const caretTarget = useStoreValue(caretTargetValue);
+  const normalizedSel = useSprig(normalizedSelectionSprig);
+  const leaf = useSprig(cursorLeafSprig, isEditable);
+  const caretInViewport = useSprig(caretInViewportSprig);
+  const caretTarget = useSprig(caretTargetSprig);
   const shouldBlinkCaret =
     normalizedSel.start.regionId === normalizedSel.end.regionId &&
     normalizedSel.start.offset === normalizedSel.end.offset;
@@ -123,7 +120,6 @@ export function useCursor({
       layoutWidth,
       offset: focus.offset,
       regionId: focus.regionId,
-      scrollContentHeight,
       viewportHeight,
     };
 
@@ -170,7 +166,6 @@ export function useCursor({
     layoutWidth,
     normalizedSel.end.offset,
     normalizedSel.end.regionId,
-    scrollContentHeight,
     viewportHeight,
   ]);
 
@@ -220,7 +215,6 @@ function areFocusVisibilityRequestsEqual(
     previous?.layoutWidth === next.layoutWidth &&
     previous.regionId === next.regionId &&
     previous.offset === next.offset &&
-    previous.scrollContentHeight === next.scrollContentHeight &&
     previous.viewportHeight === next.viewportHeight
   );
 }

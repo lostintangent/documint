@@ -1,3 +1,7 @@
+## 🗓️ v0.0.16 (05-17-26)
+
+- Various performance improvements for scrolling/editing large documents
+
 ## 🗓️ v0.0.16 (05-15-26)
 
 - Added support for presence indicators to be anchored to comment threads, in addition to text positions.

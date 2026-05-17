@@ -1,8 +1,13 @@
-// Owns cached canvas font metrics for paint. Different browsers and platforms
-// place the same font differently enough that paint should use measured ascent
-// and descent when available instead of assuming the em box matches font size.
+// Owns cached text measurement primitives shared by layout and canvas.
+// Different browsers and platforms place the same font differently enough
+// that callers should use measured ascent/descent when available instead of
+// assuming the em box matches font size.
+//
+// Implementation uses an OffscreenCanvas (or DOM canvas) for measurement;
+// that's a detail. Consumers (layout caret math, canvas painters) ask in
+// terms of font strings and lengths, not pixels.
 
-type CanvasFontMetrics = {
+export type FontMetrics = {
   ascent: number;
   descent: number;
   emHeight: number;
@@ -11,15 +16,15 @@ type CanvasFontMetrics = {
 const fallbackMetricsSample = "Hg";
 const minimumFallbackEmHeight = 12;
 
-let cachedFontMetrics: Map<string, CanvasFontMetrics> | null = null;
+let cachedFontMetrics: Map<string, FontMetrics> | null = null;
 
-export function resolveCanvasFontSize(font: string) {
+export function resolveFontSize(font: string) {
   const match = /(\d+(?:\.\d+)?)\s*px/.exec(font);
 
   return match ? Number.parseFloat(match[1]!) : 16;
 }
 
-export function resolveCanvasFontMetrics(font: string): CanvasFontMetrics {
+export function resolveFontMetrics(font: string): FontMetrics {
   cachedFontMetrics ??= new Map();
 
   const cached = cachedFontMetrics.get(font);
@@ -29,10 +34,7 @@ export function resolveCanvasFontMetrics(font: string): CanvasFontMetrics {
   }
 
   const context = getTextMeasurementContext();
-  const fallbackEmHeight = Math.max(
-    minimumFallbackEmHeight,
-    Math.round(resolveCanvasFontSize(font)),
-  );
+  const fallbackEmHeight = Math.max(minimumFallbackEmHeight, Math.round(resolveFontSize(font)));
 
   context.font = font;
   const measurement = context.measureText(fallbackMetricsSample);
@@ -53,16 +55,27 @@ export function resolveCanvasFontMetrics(font: string): CanvasFontMetrics {
   return metrics;
 }
 
-export function resolveCanvasCenteredTextTop(lineHeight: number, font: string) {
-  const { emHeight } = resolveCanvasFontMetrics(font);
+export function resolveCenteredTextTop(lineHeight: number, font: string) {
+  const { emHeight } = resolveFontMetrics(font);
 
   return Math.max(0, Math.floor((lineHeight - emHeight) / 2));
 }
 
-export function resolveCanvasCenteredTextBaseline(lineHeight: number, font: string) {
-  const { ascent } = resolveCanvasFontMetrics(font);
+export function resolveCenteredTextBaseline(lineHeight: number, font: string) {
+  const { ascent } = resolveFontMetrics(font);
 
-  return resolveCanvasCenteredTextTop(lineHeight, font) + ascent;
+  return resolveCenteredTextTop(lineHeight, font) + ascent;
+}
+
+export function measureTextWidth(text: string, font: string) {
+  if (text.length === 0) {
+    return 0;
+  }
+
+  const context = getTextMeasurementContext();
+  context.font = font;
+
+  return context.measureText(text).width;
 }
 
 let textMeasurementContext:
@@ -70,17 +83,6 @@ let textMeasurementContext:
   | CanvasRenderingContext2D
   | undefined;
 
-export function measureCanvasTextWidth(text: string, font: string) {
-  const context = getTextMeasurementContext();
-
-  if (text.length === 0) {
-    return 0;
-  }
-
-  context.font = font;
-
-  return context.measureText(text).width;
-}
 function getTextMeasurementContext() {
   if (textMeasurementContext !== undefined) {
     return textMeasurementContext;
@@ -96,7 +98,7 @@ function getTextMeasurementContext() {
   const context = canvas?.getContext("2d");
 
   if (!context) {
-    throw new Error("Canvas font metrics require OffscreenCanvas or a DOM canvas context.");
+    throw new Error("Text measurement requires OffscreenCanvas or a DOM canvas context.");
   }
 
   textMeasurementContext = context;

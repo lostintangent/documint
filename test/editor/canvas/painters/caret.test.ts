@@ -1,12 +1,12 @@
-// Tests for the overlay-canvas caret painter. These exercise
-// `paintCanvasCaretOverlay` directly (rather than through the content paint
-// pipeline) since presence carets only ever land on the overlay layer.
+// Tests for the overlay-canvas caret painter. These exercise `paintOverlay`
+// — the public overlay entry — since presence carets only ever land on the
+// overlay layer.
 
 import { expect, test } from "bun:test";
 import type { EditorPresence } from "@/editor/anchors";
-import { paintCanvasCaretOverlay } from "@/editor/canvas";
-import { createDocumentLayout } from "@/editor/layout";
-import { setSelection, type EditorState } from "@/editor/state";
+import { paintOverlay } from "@/editor/canvas";
+import { createEditorLayoutState } from "@/editor/layout";
+import { normalizeSelection, setSelection, type EditorState } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
 import { findOperationIndex, RecordingCanvasContext } from "../helpers";
 import { setup } from "../../helpers";
@@ -89,28 +89,25 @@ function renderOverlayOperations(
     width: number;
   },
 ) {
-  const layout = createDocumentLayout(state.documentIndex, { width: options.width });
+  const layoutState = createEditorLayoutState(state, {
+    height: options.height,
+    top: 0,
+    width: options.width,
+  });
   const context = new RecordingCanvasContext();
 
-  paintCanvasCaretOverlay({
-    context: context as unknown as CanvasRenderingContext2D,
+  paintOverlay(state, layoutState, context as unknown as CanvasRenderingContext2D, {
     devicePixelRatio: 1,
-    editorState: state,
     height: options.height,
-    layout,
-    normalizedSelection: {
-      end: state.selection.focus,
-      start: state.selection.anchor,
-    },
+    normalizedSelection: normalizeSelection(state),
     presence: options.presence,
     showCaret: true,
     theme: lightTheme,
-    viewportTop: 0,
     width: options.width,
   });
 
   return {
     context,
-    layout,
+    layout: layoutState.layout,
   };
 }

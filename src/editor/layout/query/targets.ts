@@ -1,17 +1,17 @@
-// Owns interactive target resolution against a prepared `DocumentLayout`:
-// link hits, task-checkbox hits, hover targets (combining link/comment/text
-// kinds), and inline-image bounds. These take a known point or selection
-// point and answer "what's there to interact with?".
+// Owns interactive target resolution: link hits, task-checkbox hits, hover
+// targets (combining link/comment/text kinds), inline-image bounds, and the
+// offset-based target lookup that pairs with hover. Point-driven entries
+// run through hit-test against a prepared `DocumentLayout`; the offset-
+// driven entry is pure state/anchors (no geometry).
 
 import type { EditorCommentRange } from "../../anchors";
 import type { DocumentResources } from "@/types";
-import type { EditorInline, EditorSelectionPoint, EditorState } from "../../state";
+import { findAncestorBlockEntry, type EditorInline, type EditorState } from "../../state";
 import type { EditorLayoutState } from "..";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
 import { resolveInlineImageDimensions } from "../measure/image";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./lookup";
 import {
-  findBlockAncestor,
   resolveLineContentInset,
   resolveListItemMarker,
   resolveTaskCheckboxBounds,
@@ -67,7 +67,7 @@ export function resolveTaskCheckboxHitAtPoint(
     return null;
   }
 
-  const listItemEntry = findBlockAncestor(state, line.blockId, "listItem");
+  const listItemEntry = findAncestorBlockEntry(state.documentIndex, line.blockId, "listItem");
 
   if (!listItemEntry) {
     return null;
@@ -130,7 +130,7 @@ export function resolveHoverTargetAtPoint(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
-  liveCommentRanges: EditorCommentRange[],
+  commentRanges: EditorCommentRange[],
 ): EditorHoverTarget | null {
   const checkboxHit = resolveTaskCheckboxHitAtPoint(layout, state, point);
 
@@ -147,10 +147,10 @@ export function resolveHoverTargetAtPoint(
     return null;
   }
 
-  const commentThreadIndex = resolveCommentThreadIndexAtSelectionPoint(
+  const commentThreadIndex = resolveCommentThreadIndexAtOffset(
     hit.regionId,
     hit.offset,
-    liveCommentRanges,
+    commentRanges,
   );
   const linkHit = resolveLinkHitAtPoint(layout, state, point);
 
@@ -172,34 +172,34 @@ export function resolveHoverTargetAtPoint(
   };
 }
 
-export function resolveTargetAtSelectionPoint(
-  layout: DocumentLayout,
+// Resolves what user-actionable target sits at a given document offset —
+// link mark, comment thread, or nothing. Pure state/anchors query: no
+// layout geometry involved. Used when the position is already known
+// (selection, programmatic placement); the pointer-driven sibling
+// `resolveHoverTargetAtPoint` composes hit-test on top of this kind of
+// lookup.
+export function resolveTargetAtOffset(
   state: EditorState,
-  selectionPoint: EditorSelectionPoint,
-  liveCommentRanges: EditorCommentRange[],
+  regionId: string,
+  offset: number,
+  commentRanges: EditorCommentRange[],
 ): EditorHoverTarget | null {
-  const container = state.documentIndex.regionIndex.get(selectionPoint.regionId);
+  const container = state.documentIndex.regionIndex.get(regionId);
 
   if (!container) {
     return null;
   }
 
-  const commentThreadIndex = resolveCommentThreadIndexAtSelectionPoint(
-    selectionPoint.regionId,
-    selectionPoint.offset,
-    liveCommentRanges,
-  );
+  const commentThreadIndex = resolveCommentThreadIndexAtOffset(regionId, offset, commentRanges);
   const run =
-    container.inlines.find(
-      (entry) => selectionPoint.offset >= entry.start && selectionPoint.offset <= entry.end,
-    ) ?? null;
+    container.inlines.find((entry) => offset >= entry.start && offset <= entry.end) ?? null;
 
   if (run?.link) {
     return {
       commentThreadIndex,
       endOffset: run.end,
       kind: "link",
-      regionId: selectionPoint.regionId,
+      regionId,
       startOffset: run.start,
       title: run.link.title,
       url: run.link.url,
@@ -243,12 +243,12 @@ export function measureInlineImageBounds(
   return { left, top, width: right - left, height };
 }
 
-function resolveCommentThreadIndexAtSelectionPoint(
+function resolveCommentThreadIndexAtOffset(
   regionId: string,
   offset: number,
-  liveCommentRanges: EditorCommentRange[],
+  commentRanges: EditorCommentRange[],
 ) {
-  for (const range of liveCommentRanges) {
+  for (const range of commentRanges) {
     if (range.regionId === regionId && offset >= range.startOffset && offset <= range.endOffset) {
       return range.threadIndex;
     }

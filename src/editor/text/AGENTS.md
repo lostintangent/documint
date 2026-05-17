@@ -1,41 +1,22 @@
 # Editor Text
 
-This subsystem owns pure text semantics that are shared across editor
-subsystems. A helper belongs here only when multiple subsystems need the same
-meaning; text-related logic that has a single owner should stay with that
-owner.
+The text subsystem owns shared editor text semantics. A helper belongs here only when multiple editor subsystems need the same meaning; text-related logic with a single owner should stay with that owner.
 
-Keep browser and canvas side effects out of this folder. Canvas contexts,
-font metrics, render caches, and pixel placement stay in `canvas` or `layout`.
+Render caches and pixel placement stay in canvas or layout. Text measurement primitives live here only because both layout and canvas consume them; they may use browser canvas measurement internally, but the public surface should be font strings, text ranges, widths, and metrics rather than DOM or React concepts.
 
-### Key Areas
+## Design Principles
 
-- `graphemes.ts` - Owns user-visible text boundaries. Layout uses it to measure
-  fallback boundaries and map Pretext cursors back to editor UTF-16 offsets;
-  navigation uses it for left/right caret movement; and state uses it for
-  deletion so all text-coordinate movement agrees on the same character model.
+- **Shared meaning lives here.** Move text logic into this subsystem only when multiple editor subsystems need to agree on it.
+- **Single-owner policy stays put.** Do not move layout measurement policy, paint policy, DOM handling, or anchor resolution here just because the code touches text.
+- **Coordinates must be explicit.** Be clear whether a helper works in UTF-16 offsets, grapheme steps, editor selection offsets, line-local ranges, or document/container offsets.
+- **Measurement and font policy are shared primitives.** `measure.ts` and `fonts.ts` keep layout measurement and canvas drawing aligned without owning placement or paint. Browser-backed measurement should stay behind those APIs.
 
-- `words.ts` - Owns word-boundary expansion for text selection. Layout hit
-  testing maps pointer coordinates to an editor offset, then asks this module
-  for the word range so geometry stays separate from text segmentation policy.
+## Subsystem Map
 
-- `fonts.ts` - Owns pure font-string resolution from document marks and code
-  text policy. Layout uses
-  it before measurement and canvas uses it before painting, keeping measured and
-  rendered text styles in sync without moving canvas metrics or paint policy
-  into this subsystem.
-
-- `emoji.ts` - Owns color-emoji detection for editor text effects that need to
-  avoid color glyph rendering limitations. Layout relies on Pretext for
-  emoji-aware measurement and wrapping.
-
-- `decorations.ts` - Owns editor-level text decoration indexing by region path.
-  Component/worker code resolves semantic decoration matches; this module keeps
-  those text ranges reconciled with the current editor document index for paint.
-
-### Boundaries
-
-Avoid moving layout measurement, paint policy, DOM event handling, anchor
-resolution, or canvas font metrics here just because those files deal with
-text. Those concerns stay with their owning subsystem until they become shared
-editor text semantics.
+- `graphemes.ts` owns user-visible character boundaries.
+- `words.ts` owns word-boundary expansion after hit testing resolves a text offset.
+- `ranges.ts` owns shared overlap, containment, and clipping helpers.
+- `fonts.ts` owns font-string resolution from marks, inline code, and text policy.
+- `measure.ts` owns cached font metrics and text-width measurement.
+- `emoji.ts` owns color-emoji detection for paint effects.
+- `decorations.ts` owns editor-level text decoration indexing by region path.

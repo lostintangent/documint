@@ -5,14 +5,14 @@ import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { isContainerBlock, isInertBlock } from "../../navigation/flow";
 import type { DocumentIndex, EditorRegion } from "../../state";
-import { createCanvasRenderCache, type CanvasRenderCache } from "../../canvas/lib/cache";
+import { createLayoutCache, type LayoutCache } from "../state/cache";
 import {
   defaultDocumentLayoutOptions,
   resolveDocumentLayoutOptions,
   type DocumentLayoutOptions,
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
-import { resolveLeafBlockGap } from "../lib/spacing";
+import { resolveBlockGap } from "../lib/spacing";
 import { resolveListMarkerInset, type LayoutBlockExtent } from "../lib/geometry";
 import { layoutTable } from "./table";
 import {
@@ -52,7 +52,6 @@ export type DocumentLayoutBlock = {
 
 export type DocumentLayout = {
   blocks: DocumentLayoutBlock[];
-  regionMetrics: Map<string, { textLength: number }>;
   regionBounds: Map<string, { bottom: number; left: number; right: number; top: number }>;
   regionLineIndices: Map<string, number[]>;
   height: number;
@@ -94,11 +93,20 @@ export function estimateLayout(input: {
   };
 }
 
-export function createDocumentLayout(
+export function measureLayoutSlice(
   documentIndex: DocumentIndex,
   options: PartialDocumentLayoutOptions,
-  cache = createCanvasRenderCache(),
+  cache = createLayoutCache(),
   resources: DocumentResources | null = null,
+  // The block map is a pure projection of `documentIndex.document.blocks`,
+  // so callers that already built one (`createEditorLayoutState`, the
+  // virtualizer) thread it in to avoid rebuilding it per slice.
+  precomputedBlockMap?: Map<string, Block>,
+  // Seed for the running Y cursor. Defaults to `options.paddingY` (slice-
+  // local coordinates). The virtualizer passes the document-space top of
+  // the slice so geometry emerges directly in document space and no
+  // post-measurement shift is needed.
+  startY?: number,
 ): DocumentLayout {
   const resolvedResources: DocumentResources = resources ?? { images: new Map() };
   const resolvedOptions = resolveDocumentLayoutOptions(options);
@@ -107,16 +115,8 @@ export function createDocumentLayout(
     string,
     { bottom: number; left: number; right: number; top: number }
   >();
-  const regionMetrics = new Map(
-    documentIndex.regions.map((container) => [
-      container.id,
-      {
-        textLength: container.text.length,
-      },
-    ]),
-  );
   const runtimeBlocks = documentIndex.blockIndex;
-  const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
+  const blockMap = precomputedBlockMap ?? buildDocumentBlockMap(documentIndex.document.blocks);
   const blockExtents = new Map<string, LayoutBlockExtent>();
 
   // Layout walks blocks (not regions) so inert leaves — those without
@@ -127,7 +127,8 @@ export function createDocumentLayout(
   // listItem) contribute no layout themselves — their leaf descendants
   // do — so we skip them here.
   const visibleRegionIds = new Set(documentIndex.regions.map((r) => r.id));
-  let y = resolvedOptions.paddingY;
+  const seedY = startY ?? resolvedOptions.paddingY;
+  let y = seedY;
   // Cached as the runtime block, not just its id, so the trailing-gap
   // step can read its `type` without re-querying `blockIndex.get`.
   let previousLaidOutBlock: DocumentIndex["blocks"][number] | null = null;
@@ -141,13 +142,13 @@ export function createDocumentLayout(
 
     // Skip text/table blocks whose regions aren't in this layout pass
     // (e.g. when called with a sliced regions array). Inert leaves are
-    // always laid out — they're cheap and the planner accounts for their
+    // always laid out — they're cheap and estimation accounts for their
     // height so adjacent regions land at consistent Y.
     if (!isInert && blockRegionsInScope.length === 0) continue;
 
     // Apply the inter-block gap before laying out (except for the first).
     if (previousLaidOutBlock !== null) {
-      y += resolveLeafBlockGap(
+      y += resolveBlockGap(
         runtimeBlocks,
         blockMap,
         previousLaidOutBlock.id,
@@ -170,11 +171,7 @@ export function createDocumentLayout(
 
     const depth = blockEntry.depth;
     const left = resolvedOptions.paddingX + depth * resolvedOptions.indentWidth;
-    const listInset = resolveListMarkerInset(
-      runtimeBlocks,
-      documentIndex.listItemMarkers,
-      blockEntry.id,
-    );
+    const listInset = resolveListMarkerInset(documentIndex, blockEntry.id);
     const availableWidth = Math.max(
       40,
       resolvedOptions.width - left - resolvedOptions.paddingX - listInset,
@@ -249,8 +246,7 @@ export function createDocumentLayout(
     blocks,
     regionBounds,
     regionLineIndices: createContainerLineIndices(lines),
-    regionMetrics,
-    height: Math.max(y, resolvedOptions.paddingY),
+    height: Math.max(y, seedY),
     lines,
     options: resolvedOptions,
     width: resolvedOptions.width,
@@ -262,7 +258,7 @@ function layoutSingleContainer(
   blockExtents: Map<string, LayoutBlockExtent>,
   regionBounds: DocumentLayout["regionBounds"],
   container: DocumentIndex["regions"][number],
-  cache: CanvasRenderCache,
+  cache: LayoutCache,
   block: Block | null,
   left: number,
   top: number,

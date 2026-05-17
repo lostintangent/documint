@@ -1,13 +1,13 @@
 import { useMemo, useRef, useEffectEvent } from "react";
 import { resizeImage } from "@/editor";
 import type { DocumentResources } from "@/types";
-import { imageAtCursorValue, useEditorCommand, useStoreValue } from "../store";
+import { imageAtCursorSprig, useEditorCommand, useSprig } from "../store";
 import type { ResizeHandle } from "./useSelection";
 
 const IMAGE_MIN_WIDTH = 48;
 
 export function useImageHandles(resources: DocumentResources | null): ResizeHandle | null {
-  const imageAtCursor = useStoreValue(imageAtCursorValue, resources);
+  const imageAtCursor = useSprig(imageAtCursorSprig, resources);
   const resizeSelectedImage = useEditorCommand(resizeImage);
   const dragStartXRef = useRef<number | null>(null);
   const dragStartYRef = useRef<number | null>(null);
