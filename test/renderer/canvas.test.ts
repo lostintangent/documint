@@ -7,7 +7,7 @@
 import { expect, test } from "bun:test";
 import { paintContent } from "@/renderer";
 import { createEditorLayoutState } from "@/editor/layout";
-import type { EditorCommentRange } from "@/editor/anchors";
+import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import {
   insertText,
@@ -528,7 +528,7 @@ test("pulses presence-active comment highlights with the ambient animation clock
         threadIndex: 2,
       },
     ],
-    presenceActiveThreadColors: new Map([[2, "#f97316"]]),
+    commentPresence: new Map([[2, createCommentPresence(2, "#f97316")]]),
     width: 240,
   });
   const commentHighlight = context.operations.find(
@@ -562,7 +562,7 @@ test("falls back to the leaf accent when presence has no color", () => {
         threadIndex: 2,
       },
     ],
-    presenceActiveThreadColors: new Map([[2, null]]),
+    commentPresence: new Map([[2, createCommentPresence(2)]]),
     width: 240,
   });
   const commentHighlight = context.operations.find(
@@ -735,7 +735,7 @@ function renderPaintOperations(
     height: number;
     commentRanges?: EditorCommentRange[];
     now?: number;
-    presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
+    commentPresence?: ReadonlyMap<number, EditorPresence>;
     textDecorations?: TextDecorationIndex;
     theme?: EditorTheme;
     width: number;
@@ -758,7 +758,7 @@ function renderPaintOperations(
     height: options.height,
     commentRanges: options.commentRanges ?? [],
     normalizedSelection: normalizeSelection(state),
-    presenceActiveThreadColors: options.presenceActiveThreadColors,
+    commentPresence: options.commentPresence,
     now: options.now,
     textDecorations: options.textDecorations,
     theme: options.theme ?? lightTheme,
@@ -768,5 +768,16 @@ function renderPaintOperations(
   return {
     context,
     layout: layoutState.layout,
+  };
+}
+
+function createCommentPresence(threadIndex: number, color?: string): EditorPresence {
+  return {
+    ...(color ? { color } : {}),
+    commentThreadIndex: threadIndex,
+    cursorPoint: null,
+    id: "user",
+    username: "User",
+    viewport: null,
   };
 }

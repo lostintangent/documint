@@ -67,7 +67,7 @@ import {
 } from "./painters/text";
 
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
-const emptyPresenceThreadColors: ReadonlyMap<number, string | null> = new Map();
+const emptyCommentPresence: ReadonlyMap<number, EditorPresence> = new Map();
 
 type PaintLayerOptions = {
   devicePixelRatio: number;
@@ -83,7 +83,7 @@ type PaintContentOptions = PaintLayerOptions & {
   activeThreadIndex: number | null;
   ambientAnimationTime?: number;
   commentRanges: EditorCommentRange[];
-  presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
+  commentPresence?: ReadonlyMap<number, EditorPresence>;
   now?: number;
   resources?: DocumentResources | null;
   textDecorations?: TextDecorationIndex;
@@ -115,7 +115,7 @@ export function paintContent(
     layout: viewport.layout,
     commentRanges: options.commentRanges,
     normalizedSelection: options.normalizedSelection,
-    presenceActiveThreadColors: options.presenceActiveThreadColors ?? emptyPresenceThreadColors,
+    commentPresence: options.commentPresence ?? emptyCommentPresence,
     now: options.now,
     resources: options.resources ?? { images: new Map() },
     blockSnapshots: viewport.blockMap,
@@ -167,7 +167,7 @@ function paintContentLayer({
   normalizedSelection,
   now = getPaintTime(),
   ambientAnimationTime = now,
-  presenceActiveThreadColors = emptyPresenceThreadColors,
+  commentPresence = emptyCommentPresence,
   resources,
   blockSnapshots,
   textDecorations = emptyTextDecorationIndex,
@@ -187,7 +187,7 @@ function paintContentLayer({
   layout: DocumentLayout;
   commentRanges: EditorCommentRange[];
   normalizedSelection: NormalizedEditorSelection;
-  presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
+  commentPresence?: ReadonlyMap<number, EditorPresence>;
   now?: number;
   resources: DocumentResources;
   blockSnapshots: Map<string, Block>;
@@ -292,7 +292,7 @@ function paintContentLayer({
       line,
       commentRanges,
       normalizedSelection,
-      presenceActiveThreadColors,
+      commentPresence,
       resources,
       blockSnapshots,
       selectionRegionOrderRange,
@@ -326,7 +326,7 @@ function paintContentLine({
   line,
   commentRanges,
   normalizedSelection,
-  presenceActiveThreadColors,
+  commentPresence,
   resources,
   blockSnapshots,
   selectionRegionOrderRange,
@@ -347,7 +347,7 @@ function paintContentLine({
   line: DocumentLayout["lines"][number];
   commentRanges: EditorCommentRange[];
   normalizedSelection: NormalizedEditorSelection;
-  presenceActiveThreadColors: ReadonlyMap<number, string | null>;
+  commentPresence: ReadonlyMap<number, EditorPresence>;
   resources: DocumentResources;
   blockSnapshots: Map<string, Block>;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
@@ -408,7 +408,7 @@ function paintContentLine({
     line,
     commentRanges,
     activeThreadIndex,
-    presenceActiveThreadColors,
+    commentPresence,
     ambientAnimationTime,
     theme,
   );

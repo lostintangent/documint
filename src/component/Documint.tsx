@@ -38,6 +38,7 @@ import {
   removeLink,
   replyToThread,
   resolveThread,
+  setSelection,
   updateLink,
   type EditorPresence,
   type TextRangeTarget,
@@ -286,7 +287,7 @@ function DocumintHost({
     enabled: isEditable,
     onMentionAccepted: emitUserMentioned,
   });
-  const { commentPresenceColors, resolvedPresence } = usePresence({ presence, users });
+  const { commentPresence, resolvedPresence } = usePresence({ presence, users });
   const activeCommentIndex = useSprig(activeCommentIndexSprig);
   const readCurrentState = () => store.editor.getState();
   const { scheduleDecorationsForTransition, textDecorations } = useDecorations({
@@ -354,6 +355,7 @@ function DocumintHost({
   const editCommentCommand = useEditorCommand(editComment);
   const replyToThreadCommand = useEditorCommand(replyToThread);
   const resolveThreadCommand = useEditorCommand(resolveThread);
+  const setSelectionCommand = useEditorCommand(setSelection);
 
   // Comment-changed emitters. Adds and edits read the freshly-applied state
   // for their thread/comment payload; deletes are passed pre-state snapshots
@@ -446,7 +448,7 @@ function DocumintHost({
       height,
       commentRanges: commentState.ranges,
       normalizedSelection: normalizedSel,
-      presenceActiveThreadColors: commentPresenceColors,
+      commentPresence,
       now,
       resources: renderResources,
       textDecorations,
@@ -503,7 +505,7 @@ function DocumintHost({
               hasActiveCommentHighlightsInViewport(
                 viewportState,
                 commentState.ranges,
-                commentPresenceColors,
+                commentPresence,
               )
           : false;
       },
@@ -572,6 +574,19 @@ function DocumintHost({
 
     scrollContainer.scrollTop = target.viewport.scrollTop;
     handleViewportScroll(scrollContainer);
+
+    // If the presence is comment-attached, then move the end
+    // users cursor to the comment in order to activate the thread.
+    if (target.commentThreadIndex != null) {
+      const range = commentState.ranges.find(
+        (r) => r.threadIndex === target.commentThreadIndex,
+      );
+
+      if (range) {
+        input.focus();
+        setSelectionCommand({ regionId: range.regionId, offset: range.startOffset });
+      }
+    }
   });
 
   const selection = useSelection({
@@ -645,13 +660,13 @@ function DocumintHost({
     activeCommentIndex,
     commentState.ranges,
     hoveredCommentThreadIndex,
-    commentPresenceColors,
+    commentPresence,
     textDecorations,
   ]);
 
-  // Resolved text-cursor presence affects only the overlay canvas and DOM
-  // overlay. Comment-thread presence colors are handled by the content-layer
-  // effect above because they paint comment rules.
+  // Resolved presence affects the overlay canvas and DOM overlay. Comment-thread
+  // presence is also handled by the content-layer effect above because it paints
+  // comment rules.
   useEffect(() => {
     scheduleOverlayPaint();
   }, [resolvedPresence]);
@@ -875,6 +890,7 @@ function DocumintHost({
             onToggleResolved={() => {
               resolveThreadCommand(activeLeaf.threadIndex, !activeLeaf.resolved);
             }}
+            presence={commentPresence.get(activeLeaf.threadIndex) ?? null}
             thread={activeLeaf.thread}
           />
         );

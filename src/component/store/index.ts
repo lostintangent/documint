@@ -46,4 +46,4 @@ export {
   selectionSprig,
 } from "./editor/sprigs";
 export type { EditorStateTransition } from "./editor/transitions";
-export { commentPresenceColorsSprig, resolvedPresenceSprig } from "./presence";
+export { commentPresenceSprig, resolvedPresenceSprig } from "./presence";

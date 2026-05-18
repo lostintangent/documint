@@ -9,7 +9,7 @@ import {
   normalizedSelectionSprig,
 } from "@/component/store/editor/computed-sprigs";
 import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/sprigs";
-import { commentPresenceColorsSprig, resolvedPresenceSprig } from "@/component/store/presence";
+import { commentPresenceSprig, resolvedPresenceSprig } from "@/component/store/presence";
 import { createLayoutCache, getDocument, createEditorLayoutState } from "@/editor";
 import { addComment, insertText, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
@@ -177,7 +177,7 @@ describe("computed sprigs", () => {
     expect(resolvedPresenceSprig.read(store, undefined)).toBeUndefined();
   });
 
-  test("derives comment-thread presence colors", () => {
+  test("derives comment presence by thread index", () => {
     let state = setup("alpha beta\n");
     const region = getRegion(state, "alpha beta");
     state = setSelection(state, {
@@ -198,7 +198,7 @@ describe("computed sprigs", () => {
     }
 
     expect(
-      commentPresenceColorsSprig.read(store, [
+      commentPresenceSprig.read(store, [
         {
           color: "#f97316",
           cursor: { threadId },
@@ -206,7 +206,22 @@ describe("computed sprigs", () => {
           username: "User",
         },
       ]),
-    ).toEqual(new Map([[0, "#f97316"]]));
+    ).toEqual(
+      new Map([
+        [
+          0,
+          {
+            color: "#f97316",
+            commentThreadIndex: 0,
+            cursor: { threadId },
+            cursorPoint: null,
+            id: "user",
+            username: "User",
+            viewport: null,
+          },
+        ],
+      ]),
+    );
   });
 
   test("derives document completion from the active editor selection", () => {

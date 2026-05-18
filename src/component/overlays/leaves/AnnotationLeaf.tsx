@@ -5,6 +5,7 @@ import {
   toggleItalic,
   toggleStrikethrough,
   toggleUnderline,
+  type EditorPresence,
   type SelectionFormatting,
 } from "@/editor";
 import {
@@ -18,10 +19,11 @@ import {
   Trash2,
   Underline,
 } from "lucide-react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
 import { useEditorCommand } from "../../store";
+import { resolvePresenceName } from "../../lib/presence";
 import { LeafInput } from "./core/LeafInput";
 import { LeafOutput } from "./core/LeafOutput";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
@@ -52,6 +54,7 @@ type AnnotationThreadLeafProps = AnnotationLeafBaseProps & {
   onEditComment: (commentIndex: number, body: string) => void;
   onReply: (body: string) => void;
   onToggleResolved: () => void;
+  presence?: EditorPresence | null;
   thread: CommentThread;
 };
 
@@ -246,6 +249,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       onSubmitEditedComment={submitEditedComment}
       onSubmitReply={submitReply}
       onToggleResolved={toggleResolved}
+      presence={threadProps?.presence ?? null}
       rootComment={rootComment}
       showRootComment={showRootComment}
       showThreadChrome={showThreadChrome}
@@ -360,6 +364,7 @@ function AnnotationLeafBody({
   onSubmitEditedComment,
   onSubmitReply,
   onToggleResolved,
+  presence,
   rootComment,
   showRootComment,
   showThreadChrome,
@@ -393,6 +398,7 @@ function AnnotationLeafBody({
   onSubmitEditedComment: (commentIndex: number) => void;
   onSubmitReply: () => void;
   onToggleResolved: () => void;
+  presence: EditorPresence | null;
   rootComment: CommentThread["comments"][0] | null;
   showRootComment: boolean;
   showThreadChrome: boolean;
@@ -543,8 +549,38 @@ function AnnotationLeafBody({
           rows={3}
           value={composerValue}
         />
+        {mode === "thread" && presence ? <CommentPresenceStatus presence={presence} /> : null}
       </div>
     </>
+  );
+}
+
+function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
+  const name = resolvePresenceName(presence);
+
+  return (
+    <div className="documint-comment-presence">
+      <span
+        aria-hidden="true"
+        className="documint-comment-presence-dot"
+        style={
+          {
+            "--documint-comment-presence-color":
+              presence.color ?? "var(--documint-leaf-accent)",
+          } as CSSProperties
+        }
+      >
+        {presence.avatarUrl ? (
+          <img
+            alt=""
+            className="documint-comment-presence-avatar"
+            draggable={false}
+            src={presence.avatarUrl}
+          />
+        ) : null}
+      </span>
+      <span>{name} is working on this...</span>
+    </div>
   );
 }
 

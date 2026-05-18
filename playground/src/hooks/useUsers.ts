@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DocumentPresence, DocumentUser } from "documint";
-import { createRandomAutoPresence } from "./lib/auto-presence";
+import { createRandomAutoPresence } from "../lib/auto-presence";
 
 type ManualEntry = {
   user: DocumentUser;
@@ -17,7 +17,6 @@ const autoUser: DocumentUser = {
 const autoPresenceTickMs = 2200;
 
 export function useUsers(content: string) {
-  const contentRef = useRef(content);
   const [manualName, setManualName] = useState("");
   const [manualAvatarUrl, setManualAvatarUrl] = useState("");
   const [manualAnchorPrefix, setManualAnchorPrefix] = useState("");
@@ -28,9 +27,10 @@ export function useUsers(content: string) {
   const [autoMode, setAutoMode] = useState(false);
   const [autoPresence, setAutoPresence] = useState<DocumentPresence | null>(null);
 
-  const mode: UsersMode = autoMode ? "auto" : manualEntries.length > 0 ? "manual" : "empty";
-
+  const contentRef = useRef(content);
   contentRef.current = content;
+
+  const mode: UsersMode = autoMode ? "auto" : manualEntries.length > 0 ? "manual" : "empty";
 
   const users = useMemo<DocumentUser[]>(() => {
     if (autoMode) return [autoUser];
@@ -41,16 +41,6 @@ export function useUsers(content: string) {
     if (autoMode) return autoPresence ? [autoPresence] : [];
     return manualEntries.map((entry) => entry.presence);
   }, [autoMode, autoPresence, manualEntries]);
-
-  const reset = useCallback(() => {
-    setManualEntries([]);
-    setManualName("");
-    setManualAvatarUrl("");
-    setManualAnchorPrefix("");
-    setManualAnchorSuffix("");
-    setManualThreadId("");
-    setAutoPresence(null);
-  }, []);
 
   useEffect(() => {
     if (!autoMode) {
@@ -123,7 +113,6 @@ export function useUsers(content: string) {
         setManualEntries((current) => current.filter((entry) => entry.user.id !== userId));
       },
     },
-    reset,
   };
 }
 

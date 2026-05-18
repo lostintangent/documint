@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { EditorPresence } from "@/editor";
+import { resolvePresenceName } from "../lib/presence";
 
 type PresenceOverlayProps = {
   insetX: number;
@@ -104,8 +105,4 @@ function resolvePresenceAriaLabel(presence: EditorPresence) {
   }
 
   return `${name} in viewport`;
-}
-
-function resolvePresenceName(presence: EditorPresence) {
-  return (presence.fullName ?? presence.username).trim() || "Presence";
 }

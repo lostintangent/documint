@@ -1,6 +1,6 @@
-import { type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { Palette } from "lucide-react";
-import { getThemeOption, themeOptions } from "../data";
+import { getThemeOption, themeOptions } from "../../lib/data";
 import { PlaygroundPopover } from "./PlaygroundPopover";
 
 type ThemePopoverProps = {

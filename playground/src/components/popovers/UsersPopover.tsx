@@ -1,7 +1,7 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 import { Trash2, Users } from "lucide-react";
 import type { DocumentPresence, DocumentUser } from "documint";
-import { describeEntry, useUsers, type UsersMode } from "../hooks/useUsers";
+import { describeEntry, useUsers, type UsersMode } from "../../hooks/useUsers";
 import {
   PlaygroundPopover,
   popoverControlClassName,
@@ -10,11 +10,9 @@ import {
 } from "./PlaygroundPopover";
 
 type UsersPopoverProps = {
-  commentThreadIds: readonly string[];
   content: string;
   onUsersChange: (users: DocumentUser[]) => void;
   onPresenceChange: (presence: DocumentPresence[]) => void;
-  resetKey: string;
 };
 
 const swatchStyleByMode: Record<UsersMode, CSSProperties | undefined> = {
@@ -36,28 +34,13 @@ const fieldCaptionClassName = "text-[0.8rem] text-muted";
 const fieldInputClassName =
   "w-full rounded-xl border border-border/[0.14] bg-background/[0.9] px-3 py-2";
 
-export function UsersPopover({
-  commentThreadIds,
-  content,
-  onUsersChange,
-  onPresenceChange,
-  resetKey,
-}: UsersPopoverProps) {
-  const previousResetKeyRef = useRef(resetKey);
-  const { auto, manualEntries, manualForm, mode, presence, reset, users } = useUsers(content);
+export function UsersPopover({ content, onUsersChange, onPresenceChange }: UsersPopoverProps) {
+  const { auto, manualEntries, manualForm, mode, presence, users } = useUsers(content);
 
   useEffect(() => {
-    if (previousResetKeyRef.current !== resetKey) {
-      previousResetKeyRef.current = resetKey;
-      reset();
-      onUsersChange([]);
-      onPresenceChange([]);
-      return;
-    }
-
     onUsersChange(users);
     onPresenceChange(presence);
-  }, [onPresenceChange, onUsersChange, presence, reset, resetKey, users]);
+  }, [onPresenceChange, onUsersChange, presence, users]);
 
   return (
     <PlaygroundPopover
@@ -110,17 +93,11 @@ export function UsersPopover({
           <input
             className={fieldInputClassName}
             disabled={auto.enabled}
-            list="documint-playground-comment-thread-ids"
             onChange={(event) => manualForm.setThreadId(event.target.value)}
             placeholder="Optional thread target"
             type="text"
             value={manualForm.threadId}
           />
-          <datalist id="documint-playground-comment-thread-ids">
-            {commentThreadIds.map((threadId) => (
-              <option key={threadId} value={threadId} />
-            ))}
-          </datalist>
         </label>
 
         <label className={fieldLabelClassName}>
@@ -178,7 +155,7 @@ export function UsersPopover({
         </p>
       ) : manualEntries.items.length > 0 ? (
         <>
-          <div aria-hidden="true" className="h-px bg-border/[0.12]" />
+          <div aria-hidden="true" className="h-px bg-border/12" />
           <div className="grid gap-3">
             {manualEntries.items.map((entry) => (
               <div className="flex min-w-0 items-center gap-[0.65rem]" key={entry.user.id}>
@@ -206,3 +183,4 @@ export function UsersPopover({
     </PlaygroundPopover>
   );
 }
+

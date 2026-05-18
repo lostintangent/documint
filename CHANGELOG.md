@@ -1,4 +1,8 @@
-## 🗓️ v0.0.16 (05-17-26)
+## 🗓️ v0.0.18 (05-18-26)
+
+- Commment threads now display a status indicator when a presence user is associated with it
+
+## 🗓️ v0.0.17 (05-17-26)
 
 - Various performance improvements for scrolling/editing large documents
 

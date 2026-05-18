@@ -32,6 +32,7 @@ import {
 } from "../../layout";
 import type { EditorState } from "../../state/types";
 import { projectAnchorContainersToEditor } from "../index";
+import type { EditorPresence } from "../presence";
 import { remapEditedRange } from "./remap";
 
 // --- Types ---
@@ -144,9 +145,9 @@ export function getCommentState(stateOrIndex: EditorState | DocumentIndex): Edit
 export function hasActiveCommentHighlightsInViewport(
   viewport: EditorLayoutState,
   ranges: readonly EditorCommentRange[],
-  activeThreadColors: ReadonlyMap<number, string | null>,
+  commentPresence: ReadonlyMap<number, EditorPresence>,
 ) {
-  if (ranges.length === 0 || activeThreadColors.size === 0) {
+  if (ranges.length === 0 || commentPresence.size === 0) {
     return false;
   }
 
@@ -175,7 +176,7 @@ export function hasActiveCommentHighlightsInViewport(
       ranges.some(
         (range) =>
           !range.resolved &&
-          activeThreadColors.has(range.threadIndex) &&
+          commentPresence.has(range.threadIndex) &&
           range.regionId === line.regionId &&
           range.endOffset > line.start &&
           range.startOffset < line.end,

@@ -3,7 +3,7 @@
 // the visible portion of a line and fill a rectangle in line-local space — so
 // they share this file.
 
-import type { EditorCommentRange } from "@/editor/anchors";
+import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import { resolveLineVisualLeft, type DocumentLayout } from "@/editor/layout";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { EditorTheme } from "@/types";
@@ -90,7 +90,7 @@ export function paintCommentHighlights(
   line: DocumentLayout["lines"][number],
   commentRanges: EditorCommentRange[],
   activeThreadIndex: number | null,
-  presenceActiveThreadColors: ReadonlyMap<number, string | null>,
+  commentPresence: ReadonlyMap<number, EditorPresence>,
   ambientAnimationTime: number,
   theme: EditorTheme,
 ) {
@@ -109,10 +109,10 @@ export function paintCommentHighlights(
     context.fillStyle = resolveCommentHighlightColor(
       range,
       activeThreadIndex,
-      presenceActiveThreadColors,
+      commentPresence,
       theme,
     );
-    const shouldPulse = !range.resolved && presenceActiveThreadColors.has(range.threadIndex);
+    const shouldPulse = !range.resolved && commentPresence.has(range.threadIndex);
     const { left, width } = resolveLineRangeRect(
       editorState,
       line,
@@ -156,7 +156,7 @@ function resolveLineRangeRect(
 function resolveCommentHighlightColor(
   range: EditorCommentRange,
   activeThreadIndex: number | null,
-  presenceActiveThreadColors: ReadonlyMap<number, string | null>,
+  commentPresence: ReadonlyMap<number, EditorPresence>,
   theme: EditorTheme,
 ) {
   if (range.resolved) {
@@ -167,7 +167,7 @@ function resolveCommentHighlightColor(
 
   return range.threadIndex === activeThreadIndex
     ? theme.commentHighlightActive
-    : presenceActiveThreadColors.has(range.threadIndex)
-      ? (presenceActiveThreadColors.get(range.threadIndex) ?? theme.leafAccent)
+    : commentPresence.has(range.threadIndex)
+      ? (commentPresence.get(range.threadIndex)?.color ?? theme.leafAccent)
       : theme.commentHighlight;
 }

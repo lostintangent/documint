@@ -377,6 +377,62 @@
   border-top-color: color-mix(in srgb, var(--documint-leaf-resolved-border) 72%, transparent);
 }
 
+.documint-comment-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.74rem;
+  line-height: 1.2;
+}
+
+.documint-comment-presence-dot {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: var(--documint-comment-presence-color, var(--documint-leaf-accent));
+  isolation: isolate;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    background: var(--documint-comment-presence-color, var(--documint-leaf-accent));
+    opacity: 0.28;
+    animation: documint-comment-presence-pulse 1600ms ease-in-out infinite;
+    z-index: -1;
+  }
+}
+
+.documint-comment-presence-avatar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+@keyframes documint-comment-presence-pulse {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: scale(0.72);
+  }
+
+  50% {
+    opacity: 0.1;
+    transform: scale(1.55);
+  }
+}
+
 /* Create chrome (the animated "add comment" toolbar that expands into a composer) */
 
 .documint-comment-leaf-create {

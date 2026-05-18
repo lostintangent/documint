@@ -21,6 +21,7 @@ import {
   createEditorLayoutState,
   resolveHoverTarget,
   setSelection,
+  type EditorPresence,
 } from "@/editor";
 import { parseDocument } from "@/markdown";
 import { getRegion, setup } from "../helpers";
@@ -79,11 +80,15 @@ test("detects only unresolved presence-active comment highlights as animated", (
   );
   const unresolvedCommentState = getCommentState(unresolvedState.documentIndex);
 
+  const presenceMap = new Map<number, EditorPresence>([
+    [0, { commentThreadIndex: 0, cursorPoint: null, id: "user", username: "User", viewport: null }],
+  ]);
+
   expect(
     hasActiveCommentHighlightsInViewport(
       unresolvedViewport,
       unresolvedCommentState.ranges,
-      new Map([[0, "#f97316"]]),
+      presenceMap,
     ),
   ).toBe(true);
 
@@ -102,7 +107,7 @@ test("detects only unresolved presence-active comment highlights as animated", (
     hasActiveCommentHighlightsInViewport(
       resolvedViewport,
       resolvedCommentState.ranges,
-      new Map([[0, "#f97316"]]),
+      presenceMap,
     ),
   ).toBe(false);
 });
