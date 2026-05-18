@@ -43,8 +43,10 @@ import { createComputedSprig, createParameterizedSprig, createRecordSprig } from
 import {
   equalArrayBy,
   equalArraysByIdentity,
+  equalByKind,
   equalCommentRanges,
   equalCommentStates,
+  equalNullable,
   equalNullableBy,
   equalNormalizedSelections,
   equalSelectionContexts,
@@ -133,9 +135,79 @@ function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting
   return a.code === b.code && equalArraysByIdentity(a.marks, b.marks);
 }
 
+/* Leaf equality */
+
+// Per-kind leaf equality. Each function compares only its own variant; the
+// `equalByKind` dispatcher handles the identity short-circuit and kind
+// discrimination once. Each leaf kind appears in exactly one function here,
+// so the higher-level equalities (selection / cursor / contextual / pointer)
+// are just different subsets of the same per-kind functions.
+
+const equalAnnotationLeaf = (a: AnnotationLeaf, b: AnnotationLeaf): boolean =>
+  areLeafBasesEqual(a, b) &&
+  equalSelectionFormatting(a.formatting, b.formatting) &&
+  areSelectionRangesEqual(a.selection, b.selection);
+
+const equalInsertionLeaf = (a: InsertionLeaf, b: InsertionLeaf): boolean =>
+  areLeafBasesEqual(a, b);
+
+const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
+  areLeafBasesEqual(a, b) &&
+  a.endOffset === b.endOffset &&
+  a.regionId === b.regionId &&
+  a.startOffset === b.startOffset &&
+  a.title === b.title &&
+  a.url === b.url;
+
+const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
+  areLeafBasesEqual(a, b) &&
+  a.cellIndex === b.cellIndex &&
+  a.columnCount === b.columnCount &&
+  a.rowCount === b.rowCount &&
+  a.rowIndex === b.rowIndex;
+
+const equalThreadLeaf = (a: ThreadLeaf, b: ThreadLeaf): boolean =>
+  areLeafBasesEqual(a, b) &&
+  a.animateInitialComment === b.animateInitialComment &&
+  a.link?.title === b.link?.title &&
+  a.link?.url === b.link?.url &&
+  a.resolved === b.resolved &&
+  a.thread === b.thread &&
+  a.threadIndex === b.threadIndex;
+
+const equalContextualLeaves = equalByKind<ContextualLeaf>({
+  link: equalLinkLeaf,
+  thread: equalThreadLeaf,
+});
+
+const equalSelectionLeaves = equalNullable(
+  equalByKind<SelectionLeaf>({
+    annotation: equalAnnotationLeaf,
+    thread: equalThreadLeaf,
+  }),
+);
+
+const equalCursorLeaves = equalNullable(
+  equalByKind<CursorLeaf>({
+    insertion: equalInsertionLeaf,
+    link: equalLinkLeaf,
+    table: equalTableLeaf,
+    thread: equalThreadLeaf,
+  }),
+);
+
+const equalPointerLeaves = equalNullable<PointerLeaf>(equalContextualLeaves);
+
+function equalPointerViews(previous: PointerView, next: PointerView) {
+  return previous.cursor === next.cursor && equalPointerLeaves(previous.leaf, next.leaf);
+}
+
+// Depends on `documentIndexSprig` rather than `editorStateSprig` so selection-
+// only transitions don't trigger a `getCommentState` walk. Comment state is
+// purely a function of the document; the selection-side change has no effect.
 export const commentStateSprig = createComputedSprig(
-  [editorStateSprig],
-  (_store, state) => getCommentState(state),
+  [documentIndexSprig],
+  (_store, documentIndex) => getCommentState(documentIndex),
   equalCommentStates,
 );
 
@@ -468,24 +540,6 @@ function areSelectionRangesEqual(
   );
 }
 
-function equalSelectionLeaves(previous: SelectionLeaf | null, next: SelectionLeaf | null) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-  if (previous.kind !== next.kind) return false;
-
-  switch (previous.kind) {
-    case "annotation":
-      return (
-        next.kind === "annotation" &&
-        areLeafBasesEqual(previous, next) &&
-        equalSelectionFormatting(previous.formatting, next.formatting) &&
-        areSelectionRangesEqual(previous.selection, next.selection)
-      );
-    case "thread":
-      return next.kind === "thread" && equalContextualLeaves(previous, next);
-  }
-}
-
 function resolveCursorLeaf({
   isEditable,
   ranges,
@@ -596,69 +650,8 @@ function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
   return { anchor: focus, kind: "insertion" };
 }
 
-function equalCursorLeaves(previous: CursorLeaf | null, next: CursorLeaf | null) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-  if (previous.kind !== next.kind) return false;
-
-  switch (previous.kind) {
-    case "thread":
-      return next.kind === "thread" && equalContextualLeaves(previous, next);
-    case "insertion":
-      return next.kind === "insertion" && areLeafBasesEqual(previous, next);
-    case "link":
-      return next.kind === "link" && equalContextualLeaves(previous, next);
-    case "table":
-      return (
-        next.kind === "table" &&
-        areLeafBasesEqual(previous, next) &&
-        previous.cellIndex === next.cellIndex &&
-        previous.columnCount === next.columnCount &&
-        previous.rowCount === next.rowCount &&
-        previous.rowIndex === next.rowIndex
-      );
-  }
-}
-
 function resolveLinkInteriorOffset(target: Extract<EditorHoverTarget, { kind: "link" }>) {
   return target.startOffset < target.endOffset ? target.startOffset + 1 : target.startOffset;
-}
-
-function equalPointerViews(previous: PointerView, next: PointerView) {
-  return previous.cursor === next.cursor && equalPointerLeaves(previous.leaf, next.leaf);
-}
-
-function equalPointerLeaves(previous: PointerLeaf | null, next: PointerLeaf | null) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-  return equalContextualLeaves(previous, next);
-}
-
-function equalContextualLeaves(previous: ContextualLeaf, next: ContextualLeaf) {
-  if (previous.kind !== next.kind) return false;
-  if (!areLeafBasesEqual(previous, next)) return false;
-
-  switch (previous.kind) {
-    case "thread":
-      return (
-        next.kind === "thread" &&
-        previous.animateInitialComment === next.animateInitialComment &&
-        previous.link?.title === next.link?.title &&
-        previous.link?.url === next.link?.url &&
-        previous.resolved === next.resolved &&
-        previous.thread === next.thread &&
-        previous.threadIndex === next.threadIndex
-      );
-    case "link":
-      return (
-        next.kind === "link" &&
-        previous.endOffset === next.endOffset &&
-        previous.regionId === next.regionId &&
-        previous.startOffset === next.startOffset &&
-        previous.title === next.title &&
-        previous.url === next.url
-      );
-  }
 }
 
 export const activeCommentIndexSprig = createComputedSprig(

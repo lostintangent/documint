@@ -6,7 +6,7 @@
 import {
   findLineEntryForRegionOffset,
   findLineForRegionOffset,
-  resolveCaretVisualLeft,
+  resolveCaretHitTestX,
   resolveEditorHitAtPoint,
   type CaretTarget,
   type DocumentLayout,
@@ -14,10 +14,6 @@ import {
 import { setSelectionPoint, type EditorState } from "../state";
 import { nextRegionInFlow, previousRegionInFlow } from "./flow";
 import { moveGraphemeOffset } from "../text/graphemes";
-
-// Small rightward nudge when hit-testing at a caret's visual X to avoid
-// landing exactly on a region boundary and resolving to the wrong side.
-const HIT_TEST_X_NUDGE = 1;
 
 export function moveCaretHorizontallyInFlow(
   state: EditorState,
@@ -80,16 +76,13 @@ export function moveCaretVerticallyInFlow(
     return state;
   }
 
-  const hit = resolveEditorHitAtPoint(layout, state, {
-    x: resolveCaretVisualLeft(state, layout, caret) + HIT_TEST_X_NUDGE,
-    y: targetLine.top + targetLine.height / 2,
-  });
-
-  if (!hit) {
-    return state;
-  }
-
-  return setSelectionPoint(state, hit.regionId, hit.offset, extendSelection);
+  return placeCaretAtLineY(
+    state,
+    layout,
+    caret,
+    targetLine.top + targetLine.height / 2,
+    extendSelection,
+  );
 }
 
 export function moveCaretToCurrentLineBoundary(
@@ -115,38 +108,52 @@ export function moveCaretToCurrentLineBoundary(
 export function moveCaretByViewportInFlow(
   state: EditorState,
   layout: DocumentLayout,
+  viewportHeight: number,
   caret: CaretTarget,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentLine = findCurrentLine(state, layout);
+  const currentLineEntry = findLineEntryForRegionOffset(layout, caret.regionId, caret.offset);
 
-  if (!currentLine) {
+  if (!currentLineEntry) {
     return state;
   }
 
-  // Approximate viewport height for page-up/page-down line count estimation.
-  const VIEWPORT_HEIGHT_ESTIMATE = 480;
+  // Advance by a viewport's worth of lines, minus one for context overlap so
+  // the user can still see the line they were on before the jump. Mirrors
+  // VS Code / browser contenteditable PageUp/PageDown behavior.
   const linesPerViewport = Math.max(
     1,
-    Math.floor(VIEWPORT_HEIGHT_ESTIMATE / layout.options.lineHeight),
+    Math.floor(viewportHeight / layout.options.lineHeight) - 1,
   );
-  const currentLineEntry = findLineEntryForRegionOffset(
-    layout,
-    currentLine.regionId,
-    state.selection.focus.offset,
-  );
-  const targetLine = currentLineEntry
-    ? layout.lines[currentLineEntry.index + direction * linesPerViewport]
-    : null;
+  const targetLine = layout.lines[currentLineEntry.index + direction * linesPerViewport];
 
   if (!targetLine) {
     return state;
   }
 
+  return placeCaretAtLineY(
+    state,
+    layout,
+    caret,
+    targetLine.top + targetLine.height / 2,
+    extendSelection,
+  );
+}
+
+// Project the caret onto a target Y at the caret's tracked visual X. Shared
+// by vertical, page, and table-column motion so the hit-test recipe lives
+// in one place: nudged X + target Y → editor hit → selection update.
+export function placeCaretAtLineY(
+  state: EditorState,
+  layout: DocumentLayout,
+  caret: CaretTarget,
+  y: number,
+  extendSelection: boolean,
+): EditorState {
   const hit = resolveEditorHitAtPoint(layout, state, {
-    x: resolveCaretVisualLeft(state, layout, caret) + HIT_TEST_X_NUDGE,
-    y: targetLine.top + targetLine.height / 2,
+    x: resolveCaretHitTestX(state, layout, caret),
+    y,
   });
 
   if (!hit) {

@@ -3,17 +3,9 @@
  * line-based up/down behavior so table cells move by row and column first,
  * then fall back to the surrounding document when the caret exits the table.
  */
-import {
-  resolveCaretVisualLeft,
-  resolveEditorHitAtPoint,
-  type CaretTarget,
-  type DocumentLayout,
-} from "../layout";
-import { resolveTableCellRegion, setSelectionPoint, type EditorState } from "../state";
-
-// Small rightward nudge when hit-testing at a caret's visual X to avoid
-// landing exactly on a cell boundary and resolving to the wrong column.
-const HIT_TEST_X_NUDGE = 1;
+import { type CaretTarget, type DocumentLayout } from "../layout";
+import { resolveTableCellRegion, type EditorState } from "../state";
+import { placeCaretAtLineY } from "./line";
 
 export function moveCaretVerticallyInTable(
   state: EditorState,
@@ -37,8 +29,8 @@ export function moveCaretVerticallyInTable(
   }
 
   const targetContainer =
-    findTableRowSiblingContainer(
-      state,
+    resolveTableCellRegion(
+      state.documentIndex,
       tableBlock.id,
       currentCell.rowIndex + direction,
       currentCell.cellIndex,
@@ -63,25 +55,8 @@ export function moveCaretVerticallyInTable(
       // -1 keeps the target point strictly inside the cell, not on its bottom border.
       Math.max(0, targetExtent.bottom - targetExtent.top - 1),
     );
-  const hit = resolveEditorHitAtPoint(layout, state, {
-    x: resolveCaretVisualLeft(state, layout, caret) + HIT_TEST_X_NUDGE,
-    y: targetY,
-  });
 
-  if (!hit) {
-    return state;
-  }
-
-  return setSelectionPoint(state, hit.regionId, hit.offset, extendSelection);
-}
-
-function findTableRowSiblingContainer(
-  state: EditorState,
-  tableBlockId: string,
-  rowIndex: number,
-  cellIndex: number,
-) {
-  return resolveTableCellRegion(state.documentIndex, tableBlockId, rowIndex, cellIndex);
+  return placeCaretAtLineY(state, layout, caret, targetY, extendSelection);
 }
 
 function findTableExitContainer(state: EditorState, tableBlockId: string, direction: -1 | 1) {

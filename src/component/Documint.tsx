@@ -35,8 +35,6 @@ import {
   insertTableRow,
   insertText,
   measureVisualCaretTarget,
-  paintContent,
-  paintOverlay,
   removeLink,
   replyToThread,
   resolveThread,
@@ -44,6 +42,7 @@ import {
   type EditorPresence,
   type TextRangeTarget,
 } from "@/editor";
+import { paintContent, paintOverlay } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
 import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";

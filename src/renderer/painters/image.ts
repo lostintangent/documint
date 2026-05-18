@@ -1,8 +1,8 @@
 // Owns paint policy for inline document images. The main paint module delegates
 // image-specific draw behavior here so text and image rendering stay separate.
 import type { DocumentResources, EditorTheme } from "@/types";
-import type { EditorInline } from "../../state";
-import type { DocumentLayout } from "../../layout";
+import type { EditorInline } from "@/editor/state";
+import type { DocumentLayout } from "@/editor/layout";
 
 const imageFallbackAspectRatio = 9 / 16;
 const imageMinimumHeight = 48;

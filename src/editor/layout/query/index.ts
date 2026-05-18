@@ -5,6 +5,7 @@
 
 export {
   measureDocumentCaretTarget,
+  resolveCaretHitTestX,
   resolveCaretVisualLeft,
   type DocumentCaretTarget,
 } from "./caret";

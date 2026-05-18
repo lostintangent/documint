@@ -1,8 +1,5 @@
-import type { EditorState } from "@/editor";
 import type { DocumintStore } from "..";
 import { defaultEquality, type Equality } from "./equality";
-
-type EditorStateSelector<T> = (state: EditorState) => T;
 
 export type DocumintSprig<T, Params extends readonly unknown[] = readonly []> = {
   read: (store: DocumintStore, ...params: Params) => T;
@@ -10,27 +7,40 @@ export type DocumintSprig<T, Params extends readonly unknown[] = readonly []> = 
 };
 
 /**
- * Build a source sprig that taps directly into `EditorState`. The sprig
- * captures the selected value at subscription time and only notifies when
- * a later transition produces a value the equality predicate considers
- * different — consumers don't need to re-check equality themselves.
+ * A source descriptor names one external mutable container that sprigs can
+ * subscribe to. `read` returns the current snapshot; `subscribe` installs a
+ * change listener and returns its unsubscribe handle.
  *
- * This is the foundation of the sprig DAG: every other derivation reaches
- * `EditorState` through one of these (or through another sprig that does).
+ * Source descriptors are the only place where store-subscribe wiring lives.
+ * Once an external source has a descriptor, `createSourceSprig` builds an
+ * arbitrary number of sprigs against it.
  */
-export function createEditorStateSprig<T>(
-  select: EditorStateSelector<T>,
+export type SprigSource<S> = {
+  read: (store: DocumintStore) => S;
+  subscribe: (store: DocumintStore, listener: () => void) => () => void;
+};
+
+/**
+ * Build a source sprig from a `SprigSource` descriptor and a selector. The
+ * sprig captures the selected value at subscription time and only notifies
+ * when a later source event produces a value the equality predicate
+ * considers different — consumers don't need to re-check equality themselves.
+ *
+ * This is the foundation of the sprig DAG: every reactive computation
+ * eventually bottoms out at one of these.
+ */
+export function createSourceSprig<S, T>(
+  source: SprigSource<S>,
+  select: (snapshot: S) => T,
   equal: Equality<T> = defaultEquality,
 ): DocumintSprig<T> {
   return {
-    read: (store) => select(store.editor.getState()),
+    read: (store) => select(source.read(store)),
     subscribe: (store, listener) => {
-      let selected = select(store.editor.getState());
-      return store.editor.subscribe((transition) => {
-        const nextSelected = select(transition.next);
-        if (equal(selected, nextSelected)) {
-          return;
-        }
+      let selected = select(source.read(store));
+      return source.subscribe(store, () => {
+        const nextSelected = select(source.read(store));
+        if (equal(selected, nextSelected)) return;
         selected = nextSelected;
         listener();
       });

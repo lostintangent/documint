@@ -5,17 +5,17 @@
 // color overlays run after the text runs so they replace base glyph fills.
 // The orchestrator drives both phases through `paintTextDecorations(phase)`.
 
-import type { DocumentLayout } from "../../../layout";
-import { findInlinesInSpan, type EditorInline, type EditorRegion } from "../../../state";
-import type { TextDecoration } from "../../../text/decorations";
-import { resolveMarkedTextFont } from "../../../text/fonts";
+import type { DocumentLayout } from "@/editor/layout";
+import { findInlinesInSpan, type EditorInline, type EditorRegion } from "@/editor/state";
+import type { TextDecoration } from "@/editor/text/decorations";
+import { resolveMarkedTextFont } from "@/editor/text/fonts";
 import {
   collectRangeBoundaries,
   filterRangesOverlappingSegment,
   findRangeAtSegment,
-} from "../../../text/ranges";
-import { blendCanvasColors } from "../../lib/colors";
-import { resolveRestingPulseAlpha, resolveRestingPulseProgress, restingPulseMinimumAlpha } from "../../lib/pulse";
+} from "@/editor/text/ranges";
+import { blendCanvasColors } from "../../animations/colors";
+import { resolveRestingPulseAlpha, resolveRestingPulseProgress, restingPulseMinimumAlpha } from "../../animations/pulse";
 import {
   editableTextBackgroundGeometry,
   paintClippedTextOverlay,

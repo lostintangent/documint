@@ -1,5 +1,5 @@
 import type { DocumintStore } from "..";
-import { defaultEquality, equalRecordBy, type Equality } from "./equality";
+import { defaultEquality, equalRecordByKeys, type Equality } from "./equality";
 import type { DocumintSprig } from "./sprigs";
 
 type SprigResults<Deps extends readonly DocumintSprig<unknown>[]> = {
@@ -46,22 +46,24 @@ export function createComputedSprig<const Deps extends readonly DocumintSprig<un
 export function createRecordSprig<Values extends Record<string, DocumintSprig<unknown>>>(
   values: Values,
 ): DocumintSprig<SprigRecordResults<Values>> {
-  const entries = Object.entries(values) as Array<[keyof Values, Values[keyof Values]]>;
+  const entries = Object.entries(values) as Array<[string, Values[keyof Values]]>;
   const deps = entries.map(([, value]) => value) as DocumintSprig<unknown>[];
+  const keys = entries.map(([key]) => key);
 
   return createComputedSprig(
     deps,
     (_store, ...resolvedValues) => {
       const record = {} as SprigRecordResults<Values>;
 
-      for (let index = 0; index < entries.length; index++) {
-        const [key] = entries[index]!;
-        record[key] = resolvedValues[index] as SprigRecordResults<Values>[keyof Values];
+      for (let index = 0; index < keys.length; index++) {
+        record[keys[index]! as keyof Values] = resolvedValues[
+          index
+        ] as SprigRecordResults<Values>[keyof Values];
       }
 
       return record;
     },
-    equalRecordBy() as Equality<SprigRecordResults<Values>>,
+    equalRecordByKeys(keys) as Equality<SprigRecordResults<Values>>,
   );
 }
 

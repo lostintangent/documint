@@ -5,9 +5,10 @@ export type EditorTransitionListener = (transition: EditorStateTransition) => vo
 
 // The editor store is a pure event source. `subscribe` is the single
 // notification primitive — selectors, equality, and value-level dedup all
-// live in the sprig layer (`createEditorStateSprig`). Command-driven
-// mutations emit `source: "local"`; `replace` emits `source: "external"`
-// so the host can avoid echoing them back as `onContentChanged`.
+// live in the sprig layer (`createSourceSprig` over `editorSource`).
+// Command-driven mutations emit `source: "local"`; `replace` emits
+// `source: "external"` so the host can avoid echoing them back as
+// `onContentChanged`.
 export type EditorStore = {
   getState: () => EditorState;
   command: <A extends unknown[]>(

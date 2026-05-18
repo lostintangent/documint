@@ -4,9 +4,9 @@
 
 Documint is a layered editor built around a functional core with explicit edge effects. Content flows through one main pipeline:
 
-`markdown → Document → EditorState → EditorLayoutState → canvas pixels`
+`markdown → Document → EditorState → EditorLayoutState → renderer → pixels`
 
-Each layer owns one transition and builds on the immutable output of the layer before it: markdown produces semantic `Document` values; document/indexing produces runtime `EditorState`; layout produces geometry in `EditorLayoutState`; canvas paint consumes state, layout, resources, theme, and time to produce pixels. Lower layers should not reach upward for orchestration concerns, and higher layers should not re-implement lower-layer semantics.
+Each layer owns one transition and builds on the immutable output of the layer before it: markdown produces semantic `Document` values; document/indexing produces runtime `EditorState`; layout produces geometry in `EditorLayoutState`; renderer consumes state, layout, resources, theme, and time to produce pixels. Lower layers should not reach upward for orchestration concerns, and higher layers should not re-implement lower-layer semantics.
 
 The durable values (`Document`, `EditorState`, `EditorLayoutState`) are immutable snapshots. Mutations return new snapshots with structural sharing: unchanged roots, indexes, selections, and layout artifacts keep reference identity whenever possible so downstream caches can prove what did not change. Most subsystems are pure transformations or queries over those snapshots and should answer entirely from their provided inputs.
 
@@ -18,7 +18,8 @@ Each subsystem has its own `AGENTS.md` for local rules and ownership. Use this m
 
 - [`src/document`](src/document/AGENTS.md) - Semantic document truth: immutable block/inline trees, canonical IDs, plain-text projections, paths, queries, and comment threads as anchored annotations.
 - [`src/markdown`](src/markdown/AGENTS.md) - File and clipboard boundary: direct `markdown → Document → markdown` parsing, serialization, fragments, front matter, tables, and comment directives.
-- [`src/editor`](src/editor/AGENTS.md) - Framework-agnostic editor engine: document indexing, state, commands, selection, navigation, anchors, layout, hit testing, text measurement, and canvas paint.
+- [`src/editor`](src/editor/AGENTS.md) - Framework-agnostic editor engine: document indexing, state, commands, selection, navigation, anchors, layout, hit testing, and text measurement.
+- [`src/renderer`](src/renderer/AGENTS.md) - Immediate-mode painting from prepared editor/layout inputs to canvas pixels.
 - [`src/component`](src/component/AGENTS.md) - React/browser host: content bridging, orchestration, effects, image loading, render scheduling, hooks, overlays, and leaf UI.
 - `playground` - Dogfooding app for real browser behavior.
 - `scripts` - Build, packaging, benchmark, and automation scripts.
@@ -49,7 +50,7 @@ Selection moves, animation ticks, and caret blinks reuse cached layout. Animatio
 - Add or update benchmark coverage when changing layout, paint, viewport planning, or other hot paths.
 - Verify real browser behavior in the playground after meaningful UI changes, especially for input, scrolling, resize, and paint issues.
 - Group tests logically with `describe` blocks, ordered common-case-first → edge-case-last; order tests within each group the same way.
-- Put helpers in the lowest subsystem they apply to (`test/document/`, `test/markdown/`, `test/editor/`). Higher subsystems may import from lower ones, never the other way around.
+- Put helpers in the lowest subsystem they apply to (`test/document/`, `test/markdown/`, `test/editor/`, `test/renderer/`). Higher subsystems may import from lower ones, never the other way around.
 
 ## Definition of done
 

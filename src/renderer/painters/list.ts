@@ -2,13 +2,13 @@
 // module delegates here so document-line foreground rendering stays focused on
 // text, selection, and annotation layering.
 
-import { resolveTaskCheckboxBounds, type DocumentLayout } from "../../layout";
-import type { EditorListItemMarker } from "../../state";
+import { resolveTaskCheckboxBounds, type DocumentLayout } from "@/editor/layout";
+import type { EditorListItemMarker } from "@/editor/state";
 import {
   resolveBlockPulseColor,
   resolveBlockPulseScale,
   type ActiveBlockPulse,
-} from "../lib/animations";
+} from "../animations";
 import type { EditorTheme } from "@/types";
 
 const listMarkerTextInset = 2;

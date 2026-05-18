@@ -31,7 +31,10 @@ export function createEditorStateTransition(
   };
 }
 
-function resolveChangedRootIndexes(previous: EditorState, next: EditorState) {
+function resolveChangedRootIndexes(
+  previous: EditorState,
+  next: EditorState,
+): readonly number[] {
   const previousBlocks = previous.documentIndex.document.blocks;
   const nextBlocks = next.documentIndex.document.blocks;
 
@@ -39,5 +42,14 @@ function resolveChangedRootIndexes(previous: EditorState, next: EditorState) {
     return nextBlocks.map((_, index) => index);
   }
 
-  return nextBlocks.flatMap((block, index) => (block === previousBlocks[index] ? [] : [index]));
+  // Single-pass scan into one result array. The `flatMap(b === prev ? [] : [i])`
+  // idiom is terser but allocates an empty array per unchanged block — meaningful
+  // garbage on every document-changing transition for large docs.
+  const changed: number[] = [];
+  for (let index = 0; index < nextBlocks.length; index += 1) {
+    if (nextBlocks[index] !== previousBlocks[index]) {
+      changed.push(index);
+    }
+  }
+  return changed;
 }

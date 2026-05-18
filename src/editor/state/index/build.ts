@@ -94,6 +94,9 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
 
   function visitBlock(block: Block, path: string, depth: number, parentBlockId: string | null) {
     const blockEntry: EditorBlock = {
+      // Local per-root index here; re-stamped to the global position when
+      // the root is positioned in `buildEditorRoots` / `positionEditorRoot`.
+      blockArrayIndex: blocks.length,
       childBlockIds: [],
       depth,
       end: position,
@@ -171,7 +174,7 @@ export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoo
         // falls out of skipping `appendRegion` here, so future inert types
         // (image-as-block, embed, display-math) qualify automatically.
         // Layout and planner reserve a fixed-height geometry slot for
-        // inert leaves; the canvas paints chrome via `paintInertBlock`.
+        // inert leaves; the renderer paints chrome via `paintInertBlock`.
         // Deletion of an inert neighbor is handled by a dedicated branch
         // in `boundary-collapse.ts`. Caret navigation, hit testing, and
         // the universal merge-collapse rule treat inert blocks correctly
@@ -465,10 +468,15 @@ function createResolvedDocumentIndex(
 
 function positionEditorRoot(root: EditorRoot, nextRoot: EditorRoot): EditorRoot {
   const delta = nextRoot.start - root.start;
+  const blockArrayStart = nextRoot.blockRange.start;
 
   return {
     ...nextRoot,
-    blocks: delta === 0 ? root.blocks : shiftEditorBlocks(root.blocks, delta),
+    // Always re-stamp blocks so `blockArrayIndex` reflects the global
+    // position. We can't skip the clone on `delta === 0` here because a
+    // freshly-built root might happen to start at the same char offset
+    // but still need its block indices stamped from local to global.
+    blocks: shiftEditorBlocks(root.blocks, delta, blockArrayStart),
     regions: delta === 0 ? root.regions : shiftEditorRegions(root.regions, delta),
   };
 }
@@ -490,9 +498,10 @@ function canReuseEditorRoot(
   );
 }
 
-function shiftEditorBlocks(blocks: EditorBlock[], delta: number) {
-  return blocks.map<EditorBlock>((block) => ({
+function shiftEditorBlocks(blocks: EditorBlock[], delta: number, blockArrayStart: number) {
+  return blocks.map<EditorBlock>((block, index) => ({
     ...block,
+    blockArrayIndex: blockArrayStart + index,
     end: block.end + delta,
     start: block.start + delta,
   }));

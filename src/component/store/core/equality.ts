@@ -89,10 +89,43 @@ export function equalRecordBy<V>(
   };
 }
 
+// Like `equalRecordBy` but pre-binds a fixed key set known at construction
+// time. Skips the per-call `Object.keys` walk and the `hasOwn` check — use
+// this when both records are guaranteed to share the same closed key set
+// (e.g. inside `createRecordSprig`).
+export function equalRecordByKeys<V = unknown>(
+  keys: readonly string[],
+  equalValue: Equality<V> = defaultEquality,
+): Equality<Record<string, V>> {
+  return (a, b) => {
+    if (a === b) return true;
+    for (const key of keys) {
+      if (!equalValue(a[key]!, b[key]!)) return false;
+    }
+    return true;
+  };
+}
+
 // Array equality that compares items by reference identity (`Object.is`).
 // Used for arrays whose elements are themselves immutable structures
 // (marks, comment threads), where structural equality reduces to identity.
 export const equalArraysByIdentity = equalArrayBy(defaultEquality);
+
+// Dispatch equality for discriminated unions keyed on `kind`. Each variant
+// supplies its own equality function over the narrowed type; the wrapper
+// handles the identity short-circuit and the kind discriminator once. If
+// `kind` lacks an entry in the table, returns `false` (over-emission is the
+// safer reactive-equality failure mode than under-emission).
+export function equalByKind<T extends { kind: string }>(perKind: {
+  [K in T["kind"]]: (a: Extract<T, { kind: K }>, b: Extract<T, { kind: K }>) => boolean;
+}): Equality<T> {
+  return (a, b) => {
+    if (a === b) return true;
+    if (a.kind !== b.kind) return false;
+    const equal = perKind[a.kind as T["kind"]];
+    return equal ? equal(a as never, b as never) : false;
+  };
+}
 
 export const equalSelectionPoints = equalBy<EditorSelectionPoint>((point) => [
   point.regionId,

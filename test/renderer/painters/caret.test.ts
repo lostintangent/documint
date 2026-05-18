@@ -4,12 +4,12 @@
 
 import { expect, test } from "bun:test";
 import type { EditorPresence } from "@/editor/anchors";
-import { paintOverlay } from "@/editor/canvas";
+import { paintOverlay } from "@/renderer";
 import { createEditorLayoutState } from "@/editor/layout";
 import { normalizeSelection, setSelection, type EditorState } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
 import { findOperationIndex, RecordingCanvasContext } from "../helpers";
-import { setup } from "../../helpers";
+import { setup } from "../../editor/helpers";
 
 test("paints resolved presence cursors on the overlay canvas", () => {
   let state = setup("alpha beta gamma\n");

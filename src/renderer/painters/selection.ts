@@ -3,11 +3,11 @@
 // the visible portion of a line and fill a rectangle in line-local space — so
 // they share this file.
 
-import type { EditorCommentRange } from "../../anchors";
-import { resolveLineVisualLeft, type DocumentLayout } from "../../layout";
-import type { EditorState, NormalizedEditorSelection } from "../../state";
+import type { EditorCommentRange } from "@/editor/anchors";
+import { resolveLineVisualLeft, type DocumentLayout } from "@/editor/layout";
+import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { EditorTheme } from "@/types";
-import { resolveRestingPulseAlpha, restingPulseMinimumAlpha } from "../lib/pulse";
+import { resolveRestingPulseAlpha, restingPulseMinimumAlpha } from "../animations/pulse";
 
 const selectionMinimumWidth = 2;
 const selectionVerticalInset = 1;

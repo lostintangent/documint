@@ -61,6 +61,18 @@ export function resolveCaretVisualLeft(
   );
 }
 
+// The caret's visual X, nudged one pixel right so hit-testing at this X
+// doesn't land exactly on a region/cell boundary and resolve to the wrong
+// side. Used by navigation when hit-testing the caret onto a target line
+// (vertical motion, page motion, table column tracking).
+export function resolveCaretHitTestX(
+  state: EditorState,
+  layout: DocumentLayout,
+  caret: NonNullable<ReturnType<typeof measureDocumentCaretTarget>>,
+) {
+  return resolveCaretVisualLeft(state, layout, caret) + 1;
+}
+
 function resolveCollapsedTrailingSpaceWidth(
   state: EditorState,
   line: DocumentLayoutLine,

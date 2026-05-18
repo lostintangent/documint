@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createEditorStateSprig } from "@/component/store/core/sprigs";
+import { createSourceSprig } from "@/component/store/core/sprigs";
+import { editorSource } from "@/component/store/editor/sprigs";
 import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 import { createViewportStore } from "@/component/store/viewport/store";
@@ -81,8 +82,8 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createDocumintStore(state);
-    const documentSprig = createEditorStateSprig((editorState) => editorState.documentIndex);
-    const focusSprig = createEditorStateSprig((editorState) => editorState.selection.focus);
+    const documentSprig = createSourceSprig(editorSource, (editorState) => editorState.documentIndex);
+    const focusSprig = createSourceSprig(editorSource, (editorState) => editorState.selection.focus);
     let documentNotifications = 0;
     let focusNotifications = 0;
 
@@ -103,7 +104,7 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createDocumintStore(state);
-    const focusSprig = createEditorStateSprig((editorState) => editorState.selection.focus);
+    const focusSprig = createSourceSprig(editorSource, (editorState) => editorState.selection.focus);
     let notifications = 0;
     const unsubscribe = focusSprig.subscribe(store, () => {
       notifications += 1;
@@ -119,7 +120,8 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createDocumintStore(state);
-    const imageUrlsSprig = createEditorStateSprig(
+    const imageUrlsSprig = createSourceSprig(
+      editorSource,
       (editorState) => new Set(editorState.documentIndex.imageUrls),
       equalStringSets,
     );
@@ -138,7 +140,7 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createDocumintStore(state);
-    const focusSprig = createEditorStateSprig((editorState) => editorState.selection.focus);
+    const focusSprig = createSourceSprig(editorSource, (editorState) => editorState.selection.focus);
     let notifications = 0;
 
     focusSprig.subscribe(store, () => {

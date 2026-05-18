@@ -2,16 +2,16 @@
 // a range selection exists (the selection highlight on the content canvas
 // stands in for it); presence carets always draw.
 
-import type { EditorPresence } from "../../anchors";
+import type { EditorPresence } from "@/editor/anchors";
 import {
   findLineForRegionOffset,
   measureCaretTarget,
   resolveCaretVisualLeft,
   type DocumentLayout,
-} from "../../layout";
-import type { EditorState, NormalizedEditorSelection } from "../../state";
+} from "@/editor/layout";
+import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { EditorTheme } from "@/types";
-import { resolveCenteredTextTop, resolveFontMetrics } from "../../text/measure";
+import { resolveCenteredTextTop, resolveFontMetrics } from "@/editor/text/measure";
 
 const caretOpticalTopInset = 1;
 const caretStrokeWidth = 2;

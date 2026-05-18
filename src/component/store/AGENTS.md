@@ -7,6 +7,7 @@ The store owns the current immutable `EditorState`, caches the lazy viewport pro
 ## Design Principles
 
 - **Editor mutations have one entry point.** State changes enter through `store.editor.command` or `store.editor.replace`; everything else observes.
+- **Source sprigs are the translation layer.** All store-subscribe wiring lives inside source sprigs — they translate raw store events into "the selected value changed (or didn't)" notifications. Computed sprigs are pure functions of other sprigs and build safely on top without ever touching the underlying state containers.
 - **Sprigs are semantic propagation control.** Reactive reads go through named sprigs, and equality belongs in the sprig layer so unchanged derived values preserve references and avoid unnecessary React work.
 - **Viewport cache and published viewport are different.** Scroll invalidates the cached viewport immediately, but reactive consumers see the published viewport only after a painted frame.
 - **Imperative reads are escape hatches.** Hot pointer paths and viewport hit testing may use `store.editor.getState()` or `store.viewport.get()`, but reactive UI should prefer sprigs.
@@ -16,8 +17,8 @@ The store owns the current immutable `EditorState`, caches the lazy viewport pro
 
 - `index.ts` exposes create-store APIs, sprig exports, and shared store types.
 - `react.tsx` owns provider, store access, `useSprig`, and command dispatch helpers.
-- `core/` owns source/computed/parameterized/record sprig constructors and equality helpers.
-- `editor/` owns editor event source, transitions, source sprigs, and editor-derived view models.
+- `core/` owns the source/computed/parameterized/record sprig constructors and equality helpers.
+- `editor/` owns the editor event source, transitions, source sprigs, and editor-derived view models.
 - `viewport/` owns the lazy viewport cache, published viewport frame, and viewport source sprig.
 - `presence.ts` owns sprigs that join editor state with the published viewport.
 
@@ -25,9 +26,12 @@ The store owns the current immutable `EditorState`, caches the lazy viewport pro
 
 A sprig is a `{ read, subscribe }` pair for a reactive value. Sprigs are the only reactive read primitive; hooks subscribe through `useSprig`, and equality/deduplication lives in the sprig layer rather than in hooks.
 
-Use `createEditorStateSprig` for source reads from `EditorState`, `createComputedSprig` for derived values, `createParameterizedSprig` when stable host parameters are part of the key, and `createRecordSprig` to bundle several sprigs into one record. Parameterized sprigs have a single-entry cache per store, so callers must pass reference-stable params and avoid multiple competing parameter sets for the same sprig.
+Use `createSourceSprig` against a `SprigSource` descriptor to expose an external store (today: the editor and viewport stores) as a sprig, `createComputedSprig` for derived values, `createParameterizedSprig` when stable host parameters are part of the key, and `createRecordSprig` to bundle several sprigs into one record. Parameterized sprigs have a single-entry cache per store, so callers must pass reference-stable params.
 
-## Known Limits
+---
 
-- Source sprig listeners are currently per consumer; sharing the listener fan-out can be fixed inside `createEditorStateSprig` without public API changes.
-- Parameterized sprigs use a single-entry cache per store; multiple consumers with different params can thrash, though current usage has one consumer per parameterized sprig.
+> **Known performance limits.** Two deliberate compromises sit below today's noise floor; the thresholds below say when to revisit.
+>
+> *Per-consumer source listener fan-out* — each source sprig consumer attaches its own listener to the underlying store, so today's ~19 `useSprig` sites install ~43 editor listeners and ~8 viewport listeners. Overhead is ~300 ns per transition. Revisit if measured cost crosses ~30 µs/sec or consumer count crosses ~150 (~5× today). Fix: shared fan-out inside `createSourceSprig`; no public API change.
+>
+> *Single-entry parameterized cache* — `createParameterizedSprig` keeps one `{depValues, params, value}` per store. Every parameterized sprig today has exactly one React consumer (audited 2025), so the invariant holds. A second consumer with different params (likely from list-rendering: per-thread overlays, per-block decorations) would ping-pong the cache. Fix: linear-scan LRU (~30 lines); no public API change.

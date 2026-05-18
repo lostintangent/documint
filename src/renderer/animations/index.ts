@@ -15,7 +15,7 @@ import {
   type TextHighlightAnimation,
   type BlockPulseAnimation,
   type TextPulseAnimation,
-} from "../../state";
+} from "@/editor/state";
 import { blendCanvasColors, transparentCanvasColor } from "./colors";
 
 export type ActiveBlockFlash = ActiveBlockFlashAnimation & {

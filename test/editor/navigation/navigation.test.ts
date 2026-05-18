@@ -6,9 +6,25 @@ import {
   moveCaretToLineBoundary,
   moveCaretVertically,
 } from "@/editor/navigation";
-import { measureLayoutSlice } from "@/editor/layout/measure";
-import { createLayoutCache, createEditorLayoutState, resolveSelectionHit } from "@/editor";
+import {
+  createEditorLayoutState,
+  createLayoutCache,
+  resolveSelectionHit,
+  type EditorState,
+} from "@/editor";
 import { getRegion, placeAt, setup } from "../helpers";
+
+// Tall enough that the full layout is in view for every test fixture, so
+// motion semantics aren't gated by virtualization or viewport clipping.
+const TEST_VIEWPORT_HEIGHT = 2_000;
+
+function layoutAt(state: EditorState, width: number) {
+  return createEditorLayoutState(
+    state,
+    { height: TEST_VIEWPORT_HEIGHT, top: 0, width },
+    createLayoutCache(),
+  );
+}
 
 test("moves left to the previous container when the caret is at the start", () => {
   const state = setup("# Heading\n\nParagraph");
@@ -101,7 +117,7 @@ test("extends horizontal selections by grapheme clusters", () => {
 test("extends the selection to the start of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");
-  const layout = measureLayoutSlice(state.documentIndex, { width: 90 });
+  const layout = layoutAt(state, 90);
   const nextState = moveCaretToLineBoundary(placeAt(state, container, "end"), layout, "Home", true);
 
   expect(nextState.selection.anchor.regionId).toBe(container.id);
@@ -114,7 +130,7 @@ test("extends the selection to the start of the current line", () => {
 test("extends the selection to the end of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");
-  const layout = measureLayoutSlice(state.documentIndex, { width: 90 });
+  const layout = layoutAt(state, 90);
   const nextState = moveCaretToLineBoundary(
     placeAt(state, container, "start"),
     layout,
@@ -134,7 +150,7 @@ test("moves vertically between table cells in the same column", () => {
   const beta = getRegion(state, "beta");
   const headerB = getRegion(state, "B");
   const delta = getRegion(state, "delta");
-  const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
+  const layout = layoutAt(state, 420);
   const upState = moveCaretVertically(placeAt(state, beta, 2), layout, -1);
 
   expect(upState.selection.focus.regionId).toBe(headerB.id);
@@ -150,7 +166,7 @@ test("moves out of a table when there is no row above or below", () => {
   const beta = getRegion(state, "beta");
   const before = getRegion(state, "before");
   const after = getRegion(state, "after");
-  const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
+  const layout = layoutAt(state, 420);
   const upState = moveCaretVertically(placeAt(state, headerB, 1), layout, -1);
   const downState = moveCaretVertically(placeAt(state, beta, 1), layout, 1);
 
@@ -162,7 +178,7 @@ test("extends the selection vertically across a region boundary while keeping th
   const state = setup("alpha\n\nbeta\n\ngamma");
   const first = getRegion(state, "alpha");
   const second = getRegion(state, "beta");
-  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
+  const layout = layoutAt(state, 320);
   const nextState = moveCaretVertically(placeAt(state, first, 2), layout, 1, true);
 
   expect(nextState.selection.anchor.regionId).toBe(first.id);
@@ -246,7 +262,7 @@ test("moves vertically across an inline soft break inside one paragraph", () => 
   // for `\n` segments.
   const state = setup("foo<br>bar\n");
   const region = getRegion(state, "foo\nbar");
-  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
+  const layout = layoutAt(state, 320);
   const downState = moveCaretVertically(placeAt(state, region, 1), layout, 1);
 
   expect(downState.selection.focus.regionId).toBe(region.id);

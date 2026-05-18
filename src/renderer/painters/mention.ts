@@ -2,10 +2,10 @@
 // objects projected as one replacement character, then rendered as a pill.
 
 import type { EditorTheme } from "@/types";
-import type { DocumentLayout } from "../../layout";
-import type { EditorInline } from "../../state";
-import { mentionHorizontalPadding } from "../../layout/measure/mention";
-import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/measure";
+import type { DocumentLayout } from "@/editor/layout";
+import type { EditorInline } from "@/editor/state";
+import { mentionHorizontalPadding } from "@/editor/layout/measure/mention";
+import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/measure";
 
 const mentionCornerRadius = 5;
 const mentionVerticalNudge = -1;

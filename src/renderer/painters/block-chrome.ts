@@ -6,10 +6,10 @@
 // orchestrator collects across the visible range and then paints once.
 
 import type { Block } from "@/document";
-import { resolveLineContentInset, type DocumentLayout } from "../../layout";
-import { findAncestorBlockEntry, type EditorState } from "../../state";
+import { resolveLineContentInset, type DocumentLayout } from "@/editor/layout";
+import { findAncestorBlockEntry, type EditorState } from "@/editor/state";
 import type { EditorTheme } from "@/types";
-import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../lib/animations";
+import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../animations";
 import { paintTableCellChrome, type PaintRegionBounds } from "./table";
 
 export const activeLineVerticalBleed = 2;

@@ -26,8 +26,6 @@ export {
   type InlineBounds,
 } from "./layout";
 
-// Canvas
-export { paintContent, paintOverlay } from "./canvas";
 export { hasActiveCommentHighlightsInViewport } from "./anchors";
 export type {
   TextDecoration,

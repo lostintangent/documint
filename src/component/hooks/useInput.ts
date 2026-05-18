@@ -978,7 +978,7 @@ function applyKeyboardInputCommand(
     if (command === "moveToLineStart" || command === "moveToLineEnd") {
       return moveCaretToLineBoundary(
         state,
-        viewport.layout,
+        viewport,
         command === "moveToLineStart" ? "Home" : "End",
         event.shiftKey,
       );
@@ -1033,7 +1033,7 @@ function applyKeyboardInputCommand(
   if (event.key === "ArrowUp" || event.key === "ArrowDown") {
     return moveCaretVertically(
       state,
-      viewport.layout,
+      viewport,
       event.key === "ArrowUp" ? -1 : 1,
       event.shiftKey,
     );
@@ -1042,7 +1042,7 @@ function applyKeyboardInputCommand(
   if (event.key === "PageUp" || event.key === "PageDown") {
     return moveCaretByViewport(
       state,
-      viewport.layout,
+      viewport,
       event.key === "PageUp" ? -1 : 1,
       event.shiftKey,
     );

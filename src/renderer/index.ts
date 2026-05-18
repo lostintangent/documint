@@ -1,7 +1,7 @@
-// Owns the top-level canvas paint pipeline. The editor mounts two stacked
-// canvases — content and overlay — and this module is the single entry point
-// each frame, exporting `paintContent` and `paintOverlay`. Tests drive the
-// same surface as the host.
+// Owns the top-level canvas paint pipeline. The host mounts two stacked
+// canvases — content and overlay — and this module is the renderer entry
+// point each frame, exporting `paintContent` and `paintOverlay`. Tests drive
+// the same surface as the host.
 //
 // See AGENTS.md in this folder for the pipeline z-order, the two-clock model
 // (`now` vs `ambientAnimationTime`), the block-snapshots-vs-block-index
@@ -10,22 +10,22 @@
 // truth for ordering rationale.
 
 import type { Block } from "@/document";
-import type { EditorCommentRange, EditorPresence } from "../anchors";
-import type { EditorLayoutState } from "../layout";
+import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
+import type { EditorLayoutState } from "@/editor/layout";
 import {
   findVisibleBlockRange,
   findVisibleLineRange,
   resolveLineContentInset,
   resolveListItemMarker,
   type DocumentLayout,
-} from "../layout";
+} from "@/editor/layout";
 import {
   findAncestorBlockEntry,
   type EditorState,
   type NormalizedEditorSelection,
-} from "../state";
+} from "@/editor/state";
 import type { DocumentResources, EditorTheme } from "@/types";
-import type { TextDecorationIndex } from "../text/decorations";
+import type { TextDecorationIndex } from "@/editor/text/decorations";
 import {
   resolveActiveBlockFlashes,
   resolveActiveTextFades,
@@ -37,8 +37,8 @@ import {
   type ActiveTextHighlight,
   type ActiveBlockPulse,
   type ActiveTextPulse,
-} from "./lib/animations";
-import { resolveCenteredTextBaseline } from "../text/measure";
+} from "./animations";
+import { resolveCenteredTextBaseline } from "@/editor/text/measure";
 import {
   activeLineVerticalBleed,
   paintActiveBlockBackground,
@@ -69,28 +69,38 @@ import {
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
 const emptyPresenceThreadColors: ReadonlyMap<number, string | null> = new Map();
 
-// Editor-facing entry point for the content canvas. Thin wrapper that pulls
+type PaintLayerOptions = {
+  devicePixelRatio: number;
+  height: number;
+  normalizedSelection: NormalizedEditorSelection;
+  theme: EditorTheme;
+  width: number;
+};
+
+type PaintContentOptions = PaintLayerOptions & {
+  activeBlockId: string | null;
+  activeRegionId: string | null;
+  activeThreadIndex: number | null;
+  ambientAnimationTime?: number;
+  commentRanges: EditorCommentRange[];
+  presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
+  now?: number;
+  resources?: DocumentResources | null;
+  textDecorations?: TextDecorationIndex;
+};
+
+type PaintOverlayOptions = PaintLayerOptions & {
+  presence?: EditorPresence[];
+  showCaret: boolean;
+};
+
+// Renderer entry point for the content canvas. Thin wrapper that pulls
 // pieces off the viewport snapshot and forwards into the orchestrator.
 export function paintContent(
   state: EditorState,
   viewport: EditorLayoutState,
   context: CanvasRenderingContext2D,
-  options: {
-    activeBlockId: string | null;
-    activeRegionId: string | null;
-    activeThreadIndex: number | null;
-    ambientAnimationTime?: number;
-    devicePixelRatio: number;
-    height: number;
-    commentRanges: EditorCommentRange[];
-    normalizedSelection: NormalizedEditorSelection;
-    presenceActiveThreadColors?: ReadonlyMap<number, string | null>;
-    now?: number;
-    resources?: DocumentResources | null;
-    textDecorations?: TextDecorationIndex;
-    theme: EditorTheme;
-    width: number;
-  },
+  options: PaintContentOptions,
 ): void {
   paintContentLayer({
     activeBlockId: options.activeBlockId,
@@ -116,22 +126,14 @@ export function paintContent(
   });
 }
 
-// Editor-facing entry point for the overlay canvas. Carets only — selection
+// Renderer entry point for the overlay canvas. Carets only — selection
 // and comment highlights live on the content canvas so they don't repaint
 // every blink tick.
 export function paintOverlay(
   state: EditorState,
   viewport: EditorLayoutState,
   context: CanvasRenderingContext2D,
-  options: {
-    devicePixelRatio: number;
-    height: number;
-    normalizedSelection: NormalizedEditorSelection;
-    presence?: EditorPresence[];
-    showCaret: boolean;
-    theme: EditorTheme;
-    width: number;
-  },
+  options: PaintOverlayOptions,
 ): void {
   paintCaretOverlay({
     context,

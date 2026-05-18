@@ -9,8 +9,8 @@
 // Keeping these here means a new text effect (squiggles, etc.) has a single
 // place to reach for instead of re-deriving each primitive.
 
-import { measureLineOffsetLeft, type DocumentLayout } from "../../../layout";
-import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../../text/measure";
+import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
+import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/measure";
 
 export const textDecorationMinimumWidth = 2;
 export const textDecorationThickness = 1.25;

@@ -35,9 +35,10 @@ export {
 
   // Resolve pointer and hover interactions against prepared layout. The raw
   // forms below are the editor-internal primitives — `navigation/`, the
-  // canvas painters, and tests reach for them. The editor-facing wrappers
+  // renderer, and tests reach for them. The editor-facing wrappers
   // (`resolveLayout*` below) compose these for the React host.
   measureInlineImageBounds,
+  resolveCaretHitTestX,
   resolveCaretVisualLeft,
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,

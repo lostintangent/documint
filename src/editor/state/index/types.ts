@@ -60,6 +60,10 @@ export type EditorRegion = {
 };
 
 export type EditorBlock = {
+  // Position of this block in `DocumentIndex.blocks`. Set by the indexer,
+  // re-stamped on every root reposition. Used by navigation's block-flow
+  // walks to look up adjacency in O(1) instead of a linear `findIndex`.
+  blockArrayIndex: number;
   childBlockIds: string[];
   depth: number;
   end: number;

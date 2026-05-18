@@ -2,9 +2,9 @@
 // module delegates here so generic line traversal stays focused on document
 // flow while table cells keep their own layering policy.
 
-import type { DocumentLayout } from "../../layout";
-import type { EditorState } from "../../state";
-import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../lib/animations";
+import type { DocumentLayout } from "@/editor/layout";
+import type { EditorState } from "@/editor/state";
+import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../animations";
 import type { EditorTheme } from "@/types";
 
 const tableCellMinimumPaintWidth = 80;

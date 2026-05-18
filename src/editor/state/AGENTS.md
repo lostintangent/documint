@@ -2,7 +2,7 @@
 
 The state subsystem owns semantic editing state and mutations. It projects immutable `Document` snapshots into an `EditorState` built around a `DocumentIndex`, then applies commands while preserving undo/redo, selection, animations, fragments, and anchored data integrity.
 
-This is a state-in/state-out layer. Browser events, DOM geometry, layout, and canvas painting stay outside it; callers enter through commands or selection primitives and receive a new immutable `EditorState` or a no-op/null result. Animation helpers accept explicit timestamps for deterministic callers, with convenience defaults for ordinary command use.
+This is a state-in/state-out layer. Browser events, DOM geometry, layout, and renderer painting stay outside it; callers enter through commands or selection primitives and receive a new immutable `EditorState` or a no-op/null result. Animation helpers accept explicit timestamps for deterministic callers, with convenience defaults for ordinary command use.
 
 `Fragment` is part of the document vocabulary, but fragment policy lives here. The document layer defines the clipboard payload shape (`text`, `inlines`, `blocks`); state decides how selections extract fragments and how destinations apply them.
 

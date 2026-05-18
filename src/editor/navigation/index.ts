@@ -2,9 +2,19 @@
  * Editor navigation helpers for caret motion and range extension. This
  * boundary keeps call sites semantic while splitting core line-based movement
  * from table-specific vertical overrides.
+ *
+ * Layout-aware motion (vertical, page, line boundary) takes the prepared
+ * `EditorLayoutState` so it has access to both layout geometry and viewport
+ * metrics. Region-only motion (horizontal, document boundary) takes just the
+ * state.
  */
-import type { CaretTarget, DocumentLayout, EditorLayoutState, EditorPoint } from "../layout";
-import { measureCaretTarget, resolveLayoutDragFocus, resolveLayoutSelectionHit } from "../layout";
+import {
+  measureCaretTarget,
+  resolveLayoutDragFocus,
+  resolveLayoutSelectionHit,
+  type EditorLayoutState,
+  type EditorPoint,
+} from "../layout";
 import {
   setSelection,
   setSelectionPoint,
@@ -35,29 +45,51 @@ export function moveCaretHorizontally(state: EditorState, delta: -1 | 1, extendS
 
 export function moveCaretVertically(
   state: EditorState,
-  layout: DocumentLayout,
+  viewport: EditorLayoutState,
   direction: -1 | 1,
   extendSelection = false,
 ) {
-  return applyVerticalMotion(state, layout, direction, extendSelection);
+  const caret = measureSelectionCaret(state, viewport);
+
+  if (!caret) {
+    return state;
+  }
+
+  return (
+    moveCaretVerticallyInTable(state, viewport.layout, caret, direction, extendSelection) ??
+    moveCaretVerticallyInFlow(state, viewport.layout, caret, direction, extendSelection)
+  );
 }
 
 export function moveCaretByViewport(
   state: EditorState,
-  layout: DocumentLayout,
+  viewport: EditorLayoutState,
   direction: -1 | 1,
   extendSelection = false,
 ) {
-  return applyViewportMotion(state, layout, direction, extendSelection);
+  const caret = measureSelectionCaret(state, viewport);
+
+  if (!caret) {
+    return state;
+  }
+
+  return moveCaretByViewportInFlow(
+    state,
+    viewport.layout,
+    viewport.viewport.height,
+    caret,
+    direction,
+    extendSelection,
+  );
 }
 
 export function moveCaretToLineBoundary(
   state: EditorState,
-  layout: DocumentLayout,
+  viewport: EditorLayoutState,
   boundary: "Home" | "End",
   extendSelection = false,
 ) {
-  return moveCaretToCurrentLineBoundary(state, layout, boundary, extendSelection);
+  return moveCaretToCurrentLineBoundary(state, viewport.layout, boundary, extendSelection);
 }
 
 export function moveCaretToDocumentBoundary(
@@ -65,7 +97,19 @@ export function moveCaretToDocumentBoundary(
   boundary: "start" | "end",
   extendSelection = false,
 ) {
-  return applyDocumentBoundaryMotion(state, boundary, extendSelection);
+  const regions = state.documentIndex.regions;
+  const targetRegion = boundary === "start" ? regions[0] : regions.at(-1);
+
+  if (!targetRegion) {
+    return state;
+  }
+
+  return setSelectionPoint(
+    state,
+    targetRegion.id,
+    boundary === "start" ? 0 : targetRegion.text.length,
+    extendSelection,
+  );
 }
 
 export function setSelectionAtPoint(
@@ -104,64 +148,9 @@ export function updateSelectionFromDrag(
     : null;
 }
 
-function applyVerticalMotion(
-  state: EditorState,
-  layout: DocumentLayout,
-  direction: -1 | 1,
-  extendSelection: boolean,
-) {
-  const caret = measureSelectionCaret(state, layout);
-
-  if (!caret) {
-    return state;
-  }
-
-  return (
-    moveCaretVerticallyInTable(state, layout, caret, direction, extendSelection) ??
-    moveCaretVerticallyInFlow(state, layout, caret, direction, extendSelection)
-  );
-}
-
-function applyViewportMotion(
-  state: EditorState,
-  layout: DocumentLayout,
-  direction: -1 | 1,
-  extendSelection: boolean,
-) {
-  const caret = measureSelectionCaret(state, layout);
-
-  if (!caret) {
-    return state;
-  }
-
-  return moveCaretByViewportInFlow(state, layout, caret, direction, extendSelection);
-}
-
-function applyDocumentBoundaryMotion(
-  state: EditorState,
-  boundary: "start" | "end",
-  extendSelection: boolean,
-) {
-  const regions = state.documentIndex.regions;
-  const targetRegion = boundary === "start" ? regions[0] : regions.at(-1);
-
-  if (!targetRegion) {
-    return state;
-  }
-
-  return setSelectionPoint(
-    state,
-    targetRegion.id,
-    boundary === "start" ? 0 : targetRegion.text.length,
-    extendSelection,
-  );
-}
-
-function measureSelectionCaret(state: EditorState, layout: DocumentLayout) {
-  return measureCaretTarget(layout, state.documentIndex, {
+function measureSelectionCaret(state: EditorState, viewport: EditorLayoutState) {
+  return measureCaretTarget(viewport.layout, state.documentIndex, {
     regionId: state.selection.focus.regionId,
     offset: state.selection.focus.offset,
   });
 }
-
-export type { CaretTarget };

@@ -48,11 +48,11 @@ export function isContainerBlock(block: { type: string }): boolean {
 // includes inert leaf blocks because they have block entries despite having no
 // editable regions.
 export function previousBlockInFlow(documentIndex: DocumentIndex, blockId: string) {
-  return findAdjacentBlockInFlow(documentIndex.blocks, blockId, -1);
+  return findAdjacentBlockInFlow(documentIndex, blockId, -1);
 }
 
 export function nextBlockInFlow(documentIndex: DocumentIndex, blockId: string) {
-  return findAdjacentBlockInFlow(documentIndex.blocks, blockId, 1);
+  return findAdjacentBlockInFlow(documentIndex, blockId, 1);
 }
 
 // First editable region in document flow within the given root, or null when
@@ -62,18 +62,20 @@ export function firstInFlowRegionOfRoot(documentIndex: DocumentIndex, rootIndex:
 }
 
 function findAdjacentBlockInFlow(
-  blocks: DocumentIndex["blocks"],
+  documentIndex: DocumentIndex,
   fromBlockId: string,
   direction: -1 | 1,
 ) {
-  const startIndex = blocks.findIndex((block) => block.id === fromBlockId);
+  const startBlock = documentIndex.blockIndex.get(fromBlockId);
 
-  if (startIndex === -1) {
+  if (!startBlock) {
     return null;
   }
 
+  const { blocks } = documentIndex;
+
   for (
-    let index = startIndex + direction;
+    let index = startBlock.blockArrayIndex + direction;
     index >= 0 && index < blocks.length;
     index += direction
   ) {

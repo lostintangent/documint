@@ -6,10 +6,10 @@
 // stays linear — the alternative would split inline visibility resolution
 // across three files.
 
-import type { DocumentLayout } from "../../../layout";
-import { findInlinesInSpan, type EditorRegion } from "../../../state";
+import type { DocumentLayout } from "@/editor/layout";
+import { findInlinesInSpan, type EditorRegion } from "@/editor/state";
 import type { DocumentResources, EditorTheme } from "@/types";
-import { resolveInlineTextFont } from "../../../text/fonts";
+import { resolveInlineTextFont } from "@/editor/text/fonts";
 import { paintInlineImage } from "../image";
 import { paintInlineMention } from "../mention";
 import {

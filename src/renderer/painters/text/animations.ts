@@ -1,24 +1,24 @@
-// Owns transient text effects: insert highlights (a flash that fades over
+// Owns transient text animations: insert highlights (a flash that fades over
 // freshly typed text), text fades (ghost text for deletions), and text
 // pulses (a radial ping at a punctuation insertion point). Each effect
 // reads its descriptor list from the orchestrator, filters to the current
 // line, and paints its overlay. All three sit on top of the settled text
 // runs so they paint last in the foreground sub-pipeline.
 
-import { measureLineOffsetLeft, type DocumentLayout } from "../../../layout";
-import { findInlinesInSpan, type EditorRegion } from "../../../state";
+import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
+import { findInlinesInSpan, type EditorRegion } from "@/editor/state";
 import type { EditorTheme } from "@/types";
-import { resolveInlineTextFont } from "../../../text/fonts";
-import { splitGraphemes } from "../../../text/graphemes";
-import { resolveFontMetrics } from "../../../text/measure";
-import { collectRangeBoundaries, findRangeAtSegment } from "../../../text/ranges";
+import { resolveInlineTextFont } from "@/editor/text/fonts";
+import { splitGraphemes } from "@/editor/text/graphemes";
+import { resolveFontMetrics } from "@/editor/text/measure";
+import { collectRangeBoundaries, findRangeAtSegment } from "@/editor/text/ranges";
 import {
   resolveTextFadeColor,
   resolveTextPulseColor,
   type ActiveTextFade,
   type ActiveTextHighlight,
   type ActiveTextPulse,
-} from "../../lib/animations";
+} from "../../animations";
 import { paintClippedTextOverlay, resolveLineSegmentBounds } from "./glyphs";
 
 const textPulseBaseRadius = 4;

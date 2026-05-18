@@ -5,7 +5,7 @@
 // isolation.
 
 import { expect, test } from "bun:test";
-import { paintContent } from "@/editor/canvas";
+import { paintContent } from "@/renderer";
 import { createEditorLayoutState } from "@/editor/layout";
 import type { EditorCommentRange } from "@/editor/anchors";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
@@ -17,7 +17,7 @@ import {
 } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
 import type { EditorTheme } from "@/types";
-import { setup } from "../helpers";
+import { setup } from "../editor/helpers";
 import {
   approximately,
   findFillTextOperation,
