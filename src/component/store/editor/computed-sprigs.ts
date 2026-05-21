@@ -10,8 +10,6 @@ import {
   resolveActiveCommentIndex,
   resolveCursorViewportStatus,
   resolveImageAtSelection,
-  resolveTargetAtSelection,
-  type EditorHoverTarget,
   type EditorLayoutState,
   type EditorInline,
   type EditorSelectionRange,
@@ -21,78 +19,43 @@ import {
   type NormalizedEditorSelection,
   type SelectionFormatting,
 } from "@/editor";
-import { isResolvedCommentThread } from "@/document";
-import type { DocumentResources, DocumentUser } from "@/types";
+import type { DocumentResources } from "@/types";
 import {
   equalDocumentCompletions,
   resolveDocumentCompletionContext,
   type DocumentCompletion,
 } from "../../completions/document-completions";
-import { equalCompletionSources, type CompletionSource } from "../../completions/completions";
-import { createMentionCompletionSource, emojiCompletionSource } from "../../completions/sources";
-import {
-  areLeafBasesEqual,
-  type AnnotationLeaf,
-  type InsertionLeaf,
-  type LinkLeaf,
-  resolveContextualLeaf,
-  type TableLeaf,
-  type ThreadLeaf,
-} from "../../overlays/leaves/core/shared";
+import type { CompletionSource } from "../../completions/completions";
 import { createComputedSprig, createParameterizedSprig, createRecordSprig } from "../core/computed";
 import {
   equalArrayBy,
   equalArraysByIdentity,
-  equalByKind,
   equalCommentRanges,
   equalCommentStates,
-  equalNullable,
   equalNullableBy,
   equalNormalizedSelections,
   equalSelectionContexts,
 } from "../core/equality";
 import type { DocumintSprig } from "../core/sprigs";
-import { publishedViewportSprig } from "../viewport/sprigs";
+import { renderedLayoutSprig } from "../layout/sprigs";
 import { documentIndexSprig, editorStateSprig, selectionSprig } from "./sprigs";
 
 export type { DocumentCompletion } from "../../completions/document-completions";
 
-type SelectionRange = EditorSelectionRange | null;
-
-type SelectionHandles = {
+// Two-point bounding box for a non-collapsed selection. Sprig output is
+// nullable (collapsed selections produce no handles); consumers handle
+// the null case explicitly.
+export type SelectionHandles = {
   end: { left: number; top: number };
   start: { left: number; top: number };
-} | null;
-
-type CommentRanges = ReturnType<typeof getCommentState>["ranges"];
-type ContextualLeaf = LinkLeaf | ThreadLeaf;
-
-export type PromotedSelectionThread = {
-  anchor: NormalizedEditorSelection["start"];
-  animateInitialComment: boolean;
-  leftOverride?: number;
-  paddingY?: number;
-  selection: NonNullable<SelectionRange>;
-  threadIndex: number;
-};
-
-export type SelectionLeaf = AnnotationLeaf | ThreadLeaf;
-
-export type CursorLeaf = InsertionLeaf | LinkLeaf | TableLeaf | ThreadLeaf;
-
-export type PointerLeaf = ContextualLeaf;
-
-export type PointerView = {
-  cursor: "pointer" | "text";
-  leaf: PointerLeaf | null;
 };
 
 export type SelectionView = {
   formatting: SelectionFormatting;
-  handles: SelectionHandles;
+  handles: SelectionHandles | null;
   normalized: NormalizedEditorSelection;
-  range: SelectionRange;
-  viewport: EditorLayoutState | null;
+  range: EditorSelectionRange | null;
+  layout: EditorLayoutState | null;
 };
 
 export type ImageAtCursor = {
@@ -101,13 +64,13 @@ export type ImageAtCursor = {
   maxWidth: number | null;
 };
 
-const equalSelectionRanges = equalNullableBy<NonNullable<SelectionRange>>((range) => [
+const equalSelectionRanges = equalNullableBy<EditorSelectionRange>((range) => [
   range.regionId,
   range.startOffset,
   range.endOffset,
 ]);
 
-const equalSelectionHandles = equalNullableBy<NonNullable<SelectionHandles>>((handles) => [
+const equalSelectionHandles = equalNullableBy<SelectionHandles>((handles) => [
   handles.start.left,
   handles.start.top,
   handles.end.left,
@@ -131,75 +94,11 @@ const equalImageAtCursors = equalNullableBy<ImageAtCursor>((target) => [
   target.bounds.height,
 ]);
 
-function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting) {
+// Exported because the overlay leaf equality (`equalAnnotationLeaf`) reuses
+// it. Selection formatting is a `{ code, marks }` shape; identity works
+// on `marks` because marks are immutable in this codebase.
+export function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting) {
   return a.code === b.code && equalArraysByIdentity(a.marks, b.marks);
-}
-
-/* Leaf equality */
-
-// Per-kind leaf equality. Each function compares only its own variant; the
-// `equalByKind` dispatcher handles the identity short-circuit and kind
-// discrimination once. Each leaf kind appears in exactly one function here,
-// so the higher-level equalities (selection / cursor / contextual / pointer)
-// are just different subsets of the same per-kind functions.
-
-const equalAnnotationLeaf = (a: AnnotationLeaf, b: AnnotationLeaf): boolean =>
-  areLeafBasesEqual(a, b) &&
-  equalSelectionFormatting(a.formatting, b.formatting) &&
-  areSelectionRangesEqual(a.selection, b.selection);
-
-const equalInsertionLeaf = (a: InsertionLeaf, b: InsertionLeaf): boolean =>
-  areLeafBasesEqual(a, b);
-
-const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
-  areLeafBasesEqual(a, b) &&
-  a.endOffset === b.endOffset &&
-  a.regionId === b.regionId &&
-  a.startOffset === b.startOffset &&
-  a.title === b.title &&
-  a.url === b.url;
-
-const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
-  areLeafBasesEqual(a, b) &&
-  a.cellIndex === b.cellIndex &&
-  a.columnCount === b.columnCount &&
-  a.rowCount === b.rowCount &&
-  a.rowIndex === b.rowIndex;
-
-const equalThreadLeaf = (a: ThreadLeaf, b: ThreadLeaf): boolean =>
-  areLeafBasesEqual(a, b) &&
-  a.animateInitialComment === b.animateInitialComment &&
-  a.link?.title === b.link?.title &&
-  a.link?.url === b.link?.url &&
-  a.resolved === b.resolved &&
-  a.thread === b.thread &&
-  a.threadIndex === b.threadIndex;
-
-const equalContextualLeaves = equalByKind<ContextualLeaf>({
-  link: equalLinkLeaf,
-  thread: equalThreadLeaf,
-});
-
-const equalSelectionLeaves = equalNullable(
-  equalByKind<SelectionLeaf>({
-    annotation: equalAnnotationLeaf,
-    thread: equalThreadLeaf,
-  }),
-);
-
-const equalCursorLeaves = equalNullable(
-  equalByKind<CursorLeaf>({
-    insertion: equalInsertionLeaf,
-    link: equalLinkLeaf,
-    table: equalTableLeaf,
-    thread: equalThreadLeaf,
-  }),
-);
-
-const equalPointerLeaves = equalNullable<PointerLeaf>(equalContextualLeaves);
-
-function equalPointerViews(previous: PointerView, next: PointerView) {
-  return previous.cursor === next.cursor && equalPointerLeaves(previous.leaf, next.leaf);
 }
 
 // Depends on `documentIndexSprig` rather than `editorStateSprig` so selection-
@@ -211,13 +110,17 @@ export const commentStateSprig = createComputedSprig(
   equalCommentStates,
 );
 
-const commentThreadsSprig = createComputedSprig(
+// Exported because overlay leaf sprigs depend on it (the comment-thread
+// leaf needs the thread list to look up by index).
+export const commentThreadsSprig = createComputedSprig(
   [commentStateSprig],
   (_store, commentState) => commentState.threads,
   equalArrayBy(Object.is),
 );
 
-const commentRangesSprig = createComputedSprig(
+// Exported because overlay leaf sprigs depend on it (cursor and pointer
+// leaves need ranges to detect commented spans under the caret/hover).
+export const commentRangesSprig = createComputedSprig(
   [commentStateSprig],
   (_store, commentState) => commentState.ranges,
   equalCommentRanges,
@@ -231,26 +134,34 @@ export const normalizedSelectionSprig = createComputedSprig(
   equalNormalizedSelections,
 );
 
-const selectionRangeSprig = createComputedSprig(
-  [editorStateSprig],
-  (_store, state) => getSelectionRange(state),
+// Selection-derived sprigs track the selection + documentIndex slices
+// rather than the full editor state, so they don't recompute on animation-
+// only transitions. The query helpers take a full EditorState, so the body
+// reads state imperatively at sprig-fire time; correctness still holds
+// because the slices cover everything the queries transitively read.
+//
+// These three are exported because overlay leaf sprigs depend on them to
+// build selection-leaf / annotation-leaf view models.
+export const selectionRangeSprig = createComputedSprig(
+  [selectionSprig, documentIndexSprig],
+  (store) => getSelectionRange(store.editor.getState()),
   equalSelectionRanges,
 );
 
-const selectionFormattingSprig = createComputedSprig(
-  [editorStateSprig],
-  (_store, state) => getSelectionFormatting(state),
+export const selectionFormattingSprig = createComputedSprig(
+  [selectionSprig, documentIndexSprig],
+  (store) => getSelectionFormatting(store.editor.getState()),
   equalSelectionFormatting,
 );
 
-const selectionHandlesSprig = createComputedSprig(
-  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
-  (_store, state, normalizedSelection, viewport) => {
-    if (!viewport) {
+export const selectionHandlesSprig = createComputedSprig(
+  [editorStateSprig, normalizedSelectionSprig, renderedLayoutSprig],
+  (_store, state, normalizedSelection, layout): SelectionHandles | null => {
+    if (!layout) {
       return null;
     }
 
-    return resolveSelectionHandles(state, viewport, normalizedSelection);
+    return resolveSelectionHandles(state, layout, normalizedSelection);
   },
   equalSelectionHandles,
 );
@@ -260,85 +171,38 @@ export const selectionViewSprig: DocumintSprig<SelectionView> = createRecordSpri
   handles: selectionHandlesSprig,
   normalized: normalizedSelectionSprig,
   range: selectionRangeSprig,
-  viewport: publishedViewportSprig,
+  layout: renderedLayoutSprig,
 });
 
-export const selectionLeafSprig = createParameterizedSprig(
-  [selectionRangeSprig, selectionFormattingSprig, selectionHandlesSprig, commentThreadsSprig],
-  (
-    _store,
-    [promotedThread]: readonly [PromotedSelectionThread | null],
-    selectionRange,
-    formatting,
-    handles,
-    threads,
-  ): SelectionLeaf | null => {
-    return resolveSelectionLeaf({
-      formatting,
-      handles,
-      promotedThread,
-      selectionRange,
-      threads,
-    });
-  },
-  equalSelectionLeaves,
-);
-
-/* Cursor */
-
-export const cursorLeafSprig = createParameterizedSprig(
-  [
-    editorStateSprig,
-    normalizedSelectionSprig,
-    publishedViewportSprig,
-    commentThreadsSprig,
-    commentRangesSprig,
-  ],
-  (
-    _store,
-    [isEditable]: readonly [boolean],
-    state,
-    normalizedSelection,
-    viewport,
-    threads,
-    ranges,
-  ): CursorLeaf | null => {
-    if (!viewport) {
-      return null;
-    }
-
-    return resolveCursorLeaf({
-      isEditable,
-      ranges,
-      normalizedSelection,
-      state,
-      threads,
-      viewport,
-    });
-  },
-  equalCursorLeaves,
-);
-
+// `normalizedSelectionSprig` already covers selection + documentIndex via
+// its own deps, so it's the right subscription target. The rendered layout
+// ties the resolution to the painted frame. We read documentIndex / full
+// state imperatively because the underlying helpers take a state — but we
+// only fire when the selection projection or the layout actually change.
 export const caretInViewportSprig = createComputedSprig(
-  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
-  (_store, state, normalizedSelection, viewport): boolean => {
-    if (!viewport) {
+  [normalizedSelectionSprig, renderedLayoutSprig],
+  (store, normalizedSelection, layout): boolean => {
+    if (!layout) {
       return true;
     }
 
-    const status = resolveCursorViewportStatus(state, viewport, normalizedSelection.end);
+    const status = resolveCursorViewportStatus(
+      store.editor.getState().documentIndex,
+      layout,
+      normalizedSelection.end,
+    );
     return status !== "above" && status !== "below";
   },
 );
 
 export const caretTargetSprig = createComputedSprig(
-  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
-  (_store, state, normalizedSelection, viewport): CaretTarget | null => {
-    if (!viewport) {
+  [normalizedSelectionSprig, renderedLayoutSprig],
+  (store, normalizedSelection, layout): CaretTarget | null => {
+    if (!layout) {
       return null;
     }
 
-    return measureCaretTarget(state, viewport, normalizedSelection.end);
+    return measureCaretTarget(store.editor.getState(), layout, normalizedSelection.end);
   },
   equalCaretTargets,
 );
@@ -355,73 +219,37 @@ export const documentCompletionSprig = createParameterizedSprig(
   equalDocumentCompletions,
 );
 
-export const completionSourcesSprig = createParameterizedSprig(
-  [],
-  (_store, [users]: readonly [readonly DocumentUser[] | undefined]): CompletionSource[] => {
-    const mentionSource = createMentionCompletionSource(users);
-    return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
-  },
-  equalArrayBy(equalCompletionSources),
-);
-
-/* Pointer */
-
-export const pointerViewSprig = createParameterizedSprig(
-  [editorStateSprig, commentThreadsSprig, commentRangesSprig],
-  (
-    _store,
-    [hoverTarget]: readonly [EditorHoverTarget | null],
-    state,
-    threads,
-    ranges,
-  ): PointerView => {
-    const target =
-      hoverTarget?.kind === "link"
-        ? resolveTargetAtSelection(state, {
-            regionId: hoverTarget.regionId,
-            offset: resolveLinkInteriorOffset(hoverTarget),
-          })
-        : hoverTarget;
-    const leaf = resolveContextualLeaf(target, threads, ranges);
-    const cursor =
-      hoverTarget?.kind === "task-toggle" || leaf?.kind === "link" ? "pointer" : "text";
-
-    return { cursor, leaf };
-  },
-  equalPointerViews,
-);
-
 /* Host */
 
 export const selectionContextSprig = createComputedSprig(
-  [editorStateSprig],
-  (_store, state) => getSelectionContext(state),
+  [selectionSprig, documentIndexSprig],
+  (store) => getSelectionContext(store.editor.getState()),
   equalSelectionContexts,
 );
 
 /* Images */
 
 export const imageAtCursorSprig = createParameterizedSprig(
-  [editorStateSprig, normalizedSelectionSprig, publishedViewportSprig],
+  [editorStateSprig, normalizedSelectionSprig, renderedLayoutSprig],
   (
     _store,
     [resources]: readonly [DocumentResources | null],
     state,
     normalizedSelection,
-    viewport,
+    layout,
   ) => {
-    if (!resources || !viewport) {
+    if (!resources || !layout) {
       return null;
     }
 
-    return resolveImageAtCursor(state, viewport, normalizedSelection, resources);
+    return resolveImageAtCursor(state, layout, normalizedSelection, resources);
   },
   equalImageAtCursors,
 );
 
 function resolveImageAtCursor(
   state: EditorState,
-  viewport: EditorLayoutState,
+  layout: EditorLayoutState,
   normalizedSelection: NormalizedEditorSelection,
   resources: DocumentResources,
 ): ImageAtCursor | null {
@@ -435,7 +263,7 @@ function resolveImageAtCursor(
     return null;
   }
 
-  const bounds = measureInlineImageBounds(state, viewport, resources, imageInline);
+  const bounds = measureInlineImageBounds(state, layout, resources, imageInline);
   const maxWidth = imageInline.image
     ? (resources.images.get(imageInline.image.url)?.intrinsicWidth ?? null)
     : null;
@@ -445,15 +273,15 @@ function resolveImageAtCursor(
 
 function resolveSelectionHandles(
   state: EditorState,
-  viewport: EditorLayoutState,
+  layout: EditorLayoutState,
   selection: NormalizedEditorSelection,
-): SelectionHandles {
+): SelectionHandles | null {
   if (selection.collapsed) {
     return null;
   }
 
-  const startCaret = measureVisualCaretTarget(state, viewport, selection.start);
-  const endCaret = measureVisualCaretTarget(state, viewport, selection.end);
+  const startCaret = measureVisualCaretTarget(state, layout, selection.start);
+  const endCaret = measureVisualCaretTarget(state, layout, selection.end);
 
   if (!startCaret || !endCaret) {
     return null;
@@ -469,189 +297,6 @@ function resolveSelectionHandles(
       top: startCaret.top,
     },
   };
-}
-
-// Small vertical nudge below the selection-end's line bottom. Pairs with the
-// 14px CSS margin-top on the selection-mode anchor wrapper to give the
-// annotation toolbar a touch of breathing room from the selection highlight.
-const selectionLeafVerticalNudge = 2;
-
-function resolveAnnotationLeaf(
-  selection: NonNullable<SelectionRange>,
-  handles: NonNullable<SelectionHandles>,
-  formatting: SelectionFormatting,
-): AnnotationLeaf {
-  return {
-    formatting,
-    // Anchor row comes from selection-end (the leaf renders below the
-    // entire selected range).
-    anchor: { regionId: selection.regionId, offset: selection.endOffset },
-    kind: "annotation",
-    // Cross-corner: x from selection-start while top comes from
-    // selection-end's row, so the leaf sits at the bottom-left of the
-    // range's bounding box.
-    leftOverride: handles.start.left,
-    paddingY: selectionLeafVerticalNudge,
-    selection,
-  };
-}
-
-function resolveSelectionLeaf({
-  formatting,
-  handles,
-  promotedThread,
-  selectionRange,
-  threads,
-}: {
-  formatting: SelectionFormatting;
-  handles: SelectionHandles;
-  promotedThread: PromotedSelectionThread | null;
-  selectionRange: SelectionRange;
-  threads: ReturnType<typeof getCommentState>["threads"];
-}): SelectionLeaf | null {
-  if (!selectionRange || !handles) {
-    return null;
-  }
-
-  if (promotedThread && areSelectionRangesEqual(promotedThread.selection, selectionRange)) {
-    const thread = threads[promotedThread.threadIndex];
-    if (!thread) return null;
-
-    return {
-      ...promotedThread,
-      kind: "thread",
-      link: null,
-      resolved: isResolvedCommentThread(thread),
-      thread,
-    };
-  }
-
-  return resolveAnnotationLeaf(selectionRange, handles, formatting);
-}
-
-function areSelectionRangesEqual(
-  previous: NonNullable<SelectionRange>,
-  next: NonNullable<SelectionRange>,
-) {
-  return (
-    previous.endOffset === next.endOffset &&
-    previous.regionId === next.regionId &&
-    previous.startOffset === next.startOffset
-  );
-}
-
-function resolveCursorLeaf({
-  isEditable,
-  ranges,
-  normalizedSelection,
-  state,
-  threads,
-  viewport,
-}: {
-  isEditable: boolean;
-  ranges: CommentRanges;
-  normalizedSelection: NormalizedEditorSelection;
-  state: EditorState;
-  threads: ReturnType<typeof getCommentState>["threads"];
-  viewport: EditorLayoutState;
-}): CursorLeaf | null {
-  const focus = state.selection.focus;
-
-  if (!normalizedSelection.collapsed) {
-    return null;
-  }
-
-  const insertionLeaf = isEditable ? resolveInsertionLeaf(state) : null;
-
-  if (insertionLeaf) {
-    return insertionLeaf;
-  }
-
-  const contextualLeaf = resolveContextualLeaf(
-    resolveTargetAtSelection(state, focus),
-    threads,
-    ranges,
-  );
-
-  if (contextualLeaf) {
-    return contextualLeaf;
-  }
-
-  const tableLeaf = isEditable ? resolveTableLeaf(state, viewport) : null;
-
-  if (tableLeaf) {
-    return tableLeaf;
-  }
-
-  return null;
-}
-
-function resolveTableLeaf(state: EditorState, viewport: EditorLayoutState): TableLeaf | null {
-  const focus = state.selection.focus;
-  const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
-  const tableCellPosition = focusedRegion
-    ? (state.documentIndex.tableCellIndex.get(focusedRegion.id) ?? null)
-    : null;
-
-  if (!focusedRegion || !tableCellPosition) {
-    return null;
-  }
-
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.blockId);
-  const table =
-    blockEntry?.type === "table" ? state.documentIndex.document.blocks[blockEntry.rootIndex] : null;
-
-  if (!blockEntry || !table || table.type !== "table") {
-    return null;
-  }
-
-  const textLeft = resolveRegionTextLeft(viewport, focusedRegion.id);
-  const columnCount = Math.max(1, ...table.rows.map((row) => row.cells.length));
-
-  return textLeft !== null
-    ? {
-        anchor: focus,
-        cellIndex: tableCellPosition.cellIndex,
-        columnCount,
-        kind: "table",
-        // The cell's text-area edge isn't a caret position, so override the
-        // host's default left (caret-x at the anchor).
-        leftOverride: textLeft,
-        rowCount: table.rows.length,
-        rowIndex: tableCellPosition.rowIndex,
-      }
-    : null;
-}
-
-function resolveRegionTextLeft(viewport: EditorLayoutState, regionId: string) {
-  const firstLine = viewport.layout.lines.find((line) => line.regionId === regionId);
-
-  return firstLine ? firstLine.left : null;
-}
-
-function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
-  const focus = state.selection.focus;
-  const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
-
-  if (!focusedRegion || focusedRegion.blockType !== "paragraph" || focusedRegion.text.length > 0) {
-    return null;
-  }
-
-  if (focus.offset !== 0) {
-    return null;
-  }
-
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.blockId);
-
-  if (!blockEntry || blockEntry.parentBlockId !== null) {
-    return null;
-  }
-
-  return { anchor: focus, kind: "insertion" };
-}
-
-function resolveLinkInteriorOffset(target: Extract<EditorHoverTarget, { kind: "link" }>) {
-  return target.startOffset < target.endOffset ? target.startOffset + 1 : target.startOffset;
 }
 
 export const activeCommentIndexSprig = createComputedSprig(

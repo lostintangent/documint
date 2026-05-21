@@ -52,6 +52,7 @@ import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
 import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
 import type { CompletionSource } from "./completions/completions";
+import { createMentionCompletionSource, emojiCompletionSource } from "./completions/sources";
 import { InsertionLeaf } from "./overlays/leaves/InsertionLeaf";
 import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
 import type { LeafResolution } from "./overlays/leaves/core/shared";
@@ -81,7 +82,6 @@ import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations"
 import {
   activeCommentIndexSprig,
   commentStateSprig,
-  completionSourcesSprig,
   createStore,
   DocumintStoreProvider,
   editorStateSprig,
@@ -232,16 +232,16 @@ function DocumintHost({
 
   const {
     autoScrollDuringDrag,
+    commitLayout,
     getScrollTop,
-    invalidateViewport,
-    observeViewport,
+    invalidateLayout,
     observeScrollContainer,
     reconcileEditorState,
     resolvePoint,
     scrollTo,
   } = viewportActions;
 
-  const { layoutWidth, viewportLayout, viewportHeight, viewportTop } = viewportState;
+  const { layoutWidth, layout, viewportHeight, viewportTop } = viewportState;
 
   const { scrollContainer: scrollContainerRef } = viewportRefs;
 
@@ -249,7 +249,14 @@ function DocumintHost({
   const commentState = useSprig(commentStateSprig);
   const normalizedSel = useSprig(normalizedSelectionSprig);
   const isEditable = Boolean(onContentChanged);
-  const completionSources = useSprig(completionSourcesSprig, users);
+  // Completion sources are pure derivations of the host-provided `users`
+  // prop — no reactive editor input — so they live as a hook-local memo
+  // rather than a sprig. Reference stability relies on `users` itself
+  // being reference-stable across renders (an existing host contract).
+  const completionSources = useMemo<CompletionSource[]>(() => {
+    const mentionSource = createMentionCompletionSource(users);
+    return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
+  }, [users]);
   const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
     return isEditable ? completionSources : undefined;
   }, [completionSources, isEditable]);
@@ -314,7 +321,7 @@ function DocumintHost({
 
       reconcileEditorState(transition.previous, transition.next);
 
-      if (transition.animationsChanged) {
+      if (transition.hasNewAnimations) {
         // All editor animations are content-layer effects (block flash,
         // text highlight/fade/pulse, block pulse).
         // None affect layout or overlay, so a content paint is sufficient.
@@ -411,23 +418,23 @@ function DocumintHost({
   /* Paint callbacks */
   //
   // The render scheduler dispatches into one of these per mode:
-  //   - `renderContent` / `renderOverlay` read the cached layout via
-  //     `viewportLayout.peekCached()` — they paint with whatever layout is
-  //     currently cached, no recompute.
-  //   - `renderViewport` reads via `viewportLayout.get()`, which returns
-  //     the cached layout or recomputes if it was invalidated by an
-  //     earlier signal (scroll, doc-change reconcile, or the layout-
-  //     affecting effect below). The layout cost is paid here, not on
-  //     the lighter paint paths.
+  //   - `renderContent` / `renderOverlay` read the latest layout via
+  //     `layout.peekLatest()` — they paint with whatever is currently
+  //     latest, no recompute. If nothing's latest (just invalidated),
+  //     they skip and wait for a full render.
+  //   - `renderViewport` calls `commitLayout()`, which resolves the latest
+  //     layout (recomputing if invalidated), commits it as the rendered
+  //     frame, and fires reactive subscribers. The layout cost is paid
+  //     here, not on the lighter paint paths.
 
-  const renderContent = useEffectEvent((viewportState = viewportLayout.peekCached()) => {
-    if (!viewportState) {
+  const renderContent = useEffectEvent((layoutState = layout.peekLatest()) => {
+    if (!layoutState) {
       return;
     }
 
     const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, {
-      paintHeight: viewportState.paintHeight,
-      paintTop: viewportState.paintTop,
+      paintHeight: layoutState.paintHeight,
+      paintTop: layoutState.paintTop,
       width: layoutWidth,
     });
 
@@ -439,7 +446,7 @@ function DocumintHost({
 
     const now = performance.now();
 
-    paintContent(editorState, viewportState, context, {
+    paintContent(editorState, layoutState, context, {
       activeBlockId: selectionContext.block?.blockId ?? null,
       activeRegionId: editorState.selection.focus.regionId,
       activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
@@ -457,14 +464,14 @@ function DocumintHost({
     });
   });
 
-  const renderOverlay = useEffectEvent((viewportState = viewportLayout.peekCached()) => {
-    if (!viewportState) {
+  const renderOverlay = useEffectEvent((layoutState = layout.peekLatest()) => {
+    if (!layoutState) {
       return;
     }
 
     const preparedLayer = prepareCanvasLayer(overlayCanvasRef.current, {
-      paintHeight: viewportState.paintHeight,
-      paintTop: viewportState.paintTop,
+      paintHeight: layoutState.paintHeight,
+      paintTop: layoutState.paintTop,
       width: layoutWidth,
     });
 
@@ -474,7 +481,7 @@ function DocumintHost({
 
     const { context, devicePixelRatio, height, width } = preparedLayer;
 
-    paintOverlay(editorState, viewportState, context, {
+    paintOverlay(editorState, layoutState, context, {
       devicePixelRatio,
       height,
       normalizedSelection: normalizedSel,
@@ -489,21 +496,19 @@ function DocumintHost({
   });
 
   const renderViewport = useEffectEvent(() => {
-    const viewportState = viewportLayout.get();
-
-    observeViewport(viewportState);
-    renderContent(viewportState);
-    renderOverlay(viewportState);
+    const layoutState = commitLayout();
+    renderContent(layoutState);
+    renderOverlay(layoutState);
   });
 
   const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
     useRenderScheduler({
       hasRunningOptionalContentAnimations: () => {
-        const viewportState = viewportLayout.peekCached();
-        return viewportState
-          ? hasAnimatedDecorationsInViewport(editorState, viewportState, textDecorations) ||
+        const layoutState = layout.peekLatest();
+        return layoutState
+          ? hasAnimatedDecorationsInViewport(editorState, layoutState, textDecorations) ||
               hasActiveCommentHighlightsInViewport(
-                viewportState,
+                layoutState,
                 commentState.ranges,
                 commentPresence,
               )
@@ -627,7 +632,7 @@ function DocumintHost({
   // we always invalidate here so the rAF that follows builds against the new
   // state.
   useEffect(() => {
-    invalidateViewport();
+    invalidateLayout();
     scheduleFullRender();
   }, [editorState.documentIndex, layoutWidth, preferredTheme, renderResources, viewportHeight]);
 
@@ -713,7 +718,7 @@ function DocumintHost({
       return null;
     }
 
-    const measured = measureVisualCaretTarget(editorState, viewportLayout.get(), activeLeaf.anchor);
+    const measured = measureVisualCaretTarget(editorState, layout.get(), activeLeaf.anchor);
     if (!measured) {
       return null;
     }

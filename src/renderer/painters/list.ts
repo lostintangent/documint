@@ -1,15 +1,30 @@
 // Owns list and task marker chrome in the canvas paint path. The main paint
 // module delegates here so document-line foreground rendering stays focused on
 // text, selection, and annotation layering.
+//
+// `resolveVisibleListMarkers` is the per-frame pre-derivation that follows the
+// same shape as `resolveVisibleHeadingRules` / `resolveVisibleBlockquoteRegions`:
+// the orchestrator builds it once over the visible block range, then per-line
+// paint is an O(1) map lookup. This avoids walking ancestors for every wrapped
+// line of every list item (only the first wrapped line gets a marker).
 
-import { resolveTaskCheckboxBounds, type DocumentLayout } from "@/editor/layout";
-import type { EditorListItemMarker } from "@/editor/state";
+import { resolveListItemMarker, resolveTaskCheckboxBounds, type DocumentLayout } from "@/editor/layout";
+import {
+  findAncestorBlockEntry,
+  type EditorListItemMarker,
+  type EditorState,
+} from "@/editor/state";
 import {
   resolveBlockPulseColor,
   resolveBlockPulseScale,
   type ActiveBlockPulse,
 } from "../animations";
 import type { EditorTheme } from "@/types";
+
+export type VisibleListMarker = {
+  blockPath: string;
+  marker: EditorListItemMarker;
+};
 
 const listMarkerTextInset = 2;
 const orderedListMarkerGap = 8;
@@ -26,6 +41,47 @@ const taskCheckmarkPath = {
 };
 
 type TaskCheckboxBounds = ReturnType<typeof resolveTaskCheckboxBounds>;
+
+// Builds the per-frame map of list markers keyed by the first-line block id.
+// Only `line.start === 0` lines carry a marker, so wrapped lines never need a
+// lookup. The per-line foreground reads this map; `paintListMarker` already
+// no-ops on wrapped lines, so a miss on a non-marker line costs only `Map.get`.
+export function resolveVisibleListMarkers(
+  layout: DocumentLayout,
+  editorState: EditorState,
+  startIndex: number,
+  endIndex: number,
+): Map<string, VisibleListMarker> {
+  const visibleListMarkers = new Map<string, VisibleListMarker>();
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const line = layout.lines[index]!;
+
+    if (line.start !== 0 || visibleListMarkers.has(line.blockId)) {
+      continue;
+    }
+
+    const listItemEntry = findAncestorBlockEntry(
+      editorState.documentIndex,
+      line.blockId,
+      "listItem",
+    );
+
+    if (!listItemEntry) {
+      continue;
+    }
+
+    const marker = resolveListItemMarker(editorState, listItemEntry.id);
+
+    if (!marker) {
+      continue;
+    }
+
+    visibleListMarkers.set(line.blockId, { blockPath: listItemEntry.path, marker });
+  }
+
+  return visibleListMarkers;
+}
 
 export function paintListMarker(
   context: CanvasRenderingContext2D,

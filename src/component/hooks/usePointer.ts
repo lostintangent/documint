@@ -22,13 +22,8 @@ import {
 } from "react";
 import type { FocusInput } from "./useInput";
 import type { DocumentStorage } from "../lib/storage";
-import {
-  pointerViewSprig,
-  useDocumintStore,
-  useEditorCommand,
-  useSprig,
-  type PointerLeaf,
-} from "../store";
+import { useDocumintStore, useEditorCommand, useSprig } from "../store";
+import { pointerViewSprig, type PointerLeaf } from "../overlays/leaves/sprigs";
 
 type UsePointerOptions = {
   // DOM refs the hook reads from.
@@ -273,7 +268,7 @@ export function usePointer({
       if (!point) return null;
 
       const currentState = store.editor.getState();
-      return resolveEditorHoverTarget(currentState, store.viewport.get(), point);
+      return resolveEditorHoverTarget(currentState, store.layout.get(), point);
     },
   );
 
@@ -347,7 +342,7 @@ export function usePointer({
     }
 
     const canvas = canvasRef.current;
-    const viewport = store.viewport.get();
+    const layout = store.layout.get();
     const point = resolvePoint(event);
     if (!point) return;
 
@@ -363,8 +358,8 @@ export function usePointer({
     if (!canvas) return;
 
     const transition = event.shiftKey
-      ? extendEditorSelectionToPoint(viewport, point)
-      : setEditorSelectionAtPoint(viewport, point);
+      ? extendEditorSelectionToPoint(layout, point)
+      : setEditorSelectionAtPoint(layout, point);
     if (!transition) return;
 
     const focus = transition.next.selection.focus;
@@ -415,7 +410,7 @@ export function usePointer({
       return;
     }
 
-    const transition = dragEditorSelection(store.viewport.get(), point, anchor);
+    const transition = dragEditorSelection(store.layout.get(), point, anchor);
     if (!transition) return;
 
     onActivity();
@@ -525,7 +520,7 @@ export function usePointer({
     const point = resolvePoint(event);
 
     if (point) {
-      const transition = setEditorSelectionAtPoint(store.viewport.get(), point);
+      const transition = setEditorSelectionAtPoint(store.layout.get(), point);
       if (!transition) {
         focusInput();
         return;
@@ -545,7 +540,7 @@ export function usePointer({
 
     if (!point || target?.kind === "task-toggle") return;
 
-    const wordSel = resolveWordSelection(currentState, store.viewport.get(), point);
+    const wordSel = resolveWordSelection(currentState, store.layout.get(), point);
     if (!wordSel) return;
 
     event.preventDefault();

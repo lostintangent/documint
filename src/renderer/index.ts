@@ -16,14 +16,8 @@ import {
   findVisibleBlockRange,
   findVisibleLineRange,
   resolveLineContentInset,
-  resolveListItemMarker,
-  type DocumentLayout,
 } from "@/editor/layout";
-import {
-  findAncestorBlockEntry,
-  type EditorState,
-  type NormalizedEditorSelection,
-} from "@/editor/state";
+import { type EditorState, type NormalizedEditorSelection } from "@/editor/state";
 import type { DocumentResources, EditorTheme } from "@/types";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import {
@@ -40,34 +34,39 @@ import {
 } from "./animations";
 import { resolveCenteredTextBaseline } from "@/editor/text/measure";
 import {
-  activeLineVerticalBleed,
   paintActiveBlockBackground,
+  paintActiveBlockHighlight,
   paintBlockquoteRules,
   paintLineContainerBackground,
   paintHeadingRules,
   paintInertBlock,
   resolveVisibleBlockquoteRegions,
   resolveVisibleHeadingRules,
-} from "./painters/block-chrome";
+} from "./painters/blocks";
 import { paintCaretOverlay } from "./painters/caret";
-import { paintListMarker } from "./painters/list";
+import { paintCommentHighlights } from "./painters/comments";
 import {
-  paintCommentHighlights,
+  paintListMarker,
+  resolveVisibleListMarkers,
+  type VisibleListMarker,
+} from "./painters/list";
+import {
   paintSelectionHighlight,
   resolveSelectionRegionOrderRange,
   type SelectionRegionOrderRange,
 } from "./painters/selection";
-import { paintActiveTableCellHighlightPass, type PaintRegionBounds } from "./painters/table";
 import {
   paintTextFades,
   paintTextHighlights,
   paintLineText,
   paintTextPulses,
-  paintTextDecorations,
+  paintTextDecorationBackgrounds,
+  paintTextDecorationOverlays,
 } from "./painters/text";
 
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
 const emptyCommentPresence: ReadonlyMap<number, EditorPresence> = new Map();
+const emptyResources: DocumentResources = { images: new Map() };
 
 type PaintLayerOptions = {
   devicePixelRatio: number;
@@ -77,53 +76,171 @@ type PaintLayerOptions = {
   width: number;
 };
 
-type PaintContentOptions = PaintLayerOptions & {
+export type PaintContentOptions = PaintLayerOptions & {
   activeBlockId: string | null;
   activeRegionId: string | null;
   activeThreadIndex: number | null;
+  // `now` is required: pixels are a function of inputs, and that includes
+  // time. Animation progress, ambient pulses, and the default for
+  // `ambientAnimationTime` all resolve through it. Callers that don't care
+  // about animations should pass `0` (or any fixed value) for determinism.
+  now: number;
+  // Ambient effects (caret blink, resting pulses) resolve from this clock,
+  // which the host may freeze/resume around activity to keep effects in
+  // phase. Defaults to `now` when omitted.
   ambientAnimationTime?: number;
   commentRanges: EditorCommentRange[];
   commentPresence?: ReadonlyMap<number, EditorPresence>;
-  now?: number;
   resources?: DocumentResources | null;
   textDecorations?: TextDecorationIndex;
 };
 
-type PaintOverlayOptions = PaintLayerOptions & {
+export type PaintOverlayOptions = PaintLayerOptions & {
   presence?: EditorPresence[];
   showCaret: boolean;
 };
 
-// Renderer entry point for the content canvas. Thin wrapper that pulls
-// pieces off the viewport snapshot and forwards into the orchestrator.
+// Renderer entry point for the content canvas. Owns the staging order;
+// delegates each stage's work to a sibling module.
 export function paintContent(
   state: EditorState,
   viewport: EditorLayoutState,
   context: CanvasRenderingContext2D,
   options: PaintContentOptions,
 ): void {
-  paintContentLayer({
-    activeBlockId: options.activeBlockId,
-    activeRegionId: options.activeRegionId,
-    activeThreadIndex: options.activeThreadIndex,
-    ambientAnimationTime: options.ambientAnimationTime,
-    containerLineBounds: viewport.layout.regionBounds,
+  const {
+    activeBlockId,
+    activeRegionId,
+    activeThreadIndex,
+    ambientAnimationTime = options.now,
+    commentRanges,
+    commentPresence = emptyCommentPresence,
+    devicePixelRatio,
+    height,
+    normalizedSelection,
+    now,
+    resources: resourcesOption,
+    textDecorations = emptyTextDecorationIndex,
+    theme,
+    width,
+  } = options;
+  const resources = resourcesOption ?? emptyResources;
+  const { layout, blockMap: blockSnapshots, paintTop: viewportTop } = viewport;
+
+  context.save();
+  context.scale(devicePixelRatio, devicePixelRatio);
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = theme.background;
+  context.fillRect(0, 0, width, height);
+  context.textBaseline = "alphabetic";
+  context.translate(0, -viewportTop);
+
+  // Stage 1: per-frame derivations that are stable across the per-line passes.
+  const { endIndex, startIndex } = findVisibleLineRange(layout, viewportTop, height);
+  const selectionRegionOrderRange = resolveSelectionRegionOrderRange(state, normalizedSelection);
+  const activeBlockFlashes = resolveActiveBlockFlashes(state, now);
+  const activeTextFades = resolveActiveTextFades(state, now);
+  const activeTextHighlights = resolveActiveTextHighlights(state, now);
+  const activeBlockPulses = resolveActiveBlockPulses(state, now);
+  const activeTextPulses = resolveActiveTextPulses(state, now);
+  const visibleBlockquoteRegions = resolveVisibleBlockquoteRegions(
+    layout,
+    state,
+    activeBlockId,
+    startIndex,
+    endIndex,
+  );
+  const visibleHeadingRules = resolveVisibleHeadingRules(
+    layout,
+    state,
+    blockSnapshots,
+    startIndex,
+    endIndex,
+    width,
+  );
+  const visibleListMarkers = resolveVisibleListMarkers(layout, state, startIndex, endIndex);
+
+  // Inputs to the per-line foreground stage. Built once per frame — per-line
+  // work only varies `line`, so we don't reallocate an options bag per
+  // visible line.
+  const lineInputs: LineForegroundInputs = {
+    activeBlockFlashes,
+    activeBlockId,
+    activeBlockPulses,
+    activeTextFades,
+    activeTextHighlights,
+    activeTextPulses,
+    activeThreadIndex,
+    ambientAnimationTime,
+    blockSnapshots,
+    commentPresence,
+    commentRanges,
     context,
-    devicePixelRatio: options.devicePixelRatio,
     editorState: state,
-    height: options.height,
-    layout: viewport.layout,
-    commentRanges: options.commentRanges,
-    normalizedSelection: options.normalizedSelection,
-    commentPresence: options.commentPresence ?? emptyCommentPresence,
-    now: options.now,
-    resources: options.resources ?? { images: new Map() },
-    blockSnapshots: viewport.blockMap,
-    textDecorations: options.textDecorations ?? emptyTextDecorationIndex,
-    theme: options.theme,
-    viewportTop: viewport.paintTop,
-    width: options.width,
+    normalizedSelection,
+    resources,
+    selectionRegionOrderRange,
+    textDecorations,
+    theme,
+    visibleListMarkers,
+    width,
+  };
+
+  // Stage 2: per-visible-line block backgrounds (code fences, table cell chrome).
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const line = layout.lines[index]!;
+    paintLineContainerBackground(
+      context,
+      line,
+      blockSnapshots.get(line.blockId) ?? null,
+      layout.regionBounds.get(line.regionId) ?? null,
+      state.documentIndex.tableCellIndex.get(line.regionId) ?? null,
+      theme,
+      width,
+    );
+  }
+
+  // Stage 3: inert block chrome (divider rule today; future image-as-block,
+  // embed, display-math). Iterates the visible slice of `layout.blocks` and
+  // dispatches by `block.type`. Text blocks no-op here — their chrome paints
+  // via stage 2 (code/table) or stage 6 (heading/blockquote rules).
+  const visibleBlockRange = findVisibleBlockRange(layout, viewportTop, height);
+  paintInertBlock(
+    context,
+    layout,
+    visibleBlockRange.startIndex,
+    visibleBlockRange.endIndex,
+    theme,
+    width,
+  );
+
+  // Stage 4: active block highlight, painted after backgrounds and before
+  // foregrounds. The dispatcher in `blocks/backgrounds.ts` decides which
+  // block-type-specific chrome to paint (today: active table cell band).
+  paintActiveBlockHighlight({
+    activeBlockFlashes,
+    activeBlockId,
+    activeRegionId,
+    context,
+    editorState: state,
+    endIndex,
+    layout,
+    regionBounds: layout.regionBounds,
+    startIndex,
+    theme,
   });
+
+  // Stage 5: per-visible-line foreground (text, decorations, markers, effects).
+  for (let index = startIndex; index < endIndex; index += 1) {
+    paintContentLine(lineInputs, layout.lines[index]!);
+  }
+
+  // Stage 6: rules (heading underline, blockquote bar) painted last so they
+  // sit on top of any foreground that bled into their geometry.
+  paintHeadingRules(context, visibleHeadingRules, theme);
+  paintBlockquoteRules(context, visibleBlockquoteRegions, theme);
+
+  context.restore();
 }
 
 // Renderer entry point for the overlay canvas. Carets only — selection
@@ -150,218 +267,48 @@ export function paintOverlay(
   });
 }
 
-// Viewport-level orchestrator. Owns the staging order; delegates each stage's
-// work to a sibling module. Private — `paintContent` is the only entry; tests
-// drive through it the same way the host does.
-function paintContentLayer({
-  activeBlockId,
-  activeRegionId,
-  activeThreadIndex,
-  containerLineBounds,
-  context,
-  devicePixelRatio,
-  editorState,
-  height,
-  layout,
-  commentRanges,
-  normalizedSelection,
-  now = getPaintTime(),
-  ambientAnimationTime = now,
-  commentPresence = emptyCommentPresence,
-  resources,
-  blockSnapshots,
-  textDecorations = emptyTextDecorationIndex,
-  theme,
-  viewportTop,
-  width,
-}: {
-  activeBlockId: string | null;
-  activeRegionId: string | null;
-  activeThreadIndex: number | null;
-  containerLineBounds: Map<string, PaintRegionBounds>;
-  ambientAnimationTime?: number;
-  context: CanvasRenderingContext2D;
-  devicePixelRatio: number;
-  editorState: EditorState;
-  height: number;
-  layout: DocumentLayout;
-  commentRanges: EditorCommentRange[];
-  normalizedSelection: NormalizedEditorSelection;
-  commentPresence?: ReadonlyMap<number, EditorPresence>;
-  now?: number;
-  resources: DocumentResources;
-  blockSnapshots: Map<string, Block>;
-  textDecorations?: TextDecorationIndex;
-  theme: EditorTheme;
-  viewportTop: number;
-  width: number;
-}) {
-  context.save();
-  context.scale(devicePixelRatio, devicePixelRatio);
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = theme.background;
-  context.fillRect(0, 0, width, height);
-  context.textBaseline = "alphabetic";
-  context.translate(0, -viewportTop);
-
-  // Resolve everything that's constant across the per-line passes once.
-  const { endIndex, startIndex } = findVisibleLineRange(layout, viewportTop, height);
-  const selectionRegionOrderRange = resolveSelectionRegionOrderRange(
-    editorState,
-    normalizedSelection,
-  );
-  const activeBlockFlashes = resolveActiveBlockFlashes(editorState, now);
-  const activeTextFades = resolveActiveTextFades(editorState, now);
-  const activeTextHighlights = resolveActiveTextHighlights(editorState, now);
-  const activeBlockPulses = resolveActiveBlockPulses(editorState, now);
-  const activeTextPulses = resolveActiveTextPulses(editorState, now);
-  const visibleBlockquoteRegions = resolveVisibleBlockquoteRegions(
-    layout,
-    editorState,
-    activeBlockId,
-    startIndex,
-    endIndex,
-  );
-  const visibleHeadingRules = resolveVisibleHeadingRules(
-    layout,
-    editorState,
-    blockSnapshots,
-    startIndex,
-    endIndex,
-    width,
-  );
-
-  // Stage 2: per-visible-line block backgrounds (code fences, table cell chrome).
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const line = layout.lines[index]!;
-    paintLineContainerBackground(
-      context,
-      line,
-      blockSnapshots.get(line.blockId) ?? null,
-      containerLineBounds.get(line.regionId) ?? null,
-      editorState.documentIndex.tableCellIndex.get(line.regionId) ?? null,
-      theme,
-      width,
-    );
-  }
-
-  // Stage 3: inert block chrome (divider rule today; future image-as-block,
-  // embed, display-math). Iterates the visible slice of `layout.blocks` and
-  // dispatches by `block.type`. Text blocks no-op here — their chrome paints
-  // via stage 2 (code/table) or stage 6 (heading/blockquote rules).
-  const visibleBlockRange = findVisibleBlockRange(layout, viewportTop, height);
-  paintInertBlock(
-    context,
-    layout,
-    visibleBlockRange.startIndex,
-    visibleBlockRange.endIndex,
-    theme,
-    width,
-  );
-
-  // Stage 4: active table cell band, painted after backgrounds and before
-  // foregrounds so the cell highlight sits behind text but on top of borders.
-  paintActiveTableCellHighlightPass({
-    activeBlockFlashes,
-    activeBlockId,
-    activeRegionId,
-    context,
-    editorState,
-    endIndex,
-    layout,
-    regionBounds: containerLineBounds,
-    startIndex,
-    theme,
-    verticalBleed: activeLineVerticalBleed,
-  });
-
-  // Stage 5: per-visible-line foreground (text, decorations, markers, effects).
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const line = layout.lines[index]!;
-    paintContentLine({
-      activeBlockId,
-      activeBlockFlashes,
-      ambientAnimationTime,
-      activeTextFades,
-      activeTextHighlights,
-      activeBlockPulses,
-      activeTextPulses,
-      activeThreadIndex,
-      context,
-      editorState,
-      line,
-      commentRanges,
-      normalizedSelection,
-      commentPresence,
-      resources,
-      blockSnapshots,
-      selectionRegionOrderRange,
-      textDecorations,
-      theme,
-      width,
-    });
-  }
-
-  // Stage 6: rules (heading underline, blockquote bar) painted last so they
-  // sit on top of any foreground that bled into their geometry.
-  paintHeadingRules(context, visibleHeadingRules, theme);
-  paintBlockquoteRules(context, visibleBlockquoteRegions, theme);
-
-  context.restore();
-}
-
-// Per-line foreground sub-pipeline. Intentionally short and linear — each call
-// is a single visual concern, ordered by z-stack.
-function paintContentLine({
-  activeBlockId,
-  activeBlockFlashes,
-  ambientAnimationTime,
-  activeTextFades,
-  activeTextHighlights,
-  activeBlockPulses,
-  activeTextPulses,
-  activeThreadIndex,
-  context,
-  editorState,
-  line,
-  commentRanges,
-  normalizedSelection,
-  commentPresence,
-  resources,
-  blockSnapshots,
-  selectionRegionOrderRange,
-  textDecorations,
-  theme,
-  width,
-}: {
-  activeBlockId: string | null;
+// Inputs to the per-line foreground stage. Stable across the line loop and
+// built once per frame in `paintContent`; `paintContentLine` only varies
+// `line`. Naming mirrors the "per-line foreground sub-pipeline" comment on
+// `paintContentLine`.
+type LineForegroundInputs = {
   activeBlockFlashes: Map<string, ActiveBlockFlash>;
-  ambientAnimationTime: number;
+  activeBlockId: string | null;
+  activeBlockPulses: Map<string, ActiveBlockPulse>;
   activeTextFades: Map<string, ActiveTextFade[]>;
   activeTextHighlights: Map<string, ActiveTextHighlight[]>;
-  activeBlockPulses: Map<string, ActiveBlockPulse>;
   activeTextPulses: Map<string, ActiveTextPulse[]>;
   activeThreadIndex: number | null;
+  ambientAnimationTime: number;
+  blockSnapshots: Map<string, Block>;
+  commentPresence: ReadonlyMap<number, EditorPresence>;
+  commentRanges: EditorCommentRange[];
   context: CanvasRenderingContext2D;
   editorState: EditorState;
-  line: DocumentLayout["lines"][number];
-  commentRanges: EditorCommentRange[];
   normalizedSelection: NormalizedEditorSelection;
-  commentPresence: ReadonlyMap<number, EditorPresence>;
   resources: DocumentResources;
-  blockSnapshots: Map<string, Block>;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
   textDecorations: TextDecorationIndex;
   theme: EditorTheme;
+  visibleListMarkers: Map<string, VisibleListMarker>;
   width: number;
-}) {
-  const snapshotBlock = blockSnapshots.get(line.blockId) ?? null;
+};
+
+// Per-line foreground sub-pipeline. Intentionally short and linear — each call
+// is a single visual concern, ordered by z-stack.
+function paintContentLine(
+  inputs: LineForegroundInputs,
+  line: EditorLayoutState["layout"]["lines"][number],
+) {
+  const { context, editorState, theme, width } = inputs;
+  const snapshotBlock = inputs.blockSnapshots.get(line.blockId) ?? null;
   const runtimeBlockPath = editorState.documentIndex.blockIndex.get(line.blockId)?.path ?? null;
   const container = editorState.documentIndex.regionIndex.get(line.regionId) ?? null;
   const containerPath = container?.path ?? "";
-  const listItemEntry = findAncestorBlockEntry(editorState.documentIndex, line.blockId, "listItem");
-  const listMarker = listItemEntry ? resolveListItemMarker(editorState, listItemEntry.id) : null;
-  const blockPulse = listItemEntry ? (activeBlockPulses.get(listItemEntry.path) ?? null) : null;
+  const visibleListMarker = inputs.visibleListMarkers.get(line.blockId) ?? null;
+  const blockPulse = visibleListMarker
+    ? (inputs.activeBlockPulses.get(visibleListMarker.blockPath) ?? null)
+    : null;
   const textLeft = line.left + resolveLineContentInset(editorState, line);
   const textBaseline = resolveLineTextBaseline(line);
   const defaultTextColor =
@@ -374,48 +321,47 @@ function paintContentLine({
     line,
     snapshotBlock,
     runtimeBlockPath,
-    activeBlockId,
-    activeBlockFlashes,
+    inputs.activeBlockId,
+    inputs.activeBlockFlashes,
     theme,
     width,
   );
-  const lineTextDecorations = textDecorations.size > 0 ? textDecorations.get(containerPath) : null;
+
+  const lineTextDecorations = inputs.textDecorations.get(containerPath) ?? null;
 
   if (lineTextDecorations) {
-    paintTextDecorations(
+    paintTextDecorationBackgrounds(
       context,
       line,
       container,
       textLeft,
       textBaseline,
       lineTextDecorations,
-      "background",
-      ambientAnimationTime,
-      defaultTextColor,
+      inputs.ambientAnimationTime,
     );
   }
   paintSelectionHighlight(
     context,
     editorState,
     line,
-    normalizedSelection,
-    selectionRegionOrderRange,
+    inputs.normalizedSelection,
+    inputs.selectionRegionOrderRange,
     theme,
   );
   paintCommentHighlights(
     context,
     editorState,
     line,
-    commentRanges,
-    activeThreadIndex,
-    commentPresence,
-    ambientAnimationTime,
+    inputs.commentRanges,
+    inputs.activeThreadIndex,
+    inputs.commentPresence,
+    inputs.ambientAnimationTime,
     theme,
   );
   paintListMarker(
     context,
     line,
-    listMarker,
+    visibleListMarker?.marker ?? null,
     textLeft,
     textBaseline,
     defaultTextColor,
@@ -429,20 +375,19 @@ function paintContentLine({
     textLeft,
     textBaseline,
     defaultTextColor,
-    resources,
+    inputs.resources,
     theme,
-    ambientAnimationTime,
+    inputs.ambientAnimationTime,
   );
   if (lineTextDecorations) {
-    paintTextDecorations(
+    paintTextDecorationOverlays(
       context,
       line,
       container,
       textLeft,
       textBaseline,
       lineTextDecorations,
-      "overlay",
-      ambientAnimationTime,
+      inputs.ambientAnimationTime,
       defaultTextColor,
     );
   }
@@ -452,7 +397,7 @@ function paintContentLine({
     container,
     textLeft,
     textBaseline,
-    activeTextHighlights.get(containerPath) ?? [],
+    inputs.activeTextHighlights.get(containerPath) ?? [],
     theme,
   );
   paintTextFades(
@@ -461,7 +406,7 @@ function paintContentLine({
     container,
     textLeft,
     textBaseline,
-    activeTextFades.get(containerPath) ?? [],
+    inputs.activeTextFades.get(containerPath) ?? [],
     defaultTextColor,
   );
   paintTextPulses(
@@ -470,12 +415,12 @@ function paintContentLine({
     container,
     textLeft,
     textBaseline,
-    activeTextPulses.get(containerPath) ?? [],
+    inputs.activeTextPulses.get(containerPath) ?? [],
     theme,
   );
 }
 
-function resolveLineTextBaseline(line: DocumentLayout["lines"][number]) {
+function resolveLineTextBaseline(line: EditorLayoutState["layout"]["lines"][number]) {
   return line.top + resolveCenteredTextBaseline(line.height, line.font);
 }
 
@@ -490,8 +435,4 @@ function resolveTextColor(block: Block | null, theme: EditorTheme) {
     default:
       return theme.paragraphText;
   }
-}
-
-function getPaintTime() {
-  return performance.now();
 }

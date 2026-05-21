@@ -4,7 +4,7 @@ import { createParameterizedSprig } from "./core/computed";
 import { equalArrayBy, equalMapBy, equalNullable, equalNullableBy } from "./core/equality";
 import { commentStateSprig } from "./editor/computed-sprigs";
 import { documentIndexSprig } from "./editor/sprigs";
-import { publishedViewportSprig } from "./viewport/sprigs";
+import { renderedLayoutSprig } from "./layout/sprigs";
 
 /* Equality */
 
@@ -64,12 +64,12 @@ const presenceTargetsSprig = createParameterizedSprig(
 );
 
 export const resolvedPresenceSprig = createParameterizedSprig(
-  [documentIndexSprig, publishedViewportSprig],
+  [documentIndexSprig, renderedLayoutSprig],
   (
     store,
     [userPresence]: readonly [DocumentUserPresence[] | undefined],
     documentIndex,
-    viewport,
+    layout,
   ): EditorPresence[] | undefined => {
     const targets = presenceTargetsSprig.read(store, userPresence);
 
@@ -77,7 +77,7 @@ export const resolvedPresenceSprig = createParameterizedSprig(
       return undefined;
     }
 
-    if (!viewport) {
+    if (!layout) {
       return targets;
     }
 
@@ -87,7 +87,7 @@ export const resolvedPresenceSprig = createParameterizedSprig(
       ? commentStateSprig.read(store).ranges
       : [];
 
-    return resolvePresenceViewport(documentIndex, viewport, targets, commentRanges);
+    return resolvePresenceViewport(documentIndex, layout, targets, commentRanges);
   },
   equalPresence,
 );

@@ -1,9 +1,10 @@
-// Owns table-specific surface chrome in the canvas paint path. The main paint
-// module delegates here so generic line traversal stays focused on document
-// flow while table cells keep their own layering policy.
+// Owns table-specific surface chrome in the canvas paint path. The block
+// chrome family delegates here so generic line traversal stays focused on
+// document flow while table cells keep their own layering policy. The
+// stage-4 dispatcher in `blocks/backgrounds.ts` decides *whether* a table
+// cell needs a highlight; this file knows *how* to paint one.
 
 import type { DocumentLayout } from "@/editor/layout";
-import type { EditorState } from "@/editor/state";
 import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../animations";
 import type { EditorTheme } from "@/types";
 
@@ -39,12 +40,15 @@ export function paintTableCellChrome({
   paintTableCellBorder(context, cellRect, theme);
 }
 
-export function paintActiveTableCellHighlightPass({
-  activeBlockFlashes,
-  activeBlockId,
+// Paints the active-cell highlight band — the colored stripe that follows the
+// caret across the visible lines of the active table cell, plus the flash
+// overlay when an active-block flash is in flight. Caller is responsible for
+// deciding that the active block IS a table cell; this function trusts its
+// inputs.
+export function paintActiveTableCellHighlight({
+  activeFlash,
   activeRegionId,
   context,
-  editorState,
   endIndex,
   layout,
   regionBounds,
@@ -52,11 +56,9 @@ export function paintActiveTableCellHighlightPass({
   theme,
   verticalBleed,
 }: {
-  activeBlockFlashes: Map<string, ActiveBlockFlash>;
-  activeBlockId: string | null;
-  activeRegionId: string | null;
+  activeFlash: ActiveBlockFlash | null;
+  activeRegionId: string;
   context: CanvasRenderingContext2D;
-  editorState: EditorState;
   endIndex: number;
   layout: DocumentLayout;
   regionBounds: Map<string, PaintRegionBounds>;
@@ -64,45 +66,22 @@ export function paintActiveTableCellHighlightPass({
   theme: EditorTheme;
   verticalBleed: number;
 }) {
-  if (!activeBlockId || !activeRegionId) {
+  const cellBounds = regionBounds.get(activeRegionId) ?? null;
+  const cellLineIndices = layout.regionLineIndices.get(activeRegionId) ?? null;
+
+  if (!cellBounds || !cellLineIndices || cellLineIndices.length === 0) {
     return;
   }
 
-  const activeTableBlock = editorState.documentIndex.blockIndex.get(activeBlockId) ?? null;
+  const firstVisibleCellLine = layout.lines[cellLineIndices[0]!] ?? null;
 
-  if (activeTableBlock?.type !== "table") {
+  if (!firstVisibleCellLine) {
     return;
   }
 
-  const activeTableCellRegion = editorState.documentIndex.regionIndex.get(activeRegionId) ?? null;
+  const cellRect = resolveTableCellPaintRect(cellBounds, firstVisibleCellLine.height);
 
-  if (activeTableCellRegion?.blockId !== activeBlockId) {
-    return;
-  }
-
-  const activeTableCellBounds = regionBounds.get(activeRegionId) ?? null;
-  const activeTableCellLineIndices = layout.regionLineIndices.get(activeRegionId) ?? null;
-
-  if (
-    !activeTableCellBounds ||
-    !activeTableCellLineIndices ||
-    activeTableCellLineIndices.length === 0
-  ) {
-    return;
-  }
-
-  const firstVisibleTableCellLine = layout.lines[activeTableCellLineIndices[0]!] ?? null;
-
-  if (!firstVisibleTableCellLine) {
-    return;
-  }
-
-  const activeTableCellRect = resolveTableCellPaintRect(
-    activeTableCellBounds,
-    firstVisibleTableCellLine.height,
-  );
-
-  if (activeTableCellRect.width === 0) {
+  if (cellRect.width === 0) {
     return;
   }
 
@@ -111,27 +90,24 @@ export function paintActiveTableCellHighlightPass({
     endIndex,
     fillStyle: theme.activeBlockBackground,
     layout,
-    left: activeTableCellRect.left,
-    lineIndices: activeTableCellLineIndices,
+    left: cellRect.left,
+    lineIndices: cellLineIndices,
     startIndex,
     verticalBleed,
-    width: activeTableCellRect.width,
+    width: cellRect.width,
   });
-  const activeTableFlash = activeTableBlock.path
-    ? (activeBlockFlashes.get(activeTableBlock.path) ?? null)
-    : null;
 
-  if (activeTableFlash) {
+  if (activeFlash) {
     paintVisibleTableCellBand({
       context,
       endIndex,
-      fillStyle: resolveActiveBlockFlashColor(theme.activeBlockFlash, activeTableFlash),
+      fillStyle: resolveActiveBlockFlashColor(theme.activeBlockFlash, activeFlash),
       layout,
-      left: activeTableCellRect.left,
-      lineIndices: activeTableCellLineIndices,
+      left: cellRect.left,
+      lineIndices: cellLineIndices,
       startIndex,
       verticalBleed,
-      width: activeTableCellRect.width,
+      width: cellRect.width,
     });
   }
 
@@ -139,7 +115,7 @@ export function paintActiveTableCellHighlightPass({
     return;
   }
 
-  paintTableCellBorder(context, activeTableCellRect, theme);
+  paintTableCellBorder(context, cellRect, theme);
 }
 
 function paintVisibleTableCellBand({

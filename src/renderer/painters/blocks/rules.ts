@@ -1,28 +1,20 @@
-// Owns block-level chrome: the backgrounds and rules that sit behind a block
-// rather than inside its inline content. These split into three call shapes —
-// per-line painters that the foreground/background passes invoke, per-block
-// painters for inert blocks (divider; future image-as-block, embed) that
-// have no lines of their own, and per-document-block accumulators that the
-// orchestrator collects across the visible range and then paints once.
+// Owns block-level rules — the thin horizontal/vertical strokes that frame
+// a block rather than fill it: heading underlines, blockquote bars, and the
+// divider rule. Each rule has a per-block-aggregate resolver that the
+// orchestrator runs once over the visible range; the painters then take a
+// finished map and stroke. Inert leaf blocks (divider today; future
+// image-as-block, embed, display-math) are dispatched by `paintInertBlock`
+// over the visible block slice.
 
 import type { Block } from "@/document";
 import { resolveLineContentInset, type DocumentLayout } from "@/editor/layout";
 import { findAncestorBlockEntry, type EditorState } from "@/editor/state";
 import type { EditorTheme } from "@/types";
-import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../animations";
-import { paintTableCellChrome, type PaintRegionBounds } from "./table";
-
-export const activeLineVerticalBleed = 2;
 
 const blockquoteRuleInsetY = 3;
 const blockquoteRuleMinimumHeight = 12;
 const blockquoteRuleTrimY = 6;
 const blockquoteRuleWidth = 3;
-
-const codeBlockBackgroundBottomInset = 8;
-const codeBlockBackgroundHorizontalInset = 12;
-const codeBlockBackgroundMinimumWidthBoost = 28;
-const codeBlockBackgroundTopInset = 4;
 
 // Horizontal rules (heading underline, divider). Both terminate at the same
 // right edge (`width - paddingX`) so they line up visually; their per-rule
@@ -45,81 +37,6 @@ export type VisibleBlockquoteRegion = {
   left: number;
   top: number;
 };
-
-// Paints the once-per-block background that sits beneath a line — currently
-// the code block fill or the table cell chrome. Only fires on the first line
-// of the container so we don't repaint the same rectangle for every wrapped
-// line in the cell or fence.
-export function paintLineContainerBackground(
-  context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  block: Block | null,
-  containerBounds: PaintRegionBounds | null,
-  tableCellPosition: { cellIndex: number; rowIndex: number } | null,
-  theme: EditorTheme,
-  width: number,
-) {
-  if (!containerBounds || line.start !== 0) {
-    return;
-  }
-
-  if (block?.type === "code") {
-    const backgroundLeft = Math.max(0, line.left - codeBlockBackgroundHorizontalInset);
-
-    context.fillStyle = theme.codeBackground;
-    context.fillRect(
-      backgroundLeft,
-      containerBounds.top - codeBlockBackgroundTopInset,
-      Math.max(
-        containerBounds.right - line.left + codeBlockBackgroundMinimumWidthBoost,
-        width - backgroundLeft,
-      ),
-      containerBounds.bottom - containerBounds.top + codeBlockBackgroundBottomInset,
-    );
-    return;
-  }
-
-  if (block?.type !== "table") {
-    return;
-  }
-
-  paintTableCellChrome({
-    context,
-    containerBounds,
-    isHeaderRow: tableCellPosition?.rowIndex === 0,
-    lineHeight: line.height,
-    theme,
-  });
-}
-
-export function paintActiveBlockBackground(
-  context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  block: Block | null,
-  runtimeBlockPath: string | null,
-  activeBlockId: string | null,
-  activeBlockFlashes: Map<string, ActiveBlockFlash>,
-  theme: EditorTheme,
-  width: number,
-) {
-  if (line.blockId !== activeBlockId || block?.type === "table") {
-    return;
-  }
-
-  const activeBlockFlash = runtimeBlockPath
-    ? (activeBlockFlashes.get(runtimeBlockPath) ?? null)
-    : null;
-
-  context.fillStyle = theme.activeBlockBackground;
-  context.fillRect(0, line.top - activeLineVerticalBleed, width, line.height);
-
-  if (!activeBlockFlash) {
-    return;
-  }
-
-  context.fillStyle = resolveActiveBlockFlashColor(theme.activeBlockFlash, activeBlockFlash);
-  context.fillRect(0, line.top - activeLineVerticalBleed, width, line.height);
-}
 
 export function resolveVisibleHeadingRules(
   layout: DocumentLayout,
@@ -214,30 +131,6 @@ export function paintHeadingRules(
   }
 }
 
-// Shared primitive for thin horizontal rules (heading underline, divider, and
-// any future rule-shaped chrome). The caller computes geometry and styling;
-// this owns the `fillStyle` + `fillRect` mechanics and the min-width clamp so
-// both callers describe a rule declaratively rather than open-coding it.
-function paintHorizontalRule(
-  context: CanvasRenderingContext2D,
-  rule: {
-    color: string;
-    left: number;
-    minimumWidth?: number;
-    right: number;
-    thickness: number;
-    top: number;
-  },
-) {
-  context.fillStyle = rule.color;
-  context.fillRect(
-    rule.left,
-    rule.top,
-    Math.max(rule.minimumWidth ?? 0, rule.right - rule.left),
-    rule.thickness,
-  );
-}
-
 export function resolveVisibleBlockquoteRegions(
   layout: DocumentLayout,
   editorState: EditorState,
@@ -297,4 +190,28 @@ export function paintBlockquoteRules(
       Math.max(blockquoteRuleMinimumHeight, region.bottom - region.top - blockquoteRuleTrimY),
     );
   }
+}
+
+// Shared primitive for thin horizontal rules (heading underline, divider, and
+// any future rule-shaped chrome). The caller computes geometry and styling;
+// this owns the `fillStyle` + `fillRect` mechanics and the min-width clamp so
+// both callers describe a rule declaratively rather than open-coding it.
+function paintHorizontalRule(
+  context: CanvasRenderingContext2D,
+  rule: {
+    color: string;
+    left: number;
+    minimumWidth?: number;
+    right: number;
+    thickness: number;
+    top: number;
+  },
+) {
+  context.fillStyle = rule.color;
+  context.fillRect(
+    rule.left,
+    rule.top,
+    Math.max(rule.minimumWidth ?? 0, rule.right - rule.left),
+    rule.thickness,
+  );
 }

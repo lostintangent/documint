@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { shouldInvalidateViewportAfterEditorTransition } from "@/component/hooks/useViewport";
+import { shouldInvalidateLayoutAfterEditorTransition } from "@/component/hooks/useViewport";
 import { insertText, setSelection } from "@/editor";
 import { setup } from "@test/editor/helpers";
 
-test("keeps viewport layout for selection-only editor transitions", () => {
+test("keeps cached layout for selection-only editor transitions", () => {
   const state = setup("alpha\n");
   const region = state.documentIndex.regions[0]!;
   const nextState = setSelection(state, {
@@ -11,10 +11,10 @@ test("keeps viewport layout for selection-only editor transitions", () => {
     regionId: region.id,
   });
 
-  expect(shouldInvalidateViewportAfterEditorTransition(state, nextState)).toBe(false);
+  expect(shouldInvalidateLayoutAfterEditorTransition(state, nextState)).toBe(false);
 });
 
-test("invalidates viewport layout immediately for document transitions", () => {
+test("invalidates cached layout immediately for document transitions", () => {
   const state = setup("alpha\n");
   const nextState = insertText(state, "!");
 
@@ -22,5 +22,5 @@ test("invalidates viewport layout immediately for document transitions", () => {
     throw new Error("Expected text insertion to produce a state transition");
   }
 
-  expect(shouldInvalidateViewportAfterEditorTransition(state, nextState)).toBe(true);
+  expect(shouldInvalidateLayoutAfterEditorTransition(state, nextState)).toBe(true);
 });

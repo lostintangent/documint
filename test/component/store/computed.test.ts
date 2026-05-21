@@ -3,14 +3,16 @@ import { createStore } from "@/component/store";
 import { createParameterizedSprig, createComputedSprig } from "@/component/store/core/computed";
 import {
   activeCommentIndexSprig,
-  completionSourcesSprig,
-  cursorLeafSprig,
   documentCompletionSprig,
   normalizedSelectionSprig,
 } from "@/component/store/editor/computed-sprigs";
+import {
+  createMentionCompletionSource,
+  emojiCompletionSource,
+} from "@/component/completions/sources";
 import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/sprigs";
 import { commentPresenceSprig, resolvedPresenceSprig } from "@/component/store/presence";
-import { createLayoutCache, getDocument, createEditorLayoutState } from "@/editor";
+import { getDocument } from "@/editor";
 import { addComment, insertText, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
 
@@ -250,11 +252,17 @@ describe("computed sprigs", () => {
     });
   });
 
-  test("derives shared completion sources from built-ins and host users", () => {
-    const state = setup("Hello\n");
-    const store = createStore(getDocument(state));
+  // Mirrors the composition done inside Documint's `completionSources`
+  // `useMemo`: a sorted mention source (when users are present) followed
+  // by the always-available emoji source. Kept here because there's no
+  // other dedicated test for the source-builders today.
+  test("composes mention and emoji completion sources from host users", () => {
+    const composeSources = (users: { id: string; username: string; fullName?: string }[] | undefined) => {
+      const mentionSource = createMentionCompletionSource(users);
+      return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
+    };
 
-    const sources = completionSourcesSprig.read(store, [
+    const sources = composeSources([
       { id: "u-zoe", username: "zoe" },
       { id: "u-amy", username: "amy", fullName: "Amy Adams" },
     ]);
@@ -269,9 +277,7 @@ describe("computed sprigs", () => {
     expect(sources[1]?.trigger).toBe(":");
     expect(sources[1]?.items.some((item) => item.label === "sparkles")).toBe(true);
 
-    expect(completionSourcesSprig.read(store, undefined).map((source) => source.trigger)).toEqual([
-      ":",
-    ]);
+    expect(composeSources(undefined).map((source) => source.trigger)).toEqual([":"]);
   });
 
   test("preserves parameterized presence output when resolved semantics are equal", () => {
@@ -319,42 +325,6 @@ describe("computed sprigs", () => {
 
     expect(activeCommentIndexSprig.read(store)).toBe(0);
   });
-
-  test("prefers cursor link leaves over table leaves", () => {
-    const state = setup("| Label |\n| --- |\n| [Docs](https://example.com) |\n");
-    const region = getRegion(state, "Docs");
-    const selected = placeAt(state, region, 1);
-    const store = createStore(getDocument(selected));
-    const viewport = createViewport(selected);
-
-    store.editor.replace(selected);
-    store.viewport.observeViewport(viewport);
-
-    expect(cursorLeafSprig.read(store, true)?.kind).toBe("link");
-  });
-
-  test("prefers cursor comment leaves over table leaves", () => {
-    let state = setup("| Label |\n| --- |\n| Review target |\n");
-    const region = getRegion(state, "Review target");
-    state =
-      addComment(
-        state,
-        {
-          endOffset: "Review".length,
-          regionId: region.id,
-          startOffset: 0,
-        },
-        "note",
-      ) ?? state;
-    state = placeAt(state, getRegion(state, "Review target"), 2);
-    const store = createStore(getDocument(state));
-    const viewport = createViewport(state);
-
-    store.editor.replace(state);
-    store.viewport.observeViewport(viewport);
-
-    expect(cursorLeafSprig.read(store, true)?.kind).toBe("thread");
-  });
 });
 
 function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
@@ -370,17 +340,3 @@ function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   return true;
 }
 
-function createViewport(state: ReturnType<typeof setup>) {
-  return createEditorLayoutState(
-    state,
-    {
-      height: 320,
-      paddingX: 0,
-      paddingY: 0,
-      top: 0,
-      width: 640,
-    },
-    createLayoutCache(),
-    null,
-  );
-}

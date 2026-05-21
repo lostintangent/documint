@@ -759,7 +759,10 @@ function renderPaintOperations(
     commentRanges: options.commentRanges ?? [],
     normalizedSelection: normalizeSelection(state),
     commentPresence: options.commentPresence,
-    now: options.now,
+    // `now` defaults to 0 in tests so paint is deterministic: any state without
+    // active animations renders identically across runs. Tests that exercise
+    // animation progression set their own `now`.
+    now: options.now ?? 0,
     textDecorations: options.textDecorations,
     theme: options.theme ?? lightTheme,
     width: options.width,

@@ -11,7 +11,13 @@ export type EditorStateTransition = {
   source: EditorStateTransitionSource;
   documentChanged: boolean;
   changedRootIndexes: readonly number[];
-  animationsChanged: boolean;
+  // True when the transition introduces animations that need to be painted.
+  // Asymmetric on purpose: a transition that clears animations
+  // (`[anim] → []`) is `false` because the host doesn't need to schedule a
+  // new paint for that — the in-flight animation loop already handles its
+  // own teardown frame. Read this as "are there new animations to kick
+  // off," not "did the animations field change."
+  hasNewAnimations: boolean;
 };
 
 export function createEditorStateTransition(
@@ -27,7 +33,7 @@ export function createEditorStateTransition(
     source,
     documentChanged,
     changedRootIndexes: documentChanged ? resolveChangedRootIndexes(previous, next) : [],
-    animationsChanged: previous.animations !== next.animations && next.animations.length > 0,
+    hasNewAnimations: previous.animations !== next.animations && next.animations.length > 0,
   };
 }
 

@@ -3,11 +3,10 @@ import { useEffect, useEffectEvent, useRef } from "react";
 import {
   caretInViewportSprig,
   caretTargetSprig,
-  cursorLeafSprig,
   normalizedSelectionSprig,
   useSprig,
-  type CursorLeaf,
 } from "../store";
+import { cursorLeafSprig, type CursorLeaf } from "../overlays/leaves/sprigs";
 
 /* Hook surface */
 

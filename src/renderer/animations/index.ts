@@ -46,7 +46,7 @@ const LIST_MARKER_POP_SCALE_SPEED = 2;
 const LIST_MARKER_POP_COLOR_SPEED = 2;
 
 export function resolveActiveTextHighlights(state: EditorState, now: number) {
-  return collectActiveAnimations<"text-highlight", TextHighlightAnimation, ActiveTextHighlight>(
+  return collectActiveAnimations<"text-highlight", TextHighlightAnimation>(
     state,
     now,
     "text-highlight",
@@ -55,7 +55,7 @@ export function resolveActiveTextHighlights(state: EditorState, now: number) {
 }
 
 export function resolveActiveBlockFlashes(state: EditorState, now: number) {
-  return collectActiveAnimation<"active-block-flash", ActiveBlockFlashAnimation, ActiveBlockFlash>(
+  return collectActiveAnimation<"active-block-flash", ActiveBlockFlashAnimation>(
     state,
     now,
     "active-block-flash",
@@ -64,7 +64,7 @@ export function resolveActiveBlockFlashes(state: EditorState, now: number) {
 }
 
 export function resolveActiveTextFades(state: EditorState, now: number) {
-  return collectActiveAnimations<"text-fade", TextFadeAnimation, ActiveTextFade>(
+  return collectActiveAnimations<"text-fade", TextFadeAnimation>(
     state,
     now,
     "text-fade",
@@ -73,7 +73,7 @@ export function resolveActiveTextFades(state: EditorState, now: number) {
 }
 
 export function resolveActiveTextPulses(state: EditorState, now: number) {
-  return collectActiveAnimations<"text-pulse", TextPulseAnimation, ActiveTextPulse>(
+  return collectActiveAnimations<"text-pulse", TextPulseAnimation>(
     state,
     now,
     "text-pulse",
@@ -82,24 +82,12 @@ export function resolveActiveTextPulses(state: EditorState, now: number) {
 }
 
 export function resolveActiveBlockPulses(state: EditorState, now: number) {
-  return collectActiveAnimation<"block-pulse", BlockPulseAnimation, ActiveBlockPulse>(
+  return collectActiveAnimation<"block-pulse", BlockPulseAnimation>(
     state,
     now,
     "block-pulse",
     (a) => a.blockPath,
   );
-}
-
-export function resolveAnimatedTextColor(
-  baseColor: string,
-  textHighlight: ActiveTextHighlight | null,
-  theme: EditorTheme,
-) {
-  if (!textHighlight) {
-    return baseColor;
-  }
-
-  return blendCanvasColors(theme.insertHighlightText, baseColor, textHighlight.progress);
 }
 
 export function resolveTextFadeColor(baseColor: string, textFade: ActiveTextFade) {
@@ -140,32 +128,28 @@ export function resolveBlockPulseColor(
 function collectActiveAnimations<
   TKind extends EditorAnimation["kind"],
   TAnimation extends Extract<EditorAnimation, { kind: TKind }>,
-  TActive extends TAnimation & { progress: number },
 >(
   state: EditorState,
   now: number,
   kind: TKind,
   getKey: (animation: TAnimation) => string,
-): Map<string, TActive[]> {
-  const result = new Map<string, TActive[]>();
+): Map<string, (TAnimation & { progress: number })[]> {
+  const result = new Map<string, (TAnimation & { progress: number })[]>();
 
   for (const animation of state.animations) {
     if (animation.kind !== kind) {
       continue;
     }
 
-    const durationMs = getEditorAnimationDuration(animation);
-    const elapsed = now - animation.startedAt;
+    const typed = animation as TAnimation;
+    const progress = resolveAnimationProgress(typed, now);
 
-    if (elapsed >= durationMs) {
+    if (progress === null) {
       continue;
     }
 
-    const active = {
-      ...animation,
-      progress: Math.max(0, Math.min(1, elapsed / durationMs)),
-    } as unknown as TActive;
-    const key = getKey(animation as TAnimation);
+    const active = { ...typed, progress };
+    const key = getKey(typed);
     const existing = result.get(key);
 
     if (existing) {
@@ -182,34 +166,41 @@ function collectActiveAnimations<
 function collectActiveAnimation<
   TKind extends EditorAnimation["kind"],
   TAnimation extends Extract<EditorAnimation, { kind: TKind }>,
-  TActive extends TAnimation & { progress: number },
 >(
   state: EditorState,
   now: number,
   kind: TKind,
   getKey: (animation: TAnimation) => string,
-): Map<string, TActive> {
-  const result = new Map<string, TActive>();
+): Map<string, TAnimation & { progress: number }> {
+  const result = new Map<string, TAnimation & { progress: number }>();
 
   for (const animation of state.animations) {
     if (animation.kind !== kind) {
       continue;
     }
 
-    const durationMs = getEditorAnimationDuration(animation);
-    const elapsed = now - animation.startedAt;
+    const typed = animation as TAnimation;
+    const progress = resolveAnimationProgress(typed, now);
 
-    if (elapsed >= durationMs) {
+    if (progress === null) {
       continue;
     }
 
-    result.set(getKey(animation as TAnimation), {
-      ...animation,
-      progress: Math.max(0, Math.min(1, elapsed / durationMs)),
-    } as unknown as TActive);
+    result.set(getKey(typed), { ...typed, progress });
   }
 
   return result;
+}
+
+function resolveAnimationProgress(animation: EditorAnimation, now: number): number | null {
+  const durationMs = getEditorAnimationDuration(animation);
+  const elapsed = now - animation.startedAt;
+
+  if (elapsed >= durationMs) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(1, elapsed / durationMs));
 }
 
 function easeOutCubic(t: number) {

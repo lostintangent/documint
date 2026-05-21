@@ -1,17 +1,17 @@
 import type { Document } from "@/document";
 import { createEditorState } from "@/editor";
 import { createEditorStore, type EditorStore } from "./editor/store";
-import { createViewportStore, type ViewportStore } from "./viewport/store";
+import { createLayoutStore, type LayoutStore } from "./layout/store";
 
 export type DocumintStore = {
   editor: EditorStore;
-  viewport: ViewportStore;
+  layout: LayoutStore;
 };
 
 export function createStore(initialDocument: Document): DocumintStore {
   return {
     editor: createEditorStore(createEditorState(initialDocument)),
-    viewport: createViewportStore(),
+    layout: createLayoutStore(),
   };
 }
 
@@ -21,24 +21,15 @@ export {
   caretInViewportSprig,
   caretTargetSprig,
   commentStateSprig,
-  completionSourcesSprig,
-  cursorLeafSprig,
   documentCompletionSprig,
   imageAtCursorSprig,
   normalizedSelectionSprig,
-  pointerViewSprig,
   selectionContextSprig,
-  selectionLeafSprig,
   selectionViewSprig,
-  type CursorLeaf,
   type DocumentCompletion,
   type ImageAtCursor,
-  type PointerLeaf,
-  type PointerView,
-  type PromotedSelectionThread,
-  type SelectionLeaf,
 } from "./editor/computed-sprigs";
-export { publishedViewportSprig } from "./viewport/sprigs";
+export { renderedLayoutSprig } from "./layout/sprigs";
 export {
   documentIndexSprig,
   editorStateSprig,

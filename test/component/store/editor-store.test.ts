@@ -3,7 +3,7 @@ import { createSourceSprig } from "@/component/store/core/sprigs";
 import { editorSource } from "@/component/store/editor/sprigs";
 import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
-import { createViewportStore } from "@/component/store/viewport/store";
+import { createLayoutStore } from "@/component/store/layout/store";
 import { insertText, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
 
@@ -27,7 +27,7 @@ describe("EditorStore", () => {
       expect.objectContaining({
         documentChanged: true,
         changedRootIndexes: [0],
-        animationsChanged: true,
+        hasNewAnimations: true,
         source: "local",
       }),
     );
@@ -43,7 +43,7 @@ describe("EditorStore", () => {
       expect.objectContaining({
         documentChanged: false,
         changedRootIndexes: [],
-        animationsChanged: false,
+        hasNewAnimations: false,
         source: "local",
       }),
     );
@@ -157,7 +157,7 @@ describe("EditorStore", () => {
 });
 
 function createDocumintStore(state: ReturnType<typeof setup>) {
-  return { editor: createEditorStore(state), viewport: createViewportStore() };
+  return { editor: createEditorStore(state), layout: createLayoutStore() };
 }
 
 function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {

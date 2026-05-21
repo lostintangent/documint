@@ -6,14 +6,12 @@ import {
   updateSelectionFromDrag,
 } from "@/editor";
 import { type HTMLAttributes, type PointerEvent, useEffectEvent, useRef, useState } from "react";
+import { selectionViewSprig, useEditorCommand, useSprig } from "../store";
 import {
   selectionLeafSprig,
-  selectionViewSprig,
-  useEditorCommand,
-  useSprig,
   type PromotedSelectionThread,
   type SelectionLeaf,
-} from "../store";
+} from "../overlays/leaves/sprigs";
 import type { FocusInput } from "./useInput";
 
 export type ResizeHandle = {
@@ -130,12 +128,12 @@ export function useSelection({
       !point ||
       !stationarySelectionPoint ||
       dragPointerIdRef.current !== event.pointerId ||
-      !selection.viewport
+      !selection.layout
     ) {
       return;
     }
 
-    const transition = dragSelectionHandle(selection.viewport, point, stationarySelectionPoint);
+    const transition = dragSelectionHandle(selection.layout, point, stationarySelectionPoint);
 
     if (!transition) {
       return;

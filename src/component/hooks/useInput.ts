@@ -288,8 +288,8 @@ export function useInput({
     const input = inputRef.current;
     if (!input) return;
 
-    const viewport = store.viewport.get();
-    const caret = measureVisualCaretTarget(readCurrentState(), viewport, point);
+    const layout = store.layout.get();
+    const caret = measureVisualCaretTarget(readCurrentState(), layout, point);
     if (!caret) return;
 
     input.style.top = `${caret.top}px`;
@@ -554,7 +554,7 @@ export function useInput({
 
       const transition = runInputCommand(
         applyKeyboardInput,
-        store.viewport.get(),
+        store.layout.get(),
         event.nativeEvent,
         keybindings,
       );

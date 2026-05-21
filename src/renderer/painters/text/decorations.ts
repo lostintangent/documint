@@ -3,7 +3,9 @@
 // span without owning a marked-up document range). Decorations paint in two
 // phases: backgrounds run before the text runs so glyph color stays on top;
 // color overlays run after the text runs so they replace base glyph fills.
-// The orchestrator drives both phases through `paintTextDecorations(phase)`.
+// The orchestrator drives the two phases through two separate entry points
+// (`paintTextDecorationBackgrounds`, `paintTextDecorationOverlays`) so the
+// phase isn't a runtime branch.
 
 import type { DocumentLayout } from "@/editor/layout";
 import { findInlinesInSpan, type EditorInline, type EditorRegion } from "@/editor/state";
@@ -25,16 +27,92 @@ import {
 
 const decorationPulseTextMaximumBaseBlend = 0.72;
 
-export function paintTextDecorations(
+export function paintTextDecorationBackgrounds(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   container: EditorRegion | null,
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
-  phase: "background" | "overlay",
+  decorationAnimationTime: number,
+) {
+  forEachDecorationSegment(
+    context,
+    line,
+    container,
+    textLeft,
+    textDecorations,
+    (segment, decoration) => {
+      if (!decoration.backgroundColor) {
+        return;
+      }
+
+      paintDecorationBackground(context, {
+        color: decoration.backgroundColor,
+        decorationAnimationTime,
+        left: segment.left,
+        pulse: decoration.pulse === true,
+        right: segment.right,
+        textBaseline,
+      });
+    },
+  );
+}
+
+export function paintTextDecorationOverlays(
+  context: CanvasRenderingContext2D,
+  line: DocumentLayout["lines"][number],
+  container: EditorRegion | null,
+  textLeft: number,
+  textBaseline: number,
+  textDecorations: readonly TextDecoration[],
   decorationAnimationTime: number,
   baseTextColor: string,
+) {
+  forEachDecorationSegment(
+    context,
+    line,
+    container,
+    textLeft,
+    textDecorations,
+    (segment, decoration) => {
+      if (!decoration.color) {
+        return;
+      }
+
+      paintClippedTextOverlay(context, {
+        color: resolveDecorationTextColor(decoration, decorationAnimationTime, baseTextColor),
+        eraseExistingGlyphs: true,
+        height: line.height,
+        left: segment.left,
+        text: segment.segmentText,
+        textBaseline,
+        textLeft: segment.segmentLeft,
+        top: line.top,
+        width: Math.max(0, segment.right - segment.left),
+      });
+    },
+  );
+}
+
+// Shared walk over the visible inlines and their overlapping decoration
+// boundaries. The two phases differ only in what they do with each segment;
+// inline iteration, boundary collection, and segment geometry are identical.
+function forEachDecorationSegment(
+  context: CanvasRenderingContext2D,
+  line: DocumentLayout["lines"][number],
+  container: EditorRegion | null,
+  textLeft: number,
+  textDecorations: readonly TextDecoration[],
+  paintSegment: (
+    segment: {
+      left: number;
+      right: number;
+      segmentLeft: number;
+      segmentText: string;
+    },
+    decoration: TextDecoration,
+  ) => void,
 ) {
   if (!container || textDecorations.length === 0) {
     return;
@@ -85,26 +163,14 @@ export function paintTextDecorations(
         continue;
       }
 
-      const { left: decorationLeft, right: decorationRight } = resolveLineSegmentBounds(
+      const { left, right } = resolveLineSegmentBounds(
         line,
         textLeft,
         decorationStart,
         decorationEnd,
       );
 
-      paintDecorationSegment(context, {
-        baseTextColor,
-        decoration: textDecoration,
-        decorationAnimationTime,
-        height: line.height,
-        left: decorationLeft,
-        phase,
-        right: decorationRight,
-        text: segmentText,
-        textBaseline,
-        textLeft: segmentLeft,
-        top: line.top,
-      });
+      paintSegment({ left, right, segmentLeft, segmentText }, textDecoration);
     }
   }
 }
@@ -113,67 +179,6 @@ function canPaintTextDecoration(inline: EditorInline) {
   return (
     inline.kind !== "image" && inline.kind !== "mention" && inline.kind !== "code" && !inline.link
   );
-}
-
-function paintDecorationSegment(
-  context: CanvasRenderingContext2D,
-  {
-    baseTextColor,
-    decoration,
-    decorationAnimationTime,
-    height,
-    left,
-    phase,
-    right,
-    text,
-    textBaseline,
-    textLeft,
-    top,
-  }: {
-    baseTextColor: string;
-    decoration: TextDecoration;
-    decorationAnimationTime: number;
-    height: number;
-    left: number;
-    phase: "background" | "overlay";
-    right: number;
-    text: string;
-    textBaseline: number;
-    textLeft: number;
-    top: number;
-  },
-) {
-  if (phase === "background") {
-    if (!decoration.backgroundColor) {
-      return;
-    }
-
-    paintDecorationBackground(context, {
-      color: decoration.backgroundColor,
-      decorationAnimationTime,
-      left,
-      pulse: decoration.pulse === true,
-      right,
-      textBaseline,
-    });
-    return;
-  }
-
-  if (!decoration.color) {
-    return;
-  }
-
-  paintClippedTextOverlay(context, {
-    color: resolveDecorationTextColor(decoration, decorationAnimationTime, baseTextColor),
-    eraseExistingGlyphs: true,
-    height,
-    left,
-    text,
-    textBaseline,
-    textLeft,
-    top,
-    width: Math.max(0, right - left),
-  });
 }
 
 function paintDecorationBackground(
