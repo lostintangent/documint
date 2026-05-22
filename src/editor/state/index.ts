@@ -1,26 +1,61 @@
 // Build
 export {
+  commitDocument,
   createDocumentIndex,
-  buildEditorRoots,
-  createDocumentFromIndex,
-  createEditorRoot,
-  rebuildEditorRoot,
   spliceDocumentIndex,
-} from "./index/build";
+} from "./index/splice";
 
 // Types
 export type {
-  EditorBlock,
-  EditorInline,
-  EditorListItemMarker,
+  BlockEntry,
+  BlockKind,
   DocumentIndex,
-  EditorRegion,
-  RuntimeLinkAttributes,
-  RuntimeMentionAttributes,
+  InlineEntry,
+  ListItemMarker,
+  RegionEntry,
+  RootEntry,
 } from "./index/types";
 
 // Inline selectors
-export { findInlinesInSpan } from "./inlines";
+export { findInlinesInSpan, regionInlines } from "./index/inlines";
+
+// Index queries
+export {
+  compareEditorPositions,
+  countRootBlocks,
+  createSemanticRegionIndex,
+  findAncestorBlockEntry,
+  firstInFlowRegionOfRoot,
+  isContainerBlock,
+  isInertBlock,
+  isRootBlockEntry,
+  nextBlockInFlow,
+  nextRegionInFlow,
+  previousBlockInFlow,
+  previousRegionInFlow,
+  resolveActiveBlockKey,
+  resolveBlock,
+  resolveBlockChildIndices,
+  resolveBlockEntry,
+  resolveBlockEntryForRegion,
+  resolveBlockPathForRegion,
+  resolveCommentThreadIndicesForRegion,
+  resolveDescendantPrimaryRegion,
+  resolveDocumentBoundaryRegion,
+  resolveParentBlockEntry,
+  resolvePrimaryRegion,
+  resolveRegion,
+  resolveRegionByPath,
+  resolveRegionOutsideRoot,
+  resolveRootBlock,
+  resolveRootPrimaryRegion,
+  resolveRootRegions,
+  resolveSiblingRootBlock,
+  resolveTableCellPosition,
+  resolveTableCellRegion,
+} from "./index/query";
+
+export type { EditorIndexPosition } from "./index/query";
 
 // Selection
 export {
@@ -32,8 +67,6 @@ export {
   getSelectionRange,
   normalizeSelection,
   resolveImageAtSelection,
-  resolveRegionByPath,
-  resolveTableCellRegion,
   resolveSelectionTarget,
 } from "./selection";
 
@@ -75,7 +108,7 @@ export {
 
 export type { EditorState } from "./types";
 
-export { findAncestorBlockEntry, type TextRangeTarget } from "./commands/context";
+export type { TextRangeTarget } from "./commands/context";
 
 // Commands
 export * from "./commands";

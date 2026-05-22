@@ -1,6 +1,6 @@
 import {
   defragmentTextInlines,
-  findBlockById,
+  findBlockChildIndicesById,
   mapBlockTree,
   rebuildTextBlock,
   type Block,
@@ -8,16 +8,18 @@ import {
   type ListBlock,
   type ParagraphBlock,
 } from "@/document";
-import type { DocumentIndex, EditorBlock, EditorRegion } from "../../../index/types";
-import type { EditorStateAction } from "../../../types";
 import {
   isInertBlock,
+  isRootBlockEntry,
   nextBlockInFlow,
   nextRegionInFlow,
   previousBlockInFlow,
   previousRegionInFlow,
-} from "../../../../navigation/flow";
-import { parseBlockChildIndices } from "../../context";
+  resolveBlockChildIndices,
+  resolveRootBlock,
+} from "../../../index/query";
+import type { DocumentIndex, BlockEntry, RegionEntry } from "../../../index/types";
+import type { EditorStateAction } from "../../../types";
 import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
@@ -35,10 +37,9 @@ import {
 // what gets lifted — is dispatched by block type inside the tree walk.
 //
 // This rule is the load-bearing contract for caret-driven deletion. It
-// shares its in-flow neighbor primitives (`previousRegionInFlow` /
-// `nextRegionInFlow`) with arrow-key navigation in `editor/navigation`,
-// so a future change to "where does left/right take me?" propagates
-// automatically to "where does delete leave me?".
+// composes the same index-owned in-flow primitives (`previousRegionInFlow` /
+// `nextRegionInFlow`) as arrow-key navigation, so topology changes propagate
+// consistently to both caret movement and deletion.
 //
 // Block-type-specific transforms whose semantics aren't expressible as
 // in-flow collapse — heading demote, blockquote unwrap, top-level list
@@ -72,7 +73,7 @@ export type DeleteDirection = "backward" | "forward";
 
 export function resolveInFlowBoundaryDelete(
   documentIndex: DocumentIndex,
-  region: EditorRegion,
+  region: RegionEntry,
   empty: boolean,
   direction: DeleteDirection,
 ): EditorStateAction | null {
@@ -83,8 +84,8 @@ export function resolveInFlowBoundaryDelete(
   // resolves against the new adjacent leaf and applies normal merge.
   const adjacent =
     direction === "backward"
-      ? previousBlockInFlow(documentIndex, region.blockId)
-      : nextBlockInFlow(documentIndex, region.blockId);
+      ? previousBlockInFlow(documentIndex, region.block.id)
+      : nextBlockInFlow(documentIndex, region.block.id);
   if (adjacent && isInertBlock(adjacent)) {
     return resolveInertNeighborCollapse(region, adjacent, direction);
   }
@@ -126,11 +127,11 @@ export function resolveInFlowBoundaryDelete(
 // precedes the caret region in a shared parent. Returns null in that case
 // so the caller falls back to the existing merge/empty rules.
 function resolveInertNeighborCollapse(
-  currentRegion: EditorRegion,
-  inertBlock: EditorBlock,
+  currentRegion: RegionEntry,
+  inertBlock: BlockEntry,
   direction: DeleteDirection,
 ): EditorStateAction | null {
-  if (inertBlock.parentBlockId !== null) return null;
+  if (!isRootBlockEntry(inertBlock)) return null;
 
   // Backward: inert block sat at a lower rootIndex than currentRegion.
   // Removing it shifts currentRegion's rootIndex down by one. Forward:
@@ -153,8 +154,8 @@ function resolveInertNeighborCollapse(
 // prepended without changing block kind. Code regions and table cells
 // are excluded because merging arbitrary paragraph content into them
 // isn't meaningful.
-function isTextMergeableRegion(region: EditorRegion): boolean {
-  return region.blockType === "paragraph" || region.blockType === "heading";
+function isTextMergeableRegion(region: RegionEntry): boolean {
+  return region.block.type === "paragraph" || region.block.type === "heading";
 }
 
 // Empty boundary collapse: rewrite only the victim's root, removing the
@@ -162,14 +163,14 @@ function isTextMergeableRegion(region: EditorRegion): boolean {
 // touched. Cursor lands at the seam in the absorber.
 function resolveEmptyCollapse(
   documentIndex: DocumentIndex,
-  victim: EditorRegion,
-  absorber: EditorRegion,
+  victim: RegionEntry,
+  absorber: RegionEntry,
   direction: DeleteDirection,
 ): EditorStateAction | null {
-  const victimRoot = documentIndex.document.blocks[victim.rootIndex];
+  const victimRoot = resolveRootBlock(documentIndex, victim.rootIndex);
   if (!victimRoot) return null;
 
-  const rebuilt = applyEditsToBlock(victimRoot, victim, absorber.blockId, undefined);
+  const rebuilt = applyEditsToBlock(victimRoot, victim, absorber.block.id, undefined);
 
   const cursorOffset = direction === "backward" ? absorber.text.length : 0;
   const sameRoot = victim.rootIndex === absorber.rootIndex;
@@ -180,7 +181,7 @@ function resolveEmptyCollapse(
   // within that root are unchanged; only its rootIndex shifts iff the
   // splice changed the doc length.
   const cursorTarget = sameRoot
-    ? rebuiltAbsorberTarget(rebuilt, absorber.rootIndex, absorber.blockId, cursorOffset)
+    ? rebuiltAbsorberTarget(rebuilt, absorber.rootIndex, absorber.block.id, cursorOffset)
     : crossRootAbsorberTarget(absorber, victim.rootIndex, rebuilt.length, cursorOffset);
 
   if (!cursorTarget) return null;
@@ -211,11 +212,11 @@ function resolveEmptyCollapse(
 // normalization reassigns one).
 function resolveMergeCollapse(
   documentIndex: DocumentIndex,
-  victim: EditorRegion,
-  absorber: EditorRegion,
+  victim: RegionEntry,
+  absorber: RegionEntry,
 ): EditorStateAction | null {
-  const absorberBlock = findBlockById(documentIndex.document.blocks, absorber.blockId);
-  const victimBlock = findBlockById(documentIndex.document.blocks, victim.blockId);
+  const absorberBlock = absorber.block;
+  const victimBlock = victim.block;
 
   if (!absorberBlock || (absorberBlock.type !== "paragraph" && absorberBlock.type !== "heading")) {
     return null;
@@ -226,10 +227,10 @@ function resolveMergeCollapse(
   const cursorTarget = regionPathTarget(absorber, absorber.rootIndex, cursorOffset);
 
   if (victim.rootIndex === absorber.rootIndex) {
-    const rootBlock = documentIndex.document.blocks[victim.rootIndex];
+    const rootBlock = resolveRootBlock(documentIndex, victim.rootIndex);
     if (!rootBlock) return null;
 
-    const rebuilt = applyEditsToBlock(rootBlock, victim, absorber.blockId, updatedAbsorberBlock);
+    const rebuilt = applyEditsToBlock(rootBlock, victim, absorber.block.id, updatedAbsorberBlock);
 
     return {
       kind: "splice-blocks",
@@ -243,20 +244,20 @@ function resolveMergeCollapse(
   // Cross root. We walk both roots independently — the absorber's root
   // for the substitution and the victim's root for the structural
   // removal — and emit a single count=2 splice that replaces both.
-  const absorberRoot = documentIndex.document.blocks[absorber.rootIndex];
-  const victimRoot = documentIndex.document.blocks[victim.rootIndex];
+  const absorberRoot = resolveRootBlock(documentIndex, absorber.rootIndex);
+  const victimRoot = resolveRootBlock(documentIndex, victim.rootIndex);
   if (!absorberRoot || !victimRoot) return null;
 
   const absorberRebuild = applyEditsToBlock(
     absorberRoot,
     victim,
-    absorber.blockId,
+    absorber.block.id,
     updatedAbsorberBlock,
   );
   if (absorberRebuild.length !== 1) return null;
   const updatedAbsorberRoot = absorberRebuild[0]!;
 
-  const victimRebuild = applyEditsToBlock(victimRoot, victim, absorber.blockId, undefined);
+  const victimRebuild = applyEditsToBlock(victimRoot, victim, absorber.block.id, undefined);
 
   // Absorber is always at the lower rootIndex (previous-in-flow for
   // backward; current R at i, victim N at i+1 for forward).
@@ -283,11 +284,11 @@ function resolveMergeCollapse(
 // stable (i.e. nothing the splice does shifts indices in the
 // region's ancestor chain).
 export function regionPathTarget(
-  region: EditorRegion,
+  region: RegionEntry,
   rootIndex: number,
   offset: number | "end" = 0,
 ): SelectionTarget {
-  const childIndices = parseBlockChildIndices(region.path);
+  const childIndices = resolveBlockChildIndices(region);
   if (childIndices.length === 0) {
     return createRootPrimaryRegionTarget(rootIndex, offset);
   }
@@ -326,7 +327,7 @@ function rebuiltAbsorberTarget(
 ): SelectionTarget | null {
   for (let index = 0; index < rebuilt.length; index += 1) {
     const root = rebuilt[index]!;
-    const childIndices = findChildIndicesByBlockId(root, absorberBlockId);
+    const childIndices = findBlockChildIndicesById(root, absorberBlockId);
     if (childIndices) {
       if (childIndices.length === 0) {
         return createRootPrimaryRegionTarget(rootIndex + index, offset);
@@ -341,12 +342,12 @@ function rebuiltAbsorberTarget(
 // child indices within that root are stable; only the rootIndex shifts
 // iff the victim's root splice changed the doc length.
 function crossRootAbsorberTarget(
-  absorber: EditorRegion,
+  absorber: RegionEntry,
   victimRootIndex: number,
   victimResidueLength: number,
   offset: number,
 ): SelectionTarget | null {
-  const childIndices = parseBlockChildIndices(absorber.path);
+  const childIndices = resolveBlockChildIndices(absorber);
   const lengthDelta = victimResidueLength - 1;
   const newRootIndex =
     absorber.rootIndex < victimRootIndex
@@ -357,30 +358,6 @@ function crossRootAbsorberTarget(
     return createRootPrimaryRegionTarget(newRootIndex, offset);
   }
   return createDescendantPrimaryRegionTarget(newRootIndex, childIndices, offset);
-}
-
-// Find a block by id in a tree, returning the path-relative child
-// indices to it. Returns null if not found.
-function findChildIndicesByBlockId(block: Block, targetBlockId: string): number[] | null {
-  if (block.id === targetBlockId) return [];
-
-  switch (block.type) {
-    case "list":
-      for (let i = 0; i < block.items.length; i += 1) {
-        const result = findChildIndicesByBlockId(block.items[i]!, targetBlockId);
-        if (result) return [i, ...result];
-      }
-      return null;
-    case "listItem":
-    case "blockquote":
-      for (let i = 0; i < block.children.length; i += 1) {
-        const result = findChildIndicesByBlockId(block.children[i]!, targetBlockId);
-        if (result) return [i, ...result];
-      }
-      return null;
-    default:
-      return null;
-  }
 }
 
 // --- Tree walk: structural removal + optional absorber substitution -----
@@ -404,7 +381,7 @@ function findChildIndicesByBlockId(block: Block, targetBlockId: string): number[
 //      children, if any, get lifted at the list level by the parent walk).
 function applyEditsToBlock(
   rootBlock: Block,
-  victim: EditorRegion,
+  victim: RegionEntry,
   absorberBlockId: string,
   updatedAbsorberBlock: Block | undefined,
 ): Block[] {
@@ -412,14 +389,14 @@ function applyEditsToBlock(
     // Rule 1: listItem owns its leading paragraph/heading.
     if (block.type === "listItem") {
       const leading = block.children[0];
-      if (leading && leading.id === victim.blockId) {
+      if (leading && leading.id === victim.block.id) {
         return liftedReplacementForVictim(block);
       }
     }
 
     // Rule 2: direct removal of the victim, unless our parent is a listItem
     // (in which case rule 1 above handled it on the way down).
-    if (block.id === victim.blockId && parent?.type !== "listItem") {
+    if (block.id === victim.block.id && parent?.type !== "listItem") {
       return [];
     }
 

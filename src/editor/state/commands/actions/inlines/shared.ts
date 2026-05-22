@@ -7,17 +7,18 @@ import {
   createTableCell as createDocumentTableCell,
   createText,
   defragmentTextInlines,
+  iterateInlineNodeRanges,
+  measureInlineNodeText,
   rebuildTableBlock,
   rebuildTextBlock,
   type Block,
   type Inline,
 } from "@/document";
 import type { RegionRangePathSelectionTarget } from "../../../selection";
-import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../../../index/shared";
-import { measureInlineNodeText, type InlineContainer } from "../../inlines";
+import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../../../index/inlines";
+import { type InlineContainer } from "../../inlines";
 
 export type { InlineContainer } from "../../inlines";
-export { measureInlineNodeText } from "../../inlines";
 
 export type InlineContainerReplacement = {
   block: Block;
@@ -100,27 +101,21 @@ export function spliceInlineNodes(
   replacement: Inline[],
 ): Inline[] {
   const nextNodes: Inline[] = [];
-  let cursor = 0;
   let inserted = false;
 
-  for (const node of nodes) {
-    const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
-
-    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
+  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+    if (endOffset <= start || startOffset >= end) {
       nextNodes.push(node);
       continue;
     }
 
     if (!inserted) {
-      nextNodes.push(...collectInlinePrefix(node, Math.max(0, startOffset - nodeStart)));
+      nextNodes.push(...sliceInlineNode(node, 0, Math.max(0, startOffset - start)));
       nextNodes.push(...replacement);
       inserted = true;
     }
 
-    nextNodes.push(...collectInlineSuffix(node, Math.min(nodeLength, endOffset - nodeStart)));
+    nextNodes.push(...sliceInlineNode(node, Math.min(end - start, endOffset - start), end - start));
   }
 
   if (!inserted) {
@@ -128,24 +123,6 @@ export function spliceInlineNodes(
   }
 
   return defragmentTextInlines(nextNodes);
-}
-
-function collectInlinePrefix(node: Inline, offset: number): Inline[] {
-  if (offset <= 0) {
-    return [];
-  }
-
-  return sliceInlineNode(node, 0, offset);
-}
-
-function collectInlineSuffix(node: Inline, offset: number): Inline[] {
-  const nodeLength = measureInlineNodeText(node);
-
-  if (offset >= nodeLength) {
-    return [];
-  }
-
-  return sliceInlineNode(node, offset, nodeLength);
 }
 
 function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): Inline[] {
@@ -176,23 +153,17 @@ export function extractInlineSelectionText(
   startOffset: number,
   endOffset: number,
 ): string {
-  let cursor = 0;
   let text = "";
 
-  for (const node of nodes) {
-    const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
-
-    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
+  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+    if (endOffset <= start || startOffset >= end) {
       continue;
     }
 
     text += extractInlineNodeSlice(
       node,
-      Math.max(0, startOffset - nodeStart),
-      Math.min(nodeLength, endOffset - nodeStart),
+      Math.max(0, startOffset - start),
+      Math.min(end - start, endOffset - start),
     );
   }
 
@@ -201,23 +172,17 @@ export function extractInlineSelectionText(
 
 export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOffset: number) {
   const sliced: Inline[] = [];
-  let cursor = 0;
 
-  for (const node of nodes) {
-    const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
-
-    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
+  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+    if (endOffset <= start || startOffset >= end) {
       continue;
     }
 
     sliced.push(
       ...sliceInlineNode(
         node,
-        Math.max(0, startOffset - nodeStart),
-        Math.min(nodeLength, endOffset - nodeStart),
+        Math.max(0, startOffset - start),
+        Math.min(end - start, endOffset - start),
       ),
     );
   }

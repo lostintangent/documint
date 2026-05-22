@@ -1,8 +1,14 @@
 // Declarative selection targets and target resolution. Actions produce these
 // stable references, and the reducer materializes them after document edits.
 
-import { getBlockChildren, type Block } from "@/document";
-import { createTableCellRegionKey } from "../index/shared";
+import {
+  resolveDescendantPrimaryRegion,
+  resolveRegion,
+  resolveRegionByPath,
+  resolveRootBlock,
+  resolveRootPrimaryRegion,
+  resolveTableCellRegion,
+} from "../index/query";
 import type { DocumentIndex } from "../index/types";
 import type { EditorSelection } from "./index";
 
@@ -91,23 +97,6 @@ export function createTableCellTarget(
   };
 }
 
-export function resolveRegionByPath(documentIndex: DocumentIndex, path: string) {
-  return documentIndex.regionPathIndex.get(path) ?? null;
-}
-
-export function resolveTableCellRegion(
-  documentIndex: DocumentIndex,
-  blockId: string,
-  rowIndex: number,
-  cellIndex: number,
-) {
-  const regionId = documentIndex.tableCellRegionIndex.get(
-    createTableCellRegionKey(blockId, rowIndex, cellIndex),
-  );
-
-  return regionId ? (documentIndex.regionIndex.get(regionId) ?? null) : null;
-}
-
 export function resolveSelectionTarget(
   documentIndex: DocumentIndex,
   selection: SelectionTarget | null,
@@ -117,8 +106,7 @@ export function resolveSelectionTarget(
   }
 
   if (selection.kind === "root-primary-region") {
-    const block = documentIndex.document.blocks[selection.rootIndex];
-    const region = block ? resolvePrimaryRegion(documentIndex, block) : null;
+    const region = resolveRootPrimaryRegion(documentIndex, selection.rootIndex);
 
     return region
       ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
@@ -126,9 +114,11 @@ export function resolveSelectionTarget(
   }
 
   if (selection.kind === "descendant-primary-region") {
-    const rootBlock = documentIndex.document.blocks[selection.rootIndex];
-    const block = rootBlock ? resolveDescendantBlock(rootBlock, selection.childIndices) : null;
-    const region = block ? resolvePrimaryRegion(documentIndex, block) : null;
+    const region = resolveDescendantPrimaryRegion(
+      documentIndex,
+      selection.rootIndex,
+      selection.childIndices,
+    );
 
     return region
       ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
@@ -136,7 +126,7 @@ export function resolveSelectionTarget(
   }
 
   if (selection.kind === "region") {
-    const region = documentIndex.regionIndex.get(selection.regionId) ?? null;
+    const region = resolveRegion(documentIndex, selection.regionId);
 
     return region
       ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
@@ -144,7 +134,7 @@ export function resolveSelectionTarget(
   }
 
   if (selection.kind === "table-cell") {
-    const rootBlock = documentIndex.document.blocks[selection.rootIndex];
+    const rootBlock = resolveRootBlock(documentIndex, selection.rootIndex);
 
     if (!rootBlock || rootBlock.type !== "table") {
       return null;
@@ -195,57 +185,4 @@ export function createCollapsedSelection(regionId: string, offset: number): Edit
 
 function resolveRegionOffset(text: string, offset: number | "end") {
   return offset === "end" ? text.length : Math.max(0, Math.min(offset, text.length));
-}
-
-function resolveDescendantBlock(rootBlock: Block, childIndices: number[]) {
-  let current: Block | null = rootBlock;
-
-  for (const childIndex of childIndices) {
-    if (!current) {
-      return null;
-    }
-
-    const children = getBlockChildren(current);
-
-    if (!children) {
-      return null;
-    }
-
-    current = children[childIndex] ?? null;
-  }
-
-  return current;
-}
-
-function resolvePrimaryRegion(
-  documentIndex: DocumentIndex,
-  block: Block,
-): DocumentIndex["regions"][number] | null {
-  const entry = documentIndex.blockIndex.get(block.id);
-
-  if (!entry) {
-    return null;
-  }
-
-  const regionId = entry.regionIds[0];
-
-  if (regionId) {
-    return documentIndex.regionIndex.get(regionId) ?? null;
-  }
-
-  const children = getBlockChildren(block);
-
-  if (!children) {
-    return null;
-  }
-
-  for (const child of children) {
-    const region = resolvePrimaryRegion(documentIndex, child);
-
-    if (region) {
-      return region;
-    }
-  }
-
-  return null;
 }

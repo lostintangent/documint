@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { resolveEditorCommand, type EditorKeybinding } from "@/component/lib/keybindings";
+import { resolveEditorInputCommand, type EditorInputKeybinding } from "@/component/lib/keybindings";
 
 // --- Modifier shortcuts ---
 // Each row is `[label, key, modifiers, expectedCommand]`. The label is the
@@ -9,6 +9,7 @@ test.each([
   ["bold", "b", { metaKey: true }, "toggleBold"],
   ["italic", "i", { metaKey: true }, "toggleItalic"],
   ["underline", "u", { metaKey: true }, "toggleUnderline"],
+  ["superscript", ".", { metaKey: true }, "toggleSuperscript"],
   ["inline code", "e", { metaKey: true }, "toggleCode"],
   ["move list item up", "ArrowUp", { altKey: true, shiftKey: true }, "moveListItemUp"],
   ["move list item down", "ArrowDown", { altKey: true, shiftKey: true }, "moveListItemDown"],
@@ -16,7 +17,7 @@ test.each([
   ["redo via meta+shift+z", "z", { metaKey: true, shiftKey: true }, "redo"],
   ["redo via ctrl+y", "y", { ctrlKey: true }, "redo"],
 ] as const)("resolves the modifier shortcut for %s", (_label, key, modifiers, command) => {
-  expect(resolveEditorCommand(createKeyboardEvent(key, modifiers))).toBe(command);
+  expect(resolveEditorInputCommand(createKeyboardEvent(key, modifiers))).toBe(command);
 });
 
 // --- Structural keys ---
@@ -32,7 +33,7 @@ test.each([
   ["meta+shift+ArrowLeft", "ArrowLeft", { metaKey: true, shiftKey: true }, "moveToLineStart"],
   ["meta+shift+ArrowRight", "ArrowRight", { metaKey: true, shiftKey: true }, "moveToLineEnd"],
 ] as const)("resolves the structural key %s", (_label, key, modifiers, command) => {
-  expect(resolveEditorCommand(createKeyboardEvent(key, modifiers))).toBe(command);
+  expect(resolveEditorInputCommand(createKeyboardEvent(key, modifiers))).toBe(command);
 });
 
 // --- Unsupported shortcuts return null ---
@@ -40,11 +41,11 @@ test.each([
   ["meta+x has no mapping", "x", { metaKey: true }],
   ["plain `b` without a modifier is not toggleBold", "b", {}],
 ] as const)("returns null when %s", (_label, key, modifiers) => {
-  expect(resolveEditorCommand(createKeyboardEvent(key, modifiers))).toBeNull();
+  expect(resolveEditorInputCommand(createKeyboardEvent(key, modifiers))).toBeNull();
 });
 
 test("resolves commands against a caller-provided keybinding set", () => {
-  const keybindings: EditorKeybinding[] = [
+  const keybindings: EditorInputKeybinding[] = [
     {
       command: "toggleBold",
       key: "k",
@@ -52,10 +53,12 @@ test("resolves commands against a caller-provided keybinding set", () => {
     },
   ];
 
-  expect(resolveEditorCommand(createKeyboardEvent("k", { metaKey: true }), keybindings)).toBe(
+  expect(resolveEditorInputCommand(createKeyboardEvent("k", { metaKey: true }), keybindings)).toBe(
     "toggleBold",
   );
-  expect(resolveEditorCommand(createKeyboardEvent("b", { metaKey: true }), keybindings)).toBeNull();
+  expect(
+    resolveEditorInputCommand(createKeyboardEvent("b", { metaKey: true }), keybindings),
+  ).toBeNull();
 });
 
 function createKeyboardEvent(

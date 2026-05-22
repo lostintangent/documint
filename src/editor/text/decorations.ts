@@ -4,7 +4,7 @@
 // editor region path.
 
 import { findVisibleLineRange, resolvePositionInViewport, type EditorLayoutState } from "../layout";
-import type { EditorState } from "../state";
+import { resolveRegion, resolveRegionByPath, type EditorState } from "../state";
 
 export type TextDecoration = {
   backgroundColor?: string;
@@ -44,7 +44,7 @@ export function reconcileTextDecorationIndex(
 
     const grouped = groupDecorationsByPath(
       update.ranges.flatMap((range) => {
-        const region = documentIndex.regionPathIndex.get(range.path);
+        const region = resolveRegionByPath(documentIndex, range.path);
         if (!region || region.rootIndex !== update.rootIndex) return [];
         return [
           {
@@ -174,7 +174,7 @@ export function hasAnimatedDecorationsInViewport(
       continue;
     }
 
-    const regionPath = state.documentIndex.regionIndex.get(line.regionId)?.path ?? null;
+    const regionPath = resolveRegion(state.documentIndex, line.regionId)?.path ?? null;
     const decorations = regionPath ? index.get(regionPath) : null;
 
     if (decorations?.some((decoration) => isAnimatedDecorationOnLine(decoration, line))) {

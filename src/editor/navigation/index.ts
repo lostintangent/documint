@@ -8,16 +8,11 @@
  * metrics. Region-only motion (horizontal, document boundary) takes just the
  * state.
  */
-import {
-  measureCaretTarget,
-  resolveLayoutDragFocus,
-  resolveLayoutSelectionHit,
-  type EditorLayoutState,
-  type EditorPoint,
-} from "../layout";
+import { measureCaretTarget, type EditorLayoutState, type EditorPoint } from "../layout";
 import {
   setSelection,
   setSelectionPoint,
+  resolveDocumentBoundaryRegion,
   type EditorSelectionPoint,
   type EditorState,
 } from "../state";
@@ -28,16 +23,23 @@ import {
   moveCaretVerticallyInFlow,
 } from "./line";
 import { moveCaretVerticallyInTable } from "./table";
-
 export {
-  firstInFlowRegionOfRoot,
-  isContainerBlock,
-  isInertBlock,
-  nextBlockInFlow,
-  nextRegionInFlow,
-  previousBlockInFlow,
-  previousRegionInFlow,
-} from "./flow";
+  resolveDragFocus,
+  resolveDragFocusPoint,
+  resolveEditorHitAtPoint,
+  resolveHoverTarget,
+  resolveHoverTargetAtPoint,
+  resolveLinkHitAtPoint,
+  resolveSelectionHit,
+  resolveTargetAtOffset,
+  resolveTaskCheckboxHitAtPoint,
+  resolveWordSelection,
+  resolveWordSelectionAtPoint,
+  type EditorHoverTarget,
+  type EditorHit,
+  type SelectionHit,
+} from "./hit";
+import { resolveDragFocus, resolveSelectionHit } from "./hit";
 
 export function moveCaretHorizontally(state: EditorState, delta: -1 | 1, extendSelection = false) {
   return moveCaretHorizontallyInFlow(state, delta, extendSelection);
@@ -97,8 +99,7 @@ export function moveCaretToDocumentBoundary(
   boundary: "start" | "end",
   extendSelection = false,
 ) {
-  const regions = state.documentIndex.regions;
-  const targetRegion = boundary === "start" ? regions[0] : regions.at(-1);
+  const targetRegion = resolveDocumentBoundaryRegion(state.documentIndex, boundary);
 
   if (!targetRegion) {
     return state;
@@ -117,7 +118,7 @@ export function setSelectionAtPoint(
   viewport: EditorLayoutState,
   point: EditorPoint,
 ) {
-  const hit = resolveLayoutSelectionHit(state, viewport, point);
+  const hit = resolveSelectionHit(state, viewport, point);
 
   return hit ? setSelection(state, { offset: hit.offset, regionId: hit.regionId }) : null;
 }
@@ -127,7 +128,7 @@ export function extendSelectionToPoint(
   viewport: EditorLayoutState,
   point: EditorPoint,
 ) {
-  const hit = resolveLayoutSelectionHit(state, viewport, point);
+  const hit = resolveSelectionHit(state, viewport, point);
 
   return hit ? setSelectionPoint(state, hit.regionId, hit.offset, true) : null;
 }
@@ -138,7 +139,7 @@ export function updateSelectionFromDrag(
   point: EditorPoint,
   anchor: EditorSelectionPoint,
 ) {
-  const focus = resolveLayoutDragFocus(state, viewport, point, anchor);
+  const focus = resolveDragFocus(state, viewport, point, anchor);
 
   return focus
     ? setSelection(state, {

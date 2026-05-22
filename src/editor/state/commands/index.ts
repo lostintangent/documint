@@ -17,6 +17,7 @@
 // Commands never reach into reducer internals.
 
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "../reducer/state";
+import { resolveDocumentBoundaryRegion } from "../index/query";
 import {
   resolveBlockById,
   resolveBlockContext,
@@ -162,9 +163,8 @@ export function pasteFragment(
 // --- Selection ---
 
 export function selectAll(state: EditorState): EditorState {
-  const regions = state.documentIndex.regions;
-  const first = regions[0];
-  const last = regions.at(-1);
+  const first = resolveDocumentBoundaryRegion(state.documentIndex, "start");
+  const last = resolveDocumentBoundaryRegion(state.documentIndex, "end");
 
   if (!first || !last) {
     return state;
@@ -178,13 +178,13 @@ export function selectAll(state: EditorState): EditorState {
 
 // --- Inline formatting ---
 
-export const toggleBold = createToggleMarkCommand("bold");
-
-export const toggleItalic = createToggleMarkCommand("italic");
-
-export const toggleStrikethrough = createToggleMarkCommand("strikethrough");
-
-export const toggleUnderline = createToggleMarkCommand("underline");
+export const toggleMark = makeCommand(
+  (context: InlineContext, mark: Mark) =>
+    resolveInlineRangeReplacement(context, (inlineContainer, startOffset, endOffset) =>
+      toggleInlineMark(inlineContainer, startOffset, endOffset, mark),
+    ),
+  resolveInlineContext,
+);
 
 export const toggleCode = makeCommand(
   (context: InlineContext) => resolveInlineRangeReplacement(context, toggleInlineCode),
@@ -429,18 +429,6 @@ function insertSoftLineBreakInline(state: EditorState) {
   const context = resolveInlineContext(state);
 
   return context ? insertInlineNode(context, createLineBreak()) : null;
-}
-
-type ToggleMark = Extract<Mark, "italic" | "bold" | "strikethrough" | "underline">;
-
-function createToggleMarkCommand(mark: ToggleMark) {
-  return makeCommand(
-    (context: InlineContext) =>
-      resolveInlineRangeReplacement(context, (inlineContainer, startOffset, endOffset) =>
-        toggleInlineMark(inlineContainer, startOffset, endOffset, mark),
-      ),
-    resolveInlineContext,
-  );
 }
 
 function updateCommentThread(

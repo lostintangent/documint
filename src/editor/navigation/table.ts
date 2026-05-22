@@ -4,7 +4,14 @@
  * then fall back to the surrounding document when the caret exits the table.
  */
 import { type CaretTarget, type DocumentLayout } from "../layout";
-import { resolveTableCellRegion, type EditorState } from "../state";
+import type { EditorState } from "../state";
+import {
+  resolveBlockEntry,
+  resolveRegion,
+  resolveRegionOutsideRoot,
+  resolveTableCellPosition,
+  resolveTableCellRegion,
+} from "../state/index/query";
 import { placeCaretAtLineY } from "./line";
 
 export function moveCaretVerticallyInTable(
@@ -14,27 +21,26 @@ export function moveCaretVerticallyInTable(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentContainer =
-    state.documentIndex.regionIndex.get(state.selection.focus.regionId) ?? null;
+  const currentContainer = resolveRegion(state.documentIndex, state.selection.focus.regionId);
 
   if (!currentContainer) {
     return null;
   }
 
-  const currentCell = state.documentIndex.tableCellIndex.get(currentContainer.id) ?? null;
-  const tableBlock = state.documentIndex.blockIndex.get(currentContainer.blockId) ?? null;
+  const currentCell = resolveTableCellPosition(currentContainer);
+  const tableBlock = resolveBlockEntry(state.documentIndex, currentContainer.block.id);
 
-  if (!currentCell || tableBlock?.type !== "table") {
+  if (!currentCell || tableBlock?.block.type !== "table") {
     return null;
   }
 
   const targetContainer =
     resolveTableCellRegion(
       state.documentIndex,
-      tableBlock.id,
+      tableBlock.block.id,
       currentCell.rowIndex + direction,
       currentCell.cellIndex,
-    ) ?? findTableExitContainer(state, tableBlock.id, direction);
+    ) ?? findTableExitContainer(state, tableBlock.block.id, direction);
 
   if (!targetContainer) {
     return state;
@@ -60,17 +66,11 @@ export function moveCaretVerticallyInTable(
 }
 
 function findTableExitContainer(state: EditorState, tableBlockId: string, direction: -1 | 1) {
-  const tableEntry = state.documentIndex.blockIndex.get(tableBlockId);
-  const regions = state.documentIndex.regions;
-  const range = tableEntry
-    ? state.documentIndex.roots[tableEntry.rootIndex]?.regionRange
-    : undefined;
+  const tableEntry = resolveBlockEntry(state.documentIndex, tableBlockId);
 
-  if (!range) {
-    return null;
-  }
-
-  return direction < 0 ? (regions[range.start - 1] ?? null) : (regions[range.end] ?? null);
+  return tableEntry
+    ? resolveRegionOutsideRoot(state.documentIndex, tableEntry.rootIndex, direction)
+    : null;
 }
 
 function clamp(value: number, min: number, max: number) {

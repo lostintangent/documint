@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { createDocumentFromIndex, createDocumentIndex, normalizeSelection } from "@/editor/state";
+import {
+  commitDocument,
+  createDocumentIndex,
+  normalizeSelection,
+  regionInlines,
+} from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
 import { parseDocument, serializeDocument } from "@/markdown";
 
@@ -13,7 +18,7 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
 `);
   const runtime = createDocumentIndex(snapshot);
 
-  expect(runtime.blocks.map((block) => block.type)).toEqual([
+  expect(runtime.blocks.map((entry) => entry.block.type)).toEqual([
     "heading",
     "paragraph",
     "list",
@@ -28,7 +33,8 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     "alpha",
     "beta",
   ]);
-  expect(runtime.regions[1]?.inlines.map((run) => run.kind)).toEqual([
+  const paragraphInlines = regionInlines(runtime.regions[1]!);
+  expect(paragraphInlines.map((run) => run.node.type)).toEqual([
     "text",
     "text",
     "text",
@@ -39,16 +45,14 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     "image",
     "text",
   ]);
-  expect(runtime.regions[1]?.inlines[1]?.link?.url).toBe("https://example.com");
-  expect(runtime.regions[1]?.inlines[5]?.text).toBe("\uFFFC");
-  expect(runtime.regions[1]?.inlines[5]?.mention).toEqual({
-    name: "Jane Doe",
-    userId: "user-123",
-  });
-  expect(runtime.regions[1]?.inlines[7]?.text).toBe("\uFFFC");
-  expect(runtime.regions[1]?.inlines[7]?.image?.alt).toBe("alt text");
-  expect(runtime.text).toContain("Paragraph with link, code, \uFFFC, and \uFFFC.");
-  expect(runtime.length).toBe(runtime.text.length);
+  expect(paragraphInlines[1]?.link?.url).toBe("https://example.com");
+  expect(paragraphInlines[5]?.text).toBe("\uFFFC");
+  const mentionNode = paragraphInlines[5]?.node;
+  expect(mentionNode?.type === "mention" && mentionNode.name).toBe("Jane Doe");
+  expect(mentionNode?.type === "mention" && mentionNode.userId).toBe("user-123");
+  expect(paragraphInlines[7]?.text).toBe("\uFFFC");
+  const imageNode = paragraphInlines[7]?.node;
+  expect(imageNode?.type === "image" && imageNode.alt).toBe("alt text");
 });
 
 test("preserves inline emphasis and strong marks in runtime text runs", () => {
@@ -59,11 +63,11 @@ test("preserves inline emphasis and strong marks in runtime text runs", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const italicRun = paragraph.inlines.find((run) => run.text === "italic");
-  const boldRun = paragraph.inlines.find((run) => run.text === "bold");
+  const italicRun = regionInlines(paragraph).find((run) => run.text === "italic");
+  const boldRun = regionInlines(paragraph).find((run) => run.text === "bold");
 
-  expect(italicRun?.marks).toEqual(["italic"]);
-  expect(boldRun?.marks).toEqual(["bold"]);
+  expect(italicRun?.node.type === "text" && italicRun.node.marks).toEqual(["italic"]);
+  expect(boldRun?.node.type === "text" && boldRun.node.marks).toEqual(["bold"]);
 });
 
 test("preserves inline underline marks in runtime text runs", () => {
@@ -74,9 +78,9 @@ test("preserves inline underline marks in runtime text runs", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const underlineRun = paragraph.inlines.find((run) => run.text === "underlined");
+  const underlineRun = regionInlines(paragraph).find((run) => run.text === "underlined");
 
-  expect(underlineRun?.marks).toEqual(["underline"]);
+  expect(underlineRun?.node.type === "text" && underlineRun.node.marks).toEqual(["underline"]);
 });
 
 test("round-trips through editor model materialization without changing markdown", () => {
@@ -88,7 +92,7 @@ test("round-trips through editor model materialization without changing markdown
 `;
   const snapshot = parseDocument(markdown);
   const runtime = createDocumentIndex(snapshot);
-  const roundTrip = createDocumentFromIndex(runtime);
+  const roundTrip = commitDocument(runtime);
 
   expect(serializeDocument(roundTrip)).toBe(markdown);
 });
@@ -100,7 +104,7 @@ test("creates a runtime paragraph for an empty document without changing markdow
   expect(runtime.regions).toHaveLength(1);
   expect(runtime.regions[0]?.text).toBe("");
   expect(runtime.document.blocks[0]?.type).toBe("paragraph");
-  expect(serializeDocument(createDocumentFromIndex(runtime))).toBe("");
+  expect(serializeDocument(commitDocument(runtime))).toBe("");
 });
 
 test("stores positioned root ranges directly on the unified editor model", () => {
@@ -295,7 +299,7 @@ test("replaces a selected image atomically instead of editing its alt text", () 
     throw new Error("Expected paragraph container");
   }
 
-  const imageRun = paragraph.inlines.find((run) => run.kind === "image");
+  const imageRun = regionInlines(paragraph).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");

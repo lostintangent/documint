@@ -28,10 +28,6 @@ export function OverlayPortalProvider({
 export function OverlayPortal({ children }: { children: ReactNode }) {
   const themeStyles = useContext(OverlayThemeContext);
 
-  if (typeof document === "undefined") {
-    return null;
-  }
-
   return createPortal(
     <div className="documint-overlay" style={{ display: "contents", ...themeStyles }}>
       {children}

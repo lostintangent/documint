@@ -65,7 +65,7 @@ test("backspace at start of an empty top-level first list item still demotes the
   // the heading/blockquote/list demote family.
   let state = setup("Lead\n\n-\n- alpha\n");
   const empty = state.documentIndex.regions.find(
-    (c) => c.blockType === "paragraph" && c.text === "",
+    (c) => c.block.type === "paragraph" && c.text === "",
   );
 
   if (!empty) throw new Error("Expected empty first list item");
@@ -200,7 +200,7 @@ test("forward delete removes an empty paragraph and moves the caret to the next 
   state = insertLineBreak(state) ?? state;
 
   const emptyParagraph = state.documentIndex.regions.find(
-    (container) => container.blockType === "paragraph" && container.text === "",
+    (container) => container.block.type === "paragraph" && container.text === "",
   );
 
   if (!emptyParagraph) {
@@ -226,7 +226,7 @@ test("forward delete removes an empty heading and moves the caret to the next bl
   state = deleteSelection(state);
 
   const emptyHeading = state.documentIndex.regions.find(
-    (container) => container.blockType === "heading" && container.text === "",
+    (container) => container.block.type === "heading" && container.text === "",
   );
 
   if (!emptyHeading) {
@@ -251,7 +251,7 @@ test("forward delete is a no-op on the last empty paragraph in the document", ()
   state = insertLineBreak(state) ?? state;
 
   const emptyParagraph = state.documentIndex.regions.find(
-    (container) => container.blockType === "paragraph" && container.text === "",
+    (container) => container.block.type === "paragraph" && container.text === "",
   );
 
   if (!emptyParagraph) {
@@ -276,7 +276,7 @@ test("backspacing an empty paragraph after a list lands in the deepest-last regi
   state = insertLineBreak(state) ?? state;
 
   const emptyParagraph = state.documentIndex.regions.find(
-    (container) => container.blockType === "paragraph" && container.text === "",
+    (container) => container.block.type === "paragraph" && container.text === "",
   );
 
   if (!emptyParagraph) {
@@ -307,7 +307,7 @@ test("forward-deleting an empty paragraph above a list lands at the start of the
   state = deleteSelection(state);
 
   const emptyParagraph = state.documentIndex.regions.find(
-    (container) => container.blockType === "paragraph" && container.text === "",
+    (container) => container.block.type === "paragraph" && container.text === "",
   );
 
   if (!emptyParagraph) {
@@ -336,7 +336,7 @@ test("moves the caret into the newly inserted empty paragraph when pressing ente
   paragraphState = insertLineBreak(paragraphState) ?? paragraphState;
 
   const emptyParagraph = paragraphState.documentIndex.regions.find(
-    (container) => container.blockType === "paragraph" && container.text === "",
+    (container) => container.block.type === "paragraph" && container.text === "",
   );
 
   if (!emptyParagraph) {
@@ -349,7 +349,7 @@ test("moves the caret into the newly inserted empty paragraph when pressing ente
   expect(toMarkdown(paragraphState)).toBe("alpha\n\n\n\n");
 
   const nextParagraphs = paragraphState.documentIndex.regions.filter(
-    (container) => container.blockType === "paragraph",
+    (container) => container.block.type === "paragraph",
   );
   const insertedParagraph = nextParagraphs[2];
 
@@ -407,7 +407,7 @@ test("re-enters the preceding blockquote when backspacing from the empty paragra
   quoteState = insertLineBreak(quoteState) ?? quoteState;
 
   const emptyParagraph = quoteState.documentIndex.regions.find(
-    (container) => container.blockType === "paragraph" && container.text === "",
+    (container) => container.block.type === "paragraph" && container.text === "",
   );
 
   if (!emptyParagraph) {
@@ -468,7 +468,7 @@ test("forward delete is a no-op on the last empty quoted line in the document", 
 test("changes heading depth with tab and shift-tab", () => {
   let headingState = setup("## Heading\n");
   const heading = headingState.documentIndex.regions.find(
-    (container) => container.blockType === "heading",
+    (container) => container.block.type === "heading",
   );
 
   if (!heading) {

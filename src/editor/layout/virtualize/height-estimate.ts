@@ -5,10 +5,10 @@
 
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import type { EditorRegion } from "../../state";
+import { regionInlines, type RegionEntry } from "../../state";
 import type { LayoutCache } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
-import { estimateLayout } from "../measure";
+import { estimateTextLayout } from "./text-estimate";
 import {
   measureTextContainerLines,
   resolveRegionMeasurementCacheIdentity,
@@ -18,7 +18,7 @@ import {
 
 export function estimateContainerHeight(
   cache: LayoutCache,
-  container: EditorRegion,
+  container: RegionEntry,
   block: Block | null,
   depth: number,
   // List item content is shifted right by this inset (bullet or task
@@ -39,7 +39,11 @@ export function estimateContainerHeight(
   const left = options.paddingX + depth * options.indentWidth;
   const availableWidth = Math.max(40, options.width - left - options.paddingX - listInset);
 
-  if (container.inlines.some((inline) => inline.kind === "image" || inline.kind === "mention")) {
+  if (
+    regionInlines(container).some(
+      (inline) => inline.node.type === "image" || inline.node.type === "mention",
+    )
+  ) {
     const font = resolveTextBlockFont(block);
     return measureTextContainerLines(
       cache,
@@ -52,7 +56,7 @@ export function estimateContainerHeight(
     ).reduce((total, line) => total + line.height, 0);
   }
 
-  const estimate = estimateLayout({
+  const estimate = estimateTextLayout({
     charWidth: options.charWidth,
     lineHeight,
     text: container.text,
@@ -64,12 +68,12 @@ export function estimateContainerHeight(
 }
 
 export function estimateTableCellHeight(
-  region: EditorRegion,
+  region: RegionEntry,
   width: number,
   lineHeight: number,
   charWidth: number | undefined,
 ) {
-  const estimate = estimateLayout({
+  const estimate = estimateTextLayout({
     charWidth,
     lineHeight,
     text: region.text,
@@ -80,7 +84,7 @@ export function estimateTableCellHeight(
 }
 
 export function createContainerHeightCacheKey(
-  container: Pick<EditorRegion, "path" | "inlines" | "text">,
+  container: RegionEntry,
   listInset: number,
   options: DocumentLayoutOptions,
   resources: DocumentResources,

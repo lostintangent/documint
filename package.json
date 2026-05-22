@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -29,7 +29,7 @@
   "devDependencies": {
     "@chenglou/pretext": "0.0.7",
     "@types/bun": "latest",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "bun-plugin-tailwind": "^0.1.2",
     "dts-bundle-generator": "^9.5.1",

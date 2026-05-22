@@ -7,26 +7,24 @@ import {
   findLineEntryForRegionOffset,
   findLineForRegionOffset,
   resolveCaretHitTestX,
-  resolveEditorHitAtPoint,
   type CaretTarget,
   type DocumentLayout,
 } from "../layout";
 import { setSelectionPoint, type EditorState } from "../state";
-import { nextRegionInFlow, previousRegionInFlow } from "./flow";
+import { nextRegionInFlow, previousRegionInFlow, resolveRegion } from "../state/index/query";
 import { moveGraphemeOffset } from "../text/graphemes";
+import { resolveEditorHitAtPoint } from "./hit";
 
 export function moveCaretHorizontallyInFlow(
   state: EditorState,
   delta: -1 | 1,
   extendSelection: boolean,
 ) {
-  const regionIndex = state.documentIndex.regionOrderIndex.get(state.selection.focus.regionId);
+  const container = resolveRegion(state.documentIndex, state.selection.focus.regionId);
 
-  if (regionIndex === undefined) {
+  if (!container) {
     return state;
   }
-
-  const container = state.documentIndex.regions[regionIndex]!;
   const nextOffset = moveGraphemeOffset(container.text, state.selection.focus.offset, delta);
 
   if (nextOffset !== state.selection.focus.offset) {
@@ -122,10 +120,7 @@ export function moveCaretByViewportInFlow(
   // Advance by a viewport's worth of lines, minus one for context overlap so
   // the user can still see the line they were on before the jump. Mirrors
   // VS Code / browser contenteditable PageUp/PageDown behavior.
-  const linesPerViewport = Math.max(
-    1,
-    Math.floor(viewportHeight / layout.options.lineHeight) - 1,
-  );
+  const linesPerViewport = Math.max(1, Math.floor(viewportHeight / layout.options.lineHeight) - 1);
   const targetLine = layout.lines[currentLineEntry.index + direction * linesPerViewport];
 
   if (!targetLine) {

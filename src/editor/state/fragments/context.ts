@@ -1,5 +1,5 @@
 import type { Block } from "@/document";
-import type { DocumentIndex, EditorRegion } from "../index/types";
+import type { DocumentIndex, RegionEntry } from "../index/types";
 import {
   normalizeSelection,
   resolveRegion,
@@ -11,15 +11,15 @@ export type FragmentSourceContext =
   | {
       kind: "single-region";
       normalized: NormalizedEditorSelection;
-      region: EditorRegion;
+      region: RegionEntry;
       root: Block;
       wholeRegion: boolean;
     }
   | {
       kind: "multi-region";
       normalized: NormalizedEditorSelection;
-      startRegion: EditorRegion;
-      endRegion: EditorRegion;
+      startRegion: RegionEntry;
+      endRegion: RegionEntry;
       sameRoot: boolean;
       startRoot: Block;
       endRoot: Block;

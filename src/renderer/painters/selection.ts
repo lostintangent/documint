@@ -22,9 +22,9 @@ export function resolveSelectionRegionOrderRange(
   editorState: EditorState,
   normalizedSelection: NormalizedEditorSelection,
 ): SelectionRegionOrderRange | null {
-  const regionOrderIndex = editorState.documentIndex.regionOrderIndex;
-  const start = regionOrderIndex.get(normalizedSelection.start.regionId);
-  const end = regionOrderIndex.get(normalizedSelection.end.regionId);
+  const regionIndex = editorState.documentIndex.regionIndex;
+  const start = regionIndex.get(normalizedSelection.start.regionId)?.documentOrder;
+  const end = regionIndex.get(normalizedSelection.end.regionId)?.documentOrder;
 
   return start === undefined || end === undefined ? null : { end, start };
 }
@@ -41,7 +41,7 @@ export function paintSelectionHighlight(
     return;
   }
 
-  const lineRegionOrder = editorState.documentIndex.regionOrderIndex.get(line.regionId);
+  const lineRegionOrder = editorState.documentIndex.regionIndex.get(line.regionId)?.documentOrder;
 
   if (
     lineRegionOrder === undefined ||

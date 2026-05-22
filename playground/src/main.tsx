@@ -12,12 +12,10 @@ if (!rootElement) {
 // gestures (which iOS uses for text selection etc.). `touch-action` in CSS
 // is too coarse — `pan-x pan-y` would suppress double-tap too — so use the
 // proprietary `gesture*` events, which only fire for pinch / rotate.
-if (typeof document !== "undefined") {
-  const prevent = (event: Event) => event.preventDefault();
-  document.addEventListener("gesturestart", prevent);
-  document.addEventListener("gesturechange", prevent);
-  document.addEventListener("gestureend", prevent);
-}
+const prevent = (event: Event) => event.preventDefault();
+document.addEventListener("gesturestart", prevent);
+document.addEventListener("gesturechange", prevent);
+document.addEventListener("gestureend", prevent);
 
 createRoot(rootElement).render(
   <StrictMode>

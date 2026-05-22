@@ -82,6 +82,15 @@ describe("Inline parsing", () => {
     expect(text.text).toBe("snake_case_identifier");
     expect(text.marks).toEqual([]);
   });
+
+  test("parses superscript html as a semantic text mark", () => {
+    const paragraph = expectBlockAt(parseDocument("Area x<sup>2</sup>\n"), 0, "paragraph");
+    const superscript = expectInlineAt(paragraph.children, 1, "text");
+
+    expect(superscript.text).toBe("2");
+    expect(superscript.marks).toEqual(["superscript"]);
+    expect(paragraph.plainText).toBe("Area x2");
+  });
 });
 
 describe("Backslash escapes", () => {

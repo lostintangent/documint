@@ -1,4 +1,4 @@
-import type { Mark } from "@/document";
+import { markOrder, type Mark } from "@/document";
 
 export type MarkdownOptions = {
   /**
@@ -19,73 +19,88 @@ export type MarkdownOptions = {
 
 export const lineFeed = "\n";
 
-export const underlineOpenTag = "<ins>";
-export const underlineCloseTag = "</ins>";
-
 export const blockquoteMarker = ">";
 export const fencedCodeMarker = "```";
 export const containerDirectiveClosingMarker = ":::";
 
 // --- Inline mark spec ---
 //
-// Single source of truth for the parser→serializer mark vocabulary. One row
-// per `Mark`, carrying both how the serializer emits it and the (possibly
-// empty) set of delimiter forms the parser recognizes:
+// Single source of truth for Documint markdown's mark syntax. One row per
+// supported `Mark`, carrying both parser and serializer policy:
 //
-//   - `emit`        — opening and closing strings the serializer wraps text
-//     in. Always present (every Mark must round-trip).
-//   - `delimiters`  — every authored delimiter that parses into this mark.
-//     A mark with no `delimiters` (e.g. `underline`) is parsed by a
-//     dedicated token reader instead of the shared delimited dispatch.
+//   - `delimiter` specs parse paired markdown delimiters and emit their
+//     canonical opening/closing delimiter.
+//   - `html` specs parse exact HTML tag pairs and emit those same tags.
 //   - `requireWordBoundary` — when true, the parser only accepts the
 //     delimiter when neither side touches a word character. Models the
 //     asymmetry between asterisk-italic (matches mid-word) and
 //     underscore-italic (must sit on word boundaries).
 //
-// The parser derives a flat, length-desc-sorted lookup at module load so
-// longer delimiters win over their shorter prefixes (`**` before `*`). The
-// serializer derives a per-`Mark` emit table at module load. Adding a new
-// mark is a single edit here — parser dispatch, paragraph escape, and
-// serializer emission all pick it up automatically.
+// The parser derives delimiter and HTML-tag dispatch tables at module load.
+// The serializer derives a per-`Mark` emit table from the same specs. Adding
+// a mark with existing syntax families should be a single row here.
 export type InlineMarkDelimiter = {
   delimiter: string;
   requireWordBoundary: boolean;
 };
 
-export type InlineMarkSpec = {
-  mark: Mark;
+export type DelimitedInlineMarkSpecInput = {
+  kind: "delimiter";
   emit: readonly [open: string, close: string];
   delimiters: ReadonlyArray<InlineMarkDelimiter>;
 };
 
-export const inlineMarkSpecs: ReadonlyArray<InlineMarkSpec> = [
-  {
-    mark: "bold",
+export type HtmlInlineMarkSpecInput = {
+  kind: "html";
+  openTag: string;
+  closeTag: string;
+};
+
+export type InlineMarkSpecInput = DelimitedInlineMarkSpecInput | HtmlInlineMarkSpecInput;
+export type DelimitedInlineMarkSpec = DelimitedInlineMarkSpecInput & { mark: Mark };
+export type HtmlInlineMarkSpec = HtmlInlineMarkSpecInput & { mark: Mark };
+export type InlineMarkSpec = DelimitedInlineMarkSpec | HtmlInlineMarkSpec;
+
+const inlineMarkSpecByMark = {
+  bold: {
+    kind: "delimiter",
     emit: ["**", "**"],
     delimiters: [{ delimiter: "**", requireWordBoundary: false }],
   },
-  {
-    mark: "italic",
+  italic: {
+    kind: "delimiter",
     emit: ["*", "*"],
     delimiters: [
       { delimiter: "*", requireWordBoundary: false },
       { delimiter: "_", requireWordBoundary: true },
     ],
   },
-  {
-    mark: "strikethrough",
+  strikethrough: {
+    kind: "delimiter",
     emit: ["~~", "~~"],
     delimiters: [{ delimiter: "~~", requireWordBoundary: false }],
   },
-  {
-    mark: "underline",
-    emit: [underlineOpenTag, underlineCloseTag],
-    // Parsed by `readUnderlineToken` (HTML-tag shape), not by the shared
-    // delimited-mark dispatch. Listed here purely for the serializer's
-    // emit lookup.
-    delimiters: [],
+  underline: {
+    kind: "html",
+    openTag: "<ins>",
+    closeTag: "</ins>",
   },
-];
+  superscript: {
+    kind: "html",
+    openTag: "<sup>",
+    closeTag: "</sup>",
+  },
+} satisfies Record<Mark, InlineMarkSpecInput>;
+
+export const inlineMarkSpecs: ReadonlyArray<InlineMarkSpec> =
+  defineInlineMarkSpecs(inlineMarkSpecByMark);
+
+function defineInlineMarkSpecs(specs: Record<Mark, InlineMarkSpecInput>): InlineMarkSpec[] {
+  return markOrder.map((mark) => ({
+    ...specs[mark],
+    mark,
+  }));
+}
 
 /**
  * Name of the trailing container directive that carries persisted comment

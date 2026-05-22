@@ -3,17 +3,16 @@
 // or whole-document height estimation.
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import { isContainerBlock, isInertBlock } from "../../navigation/flow";
-import type { DocumentIndex, EditorRegion } from "../../state";
+import { isContainerBlock, isInertBlock, resolveRegion } from "../../state/index/query";
+import type { DocumentIndex, RegionEntry } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
 import {
-  defaultDocumentLayoutOptions,
   resolveDocumentLayoutOptions,
   type DocumentLayoutOptions,
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
-import { resolveBlockGap } from "../lib/spacing";
-import { resolveListMarkerInset, type LayoutBlockExtent } from "../lib/geometry";
+import { resolveBlockGap } from "../lib/block-spacing";
+import { resolveListMarkerInset, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { layoutTable } from "./table";
 import {
   measureTextContainerLines,
@@ -24,7 +23,7 @@ import {
 } from "./text";
 
 export type { DocumentLayoutOptions } from "../lib/options";
-export type { LayoutBlockExtent } from "../lib/geometry";
+export type { LayoutBlockExtent } from "../lib/marker-metrics";
 
 export type DocumentLineBoundary = TextLineBoundary;
 
@@ -47,7 +46,7 @@ export type DocumentLayoutBlock = {
   depth: number;
   id: string;
   top: number;
-  type: DocumentIndex["blocks"][number]["type"];
+  type: DocumentIndex["blocks"][number]["block"]["type"];
 };
 
 export type DocumentLayout = {
@@ -59,39 +58,6 @@ export type DocumentLayout = {
   options: DocumentLayoutOptions;
   width: number;
 };
-
-export type LayoutEstimate = {
-  estimatedHeight: number;
-  lineCount: number;
-  width: number;
-};
-
-export function estimateLayout(input: {
-  text: string;
-  width: number;
-  charWidth?: number;
-  lineHeight?: number;
-}): LayoutEstimate {
-  const charWidth = input.charWidth ?? defaultDocumentLayoutOptions.charWidth;
-  const lineHeight = input.lineHeight ?? defaultDocumentLayoutOptions.lineHeight;
-  const charactersPerLine = Math.max(12, Math.floor(input.width / charWidth));
-  // Split on `\n` so hard line breaks contribute their own wrapped-line
-  // counts. `String.split` yields a trailing empty segment for a trailing
-  // newline, which naturally accounts for the extra empty line that the
-  // measured layout's post-loop emits in `layoutSegmentsIntoLines`.
-  const lineCount = input.text
-    .split("\n")
-    .reduce(
-      (total, segment) => total + Math.max(1, Math.ceil(segment.length / charactersPerLine)),
-      0,
-    );
-
-  return {
-    estimatedHeight: lineCount * lineHeight,
-    lineCount,
-    width: input.width,
-  };
-}
 
 export function measureLayoutSlice(
   documentIndex: DocumentIndex,
@@ -134,8 +100,8 @@ export function measureLayoutSlice(
   let previousLaidOutBlock: DocumentIndex["blocks"][number] | null = null;
 
   for (const blockEntry of documentIndex.blocks) {
-    const block = blockMap.get(blockEntry.id) ?? null;
-    if (!block || isContainerBlock(block)) continue;
+    const block = blockMap.get(blockEntry.block.id) ?? null;
+    if (!block || isContainerBlock(blockEntry)) continue;
 
     const isInert = isInertBlock(blockEntry);
     const blockRegionsInScope = blockEntry.regionIds.filter((id) => visibleRegionIds.has(id));
@@ -151,8 +117,8 @@ export function measureLayoutSlice(
       y += resolveBlockGap(
         runtimeBlocks,
         blockMap,
-        previousLaidOutBlock.id,
-        blockEntry.id,
+        previousLaidOutBlock.block.id,
+        blockEntry.block.id,
         resolvedOptions.blockGap,
       );
       // Extend the previous block's extent to include the trailing gap so
@@ -162,7 +128,7 @@ export function measureLayoutSlice(
       // rule) symmetrically. Clicks in the gap below an inert leaf fall
       // through to the next block rather than snapping back.
       if (!isInertBlock(previousLaidOutBlock)) {
-        const previousExtent = blockExtents.get(previousLaidOutBlock.id);
+        const previousExtent = blockExtents.get(previousLaidOutBlock.block.id);
         if (previousExtent) {
           previousExtent.bottom = Math.max(previousExtent.bottom, y);
         }
@@ -171,7 +137,7 @@ export function measureLayoutSlice(
 
     const depth = blockEntry.depth;
     const left = resolvedOptions.paddingX + depth * resolvedOptions.indentWidth;
-    const listInset = resolveListMarkerInset(documentIndex, blockEntry.id);
+    const listInset = resolveListMarkerInset(documentIndex, blockEntry.block.id);
     const availableWidth = Math.max(
       40,
       resolvedOptions.width - left - resolvedOptions.paddingX - listInset,
@@ -181,12 +147,12 @@ export function measureLayoutSlice(
       // Inert leaves (dividers, etc.) reserve a fixed-height slot without
       // emitting lines; chrome is painted off `layout.blocks`.
       const bottom = y + resolvedOptions.lineHeight;
-      blockExtents.set(blockEntry.id, { top: y, bottom });
+      blockExtents.set(blockEntry.block.id, { top: y, bottom });
       y = bottom;
     } else if (block.type === "table") {
       const tableContainers = blockRegionsInScope
-        .map((id) => documentIndex.regionIndex.get(id))
-        .filter((r): r is EditorRegion => r !== undefined);
+        .map((id) => resolveRegion(documentIndex, id))
+        .filter((r): r is RegionEntry => r !== null);
       y = layoutTable(
         lines,
         blockExtents,
@@ -201,7 +167,7 @@ export function measureLayoutSlice(
       );
     } else {
       for (const regionId of blockRegionsInScope) {
-        const container = documentIndex.regionIndex.get(regionId);
+        const container = resolveRegion(documentIndex, regionId);
         if (!container) continue;
         y = layoutSingleContainer(
           lines,
@@ -228,17 +194,17 @@ export function measureLayoutSlice(
   // geometry; their leaf descendants do. Sorted by `top` to support
   // binary-search visibility scoping in the paint pass.
   const blocks: DocumentLayoutBlock[] = [];
-  for (const block of documentIndex.blocks) {
-    const runtimeBlock = blockMap.get(block.id);
-    if (!runtimeBlock || isContainerBlock(runtimeBlock)) continue;
-    const extent = blockExtents.get(block.id);
+  for (const entry of documentIndex.blocks) {
+    const runtimeBlock = blockMap.get(entry.block.id);
+    if (!runtimeBlock || isContainerBlock(entry)) continue;
+    const extent = blockExtents.get(entry.block.id);
     if (!extent) continue;
     blocks.push({
       bottom: extent.bottom,
-      depth: block.depth,
-      id: block.id,
+      depth: entry.depth,
+      id: entry.block.id,
       top: extent.top,
-      type: block.type,
+      type: entry.block.type,
     });
   }
 
@@ -280,7 +246,7 @@ function layoutSingleContainer(
   let y = top;
   for (const line of measuredLines) {
     const layoutLine = {
-      blockId: container.blockId,
+      blockId: container.block.id,
       boundaries: measureTextLineBoundaries(
         cache,
         container,

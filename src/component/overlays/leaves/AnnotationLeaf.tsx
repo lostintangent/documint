@@ -1,24 +1,6 @@
 import { getCommentThreadUpdatedAt, isResolvedCommentThread, type CommentThread } from "@/document";
-import {
-  toggleBold,
-  toggleCode,
-  toggleItalic,
-  toggleStrikethrough,
-  toggleUnderline,
-  type EditorPresence,
-  type SelectionFormatting,
-} from "@/editor";
-import {
-  Bold,
-  Check,
-  Code,
-  Italic,
-  MessageSquarePlus,
-  Pencil,
-  Strikethrough,
-  Trash2,
-  Underline,
-} from "lucide-react";
+import { toggleCode, toggleMark, type EditorPresence, type SelectionFormatting } from "@/editor";
+import { Check, Code, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
@@ -26,6 +8,7 @@ import { useEditorCommand } from "../../store";
 import { resolvePresenceName } from "../../lib/presence";
 import { LeafInput } from "./core/LeafInput";
 import { LeafOutput } from "./core/LeafOutput";
+import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./formatting";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
 
 type AnnotationLink = {
@@ -68,6 +51,13 @@ const defaultFormatting: SelectionFormatting = {
 };
 const noop = () => {};
 
+const leadingFormattingMarkButtons = formattingMarkDescriptors.filter(
+  (descriptor) => descriptor.group === "leading",
+);
+const trailingFormattingMarkButtons = formattingMarkDescriptors.filter(
+  (descriptor) => descriptor.group === "trailing",
+);
+
 export function AnnotationLeaf(props: AnnotationLeafProps) {
   const createMode = props.mode === "create";
   const createProps: AnnotationCreateLeafProps | null = props.mode === "create" ? props : null;
@@ -106,12 +96,20 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const formatting = createProps?.formatting ?? defaultFormatting;
   const activeCode = formatting.code;
   const activeFormattingMarks = formatting.marks;
-  const toggleBoldCommand = useEditorCommand(toggleBold);
   const toggleCodeCommand = useEditorCommand(toggleCode);
-  const toggleItalicCommand = useEditorCommand(toggleItalic);
-  const toggleStrikethroughCommand = useEditorCommand(toggleStrikethrough);
-  const toggleUnderlineCommand = useEditorCommand(toggleUnderline);
+  const toggleMarkCommand = useEditorCommand(toggleMark);
   const actions = createProps?.actions ?? [];
+  const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
+    <LeafToolbar.Button
+      active={activeFormattingMarks.includes(button.mark)}
+      className="documint-comment-leaf-create-mark"
+      disabled={activeCode}
+      icon={button.icon}
+      key={button.mark}
+      label={button.label}
+      onClick={() => toggleMarkCommand(button.mark)}
+    />
+  );
   const composerPlaceholder = canEdit
     ? createMode
       ? "Add a comment"
@@ -271,30 +269,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               onClick={() => setIsExpanded(true)}
             />
             <LeafToolbar.Divider />
-            <LeafToolbar.Button
-              active={activeFormattingMarks.includes("bold")}
-              className="documint-comment-leaf-create-mark"
-              disabled={activeCode}
-              icon={Bold}
-              label="Bold"
-              onClick={toggleBoldCommand}
-            />
-            <LeafToolbar.Button
-              active={activeFormattingMarks.includes("italic")}
-              className="documint-comment-leaf-create-mark"
-              disabled={activeCode}
-              icon={Italic}
-              label="Italic"
-              onClick={toggleItalicCommand}
-            />
-            <LeafToolbar.Button
-              active={activeFormattingMarks.includes("underline")}
-              className="documint-comment-leaf-create-mark"
-              disabled={activeCode}
-              icon={Underline}
-              label="Underline"
-              onClick={toggleUnderlineCommand}
-            />
+            {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
             <LeafToolbar.Divider />
             <LeafToolbar.Button
               active={activeCode}
@@ -303,14 +278,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               label="Code"
               onClick={toggleCodeCommand}
             />
-            <LeafToolbar.Button
-              active={activeFormattingMarks.includes("strikethrough")}
-              className="documint-comment-leaf-create-mark"
-              disabled={activeCode}
-              icon={Strikethrough}
-              label="Strikethrough"
-              onClick={toggleStrikethroughCommand}
-            />
+            {trailingFormattingMarkButtons.map(renderFormattingMarkButton)}
             {actions.length > 0
               ? [
                   <LeafToolbar.Divider key="actions-divider" />,
@@ -565,8 +533,7 @@ function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
         className="documint-comment-presence-dot"
         style={
           {
-            "--documint-comment-presence-color":
-              presence.color ?? "var(--documint-leaf-accent)",
+            "--documint-comment-presence-color": presence.color ?? "var(--documint-leaf-accent)",
           } as CSSProperties
         }
       >

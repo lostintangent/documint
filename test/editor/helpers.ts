@@ -5,7 +5,7 @@ import {
   createDocumentFromEditorState,
   createEditorState,
   setSelection,
-  type EditorRegion,
+  type RegionEntry,
   type EditorState,
 } from "@/editor/state";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -24,7 +24,7 @@ export function toMarkdown(state: EditorState): string {
  * Find a region by its plain-text content. Throws if not found.
  * Pass an empty string to find the first empty region.
  */
-export function getRegion(state: EditorState, text: string): EditorRegion {
+export function getRegion(state: EditorState, text: string): RegionEntry {
   const region = state.documentIndex.regions.find((r) => r.text === text);
 
   if (!region) {
@@ -39,8 +39,8 @@ export function getRegion(state: EditorState, text: string): EditorRegion {
  * single block of a particular kind (heading, code block, etc.) and the
  * test wants to locate it independent of its content.
  */
-export function getRegionByType(state: EditorState, blockType: string): EditorRegion {
-  const region = state.documentIndex.regions.find((r) => r.blockType === blockType);
+export function getRegionByType(state: EditorState, blockType: string): RegionEntry {
+  const region = state.documentIndex.regions.find((r) => r.block.type === blockType);
 
   if (!region) {
     throw new Error(`Expected region with block type "${blockType}"`);
@@ -55,7 +55,7 @@ export function getRegionByType(state: EditorState, blockType: string): EditorRe
  */
 export function placeAt(
   state: EditorState,
-  region: EditorRegion,
+  region: RegionEntry,
   offset: number | "start" | "end",
 ): EditorState {
   const resolvedOffset = offset === "start" ? 0 : offset === "end" ? region.text.length : offset;
@@ -69,7 +69,7 @@ export function placeAt(
  */
 export function selectIn(
   state: EditorState,
-  region: EditorRegion,
+  region: RegionEntry,
   start: number,
   end: number,
 ): EditorState {
@@ -85,7 +85,7 @@ export function selectIn(
  */
 export function selectSubstring(
   state: EditorState,
-  region: EditorRegion,
+  region: RegionEntry,
   substring: string,
 ): EditorState {
   const start = region.text.indexOf(substring);

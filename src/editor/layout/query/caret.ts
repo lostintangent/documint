@@ -4,11 +4,11 @@
 // should land — including any visual offset from list-marker indent or
 // trailing whitespace that the line wrapping collapsed.
 
-import type { DocumentIndex, EditorState } from "../../state";
+import { resolveRegion, type DocumentIndex, type EditorState } from "../../state";
 import { measureTextWidth } from "../../text/measure";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
-import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./lookup";
-import { resolveLineContentInset } from "./geometry";
+import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
+import { resolveLineContentInset } from "./line-visuals";
 
 export type DocumentCaretTarget = {
   blockId: string;
@@ -82,7 +82,7 @@ function resolveCollapsedTrailingSpaceWidth(
     return 0;
   }
 
-  const container = state.documentIndex.regionIndex.get(line.regionId);
+  const container = resolveRegion(state.documentIndex, line.regionId);
 
   if (!container) {
     return 0;

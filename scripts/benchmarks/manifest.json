@@ -150,6 +150,7 @@
     },
     "editor": {
       "import_comments": 0.15,
+      "import_comments_dense": 2,
       "import_medium": 0.1,
       "import": 7,
       "hit_test": 0.15,

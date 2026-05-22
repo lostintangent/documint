@@ -11,12 +11,12 @@ import {
   type TableRow,
 } from "@/document";
 import type { DocumentIndex } from "../../../index/types";
+import { resolveTableCellRegion } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import { spliceInlineContainer } from "../inlines/shared";
 import {
   createRootPrimaryRegionTarget,
   createTableCellTarget,
-  resolveTableCellRegion,
   type EditorSelection,
 } from "../../../selection";
 import { resolveRootTextBlockContextFromSelection, type TableCellContext } from "../../context";

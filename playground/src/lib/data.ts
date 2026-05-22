@@ -10,7 +10,7 @@ As you edit the document, the markdown updates on the right; you can also edit t
 
 ## ✍️ Formatting
 
-Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inline code\`, and [links](https://example.com) inline.
+Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, super<sup>script</sup>, \`inline code\`, and [links](https://example.com) inline.
 
 Select text and paste a URL to turn the selection into a link.
 

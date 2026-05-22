@@ -1,3 +1,8 @@
+## 🗓️ v0.0.19 (05-22-26)
+
+- Added support for superscript text formatting
+- Improved editing perf on large documents
+
 ## 🗓️ v0.0.18 (05-18-26)
 
 - Commment threads now display a status indicator when a presence user is associated with it

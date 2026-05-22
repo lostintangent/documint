@@ -67,11 +67,10 @@ function hasAdjacentSameMarkTextPair(nodes: Inline[]): boolean {
   return false;
 }
 
-// Mark sets are kept in insertion order by every caller in the parsing and
-// editing layers, so order-sensitive equality is the canonical check. The
-// reference check is a free win when two adjacent text inlines were
-// emitted by the same `flushText` context and share the same `marks`
-// array — the dominant pattern coming out of `parseInlineRange`.
+// Mark sets are canonicalized by document builders/normalization, so
+// order-sensitive equality is the canonical check. The reference check is a
+// free win when two adjacent text inlines were emitted by the same `flushText`
+// context and share the same `marks` array — the dominant parser pattern.
 function marksEqual(left: readonly Mark[], right: readonly Mark[]): boolean {
   if (left === right) {
     return true;

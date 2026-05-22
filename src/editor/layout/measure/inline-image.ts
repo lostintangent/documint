@@ -1,7 +1,7 @@
 // Owns inline image sizing policy for document layout. Text measurement asks
 // this module for image dimensions instead of embedding resource rules inline.
 import type { DocumentResources } from "@/types";
-import type { EditorInline } from "../../state";
+import type { InlineEntry } from "../../state";
 
 const IMAGE_FALLBACK_WIDTH = 240;
 const IMAGE_FALLBACK_ASPECT_RATIO = 9 / 16;
@@ -14,12 +14,13 @@ export type InlineImageDimensions = {
 };
 
 export function resolveInlineImageDimensions(
-  inline: EditorInline,
+  inline: InlineEntry,
   resources: DocumentResources,
   availableWidth: number,
 ): InlineImageDimensions {
-  const resource = inline.image ? (resources.images.get(inline.image.url) ?? null) : null;
-  const authoredWidth = inline.image?.width ?? null;
+  const image = inline.node.type === "image" ? inline.node : null;
+  const resource = image ? (resources.images.get(image.url) ?? null) : null;
+  const authoredWidth = image?.width ?? null;
   const fallbackWidth = Math.min(availableWidth, authoredWidth ?? IMAGE_FALLBACK_WIDTH);
   const fallbackHeight = Math.max(
     IMAGE_FALLBACK_MIN_HEIGHT,
@@ -42,12 +43,13 @@ export function resolveInlineImageDimensions(
   };
 }
 
-export function resolveInlineImageSignature(inline: EditorInline, resources: DocumentResources) {
-  if (!inline.image) {
-    return `${inline.kind}:missing-image`;
+export function resolveInlineImageSignature(inline: InlineEntry, resources: DocumentResources) {
+  if (inline.node.type !== "image") {
+    return `${inline.node.type}:missing-image`;
   }
 
-  const resource = resources.images.get(inline.image.url);
+  const image = inline.node;
+  const resource = resources.images.get(image.url);
 
-  return `${inline.kind}:${inline.image.url}:${inline.image.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
+  return `image:${image.url}:${image.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
 }

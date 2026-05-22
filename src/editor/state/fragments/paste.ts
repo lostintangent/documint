@@ -9,7 +9,7 @@ import {
   type Fragment,
 } from "@/document";
 import { resolveInlineContext, type InlineContext } from "../commands/context";
-import type { DocumentIndex, EditorRegion } from "../index/types";
+import type { DocumentIndex, RegionEntry } from "../index/types";
 import { normalizeSelection, resolveRegion, type EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
 import { resolveTextHighlightAnimation } from "../animations/intents";
@@ -191,12 +191,12 @@ function resolveFragmentDestinationContext(
   const structuralBlocked = isOpaqueRegion(startRegion) || isOpaqueRegion(endRegion);
 
   return {
-    prefersVerbatimFallback: startRegion.blockType === "code" || endRegion.blockType === "code",
+    prefersVerbatimFallback: startRegion.block.type === "code" || endRegion.block.type === "code",
     sameRegion: startRegion === endRegion,
     structuralBlocked,
   };
 }
 
-function isOpaqueRegion(region: EditorRegion): boolean {
-  return region.blockType === "table" || region.blockType === "code";
+function isOpaqueRegion(region: RegionEntry): boolean {
+  return region.block.type === "table" || region.block.type === "code";
 }

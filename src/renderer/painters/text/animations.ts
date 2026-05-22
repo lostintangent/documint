@@ -6,9 +6,9 @@
 // runs so they paint last in the foreground sub-pipeline.
 
 import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
-import { findInlinesInSpan, type EditorRegion } from "@/editor/state";
+import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
 import type { EditorTheme } from "@/types";
-import { resolveInlineTextFont } from "@/editor/text/fonts";
+import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { splitGraphemes } from "@/editor/text/graphemes";
 import { resolveFontMetrics } from "@/editor/text/measure";
 import { collectRangeBoundaries, findRangeAtSegment } from "@/editor/text/ranges";
@@ -29,7 +29,7 @@ const textHighlightMinimumVisibleAlpha = 0.02;
 export function paintTextHighlights(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
   textBaseline: number,
   textHighlights: ActiveTextHighlight[],
@@ -39,10 +39,10 @@ export function paintTextHighlights(
     return;
   }
 
-  const visibleInlines = findInlinesInSpan(container.inlines, line.start, line.end);
+  const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
 
   for (const inline of visibleInlines) {
-    if (inline.kind === "image" || inline.kind === "mention") {
+    if (inline.node.type === "image" || inline.node.type === "mention") {
       continue;
     }
 
@@ -67,8 +67,13 @@ export function paintTextHighlights(
     }
 
     const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
-    const inlineFont = resolveInlineTextFont(line.font, inline.marks, inline.inlineCode);
-    context.font = inlineFont;
+    const inlineStyle = resolveInlineTextStyle(
+      line.font,
+      inline.node.type === "text" ? inline.node.marks : [],
+      inline.node.type === "code",
+    );
+    context.font = inlineStyle.font;
+    const segmentBaseline = textBaseline + inlineStyle.baselineShift;
 
     for (let index = 0; index < highlightBoundaries.length - 1; index += 1) {
       const highlightStart = highlightBoundaries[index]!;
@@ -100,7 +105,7 @@ export function paintTextHighlights(
         height: line.height,
         left: highlightLeft,
         text: segmentText,
-        textBaseline,
+        textBaseline: segmentBaseline,
         textLeft: segmentLeft,
         top: line.top,
         width: Math.max(0, highlightRight - highlightLeft),
@@ -112,7 +117,7 @@ export function paintTextHighlights(
 export function paintTextFades(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
   textBaseline: number,
   textFades: ActiveTextFade[],
@@ -138,7 +143,7 @@ export function paintTextFades(
 export function paintTextPulses(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
   textBaseline: number,
   textPulses: ActiveTextPulse[],

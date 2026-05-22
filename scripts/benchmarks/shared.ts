@@ -32,6 +32,7 @@ export type BenchmarkBudgetTree = {
     hit_test_xlarge: number;
     import: number;
     import_comments: number;
+    import_comments_dense: number;
     import_medium: number;
     import_rich: number;
     linebreak_list: number;

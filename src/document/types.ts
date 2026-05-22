@@ -132,7 +132,7 @@ export type RawBlock = BlockNode<
   }
 >;
 
-export type Mark = "bold" | "italic" | "strikethrough" | "underline";
+export type Mark = "bold" | "italic" | "strikethrough" | "underline" | "superscript";
 
 export type Text = DocumentNode<
   "text",

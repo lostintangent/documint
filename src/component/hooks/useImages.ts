@@ -34,7 +34,7 @@ export function useImages(storage: DocumentStorage): ImagesApi {
 
   const reconcileImageLoads = useEffectEvent((urls: ReadonlySet<string>) => {
     if (typeof createImageBitmap === "undefined") {
-      return; // SSR — no decode pipeline available.
+      return;
     }
 
     const inactiveUrls = resolveInactiveImageUrls(imageResources, urls);

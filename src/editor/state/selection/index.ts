@@ -3,9 +3,11 @@
 // selection target/query/formatting modules so callers can keep importing from
 // `state/selection`.
 
-import type { DocumentIndex, EditorRegion } from "../index/types";
-import { SELECTION_ORDER_MULTIPLIER } from "../index/shared";
+import type { DocumentIndex, RegionEntry } from "../index/types";
+import { compareEditorPositions, resolveRegion } from "../index/query";
 import type { EditorState } from "../types";
+
+export { resolveRegion } from "../index/query";
 
 export type EditorSelectionPoint = {
   regionId: string;
@@ -31,14 +33,10 @@ export type EditorSelectionRange = {
 
 export type ResolvedRegionRange = {
   endOffset: number;
-  region: EditorRegion;
+  region: RegionEntry;
   selection: EditorSelection;
   startOffset: number;
 };
-
-export function resolveRegion(documentIndex: DocumentIndex, regionId: string) {
-  return documentIndex.regionIndex.get(regionId) ?? null;
-}
 
 export function resolveRegionRange(
   documentIndex: DocumentIndex,
@@ -90,10 +88,9 @@ export function normalizeSelection(
   const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
   const sel = "documentIndex" in stateOrIndex ? stateOrIndex.selection : selection!;
   const collapsed = isSelectionCollapsed(sel);
-  const anchorOrder = resolveSelectionOrder(documentIndex, sel.anchor);
-  const focusOrder = resolveSelectionOrder(documentIndex, sel.focus);
+  const orientation = compareEditorPositions(documentIndex, sel.anchor, sel.focus);
 
-  if (anchorOrder <= focusOrder) {
+  if (orientation <= 0) {
     return {
       collapsed,
       end: sel.focus,
@@ -110,16 +107,6 @@ export function normalizeSelection(
 
 function clampOffset(offset: number, length: number) {
   return Math.max(0, Math.min(offset, length));
-}
-
-function resolveSelectionOrder(documentIndex: DocumentIndex, point: EditorSelectionPoint) {
-  const regionIndex = documentIndex.regionOrderIndex.get(point.regionId);
-
-  if (regionIndex === undefined) {
-    throw new Error(`Unknown canvas region: ${point.regionId}`);
-  }
-
-  return regionIndex * SELECTION_ORDER_MULTIPLIER + point.offset;
 }
 
 export * from "./target";

@@ -1,5 +1,5 @@
-// Refines the cached large-document estimate with exact geometry from
-// measured viewport slices.
+// Owns refinement of cached virtual-layout estimates from exact measured
+// viewport slices.
 
 import type { DocumentIndex } from "../../state";
 import type { VirtualLayout } from "../state/cache";

@@ -1,8 +1,7 @@
-import { createCode, createText, type Code, type Inline } from "@/document";
+import { createCode, createText, iterateInlineNodeRanges, type Code, type Inline } from "@/document";
 import {
   createInlineContainerReplacement,
   extractInlineSelectionText,
-  measureInlineNodeText,
   spliceInlineNodes,
   type InlineContainer,
   type InlineContainerReplacement,
@@ -47,23 +46,16 @@ function resolveExactSelectedInlineCode(
   startOffset: number,
   endOffset: number,
 ): Code | null {
-  let cursor = 0;
-
-  for (const node of nodes) {
-    const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
-
-    if (startOffset === nodeStart && endOffset === nodeEnd && node.type === "code") {
+  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+    if (startOffset === start && endOffset === end && node.type === "code") {
       return node;
     }
 
     if (node.type === "link") {
       const nested = resolveExactSelectedInlineCode(
         node.children,
-        Math.max(0, startOffset - nodeStart),
-        Math.min(nodeLength, endOffset - nodeStart),
+        Math.max(0, startOffset - start),
+        Math.min(end - start, endOffset - start),
       );
 
       if (nested) {

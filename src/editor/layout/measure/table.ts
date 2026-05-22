@@ -1,8 +1,11 @@
+// Owns exact table layout. Tables share row bands across multiple text
+// regions, so they need a dedicated pass instead of single-region flow.
+
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { DocumentIndex } from "../../state";
 import type { DocumentLayoutOptions } from "../lib/options";
-import type { LayoutBlockExtent } from "../lib/geometry";
+import type { LayoutBlockExtent } from "../lib/marker-metrics";
 import { updateBlockExtent, type DocumentLayout, type DocumentLayoutLine } from "./index";
 import {
   measureTextContainerLines,
@@ -33,9 +36,6 @@ export const TABLE_CELL_PADDING_X = 10;
 export const TABLE_CELL_PADDING_Y = 8;
 export const TABLE_MIN_WIDTH = 120;
 
-// Table-specific layout geometry. Tables are the one block type whose lines
-// share row bands across multiple regions, so they need a dedicated layout
-// pass instead of the default single-container flow.
 export function layoutTable(
   lines: DocumentLayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
@@ -80,7 +80,7 @@ export function layoutTable(
 
       for (const line of cell.measuredLines) {
         const layoutLine = {
-          blockId: cell.container.blockId,
+          blockId: cell.container.block.id,
           boundaries: measureTextLineBoundaries(
             cache,
             cell.container,

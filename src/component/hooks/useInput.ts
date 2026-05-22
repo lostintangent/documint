@@ -34,19 +34,17 @@ import {
   moveListItemUp,
   redo,
   selectAll,
-  toggleBold,
   toggleCode,
-  toggleItalic,
-  toggleStrikethrough,
-  toggleUnderline,
+  toggleMark,
   undo,
   type EditorLayoutState,
   type EditorSelectionPoint,
   type EditorState,
 } from "@/editor";
+import type { EditorInputCommand } from "@/types";
 import { parseFragment, serializeFragment } from "@/markdown";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
-import { resolveEditorCommand, type EditorKeybinding } from "../lib/keybindings";
+import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
 import {
   editorStateSprig,
   useDocumintStore,
@@ -59,7 +57,7 @@ type UseInputOptions = {
   // DOM refs the hook reads from.
   inputRef: RefObject<HTMLTextAreaElement | null>;
 
-  keybindings?: EditorKeybinding[];
+  keybindings?: EditorInputKeybinding[];
 
   // Host callbacks the hook invokes.
   onActivity: () => void;
@@ -120,6 +118,41 @@ type InputController = {
   focus: FocusInput;
   inputHandlers: InputHandlers;
 };
+
+type KeyboardCommandHandlerInput = {
+  event: KeyboardEvent;
+  state: EditorState;
+  viewport: EditorLayoutState;
+};
+
+type KeyboardCommandHandler = (input: KeyboardCommandHandlerInput) => EditorState | null;
+
+const keyboardCommandHandlers = {
+  dedent: ({ state }) => dedent(state),
+  deleteBackward: ({ state }) => deleteBackward(state),
+  indent: ({ state }) => indent(state),
+  insertLineBreak: ({ state }) => insertLineBreak(state),
+  insertSoftLineBreak: ({ state }) => insertSoftLineBreak(state),
+  moveListItemDown: ({ state }) => moveListItemDown(state),
+  moveListItemUp: ({ state }) => moveListItemUp(state),
+  moveToDocumentEnd: ({ event, state }) =>
+    moveCaretToDocumentBoundary(state, "end", event.shiftKey),
+  moveToDocumentStart: ({ event, state }) =>
+    moveCaretToDocumentBoundary(state, "start", event.shiftKey),
+  moveToLineEnd: ({ event, state, viewport }) =>
+    moveCaretToLineBoundary(state, viewport, "End", event.shiftKey),
+  moveToLineStart: ({ event, state, viewport }) =>
+    moveCaretToLineBoundary(state, viewport, "Home", event.shiftKey),
+  redo: ({ state }) => redo(state),
+  selectAll: ({ state }) => selectAll(state),
+  toggleBold: ({ state }) => toggleMark(state, "bold"),
+  toggleCode: ({ state }) => toggleCode(state),
+  toggleItalic: ({ state }) => toggleMark(state, "italic"),
+  toggleStrikethrough: ({ state }) => toggleMark(state, "strikethrough"),
+  toggleSuperscript: ({ state }) => toggleMark(state, "superscript"),
+  toggleUnderline: ({ state }) => toggleMark(state, "underline"),
+  undo: ({ state }) => undo(state),
+} satisfies Record<EditorInputCommand, KeyboardCommandHandler>;
 
 // Maximum characters kept in the hidden textarea before the caret, providing
 // context for IME composition, browser autocorrect, and — critically — voice
@@ -232,7 +265,6 @@ export function useInput({
   const runUndoStackPrime = useEffectEvent(() => {
     const input = inputRef.current;
     if (!input) return;
-    if (typeof document === "undefined") return;
     // `document.execCommand` is deprecated but still works on iOS Safari and
     // — critically — its insert/delete operations *are* recorded in
     // UIUndoManager (whereas assigning to `input.value` is not). Do one
@@ -761,14 +793,14 @@ export const INPUT_SEED = "\u200b";
 // keyboard-shortcut path is simply skipped on touch-primary devices.
 function useIsTouchPrimary(): boolean {
   const [isTouchPrimary, setIsTouchPrimary] = useState(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    if (typeof window.matchMedia !== "function") {
       return false;
     }
     return window.matchMedia("(pointer: coarse)").matches;
   });
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    if (typeof window.matchMedia !== "function") {
       return;
     }
     const mediaQuery = window.matchMedia("(pointer: coarse)");
@@ -966,64 +998,16 @@ function applyKeyboardInputCommand(
   state: EditorState,
   viewport: EditorLayoutState,
   event: KeyboardEvent,
-  keybindings?: EditorKeybinding[],
+  keybindings?: EditorInputKeybinding[],
 ): EditorState | null {
   if (event.key === "Delete") {
     return deleteForward(state);
   }
 
-  const command = resolveEditorCommand(event, keybindings);
+  const command = resolveEditorInputCommand(event, keybindings);
 
   if (command) {
-    if (command === "moveToLineStart" || command === "moveToLineEnd") {
-      return moveCaretToLineBoundary(
-        state,
-        viewport,
-        command === "moveToLineStart" ? "Home" : "End",
-        event.shiftKey,
-      );
-    }
-
-    if (command === "moveToDocumentStart" || command === "moveToDocumentEnd") {
-      return moveCaretToDocumentBoundary(
-        state,
-        command === "moveToDocumentStart" ? "start" : "end",
-        event.shiftKey,
-      );
-    }
-
-    switch (command) {
-      case "insertLineBreak":
-        return insertLineBreak(state);
-      case "insertSoftLineBreak":
-        return insertSoftLineBreak(state);
-      case "deleteBackward":
-        return deleteBackward(state);
-      case "indent":
-        return indent(state);
-      case "dedent":
-        return dedent(state);
-      case "moveListItemUp":
-        return moveListItemUp(state);
-      case "moveListItemDown":
-        return moveListItemDown(state);
-      case "toggleBold":
-        return toggleBold(state);
-      case "toggleItalic":
-        return toggleItalic(state);
-      case "toggleStrikethrough":
-        return toggleStrikethrough(state);
-      case "toggleUnderline":
-        return toggleUnderline(state);
-      case "toggleCode":
-        return toggleCode(state);
-      case "undo":
-        return undo(state);
-      case "redo":
-        return redo(state);
-      case "selectAll":
-        return selectAll(state);
-    }
+    return keyboardCommandHandlers[command]({ event, state, viewport });
   }
 
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -1031,21 +1015,11 @@ function applyKeyboardInputCommand(
   }
 
   if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-    return moveCaretVertically(
-      state,
-      viewport,
-      event.key === "ArrowUp" ? -1 : 1,
-      event.shiftKey,
-    );
+    return moveCaretVertically(state, viewport, event.key === "ArrowUp" ? -1 : 1, event.shiftKey);
   }
 
   if (event.key === "PageUp" || event.key === "PageDown") {
-    return moveCaretByViewport(
-      state,
-      viewport,
-      event.key === "PageUp" ? -1 : 1,
-      event.shiftKey,
-    );
+    return moveCaretByViewport(state, viewport, event.key === "PageUp" ? -1 : 1, event.shiftKey);
   }
 
   if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {

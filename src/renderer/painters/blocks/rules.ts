@@ -152,7 +152,7 @@ export function resolveVisibleBlockquoteRegions(
       continue;
     }
 
-    const current = regions.get(blockquoteEntry.id);
+    const current = regions.get(blockquoteEntry.block.id);
     const next: VisibleBlockquoteRegion = {
       bottom: line.top + line.height,
       isActive: line.blockId === activeBlockId,
@@ -161,7 +161,7 @@ export function resolveVisibleBlockquoteRegions(
     };
 
     regions.set(
-      blockquoteEntry.id,
+      blockquoteEntry.block.id,
       current
         ? {
             bottom: Math.max(current.bottom, next.bottom),

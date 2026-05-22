@@ -2,15 +2,7 @@
  * Public React host for the canvas editor. The component owns content-format
  * bridging, DOM lifecycle, viewport coordination, and hidden-input plumbing.
  */
-import {
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type UIEvent,
-} from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, type UIEvent } from "react";
 import {
   extractPlainTextFromFragment,
   type Comment,
@@ -72,12 +64,11 @@ import { useTheme } from "./hooks/useTheme";
 import { useViewport } from "./hooks/useViewport";
 import { prepareCanvasLayer } from "./lib/canvas";
 import { emitDiagnostic } from "./lib/diagnostics";
-import { type EditorKeybinding } from "./lib/keybindings";
+import { type EditorInputKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
 import { DocumentStorage } from "./lib/storage";
 import { reconcileExternalContentChange } from "./lib/reconciliation";
 import { resolveMarkdownLineDiff } from "./lib/markdown-line-diff";
-import { DocumintSsr } from "./Ssr";
 import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations";
 import {
   activeCommentIndexSprig,
@@ -103,7 +94,7 @@ export type DocumintProps = {
 
   actions?: DocumintActions;
   theme?: DocumintTheme;
-  keybindings?: EditorKeybinding[];
+  keybindings?: EditorInputKeybinding[];
   decorations?: readonly DocumintDecoration[];
   presence?: DocumentPresence[];
   storage?: DocumintStorage;
@@ -199,15 +190,11 @@ function DocumintHost({
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
 
-  const [hasMountedCanvases, setHasMountedCanvases] = useState(false);
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
 
   const canonicalContent = useMemo(() => serializeDocument(contentDocument), [contentDocument]);
 
-  const documentStorage = useMemo(
-    () => new DocumentStorage(storage, typeof window !== "undefined" ? window : null),
-    [storage],
-  );
+  const documentStorage = useMemo(() => new DocumentStorage(storage, window), [storage]);
   const images = useImages(documentStorage);
   const renderResources = images.resources;
 
@@ -583,9 +570,7 @@ function DocumintHost({
     // If the presence is comment-attached, then move the end
     // users cursor to the comment in order to activate the thread.
     if (target.commentThreadIndex != null) {
-      const range = commentState.ranges.find(
-        (r) => r.threadIndex === target.commentThreadIndex,
-      );
+      const range = commentState.ranges.find((r) => r.threadIndex === target.commentThreadIndex);
 
       if (range) {
         input.focus();
@@ -734,8 +719,8 @@ function DocumintHost({
     // host-rect read is gated by the early-returns above so it doesn't
     // run on idle paint frames.
     const scrollContainerBounds = scrollContainerRef.current?.getBoundingClientRect();
-    const hostScrollX = typeof window !== "undefined" ? window.scrollX : 0;
-    const hostScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+    const hostScrollX = window.scrollX;
+    const hostScrollY = window.scrollY;
     // Reference equality picks out the hover case when pointer arbitration
     // leaves it active.
     const isHoverLeaf = activeLeaf === pointer.leaf;
@@ -912,13 +897,7 @@ function DocumintHost({
 
   /* State machine */
 
-  // Effects that observe editor state changes for purposes other than
-  // rendering — emitting state to the host and signaling first paint.
-
-  // Signal first paint so the SSR fallback can yield to the client canvas.
-  useEffect(() => {
-    setHasMountedCanvases(true);
-  }, []);
+  // Effects that observe editor state changes for purposes other than rendering.
 
   /* Reconciliation */
 
@@ -1043,13 +1022,6 @@ function DocumintHost({
             {/* Leaf overlay */}
             {leafAnchor ? <LeafAnchor anchor={leafAnchor}>{leafContent}</LeafAnchor> : null}
           </div>
-
-          {/* SSR fallback */}
-          {!hasMountedCanvases ? (
-            <div className="documint-fallback">
-              <DocumintSsr blocks={contentDocument.blocks} />
-            </div>
-          ) : null}
         </div>
       </section>
     </OverlayPortalProvider>

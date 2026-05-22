@@ -194,7 +194,7 @@ export function paintContent(
       line,
       blockSnapshots.get(line.blockId) ?? null,
       layout.regionBounds.get(line.regionId) ?? null,
-      state.documentIndex.tableCellIndex.get(line.regionId) ?? null,
+      state.documentIndex.regionIndex.get(line.regionId)?.tableCellPosition ?? null,
       theme,
       width,
     );

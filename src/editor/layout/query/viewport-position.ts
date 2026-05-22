@@ -1,4 +1,6 @@
-import type { EditorLayoutState } from "../index";
+// Owns viewport-relative classification for already-measured geometry.
+
+import type { EditorLayoutState } from "../state";
 
 export type ViewportPositionStatus = "above" | "below" | "visible";
 

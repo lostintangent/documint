@@ -1,21 +1,23 @@
 // Selection formatting query. This is intentionally read-only: it inspects the
 // selected inline range so UI can show active formatting controls, but all
 // formatting mutations stay in `state/commands/actions/inlines`.
+//
+// Implementation note: walks the flat `InlineEntry[]` produced by the index
+// rather than re-traversing the document `Inline` tree. The index already
+// flattened link wrappers (`InlineEntry.link` is orthogonal) and stamped
+// `start`/`end` offsets, so this module is a simple range filter — no
+// cursor-tracking, no per-type length re-derivation.
 
-import { findBlockById, type Inline, type Mark } from "@/document";
-import type { InlineContainer } from "../commands/inlines";
-import { measureInlineNodeText, resolveInlineContainerFromBlock } from "../commands/inlines";
+import type { Mark } from "@/document";
+import { findInlinesInSpan, regionInlines } from "../index/inlines";
+import { resolveRegion } from "../index/query";
+import type { InlineEntry } from "../index/types";
 import type { EditorState } from "../types";
 import { getSelectionRange } from "./query";
 
 export type SelectionFormatting = {
   code: boolean;
   marks: readonly Mark[];
-};
-
-type InlineCodeState = {
-  allCode: boolean;
-  hasCode: boolean;
 };
 
 export function getSelectionFormatting(state: EditorState): SelectionFormatting {
@@ -25,152 +27,71 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
     return emptySelectionFormatting();
   }
 
-  const region = state.documentIndex.regionIndex.get(selectionRange.regionId);
+  const region = resolveRegion(state.documentIndex, selectionRange.regionId);
 
   if (!region) {
     return emptySelectionFormatting();
   }
 
-  const block = findBlockById(state.documentIndex.document.blocks, region.blockId);
+  const inlines = regionInlines(region);
 
-  if (!block) {
+  if (inlines.length === 0) {
     return emptySelectionFormatting();
   }
 
-  const inlineContainer = resolveInlineContainerFromBlock(
-    block,
-    region.path,
-    region.semanticRegionId,
-  );
-
-  if (!inlineContainer) {
-    return emptySelectionFormatting();
-  }
-
-  return resolveInlineSelectionFormatting(
-    inlineContainer,
+  const selectedInlines = findInlinesInSpan(
+    inlines,
     selectionRange.startOffset,
     selectionRange.endOffset,
   );
-}
 
-function resolveInlineSelectionFormatting(
-  inlineContainer: InlineContainer,
-  startOffset: number,
-  endOffset: number,
-): SelectionFormatting {
   return {
-    code: isInlineSelectionCode(inlineContainer, startOffset, endOffset),
-    marks: resolveInlineMarks(inlineContainer, startOffset, endOffset),
+    code: isSelectionInlineCode(selectedInlines),
+    marks: resolveSelectionMarks(selectedInlines),
   };
 }
 
-function resolveInlineMarks(
-  inlineContainer: InlineContainer,
-  startOffset: number,
-  endOffset: number,
-): Mark[] {
-  let cursor = 0;
+// The active mark set is the *intersection* of marks on every selected
+// inline entry — a mark counts as "active" only when it applies to every
+// text run in the selection. Non-text entries (images, mentions, line
+// breaks, inline code) carry no marks and therefore force the intersection
+// to be empty.
+function resolveSelectionMarks(selectedInlines: readonly InlineEntry[]): Mark[] {
   let commonMarks: Set<Mark> | null = null;
 
-  const visit = (candidates: Inline[]) => {
-    for (const node of candidates) {
-      const nodeLength = measureInlineNodeText(node);
-      const nodeStart = cursor;
-      const nodeEnd = nodeStart + nodeLength;
-      cursor = nodeEnd;
+  for (const inline of selectedInlines) {
+    if (inline.node.type !== "text") {
+      return [];
+    }
 
-      if (endOffset <= nodeStart || startOffset >= nodeEnd) {
-        continue;
-      }
+    if (commonMarks === null) {
+      commonMarks = new Set(inline.node.marks);
+      continue;
+    }
 
-      if (node.type === "text") {
-        const overlapStart = Math.max(startOffset, nodeStart);
-        const overlapEnd = Math.min(endOffset, nodeEnd);
-
-        if (overlapEnd > overlapStart) {
-          commonMarks =
-            commonMarks === null
-              ? new Set(node.marks)
-              : new Set(node.marks.filter((mark) => commonMarks?.has(mark)));
-        }
-
-        continue;
-      }
-
-      if (node.type === "link") {
-        const previousCursor = cursor;
-        cursor = nodeStart;
-        visit(node.children);
-        cursor = previousCursor;
+    for (const mark of commonMarks) {
+      if (!inline.node.marks.includes(mark)) {
+        commonMarks.delete(mark);
       }
     }
-  };
-
-  visit(inlineContainer.children);
+  }
 
   return commonMarks ? [...commonMarks] : [];
 }
 
-function isInlineSelectionCode(
-  inlineContainer: InlineContainer,
-  startOffset: number,
-  endOffset: number,
-): boolean {
-  const state = collectInlineCodeState(inlineContainer.children, startOffset, endOffset);
-
-  return state.hasCode && state.allCode;
-}
-
-function collectInlineCodeState(
-  nodes: Inline[],
-  startOffset: number,
-  endOffset: number,
-): InlineCodeState {
-  const state: InlineCodeState = {
-    allCode: true,
-    hasCode: false,
-  };
-  let cursor = 0;
-
-  for (const node of nodes) {
-    const nodeLength = measureInlineNodeText(node);
-    const nodeStart = cursor;
-    const nodeEnd = nodeStart + nodeLength;
-    cursor = nodeEnd;
-
-    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
+// Inline code is "active" when at least one inline-code node overlaps the
+// selection AND every non-empty selected entry is inline code. Mirrors the
+// previous per-walk logic: any non-code text breaks the all-code condition.
+function isSelectionInlineCode(selectedInlines: readonly InlineEntry[]): boolean {
+  let hasCode = false;
+  for (const inline of selectedInlines) {
+    if (inline.node.type === "code") {
+      hasCode = true;
       continue;
     }
-
-    const overlapStart = Math.max(startOffset, nodeStart);
-    const overlapEnd = Math.min(endOffset, nodeEnd);
-
-    if (overlapEnd <= overlapStart) {
-      continue;
-    }
-
-    if (node.type === "code") {
-      state.hasCode = true;
-      continue;
-    }
-
-    if (node.type === "link") {
-      const nested = collectInlineCodeState(
-        node.children,
-        overlapStart - nodeStart,
-        overlapEnd - nodeStart,
-      );
-
-      state.hasCode ||= nested.hasCode;
-      state.allCode &&= nested.allCode;
-      continue;
-    }
-
-    state.allCode = false;
+    return false;
   }
-
-  return state;
+  return hasCode;
 }
 
 function emptySelectionFormatting(): SelectionFormatting {

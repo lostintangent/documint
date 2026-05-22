@@ -14,7 +14,7 @@ This is the orchestration layer. Editing behavior, geometry, hit testing, and an
 
 ## Subsystem Map
 
-- `Documint.tsx`, `Ssr.tsx`, and `index.ts` own the public React component, controlled markdown bridge, host lifecycle, canvas layers, DOM entry points, SSR fallback, and leaf arbitration.
+- `Documint.tsx` and `index.ts` own the public React component, controlled markdown bridge, host lifecycle, canvas layers, DOM entry points, and leaf arbitration.
 - [`hooks/`](hooks/AGENTS.md) owns browser lifetimes and interaction translation.
 - [`store/`](store/AGENTS.md) owns component-local reactive state, viewport cache publication, and derived view models.
 - `overlays/` owns portaled DOM UI around the canvas.

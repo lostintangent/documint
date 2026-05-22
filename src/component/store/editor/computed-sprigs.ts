@@ -11,7 +11,7 @@ import {
   resolveCursorViewportStatus,
   resolveImageAtSelection,
   type EditorLayoutState,
-  type EditorInline,
+  type InlineEntry,
   type EditorSelectionRange,
   type EditorState,
   type CaretTarget,
@@ -60,7 +60,7 @@ export type SelectionView = {
 
 export type ImageAtCursor = {
   bounds: InlineBounds;
-  inline: EditorInline;
+  inline: InlineEntry;
   maxWidth: number | null;
 };
 
@@ -264,9 +264,10 @@ function resolveImageAtCursor(
   }
 
   const bounds = measureInlineImageBounds(state, layout, resources, imageInline);
-  const maxWidth = imageInline.image
-    ? (resources.images.get(imageInline.image.url)?.intrinsicWidth ?? null)
-    : null;
+  const maxWidth =
+    imageInline.node.type === "image"
+      ? (resources.images.get(imageInline.node.url)?.intrinsicWidth ?? null)
+      : null;
 
   return bounds ? { bounds, inline: imageInline, maxWidth } : null;
 }

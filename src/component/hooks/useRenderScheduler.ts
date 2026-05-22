@@ -78,8 +78,6 @@ function createPendingRenderRequests(): PendingRenderRequests {
  *     and self-schedules a follow-up content paint if so. These animations
  *     never affect overlay, so the continuation never repaints overlay.
  *   - **Lifecycle.** Any in-flight rAF is cancelled on unmount.
- *
- * On the server, paint callbacks are dispatched synchronously.
  */
 export function useRenderScheduler({
   hasRunningOptionalContentAnimations,
@@ -95,38 +93,21 @@ export function useRenderScheduler({
   /* Public API */
 
   const scheduleFullRender = useEffectEvent(() => {
-    if (typeof window === "undefined") {
-      renderViewport();
-      return;
-    }
     pendingRef.current.fullRender = true;
     requestFrame();
   });
 
   const scheduleFullPaint = useEffectEvent(() => {
-    if (typeof window === "undefined") {
-      renderContent();
-      renderOverlay();
-      return;
-    }
     pendingRef.current.fullPaint = true;
     requestFrame();
   });
 
   const scheduleContentPaint = useEffectEvent(() => {
-    if (typeof window === "undefined") {
-      renderContent();
-      return;
-    }
     pendingRef.current.contentPaint = true;
     requestFrame();
   });
 
   const scheduleOverlayPaint = useEffectEvent(() => {
-    if (typeof window === "undefined") {
-      renderOverlay();
-      return;
-    }
     pendingRef.current.overlayPaint = true;
     requestFrame();
   });
@@ -135,7 +116,7 @@ export function useRenderScheduler({
 
   // Ensures at most one rAF is outstanding at a time.
   const requestFrame = useEffectEvent(() => {
-    if (typeof window === "undefined" || frameIdRef.current !== null) {
+    if (frameIdRef.current !== null) {
       return;
     }
 
@@ -223,7 +204,7 @@ export function useRenderScheduler({
   // canvas.
   useEffect(() => {
     return () => {
-      if (typeof window === "undefined" || frameIdRef.current === null) {
+      if (frameIdRef.current === null) {
         return;
       }
 

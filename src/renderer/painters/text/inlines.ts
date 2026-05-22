@@ -7,9 +7,9 @@
 // across three files.
 
 import type { DocumentLayout } from "@/editor/layout";
-import { findInlinesInSpan, type EditorRegion } from "@/editor/state";
+import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
 import type { DocumentResources, EditorTheme } from "@/types";
-import { resolveInlineTextFont } from "@/editor/text/fonts";
+import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { paintInlineImage } from "../image";
 import { paintInlineMention } from "../mention";
 import {
@@ -25,7 +25,7 @@ import {
 export function paintLineText(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
   textBaseline: number,
   defaultColor: string,
@@ -39,7 +39,7 @@ export function paintLineText(
     return;
   }
 
-  const visibleInlines = findInlinesInSpan(container.inlines, line.start, line.end);
+  const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
 
   if (visibleInlines.length === 0) {
     context.fillStyle = defaultColor;
@@ -62,10 +62,12 @@ export function paintLineText(
       start,
       end,
     );
-    const inlineFont = resolveInlineTextFont(line.font, inline.marks, inline.inlineCode);
-    context.font = inlineFont;
+    const inlineMarks = inline.node.type === "text" ? inline.node.marks : [];
+    const inlineStyle = resolveInlineTextStyle(line.font, inlineMarks, inline.node.type === "code");
+    context.font = inlineStyle.font;
+    const segmentBaseline = textBaseline + inlineStyle.baselineShift;
 
-    if (inline.kind === "image") {
+    if (inline.node.type === "image") {
       const imageWidth = Math.max(24, segmentRight - segmentLeft);
       paintInlineImage(
         context,
@@ -80,17 +82,17 @@ export function paintLineText(
       continue;
     }
 
-    if (inline.kind === "mention") {
+    if (inline.node.type === "mention") {
       paintInlineMention(context, line, inline, theme, segmentLeft, segmentRight);
       continue;
     }
 
-    if (inline.kind === "code") {
+    if (inline.node.type === "code") {
       paintTextBackground(
         context,
         segmentLeft,
         segmentRight,
-        textBaseline,
+        segmentBaseline,
         theme.inlineCodeBackground,
         editableTextBackgroundGeometry,
       );
@@ -99,7 +101,7 @@ export function paintLineText(
         line,
         container.text,
         textLeft,
-        textBaseline,
+        segmentBaseline,
         start,
         end,
         theme.inlineCodeText,
@@ -113,13 +115,13 @@ export function paintLineText(
       line,
       container.text,
       textLeft,
-      textBaseline,
+      segmentBaseline,
       start,
       end,
       inline.link ? theme.linkText : defaultColor,
       {
-        strikethrough: inline.marks.includes("strikethrough"),
-        underline: inline.marks.includes("underline") || Boolean(inline.link),
+        strikethrough: inlineMarks.includes("strikethrough"),
+        underline: inlineMarks.includes("underline") || Boolean(inline.link),
       },
     );
   }

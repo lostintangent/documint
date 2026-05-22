@@ -9,6 +9,7 @@
 // (mapping descriptors to per-frame `{ ...descriptor, progress }` values and
 // blending colors) lives in `canvas/lib/animations`.
 
+import { resolveBlockPathForRegion } from "../index/query";
 import type { AnimationIntent, EditorState } from "../types";
 
 // --- Duration table ---
@@ -145,17 +146,10 @@ export function getEditorAnimationTime() {
 // Resolves the block path for the currently focused block, used as the
 // target for the active block flash animation.
 export function resolveFocusedBlockPath(state: EditorState): string {
-  const region = resolveFocusedRegion(state);
-  const block = region ? (state.documentIndex.blockIndex.get(region.blockId) ?? null) : null;
-
-  return block?.path ?? "";
+  return resolveBlockPathForRegion(state.documentIndex, state.selection.focus.regionId) ?? "";
 }
 
 // --- Internal ---
-
-function resolveFocusedRegion(state: EditorState) {
-  return state.documentIndex.regionIndex.get(state.selection.focus.regionId) ?? null;
-}
 
 function addEditorAnimation(state: EditorState, animation: EditorAnimation): EditorState {
   const activeAnimations = pruneEditorAnimations(state.animations, animation.startedAt);

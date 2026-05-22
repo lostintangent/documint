@@ -1,26 +1,21 @@
-// Owns pointer-to-selection resolution against a prepared `DocumentLayout`.
-// Given a click/drag point, finds the line and offset the user landed on,
-// including inert-block redirects, drag focus, and word selection.
+// Owns point-to-line resolution against a prepared `DocumentLayout`.
 
-import { type DocumentIndex, type EditorSelectionPoint, type EditorState } from "../../state";
-import { isInertBlock, nextBlockInFlow } from "../../navigation/flow";
-import { resolveWordRangeAtOffset } from "../../text/words";
-import type { DocumentLayout, DocumentLayoutLine } from "../measure";
+import { type DocumentIndex } from "../../state";
+import { resolveRegion } from "../../state/index/query";
+import type { DocumentLayout } from "../measure";
 import type { DocumentCaretTarget } from "./caret";
 import {
   findDocumentLayoutLineAtPoint,
   measureCanvasLineOffsetLeft,
   resolveBoundaryOffset,
-} from "./lookup";
-import { resolveLineContentInset } from "./geometry";
+} from "./line-lookup";
 
 export type DocumentHitTestResult = DocumentCaretTarget & {
   lineIndex: number;
 };
 
 // Layout-only hit test: given a point, return the line + offset it lands on.
-// Knows nothing about list markers, inert blocks, or other editor concerns —
-// `resolveEditorHitAtPoint` layers those on top.
+// Knows nothing about list markers, inert blocks, or other editor concerns.
 export function hitTestDocumentLayout(
   layout: DocumentLayout,
   documentIndex: DocumentIndex,
@@ -37,7 +32,7 @@ export function hitTestDocumentLayout(
   // is here to read the region's full text length for the offset clamp
   // (clicking past the end of the last line should land at the region's
   // end, not the line's).
-  const region = documentIndex.regionIndex.get(line.regionId);
+  const region = resolveRegion(documentIndex, line.regionId);
 
   if (!region) {
     return null;
@@ -55,183 +50,4 @@ export function hitTestDocumentLayout(
     offset: Math.min(region.text.length, line.start + offset),
     top: line.top,
   };
-}
-
-export function resolveEditorHitAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-) {
-  const result = resolveLayoutLineAtPoint(layout, state, point);
-
-  if (!result) {
-    return null;
-  }
-
-  // Inert-redirect hits snap to the start of the redirected-to line; the
-  // original click x is meaningless because the click landed on an inert
-  // block whose chrome the line doesn't belong to.
-  const offsetX = result.snapToLineStart ? result.line.left : point.x;
-  return resolveHitOnLine(state, result.line, offsetX);
-}
-
-export function resolveHitBelowLayout(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-) {
-  const lastLine = layout.lines[layout.lines.length - 1];
-
-  if (!lastLine || point.y <= lastLine.top + lastLine.height) {
-    return null;
-  }
-
-  return resolveHitOnLine(state, lastLine, point.x);
-}
-
-// Resolves the focus point of a mouse drag. The focus follows the pointer's
-// hit across any region; if the pointer overshoots the document's content
-// edge, it clamps to the anchor region's near edge instead of collapsing.
-export function resolveDragFocusPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-  anchor: EditorSelectionPoint,
-): EditorSelectionPoint | null {
-  const anchorContainer = findContainer(state, anchor.regionId);
-
-  if (!anchorContainer) {
-    return null;
-  }
-
-  const hit = resolveEditorHitAtPoint(layout, state, point);
-
-  if (hit) {
-    return {
-      regionId: hit.regionId,
-      offset: hit.offset,
-    };
-  }
-
-  const isAboveLayout = point.y < resolveViewportTop(layout);
-
-  return {
-    regionId: anchor.regionId,
-    offset: isAboveLayout ? 0 : anchorContainer.text.length,
-  };
-}
-
-export function resolveWordSelectionAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-) {
-  const hit = resolveEditorHitAtPoint(layout, state, point);
-
-  if (!hit) {
-    return null;
-  }
-
-  const container = findContainer(state, hit.regionId);
-
-  if (!container || container.text.length === 0) {
-    return null;
-  }
-
-  const range = resolveWordRangeAtOffset(container.text, hit.offset);
-
-  if (!range) {
-    return null;
-  }
-
-  return {
-    anchor: {
-      regionId: hit.regionId,
-      offset: range.start,
-    },
-    focus: {
-      regionId: hit.regionId,
-      offset: range.end,
-    },
-  };
-}
-
-// Resolves a horizontal position on an already-identified line to a selection
-// hit. This avoids re-resolving the line from coordinates, which can land on
-// the wrong line when Y falls exactly on a line boundary.
-function resolveHitOnLine(state: EditorState, line: DocumentLayoutLine, x: number) {
-  const region = state.documentIndex.regionIndex.get(line.regionId);
-
-  if (!region) {
-    return null;
-  }
-
-  const localX = Math.max(0, x - resolveLineContentInset(state, line) - line.left);
-  const offset = resolveBoundaryOffset(line.boundaries, localX);
-  const resolvedOffset = Math.min(region.text.length, line.start + offset);
-
-  return {
-    regionId: line.regionId,
-    offset: resolvedOffset,
-    left: measureCanvasLineOffsetLeft(line, offset),
-    top: line.top,
-    height: line.height,
-  };
-}
-
-type LayoutLineHit = {
-  line: DocumentLayoutLine;
-  // Inert-redirect hits should snap to the start of the resolved line
-  // rather than computing an offset from the original click x (the
-  // click landed on the inert block, not on this line's content).
-  snapToLineStart?: boolean;
-};
-
-function resolveLayoutLineAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-): LayoutLineHit | null {
-  // `findDocumentLayoutLineAtPoint` already does region-containment + a
-  // Y-based fallback with X disambiguation; this function layers the
-  // block-padding and inert-redirect policies on top.
-  const lineHit = findDocumentLayoutLineAtPoint(layout, point)?.line ?? null;
-
-  if (lineHit) {
-    return { line: lineHit };
-  }
-
-  // If the point is in a block's padding (e.g. below a heading's text but
-  // above the next block), resolve to the block's last line. Inert leaf
-  // blocks have no lines of their own — clicks on them redirect to the
-  // first line of the next region in flow, landing the caret at the start
-  // of the following block rather than nowhere.
-  for (const block of layout.blocks) {
-    if (point.y < block.top || point.y > block.bottom) continue;
-
-    for (let i = layout.lines.length - 1; i >= 0; i--) {
-      if (layout.lines[i]!.blockId === block.id) {
-        return { line: layout.lines[i]! };
-      }
-    }
-
-    const blockEntry = state.documentIndex.blockIndex.get(block.id);
-    if (blockEntry && isInertBlock(blockEntry)) {
-      const nextLeaf = nextBlockInFlow(state.documentIndex, block.id);
-      if (nextLeaf) {
-        const firstLine = layout.lines.find((line) => line.blockId === nextLeaf.id);
-        if (firstLine) return { line: firstLine, snapToLineStart: true };
-      }
-    }
-  }
-
-  return null;
-}
-
-function findContainer(state: EditorState, regionId: string) {
-  return state.documentIndex.regionIndex.get(regionId) ?? null;
-}
-
-function resolveViewportTop(layout: DocumentLayout) {
-  return layout.lines[0]?.top ?? 0;
 }

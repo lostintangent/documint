@@ -4,9 +4,9 @@ import {
   type Block,
   type ListItemBlock,
 } from "@/document";
-import type { DocumentIndex, EditorRegion } from "../../../index/types";
+import type { DocumentIndex, RegionEntry } from "../../../index/types";
+import { firstInFlowRegionOfRoot, resolveRootBlock } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
-import { firstInFlowRegionOfRoot } from "../../../../navigation/flow";
 import { createRootPrimaryRegionTarget } from "../../../selection";
 
 // The block-demotion override for backward delete.
@@ -38,14 +38,14 @@ import { createRootPrimaryRegionTarget } from "../../../selection";
 
 export function resolveBlockDemotion(
   documentIndex: DocumentIndex,
-  region: EditorRegion,
+  region: RegionEntry,
 ): EditorStateAction | null {
   const firstInFlow = firstInFlowRegionOfRoot(documentIndex, region.rootIndex);
   if (!firstInFlow || firstInFlow.id !== region.id) {
     return null;
   }
 
-  const rootBlock = documentIndex.document.blocks[region.rootIndex];
+  const rootBlock = resolveRootBlock(documentIndex, region.rootIndex);
   if (!rootBlock) {
     return null;
   }

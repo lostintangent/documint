@@ -11,7 +11,7 @@
 import { resolveListItemMarker, resolveTaskCheckboxBounds, type DocumentLayout } from "@/editor/layout";
 import {
   findAncestorBlockEntry,
-  type EditorListItemMarker,
+  type ListItemMarker,
   type EditorState,
 } from "@/editor/state";
 import {
@@ -23,7 +23,7 @@ import type { EditorTheme } from "@/types";
 
 export type VisibleListMarker = {
   blockPath: string;
-  marker: EditorListItemMarker;
+  marker: ListItemMarker;
 };
 
 const listMarkerTextInset = 2;
@@ -71,7 +71,7 @@ export function resolveVisibleListMarkers(
       continue;
     }
 
-    const marker = resolveListItemMarker(editorState, listItemEntry.id);
+    const marker = resolveListItemMarker(editorState, listItemEntry.block.id);
 
     if (!marker) {
       continue;
@@ -86,7 +86,7 @@ export function resolveVisibleListMarkers(
 export function paintListMarker(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  marker: EditorListItemMarker | null,
+  marker: ListItemMarker | null,
   textLeft: number,
   textBaseline: number,
   defaultTextColor: string,
@@ -208,7 +208,7 @@ function paintOrderedListMarker(
 }
 
 function resolveListMarkerCenter(
-  marker: EditorListItemMarker,
+  marker: ListItemMarker,
   line: DocumentLayout["lines"][number],
   textLeft: number,
   textBaseline: number,

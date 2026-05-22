@@ -5,10 +5,8 @@
 // values) is computed here, so a builder's output is immediately usable as
 // the corresponding node type minus the deferred id assignment.
 
-import {
-  extractPlainTextFromBlockNodes,
-  extractPlainTextFromInlineNodes,
-} from "../query/text";
+import { extractPlainTextFromBlockNodes, extractPlainTextFromInlineNodes } from "../query/text";
+import { canonicalizeMarks } from "../marks";
 import type {
   Block,
   BlockquoteBlock,
@@ -70,10 +68,10 @@ export function createHeadingTextBlock(options: {
   });
 }
 
-export function createText(text: string, marks: Mark[] = []): Text {
+export function createText(text: string, marks: readonly Mark[] = []): Text {
   return {
     id: "",
-    marks,
+    marks: canonicalizeMarks(marks),
     text,
     type: "text",
   };

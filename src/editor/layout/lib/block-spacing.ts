@@ -3,7 +3,7 @@
 // stay in sync.
 
 import type { Block } from "@/document";
-import type { DocumentIndex, EditorBlock } from "../../state";
+import type { BlockEntry } from "../../state";
 
 const h1HeadingRuleTrailingGap = 24;
 const h2HeadingRuleOuterGap = 16;
@@ -14,7 +14,7 @@ const SAME_BLOCK_GAP = 4;
 // Vertical gap between two adjacent laid-out blocks (text, table, inert),
 // keyed by their shared ancestry.
 export function resolveBlockGap(
-  runtimeBlocks: Map<string, EditorBlock>,
+  runtimeBlocks: Map<string, BlockEntry>,
   blockMap: Map<string, Block>,
   currentBlockId: string,
   nextBlockId: string,
@@ -39,25 +39,6 @@ export function resolveBlockGap(
   );
 }
 
-// Region-indexed wrapper kept for callers that walk regions instead of
-// blocks. Internally delegates to `resolveBlockGap`.
-export function resolveContainerGap(
-  runtimeBlocks: Map<string, EditorBlock>,
-  blockMap: Map<string, Block>,
-  regions: DocumentIndex["regions"],
-  index: number,
-  fallbackGap: number,
-) {
-  const current = regions[index];
-  const next = regions[index + 1];
-
-  if (!current || !next) {
-    return fallbackGap;
-  }
-
-  return resolveBlockGap(runtimeBlocks, blockMap, current.blockId, next.blockId, fallbackGap);
-}
-
 function resolveHeadingTrailingGap(block: Block | undefined) {
   if (block?.type !== "heading") {
     return 0;
@@ -75,10 +56,10 @@ function resolveHeadingLeadingGap(block: Block | undefined) {
 }
 
 function shareAncestorType(
-  runtimeBlocks: Map<string, EditorBlock>,
+  runtimeBlocks: Map<string, BlockEntry>,
   leftBlockId: string,
   rightBlockId: string,
-  type: EditorBlock["type"],
+  type: Block["type"],
 ) {
   const leftAncestors = collectAncestorIds(runtimeBlocks, leftBlockId, type);
   const rightAncestors = collectAncestorIds(runtimeBlocks, rightBlockId, type);
@@ -93,16 +74,16 @@ function shareAncestorType(
 }
 
 function collectAncestorIds(
-  runtimeBlocks: Map<string, EditorBlock>,
+  runtimeBlocks: Map<string, BlockEntry>,
   blockId: string,
-  type: EditorBlock["type"],
+  type: Block["type"],
 ) {
   const ancestors = new Set<string>();
   let current = runtimeBlocks.get(blockId) ?? null;
 
   while (current) {
-    if (current.type === type) {
-      ancestors.add(current.id);
+    if (current.block.type === type) {
+      ancestors.add(current.block.id);
     }
 
     current = current.parentBlockId ? (runtimeBlocks.get(current.parentBlockId) ?? null) : null;

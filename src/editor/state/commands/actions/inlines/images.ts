@@ -1,11 +1,10 @@
-import { createImage } from "@/document";
-import type { EditorInline } from "../../../index/types";
+import { createImage, type Image } from "@/document";
 import type { EditorStateAction } from "../../../types";
 import { spliceInlineContainer, type InlineContainer } from "./shared";
 
 export type ImageResizeTarget = {
   end: number;
-  image: NonNullable<EditorInline["image"]>;
+  image: Image;
   start: number;
 };
 

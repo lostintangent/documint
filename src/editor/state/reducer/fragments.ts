@@ -8,10 +8,8 @@
 // lives in `actions/deletion/boundary-collapse.ts` and uses a different shape
 // — it knows the surviving block's identity and merges into
 // the deepest text-like region in flow rather than peeling shallow container
-// pairs. Both paths share the in-flow neighbor primitives in
-// `navigation/flow.ts`, which is also what arrow-key navigation uses, so any
-// future change to "where does the caret go in flow?" propagates everywhere it
-// should.
+// pairs. Both paths share the index-owned in-flow neighbor primitives, so any
+// future topology change propagates everywhere it should.
 
 import {
   defragmentTextInlines,

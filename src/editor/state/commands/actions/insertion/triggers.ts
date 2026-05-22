@@ -8,7 +8,8 @@ import {
   rebuildListBlock,
   type HeadingBlock,
 } from "@/document";
-import type { DocumentIndex, EditorRegion } from "../../../index/types";
+import type { DocumentIndex, RegionEntry } from "../../../index/types";
+import { resolveRegion } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import {
   createDescendantPrimaryRegionTarget,
@@ -57,12 +58,12 @@ export function resolveInsertionTrigger(
     return null;
   }
 
-  const region = documentIndex.regionIndex.get(selection.anchor.regionId);
+  const region = resolveRegion(documentIndex, selection.anchor.regionId);
   if (!region) {
     return null;
   }
 
-  // Field-level precheck via `region.blockType`: code blocks, table
+  // Field-level precheck via `region.block.type`: code blocks, table
   // cells, dividers, etc. resolve no context and produce no trigger.
   const context = resolveTriggerContext(documentIndex, selection, region);
   if (!context) {
@@ -101,12 +102,12 @@ type TriggerContext =
 function resolveTriggerContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-  region: EditorRegion,
+  region: RegionEntry,
 ): TriggerContext | null {
   // Triggers can only fire inside paragraph and heading regions.
   // Everything else (code, table cells, dividers, …) splices without
   // further work.
-  switch (region.blockType) {
+  switch (region.block.type) {
     case "heading": {
       // Confirm the heading is at root level — `resolveRootTextBlockContextFromSelection`
       // returns null for non-root blocks (e.g. nested in containers), and
@@ -136,7 +137,7 @@ function resolveTriggerContext(
 // ---- Trigger dispatch ------------------------------------------------------
 
 function matchTriggerForContext(
-  region: EditorRegion,
+  region: RegionEntry,
   text: string,
   start: number,
   end: number,
@@ -167,7 +168,7 @@ function matchTriggerForContext(
 // is determined by whichever side of the splice is non-empty at the tail:
 //   - cursor not at end of region → suffix is non-empty → region's last char wins
 //   - cursor at end of region     → suffix is empty     → text's last char wins
-function prospectiveEndsWithWhitespace(region: EditorRegion, text: string, end: number): boolean {
+function prospectiveEndsWithWhitespace(region: RegionEntry, text: string, end: number): boolean {
   const tail = end < region.text.length ? region.text : text;
   return tail.length > 0 && /\s/.test(tail[tail.length - 1]!);
 }

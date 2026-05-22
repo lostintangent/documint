@@ -1,4 +1,5 @@
 import type { DocumentIndex } from "../../../index/types";
+import { resolveRegion } from "../../../index/query";
 import { isSelectionCollapsed, type EditorSelection } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import { resolveTextHighlightAnimation } from "../../../animations/intents";
@@ -24,7 +25,7 @@ export function resolvePairedDelimiterInsertion(
     return null;
   }
 
-  const region = documentIndex.regionIndex.get(selection.focus.regionId);
+  const region = resolveRegion(documentIndex, selection.focus.regionId);
 
   if (!region) {
     return null;

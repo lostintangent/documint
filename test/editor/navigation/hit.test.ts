@@ -1,18 +1,17 @@
 import { expect, test } from "bun:test";
 import { createLayoutCache, createEditorLayoutState, resolveHoverTarget } from "@/editor";
-import { createDocumentIndex } from "@/editor/state";
+import { createDocumentIndex, regionInlines } from "@/editor/state";
+import { hitTestDocumentLayout, measureCaretTarget } from "@/editor/layout";
 import {
-  hitTestDocumentLayout,
-  measureCaretTarget,
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
   resolveLinkHitAtPoint,
   resolveWordSelectionAtPoint,
-} from "@/editor/layout";
+} from "@/editor/navigation";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import type { DocumentResources } from "@/types";
-import { getRegion, setup } from "../../helpers";
+import { getRegion, setup } from "../helpers";
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
   const runtime = createDocumentIndex(parseDocument(`Paragraph with semantic offsets.\n`));
@@ -327,7 +326,7 @@ test("hit-tests image runs as atomic before-or-after caret stops", () => {
     throw new Error("Expected image paragraph layout");
   }
 
-  const imageRun = paragraph.inlines.find((run) => run.kind === "image");
+  const imageRun = regionInlines(paragraph).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");
@@ -364,7 +363,7 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
   const state = setup("- [ ] Review task\n");
   const viewport = createEditorLayoutState(state, { height: 320, top: 0, width: 520 }, layoutCache);
   const line = viewport.layout.lines[0];
-  const listItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
+  const listItem = state.documentIndex.blocks.find((entry) => entry.block.type === "listItem");
 
   if (!line || !listItem) throw new Error("Expected task list line");
 
@@ -373,7 +372,7 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
     y: line.top + line.height / 2,
   });
 
-  expect(hover).toEqual({ kind: "task-toggle", listItemId: listItem.id });
+  expect(hover).toEqual({ kind: "task-toggle", listItemId: listItem.block.id });
 });
 
 test("clicks on an inert leaf block redirect to the start of the next region in flow", () => {
@@ -383,7 +382,7 @@ test("clicks on an inert leaf block redirect to the start of the next region in 
   // returning null (which would feel like a dead area). Goes through
   // `resolveEditorHitAtPoint` — the editor-level path that the user-
   // facing pointer handler uses (`usePointer` → `resolveSelectionHit`
-  // → `resolveLayoutSelectionHit` → `resolveEditorHitAtPoint`).
+  // → `resolveSelectionHit` → `resolveEditorHitAtPoint`).
   const state = setup("First paragraph.\n\n---\n\nSecond paragraph.\n");
   const layout = measureLayoutSlice(state.documentIndex, { width: 480 });
   const dividerBlock = layout.blocks.find((b) => b.type === "divider");

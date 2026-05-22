@@ -17,6 +17,7 @@
 export * from "./build";
 export * from "./comments";
 export * from "./containers";
+export * from "./marks";
 export * from "./paths";
 export * from "./query";
 export * from "./types";

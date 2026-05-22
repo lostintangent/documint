@@ -28,7 +28,10 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
       dragPointerIdRef.current = event.pointerId;
       dragStartXRef.current = event.clientX;
       dragStartYRef.current = event.clientY;
-      dragStartWidthRef.current = imageAtCursor.inline.image?.width ?? imageAtCursor.bounds.width;
+      dragStartWidthRef.current =
+        imageAtCursor.inline.node.type === "image"
+          ? (imageAtCursor.inline.node.width ?? imageAtCursor.bounds.width)
+          : imageAtCursor.bounds.width;
       dragDirectionRef.current = direction;
     },
   );
@@ -39,7 +42,7 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
       dragStartXRef.current === null ||
       dragStartYRef.current === null ||
       dragStartWidthRef.current === null ||
-      !imageAtCursor?.inline.image
+      imageAtCursor?.inline.node.type !== "image"
     ) {
       return;
     }
@@ -55,7 +58,7 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
     );
     const imageInline = {
       end: imageAtCursor.inline.end,
-      image: imageAtCursor.inline.image,
+      image: imageAtCursor.inline.node,
       start: imageAtCursor.inline.start,
     };
 

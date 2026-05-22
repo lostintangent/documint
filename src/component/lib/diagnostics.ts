@@ -88,8 +88,8 @@ let frameBudgetReady = false;
  * call sites in `if (process.env.NODE_ENV !== "production")` so the
  * bundler can strip the call and its argument expressions in production.
  *
- * In environments without `window` (e.g. SSR, tests), falls back to
- * `console.log` so the diagnostic isn't silently dropped.
+ * In non-browser test/tooling environments, falls back to `console.log` so
+ * the diagnostic isn't silently dropped.
  */
 export function emitDiagnostic(kind: string, detail: Record<string, unknown>) {
   const namespacedKind = namespaceDiagnosticKind(kind);

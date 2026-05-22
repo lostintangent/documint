@@ -9,12 +9,7 @@ import { paintContent } from "@/renderer";
 import { createEditorLayoutState } from "@/editor/layout";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
-import {
-  insertText,
-  normalizeSelection,
-  setSelection,
-  type EditorState,
-} from "@/editor/state";
+import { insertText, normalizeSelection, setSelection, type EditorState } from "@/editor/state";
 import { lightTheme } from "@/component/lib/themes";
 import type { EditorTheme } from "@/types";
 import { setup } from "../editor/helpers";
@@ -607,6 +602,33 @@ test("paints inline code background with text background geometry", () => {
   expect(backgroundPaint.height).toBeLessThan(line.height);
 });
 
+test("paints superscript with scaled font and raised baseline", () => {
+  const state = setup("Area x<sup>2</sup>\n");
+  const { context } = renderPaintOperations(state, {
+    height: 180,
+    width: 240,
+  });
+  const basePaint = context.operations.find(
+    (operation) => operation.kind === "fillText" && operation.text === "Area x",
+  );
+  const superscriptPaint = context.operations.find(
+    (operation) => operation.kind === "fillText" && operation.text === "2",
+  );
+
+  if (
+    !basePaint ||
+    basePaint.kind !== "fillText" ||
+    !superscriptPaint ||
+    superscriptPaint.kind !== "fillText"
+  ) {
+    throw new Error("Expected base and superscript text paints");
+  }
+
+  expect(superscriptPaint.font).not.toBe(basePaint.font);
+  expect(superscriptPaint.font).toContain("px");
+  expect(superscriptPaint.y).toBeLessThan(basePaint.y);
+});
+
 test("keeps inline code and decoration background heights visually aligned", () => {
   const state = setup("alpha `TODO` beta\n");
   const container = state.documentIndex.regions[0];
@@ -750,7 +772,7 @@ function renderPaintOperations(
 
   paintContent(state, layoutState, context as unknown as CanvasRenderingContext2D, {
     activeBlockId:
-      state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.blockId ?? null,
+      state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.block.id ?? null,
     activeRegionId: state.selection.focus.regionId,
     activeThreadIndex: null,
     ambientAnimationTime: options.ambientAnimationTime,

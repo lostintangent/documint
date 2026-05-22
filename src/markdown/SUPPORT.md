@@ -36,7 +36,7 @@ These are the semantic node families currently representable in `Document` and t
 - Inline code
 - Links
 - Images
-- Text marks: bold, italic, strikethrough, underline
+- Text marks: bold, italic, strikethrough, underline, superscript
 - Unsupported/raw block and inline content
 - Comment appendix payload
 
@@ -69,27 +69,28 @@ These are the semantic node families currently representable in `Document` and t
 
 ## Inline Features
 
-| Feature                              | Example                          | Status                         | Notes                                                                                                |
-| ------------------------------------ | -------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Plain text                           | `text`                           | `Supported semantically`       | Base inline content.                                                                                 |
-| Bold                                 | `**bold**`                       | `Supported semantically`       | Canonical serializer emits `**`.                                                                     |
-| Italic                               | `*italic*`                       | `Supported semantically`       | Canonical serializer emits `*`.                                                                      |
-| Strikethrough                        | `~~strike~~`                     | `Supported semantically`       | GFM extension.                                                                                       |
-| Underline                            | `<ins>underline</ins>`           | `Supported semantically`       | Markdown-only convention; serializes back as `<ins>`.                                                |
-| Inline code                          | `` `code` ``                     | `Supported semantically`       | Serializer expands fence width when needed.                                                          |
-| Inline links                         | `[label](url "title")`           | `Supported semantically`       | Inline destination/title only.                                                                       |
-| Inline images                        | `![alt](url "title")`            | `Supported semantically`       | Width extension supported separately.                                                                |
-| Image width extension                | `![x](url){width=320}`           | `Supported semantically`       | Documint-specific markdown policy.                                                                   |
-| Invalid width extension preservation | `{width=0}` etc.                 | `Supported semantically`       | Invalid width stays plain text in the paragraph stream.                                              |
-| Raw inline HTML                      | inline tags other than `<ins>`   | `Preserved as unsupported/raw` | Preserved where encountered, not modeled semantically.                                               |
-| Text directives                      | `:badge[text]{...}`              | `Preserved as unsupported/raw` | Preserved as unsupported inline nodes.                                                               |
-| Hard line breaks                     | two-space break / explicit break | `Gap`                          | Common in imported prose markdown and worth deciding explicitly.                                     |
-| Soft line breaks                     | newline in paragraph             | `Canonicalized`                | Preserved through paragraph text shape as needed for current canonical output.                       |
-| Autolinks in angle brackets          | `<https://example.com>`          | `Gap`                          | Common modern markdown input; likely worth supporting.                                               |
-| GFM bare autolinks                   | `www.example.com`                | `Gap`                          | Common modern markdown input; likely worth supporting.                                               |
-| Reference-style links                | `[a][b]` + `[b]: ...`            | `Gap`                          | Not currently supported.                                                                             |
-| Entity/numeric references            | `&amp;`, `&#x20;`                | `Gap`                          | Serializer emits `&#x20;` in some canonical cases, but full parse/normalize support is not explicit. |
-| Full CommonMark emphasis rules       | nested delimiter edge cases      | `Gap`                          | Current parser supports the product surface, not the full delimiter algorithm.                       |
+| Feature                              | Example                                  | Status                         | Notes                                                                                                |
+| ------------------------------------ | ---------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Plain text                           | `text`                                   | `Supported semantically`       | Base inline content.                                                                                 |
+| Bold                                 | `**bold**`                               | `Supported semantically`       | Canonical serializer emits `**`.                                                                     |
+| Italic                               | `*italic*`                               | `Supported semantically`       | Canonical serializer emits `*`.                                                                      |
+| Strikethrough                        | `~~strike~~`                             | `Supported semantically`       | GFM extension.                                                                                       |
+| Underline                            | `<ins>underline</ins>`                   | `Supported semantically`       | Markdown-only convention; serializes back as `<ins>`.                                                |
+| Superscript                          | `<sup>2</sup>`                           | `Supported semantically`       | Markdown-only convention; serializes back as `<sup>`.                                                |
+| Inline code                          | `` `code` ``                             | `Supported semantically`       | Serializer expands fence width when needed.                                                          |
+| Inline links                         | `[label](url "title")`                   | `Supported semantically`       | Inline destination/title only.                                                                       |
+| Inline images                        | `![alt](url "title")`                    | `Supported semantically`       | Width extension supported separately.                                                                |
+| Image width extension                | `![x](url){width=320}`                   | `Supported semantically`       | Documint-specific markdown policy.                                                                   |
+| Invalid width extension preservation | `{width=0}` etc.                         | `Supported semantically`       | Invalid width stays plain text in the paragraph stream.                                              |
+| Raw inline HTML                      | inline tags other than `<ins>` / `<sup>` | `Preserved as unsupported/raw` | Preserved where encountered, not modeled semantically.                                               |
+| Text directives                      | `:badge[text]{...}`                      | `Preserved as unsupported/raw` | Preserved as unsupported inline nodes.                                                               |
+| Hard line breaks                     | two-space break / explicit break         | `Gap`                          | Common in imported prose markdown and worth deciding explicitly.                                     |
+| Soft line breaks                     | newline in paragraph                     | `Canonicalized`                | Preserved through paragraph text shape as needed for current canonical output.                       |
+| Autolinks in angle brackets          | `<https://example.com>`                  | `Gap`                          | Common modern markdown input; likely worth supporting.                                               |
+| GFM bare autolinks                   | `www.example.com`                        | `Gap`                          | Common modern markdown input; likely worth supporting.                                               |
+| Reference-style links                | `[a][b]` + `[b]: ...`                    | `Gap`                          | Not currently supported.                                                                             |
+| Entity/numeric references            | `&amp;`, `&#x20;`                        | `Gap`                          | Serializer emits `&#x20;` in some canonical cases, but full parse/normalize support is not explicit. |
+| Full CommonMark emphasis rules       | nested delimiter edge cases              | `Gap`                          | Current parser supports the product surface, not the full delimiter algorithm.                       |
 
 ## Serialization Policy
 
@@ -103,6 +104,7 @@ These behaviors are intentional even when authored input has multiple valid spel
 | Ordered list start preservation is opt-in                    | `Canonicalized`                | Controlled by `preserveOrderedListStart`.                                          |
 | Tables serialize with compact cells by default               | `Canonicalized`                | Cells emit at their natural width; opt in to column padding via `padTableColumns`. |
 | Underline serializes as `<ins>`                              | `Canonicalized`                | Semantic underline does not require alternate markdown spellings.                  |
+| Superscript serializes as `<sup>`                            | `Canonicalized`                | Semantic superscript does not require alternate markdown spellings.                |
 | Unsupported directives/raw content preserve authored payload | `Preserved as unsupported/raw` | Avoids destructive loss.                                                           |
 
 ## Translation Rules

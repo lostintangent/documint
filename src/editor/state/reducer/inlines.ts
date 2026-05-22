@@ -1,11 +1,13 @@
 // Editor-inline manipulation: low-level primitives for slicing, replacing,
-// and rebuilding EditorInline arrays. Used by text replacement and fragment
+// and rebuilding InlineEntry arrays. Used by text replacement and fragment
 // extraction to preserve inline semantics while editing region text.
 //
-// EditorInline is the runtime projection: each inline carries link/image/
-// marks/code state plus precomputed offsets. These primitives operate on
-// EditorInline arrays and produce either new EditorInline arrays or
-// document-side Inline nodes ready to slot back into a Block.
+// InlineEntry is the runtime projection: each inline references the source
+// document Inline node directly (with Link wrappers flattened to an
+// orthogonal `link` field), and carries pre-computed char-offset coordinates.
+// These primitives operate on InlineEntry arrays and produce either new
+// InlineEntry arrays or document-side Inline nodes ready to slot back into
+// a Block.
 
 import {
   createCode as createDocumentInlineCodeNode,
@@ -17,16 +19,13 @@ import {
   createText as createDocumentTextNode,
   defragmentTextInlines,
   type Inline,
+  type Link,
+  type Text,
 } from "@/document";
-import type {
-  EditorInline,
-  EditorRegion,
-  RuntimeImageAttributes,
-  RuntimeLinkAttributes,
-  RuntimeMentionAttributes,
-} from "../index/types";
+import { regionInlines } from "../index/inlines";
+import type { InlineEntry, RegionEntry } from "../index/types";
 
-type DraftEditorInline = Omit<EditorInline, "end" | "start">;
+type DraftEditorInline = Omit<InlineEntry, "end" | "start">;
 
 type EditContext = {
   didInsert: boolean;
@@ -37,18 +36,18 @@ type EditContext = {
 /* Public entry points */
 
 export function editRegionInlines(
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ): Inline[] {
   return editorInlinesToDocumentInlines(
-    replaceEditorInlines(region.inlines, startOffset, endOffset, replacementText),
+    replaceEditorInlines(regionInlines(region), startOffset, endOffset, replacementText),
   );
 }
 
 export function replaceEditorInlines(
-  inlines: EditorInline[],
+  inlines: readonly InlineEntry[],
   startOffset: number,
   endOffset: number,
   replacementText: string,
@@ -63,7 +62,7 @@ export function replaceEditorInlines(
   return finalizeEditorInlines(compactEditorInlines(nextInlines));
 }
 
-export function editorInlinesToDocumentInlines(inlines: EditorInline[]): Inline[] {
+export function editorInlinesToDocumentInlines(inlines: readonly InlineEntry[]): Inline[] {
   const nodes: Inline[] = [];
 
   for (let index = 0; index < inlines.length; index += 1) {
@@ -73,7 +72,7 @@ export function editorInlinesToDocumentInlines(inlines: EditorInline[]): Inline[
       const children: Inline[] = [];
       const link = inline.link;
 
-      while (index < inlines.length && sameRuntimeLink(inlines[index]!.link, link)) {
+      while (index < inlines.length && sameLink(inlines[index]!.link, link)) {
         const child = editorInlineToDocumentInline(inlines[index]!);
 
         if (child) {
@@ -111,7 +110,7 @@ export function editorInlinesToDocumentInlines(inlines: EditorInline[]): Inline[
 /* Edit traversal */
 
 function editEditorInlines(
-  inlines: EditorInline[],
+  inlines: readonly InlineEntry[],
   startOffset: number,
   endOffset: number,
   context: EditContext,
@@ -157,13 +156,13 @@ function editEditorInlines(
 }
 
 function replaceEditorInline(
-  inline: EditorInline,
+  inline: InlineEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
   context: EditContext,
-) {
-  switch (inline.kind) {
+): DraftEditorInline[] {
+  switch (inline.node.type) {
     case "text":
     case "code":
     case "raw":
@@ -177,11 +176,11 @@ function replaceEditorInline(
 }
 
 function replaceTextLikeEditorInline(
-  inline: EditorInline,
+  inline: InlineEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
-) {
+): DraftEditorInline[] {
   const nextText =
     inline.text.slice(0, startOffset) + replacementText + inline.text.slice(endOffset);
 
@@ -196,12 +195,12 @@ function replaceTextLikeEditorInline(
 }
 
 function replaceBreakEditorInline(
-  inline: EditorInline,
+  inline: InlineEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
   context: EditContext,
-) {
+): DraftEditorInline[] {
   if (startOffset === endOffset) {
     return [createDraftEditorInline(inline)];
   }
@@ -216,11 +215,11 @@ function replaceBreakEditorInline(
 }
 
 function replaceAtomicEditorInline(
-  inline: EditorInline,
+  inline: InlineEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
-) {
+): DraftEditorInline[] {
   if (startOffset === 0 && endOffset === inline.text.length) {
     return replacementText.length > 0
       ? [createGeneratedTextInline(replacementText, inline.link, 0)]
@@ -235,7 +234,7 @@ function replaceAtomicEditorInline(
 function pushGeneratedTextInline(
   inlines: DraftEditorInline[],
   context: EditContext,
-  link: RuntimeLinkAttributes | null,
+  link: Link | null,
 ) {
   if (context.replacementText.length === 0) {
     context.didInsert = true;
@@ -251,51 +250,43 @@ function pushGeneratedTextInline(
 
 function createGeneratedTextInline(
   text: string,
-  link: RuntimeLinkAttributes | null,
+  link: Link | null,
   index: number,
 ): DraftEditorInline {
-  return {
+  const node: Text = {
     id: `generated:${index}`,
-    image: null,
-    inlineCode: false,
-    kind: "text",
-    link,
     marks: [],
-    mention: null,
-    originalType: null,
+    text,
+    type: "text",
+  };
+  return {
+    link,
+    node,
     text,
   };
 }
 
 function resolveBoundaryLinkForInsertion(
-  previousInline: EditorInline | null,
-  nextInline: EditorInline | null,
+  previousInline: InlineEntry | null,
+  nextInline: InlineEntry | null,
 ) {
-  return previousInline?.link &&
-    nextInline?.link &&
-    sameRuntimeLink(previousInline.link, nextInline.link)
+  return previousInline?.link && nextInline?.link && sameLink(previousInline.link, nextInline.link)
     ? previousInline.link
     : null;
 }
 
 /* Draft compaction and finalization */
 
-function createDraftEditorInline(inline: EditorInline): DraftEditorInline {
+function createDraftEditorInline(inline: InlineEntry): DraftEditorInline {
   return {
-    id: inline.id,
-    image: inline.image,
-    inlineCode: inline.inlineCode,
-    kind: inline.kind,
     link: inline.link,
-    marks: inline.marks,
-    mention: inline.mention,
-    originalType: inline.originalType,
+    node: inline.node,
     text: inline.text,
   };
 }
 
-function finalizeEditorInlines(inlines: DraftEditorInline[]) {
-  const finalized: EditorInline[] = [];
+function finalizeEditorInlines(inlines: DraftEditorInline[]): InlineEntry[] {
+  const finalized: InlineEntry[] = [];
   let position = 0;
 
   for (const inline of inlines) {
@@ -313,7 +304,7 @@ function finalizeEditorInlines(inlines: DraftEditorInline[]) {
   return finalized;
 }
 
-function compactEditorInlines(inlines: DraftEditorInline[]) {
+function compactEditorInlines(inlines: DraftEditorInline[]): DraftEditorInline[] {
   const compacted: DraftEditorInline[] = [];
 
   for (const inline of inlines) {
@@ -333,75 +324,61 @@ function compactEditorInlines(inlines: DraftEditorInline[]) {
   return compacted;
 }
 
-function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInline) {
-  return (
-    previous.kind === next.kind &&
-    previous.inlineCode === next.inlineCode &&
-    sameRuntimeLink(previous.link, next.link) &&
-    sameRuntimeImage(previous.image, next.image) &&
-    sameRuntimeMention(previous.mention, next.mention) &&
-    previous.originalType === next.originalType &&
-    previous.marks.join(",") === next.marks.join(",")
-  );
+function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInline): boolean {
+  const a = previous.node;
+  const b = next.node;
+
+  if (a.type !== b.type) return false;
+  if (!sameLink(previous.link, next.link)) return false;
+
+  switch (a.type) {
+    case "text":
+      // Both are Text nodes (a.type === b.type === "text").
+      return a.marks.join(",") === (b as Text).marks.join(",");
+    case "raw":
+      return a.originalType === (b as typeof a).originalType;
+    case "image":
+    case "mention":
+      // Atomic kinds never merge — combining them into a single span would
+      // lose the per-instance attributes (url/alt/userId/...).
+      return false;
+    case "code":
+    case "lineBreak":
+      return true;
+  }
 }
 
 /* Document conversion */
 
-function editorInlineToDocumentInline(inline: EditorInline): Inline | null {
-  switch (inline.kind) {
+function editorInlineToDocumentInline(inline: InlineEntry | DraftEditorInline): Inline | null {
+  const node = inline.node;
+  switch (node.type) {
     case "lineBreak":
       return createDocumentLineBreakNode();
     case "image":
-      return inline.image ? createImageNodeFromRuntimeAttributes(inline.image) : null;
+      return createDocumentImageNode({
+        alt: node.alt,
+        title: node.title,
+        url: node.url,
+        width: node.width,
+      });
     case "mention":
-      return inline.mention ? createMentionNodeFromRuntimeAttributes(inline.mention) : null;
+      return createDocumentMentionNode({
+        name: node.name,
+        userId: node.userId,
+      });
     case "code":
       return createDocumentInlineCodeNode(inline.text);
     case "text":
-      return inline.text.length > 0 ? createDocumentTextNode(inline.text, inline.marks) : null;
+      return inline.text.length > 0 ? createDocumentTextNode(inline.text, node.marks) : null;
     case "raw":
       return createDocumentUnsupportedInlineNode({
-        originalType: inline.originalType ?? "raw",
+        originalType: node.originalType,
         source: inline.text,
       });
   }
 }
 
-function createImageNodeFromRuntimeAttributes(image: RuntimeImageAttributes) {
-  return createDocumentImageNode({
-    alt: image.alt,
-    title: image.title,
-    url: image.url,
-    width: image.width,
-  });
-}
-
-function createMentionNodeFromRuntimeAttributes(mention: RuntimeMentionAttributes) {
-  return createDocumentMentionNode({
-    name: mention.name,
-    userId: mention.userId,
-  });
-}
-
-function sameRuntimeLink(left: RuntimeLinkAttributes | null, right: RuntimeLinkAttributes | null) {
+function sameLink(left: Link | null, right: Link | null): boolean {
   return left?.url === right?.url && left?.title === right?.title;
-}
-
-function sameRuntimeImage(
-  left: RuntimeImageAttributes | null,
-  right: RuntimeImageAttributes | null,
-) {
-  return (
-    left?.url === right?.url &&
-    left?.title === right?.title &&
-    left?.alt === right?.alt &&
-    left?.width === right?.width
-  );
-}
-
-function sameRuntimeMention(
-  left: RuntimeMentionAttributes | null,
-  right: RuntimeMentionAttributes | null,
-) {
-  return left?.userId === right?.userId && left?.name === right?.name;
 }

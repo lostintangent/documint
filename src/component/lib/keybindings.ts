@@ -1,14 +1,14 @@
-import type { EditorCommand } from "@/types";
+import type { EditorInputCommand } from "@/types";
 
-export type EditorKeybinding = {
+export type EditorInputKeybinding = {
   altKey?: boolean;
-  command: EditorCommand;
+  command: EditorInputCommand;
   key: string;
   modKey?: boolean;
   shiftKey?: boolean | "any";
 };
 
-export const defaultKeybindings: EditorKeybinding[] = [
+export const defaultKeybindings: EditorInputKeybinding[] = [
   { key: "Backspace", command: "deleteBackward" },
   { key: "Enter", shiftKey: true, command: "insertSoftLineBreak" },
   { key: "Enter", command: "insertLineBreak" },
@@ -26,16 +26,17 @@ export const defaultKeybindings: EditorKeybinding[] = [
   { key: "b", modKey: true, command: "toggleBold" },
   { key: "e", modKey: true, command: "toggleCode" },
   { key: "i", modKey: true, command: "toggleItalic" },
+  { key: ".", modKey: true, command: "toggleSuperscript" },
   { key: "u", modKey: true, command: "toggleUnderline" },
   { key: "y", modKey: true, command: "redo" },
   { key: "z", modKey: true, command: "undo" },
   { key: "z", modKey: true, shiftKey: true, command: "redo" },
 ];
 
-export function resolveEditorCommand(
+export function resolveEditorInputCommand(
   event: KeyboardEvent,
-  keybindings: EditorKeybinding[] = defaultKeybindings,
-): EditorCommand | null {
+  keybindings: EditorInputKeybinding[] = defaultKeybindings,
+): EditorInputCommand | null {
   return (
     keybindings.find((binding) => {
       const shiftMatches =

@@ -141,10 +141,10 @@ export function paintActiveBlockHighlight({
     return;
   }
 
-  if (activeBlock.type === "table") {
+  if (activeBlock.block.type === "table") {
     const activeCellRegion = editorState.documentIndex.regionIndex.get(activeRegionId) ?? null;
 
-    if (activeCellRegion?.blockId !== activeBlockId) {
+    if (activeCellRegion?.block.id !== activeBlockId) {
       return;
     }
 

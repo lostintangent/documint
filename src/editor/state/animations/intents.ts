@@ -3,7 +3,8 @@
 // the intent into runtime animation descriptors after the edit is applied.
 
 import { containsColorEmoji } from "../../text/emoji";
-import type { DocumentIndex, EditorRegion } from "../index/types";
+import { regionInlines } from "../index/inlines";
+import type { DocumentIndex, RegionEntry } from "../index/types";
 import {
   normalizeSelection,
   resolveRegion,
@@ -47,7 +48,7 @@ export function resolveTextHighlightAnimation(
 }
 
 export function resolveTextHighlightAnimationForRegion(
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   insertedText: string,
 ): AnimationIntent | undefined {
@@ -64,7 +65,7 @@ export function resolveTextHighlightAnimationForRegion(
 }
 
 export function resolveTextFadeAnimation(
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   endOffset: number,
 ): AnimationIntent | undefined {
@@ -74,13 +75,13 @@ export function resolveTextFadeAnimation(
     return undefined;
   }
 
-  const isPlainText = region.inlines.some(
+  const isPlainText = regionInlines(region).some(
     (entry) =>
       entry.start <= startOffset &&
       entry.end >= endOffset &&
-      entry.kind === "text" &&
+      entry.node.type === "text" &&
       entry.link === null &&
-      entry.marks.length === 0,
+      entry.node.marks.length === 0,
   );
 
   return isPlainText
@@ -113,7 +114,7 @@ function resolveTextPulseAnimation(
 function resolveSameRegionSelectionContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): { normalized: NormalizedEditorSelection; region: EditorRegion } | null {
+): { normalized: NormalizedEditorSelection; region: RegionEntry } | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (normalized.start.regionId !== normalized.end.regionId) {

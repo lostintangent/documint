@@ -38,7 +38,7 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   // churning renders unless placement actually changes.
   useLayoutEffect(() => {
     const shell = shellRef.current;
-    if (!shell || typeof window === "undefined") {
+    if (!shell) {
       return;
     }
 

@@ -19,7 +19,7 @@ export function useTheme(theme: DocumintTheme | undefined) {
   const themeStyles = useMemo(() => createThemeStyles(preferredTheme), [preferredTheme]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    if (typeof window.matchMedia !== "function") {
       setPreferredTheme(themePair.light);
       return;
     }

@@ -1,675 +1,149 @@
-// DocumentIndex construction: builds the flattened runtime representation
-// (roots, blocks, regions, indexes) from a Document.
-import {
-  childBlockPath,
-  childContainerPath,
-  createDocument,
-  createParagraphTextBlock,
-  mapBlockTree,
-  resolveCommentThread,
-  rootBlockPath,
-  sourcePath,
-  spliceDocument,
-  tableCellPath,
-  tableRowPath,
-  type Block,
-  type Document,
-  type Inline,
-} from "@/document";
-import { getCommentState } from "../../anchors";
+// `applyRootDelta`: the universal projection primitive. Every shape of update
+// (cold build, single-region edit, root splice, append, structural replace)
+// routes through this one function. Cold build is the degenerate case where
+// `prev` is `null`: clones are empty maps, and every positioned root
+// contributes its entries to the inserts.
+//
+// The map-clone path (`new Map(prev)`) is dramatically faster in V8/JSC than
+// rebuilding via sequential `.set()` calls — empirically ~14× on a 3600-root
+// document. That's what makes the splice hot path fast: the typing edit only
+// pays for the per-root delta, not for re-iterating the whole document.
+//
+// Per-document projections (`commentContainerIndex`, `listItemMarkers`,
+// `imageUrls`) live next to the primitive so the cache-reuse policies
+// (`document.comments === prev.document.comments`, etc.) stay in one place.
+
+import { resolveCommentThread, type Block, type Document } from "@/document";
 import type {
-  EditorBlock,
-  EditorInline,
-  EditorListItemMarker,
+  BlockEntry,
   DocumentIndex,
-  EditorRegion,
-  EditorRoot,
-  RuntimeLinkAttributes,
+  ListItemMarker,
+  RegionEntry,
+  RootEntry,
 } from "./types";
-import { createTableCellRegionKey, INLINE_OBJECT_REPLACEMENT_TEXT } from "./shared";
 
-export function createDocumentIndex(document: Document): DocumentIndex {
-  const runtimeDocument = createRuntimeEditableDocument(document);
-  const roots = buildEditorRoots(
-    runtimeDocument.blocks.map((block, rootIndex) => createEditorRoot(block, rootIndex)),
-  );
-
-  return createResolvedDocumentIndex(runtimeDocument, roots);
-}
-
-export function createDocumentFromIndex(documentIndex: DocumentIndex): Document {
-  const commentState = getCommentState(documentIndex);
-
-  return createDocument(
-    collapseRuntimeEditableDocument(documentIndex.document).blocks,
-    commentState.threads,
-    documentIndex.document.frontMatter,
-  );
-}
-
-export function createEditorRoot(rootBlock: Block, rootIndex: number): EditorRoot {
-  const blocks: EditorBlock[] = [];
-  const regions: EditorRegion[] = [];
-  const textParts: string[] = [];
-  // Collected during the inline walk below, alongside the work that's
-  // already happening — no extra traversal.
-  const imageUrls = new Set<string>();
-  let position = 0;
-
-  function appendRegion(
-    block: Block,
-    path: string,
-    inlines: EditorInline[],
-    semanticRegionId: string,
-    tableCellPosition: { cellIndex: number; rowIndex: number } | null = null,
-  ) {
-    if (regions.length > 0) {
-      textParts.push("\n");
-      position += 1;
-    }
-
-    const text = inlines.map((inline) => inline.text).join("");
-    const start = position;
-    const end = start + text.length;
-
-    textParts.push(text);
-    position = end;
-    for (const inline of inlines) {
-      if (inline.image) imageUrls.add(inline.image.url);
-    }
-    regions.push({
-      blockId: block.id,
-      blockType: block.type,
-      end,
-      id: `${block.id}:${path}`,
-      path,
-      rootIndex,
-      inlines,
-      semanticRegionId,
-      start,
-      tableCellPosition,
-      text,
-    });
+export function applyRootDelta(
+  prev: DocumentIndex | null,
+  positionedRoots: RootEntry[],
+  nextDocument: Document,
+): DocumentIndex {
+  // Fast path: roots are reference-identical (metadata-only change such as
+  // `replaceDocumentMetadata`). Every map and flat array is byte-for-byte
+  // identical to `prev`; only document-derived projections may need to
+  // refresh.
+  if (prev && positionedRoots === prev.roots) {
+    return refreshDocumentProjections(prev, nextDocument);
   }
 
-  function visitBlock(block: Block, path: string, depth: number, parentBlockId: string | null) {
-    const blockEntry: EditorBlock = {
-      // Local per-root index here; re-stamped to the global position when
-      // the root is positioned in `buildEditorRoots` / `positionEditorRoot`.
-      blockArrayIndex: blocks.length,
-      childBlockIds: [],
-      depth,
-      end: position,
-      id: block.id,
-      parentBlockId,
-      path,
-      regionIds: [],
-      rootIndex,
-      start: position,
-      type: block.type,
-    };
+  const blockIndex = new Map(prev?.blockIndex);
+  const regionIndex = new Map(prev?.regionIndex);
+  const regionPathIndex = new Map(prev?.regionPathIndex);
 
-    blocks.push(blockEntry);
+  const prevRoots = prev?.roots;
+  const sharedLength = prevRoots ? Math.min(prevRoots.length, positionedRoots.length) : 0;
 
-    switch (block.type) {
-      case "blockquote":
-      case "listItem":
-        for (const [index, child] of block.children.entries()) {
-          blockEntry.childBlockIds.push(child.id);
-          visitBlock(child, childBlockPath(path, index), depth + 1, block.id);
-        }
-        break;
-      case "code": {
-        appendRegion(
-          block,
-          sourcePath(path),
-          [
-            {
-              end: block.source.length,
-              id: `${block.id}:code`,
-              image: null,
-              inlineCode: false,
-              kind: "text",
-              link: null,
-              marks: [],
-              mention: null,
-              originalType: null,
-              start: 0,
-              text: block.source,
-            },
-          ],
-          block.id,
-        );
-        blockEntry.regionIds.push(regions.at(-1)!.id);
-        break;
+  // For each shared position, compare references and rootIndex:
+  //   - same reference → reused, no work
+  //   - different reference, same rootIndex → IDs unchanged (path-based); just
+  //     set new entries (overwrites old values for the same keys)
+  //   - different rootIndex → IDs shifted; must delete old entries first
+  if (prevRoots) {
+    for (let i = 0; i < sharedLength; i += 1) {
+      const prevRoot = prevRoots[i]!;
+      const positionedRoot = positionedRoots[i]!;
+      if (positionedRoot === prevRoot) continue;
+      if (positionedRoot.rootIndex !== prevRoot.rootIndex) {
+        removeRootEntries(prevRoot, blockIndex, regionIndex, regionPathIndex);
       }
-      case "heading":
-      case "paragraph":
-        appendRegion(block, childContainerPath(path), flattenInlineNodes(block.children), block.id);
-        blockEntry.regionIds.push(regions.at(-1)!.id);
-        break;
-      case "list":
-        for (const [index, child] of block.items.entries()) {
-          blockEntry.childBlockIds.push(child.id);
-          visitBlock(child, childBlockPath(path, index), depth + 1, block.id);
-        }
-        break;
-      case "table":
-        for (const [rowIndex, row] of block.rows.entries()) {
-          for (const [cellIndex, cell] of row.cells.entries()) {
-            appendRegion(
-              block,
-              tableCellPath(tableRowPath(path, rowIndex), cellIndex),
-              flattenInlineNodes(cell.children),
-              cell.id,
-              { cellIndex, rowIndex },
-            );
-            blockEntry.regionIds.push(regions.at(-1)!.id);
-          }
-        }
-        break;
-      case "divider":
-        // Inert leaf block: contributes no region. Inertness is structural
-        // — a leaf block (not a container) with no regions. The property
-        // falls out of skipping `appendRegion` here, so future inert types
-        // (image-as-block, embed, display-math) qualify automatically.
-        // Layout and planner reserve a fixed-height geometry slot for
-        // inert leaves; the renderer paints chrome via `paintInertBlock`.
-        // Deletion of an inert neighbor is handled by a dedicated branch
-        // in `boundary-collapse.ts`. Caret navigation, hit testing, and
-        // the universal merge-collapse rule treat inert blocks correctly
-        // by virtue of their absence from the region-flow.
-        break;
-      case "directive":
-        break;
-      case "raw":
-        appendRegion(
-          block,
-          sourcePath(path),
-          [
-            {
-              end: block.source.length,
-              id: `${block.id}:raw`,
-              image: null,
-              inlineCode: false,
-              kind: "raw",
-              link: null,
-              marks: [],
-              mention: null,
-              originalType: block.originalType,
-              start: 0,
-              text: block.source,
-            },
-          ],
-          block.id,
-        );
-        blockEntry.regionIds.push(regions.at(-1)!.id);
-        break;
+      addRootEntries(positionedRoot, blockIndex, regionIndex, regionPathIndex);
     }
-
-    blockEntry.end = position;
+    // Trailing prev roots (deletions at tail) — remove their entries.
+    for (let i = sharedLength; i < prevRoots.length; i += 1) {
+      removeRootEntries(prevRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+    }
+  } else {
+    // Cold build (no prev): every positioned root contributes entries.
+    for (let i = 0; i < sharedLength; i += 1) {
+      addRootEntries(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+    }
+  }
+  // Trailing positioned roots (additions at tail) — add their entries.
+  for (let i = sharedLength; i < positionedRoots.length; i += 1) {
+    addRootEntries(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
   }
 
-  visitBlock(rootBlock, rootBlockPath(rootIndex), 0, null);
+  const blocks = positionedRoots.flatMap((root) => root.blocks);
+  const regions = positionedRoots.flatMap((root) => root.regions);
 
   return {
-    blockRange: {
-      end: blocks.length,
-      start: 0,
-    },
-    blocks,
-    end: position,
-    imageUrls,
-    length: position,
-    regionRange:
-      regions.length > 0
-        ? {
-            end: regions.length,
-            start: 0,
-          }
-        : undefined,
-    regions,
-    rootIndex,
-    start: 0,
-    text: textParts.join(""),
-  };
-}
-
-export function rebuildEditorRoot(root: EditorRoot, rootBlock: Block): EditorRoot {
-  return createEditorRoot(rootBlock, root.rootIndex);
-}
-
-export function buildEditorRoots(roots: EditorRoot[], previousRoots: EditorRoot[] | null = null) {
-  const positionedRoots: EditorRoot[] = [];
-  let blockIndex = 0;
-  let regionIndex = 0;
-  let position = 0;
-  let hasVisibleRootBefore = false;
-
-  for (const [rootIndex, root] of roots.entries()) {
-    if (root.regions.length > 0 && hasVisibleRootBefore) {
-      position += 1;
-    }
-
-    const nextRoot = {
-      ...root,
-      blockRange: {
-        end: blockIndex + root.blocks.length,
-        start: blockIndex,
-      },
-      end: position + root.length,
-      regionRange:
-        root.regions.length > 0
-          ? {
-              end: regionIndex + root.regions.length,
-              start: regionIndex,
-            }
-          : undefined,
-      start: position,
-    } satisfies EditorRoot;
-    const previousRoot = previousRoots?.[rootIndex];
-
-    positionedRoots.push(
-      canReuseEditorRoot(previousRoot, root, nextRoot)
-        ? previousRoot
-        : positionEditorRoot(root, nextRoot),
-    );
-
-    blockIndex = nextRoot.blockRange.end;
-    regionIndex = nextRoot.regionRange?.end ?? regionIndex;
-
-    if (root.regions.length > 0) {
-      position = nextRoot.end;
-      hasVisibleRootBefore = true;
-    }
-  }
-
-  return positionedRoots;
-}
-
-export function spliceDocumentIndex(
-  model: DocumentIndex,
-  nextDocument: Document,
-  rootIndex: number,
-  count: number,
-): DocumentIndex {
-  const replacementCount = nextDocument.blocks.length - (model.roots.length - count);
-
-  if (replacementCount < 0) {
-    throw new Error("Editor model splice received an invalid replacement count.");
-  }
-
-  if (rootIndex === model.roots.length && replacementCount === 1) {
-    const rootBlock = nextDocument.blocks[rootIndex];
-
-    if (rootBlock) {
-      return appendDocumentIndexRoot(model, nextDocument, rootBlock);
-    }
-  }
-
-  const canPreserveSuffixRoots = replacementCount === count;
-  const roots = [
-    ...model.roots.slice(0, rootIndex),
-    ...nextDocument.blocks
-      .slice(rootIndex, rootIndex + replacementCount)
-      .map((block, index) => createEditorRoot(block, rootIndex + index)),
-    ...(canPreserveSuffixRoots
-      ? model.roots.slice(rootIndex + count)
-      : nextDocument.blocks
-          .slice(rootIndex + replacementCount)
-          .map((block, index) => createEditorRoot(block, rootIndex + replacementCount + index))),
-  ];
-  const nextRoots = buildEditorRoots(roots, model.roots);
-
-  // Future optimization: same-count root splices can preserve more resolved indexes
-  // and update only the affected suffix instead of rebuilding the full model indexes.
-  return createResolvedDocumentIndex(nextDocument, nextRoots, model);
-}
-
-function appendDocumentIndexRoot(
-  model: DocumentIndex,
-  nextDocument: Document,
-  rootBlock: Block,
-): DocumentIndex {
-  const rootIndex = model.roots.length;
-  const root = createEditorRoot(rootBlock, rootIndex);
-  const hasVisibleRootBefore = model.roots.some((candidate) => candidate.regions.length > 0);
-  const start = root.regions.length > 0 && hasVisibleRootBefore ? model.length + 1 : model.length;
-  const positionedRoot = positionEditorRoot(root, {
-    ...root,
-    blockRange: {
-      end: model.blocks.length + root.blocks.length,
-      start: model.blocks.length,
-    },
-    end: start + root.length,
-    regionRange:
-      root.regions.length > 0
-        ? {
-            end: model.regions.length + root.regions.length,
-            start: model.regions.length,
-          }
-        : undefined,
-    start,
-  });
-  const blocks = [...model.blocks, ...positionedRoot.blocks];
-  const regions = [...model.regions, ...positionedRoot.regions];
-
-  return {
-    blockIndex: appendBlockIndex(model.blockIndex, positionedRoot.blocks),
+    blockIndex,
     blocks,
     commentContainerIndex:
-      nextDocument.comments === model.document.comments
-        ? model.commentContainerIndex
+      prev && nextDocument.comments === prev.document.comments
+        ? prev.commentContainerIndex
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
-    imageUrls: appendDocumentImageUrls(model.imageUrls, positionedRoot.imageUrls),
-    length: positionedRoot.end,
+    imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
     listItemMarkers:
-      nextDocument.blocks === model.document.blocks
-        ? model.listItemMarkers
-        : appendListItemMarkerIndex(model.listItemMarkers, rootBlock),
-    regionIndex: appendRegionIndex(model.regionIndex, positionedRoot.regions),
-    regionOrderIndex: appendRegionOrderIndex(
-      model.regionOrderIndex,
-      positionedRoot.regions,
-      model.regions.length,
-    ),
-    regionPathIndex: appendRegionPathIndex(model.regionPathIndex, positionedRoot.regions),
-    regions,
-    roots: [...model.roots, positionedRoot],
-    tableCellIndex: appendTableCellIndex(model.tableCellIndex, positionedRoot.regions),
-    tableCellRegionIndex: appendTableCellRegionIndex(
-      model.tableCellRegionIndex,
-      positionedRoot.regions,
-    ),
-    text: appendDocumentIndexText(model.text, positionedRoot),
-  };
-}
-
-export function replaceIndexedDocument(model: DocumentIndex, document: Document): DocumentIndex {
-  if (document.blocks !== model.document.blocks) {
-    throw new Error("Editor model document replacement requires preserving root blocks.");
-  }
-
-  return createResolvedDocumentIndex(document, model.roots, model);
-}
-
-// Replace a single block (by id) inside the document, rebuilding the
-// containing root via the shared `mapBlockTree` primitive and committing
-// the change with `spliceDocument`. Uses `blockIndex` to skip the cross-root
-// scan — the block index already knows which root holds the target.
-export function replaceEditorBlock(
-  documentIndex: DocumentIndex,
-  targetBlockId: string,
-  replacer: (block: Block) => Block | null,
-): Document | null {
-  const blockEntry = documentIndex.blockIndex.get(targetBlockId);
-
-  if (!blockEntry) {
-    return null;
-  }
-
-  const rootBlock = documentIndex.document.blocks[blockEntry.rootIndex];
-
-  if (!rootBlock) {
-    return null;
-  }
-
-  let found = false;
-  const nextRoots = mapBlockTree([rootBlock], (block, { recurse }) => {
-    if (block.id === targetBlockId) {
-      found = true;
-      return replacer(block);
-    }
-    return recurse();
-  });
-
-  if (!found) {
-    return null;
-  }
-
-  return spliceDocument(documentIndex.document, blockEntry.rootIndex, 1, nextRoots);
-}
-
-function createResolvedDocumentIndex(
-  document: Document,
-  roots: EditorRoot[],
-  previousModel: DocumentIndex | null = null,
-): DocumentIndex {
-  const blocks = roots.flatMap((root) => root.blocks);
-  const regions = roots.flatMap((root) => root.regions);
-  const { regionIndex, regionOrderIndex, regionPathIndex, tableCellIndex, tableCellRegionIndex } =
-    createRegionIndexes(regions);
-
-  return {
-    blockIndex: createBlockIndex(blocks),
-    blocks,
-    commentContainerIndex:
-      document.comments === previousModel?.document.comments
-        ? previousModel.commentContainerIndex
-        : createCommentContainerIndex(document),
-    document,
-    imageUrls: createDocumentImageUrls(roots, previousModel?.imageUrls),
-    length: roots.at(-1)?.end ?? 0,
-    listItemMarkers:
-      document.blocks === previousModel?.document.blocks
-        ? previousModel.listItemMarkers
-        : createListItemMarkers(document.blocks),
+      prev && nextDocument.blocks === prev.document.blocks
+        ? prev.listItemMarkers
+        : createListItemMarkers(nextDocument.blocks),
     regionIndex,
-    regionOrderIndex,
     regionPathIndex,
     regions,
-    roots,
-    tableCellIndex,
-    tableCellRegionIndex,
-    text: createDocumentIndexText(roots),
+    roots: positionedRoots,
   };
 }
 
-function positionEditorRoot(root: EditorRoot, nextRoot: EditorRoot): EditorRoot {
-  const delta = nextRoot.start - root.start;
-  const blockArrayStart = nextRoot.blockRange.start;
-
-  return {
-    ...nextRoot,
-    // Always re-stamp blocks so `blockArrayIndex` reflects the global
-    // position. We can't skip the clone on `delta === 0` here because a
-    // freshly-built root might happen to start at the same char offset
-    // but still need its block indices stamped from local to global.
-    blocks: shiftEditorBlocks(root.blocks, delta, blockArrayStart),
-    regions: delta === 0 ? root.regions : shiftEditorRegions(root.regions, delta),
-  };
-}
-
-function canReuseEditorRoot(
-  previousRoot: EditorRoot | undefined,
-  root: EditorRoot,
-  nextRoot: EditorRoot,
-): previousRoot is EditorRoot {
-  return Boolean(
-    previousRoot &&
-    root === previousRoot &&
-    previousRoot.start === nextRoot.start &&
-    previousRoot.end === nextRoot.end &&
-    previousRoot.blockRange.start === nextRoot.blockRange.start &&
-    previousRoot.blockRange.end === nextRoot.blockRange.end &&
-    previousRoot.regionRange?.start === nextRoot.regionRange?.start &&
-    previousRoot.regionRange?.end === nextRoot.regionRange?.end,
-  );
-}
-
-function shiftEditorBlocks(blocks: EditorBlock[], delta: number, blockArrayStart: number) {
-  return blocks.map<EditorBlock>((block, index) => ({
-    ...block,
-    blockArrayIndex: blockArrayStart + index,
-    end: block.end + delta,
-    start: block.start + delta,
-  }));
-}
-
-function shiftEditorRegions(regions: EditorRegion[], delta: number) {
-  return regions.map<EditorRegion>((region) => ({
-    ...region,
-    end: region.end + delta,
-    start: region.start + delta,
-  }));
-}
-
-function createBlockIndex(blocks: EditorBlock[]) {
-  const blockIndex = new Map<string, EditorBlock>();
-
-  for (const block of blocks) {
-    blockIndex.set(block.id, block);
+function removeRootEntries(
+  root: RootEntry,
+  blockIndex: Map<string, BlockEntry>,
+  regionIndex: Map<string, RegionEntry>,
+  regionPathIndex: Map<string, RegionEntry>,
+) {
+  for (const entry of root.blocks) {
+    blockIndex.delete(entry.block.id);
   }
-
-  return blockIndex;
+  for (const region of root.regions) {
+    regionIndex.delete(region.id);
+    regionPathIndex.delete(region.path);
+  }
 }
 
-function createRegionIndexes(regions: EditorRegion[]) {
-  const regionIndex = new Map<string, EditorRegion>();
-  const regionOrderIndex = new Map<string, number>();
-  const regionPathIndex = new Map<string, EditorRegion>();
-  const tableCellIndex = new Map<string, { cellIndex: number; rowIndex: number }>();
-  const tableCellRegionIndex = new Map<string, string>();
-
-  for (const [index, region] of regions.entries()) {
+function addRootEntries(
+  root: RootEntry,
+  blockIndex: Map<string, BlockEntry>,
+  regionIndex: Map<string, RegionEntry>,
+  regionPathIndex: Map<string, RegionEntry>,
+) {
+  for (const entry of root.blocks) {
+    blockIndex.set(entry.block.id, entry);
+  }
+  for (const region of root.regions) {
     regionIndex.set(region.id, region);
-    regionOrderIndex.set(region.id, index);
     regionPathIndex.set(region.path, region);
-
-    if (!region.tableCellPosition) {
-      continue;
-    }
-
-    tableCellIndex.set(region.id, region.tableCellPosition);
-    tableCellRegionIndex.set(
-      createTableCellRegionKey(
-        region.blockId,
-        region.tableCellPosition.rowIndex,
-        region.tableCellPosition.cellIndex,
-      ),
-      region.id,
-    );
   }
+}
 
+// Roots unchanged but the document reference may have been swapped (comments,
+// front matter). Reuse everything except the document-derived projections,
+// which still gate on their own input identity.
+function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document): DocumentIndex {
+  if (nextDocument === prev.document) {
+    return prev;
+  }
   return {
-    regionIndex,
-    regionOrderIndex,
-    regionPathIndex,
-    tableCellIndex,
-    tableCellRegionIndex,
+    ...prev,
+    commentContainerIndex:
+      nextDocument.comments === prev.document.comments
+        ? prev.commentContainerIndex
+        : createCommentContainerIndex(nextDocument),
+    document: nextDocument,
+    listItemMarkers:
+      nextDocument.blocks === prev.document.blocks
+        ? prev.listItemMarkers
+        : createListItemMarkers(nextDocument.blocks),
   };
-}
-
-function appendBlockIndex(blockIndex: DocumentIndex["blockIndex"], blocks: EditorBlock[]) {
-  const nextBlockIndex = new Map(blockIndex);
-
-  for (const block of blocks) {
-    nextBlockIndex.set(block.id, block);
-  }
-
-  return nextBlockIndex;
-}
-
-function appendRegionIndex(regionIndex: DocumentIndex["regionIndex"], regions: EditorRegion[]) {
-  const nextRegionIndex = new Map(regionIndex);
-
-  for (const region of regions) {
-    nextRegionIndex.set(region.id, region);
-  }
-
-  return nextRegionIndex;
-}
-
-function appendRegionOrderIndex(
-  regionOrderIndex: DocumentIndex["regionOrderIndex"],
-  regions: EditorRegion[],
-  startIndex: number,
-) {
-  const nextRegionOrderIndex = new Map(regionOrderIndex);
-
-  for (const [index, region] of regions.entries()) {
-    nextRegionOrderIndex.set(region.id, startIndex + index);
-  }
-
-  return nextRegionOrderIndex;
-}
-
-function appendRegionPathIndex(
-  regionPathIndex: DocumentIndex["regionPathIndex"],
-  regions: EditorRegion[],
-) {
-  const nextRegionPathIndex = new Map(regionPathIndex);
-
-  for (const region of regions) {
-    nextRegionPathIndex.set(region.path, region);
-  }
-
-  return nextRegionPathIndex;
-}
-
-function appendTableCellIndex(
-  tableCellIndex: DocumentIndex["tableCellIndex"],
-  regions: EditorRegion[],
-) {
-  const nextTableCellIndex = new Map(tableCellIndex);
-
-  for (const region of regions) {
-    if (region.tableCellPosition) {
-      nextTableCellIndex.set(region.id, region.tableCellPosition);
-    }
-  }
-
-  return nextTableCellIndex;
-}
-
-function appendTableCellRegionIndex(
-  tableCellRegionIndex: DocumentIndex["tableCellRegionIndex"],
-  regions: EditorRegion[],
-) {
-  const nextTableCellRegionIndex = new Map(tableCellRegionIndex);
-
-  for (const region of regions) {
-    if (!region.tableCellPosition) {
-      continue;
-    }
-
-    nextTableCellRegionIndex.set(
-      createTableCellRegionKey(
-        region.blockId,
-        region.tableCellPosition.rowIndex,
-        region.tableCellPosition.cellIndex,
-      ),
-      region.id,
-    );
-  }
-
-  return nextTableCellRegionIndex;
-}
-
-function appendListItemMarkerIndex(
-  listItemMarkers: DocumentIndex["listItemMarkers"],
-  rootBlock: Block,
-) {
-  const nextListItemMarkers = new Map(listItemMarkers);
-  appendListItemMarkers(nextListItemMarkers, [rootBlock]);
-
-  return nextListItemMarkers;
-}
-
-function appendDocumentIndexText(text: string, root: EditorRoot) {
-  if (root.regions.length === 0) {
-    return text;
-  }
-
-  return text.length > 0 ? `${text}\n${root.text}` : root.text;
-}
-
-function createDocumentIndexText(roots: EditorRoot[]) {
-  return roots
-    .filter((root) => root.regions.length > 0)
-    .map((root) => root.text)
-    .join("\n");
 }
 
 // Builds the document-level union of image URLs from per-root sets,
@@ -677,7 +151,7 @@ function createDocumentIndexText(roots: EditorRoot[]) {
 // downstream consumers (notably the image loader hook's effect dep) can
 // short-circuit on identity.
 function createDocumentImageUrls(
-  roots: EditorRoot[],
+  roots: RootEntry[],
   previous: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> {
   const next = new Set<string>();
@@ -685,24 +159,6 @@ function createDocumentImageUrls(
     for (const url of root.imageUrls) next.add(url);
   }
   return previous && areUrlSetsEqual(previous, next) ? previous : next;
-}
-
-// Append-path counterpart: returns `existing` unchanged when the appended
-// root introduces no new URLs (the common case for non-image edits), and
-// only allocates a new Set when there's actually a delta.
-function appendDocumentImageUrls(
-  existing: ReadonlySet<string>,
-  rootImageUrls: ReadonlySet<string>,
-): ReadonlySet<string> {
-  if (rootImageUrls.size === 0) return existing;
-
-  let next: Set<string> | null = null;
-  for (const url of rootImageUrls) {
-    if (existing.has(url)) continue;
-    next ??= new Set(existing);
-    next.add(url);
-  }
-  return next ?? existing;
 }
 
 function areUrlSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
@@ -713,6 +169,10 @@ function areUrlSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolea
   return true;
 }
 
+// Note: this is O(C × N) on cold build — each thread resolves against the
+// full document via `resolveCommentThread`. Reuse via `document.comments`
+// identity hides this on edits, but documents loaded with many existing
+// threads pay it once.
 function createCommentContainerIndex(document: Document) {
   const commentContainerIndex = new Map<string, number[]>();
 
@@ -732,14 +192,14 @@ function createCommentContainerIndex(document: Document) {
 }
 
 function createListItemMarkers(blocks: Block[]) {
-  const markers = new Map<string, EditorListItemMarker>();
+  const markers = new Map<string, ListItemMarker>();
   appendListItemMarkers(markers, blocks);
 
   return markers;
 }
 
 function appendListItemMarkers(
-  markers: Map<string, EditorListItemMarker>,
+  markers: Map<string, ListItemMarker>,
   blocks: Block[],
   orderedContext: { index: number; ordered: boolean; start: number | null } | null = null,
 ) {
@@ -770,7 +230,7 @@ function appendListItemMarkers(
       } else {
         markers.set(block.id, {
           kind: "bullet",
-          label: "\u2022",
+          label: "•",
         });
       }
 
@@ -781,148 +241,4 @@ function appendListItemMarkers(
       appendListItemMarkers(markers, block.children, orderedContext);
     }
   }
-}
-
-function createRuntimeEditableDocument(document: Document): Document {
-  if (document.blocks.length > 0) {
-    return document;
-  }
-
-  return createDocument([createParagraphTextBlock("")], document.comments, document.frontMatter);
-}
-
-function collapseRuntimeEditableDocument(document: Document): Document {
-  const firstBlock = document.blocks[0];
-
-  if (
-    document.blocks.length !== 1 ||
-    !firstBlock ||
-    firstBlock.type !== "paragraph" ||
-    firstBlock.children.length > 0
-  ) {
-    return document;
-  }
-
-  return createDocument([], document.comments, document.frontMatter);
-}
-
-function flattenInlineNodes(
-  nodes: Inline[],
-  link: RuntimeLinkAttributes | null = null,
-): EditorInline[] {
-  const inlines: EditorInline[] = [];
-  let position = 0;
-
-  const pushInline = (inline: Omit<EditorInline, "end" | "start">) => {
-    const start = position;
-    const end = start + inline.text.length;
-
-    inlines.push({
-      ...inline,
-      end,
-      start,
-    });
-    position = end;
-  };
-
-  for (const node of nodes) {
-    switch (node.type) {
-      case "lineBreak":
-        pushInline({
-          id: node.id,
-          image: null,
-          inlineCode: false,
-          kind: "lineBreak",
-          link,
-          marks: [],
-          mention: null,
-          originalType: null,
-          text: "\n",
-        });
-        break;
-      case "image":
-        pushInline({
-          id: node.id,
-          image: {
-            alt: node.alt,
-            title: node.title,
-            url: node.url,
-            width: node.width,
-          },
-          inlineCode: false,
-          kind: "image",
-          link,
-          marks: [],
-          mention: null,
-          originalType: null,
-          text: INLINE_OBJECT_REPLACEMENT_TEXT,
-        });
-        break;
-      case "mention":
-        pushInline({
-          id: node.id,
-          image: null,
-          inlineCode: false,
-          kind: "mention",
-          link,
-          marks: [],
-          mention: {
-            name: node.name,
-            userId: node.userId,
-          },
-          originalType: null,
-          text: INLINE_OBJECT_REPLACEMENT_TEXT,
-        });
-        break;
-      case "code":
-        pushInline({
-          id: node.id,
-          image: null,
-          inlineCode: true,
-          kind: "code",
-          link,
-          marks: [],
-          mention: null,
-          originalType: null,
-          text: node.code,
-        });
-        break;
-      case "link":
-        for (const childInline of flattenInlineNodes(node.children, {
-          title: node.title,
-          url: node.url,
-        })) {
-          pushInline(childInline);
-        }
-        break;
-      case "text":
-        pushInline({
-          id: node.id,
-          image: null,
-          inlineCode: false,
-          kind: "text",
-          link,
-          marks: node.marks,
-          mention: null,
-          originalType: null,
-          text: node.text,
-        });
-        break;
-      case "raw":
-        pushInline({
-          id: node.id,
-          image: null,
-          inlineCode: false,
-          kind: "raw",
-          link,
-          marks: [],
-          mention: null,
-          originalType: node.originalType,
-          text: node.source,
-        });
-        break;
-    }
-  }
-
-  return inlines;
 }

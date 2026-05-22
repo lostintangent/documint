@@ -1,6 +1,4 @@
-// Owns binary-search and direct lookup helpers against a prepared
-// `DocumentLayout`. Used by hit-testing, caret measurement, and the canvas
-// paint pass to scope work to the visible viewport.
+// Owns line lookup and line-boundary algebra over a prepared `DocumentLayout`.
 
 import type { DocumentLineBoundary, DocumentLayout, DocumentLayoutLine } from "../measure";
 
@@ -35,17 +33,10 @@ export function findDocumentLayoutLineAtPoint(
   layout: DocumentLayout,
   point: { x: number; y: number },
 ) {
-  const containingContainer = [...layout.regionBounds.entries()].find(([, extent]) => {
-    return (
-      point.x >= extent.left &&
-      point.x <= extent.right &&
-      point.y >= extent.top &&
-      point.y <= extent.bottom
-    );
-  });
+  const containingRegionId = findContainingRegionId(layout, point);
 
-  if (containingContainer) {
-    return findNearestDocumentLayoutLineForRegion(layout, containingContainer[0], point.y);
+  if (containingRegionId) {
+    return findNearestDocumentLayoutLineForRegion(layout, containingRegionId, point.y);
   }
 
   const lineEntry = findDocumentLayoutLineAtY(layout, point.y);
@@ -65,99 +56,8 @@ export function findDocumentLayoutLineAtPoint(
       const extent = layout.regionBounds.get(candidate.line.regionId);
 
       return extent ? point.x >= extent.left && point.x <= extent.right : false;
-    }) ??
-    [...candidates].sort((left, right) => {
-      const leftExtent = layout.regionBounds.get(left.line.regionId);
-      const rightExtent = layout.regionBounds.get(right.line.regionId);
-      const leftDistance = resolveHorizontalDistance(point.x, leftExtent);
-      const rightDistance = resolveHorizontalDistance(point.x, rightExtent);
-
-      return leftDistance - rightDistance;
-    })[0] ??
-    null
+    }) ?? findNearestHorizontalCandidate(layout, candidates, point.x)
   );
-}
-
-// Find the block-index range within `layout.blocks` whose Y range
-// intersects `[top, top + height)`. Mirrors `findDocumentLayoutLineRange`
-// for the per-block index — used by the paint pass to scope inert-block
-// chrome iteration to the visible viewport.
-export function findDocumentLayoutBlockRange(layout: DocumentLayout, top: number, height: number) {
-  if (layout.blocks.length === 0) {
-    return { endIndex: 0, startIndex: 0 };
-  }
-
-  const bottom = top + height;
-  let startIndex = findFirstBlockIndexAtOrAfter(layout, top);
-  let endIndex = findFirstBlockIndexAtOrAfter(layout, bottom);
-
-  if (startIndex > 0) {
-    const previous = layout.blocks[startIndex - 1]!;
-    if (previous.bottom > top) {
-      startIndex -= 1;
-    }
-  }
-
-  if (endIndex < layout.blocks.length) {
-    const next = layout.blocks[endIndex]!;
-    if (next.top < bottom) {
-      endIndex += 1;
-    }
-  }
-
-  return { endIndex, startIndex };
-}
-
-function findFirstBlockIndexAtOrAfter(layout: DocumentLayout, y: number) {
-  let low = 0;
-  let high = layout.blocks.length;
-
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    const block = layout.blocks[middle]!;
-
-    if (block.bottom <= y) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  return low;
-}
-
-export function findDocumentLayoutLineRange(layout: DocumentLayout, top: number, height: number) {
-  if (layout.lines.length === 0) {
-    return {
-      endIndex: 0,
-      startIndex: 0,
-    };
-  }
-
-  const bottom = top + height;
-  let startIndex = findFirstDocumentLayoutLineIndexAtOrAfter(layout, top);
-  let endIndex = findFirstDocumentLayoutLineIndexAtOrAfter(layout, bottom);
-
-  if (startIndex > 0) {
-    const previous = layout.lines[startIndex - 1]!;
-
-    if (previous.top + previous.height > top) {
-      startIndex -= 1;
-    }
-  }
-
-  if (endIndex < layout.lines.length) {
-    const next = layout.lines[endIndex]!;
-
-    if (next.top < bottom) {
-      endIndex += 1;
-    }
-  }
-
-  return {
-    endIndex,
-    startIndex,
-  };
 }
 
 export function findDocumentLayoutLineForRegionOffset(
@@ -260,6 +160,50 @@ export function findDocumentLayoutLineEntryForRegionOffset(
   return null;
 }
 
+export function measureCanvasLineOffsetLeft(
+  line: Pick<DocumentLayoutLine, "boundaries" | "left">,
+  localOffset: number,
+) {
+  return line.left + resolveBoundaryLeft(line.boundaries, localOffset);
+}
+
+export function resolveBoundaryOffset(boundaries: DocumentLineBoundary[], x: number) {
+  if (boundaries.length === 0) {
+    return 0;
+  }
+
+  for (let index = 1; index < boundaries.length; index += 1) {
+    const previous = boundaries[index - 1]!;
+    const next = boundaries[index]!;
+    const midpoint = previous.left + (next.left - previous.left) / 2;
+
+    if (x <= midpoint) {
+      return previous.offset;
+    }
+
+    if (x <= next.left) {
+      return next.offset;
+    }
+  }
+
+  return boundaries.at(-1)?.offset ?? 0;
+}
+
+function findContainingRegionId(layout: DocumentLayout, point: { x: number; y: number }) {
+  for (const [regionId, extent] of layout.regionBounds) {
+    if (
+      point.x >= extent.left &&
+      point.x <= extent.right &&
+      point.y >= extent.top &&
+      point.y <= extent.bottom
+    ) {
+      return regionId;
+    }
+  }
+
+  return null;
+}
+
 function collectLinesAtY(layout: DocumentLayout, y: number, seedIndex: number) {
   const matches: Array<{ index: number; line: DocumentLayoutLine }> = [];
 
@@ -292,6 +236,27 @@ function collectLinesAtY(layout: DocumentLayout, y: number, seedIndex: number) {
   return matches;
 }
 
+function findNearestHorizontalCandidate(
+  layout: DocumentLayout,
+  candidates: Array<{ index: number; line: DocumentLayoutLine }>,
+  x: number,
+) {
+  let nearest = candidates[0] ?? null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const extent = layout.regionBounds.get(candidate.line.regionId);
+    const distance = resolveHorizontalDistance(x, extent);
+
+    if (distance < nearestDistance) {
+      nearest = candidate;
+      nearestDistance = distance;
+    }
+  }
+
+  return nearest;
+}
+
 function resolveHorizontalDistance(x: number, extent: { left: number; right: number } | undefined) {
   if (!extent) {
     return Number.POSITIVE_INFINITY;
@@ -308,13 +273,6 @@ function resolveHorizontalDistance(x: number, extent: { left: number; right: num
   return 0;
 }
 
-export function measureCanvasLineOffsetLeft(
-  line: Pick<DocumentLayoutLine, "boundaries" | "left">,
-  localOffset: number,
-) {
-  return line.left + resolveBoundaryLeft(line.boundaries, localOffset);
-}
-
 function resolveBoundaryLeft(boundaries: DocumentLineBoundary[], offset: number) {
   for (const boundary of boundaries) {
     if (boundary.offset === offset) {
@@ -325,44 +283,4 @@ function resolveBoundaryLeft(boundaries: DocumentLineBoundary[], offset: number)
   const previous = boundaries.filter((boundary) => boundary.offset <= offset).at(-1);
 
   return previous?.left ?? 0;
-}
-
-function findFirstDocumentLayoutLineIndexAtOrAfter(layout: DocumentLayout, y: number) {
-  let low = 0;
-  let high = layout.lines.length;
-
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    const line = layout.lines[middle]!;
-
-    if (line.top + line.height <= y) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  return low;
-}
-
-export function resolveBoundaryOffset(boundaries: DocumentLineBoundary[], x: number) {
-  if (boundaries.length === 0) {
-    return 0;
-  }
-
-  for (let index = 1; index < boundaries.length; index += 1) {
-    const previous = boundaries[index - 1]!;
-    const next = boundaries[index]!;
-    const midpoint = previous.left + (next.left - previous.left) / 2;
-
-    if (x <= midpoint) {
-      return previous.offset;
-    }
-
-    if (x <= next.left) {
-      return next.offset;
-    }
-  }
-
-  return boundaries.at(-1)?.offset ?? 0;
 }

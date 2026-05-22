@@ -1,12 +1,19 @@
 import { expect, test } from "bun:test";
-import type { EditorInline, RuntimeLinkAttributes } from "@/editor/state";
+import type { Link, Mark } from "@/document";
+import type { InlineEntry } from "@/editor/state";
 import {
   editorInlinesToDocumentInlines,
   replaceEditorInlines,
 } from "@/editor/state/reducer/inlines";
 
 test("inserting at the start of a link run stays outside the link", () => {
-  const link = { title: null, url: "https://example.com" } satisfies RuntimeLinkAttributes;
+  const link: Link = {
+    children: [],
+    id: "",
+    title: null,
+    type: "link",
+    url: "https://example.com",
+  };
   const nextInlines = replaceEditorInlines(
     createInlines([{ kind: "text", link, text: "link" }]),
     0,
@@ -27,7 +34,13 @@ test("inserting at the start of a link run stays outside the link", () => {
 });
 
 test("inserting between runs in the same link stays inside the link", () => {
-  const link = { title: null, url: "https://example.com" } satisfies RuntimeLinkAttributes;
+  const link: Link = {
+    children: [],
+    id: "",
+    title: null,
+    type: "link",
+    url: "https://example.com",
+  };
   const nextInlines = replaceEditorInlines(
     createInlines([
       { kind: "text", link, text: "li" },
@@ -78,29 +91,34 @@ test("editing inline code runs preserves inline code semantics", () => {
   });
 });
 
-function createInlines(
-  inputs: Array<{
-    kind: EditorInline["kind"];
-    link?: RuntimeLinkAttributes | null;
-    marks?: EditorInline["marks"];
-    originalType?: string | null;
-    text: string;
-  }>,
-) {
+type InlineInput = {
+  kind: "text" | "code" | "raw";
+  link?: Link | null;
+  marks?: readonly Mark[];
+  originalType?: string;
+  text: string;
+};
+
+function createInlines(inputs: InlineInput[]): InlineEntry[] {
   let start = 0;
 
-  return inputs.map<EditorInline>((input, index) => {
+  return inputs.map<InlineEntry>((input, index) => {
     const end = start + input.text.length;
-    const inline: EditorInline = {
+    const node: InlineEntry["node"] =
+      input.kind === "text"
+        ? { id: `run:${index}`, marks: [...(input.marks ?? [])], text: input.text, type: "text" }
+        : input.kind === "code"
+          ? { code: input.text, id: `run:${index}`, type: "code" }
+          : {
+              id: `run:${index}`,
+              originalType: input.originalType ?? "raw",
+              source: input.text,
+              type: "raw",
+            };
+    const inline: InlineEntry = {
       end,
-      id: `run:${index}`,
-      image: null,
-      inlineCode: input.kind === "code",
-      kind: input.kind,
       link: input.link ?? null,
-      marks: input.marks ?? [],
-      mention: null,
-      originalType: input.originalType ?? null,
+      node,
       start,
       text: input.text,
     };

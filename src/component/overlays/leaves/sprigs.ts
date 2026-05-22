@@ -331,17 +331,17 @@ function resolveCursorLeaf({
 function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableLeaf | null {
   const focus = state.selection.focus;
   const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
-  const tableCellPosition = focusedRegion
-    ? (state.documentIndex.tableCellIndex.get(focusedRegion.id) ?? null)
-    : null;
+  const tableCellPosition = focusedRegion?.tableCellPosition ?? null;
 
   if (!focusedRegion || !tableCellPosition) {
     return null;
   }
 
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.blockId);
+  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.block.id);
   const table =
-    blockEntry?.type === "table" ? state.documentIndex.document.blocks[blockEntry.rootIndex] : null;
+    blockEntry?.block.type === "table"
+      ? state.documentIndex.document.blocks[blockEntry.rootIndex]
+      : null;
 
   if (!blockEntry || !table || table.type !== "table") {
     return null;
@@ -375,7 +375,7 @@ function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
   const focus = state.selection.focus;
   const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
 
-  if (!focusedRegion || focusedRegion.blockType !== "paragraph" || focusedRegion.text.length > 0) {
+  if (!focusedRegion || focusedRegion.block.type !== "paragraph" || focusedRegion.text.length > 0) {
     return null;
   }
 
@@ -383,7 +383,7 @@ function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
     return null;
   }
 
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.blockId);
+  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.block.id);
 
   if (!blockEntry || blockEntry.parentBlockId !== null) {
     return null;

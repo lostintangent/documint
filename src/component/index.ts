@@ -11,4 +11,4 @@ export {
 
 export { darkTheme, lightTheme, midnightTheme, mintTheme } from "./lib/themes";
 
-export { defaultKeybindings, type EditorKeybinding } from "./lib/keybindings";
+export { defaultKeybindings, type EditorInputKeybinding } from "./lib/keybindings";

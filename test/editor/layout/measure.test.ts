@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createLayoutCache } from "@/editor/layout/state/cache";
-import { createDocumentIndex, insertLineBreak, setSelection, toggleBold } from "@/editor/state";
+import { createDocumentIndex, insertLineBreak, setSelection, toggleMark } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
 import { measureCaretTarget } from "@/editor/layout";
 import { measureLayoutSlice } from "@/editor/layout/measure";
@@ -204,7 +204,7 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
       offset: 5,
     },
   });
-  state = toggleBold(state) ?? state;
+  state = toggleMark(state, "bold") ?? state;
 
   const markedLayout = measureLayoutSlice(
     state.documentIndex,

@@ -6,7 +6,7 @@
  */
 
 import { defragmentTextInlines, type Inline, type Mark } from "@/document";
-import { inlineMarkSpecs } from "../shared";
+import { inlineMarkSpecs, type InlineMarkSpec } from "../shared";
 
 // --- Escape patterns ---
 // Mirror the inverse-escape patterns in `parser/inlines.ts`. The serializer
@@ -51,21 +51,10 @@ function serializeInline(node: Inline, nextNode?: Inline): string {
   }
 }
 
-// Per-mark emit lookup derived from `inlineMarkSpecs` at module load. Seeded
-// with every `Mark` key up front so V8 settles on a single stable hidden
-// class — the property access in `applyMarks` then JITs to a constant-time
-// inline-cached load, matching the switch it replaces. Seeding also makes
-// the seed object the place TypeScript catches a new `Mark` union member:
-// adding one breaks this declaration until a key is added.
-const inlineMarkEmit: Record<Mark, readonly [string, string]> = {
-  bold: ["", ""],
-  italic: ["", ""],
-  strikethrough: ["", ""],
-  underline: ["", ""],
-};
-for (const spec of inlineMarkSpecs) {
-  inlineMarkEmit[spec.mark] = spec.emit;
-}
+// Per-mark emit lookup derived from the markdown-owned mark specs. Exhaustive
+// coverage is enforced by `inlineMarkSpecByMark` in `shared.ts`; the
+// serializer should not repeat one row per semantic mark.
+const inlineMarkEmit = createInlineMarkEmit(inlineMarkSpecs);
 
 // Reduce wraps `marks[0]` innermost and the last mark outermost. The parser
 // builds the `marks` array by appending each mark as it descends into a
@@ -81,6 +70,17 @@ function applyMarks(value: string, marks: Mark[]) {
     const [open, close] = inlineMarkEmit[mark];
     return `${open}${current}${close}`;
   }, value);
+}
+
+function createInlineMarkEmit(
+  specs: ReadonlyArray<InlineMarkSpec>,
+): Record<Mark, readonly [string, string]> {
+  return Object.fromEntries(
+    specs.map((spec) => [
+      spec.mark,
+      spec.kind === "html" ? [spec.openTag, spec.closeTag] : spec.emit,
+    ]),
+  ) as Record<Mark, readonly [string, string]>;
 }
 
 function serializeInlineCode(value: string) {

@@ -3,7 +3,9 @@
 // without reimplementing region and inline lookup.
 
 import type { Mark } from "@/document";
-import type { EditorInline } from "../index/types";
+import { regionInlines } from "../index/inlines";
+import { resolveBlockEntry, resolveRegion } from "../index/query";
+import type { InlineEntry } from "../index/types";
 import type { EditorState } from "../types";
 import { isSelectionCollapsed, normalizeSelection, type EditorSelectionRange } from "./index";
 
@@ -35,7 +37,7 @@ export function getCaretTextContext(state: EditorState): CaretTextContext | null
     return null;
   }
 
-  const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+  const region = resolveRegion(state.documentIndex, state.selection.focus.regionId);
 
   return region
     ? {
@@ -47,30 +49,30 @@ export function getCaretTextContext(state: EditorState): CaretTextContext | null
 }
 
 export function getSelectionContext(state: EditorState): SelectionContext {
-  const container = state.documentIndex.regionIndex.get(state.selection.anchor.regionId) ?? null;
-  const block = container ? (state.documentIndex.blockIndex.get(container.blockId) ?? null) : null;
+  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
+  const block = container ? resolveBlockEntry(state.documentIndex, container.block.id) : null;
   const inline = resolveInlineAtAnchor(state);
 
   return {
     block: block
       ? {
-          blockId: block.id,
+          blockId: block.block.id,
           depth: block.depth,
-          nodeType: block.type,
+          nodeType: block.block.type,
           text: container?.text ?? "",
         }
       : null,
     span: inline?.link
       ? { kind: "link", url: inline.link.url }
-      : inline && inline.marks.length > 0
-        ? { kind: "marks", marks: inline.marks }
+      : inline && inline.node.type === "text" && inline.node.marks.length > 0
+        ? { kind: "marks", marks: inline.node.marks }
         : { kind: "none" },
   };
 }
 
-export function resolveImageAtSelection(state: EditorState): EditorInline | null {
+export function resolveImageAtSelection(state: EditorState): InlineEntry | null {
   const inline = resolveInlineAtAnchor(state);
-  return inline?.kind === "image" ? inline : null;
+  return inline?.node.type === "image" ? inline : null;
 }
 
 export function getSelectionRange(state: EditorState): EditorSelectionRange | null {
@@ -90,8 +92,8 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
   };
 }
 
-function resolveInlineAtAnchor(state: EditorState): EditorInline | null {
-  const container = state.documentIndex.regionIndex.get(state.selection.anchor.regionId) ?? null;
+function resolveInlineAtAnchor(state: EditorState): InlineEntry | null {
+  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
 
   if (!container) {
     return null;
@@ -100,9 +102,9 @@ function resolveInlineAtAnchor(state: EditorState): EditorInline | null {
   const offset = state.selection.anchor.offset;
 
   return (
-    container.inlines.find((entry) => offset > entry.start && offset < entry.end) ??
-    container.inlines.find((entry) => entry.end === offset) ??
-    container.inlines.find((entry) => entry.start === offset) ??
+    regionInlines(container).find((entry) => offset > entry.start && offset < entry.end) ??
+    regionInlines(container).find((entry) => entry.end === offset) ??
+    regionInlines(container).find((entry) => entry.start === offset) ??
     null
   );
 }

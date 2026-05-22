@@ -28,19 +28,23 @@ import {
 import { updateCommentThreadsForRegionEdit } from "../../anchors";
 import { trimBlockToPrefix, trimBlockToSuffix } from "../fragments/blocks";
 import { mergeTrimmedBlocks } from "./fragments";
-import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/build";
-import type { DocumentIndex, EditorRegion } from "../index/types";
+import {
+  resolveRegion,
+  resolveRegionByPath,
+  resolveRootBlock,
+  resolveTableCellPosition,
+} from "../index/query";
+import { replaceDocumentMetadata, replaceEditorBlock, spliceDocumentIndex } from "../index/splice";
+import type { DocumentIndex, RegionEntry } from "../index/types";
 import {
   createDescendantPrimaryRegionTarget,
   createRegionTarget,
   normalizeSelection,
-  resolveRegion,
-  resolveRegionByPath,
   type EditorSelection,
   type NormalizedEditorSelection,
   type SelectionTarget,
 } from "../selection";
-import { editRegionInlines, replaceEditorInlines } from "./inlines";
+import { editRegionInlines } from "./inlines";
 
 export type TextEditResult = {
   documentIndex: DocumentIndex;
@@ -88,8 +92,8 @@ export function replaceWithBlocks(
     throw new Error("Unknown selection endpoints.");
   }
 
-  const startRoot = documentIndex.document.blocks[startRegion.rootIndex];
-  const endRoot = documentIndex.document.blocks[endRegion.rootIndex];
+  const startRoot = resolveRootBlock(documentIndex, startRegion.rootIndex);
+  const endRoot = resolveRootBlock(documentIndex, endRegion.rootIndex);
 
   if (!startRoot || !endRoot) {
     throw new Error("Unknown root blocks for selection.");
@@ -149,15 +153,14 @@ function replaceInSingleRegion(
     throw new Error(`Unknown region: ${normalized.start.regionId}`);
   }
 
-  const nextDocument = replaceEditorBlock(documentIndex, region.blockId, (block) =>
+  const nextDocumentIndex = replaceEditorBlock(documentIndex, region.block.id, (block) =>
     replaceBlockRegionText(block, region, normalized.start.offset, normalized.end.offset, text),
   );
 
-  if (!nextDocument) {
+  if (!nextDocumentIndex) {
     throw new Error(`Failed to replace block for region: ${region.id}`);
   }
 
-  const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, region.rootIndex, 1);
   const finalizedDocumentIndex = finalizeCommentsAfterEdit(
     documentIndex,
     nextDocumentIndex,
@@ -179,46 +182,71 @@ function replaceInSingleRegion(
   };
 }
 
+// Per-block-type text mutation table. Keyed by `block.type` rather than
+// `region.content.kind` because the two `source-text` types (code, raw)
+// rebuild via different document builders, and the `cells` case needs the
+// table-cell-position fields on the region. Container/inert kinds are
+// absent and dispatch falls through to a throw — text mutation isn't a
+// meaningful operation on them.
+//
+// Adding a new editable block type is one entry here, paired with one
+// entry in `BLOCK_CONTRIBUTIONS` (state/index/roots.ts). The visitor and
+// reducer stay free of per-type branching.
+type BlockTextMutator<B extends Block> = (
+  block: B,
+  region: RegionEntry,
+  startOffset: number,
+  endOffset: number,
+  replacementText: string,
+) => Block;
+
+const BLOCK_TEXT_MUTATORS: {
+  [K in Block["type"]]?: BlockTextMutator<Extract<Block, { type: K }>>;
+} = {
+  code: (block, region, startOffset, endOffset, replacementText) =>
+    rebuildCodeBlock(
+      block,
+      replaceRegionSourceText(region, startOffset, endOffset, replacementText),
+    ),
+  heading: (block, region, startOffset, endOffset, replacementText) =>
+    rebuildTextBlock(block, editRegionInlines(region, startOffset, endOffset, replacementText)),
+  paragraph: (block, region, startOffset, endOffset, replacementText) =>
+    rebuildTextBlock(block, editRegionInlines(region, startOffset, endOffset, replacementText)),
+  raw: (block, region, startOffset, endOffset, replacementText) =>
+    rebuildRawBlock(
+      block,
+      replaceRegionSourceText(region, startOffset, endOffset, replacementText),
+    ),
+  table: (block, region, startOffset, endOffset, replacementText) =>
+    replaceTableCellText(block, region, startOffset, endOffset, replacementText),
+};
+
 function replaceBlockRegionText(
   block: Block,
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ): Block {
-  switch (block.type) {
-    case "heading":
-    case "paragraph":
-      return rebuildTextBlock(
-        block,
-        editRegionInlines(region, startOffset, endOffset, replacementText),
-      );
-    case "code":
-      return rebuildCodeBlock(
-        block,
-        replaceRegionSourceText(region, startOffset, endOffset, replacementText),
-      );
-    case "table":
-      return replaceTableCellText(block, region, startOffset, endOffset, replacementText);
-    case "raw":
-      return rebuildRawBlock(
-        block,
-        replaceRegionSourceText(region, startOffset, endOffset, replacementText),
-      );
-    default:
-      throw new Error(`Region text replacement is not supported for block type: ${block.type}`);
+  const mutator = BLOCK_TEXT_MUTATORS[block.type] as BlockTextMutator<Block> | undefined;
+
+  if (!mutator) {
+    throw new Error(`Region text replacement is not supported for block type: ${block.type}`);
   }
+
+  return mutator(block, region, startOffset, endOffset, replacementText);
 }
 
 function replaceTableCellText(
   block: Extract<Block, { type: "table" }>,
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ): Extract<Block, { type: "table" }> {
-  const rowIndex = region.tableCellPosition?.rowIndex;
-  const cellIndex = region.tableCellPosition?.cellIndex;
+  const tableCellPosition = resolveTableCellPosition(region);
+  const rowIndex = tableCellPosition?.rowIndex;
+  const cellIndex = tableCellPosition?.cellIndex;
 
   if (rowIndex === undefined || cellIndex === undefined) {
     throw new Error(`Unable to resolve table cell position for region: ${region.id}`);
@@ -241,14 +269,12 @@ function replaceTableCellText(
 }
 
 function replaceRegionSourceText(
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ) {
-  return replaceEditorInlines(region.inlines, startOffset, endOffset, replacementText)
-    .map((run) => run.text)
-    .join("");
+  return region.text.slice(0, startOffset) + replacementText + region.text.slice(endOffset);
 }
 
 /* Comment thread repair */
@@ -256,7 +282,7 @@ function replaceRegionSourceText(
 function finalizeCommentsAfterEdit(
   previousDocumentIndex: DocumentIndex,
   nextDocumentIndex: DocumentIndex,
-  region: EditorRegion,
+  region: RegionEntry,
   startOffset: number,
   endOffset: number,
   insertedText: string,
@@ -276,7 +302,7 @@ function finalizeCommentsAfterEdit(
 
   return nextComments === nextDocumentIndex.document.comments
     ? nextDocumentIndex
-    : replaceIndexedDocument(nextDocumentIndex, {
+    : replaceDocumentMetadata(nextDocumentIndex, {
         ...nextDocumentIndex.document,
         comments: nextComments,
       });

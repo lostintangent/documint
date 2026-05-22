@@ -37,15 +37,21 @@ export type InlineContainerVisitContext = {
   path: string;
 };
 
-// `enterPlainText` coordinate space (called the "inline text-coordinate" space
-// throughout the codebase) is the SAME space the editor uses for selection
-// offsets — NOT the same as the projection produced by
-// `extractPlainTextFromInlineNodes`. Each inline node contributes:
+// `enterPlainText` offsets are in **inline text-coordinate space**: a flat
+// character stream over an `Inline` array where every node contributes a
+// fixed number of characters. This is the document's own coordinate convention,
+// and is distinct from the textual projection produced by
+// `extractPlainTextFromInlineNodes` (which uses per-kind text like `@name`
+// for mentions and `alt` for images). Per-kind contribution:
 //
 //   lineBreak | image | mention -> 1 char each (atomic stops)
 //   code | text                  -> their `length`
 //   raw                          -> `source.length`
 //   link                         -> recursive sum of children
+//
+// The editor's selection-offset space is the same space — the editor adopts
+// these offsets directly for caret math, hit testing, and region addressing
+// — but the document defines the space; the editor is one consumer.
 //
 // The callback fires only for unmarked text runs (`marks.length === 0`); marked
 // text is skipped because the decoration consumers that use this callback
@@ -111,6 +117,53 @@ export function findBlockById(blocks: Block[], blockId: string): Block | null {
   });
 
   return match;
+}
+
+export function findBlockChildIndicesById(rootBlock: Block, blockId: string): number[] | null {
+  if (rootBlock.id === blockId) {
+    return [];
+  }
+
+  const containerSpec = blockContainerSpec(rootBlock);
+  const children = containerSpec?.read(rootBlock);
+
+  if (!children) {
+    return null;
+  }
+
+  for (const [index, child] of children.entries()) {
+    const childIndices = findBlockChildIndicesById(child, blockId);
+
+    if (childIndices) {
+      return [index, ...childIndices];
+    }
+  }
+
+  return null;
+}
+
+export function findBlockByChildIndices(
+  rootBlock: Block | null,
+  childIndices: readonly number[],
+): Block | null {
+  let current = rootBlock;
+
+  for (const childIndex of childIndices) {
+    if (!current) {
+      return null;
+    }
+
+    const containerSpec = blockContainerSpec(current);
+    const children = containerSpec?.read(current);
+
+    if (!children) {
+      return null;
+    }
+
+    current = children[childIndex] ?? null;
+  }
+
+  return current;
 }
 
 function visitBlocks(
@@ -301,11 +354,30 @@ function visitPlainText(
       continue;
     }
 
-    offset += inlineTextCoordinateLength(node);
+    offset += measureInlineNodeText(node);
   }
 }
 
-function inlineTextCoordinateLength(node: Inline): number {
+// The projected character length of an `Inline` node in *inline text-coordinate
+// space* — the document's flat-character-stream coordinate convention defined
+// at `PlainTextVisitContext` above. This is the canonical length oracle: any
+// consumer that walks the raw `Inline` tree and needs to know "how many
+// characters does this node contribute to the flat stream?" reads the answer
+// here instead of inventing a per-type length switch. The editor's index
+// reuses this oracle directly for selection-offset math.
+//
+// Per-kind projection:
+//   - `lineBreak`            → 1 (projects to `\n`)
+//   - `image` / `mention`    → 1 (projects to a single object-replacement char)
+//   - `text` / `code` / `raw`→ length of the node's own text/source
+//   - `link`                 → recursive sum of children (links flatten)
+//
+// Cross-layer contract with the editor: the editor's index projects `image` /
+// `mention` to `INLINE_OBJECT_REPLACEMENT_TEXT` (a single `￼`) and `lineBreak`
+// to `\n`. The two implementations must agree that those project to one
+// character each. If the editor's placeholder ever widens, the `image` /
+// `mention` arms here have to widen with it.
+export function measureInlineNodeText(node: Inline): number {
   switch (node.type) {
     case "lineBreak":
       return 1;
@@ -319,7 +391,33 @@ function inlineTextCoordinateLength(node: Inline): number {
     case "text":
       return node.text.length;
     case "link":
-      return node.children.reduce((sum, child) => sum + inlineTextCoordinateLength(child), 0);
+      return node.children.reduce((sum, child) => sum + measureInlineNodeText(child), 0);
+  }
+}
+
+// Each `Inline` paired with its `[start, end)` extent in inline text-coordinate
+// space. Yielded by `iterateInlineNodeRanges`.
+export type InlineNodeRange = {
+  end: number;
+  node: Inline;
+  start: number;
+};
+
+// Walks `nodes` in inline text-coordinate space, yielding each node with its
+// `[start, end)` extent. The cursor + `measureInlineNodeText` arithmetic that
+// every range-scoped inline operation reimplements lives here once: consumers
+// only express what to do with the overlapping portion of `[node.start,
+// node.end)` against their own `[start, end)` query range.
+//
+// This is the substrate for splice, slice, mark toggle, code toggle, link
+// lookup, and any future range-scoped operation over an inline tree.
+export function* iterateInlineNodeRanges(nodes: readonly Inline[]): Iterable<InlineNodeRange> {
+  let cursor = 0;
+  for (const node of nodes) {
+    const start = cursor;
+    const end = start + measureInlineNodeText(node);
+    cursor = end;
+    yield { end, node, start };
   }
 }
 

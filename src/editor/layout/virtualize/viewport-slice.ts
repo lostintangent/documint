@@ -5,12 +5,12 @@
 // `measureLayoutSlice`'s `startY`), so no coordinate shift is needed here.
 
 import type { DocumentResources } from "@/types";
-import type { DocumentIndex } from "../../state";
+import { resolveRegion, type DocumentIndex } from "../../state";
 import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
-import { resolveListMarkerInset } from "../lib/geometry";
+import { resolveListMarkerInset } from "../lib/marker-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { DocumentLayout } from "../measure";
-import { createContainerHeightCacheKey } from "./estimate";
+import { createContainerHeightCacheKey } from "./height-estimate";
 
 export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayout, y: number) {
   let low = 0;
@@ -42,13 +42,13 @@ export function expandViewportSliceToBlockBoundaries(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const container = documentIndex.regions[index]!;
-    const block = runtimeBlocks.get(container.blockId);
+    const block = runtimeBlocks.get(container.block.id);
 
     if (!block) {
       continue;
     }
 
-    if (block.type === "table") {
+    if (block.block.type === "table") {
       const firstIndex = containerIndices.get(block.regionIds[0] ?? "");
       const lastIndex = containerIndices.get(block.regionIds[block.regionIds.length - 1] ?? "");
 
@@ -77,20 +77,16 @@ export function updateMeasuredContainerHeights(
 ) {
   for (const [regionId, extent] of layout.regionBounds) {
     const height = extent.bottom - extent.top;
-    const container = documentIndex.regionIndex.get(regionId);
+    const container = resolveRegion(documentIndex, regionId);
+    if (!container) continue;
     // Mirror the inset applied when estimating this region —
     // otherwise the cache key for the measured height won't match the
     // cache key the next estimate pass looks up, defeating the cache.
-    const listInset = container ? resolveListMarkerInset(documentIndex, container.blockId) : 0;
+    const listInset = resolveListMarkerInset(documentIndex, container.block.id);
 
     cacheMeasuredContainerHeight(
       cache,
-      createContainerHeightCacheKey(
-        container ?? { path: regionId, inlines: [], text: "" },
-        listInset,
-        options,
-        resources,
-      ),
+      createContainerHeightCacheKey(container, listInset, options, resources),
       height,
     );
   }

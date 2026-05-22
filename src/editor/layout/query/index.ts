@@ -1,7 +1,6 @@
 // Owns the query API for a prepared `DocumentLayout`. These reads sit on
-// top of finished geometry — pointer hit-testing, caret target measurement,
-// visible-range lookups, link/checkbox/hover targeting, and the visual
-// helpers shared with paint and navigation.
+// top of finished geometry: point-to-line testing, caret target measurement,
+// visible-range lookups, and visual helpers shared with paint and navigation.
 
 export {
   measureDocumentCaretTarget,
@@ -11,39 +10,24 @@ export {
 } from "./caret";
 
 export {
+  measureInlineImageBounds,
   resolveLineContentInset,
   resolveLineVisualLeft,
   resolveListItemMarker,
   resolveTaskCheckboxBounds,
-} from "./geometry";
+  type InlineBounds,
+} from "./line-visuals";
+
+export { hitTestDocumentLayout, type DocumentHitTestResult } from "./hit-test";
 
 export {
-  hitTestDocumentLayout,
-  resolveDragFocusPoint,
-  resolveEditorHitAtPoint,
-  resolveHitBelowLayout,
-  resolveWordSelectionAtPoint,
-  type DocumentHitTestResult,
-} from "./hit-test";
-
-export {
-  findDocumentLayoutBlockRange,
   findDocumentLayoutLineAtPoint,
   findDocumentLayoutLineEntryForRegionOffset,
   findDocumentLayoutLineForRegionOffset,
-  findDocumentLayoutLineRange,
   findNearestDocumentLayoutLineForRegion,
   measureCanvasLineOffsetLeft,
-} from "./lookup";
+} from "./line-lookup";
 
-export { resolvePositionInViewport, type ViewportPositionStatus } from "./position";
+export { findDocumentLayoutBlockRange, findDocumentLayoutLineRange } from "./viewport-ranges";
 
-export {
-  measureInlineImageBounds,
-  resolveHoverTargetAtPoint,
-  resolveLinkHitAtPoint,
-  resolveTargetAtOffset,
-  resolveTaskCheckboxHitAtPoint,
-  type EditorHoverTarget,
-  type InlineBounds,
-} from "./targets";
+export { resolvePositionInViewport, type ViewportPositionStatus } from "./viewport-position";

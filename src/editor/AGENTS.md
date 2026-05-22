@@ -16,7 +16,7 @@ This is the capability layer. It owns editing semantics and geometry algorithms.
 
 - `index.ts` is the public editor surface and cross-subsystem adapter layer.
 - [`state/`](state/AGENTS.md) owns `Document → EditorState`, indexes, commands, selection, history, fragments, and animation descriptors.
-- [`navigation/`](navigation/AGENTS.md) owns caret motion, range extension, document flow, and layout-aware movement.
-- [`layout/`](layout/AGENTS.md) owns `EditorState → EditorLayoutState`, measurement, virtualization, hit testing, and layout queries.
+- [`navigation/`](navigation/AGENTS.md) owns caret motion, range extension, document flow, point-to-selection hit testing, and layout-aware movement.
+- [`layout/`](layout/AGENTS.md) owns `EditorState → EditorLayoutState`, measurement, virtualization, core geometry hit testing, and layout queries.
 - [`anchors/`](anchors/AGENTS.md) owns editor-side projection and repair of document anchors.
 - [`text/`](text/AGENTS.md) owns shared text semantics needed by multiple editor subsystems.

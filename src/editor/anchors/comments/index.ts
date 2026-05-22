@@ -23,7 +23,14 @@ import {
   type CommentResolution,
   type CommentThread,
 } from "@/document";
-import { resolveRegionByPath, type DocumentIndex, type EditorRegion } from "../../state";
+import {
+  compareEditorPositions,
+  resolveCommentThreadIndicesForRegion,
+  resolveRegion,
+  resolveRegionByPath,
+  type DocumentIndex,
+  type RegionEntry,
+} from "../../state";
 import {
   findLineEntryForRegionOffset,
   findVisibleLineRange,
@@ -71,7 +78,7 @@ export function createCommentThreadForSelection(
     return null;
   }
 
-  const region = documentIndex.regionIndex.get(selection.regionId) ?? null;
+  const region = resolveRegion(documentIndex, selection.regionId);
   const container = region ? toAnchorContainer(documentIndex, region) : null;
 
   if (!container) {
@@ -192,8 +199,7 @@ export function hasActiveCommentHighlightsInViewport(
 // Return the index (into `Document.comments`) of the comment whose range
 // either contains the collapsed caret or overlaps the active (non-collapsed)
 // selection. Selections can cross regions, so positions are compared in
-// document order via the `regionOrderIndex` already maintained on
-// `DocumentIndex`.
+// document order via each region's `documentOrder` field.
 export function resolveActiveCommentIndex(
   state: EditorState,
   ranges: readonly EditorCommentRange[],
@@ -202,10 +208,11 @@ export function resolveActiveCommentIndex(
     return null;
   }
 
-  const { regionOrderIndex } = state.documentIndex;
   const { anchor, focus } = state.selection;
 
-  const orientation = compareDocumentPositions(regionOrderIndex, anchor, focus);
+  const orientation = compareEditorPositions(state.documentIndex, anchor, focus, {
+    unknown: "before",
+  });
   const isCollapsed = orientation === 0;
   const [start, end] = orientation <= 0 ? [anchor, focus] : [focus, anchor];
 
@@ -216,8 +223,12 @@ export function resolveActiveCommentIndex(
     if (isCollapsed) {
       // Caret-in-range: rangeStart ≤ caret ≤ rangeEnd in document order.
       if (
-        compareDocumentPositions(regionOrderIndex, rangeStart, start) <= 0 &&
-        compareDocumentPositions(regionOrderIndex, start, rangeEnd) <= 0
+        compareEditorPositions(state.documentIndex, rangeStart, start, {
+          unknown: "before",
+        }) <= 0 &&
+        compareEditorPositions(state.documentIndex, start, rangeEnd, {
+          unknown: "before",
+        }) <= 0
       ) {
         return range.threadIndex;
       }
@@ -226,29 +237,27 @@ export function resolveActiveCommentIndex(
 
     // Open-interval overlap: max(selStart, rangeStart) < min(selEnd, rangeEnd).
     const overlapStart =
-      compareDocumentPositions(regionOrderIndex, start, rangeStart) >= 0 ? start : rangeStart;
+      compareEditorPositions(state.documentIndex, start, rangeStart, {
+        unknown: "before",
+      }) >= 0
+        ? start
+        : rangeStart;
     const overlapEnd =
-      compareDocumentPositions(regionOrderIndex, end, rangeEnd) <= 0 ? end : rangeEnd;
-    if (compareDocumentPositions(regionOrderIndex, overlapStart, overlapEnd) < 0) {
+      compareEditorPositions(state.documentIndex, end, rangeEnd, {
+        unknown: "before",
+      }) <= 0
+        ? end
+        : rangeEnd;
+    if (
+      compareEditorPositions(state.documentIndex, overlapStart, overlapEnd, {
+        unknown: "before",
+      }) < 0
+    ) {
       return range.threadIndex;
     }
   }
 
   return null;
-}
-
-// Lexicographic comparator on `(regionOrder, offset)`. Used to interleave
-// selection points with comment-range bounds when the selection spans
-// regions. Unknown regions fall back to `-1` so they sort before any known
-// region — that matches the behavior of the prior packed-number scheme.
-function compareDocumentPositions(
-  regionOrderIndex: ReadonlyMap<string, number>,
-  a: { regionId: string; offset: number },
-  b: { regionId: string; offset: number },
-): number {
-  const aRegion = regionOrderIndex.get(a.regionId) ?? -1;
-  const bRegion = regionOrderIndex.get(b.regionId) ?? -1;
-  return aRegion !== bRegion ? aRegion - bRegion : a.offset - b.offset;
 }
 
 export function resolveCommentThreadViewportPosition(
@@ -296,7 +305,7 @@ export function resolveCommentThreadViewportPosition(
 export function updateCommentThreadsForRegionEdit(
   documentIndex: DocumentIndex,
   nextDocumentIndex: DocumentIndex,
-  region: EditorRegion,
+  region: RegionEntry,
   selectionStart: number,
   selectionEnd: number,
   insertedText: string,
@@ -305,7 +314,7 @@ export function updateCommentThreadsForRegionEdit(
     return nextDocumentIndex.document.comments;
   }
 
-  const threadIndices = documentIndex.commentContainerIndex.get(region.semanticRegionId) ?? [];
+  const threadIndices = resolveCommentThreadIndicesForRegion(documentIndex, region);
   const threadIndexSet = new Set(threadIndices);
 
   if (threadIndices.length === 0) {
@@ -354,14 +363,14 @@ export function updateCommentThreadsForRegionEdit(
 
 // --- Internal helpers ---
 
-// Adapt a runtime `EditorRegion` into the `AnchorContainer` shape used by the
+// Adapt a runtime `RegionEntry` into the `AnchorContainer` shape used by the
 // document-layer anchor primitives. The `containerOrdinal: -1` is a sentinel:
 // edit-time use never disambiguates by ordinal (we already know exactly which
 // region we're touching), so we skip the ordinal computation. Returns `null`
 // when the region isn't an anchorable kind (list markers, etc.).
 function toAnchorContainer(
   documentIndex: DocumentIndex,
-  region: EditorRegion,
+  region: RegionEntry,
 ): AnchorContainer | null {
   const containerKind = resolveAnchorContainerKind(documentIndex, region);
 
@@ -379,11 +388,11 @@ function toAnchorContainer(
 
 function resolveAnchorContainerKind(
   documentIndex: DocumentIndex,
-  region: EditorRegion,
+  region: RegionEntry,
 ): AnchorContainer["containerKind"] | null {
-  if (documentIndex.tableCellIndex.has(region.id)) {
+  if (region.tableCellPosition) {
     return "tableCell";
   }
 
-  return anchorKindForBlockType(region.blockType);
+  return anchorKindForBlockType(region.block.type);
 }

@@ -35,7 +35,7 @@ export type DocumintStorage = {
   openFile?(path: string): void;
 };
 
-export type EditorCommand =
+export type EditorInputCommand =
   | "dedent"
   | "deleteBackward"
   | "indent"
@@ -53,6 +53,7 @@ export type EditorCommand =
   | "toggleCode"
   | "toggleItalic"
   | "toggleStrikethrough"
+  | "toggleSuperscript"
   | "toggleUnderline"
   | "undo";
 

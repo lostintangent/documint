@@ -50,6 +50,12 @@ test("defaults document comment metadata", () => {
   expect(document.comments).toEqual([]);
 });
 
+test("canonicalizes text mark order and duplicates", () => {
+  const text = createText("marked", ["superscript", "underline", "bold", "underline"]);
+
+  expect(text.marks).toEqual(["bold", "underline", "superscript"]);
+});
+
 test("assigns runtime ids to comment threads", () => {
   const block = createParagraphTextBlock("Review this paragraph");
   const container = listAnchorContainers(createDocument([block]))[0];

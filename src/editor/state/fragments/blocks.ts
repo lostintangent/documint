@@ -12,7 +12,7 @@ import {
   replaceBlockChildren,
   type Block,
 } from "@/document";
-import type { EditorRegion } from "../index/types";
+import type { RegionEntry } from "../index/types";
 import { editRegionInlines } from "../reducer/inlines";
 
 // Returns the part of `block` from its start up to `offset` within
@@ -20,14 +20,14 @@ import { editRegionInlines } from "../reducer/inlines";
 // Returns null if nothing remains.
 export function trimBlockToPrefix(
   block: Block,
-  targetRegion: EditorRegion,
+  targetRegion: RegionEntry,
   offset: number,
 ): Block | null {
   if (block.type === "table") {
     return null;
   }
 
-  if (block.id === targetRegion.blockId) {
+  if (block.id === targetRegion.block.id) {
     return trimLeafBlockToPrefix(block, targetRegion, offset);
   }
 
@@ -39,14 +39,14 @@ export function trimBlockToPrefix(
 // Mirror of `trimBlockToPrefix` for the post-offset side.
 export function trimBlockToSuffix(
   block: Block,
-  targetRegion: EditorRegion,
+  targetRegion: RegionEntry,
   offset: number,
 ): Block | null {
   if (block.type === "table") {
     return null;
   }
 
-  if (block.id === targetRegion.blockId) {
+  if (block.id === targetRegion.block.id) {
     return trimLeafBlockToSuffix(block, targetRegion, offset);
   }
 
@@ -56,9 +56,9 @@ export function trimBlockToSuffix(
 }
 
 // Whether `block` directly is or transitively contains the leaf identified by
-// `region.blockId`. Shared by trimming and fragment path narrowing.
-export function blockContainsRegion(block: Block, region: EditorRegion): boolean {
-  if (block.id === region.blockId) {
+// `region.block.id`. Shared by trimming and fragment path narrowing.
+export function blockContainsRegion(block: Block, region: RegionEntry): boolean {
+  if (block.id === region.block.id) {
     return true;
   }
 
@@ -66,7 +66,7 @@ export function blockContainsRegion(block: Block, region: EditorRegion): boolean
   return children !== null && children.some((child) => blockContainsRegion(child, region));
 }
 
-function trimLeafBlockToPrefix(block: Block, region: EditorRegion, offset: number): Block | null {
+function trimLeafBlockToPrefix(block: Block, region: RegionEntry, offset: number): Block | null {
   if (offset === 0) {
     return null;
   }
@@ -84,7 +84,7 @@ function trimLeafBlockToPrefix(block: Block, region: EditorRegion, offset: numbe
   }
 }
 
-function trimLeafBlockToSuffix(block: Block, region: EditorRegion, offset: number): Block | null {
+function trimLeafBlockToSuffix(block: Block, region: RegionEntry, offset: number): Block | null {
   if (offset === region.text.length) {
     return null;
   }
@@ -112,7 +112,7 @@ function trimContainerBlock(
 
 function trimContainerChildrenToPrefix(
   children: Block[],
-  targetRegion: EditorRegion,
+  targetRegion: RegionEntry,
   offset: number,
 ): Block[] {
   const targetIndex = children.findIndex((child) => blockContainsRegion(child, targetRegion));
@@ -129,7 +129,7 @@ function trimContainerChildrenToPrefix(
 
 function trimContainerChildrenToSuffix(
   children: Block[],
-  targetRegion: EditorRegion,
+  targetRegion: RegionEntry,
   offset: number,
 ): Block[] {
   const targetIndex = children.findIndex((child) => blockContainsRegion(child, targetRegion));

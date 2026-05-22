@@ -1,7 +1,7 @@
 // Owns paint policy for inline document images. The main paint module delegates
 // image-specific draw behavior here so text and image rendering stay separate.
 import type { DocumentResources, EditorTheme } from "@/types";
-import type { EditorInline } from "@/editor/state";
+import type { InlineEntry } from "@/editor/state";
 import type { DocumentLayout } from "@/editor/layout";
 
 const imageFallbackAspectRatio = 9 / 16;
@@ -34,14 +34,15 @@ type ImagePlaceholderBox = PaintBox & {
 export function paintInlineImage(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  inline: EditorInline,
+  inline: InlineEntry,
   resources: DocumentResources,
   theme: EditorTheme,
   left: number,
   width: number,
   ambientAnimationTime: number,
 ) {
-  const resource = inline.image ? resources.images.get(inline.image.url) : null;
+  const resource =
+    inline.node.type === "image" ? resources.images.get(inline.node.url) : null;
   const imageHeight = resolvePaintedImageHeight(inline, resources, width);
   const box = resolveInlineImagePaintBox(line, left, width, imageHeight);
 
@@ -138,15 +139,15 @@ function paintImageLoadingShimmer(
 }
 
 function resolvePaintedImageHeight(
-  inline: EditorInline,
+  inline: InlineEntry,
   resources: DocumentResources,
   width: number,
 ) {
-  if (!inline.image) {
+  if (inline.node.type !== "image") {
     return resolveFallbackImageHeight(width);
   }
 
-  const resource = resources.images.get(inline.image.url);
+  const resource = resources.images.get(inline.node.url);
 
   if (!resource || resource.intrinsicWidth <= 0 || resource.intrinsicHeight <= 0) {
     return resolveFallbackImageHeight(width);

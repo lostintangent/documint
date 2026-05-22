@@ -1,8 +1,8 @@
 import { listAnchorContainers, type AnchorContainer } from "@/document";
-import type { DocumentIndex, EditorRegion } from "../state";
+import { createSemanticRegionIndex, type DocumentIndex, type RegionEntry } from "../state";
 
 type SemanticContainerProjection = {
-  runtimeContainer: EditorRegion | null;
+  runtimeContainer: RegionEntry | null;
   semanticContainer: AnchorContainer;
 };
 
@@ -11,9 +11,7 @@ export function projectAnchorContainersToEditor(documentIndex: DocumentIndex) {
   const semanticContainersById = new Map(
     semanticContainers.map((container) => [container.id, container]),
   );
-  const runtimeContainersBySemanticId = new Map(
-    documentIndex.regions.map((region) => [region.semanticRegionId, region]),
-  );
+  const runtimeContainersBySemanticId = createSemanticRegionIndex(documentIndex);
 
   return {
     findBySemanticMatch(containerId: string, containerOrdinal: number) {

@@ -3,8 +3,8 @@
 
 import type { EditorTheme } from "@/types";
 import type { DocumentLayout } from "@/editor/layout";
-import type { EditorInline } from "@/editor/state";
-import { mentionHorizontalPadding } from "@/editor/layout/measure/mention";
+import type { InlineEntry } from "@/editor/state";
+import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
 import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/measure";
 
 const mentionCornerRadius = 5;
@@ -15,12 +15,12 @@ const mentionTextVerticalNudge = 1;
 export function paintInlineMention(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  inline: EditorInline,
+  inline: InlineEntry,
   theme: EditorTheme,
   left: number,
   right: number,
 ) {
-  if (!inline.mention) {
+  if (inline.node.type !== "mention") {
     return;
   }
 
@@ -34,7 +34,7 @@ export function paintInlineMention(
   paintRoundedRect(context, left, top, width, height, mentionCornerRadius);
   context.fillStyle = theme.mentionText ?? theme.linkText;
   context.fillText(
-    `@${inline.mention.name}`,
+    `@${inline.node.name}`,
     left + mentionHorizontalPadding,
     baseline + mentionVerticalNudge + mentionTextVerticalNudge,
   );

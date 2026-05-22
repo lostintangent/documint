@@ -23,6 +23,18 @@ describe("Inline canonicalization", () => {
     expectRoundTrip("Paragraph with <ins>underline</ins> text.\n");
   });
 
+  test("emits superscript marks as sup html", () => {
+    expectRoundTrip("Area x<sup>2</sup>\n");
+  });
+
+  test("emits nested marks in canonical semantic mark order", () => {
+    const document = createDocument([
+      createParagraphBlock([createText("marked", ["superscript", "underline", "bold"])]),
+    ]);
+
+    expect(serializeDocument(document)).toBe("<sup><ins>**marked**</ins></sup>\n");
+  });
+
   test("defensively escapes intra-word underscores so the next parse stays plain text", () => {
     // The serializer escapes literal underscores to `\_`; reparsing strips
     // the backslashes; the second serialize emits the escaped form again.

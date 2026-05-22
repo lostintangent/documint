@@ -1,19 +1,11 @@
-// Shared inline-region helpers. InlineContainer resolves editable document
-// regions whose backing data is `Inline[]`; measureInlineNodeText defines the
-// text-coordinate length model used by inline commands and selection queries.
+// Shared inline-region helpers. `InlineContainer` resolves editable document
+// regions whose backing data is `Inline[]`. The runtime data we need — block,
+// container path, table cell — is already on `RegionEntry` and the document
+// block; this resolver assembles them with no path-string parsing.
 
-import {
-  extractPlainTextFromInlineNodes,
-  findBlockById,
-  type Block,
-  type HeadingBlock,
-  type Inline,
-  type ParagraphBlock,
-  type TableBlock,
-  type TableCell,
-} from "@/document";
-import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../index/shared";
-import type { DocumentIndex } from "../index/types";
+import type { Block, HeadingBlock, Inline, ParagraphBlock, TableBlock, TableCell } from "@/document";
+import { resolveBlockPathForRegion, resolveRegion, resolveTableCellPosition } from "../index/query";
+import type { DocumentIndex, RegionEntry } from "../index/types";
 
 export type InlineContainer =
   | {
@@ -32,77 +24,55 @@ export type InlineContainer =
     };
 
 export function resolveInlineContainer(documentIndex: DocumentIndex, regionId: string) {
-  const region = documentIndex.regionIndex.get(regionId);
+  const region = resolveRegion(documentIndex, regionId);
 
   if (!region) {
     return null;
   }
 
-  const block = findBlockById(documentIndex.document.blocks, region.blockId);
-
-  if (!block) {
-    return null;
-  }
-
-  return resolveInlineContainerFromBlock(block, region.path, region.semanticRegionId);
+  return resolveInlineContainerFromRegion(
+    region.block,
+    region,
+    resolveBlockPathForRegion(documentIndex, region.id),
+  );
 }
 
-export function resolveInlineContainerFromBlock(
+// Build an `InlineContainer` from a resolved document block plus its
+// runtime `RegionEntry`. The region already carries `containerPath` and
+// `tableCellPosition` from the index — no regex re-parsing required.
+function resolveInlineContainerFromRegion(
   block: Block,
-  regionPath: string,
-  semanticRegionId: string,
+  region: RegionEntry,
+  blockPath: string | null,
 ): InlineContainer | null {
   if (block.type === "heading" || block.type === "paragraph") {
     return {
       block,
       children: block.children,
       kind: "inlineBlock",
-      path: regionPath.replace(/\.children$/, ""),
+      path: region.containerPath,
     };
   }
 
-  if (block.type !== "table") {
+  const tableCellPosition = resolveTableCellPosition(region);
+
+  if (block.type !== "table" || !tableCellPosition || !blockPath) {
     return null;
   }
 
-  const cellPathMatch = /^(.*\.rows\.\d+\.cells\.\d+)$/.exec(regionPath);
+  const { rowIndex, cellIndex } = tableCellPosition;
+  const cell = block.rows[rowIndex]?.cells[cellIndex];
 
-  if (!cellPathMatch) {
+  if (!cell) {
     return null;
   }
 
-  for (const row of block.rows) {
-    for (const cell of row.cells) {
-      if (cell.id === semanticRegionId) {
-        return {
-          block,
-          blockPath: cellPathMatch[1]!.replace(/\.rows\.\d+\.cells\.\d+$/, ""),
-          cell,
-          children: cell.children,
-          kind: "tableCell",
-          path: cellPathMatch[1]!,
-        };
-      }
-    }
-  }
-
-  return null;
-}
-
-export function measureInlineNodeText(node: Inline) {
-  switch (node.type) {
-    case "lineBreak":
-      return 1;
-    case "image":
-    case "mention":
-      return INLINE_OBJECT_REPLACEMENT_TEXT.length;
-    case "code":
-      return node.code.length;
-    case "link":
-      return extractPlainTextFromInlineNodes(node.children).length;
-    case "text":
-      return node.text.length;
-    case "raw":
-      return node.source.length;
-  }
+  return {
+    block,
+    blockPath,
+    cell,
+    children: cell.children,
+    kind: "tableCell",
+    path: region.containerPath,
+  };
 }

@@ -22,9 +22,13 @@ import {
   addAnimationIntent,
   getEditorAnimationTime,
   pruneEditorAnimations,
-  resolveFocusedBlockPath,
 } from "../animations";
-import { createDocumentIndex, replaceEditorBlock, replaceIndexedDocument } from "../index/build";
+import {
+  resolveActiveBlockKey,
+  resolveBlockPathForRegion,
+  resolveDocumentBoundaryRegion,
+} from "../index/query";
+import { createDocumentIndex, replaceDocumentMetadata, replaceEditorBlock } from "../index/splice";
 import type { DocumentIndex } from "../index/types";
 import type { EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
@@ -89,9 +93,13 @@ function reduceEditorStateAction(
       return setSelection(state, action.selection);
 
     case "replace-block": {
-      const document = replaceEditorBlock(state.documentIndex, action.blockId, () => action.block);
-      return document
-        ? applyDocumentMutation(state, createDocumentIndex(document), action.selection ?? null)
+      const nextDocumentIndex = replaceEditorBlock(
+        state.documentIndex,
+        action.blockId,
+        () => action.block,
+      );
+      return nextDocumentIndex
+        ? applyDocumentMutation(state, nextDocumentIndex, action.selection ?? null)
         : null;
     }
 
@@ -128,7 +136,7 @@ function reduceEditorStateAction(
       );
       return applyDocumentMutation(
         state,
-        replaceIndexedDocument(state.documentIndex, document),
+        replaceDocumentMetadata(state.documentIndex, document),
         null,
       );
     }
@@ -175,7 +183,10 @@ export function setSelection(
   const shouldFlash = activeBlockChanged ?? didActiveBlockChange(state, nextState);
 
   return shouldFlash
-    ? addActiveBlockFlashAnimation(nextState, resolveFocusedBlockPath(nextState))
+    ? addActiveBlockFlashAnimation(
+        nextState,
+        resolveBlockPathForRegion(nextState.documentIndex, nextState.selection.focus.regionId) ?? "",
+      )
     : nextState;
 }
 
@@ -259,9 +270,9 @@ function restoreHistoryEntry(
 /* Internal helpers */
 
 function resolveDefaultSelectionPoint(documentIndex: DocumentIndex): EditorSelectionPoint {
-  return documentIndex.regions[0]
-    ? { regionId: documentIndex.regions[0].id, offset: 0 }
-    : { regionId: "empty", offset: 0 };
+  const region = resolveDocumentBoundaryRegion(documentIndex, "start");
+
+  return region ? { regionId: region.id, offset: 0 } : { regionId: "empty", offset: 0 };
 }
 
 function clampSelectionPoint(
@@ -285,29 +296,14 @@ function didActiveBlockChange(
   nextState: EditorState,
   nextSelection?: EditorSelection,
 ): boolean {
-  const previousKey = resolveActiveBlockKey(previousState.documentIndex, previousState.selection);
+  const previousKey = resolveActiveBlockKey(
+    previousState.documentIndex,
+    previousState.selection.focus,
+  );
   const nextKey = resolveActiveBlockKey(
     nextState.documentIndex,
-    nextSelection ?? nextState.selection,
+    (nextSelection ?? nextState.selection).focus,
   );
 
   return nextKey !== null && nextKey !== previousKey;
-}
-
-function resolveActiveBlockKey(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): string | null {
-  const focusedRegion = documentIndex.regionIndex.get(selection.focus.regionId);
-  const focusedBlock = focusedRegion
-    ? (documentIndex.blockIndex.get(focusedRegion.blockId) ?? null)
-    : null;
-
-  if (!focusedRegion || !focusedBlock?.path) {
-    return null;
-  }
-
-  return focusedBlock.type === "table"
-    ? `cell:${focusedRegion.path}`
-    : `block:${focusedBlock.path}`;
 }

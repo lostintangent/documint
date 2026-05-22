@@ -7,12 +7,10 @@ import {
   insertImage,
   insertMention,
   insertSoftLineBreak,
+  regionInlines,
   resizeImage,
-  toggleBold,
   toggleCode,
-  toggleItalic,
-  toggleStrikethrough,
-  toggleUnderline,
+  toggleMark,
 } from "@/editor/state";
 import { getRegion, placeAt, selectSubstring, setup, toMarkdown } from "../../helpers";
 
@@ -21,15 +19,15 @@ describe("Inline mark toggles", () => {
     const base = setup("Plain text here.\n");
     const region = getRegion(base, "Plain text here.");
     let state = selectSubstring(base, region, "text");
-    state = toggleBold(state) ?? state;
+    state = toggleMark(state, "bold") ?? state;
 
     expect(toMarkdown(state)).toBe("Plain **text** here.\n");
 
-    state = toggleBold(state) ?? state;
+    state = toggleMark(state, "bold") ?? state;
 
     expect(toMarkdown(state)).toBe("Plain text here.\n");
 
-    state = toggleItalic(state) ?? state;
+    state = toggleMark(state, "italic") ?? state;
 
     expect(toMarkdown(state)).toBe("Plain *text* here.\n");
   });
@@ -38,11 +36,11 @@ describe("Inline mark toggles", () => {
     const base = setup("Paragraph body.\n");
     const region = getRegion(base, "Paragraph body.");
     let state = selectSubstring(base, region, "Paragraph");
-    state = toggleBold(state) ?? state;
+    state = toggleMark(state, "bold") ?? state;
 
     expect(toMarkdown(state)).toBe("**Paragraph** body.\n");
 
-    state = toggleItalic(state) ?? state;
+    state = toggleMark(state, "italic") ?? state;
 
     expect(toMarkdown(state)).toBe("***Paragraph*** body.\n");
   });
@@ -51,21 +49,42 @@ describe("Inline mark toggles", () => {
     const base = setup("Hello world\n");
     const region = getRegion(base, "Hello world");
     const selected = selectSubstring(base, region, "world");
-    const on = toggleStrikethrough(selected) ?? selected;
+    const on = toggleMark(selected, "strikethrough") ?? selected;
 
     expect(toMarkdown(on)).toBe("Hello ~~world~~\n");
 
-    const off = toggleStrikethrough(on) ?? on;
+    const off = toggleMark(on, "strikethrough") ?? on;
 
     expect(toMarkdown(off)).toBe("Hello world\n");
+  });
+
+  test("toggles marks through the generic mark command", () => {
+    const base = setup("Area of x2.\n");
+    const region = getRegion(base, "Area of x2.");
+    const selected = selectSubstring(base, region, "x2");
+    const marked = toggleMark(selected, "bold") ?? selected;
+
+    expect(toMarkdown(marked)).toBe("Area of **x2**.\n");
+
+    const unmarked = toggleMark(marked, "bold") ?? marked;
+
+    expect(toMarkdown(unmarked)).toBe("Area of x2.\n");
   });
 
   test("routes mod-u through inline underline toggles", () => {
     const base = setup("Paragraph body.\n");
     const region = getRegion(base, "Paragraph body.");
-    const state = toggleUnderline(selectSubstring(base, region, "body"));
+    const state = toggleMark(selectSubstring(base, region, "body"), "underline");
 
     expect(toMarkdown(state ?? base)).toBe("Paragraph <ins>body</ins>.\n");
+  });
+
+  test("toggles superscript through the generic mark command", () => {
+    const base = setup("Area of x2.\n");
+    const region = getRegion(base, "Area of x2.");
+    const state = toggleMark(selectSubstring(base, region, "2"), "superscript");
+
+    expect(toMarkdown(state ?? base)).toBe("Area of x<sup>2</sup>.\n");
   });
 
   test("toggles inline code on and off for a single-container selection", () => {
@@ -208,16 +227,16 @@ describe("Images", () => {
   test("resizes an image by replacing it with a new width attribute", () => {
     const state = setup("before ![alt](https://example.com/img.png) after\n");
     const region = getRegion(state, "before ￼ after");
-    const imageRun = region.inlines.find((r) => r.kind === "image");
+    const imageRun = regionInlines(region).find((r) => r.node.type === "image");
 
-    if (!imageRun?.image) {
+    if (!imageRun || imageRun.node.type !== "image") {
       throw new Error("Expected image run");
     }
 
     const placed = placeAt(state, region, imageRun.start);
     const next = resizeImage(
       placed,
-      { start: imageRun.start, end: imageRun.end, image: imageRun.image },
+      { start: imageRun.start, end: imageRun.end, image: imageRun.node },
       320,
     );
 

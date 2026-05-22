@@ -12,6 +12,7 @@ import {
   deleteForward,
   deleteSelection,
   insertText,
+  regionInlines,
   replaceSelection,
   replaceTextRange,
   setSelection,
@@ -127,7 +128,7 @@ test("deleting all text within a single heading keeps the heading block", () => 
   // boundary block drops.
   expect(toMarkdown(state)).toBe("#\n");
   expect(state.documentIndex.regions).toHaveLength(1);
-  expect(state.documentIndex.regions[0]?.blockType).toBe("heading");
+  expect(state.documentIndex.regions[0]?.block.type).toBe("heading");
 });
 
 test("merges two paragraphs when a cross-region selection is replaced with text", () => {
@@ -270,7 +271,7 @@ test("trims a code block when it is an endpoint of a cross-region selection", ()
 test("drops tables entirely when a cross-region selection enters or exits them", () => {
   let state = setup("alpha\n\n| A | B |\n| --- | --- |\n| one | two |\n\nbeta\n");
   const paragraphs = state.documentIndex.regions.filter(
-    (region) => region.blockType === "paragraph",
+    (region) => region.block.type === "paragraph",
   );
   const [first, second] = paragraphs;
 
@@ -321,7 +322,7 @@ test("normalizes an empty document to a single empty paragraph after replacing e
 test("trims a list when a cross-region selection starts in one list item and ends in a later paragraph", () => {
   let state = setup("- alpha\n- beta\n- gamma\n\nafter\n");
   const listRegions = state.documentIndex.regions.filter(
-    (region) => region.blockType === "listItem" || region.blockType === "paragraph",
+    (region) => region.block.type === "listItem" || region.block.type === "paragraph",
   );
   const firstListItem = listRegions.find((region) => region.text === "alpha");
   const afterParagraph = listRegions.find((region) => region.text === "after");
@@ -405,7 +406,7 @@ test("replaces the entire document with a single paragraph when every block is f
   // paragraph rather than inheriting the first block's heading type.
   expect(toMarkdown(state)).toBe("x\n");
   expect(state.documentIndex.regions).toHaveLength(1);
-  expect(state.documentIndex.regions[0]?.blockType).toBe("paragraph");
+  expect(state.documentIndex.regions[0]?.block.type).toBe("paragraph");
 });
 
 test("cross-region delete drops a trailing heading when it is fully consumed by the selection", () => {
@@ -427,7 +428,7 @@ test("cross-region delete drops a trailing heading when it is fully consumed by 
   // was fully consumed and drops — its type doesn't leak into the result.
   expect(toMarkdown(state)).toBe("alpha\n");
   expect(state.documentIndex.regions).toHaveLength(1);
-  expect(state.documentIndex.regions[0]?.blockType).toBe("paragraph");
+  expect(state.documentIndex.regions[0]?.block.type).toBe("paragraph");
 
   // Caret lands at the end of the preserved prefix — where the cursor sat
   // before the selection extended — not at offset 0.
@@ -468,7 +469,7 @@ test("select-all + delete produces an empty paragraph even when the document sta
   // The heading's type must not survive — the deletion consumed it entirely.
   expect(toMarkdown(state)).toBe("\n");
   expect(state.documentIndex.regions).toHaveLength(1);
-  expect(state.documentIndex.regions[0]?.blockType).toBe("paragraph");
+  expect(state.documentIndex.regions[0]?.block.type).toBe("paragraph");
 });
 
 function selectionBetween(
@@ -489,7 +490,7 @@ test("deletes adjacent images atomically with deleteBackward and deleteForward",
 
   if (!region) throw new Error("Expected paragraph region");
 
-  const imageRun = region.inlines.find((run) => run.kind === "image");
+  const imageRun = regionInlines(region).find((run) => run.node.type === "image");
 
   if (!imageRun) throw new Error("Expected image run");
 

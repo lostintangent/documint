@@ -26,4 +26,4 @@ The anchor algebra in `query/anchors.ts` is the shared substrate for comments, p
 
 Anchor containers are single semantic text containers: paragraph/heading text, code source, or a table cell's inline text. Anchors never span containers. `listAnchorContainers` returns containers in document order with a stable ordinal; consumers layer their own scoring or affinity policy on top of the candidate search primitives.
 
-Do not conflate anchor offsets with the visitor's `enterPlainText` offsets. The visitor uses editor selection-offset space, where atomic inline stops such as line breaks, images, and mentions count as one character.
+Do not conflate anchor offsets with the visitor's `enterPlainText` offsets. The visitor uses **inline text-coordinate space**: a flat character stream where atomic inline stops (line breaks, images, mentions) count as one character each. The editor's selection-offset space is the same space, under a different name.

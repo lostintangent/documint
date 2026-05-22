@@ -6,8 +6,8 @@ import {
   type DeletionContext,
   type RootTextBlockContext,
 } from "../../context";
+import { previousRegionInFlow, resolveSiblingRootBlock } from "../../../index/query";
 import { createRootPrimaryRegionTarget, normalizeSelection } from "../../../selection";
-import { previousRegionInFlow } from "../../../../navigation/flow";
 import { resolveTextReplacement } from "../insertion/replace";
 import { regionPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
@@ -110,8 +110,8 @@ function mergeAdjacentListsAroundEmptyParagraph(
     return null;
   }
 
-  const previousRoot = documentIndex.document.blocks[ctx.rootIndex - 1];
-  const nextRoot = documentIndex.document.blocks[ctx.rootIndex + 1];
+  const previousRoot = resolveSiblingRootBlock(documentIndex, ctx.rootIndex, -1);
+  const nextRoot = resolveSiblingRootBlock(documentIndex, ctx.rootIndex, 1);
 
   if (
     !previousRoot ||

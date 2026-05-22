@@ -16,6 +16,7 @@
 // — adding a property to a node type doesn't require touching normalize.
 
 import { blockContainerSpec } from "../containers";
+import { canonicalizeMarks } from "../marks";
 import { childBlockPath, rootBlockPath, tableCellPath, tableRowPath } from "../paths";
 import { extractBlockPlainText, extractPlainTextFromInlineNodes } from "../query/text";
 import type { Block, Inline, TableRow } from "../types";
@@ -43,9 +44,9 @@ function recurseBlockChildren(node: Block, path: string): Block {
   const spec = blockContainerSpec(node);
 
   if (spec) {
-    const children = spec.read(node).map((child, index) =>
-      normalizeBlockNode(child, childBlockPath(path, index)),
-    );
+    const children = spec
+      .read(node)
+      .map((child, index) => normalizeBlockNode(child, childBlockPath(path, index)));
     return spec.withChildren(node, children);
   }
 
@@ -95,6 +96,11 @@ function normalizeTableRowNode(row: TableRow, path: string): TableRow {
 }
 
 function normalizeInlineNode(node: Inline, path: string): Inline {
+  if (node.type === "text") {
+    const canonicalNode: Inline = { ...node, marks: canonicalizeMarks(node.marks) };
+    return { ...canonicalNode, id: nodeId(canonicalNode, path) };
+  }
+
   if (node.type !== "link") {
     return { ...node, id: nodeId(node, path) };
   }

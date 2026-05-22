@@ -4,10 +4,6 @@
  */
 
 export function resolveDevicePixelRatio() {
-  if (typeof window === "undefined") {
-    return 1;
-  }
-
   return Math.max(1, window.devicePixelRatio || 1);
 }
 

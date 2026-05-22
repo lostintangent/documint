@@ -1,13 +1,16 @@
 import { expect, test } from "bun:test";
 import { createParagraphTextBlock, spliceDocument } from "@/document";
+import { createDocumentIndex, spliceDocumentIndex } from "@/editor/state";
 import {
-  createDocumentIndex,
-  buildEditorRoots,
-  createEditorRoot,
-  rebuildEditorRoot,
-  spliceDocumentIndex,
-} from "@/editor/state";
-import { replaceEditorBlock } from "@/editor/state/index/build";
+  createRootEntry,
+  positionRootEntries,
+  rebuildRootEntry,
+} from "@/editor/state/index/roots";
+import {
+  commitDocument,
+  replaceDocumentMetadata,
+  replaceEditorBlock,
+} from "@/editor/state/index/splice";
 import { parseDocument, serializeDocument } from "@/markdown";
 
 test("builds positioned editor roots directly on the unified model", () => {
@@ -17,8 +20,8 @@ test("builds positioned editor roots directly on the unified model", () => {
 
 beta
 `);
-  const roots = buildEditorRoots(
-    snapshot.blocks.map((block, rootIndex) => createEditorRoot(block, rootIndex)),
+  const roots = positionRootEntries(
+    snapshot.blocks.map((block, rootIndex) => createRootEntry(block, rootIndex)),
   );
   const runtime = createDocumentIndex(snapshot);
 
@@ -35,9 +38,9 @@ test("rebuilds a root model against a normalized replacement root", () => {
 
 alpha
 `);
-  const original = createEditorRoot(snapshot.blocks[1]!, 1);
+  const original = createRootEntry(snapshot.blocks[1]!, 1);
   const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
-  const rebuilt = rebuildEditorRoot(original, nextDocument.blocks[1]!);
+  const rebuilt = rebuildRootEntry(original, nextDocument.blocks[1]!);
 
   expect(rebuilt.rootIndex).toBe(1);
   expect(rebuilt.regions[0]?.path).toBe("root.1.children");
@@ -136,13 +139,13 @@ alpha
 
 test("replaces a nested editor block through the reducer", () => {
   const documentIndex = createDocumentIndex(parseDocument("- alpha\n"));
-  const paragraph = documentIndex.blocks.find((block) => block.type === "paragraph");
+  const paragraph = documentIndex.blocks.find((entry) => entry.block.type === "paragraph");
 
   if (!paragraph) {
     throw new Error("Expected paragraph block");
   }
 
-  const reduction = replaceEditorBlock(documentIndex, paragraph.id, () =>
+  const reduction = replaceEditorBlock(documentIndex, paragraph.block.id, () =>
     createParagraphTextBlock("beta"),
   );
 
@@ -150,7 +153,35 @@ test("replaces a nested editor block through the reducer", () => {
     throw new Error("Expected nested block replacement");
   }
 
-  expect(serializeDocument(reduction)).toBe("- beta\n");
+  expect(serializeDocument(commitDocument(reduction))).toBe("- beta\n");
+});
+
+test("reuses index maps and flat arrays on metadata-only document changes", () => {
+  const snapshot = parseDocument(`# Heading
+
+alpha
+
+beta
+`);
+  const index = createDocumentIndex(snapshot);
+  // Metadata-only mutation: blocks identical, front matter added.
+  const nextDocument = { ...index.document, frontMatter: "title: example\n" };
+  const next = replaceDocumentMetadata(index, nextDocument);
+
+  expect(next.document).toBe(nextDocument);
+  // Roots, blocks, regions and lookup maps all keep reference identity —
+  // the metadata fast path doesn't allocate any of them.
+  expect(next.roots).toBe(index.roots);
+  expect(next.blocks).toBe(index.blocks);
+  expect(next.regions).toBe(index.regions);
+  expect(next.blockIndex).toBe(index.blockIndex);
+  expect(next.regionIndex).toBe(index.regionIndex);
+  expect(next.regionPathIndex).toBe(index.regionPathIndex);
+  expect(next.imageUrls).toBe(index.imageUrls);
+  // listItemMarkers reuses when document.blocks identity holds.
+  expect(next.listItemMarkers).toBe(index.listItemMarkers);
+  // commentContainerIndex reuses when document.comments identity holds.
+  expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
 });
 
 test("replaces a root range through the reducer", () => {

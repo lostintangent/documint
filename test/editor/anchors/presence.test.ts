@@ -19,7 +19,7 @@ import {
   type EditorPresence,
   type EditorPresenceViewport,
 } from "@/editor/anchors";
-import type { EditorRegion } from "@/editor/state";
+import type { RegionEntry } from "@/editor/state";
 import { setup } from "../helpers";
 
 function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
@@ -381,7 +381,7 @@ function createPresenceViewportFixture() {
   );
 }
 
-function createResolvedCursor(username: string, region: EditorRegion): EditorPresence {
+function createResolvedCursor(username: string, region: RegionEntry): EditorPresence {
   return {
     commentThreadIndex: null,
     cursorPoint: {
@@ -394,7 +394,7 @@ function createResolvedCursor(username: string, region: EditorRegion): EditorPre
   };
 }
 
-function requireRegion(region: EditorRegion | undefined) {
+function requireRegion(region: RegionEntry | undefined) {
   if (!region) {
     throw new Error("Expected editor region");
   }

@@ -178,12 +178,7 @@ export function useCursor({
     cursorVisibleRef.current = true;
     requestVisibilityPaint();
 
-    if (
-      !shouldBlinkCaret ||
-      !caretInViewport ||
-      activeAt !== null ||
-      typeof window === "undefined"
-    ) {
+    if (!shouldBlinkCaret || !caretInViewport || activeAt !== null) {
       return;
     }
 

@@ -1,7 +1,5 @@
-// Owns the small rect/extent types every layout file reuses, plus the marker
-// inset constants (and the helper that resolves which inset applies for a
-// given block's ancestry). Kept free of option/spacing policy so consumers
-// can import without pulling in those concerns.
+// Owns list/task marker metrics shared by exact layout, virtualization, and
+// visual queries.
 
 import { findAncestorBlockEntry, type DocumentIndex } from "../../state";
 
@@ -18,13 +16,6 @@ export type LayoutBlockExtent = {
   top: number;
 };
 
-export type ContainerLineBounds = {
-  bottom: number;
-  left: number;
-  right: number;
-  top: number;
-};
-
 // List item content is rendered shifted right by the marker inset (bullet
 // or task checkbox) so the marker can sit in the gutter to its left.
 // Subtract this from `availableWidth` so wrap measurement matches the
@@ -38,7 +29,7 @@ export function resolveListMarkerInset(documentIndex: DocumentIndex, blockId: st
     return 0;
   }
 
-  const marker = documentIndex.listItemMarkers.get(listItem.id);
+  const marker = documentIndex.listItemMarkers.get(listItem.block.id);
 
   return marker?.kind === "task" ? TASK_MARKER_TEXT_INSET : LIST_MARKER_TEXT_INSET;
 }

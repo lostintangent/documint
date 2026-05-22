@@ -23,9 +23,9 @@ import {
   findLineForRegionOffset,
   measureCaretTarget,
   resolveCaretVisualLeft,
-  resolveEditorHitAtPoint,
   type DocumentLayout,
 } from "@/editor/layout";
+import { resolveEditorHitAtPoint } from "@/editor/navigation";
 import { createLayoutCache } from "@/editor";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 import { runBenchmark } from "./shared";
@@ -82,6 +82,14 @@ export function createEditorBenchmarks(
     }),
     runBenchmark("editor_import_comments", 200, budgets.import_comments, () => {
       void createEditorState(fixtures.commentsSnapshot);
+    }),
+    // Cold-build cost of `createCommentContainerIndex`: O(C × N) per thread
+    // because each thread runs `resolveCommentThread` against the document.
+    // Reuse via `document.comments` identity hides this on edits, but every
+    // import / undo / external-content reload pays it once.
+    runBenchmark("editor_import_comments_dense", 200, budgets.import_comments_dense, () => {
+      const denseSnapshot = createDenseCommentSnapshot(fixtures.mediumSnapshot, 60);
+      void createEditorState(denseSnapshot);
     }),
     runBenchmark("editor_export_medium", 200, budgets.export_medium, () => {
       void createDocumentFromEditorState(mediumState);

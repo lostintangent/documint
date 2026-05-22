@@ -12,6 +12,7 @@ import {
   resolveSelectionHit,
   type EditorState,
 } from "@/editor";
+import { regionInlines } from "@/editor/state";
 import { getRegion, placeAt, setup } from "../helpers";
 
 // Tall enough that the full layout is in view for every test fixture, so
@@ -78,7 +79,7 @@ test("moves horizontally across images as atomic inline objects", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const imageRun = container.inlines.find((run) => run.kind === "image");
+  const imageRun = regionInlines(container).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");

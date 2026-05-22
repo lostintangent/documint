@@ -9,13 +9,19 @@ export {
   type DocumintAction,
   type DocumintActions,
   type DocumintDecoration,
-  type EditorKeybinding,
+  type EditorInputKeybinding,
   type DocumintProps,
   type DocumintTheme,
   type UserMentionEvent,
 } from "./component";
 
-export type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "./types";
+export type {
+  DocumentPresence,
+  DocumentUser,
+  DocumintStorage,
+  EditorInputCommand,
+  EditorTheme,
+} from "./types";
 
 export type {
   Anchor,

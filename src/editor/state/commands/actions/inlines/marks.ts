@@ -1,8 +1,15 @@
-// Mark toggling: bold, italic, strikethrough, underline.
-import { createText, defragmentTextInlines, type Inline, type Mark, type Text } from "@/document";
+// Mark toggling for any semantic document mark.
+import {
+  canonicalizeMarks,
+  createText,
+  defragmentTextInlines,
+  iterateInlineNodeRanges,
+  type Inline,
+  type Mark,
+  type Text,
+} from "@/document";
 import {
   createInlineContainerReplacement,
-  measureInlineNodeText,
   type InlineContainer,
   type InlineContainerReplacement,
 } from "./shared";
@@ -11,7 +18,7 @@ export function toggleInlineMark(
   inlineContainer: InlineContainer,
   startOffset: number,
   endOffset: number,
-  mark: Extract<Mark, "italic" | "bold" | "strikethrough" | "underline">,
+  mark: Mark,
 ): InlineContainerReplacement | null {
   const removeMark = shouldRemoveInlineMark(inlineContainer.children, startOffset, endOffset, mark);
 
@@ -28,22 +35,25 @@ export function toggleInlineMark(
     : null;
 }
 
+// Determines mark state across an outer-space range. Walks inline nodes
+// recursively (link children are descended into) so an outer-space range
+// that intersects nested marked text is detected correctly. Returns:
+//   - `null` when the range contains no text at all (nothing to toggle).
+//   - `true`  when every text run in the range carries `mark` (we should remove it).
+//   - `false` when at least one text run lacks `mark` (we should apply it).
 function shouldRemoveInlineMark(
   nodes: Inline[],
   startOffset: number,
   endOffset: number,
   mark: Mark,
 ) {
-  let cursor = 0;
   let hasText = false;
   let allMarked = true;
 
-  const visit = (candidates: Inline[]) => {
-    for (const node of candidates) {
-      const nodeLength = measureInlineNodeText(node);
-      const nodeStart = cursor;
-      const nodeEnd = nodeStart + nodeLength;
-      cursor = nodeEnd;
+  const visit = (candidates: Inline[], parentOffset: number) => {
+    for (const { node, start, end } of iterateInlineNodeRanges(candidates)) {
+      const nodeStart = parentOffset + start;
+      const nodeEnd = parentOffset + end;
 
       if (endOffset <= nodeStart || startOffset >= nodeEnd) {
         continue;
@@ -61,19 +71,24 @@ function shouldRemoveInlineMark(
       }
 
       if (node.type === "link") {
-        const previousCursor = cursor;
-        cursor = nodeStart;
-        visit(node.children);
-        cursor = previousCursor;
+        // Link children are walked in outer coordinate space — pass the
+        // link's outer start as the parent offset so child nodeStart /
+        // nodeEnd match what we'd see if links were flattened.
+        visit(node.children, nodeStart);
       }
     }
   };
 
-  visit(nodes);
+  visit(nodes, 0);
 
   return hasText ? allMarked : null;
 }
 
+// Rewrites the marked range within `nodes`. Text nodes are split at the
+// overlap boundaries and the overlapping slice gets the mark toggled.
+// Links recurse with the overlap window translated into link-local
+// coordinates (because rebuilding a link's children must produce
+// link-local `Inline[]`).
 function toggleInlineNodesMark(
   nodes: Inline[],
   startOffset: number,
@@ -82,49 +97,28 @@ function toggleInlineNodesMark(
   shouldRemove: boolean,
 ): Inline[] {
   const nextNodes: Inline[] = [];
-  let cursor = 0;
 
-  for (const node of nodes) {
-    const nodeStart = cursor;
-    const nodeLength = measureInlineNodeText(node);
-    const nodeEnd = nodeStart + nodeLength;
-
-    cursor = nodeEnd;
-
-    if (endOffset <= nodeStart || startOffset >= nodeEnd) {
+  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+    if (endOffset <= start || startOffset >= end) {
       nextNodes.push(node);
       continue;
     }
 
+    const localStart = Math.max(0, startOffset - start);
+    const localEnd = Math.min(end - start, endOffset - start);
+
     if (node.type === "text") {
-      nextNodes.push(
-        ...toggleTextNodeMark(
-          node,
-          Math.max(0, startOffset - nodeStart),
-          Math.min(nodeLength, endOffset - nodeStart),
-          mark,
-          shouldRemove,
-        ),
-      );
+      nextNodes.push(...toggleTextNodeMark(node, localStart, localEnd, mark, shouldRemove));
       continue;
     }
 
     if (node.type === "link") {
       const children = defragmentTextInlines(
-        toggleInlineNodesMark(
-          node.children,
-          Math.max(0, startOffset - nodeStart),
-          Math.min(nodeLength, endOffset - nodeStart),
-          mark,
-          shouldRemove,
-        ),
+        toggleInlineNodesMark(node.children, localStart, localEnd, mark, shouldRemove),
       );
 
       if (children.length > 0) {
-        nextNodes.push({
-          ...node,
-          children,
-        });
+        nextNodes.push({ ...node, children });
       }
       continue;
     }
@@ -162,5 +156,5 @@ function toggleTextNodeMark(
 }
 
 function insertMark(marks: Mark[], mark: Mark) {
-  return marks.includes(mark) ? marks : [...marks, mark].sort();
+  return marks.includes(mark) ? marks : canonicalizeMarks([...marks, mark]);
 }

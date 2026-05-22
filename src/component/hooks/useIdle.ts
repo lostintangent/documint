@@ -20,7 +20,7 @@ export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
   const idleTimerRef = useRef<number | null>(null);
 
   const clearIdleTimer = () => {
-    if (typeof window === "undefined" || idleTimerRef.current === null) {
+    if (idleTimerRef.current === null) {
       return;
     }
 
@@ -51,9 +51,7 @@ export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
 
     clearIdleTimer();
 
-    if (typeof window !== "undefined") {
-      idleTimerRef.current = window.setTimeout(markIdle, activityIdleDelayMs);
-    }
+    idleTimerRef.current = window.setTimeout(markIdle, activityIdleDelayMs);
   });
 
   const isActive = useEffectEvent(() => activeAtRef.current !== null);

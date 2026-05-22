@@ -2,14 +2,14 @@
 // occupy one object-replacement character in editor text, so layout measures
 // the visual pill width for that single atomic offset.
 
-import type { RuntimeMentionAttributes } from "../../state";
+import type { Mention } from "@/document";
 
 export const mentionHorizontalPadding = 4;
 export const mentionMinimumWidth = 18;
 
 export function measureInlineMentionWidth(
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-  mention: RuntimeMentionAttributes,
+  mention: Mention,
 ) {
   return Math.max(
     mentionMinimumWidth,

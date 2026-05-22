@@ -202,7 +202,7 @@ test("joining adjacent lists across an empty paragraph lands the cursor at the d
   state = insertText(state, "") ?? state;
 
   const empty = state.documentIndex.regions.find(
-    (r) => r.blockType === "paragraph" && r.text === "",
+    (r) => r.block.type === "paragraph" && r.text === "",
   );
   if (!empty) throw new Error("Expected empty paragraph between lists");
 
@@ -512,13 +512,13 @@ test("toggles nested semantic task-list state for rendered task items", () => {
 
 test("toggles task list state through the action dispatcher", () => {
   const state = setup("- [ ] task\n");
-  const taskItem = state.documentIndex.blocks.find((block) => block.type === "listItem");
+  const taskItem = state.documentIndex.blocks.find((entry) => entry.block.type === "listItem");
 
   if (!taskItem) {
     throw new Error("Expected task list item");
   }
 
-  const nextState = toggleTask(state, taskItem.id);
+  const nextState = toggleTask(state, taskItem.block.id);
 
   if (!nextState) {
     throw new Error("Expected task toggle state");
@@ -590,7 +590,7 @@ test("backspacing an empty first nested list item removes just the item and land
   // parent's leading paragraph.
   let state = setup("- top\n  - \n  - sibling\n");
   const empty = state.documentIndex.regions.find(
-    (r) => r.blockType === "paragraph" && r.text === "",
+    (r) => r.block.type === "paragraph" && r.text === "",
   );
 
   if (!empty) throw new Error("Expected empty nested item");
@@ -610,7 +610,7 @@ test("backspacing an empty deeply-nested first list item collapses one level at 
   // smallest containing list whose removal handles the deletion.
   let state = setup("- one\n  - two\n    - \n");
   const empty = state.documentIndex.regions.find(
-    (r) => r.blockType === "paragraph" && r.text === "",
+    (r) => r.block.type === "paragraph" && r.text === "",
   );
 
   if (!empty) throw new Error("Expected empty doubly-nested item");

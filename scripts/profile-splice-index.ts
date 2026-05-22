@@ -17,6 +17,7 @@
 // Delete this file when the question has been answered.
 
 import "../test/setup-canvas";
+import { mapBlockTree, spliceDocument, type Document } from "@/document";
 import { parseDocument } from "@/markdown";
 import {
   createDocumentIndex,
@@ -24,13 +25,15 @@ import {
   insertText,
   setSelection,
   spliceDocumentIndex,
-  buildEditorRoots,
-  createEditorRoot,
-  rebuildEditorRoot,
+  type DocumentIndex,
   type EditorState,
 } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
-import { replaceEditorBlock } from "@/editor/state/index/build";
+import {
+  createRootEntry,
+  positionRootEntries,
+  rebuildRootEntry,
+} from "@/editor/state/index/roots";
 import { buildSyntheticLongFixture, readBenchmarkFixtureMarkdown } from "@test/utils";
 
 type Phase = {
@@ -83,9 +86,9 @@ console.log(
     "  spliceText      = reducer/text.ts:spliceText — doc mutation + reindex + comment repair\n" +
     "  replaceBlk      = replaceEditorBlock alone — rebuild affected root, return new Document\n" +
     "  spliceIdx       = spliceDocumentIndex alone — reindex given a rebuilt Document\n" +
-    "  splicePrelude   = the splice's per-root work + buildEditorRoots positioning, no maps\n" +
+    "  splicePrelude   = the splice's per-root work + positionRootEntries positioning, no maps\n" +
     "  createIdx(full) = createDocumentIndex(nextDocument) — worst case (undo/redo path)\n" +
-    "  fullPrelude     = N × createEditorRoot + buildEditorRoots positioning, no maps\n" +
+    "  fullPrelude     = N × createRootEntry + positionRootEntries positioning, no maps\n" +
     "\nDerived insights:\n" +
     "  spliceIdx − splicePrelude   ≈ time in createResolvedDocumentIndex (maps) on hot path\n" +
     "  createIdx(full) − fullPrelude ≈ time in createResolvedDocumentIndex (maps) on cold path\n" +
@@ -93,6 +96,175 @@ console.log(
     "  If (spliceIdx − splicePrelude) is the dominant share of spliceIdx, then the\n" +
     "  TODO in index/build.ts:321 (incremental same-count splice maps) is worth pursuing.\n",
 );
+
+// --- Append-trailing-root scenarios ------------------------------------------
+//
+// Question: does the `appendDocumentIndexRoot` fast path
+// (`build.ts:329-387`, with its 6 `appendXIndex` helpers) earn its keep
+// versus letting `spliceDocumentIndex` fall through to its general
+// `createResolvedDocumentIndex` path?
+//
+// Trigger conditions for the fast path (read off `spliceDocumentIndex`):
+//   rootIndex === model.roots.length  AND  replacementCount === 1
+// i.e. a single new trailing root with no removal. We replay exactly that
+// here: take the parsed doc, lop off the last root to form a "base," then
+// `spliceDocumentIndex(base, full, N, 0)`. That call hits the fast path.
+//
+// We can't measure "what would happen without the fast path" directly —
+// `createResolvedDocumentIndex` isn't exported — so we measure the
+// components a general path would do (`createRootEntry` + reusing
+// `positionRootEntries`) plus an estimate of the map-rebuild cost taken from
+// the cold path (`createIdx(full) − fullPrelude` on the same N+1 doc).
+// That gives an upper bound on what deleting the fast path would cost.
+
+type AppendScenario = {
+  description: string;
+  blockCount: number;
+  build: () => { baseIndex: DocumentIndex; fullDoc: Document };
+};
+
+type AppendSample = {
+  appendFast: number;
+  coldRebuild: number;
+  manualPrelude: number;
+  fullPrelude: number;
+};
+
+const appendPhaseLabels = [
+  "appendFast",
+  "manualPrelude",
+  "coldRebuild",
+  "fullPrelude",
+  "est.general",
+];
+
+const appendScenarios: AppendScenario[] = [
+  buildAppendScenario("medium ", fixtures.mediumMarkdown),
+  buildAppendScenario("long   ", fixtures.longMarkdown),
+  buildAppendScenario("xlarge ", fixtures.xlargeMarkdown),
+  buildAppendScenario("huge   ", fixtures.hugeMarkdown),
+];
+
+console.log("\n=== append-trailing-root decomposition (microseconds; p50 / p99) ===\n");
+
+const appendHeader = ["scenario", "blocks", ...appendPhaseLabels]
+  .map((s) => s.padStart(14))
+  .join(" | ");
+console.log(appendHeader);
+console.log("-".repeat(appendHeader.length));
+
+for (const scenario of appendScenarios) {
+  const phases = profileAppendScenario(scenario);
+  printAppendRows(scenario, phases);
+}
+
+console.log(
+  "\nAppend-scenario legend:\n" +
+    "  appendFast    = spliceDocumentIndex(base, full, N, 0) — current fast path\n" +
+    "  manualPrelude = createRootEntry(new) + positionRootEntries([...base, new], base)\n" +
+    "                  — the per-root + positioning work the general path would do\n" +
+    "  coldRebuild   = createDocumentIndex(full) — strict ceiling on general-path cost\n" +
+    "  fullPrelude   = (N+1) × createRootEntry + positionRootEntries, no maps\n" +
+    "                  — same denominator the existing decomposition uses\n" +
+    "  est.general   = manualPrelude + (coldRebuild − fullPrelude)\n" +
+    "                  — estimated cost of the general splice path if the fast path\n" +
+    "                    branch were deleted. Reuses N positioned roots from `base`,\n" +
+    "                    but still rebuilds all maps from scratch.\n" +
+    "\nDecision:\n" +
+    "  est.general − appendFast = the regression deleting the fast path would cause\n" +
+    "  on this specific input shape. The fast path doesn't fire on any other shape,\n" +
+    "  so this is the maximum cost it's saving anywhere.\n",
+);
+
+function buildAppendScenario(label: string, markdown: string): AppendScenario {
+  const fullDoc = parseDocument(markdown);
+  if (fullDoc.blocks.length < 2) {
+    throw new Error("append scenario needs at least 2 root blocks");
+  }
+  const baseDoc = spliceDocument(fullDoc, fullDoc.blocks.length - 1, 1, []);
+  return {
+    description: label,
+    blockCount: fullDoc.blocks.length,
+    build: () => ({ baseIndex: createDocumentIndex(baseDoc), fullDoc }),
+  };
+}
+
+function profileAppendScenario(scenario: AppendScenario): Phase[] {
+  const phases: Phase[] = appendPhaseLabels.map((name) => ({ name, samples: [] }));
+
+  for (let i = 0; i < WARMUP; i += 1) {
+    runAppendShot(scenario);
+  }
+
+  for (let i = 0; i < ITERATIONS; i += 1) {
+    const sample = runAppendShot(scenario);
+    phases[0]!.samples.push(sample.appendFast);
+    phases[1]!.samples.push(sample.manualPrelude);
+    phases[2]!.samples.push(sample.coldRebuild);
+    phases[3]!.samples.push(sample.fullPrelude);
+    phases[4]!.samples.push(
+      sample.manualPrelude + Math.max(0, sample.coldRebuild - sample.fullPrelude),
+    );
+  }
+
+  for (const phase of phases) {
+    phase.samples.sort((a, b) => a - b);
+  }
+
+  return phases;
+}
+
+function runAppendShot(scenario: AppendScenario): AppendSample {
+  const { baseIndex, fullDoc } = scenario.build();
+  const N = baseIndex.roots.length;
+  const newBlock = fullDoc.blocks[N]!;
+
+  // 1. Current append fast path
+  const t0 = performance.now();
+  void spliceDocumentIndex(baseIndex, fullDoc, N, 0);
+  const t1 = performance.now();
+
+  // 2. Cold rebuild — strict upper bound on general-path cost (no root reuse)
+  const t2 = performance.now();
+  void createDocumentIndex(fullDoc);
+  const t3 = performance.now();
+
+  // 3. Manual prelude — what the general splice path would do before
+  //    createResolvedDocumentIndex: build one new root, position with reuse.
+  const t4 = performance.now();
+  const newRoot = createRootEntry(newBlock, N);
+  void positionRootEntries([...baseIndex.roots, newRoot], baseIndex.roots);
+  const t5 = performance.now();
+
+  // 4. Full cold prelude on the same N+1 doc, for deriving cold map cost.
+  const t6 = performance.now();
+  const allRoots = fullDoc.blocks.map((b, i) => createRootEntry(b, i));
+  void positionRootEntries(allRoots);
+  const t7 = performance.now();
+
+  return {
+    appendFast: usec(t0, t1),
+    coldRebuild: usec(t2, t3),
+    manualPrelude: usec(t4, t5),
+    fullPrelude: usec(t6, t7),
+  };
+}
+
+function printAppendRows(scenario: AppendScenario, phases: Phase[]) {
+  const p50 = phases.map((phase) => percentile(phase.samples, 0.5));
+  const p99 = phases.map((phase) => percentile(phase.samples, 0.99));
+  const blockStr = String(scenario.blockCount).padStart(6);
+
+  const row50 = ["p50  " + scenario.description, blockStr, ...p50.map(fmt)]
+    .map((s) => String(s).padStart(14))
+    .join(" | ");
+  const row99 = ["p99  " + scenario.description, blockStr, ...p99.map(fmt)]
+    .map((s) => String(s).padStart(14))
+    .join(" | ");
+
+  console.log(row50);
+  console.log(row99);
+}
 
 // --- Implementation ---------------------------------------------------------
 
@@ -147,17 +319,26 @@ function runOneShot(scenario: Scenario): Sample {
   const t2b = performance.now();
   void spliceResult;
 
-  // --- 3. replaceEditorBlock alone ---
-  // For the single-region splice path this is what spliceText calls first.
-  // We pass an identity replacer; replaceEditorBlock still walks the path via
-  // mapBlockTree and emits a fresh Document, so timing is faithful.
+  // --- 3. replaceBlk: rebuild the affected root and emit a new Document.
+  // Mirrors what `replaceEditorBlock` used to time-share with `spliceIdx`:
+  // we deliberately call the underlying primitives directly here so that
+  // step #3 keeps measuring "Document rebuild" in isolation. (The new
+  // `replaceEditorBlock` returns a `DocumentIndex` directly.)
   const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId)!;
-  const blockId = region.blockId;
+  const blockId = region.block.id;
+  const rootBlock = state.documentIndex.document.blocks[region.rootIndex]!;
 
   const t3a = performance.now();
-  const nextDocument = replaceEditorBlock(state.documentIndex, blockId, (block) => block);
+  const nextRoots = mapBlockTree([rootBlock], (block, { recurse }) =>
+    block.id === blockId ? block : recurse(),
+  );
+  const nextDocument = spliceDocument(
+    state.documentIndex.document,
+    region.rootIndex,
+    1,
+    nextRoots,
+  );
   const t3b = performance.now();
-  if (!nextDocument) throw new Error("replaceEditorBlock returned null");
 
   // --- 4. spliceDocumentIndex on the rebuilt Document ---
   const t4a = performance.now();
@@ -169,7 +350,7 @@ function runOneShot(scenario: Scenario): Sample {
   // spliceDocumentIndex does internally, WITHOUT calling createResolvedDocumentIndex.
   // The delta (#4 − #5) ≈ time spent in createResolvedDocumentIndex on the splice path.
   const t5a = performance.now();
-  const replacedRoot = rebuildEditorRoot(
+  const replacedRoot = rebuildRootEntry(
     state.documentIndex.roots[region.rootIndex]!,
     nextDocument.blocks[region.rootIndex]!,
   );
@@ -178,7 +359,7 @@ function runOneShot(scenario: Scenario): Sample {
     replacedRoot,
     ...state.documentIndex.roots.slice(region.rootIndex + 1),
   ];
-  void buildEditorRoots(splicedRoots, state.documentIndex.roots);
+  void positionRootEntries(splicedRoots, state.documentIndex.roots);
   const t5b = performance.now();
 
   // --- 6. createDocumentIndex(nextDocument) — full reindex baseline ---
@@ -187,13 +368,13 @@ function runOneShot(scenario: Scenario): Sample {
   const t6b = performance.now();
   void fullIdx;
 
-  // --- 7. fullPrelude: N × createEditorRoot + buildEditorRoots, no maps.
+  // --- 7. fullPrelude: N × createRootEntry + positionRootEntries, no maps.
   // The delta (#6 − #7) ≈ time spent in createResolvedDocumentIndex on the cold path.
   const t7a = performance.now();
   const allRoots = nextDocument.blocks.map((block, rootIndex) =>
-    createEditorRoot(block, rootIndex),
+    createRootEntry(block, rootIndex),
   );
-  void buildEditorRoots(allRoots);
+  void positionRootEntries(allRoots);
   const t7b = performance.now();
 
   return {

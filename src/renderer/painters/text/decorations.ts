@@ -8,16 +8,25 @@
 // phase isn't a runtime branch.
 
 import type { DocumentLayout } from "@/editor/layout";
-import { findInlinesInSpan, type EditorInline, type EditorRegion } from "@/editor/state";
+import {
+  findInlinesInSpan,
+  regionInlines,
+  type InlineEntry,
+  type RegionEntry,
+} from "@/editor/state";
 import type { TextDecoration } from "@/editor/text/decorations";
-import { resolveMarkedTextFont } from "@/editor/text/fonts";
+import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import {
   collectRangeBoundaries,
   filterRangesOverlappingSegment,
   findRangeAtSegment,
 } from "@/editor/text/ranges";
 import { blendCanvasColors } from "../../animations/colors";
-import { resolveRestingPulseAlpha, resolveRestingPulseProgress, restingPulseMinimumAlpha } from "../../animations/pulse";
+import {
+  resolveRestingPulseAlpha,
+  resolveRestingPulseProgress,
+  restingPulseMinimumAlpha,
+} from "../../animations/pulse";
 import {
   editableTextBackgroundGeometry,
   paintClippedTextOverlay,
@@ -30,7 +39,7 @@ const decorationPulseTextMaximumBaseBlend = 0.72;
 export function paintTextDecorationBackgrounds(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
@@ -41,6 +50,7 @@ export function paintTextDecorationBackgrounds(
     line,
     container,
     textLeft,
+    textBaseline,
     textDecorations,
     (segment, decoration) => {
       if (!decoration.backgroundColor) {
@@ -53,7 +63,7 @@ export function paintTextDecorationBackgrounds(
         left: segment.left,
         pulse: decoration.pulse === true,
         right: segment.right,
-        textBaseline,
+        textBaseline: segment.textBaseline,
       });
     },
   );
@@ -62,7 +72,7 @@ export function paintTextDecorationBackgrounds(
 export function paintTextDecorationOverlays(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
@@ -74,6 +84,7 @@ export function paintTextDecorationOverlays(
     line,
     container,
     textLeft,
+    textBaseline,
     textDecorations,
     (segment, decoration) => {
       if (!decoration.color) {
@@ -86,7 +97,7 @@ export function paintTextDecorationOverlays(
         height: line.height,
         left: segment.left,
         text: segment.segmentText,
-        textBaseline,
+        textBaseline: segment.textBaseline,
         textLeft: segment.segmentLeft,
         top: line.top,
         width: Math.max(0, segment.right - segment.left),
@@ -101,8 +112,9 @@ export function paintTextDecorationOverlays(
 function forEachDecorationSegment(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: EditorRegion | null,
+  container: RegionEntry | null,
   textLeft: number,
+  textBaseline: number,
   textDecorations: readonly TextDecoration[],
   paintSegment: (
     segment: {
@@ -110,6 +122,7 @@ function forEachDecorationSegment(
       right: number;
       segmentLeft: number;
       segmentText: string;
+      textBaseline: number;
     },
     decoration: TextDecoration,
   ) => void,
@@ -124,7 +137,7 @@ function forEachDecorationSegment(
     return;
   }
 
-  const visibleInlines = findInlinesInSpan(container.inlines, line.start, line.end);
+  const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
 
   for (const inline of visibleInlines) {
     if (!canPaintTextDecoration(inline)) {
@@ -148,16 +161,18 @@ function forEachDecorationSegment(
     const decorationBoundaries = collectRangeBoundaries(start, end, segmentDecorations);
 
     const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
-    context.font = resolveMarkedTextFont(line.font, inline.marks);
+    const inlineStyle = resolveInlineTextStyle(
+      line.font,
+      inline.node.type === "text" ? inline.node.marks : [],
+      false,
+    );
+    context.font = inlineStyle.font;
+    const segmentBaseline = textBaseline + inlineStyle.baselineShift;
 
     for (let index = 0; index < decorationBoundaries.length - 1; index += 1) {
       const decorationStart = decorationBoundaries[index]!;
       const decorationEnd = decorationBoundaries[index + 1]!;
-      const textDecoration = findRangeAtSegment(
-        segmentDecorations,
-        decorationStart,
-        decorationEnd,
-      );
+      const textDecoration = findRangeAtSegment(segmentDecorations, decorationStart, decorationEnd);
 
       if (!textDecoration || decorationEnd <= decorationStart) {
         continue;
@@ -170,14 +185,20 @@ function forEachDecorationSegment(
         decorationEnd,
       );
 
-      paintSegment({ left, right, segmentLeft, segmentText }, textDecoration);
+      paintSegment(
+        { left, right, segmentLeft, segmentText, textBaseline: segmentBaseline },
+        textDecoration,
+      );
     }
   }
 }
 
-function canPaintTextDecoration(inline: EditorInline) {
+function canPaintTextDecoration(inline: InlineEntry) {
   return (
-    inline.kind !== "image" && inline.kind !== "mention" && inline.kind !== "code" && !inline.link
+    inline.node.type !== "image" &&
+    inline.node.type !== "mention" &&
+    inline.node.type !== "code" &&
+    !inline.link
   );
 }
 

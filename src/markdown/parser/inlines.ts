@@ -15,9 +15,8 @@ import type { Inline, Mark } from "@/document";
 import {
   inlineMarkSpecs,
   lineFeed,
-  underlineCloseTag,
-  underlineOpenTag,
   type InlineMarkDelimiter,
+  type HtmlInlineMarkSpec,
 } from "../shared";
 
 // --- Single-character markers ---
@@ -65,6 +64,7 @@ const markdownDestinationEscape = /\\(.)/g;
 type ParsedInlineMarkDelimiter = InlineMarkDelimiter & { mark: Mark };
 
 const inlineMarkDelimiters: ReadonlyArray<ParsedInlineMarkDelimiter> = inlineMarkSpecs
+  .filter((spec) => spec.kind === "delimiter")
   .flatMap((spec) =>
     spec.delimiters.map<ParsedInlineMarkDelimiter>((d) => ({
       mark: spec.mark,
@@ -73,6 +73,10 @@ const inlineMarkDelimiters: ReadonlyArray<ParsedInlineMarkDelimiter> = inlineMar
     })),
   )
   .sort((left, right) => right.delimiter.length - left.delimiter.length);
+
+const htmlInlineMarkSpecs: ReadonlyArray<HtmlInlineMarkSpec> = inlineMarkSpecs.filter(
+  (spec) => spec.kind === "html",
+);
 
 export function parseInlines(source: string): Inline[] {
   return parseInlineRange(source, 0, source.length, []);
@@ -123,15 +127,15 @@ type InlineTokenReader = (
 ) => InlineToken | null;
 
 // Order matters within a given lead character: the more specific reader
-// runs first (for `<`, hard-break then underline then catchall raw HTML;
-// for `\`, the line-break shape before the generic escape).
+// runs first (for `<`, hard-break then semantic HTML marks, then catchall
+// raw HTML; for `\`, the line-break shape before the generic escape).
 const inlineTokenReaders: ReadonlyArray<{
   leadChars: ReadonlyArray<string>;
   read: InlineTokenReader;
 }> = [
   { leadChars: [directiveMarker], read: readInlineDirectiveToken },
   { leadChars: ["<"], read: readLineBreakHtmlToken },
-  { leadChars: ["<"], read: readUnderlineToken },
+  { leadChars: ["<"], read: readHtmlMarkToken },
   { leadChars: ["<"], read: readRawHtmlToken },
   { leadChars: [escapeMarker], read: readBackslashLineBreakToken },
   { leadChars: [escapeMarker], read: readGenericEscapeToken },
@@ -211,24 +215,28 @@ function readInlineDirectiveToken(source: string, index: number, end: number) {
   };
 }
 
-function readUnderlineToken(source: string, index: number, end: number, marks: Mark[]) {
-  if (!source.startsWith(underlineOpenTag, index)) {
-    return null;
+function readHtmlMarkToken(source: string, index: number, end: number, marks: Mark[]) {
+  for (const spec of htmlInlineMarkSpecs) {
+    if (!source.startsWith(spec.openTag, index)) {
+      continue;
+    }
+
+    const closeIndex = source.indexOf(spec.closeTag, index + spec.openTag.length);
+
+    if (closeIndex < 0 || closeIndex >= end) {
+      continue;
+    }
+
+    return {
+      end: closeIndex + spec.closeTag.length,
+      nodes: parseInlineRange(source, index + spec.openTag.length, closeIndex, [
+        ...marks,
+        spec.mark,
+      ]),
+    };
   }
 
-  const closeIndex = source.indexOf(underlineCloseTag, index + underlineOpenTag.length);
-
-  if (closeIndex < 0 || closeIndex >= end) {
-    return null;
-  }
-
-  return {
-    end: closeIndex + underlineCloseTag.length,
-    nodes: parseInlineRange(source, index + underlineOpenTag.length, closeIndex, [
-      ...marks,
-      "underline",
-    ]),
-  };
+  return null;
 }
 
 function readRawHtmlToken(source: string, index: number, end: number) {
