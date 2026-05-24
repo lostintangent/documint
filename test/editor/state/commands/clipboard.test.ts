@@ -437,6 +437,12 @@ describe("Code blocks", () => {
     );
   });
 
+  test("copy: partial source selection emits bare source text", () => {
+    expect(copySubstring("```ts\nconst value = 1;\n```\n", "const value = 1;", "value")).toBe(
+      "value",
+    );
+  });
+
   test("paste: into an empty paragraph replaces it", () => {
     expect(pasteInto("\n", { region: "", offset: "start" }, "```\nfoo\n```\n")).toBe(
       "```\nfoo\n```\n",

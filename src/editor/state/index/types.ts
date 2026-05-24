@@ -33,10 +33,15 @@ export type InlineEntry = {
   text: string;
 };
 
+// Effective list-item marker semantics derived from document tree context.
+// The document owns the source facts (`ListBlock.ordered/start`,
+// `ListItemBlock.checked`, and nesting shape); the index caches the per-item
+// projection layout/paint needs in O(1). Rendered glyphs such as bullets or
+// ordered-label strings belong to the renderer, not this type.
 export type ListItemMarker =
-  | { checked: boolean; kind: "task" }
-  | { kind: "bullet"; label: "•" }
-  | { kind: "ordered"; label: string };
+  | { checked: boolean; depth: number; kind: "task" }
+  | { depth: number; kind: "unordered" }
+  | { depth: number; kind: "ordered"; ordinal: number };
 
 export type RegionEntry = {
   // Direct reference to the document Block this region belongs to. For table
@@ -115,6 +120,10 @@ export type RootEntry = {
   // the set without re-walking the tree on every keystroke. Reused by
   // reference when the root itself is reused (`canReuseRootEntry`).
   imageUrls: ReadonlySet<string>;
+  // List/task/ordered marker semantics for list items inside this root.
+  // Collected while the root is already being walked so unrelated root edits
+  // don't force a full-document marker rebuild.
+  listItemMarkers: ReadonlyMap<string, ListItemMarker>;
   regionRange: { end: number; start: number } | undefined;
   regions: RegionEntry[];
   rootIndex: number;
@@ -136,7 +145,7 @@ export type DocumentIndex = {
   // consumers can use it directly as a React `useEffect` dep without
   // having to derive a content-based signature.
   imageUrls: ReadonlySet<string>;
-  listItemMarkers: Map<string, ListItemMarker>;
+  listItemMarkers: ReadonlyMap<string, ListItemMarker>;
   regionIndex: Map<string, RegionEntry>;
   regionPathIndex: Map<string, RegionEntry>;
   regions: RegionEntry[];

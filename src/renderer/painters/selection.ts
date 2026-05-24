@@ -6,7 +6,7 @@
 
 import type { DocumentLayout } from "@/editor/layout";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 import { resolveLineRangeRect } from "./line-range";
 
 const selectionMinimumWidth = 2;
@@ -35,7 +35,7 @@ export function paintSelectionHighlight(
   line: DocumentLayout["lines"][number],
   normalizedSelection: NormalizedEditorSelection,
   selectionRegionOrderRange: SelectionRegionOrderRange | null,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   if (!selectionRegionOrderRange) {
     return;

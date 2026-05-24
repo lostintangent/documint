@@ -1,9 +1,5 @@
 // Build
-export {
-  commitDocument,
-  createDocumentIndex,
-  spliceDocumentIndex,
-} from "./index/splice";
+export { commitDocument, createDocumentIndex, spliceDocumentIndex } from "./index/splice";
 
 // Types
 export type {
@@ -28,6 +24,8 @@ export {
   firstInFlowRegionOfRoot,
   isContainerBlock,
   isInertBlock,
+  isInlineTextRegion,
+  isSourceTextRegion,
   isRootBlockEntry,
   nextBlockInFlow,
   nextRegionInFlow,
@@ -82,10 +80,7 @@ export type {
 } from "./selection";
 
 // Animations
-export {
-  getEditorAnimationDuration,
-  hasRunningEditorAnimations,
-} from "./animations";
+export { getEditorAnimationDuration, hasRunningEditorAnimations } from "./animations";
 
 export type {
   ActiveBlockFlashAnimation,

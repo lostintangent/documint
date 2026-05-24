@@ -4,6 +4,7 @@
 
 import { containsColorEmoji } from "../../text/emoji";
 import { regionInlines } from "../index/inlines";
+import { isInlineTextRegion } from "../index/query";
 import type { DocumentIndex, RegionEntry } from "../index/types";
 import {
   normalizeSelection,
@@ -52,7 +53,11 @@ export function resolveTextHighlightAnimationForRegion(
   startOffset: number,
   insertedText: string,
 ): AnimationIntent | undefined {
-  if (insertedText.length === 0 || containsColorEmoji(insertedText)) {
+  if (
+    !isInlineTextRegion(region) ||
+    insertedText.length === 0 ||
+    containsColorEmoji(insertedText)
+  ) {
     return undefined;
   }
 
@@ -101,6 +106,10 @@ function resolveTextPulseAnimation(
   const context = resolveSameRegionSelectionContext(documentIndex, selection);
 
   if (!context) {
+    return undefined;
+  }
+
+  if (!isInlineTextRegion(context.region)) {
     return undefined;
   }
 

@@ -10,8 +10,8 @@ import { createEditorLayoutState } from "@/editor/layout";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import { insertText, normalizeSelection, setSelection, type EditorState } from "@/editor/state";
-import { lightTheme } from "@/component/lib/themes";
-import type { EditorTheme } from "@/types";
+import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
+import type { ResolvedEditorTheme } from "@/types";
 import { setup } from "../editor/helpers";
 import {
   approximately,
@@ -21,6 +21,8 @@ import {
   RecordingCanvasContext,
   type RecordingOperation,
 } from "./helpers";
+
+const resolvedLightTheme = resolveEditorTheme(lightTheme);
 
 test("paints active table highlights only within the active cell before text", () => {
   let state = setup(`| Left | Active | Right |
@@ -50,7 +52,7 @@ test("paints active table highlights only within the active cell before text", (
   const rightCellBackgroundIndex = findOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "fillRect" &&
-      operation.fillStyle === lightTheme.tableHeaderBackground &&
+      operation.fillStyle === resolvedLightTheme.tableHeaderBackground &&
       approximately(operation.x, rightBounds.left) &&
       approximately(operation.y, rightBounds.top)
     );
@@ -58,7 +60,7 @@ test("paints active table highlights only within the active cell before text", (
   const activeHighlightIndex = findOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "fillRect" &&
-      operation.fillStyle === lightTheme.activeBlockBackground &&
+      operation.fillStyle === resolvedLightTheme.activeBlockBackground &&
       approximately(operation.x, activeBounds.left) &&
       approximately(operation.width, activeBounds.right - activeBounds.left)
     );
@@ -67,7 +69,7 @@ test("paints active table highlights only within the active cell before text", (
   const activeBorderIndex = findLastOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "strokeRect" &&
-      operation.strokeStyle === lightTheme.tableBorder &&
+      operation.strokeStyle === resolvedLightTheme.tableBorder &&
       approximately(operation.x, activeBounds.left) &&
       approximately(operation.y, activeBounds.top)
     );
@@ -106,7 +108,7 @@ test("keeps non-table active block highlights full width", () => {
   const activeHighlightIndex = findOperationIndex(context.operations, (operation) => {
     return (
       operation.kind === "fillRect" &&
-      operation.fillStyle === lightTheme.activeBlockBackground &&
+      operation.fillStyle === resolvedLightTheme.activeBlockBackground &&
       approximately(operation.x, 0) &&
       approximately(operation.width, 240)
     );
@@ -122,6 +124,109 @@ test("keeps non-table active block highlights full width", () => {
   if (!activeHighlight || activeHighlight.kind !== "fillRect") {
     throw new Error("Expected paragraph highlight fill");
   }
+});
+
+test("paints code block chrome inside document padding with content inset", () => {
+  const state = setup("```ts\nconst value = 1;\n```\n");
+  const { context, layout } = renderPaintOperations(state, { height: 180, width: 240 });
+  const line = layout.lines.find((entry) => entry.text === "const value = 1;");
+
+  if (!line) {
+    throw new Error("Expected code line");
+  }
+
+  const backgroundPaint = context.operations.find(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+      operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.codeBackground,
+  );
+  const textPaint = findFillTextOperation(context.operations, "const value = 1;");
+
+  if (!backgroundPaint || !textPaint) {
+    throw new Error("Expected code block background and text paints");
+  }
+
+  expect(backgroundPaint.x).toBe(layout.options.paddingX);
+  expect(backgroundPaint.y).toBe(line.top - 6);
+  expect(backgroundPaint.width).toBe(240 - layout.options.paddingX * 2);
+  expect(backgroundPaint.height).toBe(line.height + 12);
+  expect(textPaint.x).toBe(layout.options.paddingX + 12);
+  expect(line.left).toBe(layout.options.paddingX + 12);
+});
+
+test("centers active code block tint inside the code background padding", () => {
+  let state = setup("```ts\nconst value = 1;\n```\n");
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected code region");
+  }
+
+  state = setSelection(state, { regionId: region.id, offset: "const".length });
+
+  const { context, layout } = renderPaintOperations(state, { height: 180, width: 240 });
+  const line = layout.lines.find((entry) => entry.text === "const value = 1;");
+
+  if (!line) {
+    throw new Error("Expected code line");
+  }
+
+  const backgroundPaint = context.operations.find(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+      operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.codeBackground,
+  );
+  const activePaint = context.operations.find(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.activeBlockBackground,
+  );
+
+  if (!backgroundPaint || !activePaint) {
+    throw new Error("Expected code background and active block paints");
+  }
+
+  expect(activePaint.x).toBe(backgroundPaint.x);
+  expect(activePaint.width).toBe(backgroundPaint.width);
+  expect(activePaint.y - backgroundPaint.y).toBe(
+    backgroundPaint.y + backgroundPaint.height - (activePaint.y + activePaint.height),
+  );
+});
+
+test("bleeds active blockquote rules to the quote line-box top", () => {
+  let state = setup("> alpha\n>\n> beta\n");
+  const activeRegion = state.documentIndex.regions.find((region) => region.text === "beta");
+
+  if (!activeRegion) {
+    throw new Error("Expected quoted paragraph");
+  }
+
+  state = setSelection(state, { regionId: activeRegion.id, offset: 1 });
+
+  const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
+  const firstLine = layout.lines.find((line) => line.text === "alpha");
+  const activeLine = layout.lines.find((line) => line.regionId === activeRegion.id);
+
+  if (!firstLine || !activeLine) {
+    throw new Error("Expected quoted lines");
+  }
+
+  const activeHighlight = context.operations.find(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.activeBlockBackground,
+  );
+  const activeRule = context.operations.find(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.blockquoteRuleActive,
+  );
+
+  if (!activeHighlight || !activeRule) {
+    throw new Error("Expected active blockquote highlight and rule paints");
+  }
+
+  expect(activeHighlight.y).toBeLessThan(activeLine.top);
+  expect(activeRule.y).toBe(firstLine.top - 1);
+  expect(activeRule.y + activeRule.height).toBeLessThan(activeLine.top + activeLine.height);
 });
 
 test("paints selection highlights across every region the selection spans", () => {
@@ -141,7 +246,8 @@ test("paints selection highlights across every region the selection spans", () =
 
   const selectionFills = context.operations.filter(
     (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
-      operation.kind === "fillRect" && operation.fillStyle === lightTheme.selectionBackground,
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.selectionBackground,
   );
 
   expect(selectionFills.length).toBe(3);
@@ -188,7 +294,8 @@ test("does not paint a selection highlight when the selection is collapsed", () 
   const selectionFillIndex = findOperationIndex(
     context.operations,
     (operation) =>
-      operation.kind === "fillRect" && operation.fillStyle === lightTheme.selectionBackground,
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.selectionBackground,
   );
 
   expect(selectionFillIndex).toBe(-1);
@@ -212,11 +319,12 @@ test("paints insert highlights as a glyph overlay without splitting text runs", 
   );
   const insertedCharacterPaint = textOperations.find((operation) => operation.text === "!");
   const baseTextPaint = textOperations.find(
-    (operation) => operation.text === "alpha!" && operation.fillStyle === lightTheme.paragraphText,
+    (operation) =>
+      operation.text === "alpha!" && operation.fillStyle === resolvedLightTheme.paragraphText,
   );
   const highlightOverlayPaint = textOperations.find(
     (operation) =>
-      operation.text === "alpha!" && operation.fillStyle === lightTheme.insertHighlightText,
+      operation.text === "alpha!" && operation.fillStyle === resolvedLightTheme.insertHighlightText,
   );
 
   expect(insertedCharacterPaint).toBeUndefined();
@@ -224,6 +332,20 @@ test("paints insert highlights as a glyph overlay without splitting text runs", 
   expect(highlightOverlayPaint).toBeDefined();
   expect(highlightOverlayPaint?.globalAlpha).toBeGreaterThan(0);
   expect(highlightOverlayPaint?.globalAlpha).toBeLessThanOrEqual(1);
+});
+
+test("paints sparse theme text colors from the resolved base text", () => {
+  const state = setup("# Heading\n\nParagraph\n\n> Quote\n\n`inline`\n");
+  const theme = resolveEditorTheme({
+    ...withoutTextTokens(resolvedLightTheme),
+    text: "#f5f5f5",
+  });
+  const { context } = renderPaintOperations(state, { height: 260, theme, width: 360 });
+
+  expect(findFillTextOperation(context.operations, "Heading")?.fillStyle).toBe("#f5f5f5");
+  expect(findFillTextOperation(context.operations, "Paragraph")?.fillStyle).toBe("#f5f5f5");
+  expect(findFillTextOperation(context.operations, "Quote")?.fillStyle).toBe("#f5f5f5");
+  expect(findFillTextOperation(context.operations, "inline")?.fillStyle).toBe("#f5f5f5");
 });
 
 test("paints text color decorations as a glyph overlay without splitting text runs", () => {
@@ -259,7 +381,7 @@ test("paints text color decorations as a glyph overlay without splitting text ru
   const baseTextPaint = textOperations.find(
     (operation) =>
       operation.text === "alpha beta" &&
-      operation.fillStyle === lightTheme.paragraphText &&
+      operation.fillStyle === resolvedLightTheme.paragraphText &&
       operation.globalCompositeOperation === "source-over",
   );
   const decorationMaskPaint = textOperations.find(
@@ -357,11 +479,12 @@ test("paints decoration background colors behind text", () => {
     (operation) =>
       operation.kind === "fillText" &&
       operation.text === "alpha TODO" &&
-      operation.fillStyle === lightTheme.paragraphText,
+      operation.fillStyle === resolvedLightTheme.paragraphText,
   );
   const selectionPaintIndex = context.operations.findIndex(
     (operation) =>
-      operation.kind === "fillRect" && operation.fillStyle === lightTheme.selectionBackground,
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.selectionBackground,
   );
   const textOverlayPaintIndex = context.operations.findIndex(
     (operation) =>
@@ -421,7 +544,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
     (operation) =>
       operation.kind === "fillText" &&
       operation.text.includes("sparkle") &&
-      operation.fillStyle !== lightTheme.paragraphText &&
+      operation.fillStyle !== resolvedLightTheme.paragraphText &&
       operation.globalCompositeOperation === "source-over",
   );
 
@@ -436,7 +559,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
   expect(pulsingTextOverlay.globalAlpha).toBe(1);
   expect(pulsingTextOverlay.globalCompositeOperation).toBe("source-over");
   expect(pulsingTextOverlay.fillStyle).not.toBe("#713f12");
-  expect(pulsingTextOverlay.fillStyle).not.toBe(lightTheme.paragraphText);
+  expect(pulsingTextOverlay.fillStyle).not.toBe(resolvedLightTheme.paragraphText);
 
   const { context: transparentContext } = renderPaintOperations(state, {
     height: 180,
@@ -448,7 +571,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
     (operation) =>
       operation.kind === "fillText" &&
       operation.text.includes("sparkle") &&
-      operation.fillStyle !== lightTheme.paragraphText &&
+      operation.fillStyle !== resolvedLightTheme.paragraphText &&
       operation.globalCompositeOperation === "source-over",
   );
   const transparentBackground = transparentContext.operations.find(
@@ -465,7 +588,7 @@ test("pulses animated decoration backgrounds with paint-time alpha", () => {
   expect(transparentBackground.globalAlpha).toBeCloseTo(0.42);
   expect(transparentTextOverlay.globalAlpha).toBe(1);
   expect(transparentTextOverlay.fillStyle).not.toBe("#713f12");
-  expect(transparentTextOverlay.fillStyle).not.toBe(lightTheme.paragraphText);
+  expect(transparentTextOverlay.fillStyle).not.toBe(resolvedLightTheme.paragraphText);
 
   const { context: pausedContext } = renderPaintOperations(state, {
     ambientAnimationTime: 1100,
@@ -561,7 +684,8 @@ test("falls back to the leaf accent when presence has no color", () => {
     width: 240,
   });
   const commentHighlight = context.operations.find(
-    (operation) => operation.kind === "fillRect" && operation.fillStyle === lightTheme.leafAccent,
+    (operation) =>
+      operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.leafAccent,
   );
 
   expect(commentHighlight).toEqual(expect.objectContaining({ kind: "fillRect" }));
@@ -575,13 +699,14 @@ test("paints inline code background with text background geometry", () => {
   });
   const backgroundPaintIndex = context.operations.findIndex(
     (operation) =>
-      operation.kind === "fillRect" && operation.fillStyle === lightTheme.inlineCodeBackground,
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.inlineCodeBackground,
   );
   const codeTextPaintIndex = context.operations.findIndex(
     (operation) =>
       operation.kind === "fillText" &&
       operation.text === "TODO" &&
-      operation.fillStyle === lightTheme.inlineCodeText,
+      operation.fillStyle === resolvedLightTheme.inlineCodeText,
   );
   const line = layout.lines[0];
   const backgroundPaint = context.operations[backgroundPaintIndex];
@@ -659,7 +784,8 @@ test("keeps inline code and decoration background heights visually aligned", () 
   );
   const inlineCodeBackground = context.operations.find(
     (operation) =>
-      operation.kind === "fillRect" && operation.fillStyle === lightTheme.inlineCodeBackground,
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.inlineCodeBackground,
   );
 
   if (
@@ -697,10 +823,9 @@ test("right-aligns ordered list markers without moving list text", () => {
   const markerTen = findFillTextOperation(context.operations, "10.");
   const textOne = findFillTextOperation(context.operations, "one");
   const textTen = findFillTextOperation(context.operations, "ten");
-  const bulletMarker = findFillTextOperation(context.operations, "•");
 
-  if (!markerOne || !markerTen || !textOne || !textTen || !bulletMarker) {
-    throw new Error("Expected ordered and unordered list paint operations");
+  if (!markerOne || !markerTen || !textOne || !textTen) {
+    throw new Error("Expected ordered list paint operations");
   }
 
   expect(markerTen.x).toBe(markerOne.x);
@@ -709,44 +834,82 @@ test("right-aligns ordered list markers without moving list text", () => {
   expect(markerTen.textAlign).toBe("right");
   expect(markerOne.x).toBe(textOne.x - orderedListMarkerGap);
   expect(markerTen.x).toBe(textTen.x - orderedListMarkerGap);
-  expect(bulletMarker.textAlign).toBe("start");
+});
+
+test("draws unordered list marker shapes by nesting depth", () => {
+  const state = setup(`- top
+  - child
+    - grandchild
+`);
+  const { context } = renderPaintOperations(state, { height: 220, width: 320 });
+  const markerFills = context.operations.filter(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+      operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.listMarkerText,
+  );
+  const markerPathFills = context.operations.filter(
+    (operation): operation is Extract<RecordingOperation, { kind: "fillPath" }> =>
+      operation.kind === "fillPath" && operation.fillStyle === resolvedLightTheme.listMarkerText,
+  );
+  const markerArcs = context.operations.filter(
+    (operation): operation is Extract<RecordingOperation, { kind: "arc" }> =>
+      operation.kind === "arc" && approximately(operation.radius, 3),
+  );
+  const markerStroke = context.operations.find(
+    (operation) =>
+      operation.kind === "strokePath" &&
+      operation.strokeStyle === resolvedLightTheme.listMarkerText,
+  );
+
+  expect(markerArcs).toHaveLength(2);
+  expect(markerPathFills.length).toBeGreaterThanOrEqual(1);
+  expect(markerStroke).toBeDefined();
+  expect(markerFills.some((operation) => operation.width === 6 && operation.height === 6)).toBe(
+    true,
+  );
 });
 
 test("uses explicit list marker text color when provided", () => {
   const state = setup("- bullet\n");
-  const theme: EditorTheme = {
-    ...lightTheme,
+  const theme: ResolvedEditorTheme = {
+    ...resolvedLightTheme,
     listMarkerText: "#f97316",
     paragraphText: "#14532d",
   };
   const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
-  const marker = findFillTextOperation(context.operations, "•");
+  const marker = context.operations.find(
+    (operation) => operation.kind === "fillPath" && operation.fillStyle === "#f97316",
+  );
   const text = findFillTextOperation(context.operations, "bullet");
 
   if (!marker || !text) {
     throw new Error("Expected list marker and text paint operations");
   }
 
-  expect(marker.fillStyle).toBe("#f97316");
+  expect(marker).toBeDefined();
   expect(text.fillStyle).toBe("#14532d");
 });
 
-test("falls back to paragraph text color when list marker color is omitted", () => {
+test("uses resolved list marker text color", () => {
   const state = setup("- bullet\n");
-  const theme: EditorTheme = {
-    ...lightTheme,
+  const theme: ResolvedEditorTheme = {
+    ...resolvedLightTheme,
+    listMarkerText: resolvedLightTheme.checkboxUncheckedStroke,
     paragraphText: "#14532d",
   };
 
   const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
-  const marker = findFillTextOperation(context.operations, "•");
+  const marker = context.operations.find(
+    (operation) =>
+      operation.kind === "fillPath" &&
+      operation.fillStyle === resolvedLightTheme.checkboxUncheckedStroke,
+  );
   const text = findFillTextOperation(context.operations, "bullet");
 
   if (!marker || !text) {
     throw new Error("Expected list marker and text paint operations");
   }
 
-  expect(marker.fillStyle).toBe("#14532d");
+  expect(marker).toBeDefined();
   expect(text.fillStyle).toBe("#14532d");
 });
 
@@ -759,7 +922,7 @@ function renderPaintOperations(
     now?: number;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     textDecorations?: TextDecorationIndex;
-    theme?: EditorTheme;
+    theme?: ResolvedEditorTheme;
     width: number;
   },
 ) {
@@ -786,7 +949,7 @@ function renderPaintOperations(
     // animation progression set their own `now`.
     now: options.now ?? 0,
     textDecorations: options.textDecorations,
-    theme: options.theme ?? lightTheme,
+    theme: options.theme ?? resolvedLightTheme,
     width: options.width,
   });
 
@@ -805,4 +968,24 @@ function createCommentPresence(threadIndex: number, color?: string): EditorPrese
     username: "User",
     viewport: null,
   };
+}
+
+function withoutTextTokens(theme: ResolvedEditorTheme) {
+  const {
+    blockquoteText: _blockquoteText,
+    codeText: _codeText,
+    headingText: _headingText,
+    imagePlaceholderText: _imagePlaceholderText,
+    inlineCodeText: _inlineCodeText,
+    insertHighlightText: _insertHighlightText,
+    leafButtonText: _leafButtonText,
+    leafSecondaryText: _leafSecondaryText,
+    leafText: _leafText,
+    linkText: _linkText,
+    paragraphText: _paragraphText,
+    text: _text,
+    ...themeWithoutText
+  } = theme;
+
+  return themeWithoutText;
 }

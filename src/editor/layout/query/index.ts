@@ -11,10 +11,13 @@ export {
 
 export {
   measureInlineImageBounds,
+  resolveCodeBlockBackgroundBounds,
   resolveLineContentInset,
   resolveLineVisualLeft,
   resolveListItemMarker,
+  resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
+  resolveUnorderedListMarkerBounds,
   type InlineBounds,
 } from "./line-visuals";
 

@@ -5,7 +5,7 @@ import {
   type EditorLayoutState,
   type EditorState,
 } from "@/editor";
-import type { DocumentResources, EditorTheme } from "@/types";
+import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import {
   type CSSProperties,
   type MouseEvent,
@@ -33,7 +33,7 @@ const DRAG_AUTO_SCROLL_INCREMENT = 18;
 
 type UseViewportOptions = {
   renderResources: DocumentResources | null;
-  theme: EditorTheme;
+  theme: ResolvedEditorTheme;
 };
 
 export type ViewportController = {
@@ -224,7 +224,9 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
 
     scrollContainer.scrollTop = top;
     const appliedTop = scrollContainer.scrollTop;
-    setViewportTop(appliedTop);
+    if (appliedTop !== viewportMetricsRef.current.top) {
+      setViewportTop(appliedTop);
+    }
     return appliedTop;
   });
 

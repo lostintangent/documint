@@ -11,7 +11,7 @@ import {
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import type { DocumentResources } from "@/types";
-import { getRegion, setup } from "../helpers";
+import { getRegion, getRegionByType, setup } from "../helpers";
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
   const runtime = createDocumentIndex(parseDocument(`Paragraph with semantic offsets.\n`));
@@ -208,6 +208,28 @@ test("resolves a click on the trailing empty line below a soft break to its post
 
   expect(hit?.regionId).toBe(region.id);
   expect(hit?.offset).toBe(region.text.length);
+});
+
+test("resolves clicks inside code block lines to source offsets", () => {
+  const state = setup("```ts\nconst value = 1;\n```\n");
+  const region = getRegionByType(state, "code");
+  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
+  const caret = measureCaretTarget(layout, state.documentIndex, {
+    regionId: region.id,
+    offset: "const".length,
+  });
+
+  if (!caret) {
+    throw new Error("Expected code caret");
+  }
+
+  const hit = resolveEditorHitAtPoint(layout, state, {
+    x: caret.left,
+    y: caret.top + caret.height / 2,
+  });
+
+  expect(hit?.regionId).toBe(region.id);
+  expect(hit?.offset).toBe("const".length);
 });
 
 test("resolves word selection with shared unicode word boundaries", () => {

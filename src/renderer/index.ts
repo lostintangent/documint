@@ -18,7 +18,7 @@ import {
   resolveLineContentInset,
 } from "@/editor/layout";
 import { type EditorState, type NormalizedEditorSelection } from "@/editor/state";
-import type { DocumentResources, EditorTheme } from "@/types";
+import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import {
   resolveActiveBlockFlashes,
@@ -72,7 +72,7 @@ type PaintLayerOptions = {
   devicePixelRatio: number;
   height: number;
   normalizedSelection: NormalizedEditorSelection;
-  theme: EditorTheme;
+  theme: ResolvedEditorTheme;
   width: number;
 };
 
@@ -177,6 +177,7 @@ export function paintContent(
     commentRanges,
     context,
     editorState: state,
+    layout,
     normalizedSelection,
     resources,
     selectionRegionOrderRange,
@@ -196,7 +197,7 @@ export function paintContent(
       layout.regionBounds.get(line.regionId) ?? null,
       state.documentIndex.regionIndex.get(line.regionId)?.tableCellPosition ?? null,
       theme,
-      width,
+      layout,
     );
   }
 
@@ -285,11 +286,12 @@ type LineForegroundInputs = {
   commentRanges: EditorCommentRange[];
   context: CanvasRenderingContext2D;
   editorState: EditorState;
+  layout: EditorLayoutState["layout"];
   normalizedSelection: NormalizedEditorSelection;
   resources: DocumentResources;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
   textDecorations: TextDecorationIndex;
-  theme: EditorTheme;
+  theme: ResolvedEditorTheme;
   visibleListMarkers: Map<string, VisibleListMarker>;
   width: number;
 };
@@ -320,10 +322,12 @@ function paintContentLine(
     context,
     line,
     snapshotBlock,
+    inputs.layout.regionBounds.get(line.regionId) ?? null,
     runtimeBlockPath,
     inputs.activeBlockId,
     inputs.activeBlockFlashes,
     theme,
+    inputs.layout,
     width,
   );
 
@@ -364,7 +368,6 @@ function paintContentLine(
     visibleListMarker?.marker ?? null,
     textLeft,
     textBaseline,
-    defaultTextColor,
     theme,
     blockPulse,
   );
@@ -424,7 +427,7 @@ function resolveLineTextBaseline(line: EditorLayoutState["layout"]["lines"][numb
   return line.top + resolveCenteredTextBaseline(line.height, line.font);
 }
 
-function resolveTextColor(block: Block | null, theme: EditorTheme) {
+function resolveTextColor(block: Block | null, theme: ResolvedEditorTheme) {
   switch (block?.type) {
     case "heading":
       return theme.headingText;

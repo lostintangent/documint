@@ -1,12 +1,7 @@
-import type { EditorTheme } from "@/types";
+import type { EditorTheme, ResolvedEditorTheme } from "@/types";
 
 const DEFAULT_THEME_PADDING_X = 16;
 const DEFAULT_THEME_PADDING_Y = 18;
-
-export type ResolvedEditorTheme = EditorTheme & {
-  paddingX: number;
-  paddingY: number;
-};
 
 export const lightTheme: EditorTheme = {
   activeBlockBackground: "#fff1c7",
@@ -28,7 +23,6 @@ export const lightTheme: EditorTheme = {
   commentHighlightResolved: "#cfe9d8",
   commentHighlightResolvedActive: "#8dc4a0",
   headingRule: "rgba(15, 23, 42, 0.18)",
-  headingText: "#0f172a",
   imageLoadingOverlay: "rgba(255, 255, 255, 0.42)",
   imagePlaceholderIcon: "rgba(14, 116, 144, 0.42)",
   imagePlaceholderText: "rgba(15, 23, 42, 0.58)",
@@ -40,22 +34,19 @@ export const lightTheme: EditorTheme = {
   leafAccent: "#1d4ed8",
   leafBackground: "#fcfbf7",
   leafBorder: "rgba(148, 163, 184, 0.55)",
-  leafButtonBackground: "rgba(15, 23, 42, 0.08)",
-  leafButtonBorder: "rgba(148, 163, 184, 0.55)",
-  leafButtonText: "#1f2937",
+  leafInputBackground: "rgba(15, 23, 42, 0.08)",
   leafResolvedBackground: "#cfe9d8",
   leafResolvedBorder: "#8dc4a0",
   leafSecondaryText: "#334155",
   leafShadow: "0 14px 40px rgba(15, 23, 42, 0.16)",
-  leafText: "#1f2937",
   linkText: "#1d4ed8",
-  paragraphText: "#1f2937",
   selectionBackground: "rgba(125, 211, 252, 0.35)",
   selectionHandleBackground: "#fcfbf7",
   selectionHandleBorder: "#1d4ed8",
   tableBodyBackground: "rgba(248, 250, 252, 0.98)",
   tableBorder: "rgba(148, 163, 184, 0.55)",
   tableHeaderBackground: "rgba(226, 232, 240, 0.95)",
+  text: "#1f2937",
 };
 
 export const darkTheme: EditorTheme = {
@@ -71,14 +62,13 @@ export const darkTheme: EditorTheme = {
   checkboxCheckedStroke: "#67e8f9",
   checkboxUncheckedFill: "#0f172a",
   checkboxUncheckedStroke: "#64748b",
-  codeBackground: "#020617",
+  codeBackground: "#1f2937",
   codeText: "#dbeafe",
   commentHighlight: "rgba(96, 165, 250, 0.34)",
   commentHighlightActive: "#facc15",
   commentHighlightResolved: "rgba(74, 222, 128, 0.24)",
   commentHighlightResolvedActive: "#4ade80",
   headingRule: "rgba(226, 232, 240, 0.22)",
-  headingText: "#f8fafc",
   imageLoadingOverlay: "rgba(186, 230, 253, 0.18)",
   imagePlaceholderIcon: "rgba(125, 211, 252, 0.44)",
   imagePlaceholderText: "rgba(226, 232, 240, 0.62)",
@@ -90,22 +80,19 @@ export const darkTheme: EditorTheme = {
   leafAccent: "#93c5fd",
   leafBackground: "#0b1220",
   leafBorder: "rgba(100, 116, 139, 0.7)",
-  leafButtonBackground: "rgba(148, 163, 184, 0.16)",
-  leafButtonBorder: "rgba(100, 116, 139, 0.7)",
-  leafButtonText: "#dbe4f0",
+  leafInputBackground: "rgba(148, 163, 184, 0.16)",
   leafResolvedBackground: "rgba(74, 222, 128, 0.24)",
   leafResolvedBorder: "#4ade80",
   leafSecondaryText: "#cbd5e1",
   leafShadow: "0 18px 44px rgba(2, 6, 23, 0.42), 0 0 0 1px rgba(148, 163, 184, 0.06)",
-  leafText: "#dbe4f0",
   linkText: "#93c5fd",
-  paragraphText: "#dbe4f0",
   selectionBackground: "rgba(56, 189, 248, 0.28)",
   selectionHandleBackground: "#0b1220",
   selectionHandleBorder: "#93c5fd",
   tableBodyBackground: "rgba(15, 23, 42, 0.9)",
   tableBorder: "rgba(100, 116, 139, 0.7)",
   tableHeaderBackground: "rgba(30, 41, 59, 0.96)",
+  text: "#dbe4f0",
 };
 
 export const mintTheme: EditorTheme = {
@@ -116,7 +103,6 @@ export const mintTheme: EditorTheme = {
   blockquoteRule: "rgba(5, 150, 105, 0.22)",
   blockquoteRuleActive: "rgba(6, 95, 70, 0.38)",
   blockquoteText: "#166534",
-  caret: "#14532d",
   codeBackground: "#052e16",
   codeText: "#dcfce7",
   commentHighlight: "rgba(52, 211, 153, 0.26)",
@@ -124,29 +110,25 @@ export const mintTheme: EditorTheme = {
   commentHighlightResolved: "rgba(187, 247, 208, 0.96)",
   commentHighlightResolvedActive: "#059669",
   headingRule: "rgba(20, 83, 45, 0.18)",
-  headingText: "#14532d",
   inlineCodeBackground: "rgba(20, 83, 45, 0.08)",
   inlineCodeText: "#166534",
   insertHighlightText: "#10b981",
   leafAccent: "#059669",
   leafBackground: "#f3fbf6",
   leafBorder: "rgba(22, 163, 74, 0.24)",
-  leafButtonBackground: "rgba(20, 83, 45, 0.08)",
-  leafButtonBorder: "rgba(22, 163, 74, 0.28)",
-  leafButtonText: "#14532d",
+  leafInputBackground: "rgba(20, 83, 45, 0.08)",
   leafResolvedBackground: "#d1fae5",
   leafResolvedBorder: "#10b981",
   leafSecondaryText: "#166534",
   leafShadow: "0 14px 40px rgba(20, 83, 45, 0.14)",
-  leafText: "#14532d",
   linkText: "#047857",
-  paragraphText: "#14532d",
   selectionBackground: "rgba(52, 211, 153, 0.24)",
   selectionHandleBackground: "#f3fbf6",
   selectionHandleBorder: "#059669",
   tableBodyBackground: "rgba(243, 251, 246, 0.96)",
   tableBorder: "rgba(22, 163, 74, 0.24)",
   tableHeaderBackground: "rgba(220, 252, 231, 0.96)",
+  text: "#14532d",
 };
 
 export const midnightTheme: EditorTheme = {
@@ -163,35 +145,52 @@ export const midnightTheme: EditorTheme = {
   commentHighlightResolved: "rgba(45, 212, 191, 0.22)",
   commentHighlightResolvedActive: "#2dd4bf",
   headingRule: "rgba(233, 213, 255, 0.24)",
-  headingText: "#f5f3ff",
   inlineCodeBackground: "rgba(196, 181, 253, 0.16)",
   inlineCodeText: "#f9a8d4",
   insertHighlightText: "#c084fc",
   leafAccent: "#d8b4fe",
   leafBackground: "#12091f",
   leafBorder: "rgba(139, 92, 246, 0.34)",
-  leafButtonBackground: "rgba(196, 181, 253, 0.16)",
-  leafButtonBorder: "rgba(139, 92, 246, 0.34)",
-  leafButtonText: "#ede9fe",
+  leafInputBackground: "rgba(196, 181, 253, 0.16)",
   leafResolvedBackground: "rgba(45, 212, 191, 0.22)",
   leafResolvedBorder: "#2dd4bf",
   leafSecondaryText: "#ddd6fe",
   leafShadow: "0 20px 48px rgba(2, 6, 23, 0.48), 0 0 0 1px rgba(196, 181, 253, 0.08)",
   leafText: "#f5f3ff",
   linkText: "#d8b4fe",
-  paragraphText: "#ede9fe",
   selectionBackground: "rgba(167, 139, 250, 0.26)",
   selectionHandleBackground: "#12091f",
   selectionHandleBorder: "#d8b4fe",
   tableBodyBackground: "rgba(30, 27, 75, 0.88)",
   tableBorder: "rgba(139, 92, 246, 0.34)",
   tableHeaderBackground: "rgba(49, 46, 129, 0.94)",
+  text: "#ede9fe",
 };
 
 export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
+  const { text } = theme;
+
   return {
     ...theme,
+    blockquoteText: theme.blockquoteText ?? text,
+    caret: theme.caret ?? text,
+    codeText: theme.codeText ?? text,
+    dividerRule: theme.dividerRule ?? theme.headingRule,
+    headingText: theme.headingText ?? text,
+    imagePlaceholderText: theme.imagePlaceholderText ?? text,
+    inlineCodeText: theme.inlineCodeText ?? text,
+    insertHighlightText: theme.insertHighlightText ?? text,
+    leafButtonText: theme.leafButtonText ?? text,
+    leafSecondaryText: theme.leafSecondaryText ?? text,
+    leafShadow: theme.leafShadow ?? "",
+    leafText: theme.leafText ?? text,
+    linkText: theme.linkText ?? text,
+    listMarkerText: theme.listMarkerText ?? theme.checkboxUncheckedStroke ?? theme.headingRule ?? text,
+    mentionBackground: theme.mentionBackground ?? theme.inlineCodeBackground,
+    mentionText: theme.mentionText ?? theme.linkText ?? text,
     paddingX: theme.paddingX ?? DEFAULT_THEME_PADDING_X,
     paddingY: theme.paddingY ?? DEFAULT_THEME_PADDING_Y,
+    paragraphText: theme.paragraphText ?? text,
+    text,
   };
 }

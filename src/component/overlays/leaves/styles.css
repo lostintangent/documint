@@ -197,21 +197,12 @@
   cursor: pointer;
   font: inherit;
 
-  &:not(.documint-leaf-action-text) {
-    line-height: 0;
-  }
+  line-height: 0;
 
   &:disabled {
     opacity: 0.45;
     cursor: default;
   }
-}
-
-.documint-leaf-action-text {
-  padding: 0.35rem 0.62rem;
-  border: 1px solid var(--documint-leaf-button-border);
-  border-radius: 999px;
-  background: var(--documint-leaf-button-bg);
 }
 
 .documint-leaf-action-danger {
@@ -247,7 +238,7 @@
   padding: 0.65rem 3.2rem 0.75rem 0.75rem;
   border: 1px solid var(--documint-leaf-border);
   border-radius: 0.75rem;
-  background: var(--documint-leaf-button-bg);
+  background: var(--documint-leaf-input-bg);
   color: var(--documint-leaf-text);
   font: inherit;
   overflow-wrap: anywhere;

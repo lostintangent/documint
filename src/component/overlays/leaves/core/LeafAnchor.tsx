@@ -23,6 +23,11 @@ type LeafAnchorPlacement = {
   verticalPlacement: "above" | "below";
 };
 
+type LeafShellSize = {
+  height: number;
+  width: number;
+};
+
 const DEFAULT_PLACEMENT: LeafAnchorPlacement = {
   horizontalOffset: 0,
   verticalPlacement: "below",
@@ -30,12 +35,25 @@ const DEFAULT_PLACEMENT: LeafAnchorPlacement = {
 
 export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const shellSizeRef = useRef<LeafShellSize | null>(null);
+  const latestAnchorRef = useRef(anchor);
   const [placement, setPlacement] = useState<LeafAnchorPlacement>(DEFAULT_PLACEMENT);
+  latestAnchorRef.current = anchor;
 
-  // Flip the leaf above the anchor and horizontally shift it when it would
-  // overflow the visible viewport (cursor near doc edges, iOS keyboard up, etc.).
-  // Equality-checked setState keeps steady-state ResizeObserver fires from
-  // churning renders unless placement actually changes.
+  // Anchor moves reuse shell size cached by ResizeObserver, avoiding a
+  // shell layout read on scroll-only updates.
+  useLayoutEffect(() => {
+    const shellSize = shellSizeRef.current;
+    if (!shellSize) {
+      return;
+    }
+
+    setPlacement((current) => {
+      const next = resolveLeafPlacement(anchor, shellSize);
+      return arePlacementsEqual(current, next) ? current : next;
+    });
+  }, [anchor.left, anchor.top]);
+
   useLayoutEffect(() => {
     const shell = shellRef.current;
     if (!shell) {
@@ -43,20 +61,19 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
     }
 
     const evaluatePlacement = () => {
-      const shellBounds = shell.getBoundingClientRect();
-      const nextPlacement = resolveLeafPlacement(anchor, shellBounds);
-
-      setPlacement((current) =>
-        arePlacementsEqual(current, nextPlacement) ? current : nextPlacement,
-      );
+      const bounds = shell.getBoundingClientRect();
+      const shellSize = { height: bounds.height, width: bounds.width };
+      shellSizeRef.current = shellSize;
+      setPlacement((current) => {
+        const next = resolveLeafPlacement(latestAnchorRef.current, shellSize);
+        return arePlacementsEqual(current, next) ? current : next;
+      });
     };
 
     evaluatePlacement();
 
-    // Re-evaluate on the two inputs that change the decision: shell size
-    // (content resize) and screen space (visual viewport / window resize).
-    // Page scroll deliberately doesn't — the leaf moves with the page
-    // anyway, and flipping mid-scroll would be jarring.
+    // Screen-space changes can also alter fit/flip decisions. Page scroll is
+    // handled by the anchor-move effect above, using the cached shell size.
     const resizeObserver = new ResizeObserver(evaluatePlacement);
     resizeObserver.observe(shell);
     window.visualViewport?.addEventListener("resize", evaluatePlacement);
@@ -67,7 +84,7 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
       window.visualViewport?.removeEventListener("resize", evaluatePlacement);
       window.removeEventListener("resize", evaluatePlacement);
     };
-  }, [anchor.left, anchor.top]);
+  }, []);
 
   return (
     <OverlayPortal>
@@ -96,7 +113,10 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   );
 }
 
-function resolveLeafPlacement(anchor: LeafResolution, shellBounds: DOMRect): LeafAnchorPlacement {
+function resolveLeafPlacement(
+  anchor: LeafResolution,
+  shellSize: LeafShellSize,
+): LeafAnchorPlacement {
   const visualVp = window.visualViewport;
   const visibleWidth = visualVp?.width ?? window.innerWidth;
   const visibleHeight = visualVp?.height ?? window.innerHeight;
@@ -111,10 +131,10 @@ function resolveLeafPlacement(anchor: LeafResolution, shellBounds: DOMRect): Lea
   return {
     horizontalOffset: resolveHorizontalOffset({
       anchorScreenLeft,
-      shellWidth: shellBounds.width,
+      shellWidth: shellSize.width,
       visibleWidth,
     }),
-    verticalPlacement: shellBounds.height + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below",
+    verticalPlacement: shellSize.height + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below",
   };
 }
 

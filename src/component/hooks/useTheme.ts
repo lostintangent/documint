@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import type { EditorTheme } from "@/types";
+import type { EditorTheme, ResolvedEditorTheme } from "@/types";
 import type { DocumintTheme } from "../Documint";
-import { darkTheme, lightTheme, resolveEditorTheme, type ResolvedEditorTheme } from "../lib/themes";
+import { darkTheme, lightTheme, resolveEditorTheme } from "../lib/themes";
 
 type DocumintThemePair = {
   dark: ResolvedEditorTheme;
@@ -79,23 +79,22 @@ function resolveThemePair(theme: DocumintTheme | undefined): DocumintThemePair {
   };
 }
 
-function createThemeStyles(theme: EditorTheme): CSSProperties {
+function createThemeStyles(theme: ResolvedEditorTheme): CSSProperties {
   return {
     "--documint-background": theme.background,
-    "--documint-leaf-button-bg": theme.leafButtonBackground,
-    "--documint-leaf-button-border": theme.leafButtonBorder,
     "--documint-leaf-button-text": theme.leafButtonText,
     "--documint-leaf-accent": theme.leafAccent,
     "--documint-leaf-bg": theme.leafBackground,
     "--documint-leaf-border": theme.leafBorder,
+    "--documint-leaf-input-bg": theme.leafInputBackground,
     "--documint-leaf-font-family": '"Avenir Next", "Segoe UI", sans-serif',
-    "--documint-leaf-shadow": theme.leafShadow ?? undefined,
+    "--documint-leaf-shadow": theme.leafShadow,
     "--documint-leaf-secondary-text": theme.leafSecondaryText,
     "--documint-leaf-resolved-bg": theme.leafResolvedBackground,
     "--documint-leaf-resolved-border": theme.leafResolvedBorder,
     "--documint-leaf-text": theme.leafText,
-    "--documint-mention-bg": theme.mentionBackground ?? undefined,
-    "--documint-mention-text": theme.mentionText ?? undefined,
+    "--documint-mention-bg": theme.mentionBackground,
+    "--documint-mention-text": theme.mentionText,
     "--documint-selection-handle-bg": theme.selectionHandleBackground,
     "--documint-selection-handle-border": theme.selectionHandleBorder,
   } as CSSProperties;

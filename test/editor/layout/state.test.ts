@@ -1,13 +1,22 @@
 import { expect, test } from "bun:test";
-import { buildSyntheticLongFixture, sampleMarkdown } from "@test/utils";
 import { createEditorLayoutState, createLayoutCache, insertText, setSelection } from "@/editor";
+import { resolveCodeBlockBackgroundBounds } from "@/editor/layout";
 import { createEditorState } from "@/editor/state";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import { setup } from "../helpers";
 
+const repeatedSampleMarkdown = `# Sample Document
+
+This is the bootstrap fixture for the editable preview editor.
+
+- one
+- two
+- three
+`;
+
 test("creates a viewport layout slice smaller than the full long-document layout", () => {
-  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 80));
+  const snapshot = parseDocument(createVirtualizationFixture(80));
   const state = createEditorState(snapshot);
   const fullLayout = measureLayoutSlice(state.documentIndex, {
     width: 420,
@@ -23,7 +32,7 @@ test("creates a viewport layout slice smaller than the full long-document layout
 });
 
 test("keeps near pinned regions in the viewport slice", () => {
-  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 40));
+  const snapshot = parseDocument(createVirtualizationFixture(40));
   const initialState = createEditorState(snapshot);
   const pinnedContainer = initialState.documentIndex.regions.at(-1);
 
@@ -57,7 +66,7 @@ test("keeps near pinned regions in the viewport slice", () => {
 });
 
 test("does not expand virtualized slices to far offscreen pinned regions", () => {
-  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 40));
+  const snapshot = parseDocument(createVirtualizationFixture(40));
   const initialState = createEditorState(snapshot);
   const pinnedContainer = initialState.documentIndex.regions.at(-1);
 
@@ -80,7 +89,7 @@ test("does not expand virtualized slices to far offscreen pinned regions", () =>
 });
 
 test("uses exact full-document layout for small documents", () => {
-  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 10));
+  const snapshot = parseDocument(createVirtualizationFixture(10));
   const state = createEditorState(snapshot);
   const fullLayout = measureLayoutSlice(state.documentIndex, {
     width: 420,
@@ -97,7 +106,7 @@ test("uses exact full-document layout for small documents", () => {
 });
 
 test("keeps large documents on sliced viewport layout", () => {
-  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 40));
+  const snapshot = parseDocument(createVirtualizationFixture(40));
   const state = createEditorState(snapshot);
   const fullLayout = measureLayoutSlice(state.documentIndex, {
     width: 420,
@@ -180,7 +189,7 @@ test("refines virtualized layout estimates after measuring slices", () => {
 });
 
 test("aligns the initial virtualized slice with full-layout document coordinates", () => {
-  const snapshot = parseDocument(buildSyntheticLongFixture(sampleMarkdown, 40));
+  const snapshot = parseDocument(createVirtualizationFixture(40));
   const state = createEditorState(snapshot);
   const fullLayout = measureLayoutSlice(state.documentIndex, {
     paddingY: 12,
@@ -267,6 +276,41 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inli
   expect(editedViewport.totalHeight).toBeLessThan(1000);
 });
 
+test("keeps visual block gaps consistent after code block backgrounds", () => {
+  const paragraphState = setup("alpha\n\nbeta\n");
+  const paragraphLayout = createEditorLayoutState(paragraphState, {
+    height: 320,
+    top: 0,
+    width: 320,
+  }).layout;
+  const [firstParagraph, secondParagraph] = paragraphLayout.lines;
+
+  if (!firstParagraph || !secondParagraph) {
+    throw new Error("Expected paragraph lines");
+  }
+
+  const codeState = setup("```ts\nconst value = 1;\n```\n\nbeta\n");
+  const codeLayout = createEditorLayoutState(codeState, { height: 320, top: 0, width: 320 }).layout;
+  const codeLine = codeLayout.lines.find((line) => line.text === "const value = 1;");
+  const paragraphAfterCode = codeLayout.lines.find((line) => line.text === "beta");
+
+  if (!codeLine || !paragraphAfterCode) {
+    throw new Error("Expected code and paragraph lines");
+  }
+
+  const codeBounds = codeLayout.regionBounds.get(codeLine.regionId);
+
+  if (!codeBounds) {
+    throw new Error("Expected code bounds");
+  }
+
+  const paragraphGap = secondParagraph.top - (firstParagraph.top + firstParagraph.height);
+  const codeBackgroundBounds = resolveCodeBlockBackgroundBounds(codeLayout, codeLine, codeBounds);
+  const codeGap = paragraphAfterCode.top - (codeBackgroundBounds.top + codeBackgroundBounds.height);
+
+  expect(codeGap).toBe(paragraphGap);
+});
+
 function createMeasurementSkewFixture(paragraphCount: number) {
   return (
     Array.from(
@@ -274,5 +318,12 @@ function createMeasurementSkewFixture(paragraphCount: number) {
       (_, index) =>
         `Paragraph ${index + 1} ${"WWWWWWWWWW ".repeat(36)}wide glyphs make exact measurement diverge from the cheap char-width estimate.`,
     ).join("\n\n") + "\n"
+  );
+}
+
+function createVirtualizationFixture(repeatedSections: number) {
+  return (
+    Array.from({ length: repeatedSections }, () => repeatedSampleMarkdown.trimEnd()).join("\n\n") +
+    "\n"
   );
 }

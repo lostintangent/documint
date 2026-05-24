@@ -8,7 +8,13 @@
 // paint is an O(1) map lookup. This avoids walking ancestors for every wrapped
 // line of every list item (only the first wrapped line gets a marker).
 
-import { resolveListItemMarker, resolveTaskCheckboxBounds, type DocumentLayout } from "@/editor/layout";
+import {
+  resolveListItemMarker,
+  resolveOrderedListMarkerAnchor,
+  resolveTaskCheckboxBounds,
+  resolveUnorderedListMarkerBounds,
+  type DocumentLayout,
+} from "@/editor/layout";
 import {
   findAncestorBlockEntry,
   type ListItemMarker,
@@ -19,15 +25,15 @@ import {
   resolveBlockPulseScale,
   type ActiveBlockPulse,
 } from "../animations";
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 
 export type VisibleListMarker = {
   blockPath: string;
   marker: ListItemMarker;
 };
 
-const listMarkerTextInset = 2;
-const orderedListMarkerGap = 8;
+const unorderedMarkerRadius = 3;
+const unorderedMarkerStrokeWidth = 1.5;
 
 const taskCheckboxCornerRadius = 3;
 const taskCheckboxStrokeWidth = 1.5;
@@ -89,8 +95,7 @@ export function paintListMarker(
   marker: ListItemMarker | null,
   textLeft: number,
   textBaseline: number,
-  defaultTextColor: string,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
   if (!marker || line.start !== 0) {
@@ -110,14 +115,14 @@ export function paintListMarker(
   if (marker.kind === "task") {
     paintTaskCheckbox(context, line, marker.checked, theme, pop);
   } else {
-    const markerTextColor = theme.listMarkerText ?? defaultTextColor;
+    const markerTextColor = theme.listMarkerText;
 
     context.fillStyle = pop ? resolveBlockPulseColor(markerTextColor, pop, theme) : markerTextColor;
 
     if (marker.kind === "ordered") {
-      paintOrderedListMarker(context, marker.label, textLeft, textBaseline);
+      paintOrderedListMarker(context, resolveListItemMarkerLabel(marker), textLeft, textBaseline);
     } else {
-      context.fillText(marker.label, line.left - listMarkerTextInset, textBaseline);
+      paintUnorderedListMarker(context, marker, line);
     }
   }
 
@@ -130,7 +135,7 @@ export function paintTaskCheckbox(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   checked: boolean,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
   const checkboxBounds = resolveTaskCheckboxBounds(line);
@@ -148,7 +153,7 @@ function paintTaskCheckboxFrame(
   context: CanvasRenderingContext2D,
   checkboxBounds: TaskCheckboxBounds,
   checked: boolean,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
   const fillColor = checked ? theme.checkboxCheckedFill : theme.checkboxUncheckedFill;
@@ -172,7 +177,7 @@ function paintTaskCheckboxFrame(
 function paintTaskCheckboxCheckmark(
   context: CanvasRenderingContext2D,
   checkboxBounds: TaskCheckboxBounds,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
   context.strokeStyle = pop
@@ -203,8 +208,41 @@ function paintOrderedListMarker(
 ) {
   const previousTextAlign = context.textAlign;
   context.textAlign = "right";
-  context.fillText(label, textLeft - orderedListMarkerGap, textBaseline);
+  context.fillText(label, resolveOrderedListMarkerAnchor(textLeft), textBaseline);
   context.textAlign = previousTextAlign;
+}
+
+function paintUnorderedListMarker(
+  context: CanvasRenderingContext2D,
+  marker: Extract<ListItemMarker, { kind: "unordered" }>,
+  line: DocumentLayout["lines"][number],
+) {
+  const bounds = resolveUnorderedListMarkerBounds(line);
+  const x = bounds.left + bounds.width / 2;
+  const y = bounds.top + bounds.height / 2;
+  const variant = marker.depth % 3;
+
+  context.beginPath();
+
+  if (variant === 2) {
+    context.fillRect(
+      bounds.left,
+      bounds.top,
+      bounds.width,
+      bounds.height,
+    );
+    return;
+  }
+
+  context.arc(x, y, unorderedMarkerRadius, 0, Math.PI * 2);
+
+  if (variant === 1) {
+    context.lineWidth = unorderedMarkerStrokeWidth;
+    context.strokeStyle = context.fillStyle;
+    context.stroke();
+  } else {
+    context.fill();
+  }
 }
 
 function resolveListMarkerCenter(
@@ -219,12 +257,22 @@ function resolveListMarkerCenter(
     return { x: bounds.left + bounds.size / 2, y: bounds.top + bounds.size / 2 };
   }
 
-  const metrics = context.measureText(marker.label);
-  const y = textBaseline - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
-
   if (marker.kind === "ordered") {
-    return { x: textLeft - orderedListMarkerGap - metrics.width / 2, y };
+    const label = resolveListItemMarkerLabel(marker);
+    const metrics = context.measureText(label);
+    const y = textBaseline - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+
+    return { x: resolveOrderedListMarkerAnchor(textLeft) - metrics.width / 2, y };
   }
 
-  return { x: line.left - listMarkerTextInset + metrics.width / 2, y };
+  const bounds = resolveUnorderedListMarkerBounds(line);
+
+  return {
+    x: bounds.left + bounds.width / 2,
+    y: bounds.top + bounds.height / 2,
+  };
+}
+
+function resolveListItemMarkerLabel(marker: Extract<ListItemMarker, { kind: "ordered" }>) {
+  return `${marker.ordinal}.`;
 }

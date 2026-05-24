@@ -39,6 +39,7 @@ export type BenchmarkBudgetTree = {
     linebreak_medium: number;
     paste_blocks_long: number;
     paste_inlines_dense: number;
+    splice_blocks_long: number;
     typing_code: number;
     typing_comments_elsewhere: number;
     typing_long: number;

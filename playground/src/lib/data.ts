@@ -93,6 +93,32 @@ The numbered markers above use a foreground color decoration, while TODO uses a 
 
 The word lesson uses a pulsing decoration so the playground can exercise paint-only animation without changing editor state.
 
+## 🌳 Code Blocks
+
+Use fenced code blocks for source snippets, configuration, and markdown examples that should stay literal.
+
+\`\`\`text
+        &&& &&&&& &&&
+     &&&&&&&&&&&&&&&&&&&
+   &&&&&&&&&&&&&&&&&&&&&&&
+  &&&&&&&&&&&&&&&&&&&&&&&&&
+   &&&&&&&&&&&&&&&&&&&&&&&
+     &&&&&&&&&&&&&&&&&&&
+          &&& ||| &&&
+              |||
+              |||
+          ____|||____
+\`\`\`
+
+Markdown can be shown literally inside a code fence:
+
+\`\`\`markdown
+## Release notes
+
+- Add a concise summary.
+- Include \`inline code\` when a command or symbol matters.
+\`\`\`
+
 :::documint-comments
 [
   {
@@ -202,7 +228,6 @@ const sunriseTheme: EditorTheme = {
   activeBlockFlash: "rgba(249, 115, 22, 0.3)",
   blockquoteRuleActive: "rgba(249, 115, 22, 0.34)",
   blockquoteRule: "rgba(194, 65, 12, 0.24)",
-  caret: "#7c2d12",
   codeBackground: "#431407",
   codeText: "#ffedd5",
   commentHighlight: "rgba(253, 186, 116, 0.34)",
@@ -210,22 +235,18 @@ const sunriseTheme: EditorTheme = {
   commentHighlightResolved: "#fde68a",
   commentHighlightResolvedActive: "#f59e0b",
   insertHighlightText: "#ea580c",
-  headingText: "#7c2d12",
   inlineCodeBackground: "rgba(194, 65, 12, 0.08)",
   inlineCodeText: "#9a3412",
-  leafButtonBackground: "rgba(194, 65, 12, 0.08)",
-  leafButtonBorder: "rgba(234, 88, 12, 0.32)",
-  leafButtonText: "#7c2d12",
   leafAccent: "#ea580c",
   leafBackground: "#fff7ed",
   leafBorder: "rgba(234, 88, 12, 0.24)",
+  leafInputBackground: "rgba(194, 65, 12, 0.08)",
   leafSecondaryText: "#9a3412",
   leafResolvedBackground: "#fde68a",
   leafResolvedBorder: "#f59e0b",
-  leafText: "#7c2d12",
   linkText: "#c2410c",
-  paragraphText: "#7c2d12",
   blockquoteText: "#9a3412",
+  text: "#7c2d12",
   selectionBackground: "rgba(251, 146, 60, 0.24)",
   selectionHandleBackground: "#fff7ed",
   selectionHandleBorder: "#ea580c",

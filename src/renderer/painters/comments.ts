@@ -8,7 +8,7 @@
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { DocumentLayout } from "@/editor/layout";
 import type { EditorState } from "@/editor/state";
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 import { resolveRestingPulseAlpha, restingPulseMinimumAlpha } from "../animations/pulse";
 import { resolveLineRangeRect } from "./line-range";
 
@@ -24,7 +24,7 @@ export function paintCommentHighlights(
   activeThreadIndex: number | null,
   commentPresence: ReadonlyMap<number, EditorPresence>,
   ambientAnimationTime: number,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   for (const range of commentRanges) {
     if (range.regionId !== line.regionId) {
@@ -73,7 +73,7 @@ function resolveCommentHighlightColor(
   range: EditorCommentRange,
   activeThreadIndex: number | null,
   commentPresence: ReadonlyMap<number, EditorPresence>,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   if (range.resolved) {
     return range.threadIndex === activeThreadIndex

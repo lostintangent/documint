@@ -95,10 +95,13 @@ const equalImageAtCursors = equalNullableBy<ImageAtCursor>((target) => [
 ]);
 
 // Exported because the overlay leaf equality (`equalAnnotationLeaf`) reuses
-// it. Selection formatting is a `{ code, marks }` shape; identity works
-// on `marks` because marks are immutable in this codebase.
+// it. Identity works on `marks` because marks are immutable in this codebase.
 export function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting) {
-  return a.code === b.code && equalArraysByIdentity(a.marks, b.marks);
+  return (
+    a.code === b.code &&
+    a.supported === b.supported &&
+    equalArraysByIdentity(a.marks, b.marks)
+  );
 }
 
 // Depends on `documentIndexSprig` rather than `editorStateSprig` so selection-

@@ -1,5 +1,7 @@
+import { createCodeBlock, createParagraphTextBlock } from "@/document";
 import type { EditorStateAction } from "../../../types";
-import type { BlockContext } from "../../context";
+import { createRootPrimaryRegionTarget } from "../../../selection";
+import type { BlockContext, CodeBlockContext } from "../../context";
 import {
   resolveBlockquoteTextBlockSplit,
   resolveRootTextBlockSplit,
@@ -13,7 +15,7 @@ import { resolveTableCellLineBreak } from "../blocks/table";
 export function resolveLineBreakAction(ctx: BlockContext): EditorStateAction | null {
   switch (ctx.kind) {
     case "code":
-      return { kind: "splice-text", text: "\n" };
+      return resolveCodeBlockLineBreak(ctx);
 
     case "tableCell":
       return resolveTableCellLineBreak(ctx);
@@ -32,4 +34,28 @@ export function resolveLineBreakAction(ctx: BlockContext): EditorStateAction | n
     case "rootTextBlock":
       return resolveRootTextBlockSplit(ctx, ctx.offset);
   }
+}
+
+function resolveCodeBlockLineBreak(ctx: CodeBlockContext): EditorStateAction {
+  const block = ctx.region.block;
+
+  // Blank lines are source content, so code blocks require two trailing
+  // blank lines before Enter exits and trims the exit marker.
+  if (block.type !== "code" || !ctx.atEnd || !ctx.region.text.endsWith("\n\n")) {
+    return { kind: "splice-text", text: "\n" };
+  }
+
+  return {
+    kind: "splice-blocks",
+    blocks: [
+      createCodeBlock({
+        language: block.language,
+        meta: block.meta,
+        source: ctx.region.text.replace(/\n+$/, ""),
+      }),
+      createParagraphTextBlock(""),
+    ],
+    rootIndex: ctx.rootIndex,
+    selection: createRootPrimaryRegionTarget(ctx.rootIndex + 1),
+  };
 }

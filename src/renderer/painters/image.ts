@@ -1,8 +1,9 @@
 // Owns paint policy for inline document images. The main paint module delegates
 // image-specific draw behavior here so text and image rendering stay separate.
-import type { DocumentResources, EditorTheme } from "@/types";
+import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import type { InlineEntry } from "@/editor/state";
 import type { DocumentLayout } from "@/editor/layout";
+import type { PaintRect } from "./geometry";
 
 const imageFallbackAspectRatio = 9 / 16;
 const imageMinimumHeight = 48;
@@ -19,14 +20,7 @@ const imageLoadingCycleMs = 1800;
 const imageLoadingShimmerMinimumWidth = 48;
 const imageLoadingShimmerWidthScale = 0.22;
 
-type PaintBox = {
-  height: number;
-  left: number;
-  top: number;
-  width: number;
-};
-
-type ImagePlaceholderBox = PaintBox & {
+type ImagePlaceholderBox = PaintRect & {
   ambientAnimationTime: number;
   status: "error" | "loading";
 };
@@ -36,13 +30,12 @@ export function paintInlineImage(
   line: DocumentLayout["lines"][number],
   inline: InlineEntry,
   resources: DocumentResources,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   left: number,
   width: number,
   ambientAnimationTime: number,
 ) {
-  const resource =
-    inline.node.type === "image" ? resources.images.get(inline.node.url) : null;
+  const resource = inline.node.type === "image" ? resources.images.get(inline.node.url) : null;
   const imageHeight = resolvePaintedImageHeight(inline, resources, width);
   const box = resolveInlineImagePaintBox(line, left, width, imageHeight);
 
@@ -65,7 +58,7 @@ export function paintInlineImage(
 
 function paintImagePlaceholder(
   context: CanvasRenderingContext2D,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   box: ImagePlaceholderBox,
 ) {
   const label = box.status === "loading" ? "Loading image" : "Image unavailable";
@@ -112,8 +105,8 @@ function paintImagePlaceholder(
 
 function paintImageLoadingShimmer(
   context: CanvasRenderingContext2D,
-  theme: EditorTheme,
-  box: PaintBox,
+  theme: ResolvedEditorTheme,
+  box: PaintRect,
   ambientAnimationTime: number,
 ) {
   const shimmerWidth = Math.max(
@@ -164,7 +157,7 @@ function resolveInlineImagePaintBox(
   left: number,
   width: number,
   height: number,
-): PaintBox {
+): PaintRect {
   return {
     height,
     left,
@@ -173,7 +166,7 @@ function resolveInlineImagePaintBox(
   };
 }
 
-function resolveImagePlaceholderIconBox(box: PaintBox) {
+function resolveImagePlaceholderIconBox(box: PaintRect) {
   const size = Math.max(
     imagePlaceholderIconMinimumSize,
     Math.min(

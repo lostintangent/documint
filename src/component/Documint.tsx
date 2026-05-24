@@ -22,10 +22,8 @@ import {
   getDocument,
   hasActiveCommentHighlightsInViewport,
   hasAnimatedDecorationsInViewport,
-  insertTable,
   insertTableColumn,
   insertTableRow,
-  insertText,
   measureVisualCaretTarget,
   removeLink,
   replyToThread,
@@ -334,8 +332,6 @@ function DocumintHost({
     return store.editor.subscribe(commitEditorCommandTransition);
   }, [store]);
 
-  const insertTextCommand = useEditorCommand(insertText);
-  const insertTableCommand = useEditorCommand(insertTable);
   const deleteTableColumnCommand = useEditorCommand(deleteTableColumn);
   const deleteTableRowCommand = useEditorCommand(deleteTableRow);
   const deleteTableCommand = useEditorCommand(deleteTable);
@@ -748,16 +744,7 @@ function DocumintHost({
 
     switch (activeLeaf.kind) {
       case "insertion":
-        return (
-          <InsertionLeaf
-            onInsert={(text) => {
-              insertTextCommand(text);
-            }}
-            onInsertTable={(columnCount) => {
-              insertTableCommand(columnCount);
-            }}
-          />
-        );
+        return <InsertionLeaf />;
       case "table":
         return (
           <TableLeaf

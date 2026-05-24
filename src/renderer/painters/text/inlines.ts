@@ -8,7 +8,7 @@
 
 import type { DocumentLayout } from "@/editor/layout";
 import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
-import type { DocumentResources, EditorTheme } from "@/types";
+import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { paintInlineImage } from "../image";
 import { paintInlineMention } from "../mention";
@@ -30,7 +30,7 @@ export function paintLineText(
   textBaseline: number,
   defaultColor: string,
   resources: DocumentResources,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   ambientAnimationTime: number,
 ) {
   if (!container) {

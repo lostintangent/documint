@@ -10,7 +10,7 @@ import {
   type DocumentLayout,
 } from "@/editor/layout";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 import { resolveCenteredTextTop, resolveFontMetrics } from "@/editor/text/measure";
 
 const caretOpticalTopInset = 1;
@@ -38,7 +38,7 @@ export function paintCaretOverlay({
   normalizedSelection: NormalizedEditorSelection;
   presence?: EditorPresence[];
   showCaret: boolean;
-  theme: EditorTheme;
+  theme: ResolvedEditorTheme;
   viewportTop: number;
   width: number;
 }) {

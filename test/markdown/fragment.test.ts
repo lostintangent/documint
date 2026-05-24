@@ -10,11 +10,11 @@ describe("parseFragment classification", () => {
   // so a copy/paste round trip lands in the same fragment kind on the way
   // back. Ordered text → inlines → blocks (lowest to highest altitude).
   test.each([
-    ["empty source", "", "text"],
-    ["single unmarked paragraph", "hello world\n", "text"],
-    ["single paragraph with marks", "*italic* text\n", "inlines"],
-    ["multiple blocks", "# Heading\n\nParagraph.\n", "blocks"],
-  ] as const)("classifies %s as `%s`", (_label, source, expectedKind) => {
+    ["empty source", "text", ""],
+    ["single unmarked paragraph", "text", "hello world\n"],
+    ["single paragraph with marks", "inlines", "*italic* text\n"],
+    ["multiple blocks", "blocks", "# Heading\n\nParagraph.\n"],
+  ] as const)("classifies %s as `%s`", (_label, expectedKind, source) => {
     expect(parseFragment(source).kind).toBe(expectedKind);
   });
 });

@@ -13,7 +13,7 @@
 // `imageUrls`) live next to the primitive so the cache-reuse policies
 // (`document.comments === prev.document.comments`, etc.) stay in one place.
 
-import { resolveCommentThread, type Block, type Document } from "@/document";
+import { resolveCommentThread, type Document } from "@/document";
 import type {
   BlockEntry,
   DocumentIndex,
@@ -42,19 +42,17 @@ export function applyRootDelta(
   const prevRoots = prev?.roots;
   const sharedLength = prevRoots ? Math.min(prevRoots.length, positionedRoots.length) : 0;
 
-  // For each shared position, compare references and rootIndex:
+  // For each shared position, compare references:
   //   - same reference → reused, no work
-  //   - different reference, same rootIndex → IDs unchanged (path-based); just
-  //     set new entries (overwrites old values for the same keys)
-  //   - different rootIndex → IDs shifted; must delete old entries first
+  //   - different reference → remove previous entries, then add next entries.
+  //     Same rootIndex does not imply stable block/region ids; root replacement
+  //     and root insertion can both put different block ids at the same slot.
   if (prevRoots) {
     for (let i = 0; i < sharedLength; i += 1) {
       const prevRoot = prevRoots[i]!;
       const positionedRoot = positionedRoots[i]!;
       if (positionedRoot === prevRoot) continue;
-      if (positionedRoot.rootIndex !== prevRoot.rootIndex) {
-        removeRootEntries(prevRoot, blockIndex, regionIndex, regionPathIndex);
-      }
+      removeRootEntries(prevRoot, blockIndex, regionIndex, regionPathIndex);
       addRootEntries(positionedRoot, blockIndex, regionIndex, regionPathIndex);
     }
     // Trailing prev roots (deletions at tail) — remove their entries.
@@ -84,10 +82,7 @@ export function applyRootDelta(
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
     imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
-    listItemMarkers:
-      prev && nextDocument.blocks === prev.document.blocks
-        ? prev.listItemMarkers
-        : createListItemMarkers(nextDocument.blocks),
+    listItemMarkers: createDocumentListItemMarkers(positionedRoots, prev?.listItemMarkers),
     regionIndex,
     regionPathIndex,
     regions,
@@ -139,10 +134,7 @@ function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document)
         ? prev.commentContainerIndex
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
-    listItemMarkers:
-      nextDocument.blocks === prev.document.blocks
-        ? prev.listItemMarkers
-        : createListItemMarkers(nextDocument.blocks),
+    listItemMarkers: prev.listItemMarkers,
   };
 }
 
@@ -169,6 +161,44 @@ function areUrlSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolea
   return true;
 }
 
+// Builds the document-level list marker semantics map from per-root maps,
+// reusing the previous map when the marker values are unchanged.
+function createDocumentListItemMarkers(
+  roots: RootEntry[],
+  previous: ReadonlyMap<string, ListItemMarker> | undefined,
+): ReadonlyMap<string, ListItemMarker> {
+  const next = new Map<string, ListItemMarker>();
+  for (const root of roots) {
+    for (const [id, marker] of root.listItemMarkers) next.set(id, marker);
+  }
+  return previous && areListItemMarkerMapsEqual(previous, next) ? previous : next;
+}
+
+function areListItemMarkerMapsEqual(
+  a: ReadonlyMap<string, ListItemMarker>,
+  b: ReadonlyMap<string, ListItemMarker>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, marker] of a) {
+    const next = b.get(id);
+    if (!next || !areListItemMarkersEqual(marker, next)) return false;
+  }
+  return true;
+}
+
+function areListItemMarkersEqual(a: ListItemMarker, b: ListItemMarker): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.depth !== b.depth) return false;
+  switch (a.kind) {
+    case "task":
+      return b.kind === "task" && a.checked === b.checked;
+    case "unordered":
+      return b.kind === "unordered";
+    case "ordered":
+      return b.kind === "ordered" && a.ordinal === b.ordinal;
+  }
+}
+
 // Note: this is O(C × N) on cold build — each thread resolves against the
 // full document via `resolveCommentThread`. Reuse via `document.comments`
 // identity hides this on edits, but documents loaded with many existing
@@ -189,56 +219,4 @@ function createCommentContainerIndex(document: Document) {
   }
 
   return commentContainerIndex;
-}
-
-function createListItemMarkers(blocks: Block[]) {
-  const markers = new Map<string, ListItemMarker>();
-  appendListItemMarkers(markers, blocks);
-
-  return markers;
-}
-
-function appendListItemMarkers(
-  markers: Map<string, ListItemMarker>,
-  blocks: Block[],
-  orderedContext: { index: number; ordered: boolean; start: number | null } | null = null,
-) {
-  for (const block of blocks) {
-    if (block.type === "list") {
-      for (const [index, child] of block.items.entries()) {
-        appendListItemMarkers(markers, [child], {
-          index,
-          ordered: block.ordered,
-          start: block.start,
-        });
-      }
-
-      continue;
-    }
-
-    if (block.type === "listItem") {
-      if (typeof block.checked === "boolean") {
-        markers.set(block.id, {
-          checked: block.checked,
-          kind: "task",
-        });
-      } else if (orderedContext?.ordered) {
-        markers.set(block.id, {
-          kind: "ordered",
-          label: `${(orderedContext.start ?? 1) + orderedContext.index}.`,
-        });
-      } else {
-        markers.set(block.id, {
-          kind: "bullet",
-          label: "•",
-        });
-      }
-
-      appendListItemMarkers(markers, block.children, orderedContext);
-    }
-
-    if (block.type === "blockquote") {
-      appendListItemMarkers(markers, block.children, orderedContext);
-    }
-  }
 }

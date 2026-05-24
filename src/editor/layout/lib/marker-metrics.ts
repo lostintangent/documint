@@ -4,12 +4,15 @@
 import { findAncestorBlockEntry, type DocumentIndex } from "../../state";
 
 export const LIST_MARKER_TEXT_INSET = 18;
+export const ORDERED_LIST_MARKER_GAP = 8;
 export const TASK_CHECKBOX_SIZE = 14;
 // Gap between the task checkbox and the start of its text. Keeping this
 // explicit makes the relationship between the box size and the text inset
 // obvious — bumping the box automatically bumps the inset.
 export const TASK_CHECKBOX_TEXT_GAP = 8;
 export const TASK_MARKER_TEXT_INSET = TASK_CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
+export const UNORDERED_LIST_MARKER_GUTTER_INSET = 2;
+export const UNORDERED_LIST_MARKER_SIZE = 6;
 
 export type LayoutBlockExtent = {
   bottom: number;

@@ -6,11 +6,13 @@ import type { DocumentResources } from "@/types";
 import { isContainerBlock, isInertBlock, resolveRegion } from "../../state/index/query";
 import type { DocumentIndex, RegionEntry } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
+import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
 import {
   resolveDocumentLayoutOptions,
   type DocumentLayoutOptions,
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
+import { CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
 import { resolveBlockGap } from "../lib/block-spacing";
 import { resolveListMarkerInset, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { layoutTable } from "./table";
@@ -138,9 +140,11 @@ export function measureLayoutSlice(
     const depth = blockEntry.depth;
     const left = resolvedOptions.paddingX + depth * resolvedOptions.indentWidth;
     const listInset = resolveListMarkerInset(documentIndex, blockEntry.block.id);
+    const codeContentInset = block.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
+    const contentLeft = left + codeContentInset;
     const availableWidth = Math.max(
       40,
-      resolvedOptions.width - left - resolvedOptions.paddingX - listInset,
+      resolvedOptions.width - left - resolvedOptions.paddingX - listInset - codeContentInset * 2,
     );
 
     if (isInert) {
@@ -176,7 +180,7 @@ export function measureLayoutSlice(
           container,
           cache,
           block,
-          left,
+          contentLeft,
           y,
           availableWidth,
           resolvedOptions,
@@ -234,6 +238,7 @@ function layoutSingleContainer(
 ) {
   const font = resolveTextBlockFont(block);
   const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
+  const blockPaddingY = block?.type === "code" ? CODE_BLOCK_BACKGROUND_PADDING_Y : 0;
   const measuredLines = measureTextContainerLines(
     cache,
     container,
@@ -243,7 +248,7 @@ function layoutSingleContainer(
     lineHeight,
     resources,
   );
-  let y = top;
+  let y = top + blockPaddingY;
   for (const line of measuredLines) {
     const layoutLine = {
       blockId: container.block.id,
@@ -274,7 +279,18 @@ function layoutSingleContainer(
     y += line.height;
   }
 
-  return y;
+  if (block?.type === "code") {
+    const current = blockExtents.get(container.block.id);
+
+    if (current) {
+      blockExtents.set(container.block.id, {
+        bottom: current.bottom + blockPaddingY,
+        top: current.top - blockPaddingY,
+      });
+    }
+  }
+
+  return y + blockPaddingY;
 }
 
 function createContainerLineIndices(lines: DocumentLayoutLine[]) {

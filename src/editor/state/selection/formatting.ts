@@ -10,7 +10,7 @@
 
 import type { Mark } from "@/document";
 import { findInlinesInSpan, regionInlines } from "../index/inlines";
-import { resolveRegion } from "../index/query";
+import { isInlineTextRegion, resolveRegion } from "../index/query";
 import type { InlineEntry } from "../index/types";
 import type { EditorState } from "../types";
 import { getSelectionRange } from "./query";
@@ -18,6 +18,7 @@ import { getSelectionRange } from "./query";
 export type SelectionFormatting = {
   code: boolean;
   marks: readonly Mark[];
+  supported: boolean;
 };
 
 export function getSelectionFormatting(state: EditorState): SelectionFormatting {
@@ -31,6 +32,14 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
 
   if (!region) {
     return emptySelectionFormatting();
+  }
+
+  if (!isInlineTextRegion(region)) {
+    return {
+      code: false,
+      marks: [],
+      supported: false,
+    };
   }
 
   const inlines = regionInlines(region);
@@ -48,6 +57,7 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
   return {
     code: isSelectionInlineCode(selectedInlines),
     marks: resolveSelectionMarks(selectedInlines),
+    supported: true,
   };
 }
 
@@ -98,5 +108,6 @@ function emptySelectionFormatting(): SelectionFormatting {
   return {
     code: false,
     marks: [],
+    supported: true,
   };
 }

@@ -60,7 +60,7 @@ function getThemeOptionLabelStyle(option: (typeof themeOptions)[number]): CSSPro
         ? "#111827"
         : option.id === "midnight"
           ? "#6d28d9"
-          : (option.theme?.paragraphText ?? option.theme?.leafText ?? "#1f2937"),
+          : (option.theme?.paragraphText ?? option.theme?.leafText ?? option.theme?.text ?? "#1f2937"),
   };
 }
 

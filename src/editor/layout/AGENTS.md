@@ -13,6 +13,17 @@ Small/common documents use exact full-document layout. Large documents use whole
 - **Refinement is the cache write-back boundary.** Virtualized layout may update cached estimated heights after exact slice measurement; other layout work treats cache reads as memoization.
 - **Hit testing is geometric here.** Layout may answer which measured line/offset a point lands on. Editor policies such as inert-leaf redirects, drag clamping, word selection, link hits, and task-toggle targeting belong above layout.
 - **Measurement details stay behind layout/text APIs.** Browser-backed text metrics and resource-dependent image sizes are inputs to measurement, not reasons for callers to inspect DOM or duplicate layout math.
+- **Store core geometry, derive visual geometry.** `DocumentLayout` stores the
+  measured primitives that define document space: line boxes, block extents,
+  region bounds, line indices, options, and total height. Cheap or
+  caller-specific geometry lives in `query/` helpers and is resolved just in
+  time from prepared lines: caret visual X, list-marker anchors/bounds, inline
+  object bounds, and text segment bounds. This keeps virtualized layout from
+  eagerly computing intra-line chrome for offscreen content while still giving
+  paint, navigation, and hit testing one shared geometry API. Promote derived
+  geometry into measured layout state only when it affects wrapping,
+  virtualization, broad hit testing, or becomes stable prepared render input
+  that multiple callers would otherwise recompute.
 
 ## Subsystem Map
 

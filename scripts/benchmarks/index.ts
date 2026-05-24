@@ -1,5 +1,4 @@
 import "../../test/setup-canvas";
-import { buildSyntheticLongFixture, readBenchmarkFixtureMarkdown } from "@test/utils";
 import { parseDocument } from "@/markdown";
 import { createComponentBenchmarks } from "./component";
 import { createEditorBenchmarks } from "./editor";
@@ -14,9 +13,31 @@ type RepeatedBudgetFailure = {
   records: BenchmarkRecord[];
 };
 
+type BenchmarkFixtureId =
+  | "article"
+  | "blockquotes"
+  | "blockquote-transitions"
+  | "comments-review"
+  | "code-directives"
+  | "full-spectrum"
+  | "headings"
+  | "images-links"
+  | "long-structural"
+  | "lists"
+  | "nested-structural"
+  | "rich-code"
+  | "rich-images"
+  | "rich-mixed"
+  | "rich-tables"
+  | "sample"
+  | "tables"
+  | "task-lists"
+  | "unsupported-html";
+
 const manifestPath = new URL("./manifest.json", import.meta.url);
 const manifest = (await Bun.file(manifestPath).json()) as {
   benchmarks: BenchmarkBudgetTree;
+  fixtures: Array<{ id: string; path: string }>;
 };
 const benchmarkRunCount = 3;
 const allowedBudgetFailureCount = 1;
@@ -146,6 +167,20 @@ function groupBenchmarkRecordsByName(runs: BenchmarkRecord[][]) {
 
 function resolveBenchmarkBudget(records: BenchmarkRecord[]) {
   return records.find((record) => record.budgetMs !== undefined)?.budgetMs;
+}
+
+async function readBenchmarkFixtureMarkdown(id: BenchmarkFixtureId) {
+  const fixture = manifest.fixtures.find((candidate) => candidate.id === id);
+
+  if (!fixture) {
+    throw new Error(`Unknown fixture: ${id}`);
+  }
+
+  return Bun.file(fixture.path).text();
+}
+
+function buildSyntheticLongFixture(seed: string, repetitions = 120) {
+  return Array.from({ length: repetitions }, () => seed.trimEnd()).join("\n\n") + "\n";
 }
 
 function formatBudgetFailureMessage(failures: RepeatedBudgetFailure[]) {

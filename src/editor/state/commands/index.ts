@@ -24,6 +24,7 @@ import {
   resolveInlineContext,
   resolveInlineTargetContext,
   resolveListItemContext,
+  resolveRootBlockInsertionContext,
   resolveTableCellContext,
   resolveTextRangeContext,
   type InlineContext,
@@ -69,7 +70,11 @@ import {
   resolveListItemIndent,
   resolveListItemMove,
 } from "./actions/blocks/list";
-import { resolveHeadingDepthShift, resolveParagraphBlockquoteIndent } from "./actions/blocks";
+import {
+  resolveCodeBlockInsertion,
+  resolveHeadingDepthShift,
+  resolveParagraphBlockquoteIndent,
+} from "./actions/blocks";
 import { resolveDeletion } from "./actions/deletion";
 import {
   resolveTableColumnDeletion,
@@ -302,10 +307,16 @@ export const toggleTask = makeCommand((state, listItemId: string) => {
   };
 });
 
-// --- Tables ---
+// --- Block insertion & tables ---
 
-export const insertTable = makeCommand((state, columnCount: number) =>
-  resolveTableInsertion(state.documentIndex, state.selection, columnCount),
+export const insertCodeBlock = makeCommand(
+  resolveCodeBlockInsertion,
+  (state) => resolveRootBlockInsertionContext(state.documentIndex, state.selection),
+);
+
+export const insertTable = makeCommand(
+  resolveTableInsertion,
+  (state) => resolveRootBlockInsertionContext(state.documentIndex, state.selection),
 );
 
 export const insertTableColumn = makeCommand(

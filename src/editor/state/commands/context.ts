@@ -22,7 +22,12 @@ import {
 } from "../index/query";
 import { resolveInlineContainer, type InlineContainer } from "./inlines";
 import type { DocumentIndex, RegionEntry } from "../index/types";
-import { normalizeSelection, resolveRegionRange, type EditorSelection } from "../selection";
+import {
+  isSelectionCollapsed,
+  normalizeSelection,
+  resolveRegionRange,
+  type EditorSelection,
+} from "../selection";
 import type { EditorState } from "../types";
 
 // Semantic command context resolution. This module answers "what structural
@@ -58,6 +63,13 @@ export type RootTextBlockContext = TextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
   region: DocumentIndex["regions"][number];
   rootIndex: number;
+};
+
+export type RootBlockInsertionContext = RootTextBlockContext & {
+  atStart: true;
+  block: Extract<Block, { type: "paragraph" }>;
+  empty: true;
+  offset: 0;
 };
 
 export type BlockquoteTextBlockContext = TextContextFacts & {
@@ -320,6 +332,31 @@ export function resolveRootTextBlockContextFromSelection(
     block,
     region,
     rootIndex,
+  };
+}
+
+export function resolveRootBlockInsertionContext(
+  documentIndex: DocumentIndex,
+  selection: EditorSelection,
+): RootBlockInsertionContext | null {
+  const context = resolveRootTextBlockContextFromSelection(documentIndex, selection);
+
+  if (
+    !context ||
+    context.block.type !== "paragraph" ||
+    !context.empty ||
+    !context.atStart ||
+    !isSelectionCollapsed(selection)
+  ) {
+    return null;
+  }
+
+  return {
+    ...context,
+    atStart: true,
+    block: context.block,
+    empty: true,
+    offset: 0,
   };
 }
 

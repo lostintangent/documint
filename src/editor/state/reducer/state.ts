@@ -28,7 +28,12 @@ import {
   resolveBlockPathForRegion,
   resolveDocumentBoundaryRegion,
 } from "../index/query";
-import { createDocumentIndex, replaceDocumentMetadata, replaceEditorBlock } from "../index/splice";
+import {
+  createDocumentIndex,
+  replaceDocumentMetadata,
+  replaceEditorBlock,
+  spliceDocumentIndex,
+} from "../index/splice";
 import type { DocumentIndex } from "../index/types";
 import type { EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
@@ -104,13 +109,18 @@ function reduceEditorStateAction(
     }
 
     case "splice-blocks": {
+      const count = action.count ?? 1;
       const document = spliceDocument(
         state.documentIndex.document,
         action.rootIndex,
-        action.count ?? 1,
+        count,
         action.blocks,
       );
-      return applyDocumentMutation(state, createDocumentIndex(document), action.selection ?? null);
+      return applyDocumentMutation(
+        state,
+        spliceDocumentIndex(state.documentIndex, document, action.rootIndex, count),
+        action.selection ?? null,
+      );
     }
 
     case "splice-text": {

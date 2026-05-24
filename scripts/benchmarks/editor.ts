@@ -1,6 +1,7 @@
 import {
   createAnchorFromContainer,
   createCommentThread,
+  createParagraphTextBlock,
   extractQuoteFromContainer,
   listAnchorContainers,
   markCommentThreadAsResolved,
@@ -16,6 +17,7 @@ import {
   pasteFragment,
   setSelection,
 } from "@/editor/state";
+import { dispatch } from "@/editor/state/reducer/state";
 import { parseFragment, serializeFragment } from "@/markdown";
 import {
   createEditorLayoutState,
@@ -121,6 +123,9 @@ export function createEditorBenchmarks(
     }),
     runBenchmark("editor_typing_long", 100, budgets.typing_long, () => {
       void insertText(longEditingState, " updated");
+    }),
+    runBenchmark("editor_splice_blocks_long", 100, budgets.splice_blocks_long, () => {
+      void dispatch(longState, createMiddleRootReplacementAction(longState));
     }),
     // Full-frame: insertText + viewport layout. Approximates the actual
     // user-felt keystroke latency (state mutation + layout) on a long doc.
@@ -361,6 +366,18 @@ function selectMiddleTextRegion(snapshot: Parameters<typeof createEditorState>[0
     regionId: region.id,
     offset: Math.floor(region.text.length / 2),
   });
+}
+
+function createMiddleRootReplacementAction(state: ReturnType<typeof createEditorState>) {
+  const rootIndex = Math.floor(state.documentIndex.roots.length / 2);
+
+  return {
+    blocks: [createParagraphTextBlock(`Replacement root ${rootIndex}`)],
+    count: 1,
+    kind: "splice-blocks" as const,
+    rootIndex,
+    selection: null,
+  };
 }
 
 function createLongInteractionFixture(snapshot: Parameters<typeof createEditorState>[0]) {

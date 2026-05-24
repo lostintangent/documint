@@ -149,7 +149,9 @@ export function findAncestorBlockEntry(
       return current;
     }
 
-    current = current.parentBlockId ? resolveBlockEntry(documentIndex, current.parentBlockId) : null;
+    current = current.parentBlockId
+      ? resolveBlockEntry(documentIndex, current.parentBlockId)
+      : null;
   }
 
   return null;
@@ -233,12 +235,22 @@ export function isContainerBlock(entry: BlockEntry): boolean {
   return entry.kind === "container";
 }
 
+export function isInlineTextRegion(region: RegionEntry): boolean {
+  return region.content.kind === "inline-text";
+}
+
+export function isSourceTextRegion(region: RegionEntry): boolean {
+  return region.content.kind === "source-text";
+}
+
 export function resolveActiveBlockKey(
   documentIndex: DocumentIndex,
   point: EditorIndexPosition,
 ): string | null {
   const focusedRegion = resolveRegion(documentIndex, point.regionId);
-  const focusedBlock = focusedRegion ? resolveBlockEntry(documentIndex, focusedRegion.block.id) : null;
+  const focusedBlock = focusedRegion
+    ? resolveBlockEntry(documentIndex, focusedRegion.block.id)
+    : null;
 
   if (!focusedRegion || !focusedBlock?.path) {
     return null;

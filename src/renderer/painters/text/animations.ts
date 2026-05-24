@@ -7,7 +7,7 @@
 
 import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
 import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { splitGraphemes } from "@/editor/text/graphemes";
 import { resolveFontMetrics } from "@/editor/text/measure";
@@ -33,7 +33,7 @@ export function paintTextHighlights(
   textLeft: number,
   textBaseline: number,
   textHighlights: ActiveTextHighlight[],
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   if (!container || textHighlights.length === 0) {
     return;
@@ -147,7 +147,7 @@ export function paintTextPulses(
   textLeft: number,
   textBaseline: number,
   textPulses: ActiveTextPulse[],
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   if (!container || textPulses.length === 0) {
     return;

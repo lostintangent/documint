@@ -1,4 +1,5 @@
 import {
+  Code2,
   Heading,
   Heading1,
   Heading2,
@@ -13,12 +14,9 @@ import {
   Table2,
   TextQuote,
 } from "lucide-react";
+import { insertCodeBlock, insertTable, insertText } from "@/editor";
+import { useEditorCommand } from "../../store";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
-
-type InsertionLeafProps = {
-  onInsert: (text: string) => void;
-  onInsertTable: (columnCount: number) => void;
-};
 
 type HeadingAction = {
   icon: typeof Heading1;
@@ -42,22 +40,30 @@ const tableActions = [
   { columns: 5, text: "5 columns" },
 ];
 
-export function InsertionLeaf({ onInsert, onInsertTable }: InsertionLeafProps) {
+export function InsertionLeaf() {
+  const insertCodeBlockCommand = useEditorCommand(insertCodeBlock);
+  const insertTableCommand = useEditorCommand(insertTable);
+  const insertTextCommand = useEditorCommand(insertText);
+
   return (
     <LeafToolbar>
-      <LeafToolbar.Button icon={List} label="Insert bulleted list" onClick={() => onInsert("- ")} />
+      <LeafToolbar.Button
+        icon={List}
+        label="Insert bulleted list"
+        onClick={() => insertTextCommand("- ")}
+      />
       <LeafToolbar.Button
         icon={ListOrdered}
         label="Insert numbered list"
-        onClick={() => onInsert("1. ")}
+        onClick={() => insertTextCommand("1. ")}
       />
       <LeafToolbar.Button
         icon={ListTodo}
         label="Insert task list"
-        onClick={() => onInsert("- [ ] ")}
+        onClick={() => insertTextCommand("- [ ] ")}
       />
       <LeafToolbar.Divider />
-      <LeafToolbar.Menu icon={Heading} label="Insert heading" onSelect={onInsert}>
+      <LeafToolbar.Menu icon={Heading} label="Insert heading" onSelect={insertTextCommand}>
         {headingActions.map(({ icon, label, text }) => (
           <LeafToolbar.MenuItem icon={icon} key={text} text={label} value={text} />
         ))}
@@ -65,7 +71,7 @@ export function InsertionLeaf({ onInsert, onInsertTable }: InsertionLeafProps) {
       <LeafToolbar.Menu
         icon={Table2}
         label="Insert table"
-        onSelect={(value) => onInsertTable(Number(value))}
+        onSelect={(value) => insertTableCommand(Number(value))}
       >
         {tableActions.map(({ columns, text }) => (
           <LeafToolbar.MenuItem icon={Table2} key={columns} text={text} value={String(columns)} />
@@ -75,9 +81,18 @@ export function InsertionLeaf({ onInsert, onInsertTable }: InsertionLeafProps) {
       <LeafToolbar.Button
         icon={TextQuote}
         label="Insert blockquote"
-        onClick={() => onInsert("> ")}
+        onClick={() => insertTextCommand("> ")}
       />
-      <LeafToolbar.Button icon={Minus} label="Insert divider" onClick={() => onInsert("--- ")} />
+      <LeafToolbar.Button
+        icon={Code2}
+        label="Insert code block"
+        onClick={insertCodeBlockCommand}
+      />
+      <LeafToolbar.Button
+        icon={Minus}
+        label="Insert divider"
+        onClick={() => insertTextCommand("--- ")}
+      />
     </LeafToolbar>
   );
 }

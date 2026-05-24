@@ -14,6 +14,19 @@ export type RecordingOperation =
       y: number;
     }
   | {
+      endAngle: number;
+      kind: "arc";
+      radius: number;
+      startAngle: number;
+      x: number;
+      y: number;
+    }
+  | {
+      fillStyle: string | CanvasGradient | CanvasPattern;
+      globalAlpha: number;
+      kind: "fillPath";
+    }
+  | {
       font: string;
       fillStyle: string | CanvasGradient | CanvasPattern;
       globalCompositeOperation: GlobalCompositeOperation;
@@ -31,6 +44,11 @@ export type RecordingOperation =
       width: number;
       x: number;
       y: number;
+    }
+  | {
+      kind: "strokePath";
+      lineWidth: number;
+      strokeStyle: string | CanvasGradient | CanvasPattern;
     };
 
 export class RecordingCanvasContext {
@@ -54,7 +72,16 @@ export class RecordingCanvasContext {
   textAlign: CanvasTextAlign = "start";
   textBaseline: CanvasTextBaseline = "alphabetic";
 
-  arc() {}
+  arc(x: number, y: number, radius: number, startAngle: number, endAngle: number) {
+    this.operations.push({
+      endAngle,
+      kind: "arc",
+      radius,
+      startAngle,
+      x,
+      y,
+    });
+  }
 
   beginPath() {
     this.pendingRoundedRect = null;
@@ -66,6 +93,11 @@ export class RecordingCanvasContext {
 
   fill() {
     if (!this.pendingRoundedRect) {
+      this.operations.push({
+        fillStyle: this.fillStyle,
+        globalAlpha: this.globalAlpha,
+        kind: "fillPath",
+      });
       return;
     }
 
@@ -152,7 +184,13 @@ export class RecordingCanvasContext {
 
   scale() {}
 
-  stroke() {}
+  stroke() {
+    this.operations.push({
+      kind: "strokePath",
+      lineWidth: this.lineWidth,
+      strokeStyle: this.strokeStyle,
+    });
+  }
 
   strokeRect(x: number, y: number, width: number, height: number) {
     this.operations.push({

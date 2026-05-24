@@ -22,12 +22,15 @@ export {
 
   // Resolve geometry against prepared layout.
   measureInlineImageBounds,
+  resolveCodeBlockBackgroundBounds,
   resolveCaretHitTestX,
   resolveCaretVisualLeft,
   resolveLineContentInset,
   resolveLineVisualLeft,
   resolveListItemMarker,
+  resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
+  resolveUnorderedListMarkerBounds,
   resolvePositionInViewport,
   type ViewportPositionStatus,
 } from "./query";

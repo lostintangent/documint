@@ -8,6 +8,7 @@ import type { DocumentResources } from "@/types";
 import { regionInlines, type RegionEntry } from "../../state";
 import type { LayoutCache } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
+import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
 import { estimateTextLayout } from "./text-estimate";
 import {
   measureTextContainerLines,
@@ -28,7 +29,14 @@ export function estimateContainerHeight(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  const cacheKey = createContainerHeightCacheKey(container, listInset, options, resources);
+  const codeContentInset = block?.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
+  const cacheKey = createContainerHeightCacheKey(
+    container,
+    listInset,
+    codeContentInset,
+    options,
+    resources,
+  );
   const cached = cache.measuredContainerHeights.get(cacheKey);
 
   if (cached !== undefined) {
@@ -37,7 +45,10 @@ export function estimateContainerHeight(
 
   const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
   const left = options.paddingX + depth * options.indentWidth;
-  const availableWidth = Math.max(40, options.width - left - options.paddingX - listInset);
+  const availableWidth = Math.max(
+    40,
+    options.width - left - options.paddingX - listInset - codeContentInset * 2,
+  );
 
   if (
     regionInlines(container).some(
@@ -64,7 +75,9 @@ export function estimateContainerHeight(
   });
   const estimatedHeight = Math.max(lineHeight, estimate.lineCount * lineHeight);
 
-  return estimatedHeight;
+  return block?.type === "code"
+    ? estimatedHeight + CODE_BLOCK_BACKGROUND_PADDING_Y * 2
+    : estimatedHeight;
 }
 
 export function estimateTableCellHeight(
@@ -86,8 +99,9 @@ export function estimateTableCellHeight(
 export function createContainerHeightCacheKey(
   container: RegionEntry,
   listInset: number,
+  codeContentInset: number,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.lineHeight}:${listInset}`;
+  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.lineHeight}:${listInset}:${codeContentInset}`;
 }

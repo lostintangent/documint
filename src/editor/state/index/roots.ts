@@ -20,6 +20,7 @@ import type {
   BlockEntry,
   BlockKind,
   InlineEntry,
+  ListItemMarker,
   RegionContent,
   RegionEntry,
   RootEntry,
@@ -81,6 +82,13 @@ const BLOCK_CONTRIBUTIONS: {
   }),
 };
 
+type ListMarkerContext = {
+  depth: number;
+  index: number;
+  ordered: boolean;
+  start: number | null;
+};
+
 function resolveBlockContribution(block: Block): BlockContribution {
   // Cast is safe: the table's discriminator and the block's discriminator
   // are the same union; TypeScript just doesn't track the relationship.
@@ -93,6 +101,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
   // Collected during the inline walk below, alongside the work that's
   // already happening — no extra traversal.
   const imageUrls = new Set<string>();
+  const listItemMarkers = new Map<string, ListItemMarker>();
   let position = 0;
 
   function appendInlineRegion(
@@ -155,7 +164,13 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     });
   }
 
-  function visitBlock(block: Block, path: string, depth: number, parentBlockId: string | null) {
+  function visitBlock(
+    block: Block,
+    path: string,
+    depth: number,
+    parentBlockId: string | null,
+    listMarkerContext: ListMarkerContext | null = null,
+  ) {
     const contribution = resolveBlockContribution(block);
     const blockEntry: BlockEntry = {
       block,
@@ -174,10 +189,18 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
 
     blocks.push(blockEntry);
 
+    appendListItemMarker(block, listMarkerContext);
+
     switch (contribution.kind) {
       case "container":
         for (const [index, child] of contribution.children.entries()) {
-          visitBlock(child, childBlockPath(path, index), depth + 1, block.id);
+          visitBlock(
+            child,
+            childBlockPath(path, index),
+            depth + 1,
+            block.id,
+            resolveChildListMarkerContext(block, index, listMarkerContext),
+          );
         }
         break;
       case "inline-text":
@@ -216,6 +239,52 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     blockEntry.end = position;
   }
 
+  function appendListItemMarker(block: Block, context: ListMarkerContext | null) {
+    if (block.type !== "listItem") {
+      return;
+    }
+
+    if (typeof block.checked === "boolean") {
+      listItemMarkers.set(block.id, {
+        checked: block.checked,
+        depth: context?.depth ?? 0,
+        kind: "task",
+      });
+      return;
+    }
+
+    if (context?.ordered) {
+      listItemMarkers.set(block.id, {
+        depth: context.depth,
+        kind: "ordered",
+        ordinal: (context.start ?? 1) + context.index,
+      });
+      return;
+    }
+
+    listItemMarkers.set(block.id, {
+      depth: context?.depth ?? 0,
+      kind: "unordered",
+    });
+  }
+
+  function resolveChildListMarkerContext(
+    block: Block,
+    childIndex: number,
+    inherited: ListMarkerContext | null,
+  ): ListMarkerContext | null {
+    if (block.type === "list") {
+      return {
+        depth: inherited ? inherited.depth + 1 : 0,
+        index: childIndex,
+        ordered: block.ordered,
+        start: block.start,
+      };
+    }
+
+    return inherited;
+  }
+
   visitBlock(rootBlock, rootBlockPath(rootIndex), 0, null);
 
   return {
@@ -226,6 +295,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     blocks,
     end: position,
     imageUrls,
+    listItemMarkers,
     regionRange:
       regions.length > 0
         ? {

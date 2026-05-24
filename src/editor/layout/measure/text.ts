@@ -13,7 +13,13 @@ import {
 } from "@chenglou/pretext/rich-inline";
 import type { Block, Image, Mark, Mention } from "@/document";
 import type { DocumentResources } from "@/types";
-import { findInlinesInSpan, regionInlines, type InlineEntry, type RegionEntry } from "../../state";
+import {
+  findInlinesInSpan,
+  isSourceTextRegion,
+  regionInlines,
+  type InlineEntry,
+  type RegionEntry,
+} from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import { codeTextFont, inlineTextHasCustomMetrics, resolveInlineTextStyle } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./inline-image";
@@ -216,6 +222,23 @@ export function measureTextLineBoundaries(
     },
   ];
   let width = 0;
+
+  if (isSourceTextRegion(container)) {
+    let offset = 0;
+    context.font = font;
+
+    for (const advance of measureTextBoundaryAdvances(cache, context, text)) {
+      width += advance.width;
+      offset += advance.length;
+      boundaries.push({
+        left: width,
+        offset,
+      });
+    }
+
+    return cacheLineBoundaries(cache, cacheKey, boundaries);
+  }
+
   const visibleRuns = findInlinesInSpan(regionInlines(container), start, end);
 
   for (const run of visibleRuns) {
@@ -348,7 +371,33 @@ function createMeasuredTextLines(
     });
   }
 
-  return lines;
+  // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
+  // visual row after a trailing source newline. Materialize it so code-block
+  // carets can land immediately after pressing Enter at end-of-source.
+  return isSourceTextRegion(container) && text.endsWith("\n")
+    ? materializeTrailingSourceTextLine(lines, text.length, lineHeight)
+    : lines;
+}
+
+function materializeTrailingSourceTextLine(
+  lines: MeasuredTextLine[],
+  offset: number,
+  lineHeight: number,
+): MeasuredTextLine[] {
+  if (lines.some((line) => line.start === offset && line.end === offset)) {
+    return lines;
+  }
+
+  return [
+    ...lines,
+    {
+      end: offset,
+      height: lineHeight,
+      start: offset,
+      text: "",
+      width: 0,
+    },
+  ];
 }
 
 function resolveMeasuredLineEnd(text: string, start: number, end: number) {

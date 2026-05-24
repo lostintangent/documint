@@ -1,3 +1,8 @@
+## 🗓️ v0.0.20 (05-24-26)
+
+- Added basic support for code blocks
+- Added different list markers for 2nd and 3rd depth unordered lists
+
 ## 🗓️ v0.0.19 (05-22-26)
 
 - Added support for superscript text formatting

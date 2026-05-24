@@ -1,5 +1,6 @@
 import {
   createBlockquoteBlock,
+  createCodeBlock,
   createHeadingTextBlock,
   createParagraphTextBlock,
   type Block,
@@ -11,7 +12,11 @@ import {
   createDescendantPrimaryRegionTarget,
   createRootPrimaryRegionTarget,
 } from "../../../selection";
-import { type BlockquoteTextBlockContext, type RootTextBlockContext } from "../../context";
+import type {
+  BlockquoteTextBlockContext,
+  RootBlockInsertionContext,
+  RootTextBlockContext,
+} from "../../context";
 
 // Block-level action resolvers that aren't specific to lists or
 // tables: splits for paragraphs/headings/blockquotes and heading
@@ -133,6 +138,15 @@ export function resolveParagraphBlockquoteIndent(
     blocks: [createBlockquoteBlock([ctx.block])],
     rootIndex: ctx.rootIndex,
     selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, [0], ctx.offset),
+  };
+}
+
+export function resolveCodeBlockInsertion(context: RootBlockInsertionContext): EditorStateAction {
+  return {
+    kind: "splice-blocks",
+    blocks: [createCodeBlock({ source: "" })],
+    rootIndex: context.rootIndex,
+    selection: createRootPrimaryRegionTarget(context.rootIndex),
   };
 }
 

@@ -9,11 +9,11 @@
 import type { Block } from "@/document";
 import { resolveLineContentInset, type DocumentLayout } from "@/editor/layout";
 import { findAncestorBlockEntry, type EditorState } from "@/editor/state";
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 
-const blockquoteRuleInsetY = 3;
+const blockquoteRuleBottomInset = 3;
 const blockquoteRuleMinimumHeight = 12;
-const blockquoteRuleTrimY = 6;
+const blockquoteRuleTopBleed = 1;
 const blockquoteRuleWidth = 3;
 
 // Horizontal rules (heading underline, divider). Both terminate at the same
@@ -89,7 +89,7 @@ export function paintInertBlock(
   layout: DocumentLayout,
   startIndex: number,
   endIndex: number,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   width: number,
 ) {
   for (let index = startIndex; index < endIndex; index += 1) {
@@ -104,7 +104,7 @@ export function paintInertBlock(
       const ruleTop = Math.round(block.top + (block.bottom - block.top - dividerRuleThickness) / 2);
 
       paintHorizontalRule(context, {
-        color: theme.dividerRule ?? theme.headingRule,
+        color: theme.dividerRule,
         left,
         right,
         thickness: dividerRuleThickness,
@@ -117,7 +117,7 @@ export function paintInertBlock(
 export function paintHeadingRules(
   context: CanvasRenderingContext2D,
   visibleHeadingRules: Map<string, VisibleHeadingRule>,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   for (const rule of visibleHeadingRules.values()) {
     paintHorizontalRule(context, {
@@ -179,15 +179,18 @@ export function resolveVisibleBlockquoteRegions(
 export function paintBlockquoteRules(
   context: CanvasRenderingContext2D,
   visibleBlockquoteRegions: Map<string, VisibleBlockquoteRegion>,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   for (const region of visibleBlockquoteRegions.values()) {
+    const top = region.top - blockquoteRuleTopBleed;
+    const bottom = region.bottom - blockquoteRuleBottomInset;
+
     context.fillStyle = region.isActive ? theme.blockquoteRuleActive : theme.blockquoteRule;
     context.fillRect(
       region.left,
-      region.top + blockquoteRuleInsetY,
+      top,
       blockquoteRuleWidth,
-      Math.max(blockquoteRuleMinimumHeight, region.bottom - region.top - blockquoteRuleTrimY),
+      Math.max(blockquoteRuleMinimumHeight, bottom - top),
     );
   }
 }

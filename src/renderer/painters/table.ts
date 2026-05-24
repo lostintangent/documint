@@ -5,20 +5,16 @@
 // cell needs a highlight; this file knows *how* to paint one.
 
 import type { DocumentLayout } from "@/editor/layout";
+import type { ResolvedEditorTheme } from "@/types";
 import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../animations";
-import type { EditorTheme } from "@/types";
+import type { PaintRect } from "./geometry";
 
 const tableCellMinimumPaintWidth = 80;
 
 export type PaintRegionBounds =
   DocumentLayout["regionBounds"] extends Map<string, infer Extent> ? Extent : never;
 
-type TableCellPaintRect = {
-  height: number;
-  left: number;
-  top: number;
-  width: number;
-};
+type TableCellPaintRect = PaintRect;
 
 export function paintTableCellChrome({
   context,
@@ -31,7 +27,7 @@ export function paintTableCellChrome({
   containerBounds: PaintRegionBounds;
   isHeaderRow: boolean;
   lineHeight: number;
-  theme: EditorTheme;
+  theme: ResolvedEditorTheme;
 }) {
   const cellRect = resolveTableCellPaintRect(containerBounds, lineHeight);
 
@@ -63,7 +59,7 @@ export function paintActiveTableCellHighlight({
   layout: DocumentLayout;
   regionBounds: Map<string, PaintRegionBounds>;
   startIndex: number;
-  theme: EditorTheme;
+  theme: ResolvedEditorTheme;
   verticalBleed: number;
 }) {
   const cellBounds = regionBounds.get(activeRegionId) ?? null;
@@ -174,7 +170,7 @@ function resolveTableCellPaintRect(
 function paintTableCellBorder(
   context: CanvasRenderingContext2D,
   cellRect: TableCellPaintRect,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   context.strokeStyle = theme.tableBorder;
   context.strokeRect(cellRect.left, cellRect.top, cellRect.width, cellRect.height);

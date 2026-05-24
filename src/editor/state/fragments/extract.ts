@@ -40,6 +40,7 @@ import {
 import { editorInlinesToDocumentInlines, replaceEditorInlines } from "../reducer/inlines";
 import { blockContainsRegion, trimBlockToPrefix, trimBlockToSuffix } from "./blocks";
 import { regionInlines } from "../index/inlines";
+import { isSourceTextRegion } from "../index/query";
 import type { DocumentIndex, RegionEntry } from "../index/types";
 import { type EditorSelection } from "../selection";
 import { resolveFragmentSourceContext } from "./context";
@@ -56,10 +57,18 @@ export function extractFragment(
 
   switch (context.kind) {
     case "single-region":
-      // Single-region selection. Two sub-cases produce inline-level fragments:
-      //   - A partial range that doesn't cover the whole region.
-      //   - Any range inside a table cell — a single cell isn't markdown-
-      //     shaped on its own, so even whole-cell coverage emits inlines.
+      if (!context.wholeRegion && isSourceTextRegion(context.region)) {
+        return classifySourceText(
+          context.region.text.slice(
+            context.normalized.start.offset,
+            context.normalized.end.offset,
+          ),
+        );
+      }
+
+      // Single-region inline selections either cover a partial range, or a
+      // table cell that is not markdown-shaped on its own even when selected
+      // end-to-end.
       if (!context.wholeRegion || context.region.block.type === "table") {
         const inlines = sliceRegionInlines(
           context.region,
@@ -107,6 +116,10 @@ function classifyInlines(inlines: Inline[]): Fragment | null {
   }
 
   return { kind: "inlines", inlines };
+}
+
+function classifySourceText(text: string): Fragment | null {
+  return text.length > 0 ? { kind: "text", text } : null;
 }
 
 function classifyBlocks(blocks: Block[]): Fragment {

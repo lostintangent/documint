@@ -7,9 +7,11 @@ import type { EditorPresence } from "@/editor/anchors";
 import { paintOverlay } from "@/renderer";
 import { createEditorLayoutState } from "@/editor/layout";
 import { normalizeSelection, setSelection, type EditorState } from "@/editor/state";
-import { lightTheme } from "@/component/lib/themes";
-import { findOperationIndex, RecordingCanvasContext } from "../helpers";
-import { setup } from "../../editor/helpers";
+import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
+import { findOperationIndex, RecordingCanvasContext } from "./helpers";
+import { setup } from "../editor/helpers";
+
+const resolvedLightTheme = resolveEditorTheme(lightTheme);
 
 test("paints resolved presence cursors on the overlay canvas", () => {
   let state = setup("alpha beta gamma\n");
@@ -45,7 +47,7 @@ test("paints resolved presence cursors on the overlay canvas", () => {
     width: 240,
   });
   const userCaretIndex = findOperationIndex(context.operations, (operation) => {
-    return operation.kind === "fillRect" && operation.fillStyle === lightTheme.caret;
+    return operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.caret;
   });
   const presenceCaretIndex = findOperationIndex(context.operations, (operation) => {
     return operation.kind === "fillRect" && operation.fillStyle === "#0ea5e9";
@@ -102,7 +104,7 @@ function renderOverlayOperations(
     normalizedSelection: normalizeSelection(state),
     presence: options.presence,
     showCaret: true,
-    theme: lightTheme,
+    theme: resolvedLightTheme,
     width: options.width,
   });
 

@@ -19,30 +19,17 @@ import {
   createTableCellTarget,
   type EditorSelection,
 } from "../../../selection";
-import { resolveRootTextBlockContextFromSelection, type TableCellContext } from "../../context";
+import type { RootBlockInsertionContext, TableCellContext } from "../../context";
 
 // Table action resolvers: insert/delete rows and columns, cell navigation,
 // and table deletion. Most take a pre-resolved TableCellContext so
 // commands handle "is the selection in a table cell?" once at the boundary.
 
 export function resolveTableInsertion(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
+  context: RootBlockInsertionContext,
   columnCount: number,
-): EditorStateAction | null {
-  const context = resolveRootTextBlockContextFromSelection(documentIndex, selection);
+): EditorStateAction {
   const resolvedColumnCount = Math.max(2, columnCount);
-
-  if (
-    !context ||
-    context.block.type !== "paragraph" ||
-    context.block.plainText.length > 0 ||
-    selection.anchor.regionId !== selection.focus.regionId ||
-    selection.anchor.offset !== 0 ||
-    selection.focus.offset !== 0
-  ) {
-    return null;
-  }
 
   return {
     kind: "splice-blocks",

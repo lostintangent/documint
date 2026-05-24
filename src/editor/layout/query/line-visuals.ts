@@ -15,12 +15,17 @@ import {
 } from "../../state";
 import {
   LIST_MARKER_TEXT_INSET,
+  ORDERED_LIST_MARKER_GAP,
   TASK_CHECKBOX_SIZE,
   TASK_MARKER_TEXT_INSET,
+  UNORDERED_LIST_MARKER_GUTTER_INSET,
+  UNORDERED_LIST_MARKER_SIZE,
 } from "../lib/marker-metrics";
+import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/measure";
 import type { EditorLayoutState } from "../state";
 import { resolveInlineImageDimensions } from "../measure/inline-image";
 import type { DocumentLayout, DocumentLayoutLine } from "../measure";
+import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
 export type InlineBounds = {
@@ -50,6 +55,10 @@ export function resolveLineContentInset(state: EditorState, line: DocumentLayout
   return marker?.kind === "task" ? TASK_MARKER_TEXT_INSET : LIST_MARKER_TEXT_INSET;
 }
 
+export function resolveOrderedListMarkerAnchor(textLeft: number) {
+  return textLeft - ORDERED_LIST_MARKER_GAP;
+}
+
 export function resolveTaskCheckboxBounds(line: DocumentLayoutLine) {
   return {
     left: line.left,
@@ -58,11 +67,47 @@ export function resolveTaskCheckboxBounds(line: DocumentLayoutLine) {
   };
 }
 
+export function resolveUnorderedListMarkerBounds(line: DocumentLayoutLine) {
+  const size = UNORDERED_LIST_MARKER_SIZE;
+  const centerY = resolveTextOpticalCenter(line);
+
+  return {
+    height: size,
+    left: line.left - UNORDERED_LIST_MARKER_GUTTER_INSET,
+    top: centerY - size / 2,
+    width: size,
+  };
+}
+
+export function resolveCodeBlockBackgroundBounds(
+  layout: DocumentLayout,
+  line: DocumentLayoutLine,
+  regionBounds: { bottom: number; left: number; right: number; top: number },
+): InlineBounds {
+  const left = Math.max(0, line.left - CODE_BLOCK_CONTENT_PADDING_X);
+  const right = Math.max(left, layout.width - layout.options.paddingX);
+
+  return {
+    height: regionBounds.bottom - regionBounds.top + CODE_BLOCK_BACKGROUND_PADDING_Y * 2,
+    left,
+    top: regionBounds.top - CODE_BLOCK_BACKGROUND_PADDING_Y,
+    width: right - left,
+  };
+}
+
 export function resolveListItemMarker(
   state: EditorState,
   listItemId: string,
 ): ListItemMarker | null {
   return state.documentIndex.listItemMarkers.get(listItemId) ?? null;
+}
+
+function resolveTextOpticalCenter(line: DocumentLayoutLine) {
+  const baseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
+  const { ascent, descent } = resolveFontMetrics(line.font);
+
+  // Small canvas-drawn markers look optically low when centered on font metrics.
+  return baseline - (ascent - descent) / 2 - 1;
 }
 
 export function measureInlineImageBounds(

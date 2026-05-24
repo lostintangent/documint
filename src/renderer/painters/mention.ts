@@ -1,7 +1,7 @@
 // Owns paint policy for inline user mentions. Mentions are semantic inline
 // objects projected as one replacement character, then rendered as a pill.
 
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 import type { DocumentLayout } from "@/editor/layout";
 import type { InlineEntry } from "@/editor/state";
 import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
@@ -16,7 +16,7 @@ export function paintInlineMention(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
   inline: InlineEntry,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
   left: number,
   right: number,
 ) {
@@ -30,9 +30,9 @@ export function paintInlineMention(
   const height = metrics.ascent + metrics.descent + mentionVerticalPadding * 2;
   const width = Math.max(0, right - left);
 
-  context.fillStyle = theme.mentionBackground ?? theme.inlineCodeBackground;
+  context.fillStyle = theme.mentionBackground;
   paintRoundedRect(context, left, top, width, height, mentionCornerRadius);
-  context.fillStyle = theme.mentionText ?? theme.linkText;
+  context.fillStyle = theme.mentionText;
   context.fillText(
     `@${inline.node.name}`,
     left + mentionHorizontalPadding,

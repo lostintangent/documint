@@ -5,7 +5,7 @@
 // `hasRunningEditorAnimations` predicate live in `state/animations` because
 // they are model-lifetime policy, not paint policy.
 
-import type { EditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/types";
 import {
   getEditorAnimationDuration,
   type ActiveBlockFlashAnimation,
@@ -105,7 +105,7 @@ export function resolveActiveBlockFlashColor(
   );
 }
 
-export function resolveTextPulseColor(textPulse: ActiveTextPulse, theme: EditorTheme) {
+export function resolveTextPulseColor(textPulse: ActiveTextPulse, theme: ResolvedEditorTheme) {
   return blendCanvasColors(theme.insertHighlightText, transparentCanvasColor, textPulse.progress);
 }
 
@@ -117,7 +117,7 @@ export function resolveBlockPulseScale(pop: ActiveBlockPulse) {
 export function resolveBlockPulseColor(
   baseColor: string,
   pop: ActiveBlockPulse,
-  theme: EditorTheme,
+  theme: ResolvedEditorTheme,
 ) {
   const colorProgress = Math.max(0, pop.progress * LIST_MARKER_POP_COLOR_SPEED - 1);
   return blendCanvasColors(theme.insertHighlightText, baseColor, colorProgress);

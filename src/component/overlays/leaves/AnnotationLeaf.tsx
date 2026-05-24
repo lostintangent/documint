@@ -48,6 +48,7 @@ const createToThreadTransitionMs = 220;
 const defaultFormatting: SelectionFormatting = {
   code: false,
   marks: [],
+  supported: true,
 };
 const noop = () => {};
 
@@ -96,6 +97,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const formatting = createProps?.formatting ?? defaultFormatting;
   const activeCode = formatting.code;
   const activeFormattingMarks = formatting.marks;
+  const formattingSupported = formatting.supported;
   const toggleCodeCommand = useEditorCommand(toggleCode);
   const toggleMarkCommand = useEditorCommand(toggleMark);
   const actions = createProps?.actions ?? [];
@@ -103,7 +105,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     <LeafToolbar.Button
       active={activeFormattingMarks.includes(button.mark)}
       className="documint-comment-leaf-create-mark"
-      disabled={activeCode}
+      disabled={!formattingSupported || activeCode}
       icon={button.icon}
       key={button.mark}
       label={button.label}
@@ -274,6 +276,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
             <LeafToolbar.Button
               active={activeCode}
               className="documint-comment-leaf-create-mark"
+              disabled={!formattingSupported}
               icon={Code}
               label="Code"
               onClick={toggleCodeCommand}

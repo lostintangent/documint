@@ -166,6 +166,7 @@
       "typing_small": 0.15,
       "typing_medium": 0.15,
       "typing_long": 3,
+      "splice_blocks_long": 2,
       "typing_long_full_frame": 6,
       "typing_code": 0.05,
       "typing_table": 0.15,
