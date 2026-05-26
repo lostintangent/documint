@@ -1,3 +1,7 @@
+## 🗓️ v0.0.21 (05-26-26)
+
+- Added initial search support (`CMD+F`)
+
 ## 🗓️ v0.0.20 (05-24-26)
 
 - Added basic support for code blocks

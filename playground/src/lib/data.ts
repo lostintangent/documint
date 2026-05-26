@@ -1,5 +1,9 @@
 import { darkTheme, lightTheme, midnightTheme, mintTheme, type EditorTheme } from "documint";
 
+export const slowSampleImagePath = "playground-slow-editor-shell.png";
+export const slowSampleImageSource =
+  "https://dummyimage.com/960x540/0f172a/f8fafc.png&text=Editor+Shell";
+
 const sampleMarkdown = `# 🎓 Tutorial Document
 
 Welcome to Documint 👋, a canvas-based markdown editor for rich documents with formatting, tables, images, comments, mentions, and custom decorations.
@@ -52,7 +56,7 @@ Inline images stay semantic while rendering like real content.
 
 Select and resize an image below with the handles, or paste an image to insert a new one.
 
-![Editor shell](https://dummyimage.com/960x540/0f172a/f8fafc.png&text=Editor+Shell "Wide host")
+![Editor shell](${slowSampleImagePath} "Wide host")
 ![Narrow host](https://dummyimage.com/640x360/1e293b/e2e8f0.png&text=Narrow+Host "Constrained width")
 ![Diagnostics](https://dummyimage.com/720x360/0f766e/f0fdfa.png&text=Diagnostics)
 

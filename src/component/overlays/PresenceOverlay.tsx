@@ -4,26 +4,17 @@ import type { EditorPresence } from "@/editor";
 import { resolvePresenceName } from "../lib/presence";
 
 type PresenceOverlayProps = {
-  insetX: number;
-  insetY: number;
   onSelect: (presence: EditorPresence) => void;
   presence: EditorPresence[] | undefined;
 };
 
-export function PresenceOverlay({ insetX, insetY, onSelect, presence }: PresenceOverlayProps) {
+export function PresenceOverlay({ onSelect, presence }: PresenceOverlayProps) {
   if (!presence) {
     return null;
   }
 
   return (
-    <div
-      aria-label="Presence"
-      className="documint-presence-indicators"
-      style={{
-        paddingRight: `${insetX}px`,
-        top: `${insetY}px`,
-      }}
-    >
+    <div aria-label="Presence" className="documint-presence-indicators">
       {presence.map((entry) => (
         <PresenceIndicator key={entry.id} onSelect={() => onSelect(entry)} presence={entry} />
       ))}

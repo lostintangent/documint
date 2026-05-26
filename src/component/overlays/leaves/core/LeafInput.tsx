@@ -6,7 +6,7 @@ import { CompletionLeaf } from "../CompletionLeaf";
 import { type CompletionSource } from "../../../completions/completions";
 import { useCallback, useRef, type KeyboardEvent, type RefObject } from "react";
 import { useLeafInputCompletions } from "./useLeafInputCompletions";
-import { LeafAnchor } from "./LeafAnchor";
+import { DocumentLeafAnchor } from "./DocumentLeafAnchor";
 
 export type LeafInputActions =
   | {
@@ -103,9 +103,9 @@ export function LeafInput({
       />
       {renderActions(actions)}
       {activeCompletion && completionAnchor && leafProps ? (
-        <LeafAnchor anchor={completionAnchor}>
+        <DocumentLeafAnchor anchor={completionAnchor}>
           <CompletionLeaf {...leafProps} />
-        </LeafAnchor>
+        </DocumentLeafAnchor>
       ) : null}
     </div>
   );

@@ -1,8 +1,8 @@
-// Plain-text projection of the semantic document. Pure data over `Block` and
-// `Inline` trees — no IDs, no normalization, no side effects. Used wherever the
-// editor, comments, or markdown layer needs a readable string view of structural
-// content: comment quotes, fragment-to-text fallbacks, list-item digests, and
-// the canonical `plainText` field cached on every block.
+// Plain-text projection of semantic document content. Builders use the inline
+// projection to create each node's cached `plainText`; document/query code then
+// composes committed block/cell `plainText` fields so anchoring, fragments, and
+// future content search all share the same semantic text without markdown
+// syntax.
 
 import type { Block, Fragment, Inline } from "../types";
 
@@ -29,12 +29,10 @@ export function extractPlainTextFromInlineNodes(nodes: Inline[]): string {
     .join("");
 }
 
-// Plain-text projection of a single block. Used by the normalizer to derive
-// each block's canonical `plainText` field, and by `extractPlainTextFromBlockNodes`
-// as the per-node recipe. Container blocks read their children's cached
-// `plainText` where possible (list, table) and recurse otherwise (blockquote,
-// listItem); inline-container blocks (heading, paragraph) project their inline
-// children directly.
+// Plain-text projection of a single uncommitted block shape. Builders call this
+// before a node has a durable id, while document queries over committed
+// snapshots should prefer the cached `plainText` fields already stored on the
+// document model.
 export function extractBlockPlainText(node: Block): string {
   switch (node.type) {
     case "blockquote":
@@ -50,9 +48,7 @@ export function extractBlockPlainText(node: Block): string {
     case "list":
       return node.items.map((child) => child.plainText).join("\n");
     case "table":
-      return node.rows
-        .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
-        .join("\n");
+      return node.rows.map((row) => row.cells.map((cell) => cell.plainText).join(" | ")).join("\n");
     case "divider":
       return "";
     case "raw":
@@ -65,8 +61,20 @@ export function extractBlockPlainText(node: Block): string {
 // blocks (blockquote, listItem) — callers that compare against `plainText` get
 // the same answer either way. If you need an untrimmed projection of a single
 // node, use `extractBlockPlainText` directly.
+//
+// Reads each block's cached `plainText` field directly rather than routing
+// through `extractBlockPlainText`. Every `Block` reaches this function via a
+// builder (`createParagraphBlock`, `createBlockquoteBlock`, etc.) that
+// already computed `plainText` from the same text content a recursive walk
+// would visit; recursing here would redo `O(total descendant text)` work
+// per nesting level for callers like `createListItemBlock` /
+// `createBlockquoteBlock`. The cached read keeps the per-call cost
+// proportional to the immediate child count.
 export function extractPlainTextFromBlockNodes(nodes: Block[]): string {
-  return nodes.map(extractBlockPlainText).join("\n").trim();
+  return nodes
+    .map((node) => node.plainText)
+    .join("\n")
+    .trim();
 }
 
 // Whether an inline list could be losslessly represented as a plain string

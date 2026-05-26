@@ -1,24 +1,28 @@
 // Canonicalization for a freshly-built block tree: assigns deterministic
-// `id`s from tree paths, computes `plainText` projections, and recurses into
-// every container so the whole tree is canonical end to end. The semantic
-// content of a node decides its identity; the path decides where two
-// otherwise-identical nodes get distinct IDs. Identity is the same across
-// runs and machines for the same input.
+// `id`s from tree paths and recurses into every container so the whole tree
+// is canonical end to end. The semantic content of a node decides its
+// identity; the path decides where two otherwise-identical nodes get
+// distinct IDs. Identity is the same across runs and machines for the same
+// input.
 //
 // `createDocument` and `spliceDocument` are the only callers. Builders in
-// `./builders` produce un-normalized shapes (with `id: ""`); this module
-// owns the canonical pass that turns those into committed `Document` nodes.
+// `./builders` produce un-normalized shapes (with `id: ""`) but otherwise
+// already-canonical derived fields (`plainText`, canonical mark order);
+// this module owns the path-derived id pass that turns those into
+// committed `Document` nodes.
 //
 // Per-node, normalize does exactly two things: rebuild structural children
 // (so each child gets a path-derived id), then spread the result with a
-// fresh `id` and `plainText`. The spread means non-structural fields on the
-// node (`language`, `meta`, `depth`, `align`, …) carry through automatically
-// — adding a property to a node type doesn't require touching normalize.
+// fresh `id`. `plainText` and inline `marks` carry through from the builder
+// — text content doesn't change during normalize, only IDs do — so
+// re-deriving them here would be redundant work. The spread also means
+// non-structural fields (`language`, `meta`, `depth`, `align`, …) carry
+// through automatically: adding a property to a node type doesn't require
+// touching normalize.
 
 import { blockContainerSpec } from "../containers";
-import { canonicalizeMarks } from "../marks";
 import { childBlockPath, rootBlockPath, tableCellPath, tableRowPath } from "../paths";
-import { extractBlockPlainText, extractPlainTextFromInlineNodes } from "../query/text";
+import { extractPlainTextFromInlineNodes } from "../query/text";
 import type { Block, Inline, TableRow } from "../types";
 
 export function normalizeRootBlock(block: Block, rootIndex: number): Block {
@@ -27,12 +31,14 @@ export function normalizeRootBlock(block: Block, rootIndex: number): Block {
 
 function normalizeBlockNode(node: Block, path: string): Block {
   const recursed = recurseBlockChildren(node, path);
-  const plainText = extractBlockPlainText(recursed);
-
+  // Trust the builder's `plainText`: every Block reaches normalize via a
+  // builder (`createParagraphBlock`, `createBlockquoteBlock`, etc.) that
+  // computed `plainText` from the same inline/child text content normalize
+  // would walk again. `recurseBlockChildren` only reassigns IDs — text
+  // content is preserved — so the cached value is still canonical.
   return {
     ...recursed,
-    id: nodeId(recursed, path, plainText),
-    plainText,
+    id: nodeId(recursed, path, recursed.plainText),
   };
 }
 
@@ -96,12 +102,11 @@ function normalizeTableRowNode(row: TableRow, path: string): TableRow {
 }
 
 function normalizeInlineNode(node: Inline, path: string): Inline {
-  if (node.type === "text") {
-    const canonicalNode: Inline = { ...node, marks: canonicalizeMarks(node.marks) };
-    return { ...canonicalNode, id: nodeId(canonicalNode, path) };
-  }
-
   if (node.type !== "link") {
+    // Trust the builder's mark canonicalization: every `Text` node reaches
+    // normalize via `createText`, which already routed `marks` through
+    // `canonicalizeMarks`. Re-canonicalizing here would allocate a fresh
+    // `Set`/array/sort per text node for no change in output.
     return { ...node, id: nodeId(node, path) };
   }
 
@@ -127,23 +132,43 @@ function normalizeInlineNode(node: Inline, path: string): Inline {
 // `nodeId` composes its semantic seed from `blockSeedFor` / `inlineSeedFor`.
 // Add or remove a field that should participate in identity by editing one
 // of those two switches — that's the one place to look. `plainText` is
-// passed in rather than read from `node.plainText` because the normalizer
-// recomputes it from children before assigning the id, and stale `plainText`
-// on the input node would otherwise leak through.
+// passed in as a parameter rather than read off `node.plainText` directly
+// because the inline-container case (`link`) computes the projection on the
+// fly from its just-normalized children and has no `plainText` field of its
+// own; block callers pass `recursed.plainText` (the builder's canonical
+// value, preserved through recursion).
 
 const FNV_OFFSET_BASIS = 2166136261;
 const FNV_PRIME = 16777619;
+const SEED_SEPARATOR_CHAR_CODE = 0x3a; // ':'
 
+// FNV-1a, but consumes `type`, `path`, and `semanticSeed` directly without
+// concatenating them into an intermediate payload string. Bit-identical to
+// hashing `${type}:${path}:${semanticSeed}` — the same bytes get XOR-mixed
+// and multiplied in the same order — but skips one large allocation per
+// node, which matters when `semanticSeed` carries a long `plainText`.
 function hashedId(type: string, path: string, semanticSeed: string): string {
   let hash = FNV_OFFSET_BASIS;
-  const payload = `${type}:${path}:${semanticSeed}`;
-
-  for (let index = 0; index < payload.length; index += 1) {
-    hash ^= payload.charCodeAt(index);
-    hash = Math.imul(hash, FNV_PRIME);
-  }
+  hash = mixStringIntoHash(hash, type);
+  hash = mixByteIntoHash(hash, SEED_SEPARATOR_CHAR_CODE);
+  hash = mixStringIntoHash(hash, path);
+  hash = mixByteIntoHash(hash, SEED_SEPARATOR_CHAR_CODE);
+  hash = mixStringIntoHash(hash, semanticSeed);
 
   return `${type}-${(hash >>> 0).toString(36)}`;
+}
+
+function mixStringIntoHash(hash: number, segment: string): number {
+  for (let index = 0; index < segment.length; index += 1) {
+    hash ^= segment.charCodeAt(index);
+    hash = Math.imul(hash, FNV_PRIME);
+  }
+  return hash;
+}
+
+function mixByteIntoHash(hash: number, byte: number): number {
+  hash ^= byte;
+  return Math.imul(hash, FNV_PRIME);
 }
 
 function nodeId(node: Block | Inline, path: string, plainText?: string): string {

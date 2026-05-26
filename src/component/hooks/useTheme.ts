@@ -15,15 +15,12 @@ type InputDocumintThemePair = {
 
 export function useTheme(theme: DocumintTheme | undefined) {
   const themePair = useMemo(() => resolveThemePair(theme), [theme]);
-  const [preferredTheme, setPreferredTheme] = useState<ResolvedEditorTheme>(themePair.light);
+  const [preferredTheme, setPreferredTheme] = useState<ResolvedEditorTheme>(() =>
+    resolvePreferredTheme(themePair),
+  );
   const themeStyles = useMemo(() => createThemeStyles(preferredTheme), [preferredTheme]);
 
   useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      setPreferredTheme(themePair.light);
-      return;
-    }
-
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const updateTheme = () => {
       setPreferredTheme(mediaQuery.matches ? themePair.dark : themePair.light);
@@ -50,6 +47,12 @@ export function useTheme(theme: DocumintTheme | undefined) {
     theme: preferredTheme,
     themeStyles,
   };
+}
+
+function resolvePreferredTheme(themePair: DocumintThemePair) {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? themePair.dark
+    : themePair.light;
 }
 
 function isThemePair(theme: DocumintTheme): theme is InputDocumintThemePair {

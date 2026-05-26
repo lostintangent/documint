@@ -88,6 +88,12 @@ function parseInlineRange(source: string, start: number, end: number, marks: Mar
   let textStart = start;
 
   while (index < end) {
+    index = findNextInlineTokenStart(source, index, end);
+
+    if (index < 0) {
+      break;
+    }
+
     const token = readInlineToken(source, index, end, marks);
 
     if (token) {
@@ -151,6 +157,9 @@ const inlineTokenReaders: ReadonlyArray<{
 ];
 
 const inlineReadersByLeadChar = buildInlineLeadCharIndex();
+// Derived from the reader registry so plain prose can skip directly to the
+// next character that could start a token without duplicating dialect policy.
+const inlineTokenStartPattern = buildInlineTokenStartPattern();
 
 function buildInlineLeadCharIndex(): Map<string, InlineTokenReader[]> {
   const index = new Map<string, InlineTokenReader[]>();
@@ -165,6 +174,17 @@ function buildInlineLeadCharIndex(): Map<string, InlineTokenReader[]> {
     }
   }
   return index;
+}
+
+function buildInlineTokenStartPattern() {
+  const characterClass = [...inlineReadersByLeadChar.keys()]
+    .map(escapeInlineTokenStartForCharacterClass)
+    .join("");
+  return new RegExp(`[${characterClass}]`, "g");
+}
+
+function escapeInlineTokenStartForCharacterClass(character: string) {
+  return character === lineFeed ? "\\n" : character.replace(/[\\\]\[\^-]/g, "\\$&");
 }
 
 function readInlineToken(
@@ -186,6 +206,13 @@ function readInlineToken(
   }
 
   return null;
+}
+
+function findNextInlineTokenStart(source: string, start: number, end: number) {
+  inlineTokenStartPattern.lastIndex = start;
+  const match = inlineTokenStartPattern.exec(source);
+
+  return match && match.index < end ? match.index : -1;
 }
 
 // --- Token readers, in dispatcher order ---

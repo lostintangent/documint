@@ -4,9 +4,11 @@
 
 export const transparentCanvasColor = "rgba(0, 0, 0, 0)";
 
+export type CanvasColor = [number, number, number, number];
+
 export function blendCanvasColors(fromColor: string, toColor: string, progress: number) {
-  const from = resolveColor(fromColor);
-  const to = resolveColor(toColor);
+  const from = resolveCanvasColor(fromColor);
+  const to = resolveCanvasColor(toColor);
 
   return `rgba(${roundColorChannel(mixColorChannel(from[0], to[0], progress))}, ${roundColorChannel(
     mixColorChannel(from[1], to[1], progress),
@@ -17,22 +19,21 @@ export function blendCanvasColors(fromColor: string, toColor: string, progress: 
   )})`;
 }
 
-const colorCache = new Map<string, [number, number, number, number]>([
-  [transparentCanvasColor, [0, 0, 0, 0]],
-]);
+const colorCache = new Map<string, CanvasColor | null>([[transparentCanvasColor, [0, 0, 0, 0]]]);
 
-function resolveColor(color: string): [number, number, number, number] {
+export function resolveCanvasColor(color: string): CanvasColor {
+  return resolveOptionalCanvasColor(color) ?? colorCache.get(transparentCanvasColor)!;
+}
+
+export function resolveOptionalCanvasColor(color: string): CanvasColor | null {
   const cached = colorCache.get(color);
 
-  if (cached) {
+  if (cached !== undefined) {
     return cached;
   }
 
   const parsed =
-    parseHexCanvasColor(color) ??
-    parseRgbCanvasColor(color) ??
-    parseRgbaCanvasColor(color) ??
-    colorCache.get(transparentCanvasColor)!;
+    parseHexCanvasColor(color) ?? parseRgbCanvasColor(color) ?? parseRgbaCanvasColor(color);
 
   colorCache.set(color, parsed);
 

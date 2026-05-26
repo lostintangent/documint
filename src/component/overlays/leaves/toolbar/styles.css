@@ -5,16 +5,6 @@
    (e.g. the completion popover in LeafInput). */
 
 .documint-leaf-toolbar {
-  --documint-leaf-toolbar-button-active-bg: color-mix(
-    in srgb,
-    var(--documint-leaf-accent) 16%,
-    var(--documint-leaf-bg)
-  );
-  --documint-leaf-toolbar-divider-color: color-mix(
-    in srgb,
-    var(--documint-leaf-border) 72%,
-    transparent
-  );
   display: inline-flex;
   align-items: center;
   gap: 0.52rem;
@@ -29,7 +19,7 @@
 .documint-leaf-toolbar-divider {
   width: 1px;
   height: 1.15rem;
-  background: var(--documint-leaf-toolbar-divider-color);
+  background: var(--documint-leaf-control-divider-color);
 }
 
 .documint-leaf-toolbar-button {
@@ -53,11 +43,11 @@
     color 120ms ease;
 
   &:hover {
-    background: var(--documint-leaf-toolbar-button-active-bg);
+    background: var(--documint-leaf-button-active-bg);
   }
 
   &.active {
-    background: var(--documint-leaf-toolbar-button-active-bg);
+    background: var(--documint-leaf-button-active-bg);
     color: var(--documint-leaf-text);
   }
 

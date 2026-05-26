@@ -269,7 +269,7 @@ export function resolveHoverTargetAtPoint(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
-  commentRanges: EditorCommentRange[],
+  commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
   const checkboxHit = resolveTaskCheckboxHitAtPoint(layout, state, point);
 
@@ -315,7 +315,7 @@ export function resolveHoverTarget(
   state: EditorState,
   viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
-  commentRanges: EditorCommentRange[],
+  commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
   return resolveHoverTargetAtPoint(viewport.layout, state, point, commentRanges);
 }
@@ -325,7 +325,7 @@ export function resolveTargetAtOffset(
   state: EditorState,
   regionId: string,
   offset: number,
-  commentRanges: EditorCommentRange[],
+  commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
   const container = resolveRegion(state.documentIndex, regionId);
 
@@ -433,7 +433,7 @@ function resolveLayoutLineAtPoint(
 function resolveCommentThreadIndexAtOffset(
   regionId: string,
   offset: number,
-  commentRanges: EditorCommentRange[],
+  commentRanges: readonly EditorCommentRange[],
 ) {
   for (const range of commentRanges) {
     if (range.regionId === regionId && offset >= range.startOffset && offset <= range.endOffset) {

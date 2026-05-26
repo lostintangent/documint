@@ -17,6 +17,7 @@
 import {
   measureCaretTarget,
   resolvePositionInViewport,
+  resolveScrollTopToReveal,
   type EditorLayoutState,
 } from "../../layout";
 import type { DocumentIndex, EditorSelectionPoint } from "../../state";
@@ -115,10 +116,15 @@ function resolveCursorPosition(
   return viewport.estimateRegionBounds(point.regionId);
 }
 
-function resolvePresenceTargetScrollTop(viewport: EditorLayoutState, position: { top: number }) {
-  const maxScrollTop = Math.max(0, viewport.totalHeight - viewport.viewport.height);
-  const targetTop =
-    position.top - Math.min(presenceViewportScrollMargin, viewport.viewport.height / 4);
-
-  return Math.max(0, Math.min(maxScrollTop, targetTop));
+function resolvePresenceTargetScrollTop(
+  viewport: EditorLayoutState,
+  position: { bottom: number; top: number },
+) {
+  // Presence anchors at the start: when scrolling to a remote cursor or
+  // comment thread, we want to see what they are working on (everything
+  // below the target), not the prior context above it.
+  return resolveScrollTopToReveal(viewport, position, {
+    align: "start",
+    margin: presenceViewportScrollMargin,
+  });
 }

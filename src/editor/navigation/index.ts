@@ -41,6 +41,8 @@ export {
 } from "./hit";
 import { resolveDragFocus, resolveSelectionHit } from "./hit";
 
+export { resolveEditorSearchMatches, type EditorSearchMatch } from "./search";
+
 export function moveCaretHorizontally(state: EditorState, delta: -1 | 1, extendSelection = false) {
   return moveCaretHorizontallyInFlow(state, delta, extendSelection);
 }

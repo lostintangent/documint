@@ -7,18 +7,18 @@
 //   3. Leaf shell    — bordered, shadowed container
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { OverlayPortal } from "../../OverlayPortal";
-import type { LeafResolution } from "./shared";
+import type { DocumentLeafResolution } from "./shared";
 
 // Pixel height of the hover bridge. JS-owned: written inline as
 // `--documint-leaf-bridge-height` so styles.css has one source of truth.
 export const LEAF_BRIDGE_HEIGHT = 12;
 
-type LeafAnchorProps = {
-  anchor: LeafResolution;
+type DocumentLeafAnchorProps = {
+  anchor: DocumentLeafResolution;
   children: ReactNode;
 };
 
-type LeafAnchorPlacement = {
+type DocumentLeafAnchorPlacement = {
   horizontalOffset: number;
   verticalPlacement: "above" | "below";
 };
@@ -28,16 +28,16 @@ type LeafShellSize = {
   width: number;
 };
 
-const DEFAULT_PLACEMENT: LeafAnchorPlacement = {
+const DEFAULT_PLACEMENT: DocumentLeafAnchorPlacement = {
   horizontalOffset: 0,
   verticalPlacement: "below",
 };
 
-export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
+export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const shellSizeRef = useRef<LeafShellSize | null>(null);
   const latestAnchorRef = useRef(anchor);
-  const [placement, setPlacement] = useState<LeafAnchorPlacement>(DEFAULT_PLACEMENT);
+  const [placement, setPlacement] = useState<DocumentLeafAnchorPlacement>(DEFAULT_PLACEMENT);
   latestAnchorRef.current = anchor;
 
   // Anchor moves reuse shell size cached by ResizeObserver, avoiding a
@@ -114,9 +114,9 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
 }
 
 function resolveLeafPlacement(
-  anchor: LeafResolution,
+  anchor: DocumentLeafResolution,
   shellSize: LeafShellSize,
-): LeafAnchorPlacement {
+): DocumentLeafAnchorPlacement {
   const visualVp = window.visualViewport;
   const visibleWidth = visualVp?.width ?? window.innerWidth;
   const visibleHeight = visualVp?.height ?? window.innerHeight;
@@ -159,7 +159,7 @@ function resolveHorizontalOffset({
   );
 }
 
-function arePlacementsEqual(left: LeafAnchorPlacement, right: LeafAnchorPlacement): boolean {
+function arePlacementsEqual(left: DocumentLeafAnchorPlacement, right: DocumentLeafAnchorPlacement): boolean {
   return (
     left.horizontalOffset === right.horizontalOffset &&
     left.verticalPlacement === right.verticalPlacement

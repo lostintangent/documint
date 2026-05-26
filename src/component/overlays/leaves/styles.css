@@ -1,5 +1,5 @@
 /* Leaf overlay styles, ordered outer → inner:
-     1. Anchor   — viewport positioning + hover bridge
+     1. Anchor   — document/fixed positioning + hover bridge
      2. Shell    — bordered container (with state and content variants)
      3. Menu     — shared dropdown surface (toolbar menus, completion popover)
      4. Action   — small icon buttons used throughout leaf chrome
@@ -11,10 +11,10 @@
    The toolbar's own styles live in `toolbar/styles.css`; both files are
    concatenated by the editor's stylesheet assembly. */
 
-/* -- Anchor: positioned wrapper rendered by LeafAnchor (via OverlayPortal) -- */
+/* -- Anchor: document leaves portal to page coordinates; fixed leaves render as editor chrome. -- */
 
 /* `--documint-leaf-anchor-height`, `--documint-leaf-bridge-height`, and
-   `--documint-leaf-padding-y` are JS-owned (set inline by `LeafAnchor`).
+   `--documint-leaf-padding-y` are JS-owned (set inline by `DocumentLeafAnchor`).
    `position: absolute` against the initial containing block lets the
    browser move the leaf with host-page scrolls naturally. */
 .documint-leaf-anchor {
@@ -54,6 +54,41 @@
   }
 }
 
+.documint-overlay-leaf {
+  flex: 0 0 auto;
+  position: relative;
+  width: var(--documint-overlay-leaf-width);
+  height: var(--documint-overlay-leaf-height);
+  opacity: 1;
+  pointer-events: none;
+  transition:
+    height 500ms ease,
+    opacity 500ms ease;
+
+  &[data-state="closed"] {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.documint-overlay-leaf-frame {
+  position: absolute;
+  top: 0;
+  right: 0;
+  overflow: hidden;
+  padding: 1px;
+  transform: translateY(0);
+  transition: transform 500ms ease;
+}
+
+.documint-overlay-leaf[data-state="closed"] .documint-overlay-leaf-frame {
+  transform: translateY(-100%);
+}
+
+.documint-overlay-leaf .documint-leaf-shell {
+  pointer-events: auto;
+}
+
 .documint-leaf-bridge {
   width: 100%;
   height: var(--documint-leaf-bridge-height);
@@ -73,6 +108,21 @@
 /* -- Shell: bordered, themed container that holds leaf content -- */
 
 .documint-leaf-shell {
+  --documint-leaf-button-active-bg: color-mix(
+    in srgb,
+    var(--documint-leaf-accent) 16%,
+    var(--documint-leaf-bg)
+  );
+  --documint-leaf-input-button-active-bg: color-mix(
+    in srgb,
+    var(--documint-leaf-accent) 24%,
+    var(--documint-leaf-input-bg)
+  );
+  --documint-leaf-control-divider-color: color-mix(
+    in srgb,
+    var(--documint-leaf-border) 72%,
+    transparent
+  );
   --documint-leaf-divider-color: color-mix(in srgb, var(--documint-leaf-border) 60%, transparent);
   padding: 0.8rem;
   border: 1px solid var(--documint-leaf-border);
@@ -94,6 +144,11 @@
   &:has(> .documint-completion-leaf) {
     width: auto;
     padding: 0.35rem;
+  }
+
+  &:has(> .documint-search-leaf) {
+    width: auto;
+    padding: 0.42rem;
   }
 
   &:has(> .documint-comment-leaf-create.is-expanded) {
@@ -187,26 +242,123 @@
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  width: auto;
-  height: auto;
-  padding: 0;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.12rem;
   border: 0;
-  border-radius: 0;
+  border-radius: 0.38rem;
   background: transparent;
   color: var(--documint-leaf-button-text);
   cursor: pointer;
   font: inherit;
-
   line-height: 0;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+
+  &:hover {
+    background: var(--documint-leaf-button-active-bg);
+  }
 
   &:disabled {
     opacity: 0.45;
     cursor: default;
+
+    &:hover {
+      background: transparent;
+    }
   }
 }
 
 .documint-leaf-action-danger {
   color: var(--documint-leaf-accent);
+}
+
+/* -- Search: compact document find surface -- */
+
+.documint-search-leaf {
+  display: grid;
+  grid-template-columns: minmax(12.5rem, 18rem) repeat(2, 1.45rem) 0.5rem 1.45rem;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.documint-search-leaf > .documint-leaf-action {
+  width: 1.45rem;
+  min-width: 1.45rem;
+  padding: 0;
+}
+
+.documint-search-divider {
+  justify-self: center;
+  width: 1px;
+  height: 1.15rem;
+  background: var(--documint-leaf-control-divider-color);
+}
+
+.documint-search-input-shell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+  padding: 0.24rem 0.5rem;
+  border: 1px solid var(--documint-leaf-border);
+  border-radius: 0.62rem;
+  background: var(--documint-leaf-input-bg);
+  color: var(--documint-leaf-secondary-text);
+}
+
+.documint-search-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--documint-leaf-text);
+  font: inherit;
+}
+
+.documint-search-input-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.documint-search-count {
+  min-width: 2.8rem;
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.78rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.documint-search-case-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.38rem;
+  background: transparent;
+  color: var(--documint-leaf-button-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.documint-search-case-toggle:hover,
+.documint-search-case-toggle[aria-pressed="true"] {
+  background: var(--documint-leaf-input-button-active-bg);
+  color: var(--documint-leaf-text);
 }
 
 /* -- Input: textarea (leaf-input) inside a positioning field that hosts
@@ -216,6 +368,14 @@
   position: relative;
   width: 100%;
   min-width: 0;
+
+  & .documint-leaf-action:hover {
+    background: var(--documint-leaf-input-button-active-bg);
+  }
+
+  & .documint-leaf-action:disabled:hover {
+    background: transparent;
+  }
 }
 
 .documint-leaf-input-cancel {

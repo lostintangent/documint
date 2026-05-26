@@ -7,12 +7,14 @@ export {
   moveCaretVertically,
   extendSelectionToPoint,
   resolveDragFocus,
+  resolveEditorSearchMatches,
   resolveSelectionHit,
   resolveTargetAtOffset,
   resolveWordSelection,
   setSelectionAtPoint,
   updateSelectionFromDrag,
   type EditorHoverTarget,
+  type EditorSearchMatch,
 } from "./navigation";
 
 // Layout — viewport composition (aliased to public names)
@@ -53,6 +55,7 @@ export {
   resolveImageAtSelection,
   setSelection,
   type CaretTextContext,
+  type DocumentIndex,
   type InlineEntry,
   type EditorSelection,
   type EditorSelectionPoint,
@@ -69,15 +72,16 @@ import {
   resolveTargetAtOffset,
 } from "./navigation";
 import { type EditorLayoutState, type EditorPoint } from "./layout";
-import { getCommentState } from "./anchors";
+import { getCommentState, type EditorCommentRange } from "./anchors";
 import type { EditorSelectionPoint, EditorState } from "./state";
 
 export function resolveHoverTarget(
   state: EditorState,
   viewport: EditorLayoutState,
   point: EditorPoint,
+  commentRanges: readonly EditorCommentRange[] = getCommentState(state).ranges,
 ) {
-  return resolveNavigationHoverTarget(state, viewport, point, getCommentState(state).ranges);
+  return resolveNavigationHoverTarget(state, viewport, point, commentRanges);
 }
 
 // Offset-based sibling of `resolveHoverTarget`. The callers we have here

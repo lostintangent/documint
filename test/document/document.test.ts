@@ -274,6 +274,39 @@ describe("Plain text extraction", () => {
   });
 });
 
+describe("Anchor containers", () => {
+  test("read canonical plain text from committed document nodes", () => {
+    const document = createDocument([
+      createHeadingTextBlock({ depth: 1, text: "Title" }),
+      createParagraphBlock([
+        createText("Paragraph "),
+        createLink({
+          children: [createText("link")],
+          url: "https://example.com",
+        }),
+      ]),
+      createCodeBlock({ source: "const x = 1;" }),
+      createTableBlock({
+        rows: [createTableRow([createTableCell([createText("Cell")])])],
+      }),
+      createBlockquoteBlock([createParagraphTextBlock("Nested quote")]),
+    ]);
+    const table = document.blocks[3];
+
+    if (table?.type !== "table") {
+      throw new Error("Expected table block");
+    }
+
+    expect(listAnchorContainers(document).map((container) => container.text)).toEqual([
+      document.blocks[0]!.plainText,
+      document.blocks[1]!.plainText,
+      document.blocks[2]!.plainText,
+      table.rows[0]!.cells[0]!.plainText,
+      "Nested quote",
+    ]);
+  });
+});
+
 function createTestDocument(blocks: Block[]) {
   return createDocument(blocks);
 }

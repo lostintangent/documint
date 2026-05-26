@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffectEvent } from "react";
-import { resizeImage } from "@/editor";
+import { resizeImage, type InlineEntry } from "@/editor";
 import type { DocumentResources } from "@/types";
 import { imageAtCursorSprig, useEditorCommand, useSprig } from "../store";
 import type { ResizeHandle } from "./useSelection";
@@ -14,6 +14,8 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
   const dragStartWidthRef = useRef<number | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const dragDirectionRef = useRef<1 | -1>(1);
+  const draggedImageRef = useRef<InlineEntry | null>(null);
+  const dragMaxWidthRef = useRef<number | null>(null);
 
   const onPointerDown = useEffectEvent(
     (event: React.PointerEvent<HTMLDivElement>, direction: 1 | -1) => {
@@ -33,16 +35,20 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
           ? (imageAtCursor.inline.node.width ?? imageAtCursor.bounds.width)
           : imageAtCursor.bounds.width;
       dragDirectionRef.current = direction;
+      draggedImageRef.current = imageAtCursor.inline;
+      dragMaxWidthRef.current = imageAtCursor.maxWidth;
     },
   );
 
   const onPointerMove = useEffectEvent((event: React.PointerEvent<HTMLDivElement>) => {
+    const draggedImage = draggedImageRef.current;
+
     if (
       dragPointerIdRef.current !== event.pointerId ||
       dragStartXRef.current === null ||
       dragStartYRef.current === null ||
       dragStartWidthRef.current === null ||
-      imageAtCursor?.inline.node.type !== "image"
+      draggedImage?.node.type !== "image"
     ) {
       return;
     }
@@ -50,16 +56,16 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
     const dx = event.clientX - dragStartXRef.current;
     const dy = event.clientY - dragStartYRef.current;
     const newWidth = Math.min(
-      imageAtCursor.maxWidth ?? Infinity,
+      dragMaxWidthRef.current ?? Infinity,
       Math.max(
         IMAGE_MIN_WIDTH,
         Math.round(dragStartWidthRef.current + dragDirectionRef.current * (dx + dy)),
       ),
     );
     const imageInline = {
-      end: imageAtCursor.inline.end,
-      image: imageAtCursor.inline.node,
-      start: imageAtCursor.inline.start,
+      end: draggedImage.end,
+      image: draggedImage.node,
+      start: draggedImage.start,
     };
 
     resizeSelectedImage(imageInline, newWidth);
@@ -74,6 +80,8 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
     dragStartXRef.current = null;
     dragStartYRef.current = null;
     dragStartWidthRef.current = null;
+    draggedImageRef.current = null;
+    dragMaxWidthRef.current = null;
   });
 
   const startProps = useMemo(

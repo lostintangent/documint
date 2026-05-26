@@ -21,7 +21,6 @@
  */
 
 import type { Document } from "../types";
-import { extractPlainTextFromInlineNodes } from "./text";
 import { visitDocument } from "./visit";
 
 // --- Anchor kinds ---
@@ -125,6 +124,9 @@ export type AnchorResolution<TRepair> = {
 // Walk `document` in document order and return every text container an anchor
 // can attach to: heading and paragraph blocks (kind `text`), code blocks
 // (kind `code`), and individual table cells (kind `tableCell`).
+// Container text comes from the committed document's cached `plainText` fields
+// so anchoring and future content search share one canonical semantic text
+// projection instead of re-projecting inline children ad hoc.
 // `containerOrdinal` reflects the global order across all kinds, so it stays
 // stable even when consumers filter by kind.
 export function listAnchorContainers(document: Document): AnchorContainer[] {
@@ -139,7 +141,7 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
             containerKind: "text",
             containerOrdinal: containers.length,
             id: block.id,
-            text: extractPlainTextFromInlineNodes(block.children),
+            text: block.plainText,
           });
           break;
 
@@ -148,7 +150,7 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
             containerKind: "code",
             containerOrdinal: containers.length,
             id: block.id,
-            text: block.source,
+            text: block.plainText,
           });
           break;
       }
@@ -158,7 +160,7 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
         containerKind: "tableCell",
         containerOrdinal: containers.length,
         id: cell.id,
-        text: extractPlainTextFromInlineNodes(cell.children),
+        text: cell.plainText,
       });
     },
   });

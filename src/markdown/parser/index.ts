@@ -46,9 +46,11 @@ export function parseFragmentBlocks(source: string, options: MarkdownOptions = {
 }
 
 function createCursor(source: string): MarkdownLineCursor {
+  const normalized = source.includes("\r") ? source.replace(/\r\n/g, lineFeed) : source;
+
   return {
     index: 0,
-    lines: source.replace(/\r\n/g, lineFeed).split(lineFeed),
+    lines: normalized.split(lineFeed),
   };
 }
 
@@ -87,7 +89,15 @@ export function peekLine(cursor: MarkdownLineCursor, offset: number) {
 }
 
 export function isBlankLine(line: string) {
-  return line.trim() === "";
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (character !== " " && character !== "\t") {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function sliceIndentedContent(line: string, indent: number) {

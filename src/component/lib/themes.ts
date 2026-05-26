@@ -185,7 +185,8 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     leafShadow: theme.leafShadow ?? "",
     leafText: theme.leafText ?? text,
     linkText: theme.linkText ?? text,
-    listMarkerText: theme.listMarkerText ?? theme.checkboxUncheckedStroke ?? theme.headingRule ?? text,
+    listMarkerText:
+      theme.listMarkerText ?? theme.checkboxUncheckedStroke ?? theme.headingRule ?? text,
     mentionBackground: theme.mentionBackground ?? theme.inlineCodeBackground,
     mentionText: theme.mentionText ?? theme.linkText ?? text,
     paddingX: theme.paddingX ?? DEFAULT_THEME_PADDING_X,

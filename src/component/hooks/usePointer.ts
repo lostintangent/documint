@@ -22,7 +22,13 @@ import {
 } from "react";
 import type { FocusInput } from "./useInput";
 import type { DocumentStorage } from "../lib/storage";
-import { useDocumintStore, useEditorCommand, useSprig } from "../store";
+import {
+  commentRangesSprig,
+  editorStateSprig,
+  useDocumintStore,
+  useEditorCommand,
+  useSprig,
+} from "../store";
 import { pointerViewSprig, type PointerLeaf } from "../overlays/leaves/sprigs";
 
 type UsePointerOptions = {
@@ -41,6 +47,9 @@ type UsePointerOptions = {
   onActivity: () => void;
   storage: DocumentStorage;
 };
+
+type CanvasPointerEvent = PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>;
+type CanvasPoint = { x: number; y: number };
 
 type CanvasPointerHandlers = {
   onClick: (event: MouseEvent<HTMLCanvasElement>) => void;
@@ -150,6 +159,8 @@ export function usePointer({
   /* Internal state */
 
   const store = useDocumintStore();
+  const editorState = useSprig(editorStateSprig);
+  const commentRanges = useSprig(commentRangesSprig);
   const setEditorSelection = useEditorCommand(setSelection);
   const setEditorSelectionAtPoint = useEditorCommand(setSelectionAtPoint);
   const extendEditorSelectionToPoint = useEditorCommand(extendSelectionToPoint);
@@ -262,15 +273,14 @@ export function usePointer({
 
   /* Hit testing */
 
-  const resolveHoverTarget = useEffectEvent(
-    (event: PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>) => {
-      const point = resolvePoint(event);
-      if (!point) return null;
-
-      const currentState = store.editor.getState();
-      return resolveEditorHoverTarget(currentState, store.layout.get(), point);
-    },
+  const resolveHoverTargetAtPoint = useEffectEvent((point: CanvasPoint) =>
+    resolveEditorHoverTarget(editorState, store.layout.get(), point, commentRanges),
   );
+
+  const resolveHoverTarget = useEffectEvent((event: CanvasPointerEvent) => {
+    const point = resolvePoint(event);
+    return point ? resolveHoverTargetAtPoint(point) : null;
+  });
 
   /* Pointer-capture helpers */
 
@@ -406,7 +416,7 @@ export function usePointer({
     // threads, task toggles) from appearing as the pointer drags over
     // them mid-selection.
     if (dragPointerIdRef.current !== event.pointerId || !anchor) {
-      applyHoverTarget(resolveHoverTarget(event));
+      applyHoverTarget(resolveHoverTargetAtPoint(point));
       return;
     }
 

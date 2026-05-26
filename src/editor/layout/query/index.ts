@@ -33,4 +33,9 @@ export {
 
 export { findDocumentLayoutBlockRange, findDocumentLayoutLineRange } from "./viewport-ranges";
 
-export { resolvePositionInViewport, type ViewportPositionStatus } from "./viewport-position";
+export {
+  resolvePositionInViewport,
+  resolveScrollTopToReveal,
+  type ScrollRevealAlignment,
+  type ViewportPositionStatus,
+} from "./viewport-position";

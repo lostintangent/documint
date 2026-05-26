@@ -22,6 +22,7 @@ import type { DocumentStorage } from "../lib/storage";
 import { imageUrlsSprig, useSprig } from "../store";
 
 export type ImagesApi = {
+  hasLoadingImages: boolean;
   resources: DocumentResources | null;
   persistImage: (file: File) => Promise<string | null>;
 };
@@ -40,22 +41,19 @@ export function useImages(storage: DocumentStorage): ImagesApi {
     const inactiveUrls = resolveInactiveImageUrls(imageResources, urls);
     const pendingUrls = resolvePendingImageUrls(imageResources, urls);
 
-    if (inactiveUrls.length) {
+    if (inactiveUrls.length || pendingUrls.length) {
       setImageResources((previous) => {
         const next = new Map(previous);
         for (const url of inactiveUrls) next.delete(url);
+        for (const url of pendingUrls) next.set(url, createImageResource("loading"));
         return next;
       });
     }
 
-    // The "loading" placeholder set here doubles as the dedup signal for
+    // The "loading" placeholders above double as the dedup signal for
     // in-flight loads from prior reconciliations: effects run post-commit,
-    // so by the next reconciliation the placeholder is visible here.
+    // so by the next reconciliation the placeholders are visible here.
     for (const url of pendingUrls) {
-      setImageResources((previous) =>
-        withImageResource(previous, url, createImageResource("loading")),
-      );
-
       void loadImage(url, storage).then((bitmap) => {
         setImageResources((previous) => {
           // Evicted (or unmounted) before decode finished — drop the
@@ -121,8 +119,9 @@ export function useImages(storage: DocumentStorage): ImagesApi {
           },
     [imageResources],
   );
+  const hasLoadingImages = hasLoadingImageResource(imageResources);
 
-  return useMemo(() => ({ resources, persistImage }), [resources, persistImage]);
+  return { hasLoadingImages, resources, persistImage };
 }
 
 /* Loading pipeline */
@@ -153,6 +152,15 @@ function resolvePendingImageUrls(
     const status = resources.get(url)?.status;
     return status !== "loaded" && status !== "loading";
   });
+}
+
+function hasLoadingImageResource(resources: Map<string, DocumentImageResource>) {
+  for (const resource of resources.values()) {
+    if (resource.status === "loading") {
+      return true;
+    }
+  }
+  return false;
 }
 
 function withImageResource(

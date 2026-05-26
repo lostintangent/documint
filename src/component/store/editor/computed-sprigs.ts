@@ -11,6 +11,7 @@ import {
   resolveCursorViewportStatus,
   resolveImageAtSelection,
   type EditorLayoutState,
+  type EditorSelection,
   type InlineEntry,
   type EditorSelectionRange,
   type EditorState,
@@ -208,6 +209,48 @@ export const caretTargetSprig = createComputedSprig(
     return measureCaretTarget(store.editor.getState(), layout, normalizedSelection.end);
   },
   equalCaretTargets,
+);
+
+// View model for `useCursor`'s focus-visibility effect: the vertical extent
+// to scroll into view whenever the selection moves. Reads `caretTargetSprig`
+// when the focus point's line is measured in the prepared layout, and falls
+// back to the focus region's estimated bounds otherwise — so programmatic
+// far-jumps (search navigation, Cmd+Home/End, undo to off-screen positions)
+// still land at a sensible scroll position before the next layout pass.
+//
+// Niche: shaped for one consumer. Naming reflects that rather than
+// pretending it's a general selection-end primitive — consumers that need
+// pixel-precise caret geometry should read `caretTargetSprig` directly.
+export type CursorScrollTarget = {
+  bottom: number;
+  // Equality token: repeated `setSelection` calls should re-emit even when
+  // the caret bounds are unchanged, so a hidden offscreen caret can be
+  // requested again after manual scrolling.
+  selection: EditorSelection;
+  top: number;
+};
+
+const equalCursorScrollTargets = equalNullableBy<CursorScrollTarget>((target) => [
+  target.selection,
+  target.top,
+  target.bottom,
+]);
+
+export const cursorScrollTargetSprig = createComputedSprig(
+  [caretTargetSprig, selectionSprig, normalizedSelectionSprig, renderedLayoutSprig],
+  (_store, caretTarget, selection, normalizedSelection, layout): CursorScrollTarget | null => {
+    if (caretTarget) {
+      return { bottom: caretTarget.top + caretTarget.height, selection, top: caretTarget.top };
+    }
+
+    if (!layout) {
+      return null;
+    }
+
+    const bounds = layout.estimateRegionBounds(normalizedSelection.end.regionId);
+    return bounds ? { ...bounds, selection } : null;
+  },
+  equalCursorScrollTargets,
 );
 
 export const documentCompletionSprig = createParameterizedSprig(

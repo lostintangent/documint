@@ -19,7 +19,13 @@ import {
   createUserMentionHostEvent,
   type PlaygroundHostEvent,
 } from "./lib/events";
-import { fixtureOptions, getThemeOption, themeOptions } from "./lib/data";
+import {
+  fixtureOptions,
+  getThemeOption,
+  slowSampleImagePath,
+  slowSampleImageSource,
+  themeOptions,
+} from "./lib/data";
 
 // In-memory storage for reading/writing pasted images. Hosts in the wild would write to
 // disk, S3, etc.; the playground keeps blobs in a Map so paste-to-render
@@ -29,6 +35,19 @@ function createInMemoryStorage(): DocumintStorage {
 
   return {
     async readFile(path) {
+      if (path === slowSampleImagePath) {
+        await delay(10000);
+        const cached = files.get(path);
+        if (cached) return cached;
+
+        const response = await fetch(slowSampleImageSource);
+        if (!response.ok) return null;
+
+        const blob = await response.blob();
+        files.set(path, blob);
+        return blob;
+      }
+
       return files.get(path) ?? null;
     },
     async writeFile(file) {
@@ -41,6 +60,10 @@ function createInMemoryStorage(): DocumintStorage {
   };
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+}
+
 const storage = createInMemoryStorage();
 
 const demoUser: DocumentUser = {
@@ -49,7 +72,7 @@ const demoUser: DocumentUser = {
 };
 
 const decorations: readonly DocumintDecoration[] = [
-  { backgroundColor: "#fde047", color: "#111827", pattern: /\bTODO\b/g },
+  { backgroundColor: "#fde047", pattern: /\bTODO\b/g },
   { backgroundColor: "#38bdf8", pulse: true, color: "#082f49", pattern: /\blesson\b/g },
   { color: "#6b7280", pattern: /\((\d+)\)/g },
 ];

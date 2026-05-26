@@ -21,7 +21,7 @@ import {
   filterRangesOverlappingSegment,
   findRangeAtSegment,
 } from "@/editor/text/ranges";
-import { blendCanvasColors } from "../../animations/colors";
+import { blendCanvasColors, resolveOptionalCanvasColor } from "../../animations/colors";
 import {
   resolveRestingPulseAlpha,
   resolveRestingPulseProgress,
@@ -35,6 +35,8 @@ import {
 } from "./glyphs";
 
 const decorationPulseTextMaximumBaseBlend = 0.72;
+const minimumDecorationTextContrast = 4.5;
+const decorationTextContrastStep = 0.05;
 
 export function paintTextDecorationBackgrounds(
   context: CanvasRenderingContext2D,
@@ -87,7 +89,7 @@ export function paintTextDecorationOverlays(
     textBaseline,
     textDecorations,
     (segment, decoration) => {
-      if (!decoration.color) {
+      if (!decoration.color && !decoration.backgroundColor) {
         return;
       }
 
@@ -139,6 +141,28 @@ function forEachDecorationSegment(
 
   const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
 
+  if (visibleInlines.length === 0) {
+    const segmentText = container.text.slice(line.start, line.end);
+    if (segmentText.length === 0) {
+      return;
+    }
+
+    const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, line.start, line.end);
+    context.font = line.font;
+    paintDecorationSegments({
+      line,
+      lineDecorations,
+      paintSegment,
+      segmentLeft,
+      segmentText,
+      start: line.start,
+      end: line.end,
+      textLeft,
+      textBaseline,
+    });
+    return;
+  }
+
   for (const inline of visibleInlines) {
     if (!canPaintTextDecoration(inline)) {
       continue;
@@ -158,48 +182,83 @@ function forEachDecorationSegment(
       continue;
     }
 
-    const decorationBoundaries = collectRangeBoundaries(start, end, segmentDecorations);
-
     const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
     const inlineStyle = resolveInlineTextStyle(
       line.font,
       inline.node.type === "text" ? inline.node.marks : [],
-      false,
+      inline.node.type === "code",
     );
     context.font = inlineStyle.font;
     const segmentBaseline = textBaseline + inlineStyle.baselineShift;
 
-    for (let index = 0; index < decorationBoundaries.length - 1; index += 1) {
-      const decorationStart = decorationBoundaries[index]!;
-      const decorationEnd = decorationBoundaries[index + 1]!;
-      const textDecoration = findRangeAtSegment(segmentDecorations, decorationStart, decorationEnd);
-
-      if (!textDecoration || decorationEnd <= decorationStart) {
-        continue;
-      }
-
-      const { left, right } = resolveLineSegmentBounds(
-        line,
-        textLeft,
-        decorationStart,
-        decorationEnd,
-      );
-
-      paintSegment(
-        { left, right, segmentLeft, segmentText, textBaseline: segmentBaseline },
-        textDecoration,
-      );
-    }
+    paintDecorationSegments({
+      line,
+      lineDecorations: segmentDecorations,
+      paintSegment,
+      segmentLeft,
+      segmentText,
+      start,
+      end,
+      textLeft,
+      textBaseline: segmentBaseline,
+    });
   }
 }
 
 function canPaintTextDecoration(inline: InlineEntry) {
-  return (
-    inline.node.type !== "image" &&
-    inline.node.type !== "mention" &&
-    inline.node.type !== "code" &&
-    !inline.link
-  );
+  return inline.node.type !== "image" && inline.node.type !== "mention";
+}
+
+function paintDecorationSegments({
+  line,
+  lineDecorations,
+  paintSegment,
+  segmentLeft,
+  segmentText,
+  start,
+  end,
+  textLeft,
+  textBaseline,
+}: {
+  line: DocumentLayout["lines"][number];
+  lineDecorations: readonly TextDecoration[];
+  paintSegment: (
+    segment: {
+      left: number;
+      right: number;
+      segmentLeft: number;
+      segmentText: string;
+      textBaseline: number;
+    },
+    decoration: TextDecoration,
+  ) => void;
+  segmentLeft: number;
+  segmentText: string;
+  start: number;
+  end: number;
+  textLeft: number;
+  textBaseline: number;
+}) {
+  const decorationBoundaries = collectRangeBoundaries(start, end, lineDecorations);
+
+  for (let index = 0; index < decorationBoundaries.length - 1; index += 1) {
+    const decorationStart = decorationBoundaries[index]!;
+    const decorationEnd = decorationBoundaries[index + 1]!;
+    const textDecoration = findRangeAtSegment(lineDecorations, decorationStart, decorationEnd);
+
+    if (!textDecoration || decorationEnd <= decorationStart) {
+      continue;
+    }
+
+    const { left, right } = resolveLineSegmentBounds(
+      line,
+      textLeft,
+      decorationStart,
+      decorationEnd,
+    );
+
+    paintSegment({ left, right, segmentLeft, segmentText, textBaseline }, textDecoration);
+  }
 }
 
 function paintDecorationBackground(
@@ -239,12 +298,97 @@ function resolveDecorationTextColor(
   decorationAnimationTime: number,
   baseTextColor: string,
 ) {
+  const restingColor = resolveContrastingDecorationTextColor(
+    decoration.color ?? baseTextColor,
+    decoration.backgroundColor,
+  );
+
   if (!decoration.pulse || !decoration.backgroundColor) {
-    return decoration.color ?? baseTextColor;
+    return restingColor;
   }
 
   const pulseProgress = resolveRestingPulseProgress(decorationAnimationTime);
   const blendProgress = (1 - pulseProgress) * decorationPulseTextMaximumBaseBlend;
 
-  return blendCanvasColors(decoration.color ?? baseTextColor, baseTextColor, blendProgress);
+  return blendCanvasColors(restingColor, baseTextColor, blendProgress);
+}
+
+function resolveContrastingDecorationTextColor(textColor: string, backgroundColor?: string) {
+  if (!backgroundColor) {
+    return textColor;
+  }
+
+  const text = resolveOptionalCanvasColor(textColor);
+  const background = resolveOptionalCanvasColor(backgroundColor);
+
+  if (!text || !background) {
+    return textColor;
+  }
+
+  if (contrastRatio(text, background) >= minimumDecorationTextContrast) {
+    return textColor;
+  }
+
+  const black: [number, number, number, number] = [0, 0, 0, text[3]];
+  const white: [number, number, number, number] = [255, 255, 255, text[3]];
+  const blackContrast = contrastRatio(black, background);
+  const whiteContrast = contrastRatio(white, background);
+  const target = blackContrast >= whiteContrast ? black : white;
+
+  for (
+    let progress = decorationTextContrastStep;
+    progress <= 1;
+    progress += decorationTextContrastStep
+  ) {
+    const adjusted = mixCanvasColor(text, target, progress);
+
+    if (contrastRatio(adjusted, background) >= minimumDecorationTextContrast) {
+      return formatCanvasColor(adjusted);
+    }
+  }
+
+  return formatCanvasColor(target);
+}
+
+function contrastRatio(
+  a: readonly [number, number, number, number],
+  b: readonly [number, number, number, number],
+) {
+  const aLuminance = relativeLuminance(a);
+  const bLuminance = relativeLuminance(b);
+  const lighter = Math.max(aLuminance, bLuminance);
+  const darker = Math.min(aLuminance, bLuminance);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function relativeLuminance(color: readonly [number, number, number, number]) {
+  const [r, g, b] = color;
+  return (
+    0.2126 * linearizeRgbChannel(r) +
+    0.7152 * linearizeRgbChannel(g) +
+    0.0722 * linearizeRgbChannel(b)
+  );
+}
+
+function linearizeRgbChannel(value: number) {
+  const channel = value / 255;
+  return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+}
+
+function mixCanvasColor(
+  from: readonly [number, number, number, number],
+  to: readonly [number, number, number, number],
+  progress: number,
+): [number, number, number, number] {
+  return [
+    from[0] + (to[0] - from[0]) * progress,
+    from[1] + (to[1] - from[1]) * progress,
+    from[2] + (to[2] - from[2]) * progress,
+    from[3],
+  ];
+}
+
+function formatCanvasColor(color: readonly [number, number, number, number]) {
+  return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(color[2])}, ${color[3]})`;
 }

@@ -1,10 +1,10 @@
-import type { CaretTarget } from "@/editor";
 import { useEffect, useEffectEvent, useRef } from "react";
 import {
   caretInViewportSprig,
-  caretTargetSprig,
+  cursorScrollTargetSprig,
   normalizedSelectionSprig,
   useSprig,
+  type CursorScrollTarget,
 } from "../store";
 import { cursorLeafSprig, type CursorLeaf } from "../overlays/leaves/sprigs";
 
@@ -24,10 +24,8 @@ type UseCursorOptions = {
 
 type CursorController = {
   /**
-   * Whether the user caret is inside the editor's visible scroll window.
-   * Used internally to suspend the blink interval when the caret scrolls
-   * off-screen, and exposed for consumers that want to gate other
-   * caret-anchored UI on the same signal.
+   * Whether the caret is inside the visible scroll window. Used to suspend
+   * blinking and gate caret-anchored UI.
    */
   caretInViewport: boolean;
   leaf: CursorLeaf | null;
@@ -35,9 +33,10 @@ type CursorController = {
 };
 
 type FocusVisibilityRequest = {
+  bottom: number;
   layoutWidth: number;
-  offset: number;
-  regionId: string;
+  scrollTop: number;
+  top: number;
   viewportHeight: number;
 };
 
@@ -51,34 +50,10 @@ const CARET_BLINK_INTERVAL_MS = 530;
 const FOCUS_VISIBILITY_PADDING = 24;
 
 /**
- * Owns the browser lifecycle around the text caret — visual blink, activity
- * signals, and keeping the caret visible in the viewport.
- *
- * What this hook owns:
- *   - Caret blink lifecycle: solid while the shared idle clock is active,
- *     then blinking at `CARET_BLINK_INTERVAL_MS`. Disabled when a range is
- *     selected, and suspended when the caret is off-viewport.
- *   - Store-derived cursor view data: the contextual leaf, caret viewport
- *     status, and measured caret target.
- *   - Focus visibility: when the caret moves out of the visible viewport
- *     (via typing, navigation, or layout changes), scroll just enough to
- *     bring it back. Dedupes against repeat triggers for the same logical
- *     state to avoid scroll thrash.
- *   - Caret viewport status: reads whether the caret is inside the
- *     visible scroll window. Drives blink suspension and is exposed for
- *     other caret-anchored UI to gate on.
- *
- * Contract with the host:
- *   - The host renders the `leaf` as a contextual overlay (alongside
- *     pointer hover and selection leaves; the host arbitrates priority).
- *   - The host calls `isVisible()` from its overlay paint pass to decide
- *     whether to draw the caret on the current frame.
- *   - The host passes the shared idle clock state so any user action
- *     keeps the caret solid for a moment before blinking resumes.
- *   - The host provides `onVisibilityChange` (typically a render scheduler
- *     callback) so blink ticks can repaint the overlay canvas.
- *   - The host provides `scrollTo` and viewport metrics so this hook can
- *     keep the caret in view without the host owning that logic.
+ * Owns caret browser lifetimes: contextual leaf data, blink cadence, viewport
+ * status, and focus visibility. Selection moves scroll through
+ * `cursorScrollTargetSprig`, whose estimated-bounds fallback lets off-layout
+ * jumps such as search navigation land before the next layout pass.
  */
 export function useCursor({
   activeAt,
@@ -94,7 +69,7 @@ export function useCursor({
   const normalizedSel = useSprig(normalizedSelectionSprig);
   const leaf = useSprig(cursorLeafSprig, isEditable);
   const caretInViewport = useSprig(caretInViewportSprig);
-  const caretTarget = useSprig(caretTargetSprig);
+  const scrollTarget = useSprig(cursorScrollTargetSprig);
   const shouldBlinkCaret =
     normalizedSel.start.regionId === normalizedSel.end.regionId &&
     normalizedSel.start.offset === normalizedSel.end.offset;
@@ -109,16 +84,16 @@ export function useCursor({
 
   /* Focus visibility */
 
-  // Watches the selection focus and viewport metrics. When the caret leaves
-  // the visible region (after typing, navigation, or layout changes), scrolls
-  // just enough to bring it back. Dedupes against repeat triggers for the
-  // same logical state to avoid scroll thrash on incidental rerenders.
+  // Dedupe identical visibility requests; layout/scroll changes may publish
+  // the same target more than once.
   useEffect(() => {
-    const focus = normalizedSel.end;
+    if (!scrollTarget) return;
+
     const focusVisibilityRequest: FocusVisibilityRequest = {
+      bottom: scrollTarget.bottom,
       layoutWidth,
-      offset: focus.offset,
-      regionId: focus.regionId,
+      scrollTop: getScrollTop(),
+      top: scrollTarget.top,
       viewportHeight,
     };
 
@@ -128,31 +103,26 @@ export function useCursor({
       return;
     }
 
-    if (!caretTarget) return;
-
-    const currentTop = getScrollTop();
+    const currentTop = focusVisibilityRequest.scrollTop;
     const visibleTop = currentTop + FOCUS_VISIBILITY_PADDING;
     const visibleBottom = currentTop + viewportHeight - FOCUS_VISIBILITY_PADDING;
 
-    if (caretTarget.top < visibleTop) {
-      const appliedTop = scrollTo(Math.max(0, caretTarget.top - FOCUS_VISIBILITY_PADDING));
+    if (scrollTarget.top < visibleTop) {
+      const appliedTop = scrollTo(Math.max(0, scrollTarget.top - FOCUS_VISIBILITY_PADDING));
       if (
-        isCaretVisibleAtScrollTop(caretTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
+        isScrollTargetVisible(scrollTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
       ) {
         lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
       }
       return;
     }
 
-    if (caretTarget.top + caretTarget.height > visibleBottom) {
+    if (scrollTarget.bottom > visibleBottom) {
       const appliedTop = scrollTo(
-        Math.max(
-          0,
-          caretTarget.top + caretTarget.height - viewportHeight + FOCUS_VISIBILITY_PADDING,
-        ),
+        Math.max(0, scrollTarget.bottom - viewportHeight + FOCUS_VISIBILITY_PADDING),
       );
       if (
-        isCaretVisibleAtScrollTop(caretTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
+        isScrollTargetVisible(scrollTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
       ) {
         lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
       }
@@ -160,20 +130,11 @@ export function useCursor({
     }
 
     lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
-  }, [
-    caretTarget,
-    layoutWidth,
-    normalizedSel.end.offset,
-    normalizedSel.end.regionId,
-    viewportHeight,
-  ]);
+  }, [scrollTarget, layoutWidth, viewportHeight]);
 
   /* Caret blink loop */
 
-  // Restart whenever the blink eligibility flips: collapsed↔ranged selection
-  // (`shouldBlinkCaret`), on/off-viewport (`caretInViewport`), and
-  // active/idle input. During activity the caret stays solid and no blink
-  // interval runs.
+  // During activity the caret stays solid; idle collapsed selections blink.
   useEffect(() => {
     cursorVisibleRef.current = true;
     requestVisibilityPaint();
@@ -206,21 +167,19 @@ function areFocusVisibilityRequestsEqual(
   next: FocusVisibilityRequest,
 ) {
   return (
+    previous?.bottom === next.bottom &&
     previous?.layoutWidth === next.layoutWidth &&
-    previous.regionId === next.regionId &&
-    previous.offset === next.offset &&
-    previous.viewportHeight === next.viewportHeight
+    previous?.scrollTop === next.scrollTop &&
+    previous?.top === next.top &&
+    previous?.viewportHeight === next.viewportHeight
   );
 }
 
-function isCaretVisibleAtScrollTop(
-  caret: Pick<CaretTarget, "height" | "top">,
+function isScrollTargetVisible(
+  target: CursorScrollTarget,
   scrollTop: number,
   visibleHeight: number,
   padding: number,
 ) {
-  return (
-    caret.top >= scrollTop + padding &&
-    caret.top + caret.height <= scrollTop + visibleHeight - padding
-  );
+  return target.top >= scrollTop + padding && target.bottom <= scrollTop + visibleHeight - padding;
 }

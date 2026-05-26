@@ -32,6 +32,8 @@ export {
   resolveTaskCheckboxBounds,
   resolveUnorderedListMarkerBounds,
   resolvePositionInViewport,
+  resolveScrollTopToReveal,
+  type ScrollRevealAlignment,
   type ViewportPositionStatus,
 } from "./query";
 
