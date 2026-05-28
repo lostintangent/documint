@@ -2,7 +2,9 @@
 // stability is covered by `roundtrip.test.ts`.
 
 import { describe, expect, test } from "bun:test";
+import type { Inline } from "@/document";
 import { parseDocument, serializeDocument } from "@/markdown";
+import { fixtureOptions } from "../../playground/src/lib/data";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
 
 describe("Inline parsing", () => {
@@ -56,6 +58,142 @@ describe("Inline parsing", () => {
     expect(mention.name).toBe("Jane Doe");
     expect(mention.userId).toBe("user-123");
     expect(paragraph.plainText).toBe("Hello @Jane Doe!");
+  });
+
+  test("parses registered protocol links as semantic resource nodes", () => {
+    const paragraph = expectBlockAt(
+      parseDocument("Use [Recording](demo-resource://recording/live) now.\n", {
+        resourceProtocols: ["demo-resource:"],
+      }),
+      0,
+      "paragraph",
+    );
+    const resource = expectInlineAt(paragraph.children, 1, "resource");
+
+    expect(paragraph.children).toHaveLength(3);
+    expect(paragraph.children.some((child) => child.type === "link")).toBe(false);
+    expect(resource.label).toBe("Recording");
+    expect(resource.protocol).toBe("demo-resource:");
+    expect(resource.url).toBe("demo-resource://recording/live");
+    expect(paragraph.plainText).toBe("Use Recording now.");
+  });
+
+  test("canonicalizes registered resource protocols without trailing colons", () => {
+    const paragraph = expectBlockAt(
+      parseDocument("Use [Recording](demo-resource://recording/live) now.\n", {
+        resourceProtocols: ["demo-resource"],
+      }),
+      0,
+      "paragraph",
+    );
+    const resource = expectInlineAt(paragraph.children, 1, "resource");
+
+    expect(resource.protocol).toBe("demo-resource:");
+    expect(resource.url).toBe("demo-resource://recording/live");
+  });
+
+  test("parses registered protocol links with titles as semantic resource nodes", () => {
+    const paragraph = expectBlockAt(
+      parseDocument('Use [Recording](demo-resource://recording/live "ignored title") now.\n', {
+        resourceProtocols: ["demo-resource:"],
+      }),
+      0,
+      "paragraph",
+    );
+    const resource = expectInlineAt(paragraph.children, 1, "resource");
+
+    expect(paragraph.children.some((child) => child.type === "link")).toBe(false);
+    expect(resource.label).toBe("Recording");
+    expect(resource.protocol).toBe("demo-resource:");
+    expect(resource.url).toBe("demo-resource://recording/live");
+  });
+
+  test("uses the link text projection as the resource label", () => {
+    const paragraph = expectBlockAt(
+      parseDocument("Use [ **Recording** session ](demo-resource://recording/live) now.\n", {
+        resourceProtocols: ["demo-resource:"],
+      }),
+      0,
+      "paragraph",
+    );
+    const resource = expectInlineAt(paragraph.children, 1, "resource");
+
+    expect(resource.label).toBe(" Recording session ");
+  });
+
+  test("keeps unknown protocol links as editable links", () => {
+    const paragraph = expectBlockAt(
+      parseDocument("Use [Recording](demo-resource://recording/live) now.\n"),
+      0,
+      "paragraph",
+    );
+
+    expectInlineAt(paragraph.children, 1, "link");
+  });
+
+  test("parses playground tutorial demo-resource links as resources", () => {
+    const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
+
+    if (!tutorial) {
+      throw new Error("Expected playground tutorial fixture");
+    }
+
+    const document = parseDocument(tutorial.markdown, {
+      resourceProtocols: ["demo-note:", "demo-resource:"],
+    });
+    const inlines = document.blocks.flatMap((block) =>
+      block.type === "paragraph" || block.type === "heading" ? block.children : [],
+    );
+    const resourceNodes = inlines.filter(
+      (inline): inline is Extract<Inline, { type: "resource" }> =>
+        inline.type === "resource" &&
+        (inline.protocol === "demo-note:" || inline.protocol === "demo-resource:"),
+    );
+    const demoResourceLinks = collectInlineLinks(inlines).filter((link) =>
+      link.url.startsWith("demo-resource:") || link.url.startsWith("demo-note:"),
+    );
+
+    expect(resourceNodes.map((resource) => resource.url)).toEqual([
+      "demo-resource://recording/live",
+      "demo-note://note/complete",
+    ]);
+    expect(resourceNodes.map((resource) => resource.label)).toEqual([
+      "Recording session",
+      "Planning note",
+    ]);
+    expect(demoResourceLinks).toEqual([]);
+  });
+
+  test("normalizes registered protocol iterables once for the whole document", () => {
+    const protocols = new Map([["demo-resource:", { label: "Demo" }]]).keys();
+    const document = parseDocument(
+      "# Heading consumes inline parsing first\n\nUse [Recording](demo-resource://recording/live) now.\n",
+      { resourceProtocols: protocols },
+    );
+    const paragraph = expectBlockAt(document, 1, "paragraph");
+
+    expectInlineAt(paragraph.children, 1, "resource");
+  });
+
+  test("does not cache mutable resource protocol iterables across parses", () => {
+    const protocols = ["demo-resource:"];
+    const source = "Use [Recording](demo-resource://recording/live) now.\n";
+
+    expectInlineAt(
+      expectBlockAt(parseDocument(source, { resourceProtocols: protocols }), 0, "paragraph")
+        .children,
+      1,
+      "resource",
+    );
+
+    protocols.length = 0;
+
+    expectInlineAt(
+      expectBlockAt(parseDocument(source, { resourceProtocols: protocols }), 0, "paragraph")
+        .children,
+      1,
+      "link",
+    );
   });
 
   // --- Edge cases that mimic hard-break / mark syntax but aren't ---
@@ -353,4 +491,17 @@ function summarizeRepresentativeNodes(document: ReturnType<typeof parseDocument>
     tableId: table.id,
     tableText: table.plainText,
   };
+}
+
+function collectInlineLinks(inlines: readonly Inline[]): Extract<Inline, { type: "link" }>[] {
+  const links: Extract<Inline, { type: "link" }>[] = [];
+
+  for (const inline of inlines) {
+    if (inline.type === "link") {
+      links.push(inline);
+      links.push(...collectInlineLinks(inline.children));
+    }
+  }
+
+  return links;
 }

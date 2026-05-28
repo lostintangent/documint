@@ -18,6 +18,7 @@ import {
   resolveLineContentInset,
 } from "@/editor/layout";
 import { type EditorState, type NormalizedEditorSelection } from "@/editor/state";
+import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import {
@@ -66,7 +67,6 @@ import {
 
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
 const emptyCommentPresence: ReadonlyMap<number, EditorPresence> = new Map();
-const emptyResources: DocumentResources = { images: new Map() };
 
 type PaintLayerOptions = {
   devicePixelRatio: number;
@@ -124,7 +124,7 @@ export function paintContent(
     theme,
     width,
   } = options;
-  const resources = resourcesOption ?? emptyResources;
+  const resources = resourcesOption ?? emptyDocumentResources;
   const { layout, blockMap: blockSnapshots, paintTop: viewportTop } = viewport;
 
   context.save();

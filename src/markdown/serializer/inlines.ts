@@ -40,6 +40,8 @@ function serializeInline(node: Inline, nextNode?: Inline): string {
       return serializeImage(node);
     case "mention":
       return serializeMention(node);
+    case "resource":
+      return serializeResource(node);
     case "code":
       return serializeInlineCode(node.code);
     case "link":
@@ -125,8 +127,16 @@ function serializeMention(node: Extract<Inline, { type: "mention" }>) {
   return `@[${escapeMarkdownText(node.name)}](${escapeMarkdownDestination(node.userId)})`;
 }
 
+function serializeResource(node: Extract<Inline, { type: "resource" }>) {
+  return serializeInlineLink(escapeMarkdownText(node.label), node.url, null);
+}
+
 function serializeLink(node: Extract<Inline, { type: "link" }>) {
-  return `[${serializeInlines(node.children)}]${serializeLinkDestination(node.url, node.title)}`;
+  return serializeInlineLink(serializeInlines(node.children), node.url, node.title);
+}
+
+function serializeInlineLink(label: string, url: string, title: string | null) {
+  return `[${label}]${serializeLinkDestination(url, title)}`;
 }
 
 function serializeLinkDestination(url: string, title: string | null) {

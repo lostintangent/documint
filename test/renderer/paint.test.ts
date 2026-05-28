@@ -9,9 +9,17 @@ import { paintContent } from "@/renderer";
 import { createEditorLayoutState } from "@/editor/layout";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
-import { insertText, normalizeSelection, setSelection, type EditorState } from "@/editor/state";
+import {
+  createEditorState,
+  insertText,
+  normalizeSelection,
+  setSelection,
+  type EditorState,
+} from "@/editor/state";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
-import type { ResolvedEditorTheme } from "@/types";
+import { parseDocument } from "@/markdown";
+import type { DocumentResourceIcon, DocumentResources, ResolvedEditorTheme } from "@/types";
+import { fixtureOptions, slowSampleImagePath } from "../../playground/src/lib/data";
 import { setup } from "../editor/helpers";
 import {
   approximately,
@@ -124,6 +132,167 @@ test("keeps non-table active block highlights full width", () => {
   if (!activeHighlight || activeHighlight.kind !== "fillRect") {
     throw new Error("Expected paragraph highlight fill");
   }
+});
+
+test("paints playground tutorial resources as pills, not links", () => {
+  const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
+
+  if (!tutorial) {
+    throw new Error("Expected playground tutorial fixture");
+  }
+
+  const state = createEditorState(
+    parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
+  );
+  const resources: DocumentResources = {
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(["demo-resource://recording/live"]),
+      protocols: new Map([
+        ["demo-note:", { icon: "N", label: "Demo note" }],
+        ["demo-resource:", { icon: "R", label: "Demo resource" }],
+      ]),
+    },
+  };
+  for (const url of [
+    slowSampleImagePath,
+    "https://dummyimage.com/640x360/1e293b/e2e8f0.png&text=Narrow+Host",
+    "https://dummyimage.com/720x360/0f766e/f0fdfa.png&text=Diagnostics",
+  ]) {
+    resources.images.set(url, {
+      intrinsicHeight: 360,
+      intrinsicWidth: 640,
+      source: null,
+      status: "loaded",
+    });
+  }
+  const { context } = renderPaintOperations(state, {
+    height: 5000,
+    resources,
+    width: 900,
+  });
+  const recordingText = findFillTextOperation(context.operations, "Recording session");
+  const noteText = findFillTextOperation(context.operations, "Planning note");
+  const objectReplacementText = context.operations.find(
+    (operation) => operation.kind === "fillText" && operation.text.includes("￼"),
+  );
+  const resourceBackgrounds = context.operations.filter(
+    (operation) =>
+      operation.kind === "fillRect" &&
+      operation.fillStyle === resolvedLightTheme.commentHighlight,
+  );
+
+  if (!recordingText || !noteText) {
+    throw new Error("Expected resource label paint operations");
+  }
+
+  expect(recordingText.fillStyle).toBe(resolvedLightTheme.text);
+  expect(noteText.fillStyle).toBe(resolvedLightTheme.leafSecondaryText);
+  expect(objectReplacementText).toBeUndefined();
+  expect(resourceBackgrounds.length).toBeGreaterThanOrEqual(2);
+});
+
+test("does not paint playground tutorial resources as link text", () => {
+  const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
+
+  if (!tutorial) {
+    throw new Error("Expected playground tutorial fixture");
+  }
+
+  const state = createEditorState(
+    parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
+  );
+  const resources: DocumentResources = {
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(),
+      protocols: new Map([
+        ["demo-note:", { icon: "N", label: "Demo note" }],
+        ["demo-resource:", { icon: "R", label: "Demo resource" }],
+      ]),
+    },
+  };
+  for (const url of [
+    slowSampleImagePath,
+    "https://dummyimage.com/640x360/1e293b/e2e8f0.png&text=Narrow+Host",
+    "https://dummyimage.com/720x360/0f766e/f0fdfa.png&text=Diagnostics",
+  ]) {
+    resources.images.set(url, {
+      intrinsicHeight: 360,
+      intrinsicWidth: 640,
+      source: null,
+      status: "loaded",
+    });
+  }
+  const { context } = renderPaintOperations(state, {
+    height: 5000,
+    resources,
+    width: 900,
+  });
+  const linkTextOperations = context.operations.filter(
+    (operation) =>
+      operation.kind === "fillText" &&
+      (operation.text === "Recording session" || operation.text === "Planning note") &&
+      operation.fillStyle === resolvedLightTheme.linkText,
+  );
+
+  expect(linkTextOperations).toEqual([]);
+});
+
+test("paints ordinary links as link text", () => {
+  const state = setup("[Recording session](demo-resource://recording/live)\n");
+  const { context } = renderPaintOperations(state, { height: 180, width: 360 });
+  const linkText = findFillTextOperation(context.operations, "Recording session");
+
+  if (!linkText) {
+    throw new Error("Expected link text paint operation");
+  }
+
+  expect(linkText.fillStyle).toBe(resolvedLightTheme.linkText);
+});
+
+test("paints resource svg icon nodes onto canvas", () => {
+  const state = createEditorState(
+    parseDocument("[Recording session](demo-resource://recording/live)\n", {
+      resourceProtocols: ["demo-resource:"],
+    }),
+  );
+  const icon: DocumentResourceIcon = {
+    node: [["line", { x1: "5", x2: "19", y1: "12", y2: "12" }]],
+    type: "svg",
+  };
+  const resources: DocumentResources = {
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(["demo-resource://recording/live"]),
+      protocols: new Map([["demo-resource:", { icon, label: "Demo resource" }]]),
+    },
+  };
+  const { context } = renderPaintOperations(state, {
+    height: 180,
+    resources,
+    width: 360,
+  });
+  const iconSegment = context.operations.find(
+    (operation) =>
+      operation.kind === "fillRect" &&
+      typeof operation.fillStyle === "string" &&
+      operation.fillStyle.startsWith("rgba("),
+  );
+  const labelSegment = context.operations.find(
+    (operation) =>
+      operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.commentHighlight,
+  );
+  const iconStroke = context.operations.find(
+    (operation) =>
+      operation.kind === "strokePath" && operation.strokeStyle === resolvedLightTheme.background,
+  );
+  const labelText = findFillTextOperation(context.operations, "Recording session");
+
+  expect(iconSegment).toBeDefined();
+  expect(labelSegment).toBeDefined();
+  expect(iconStroke).toBeDefined();
+  expect(labelText?.fillStyle).toBe(resolvedLightTheme.text);
 });
 
 test("paints code block chrome inside document padding with content inset", () => {
@@ -921,16 +1090,22 @@ function renderPaintOperations(
     commentRanges?: EditorCommentRange[];
     now?: number;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
+    resources?: DocumentResources;
     textDecorations?: TextDecorationIndex;
     theme?: ResolvedEditorTheme;
     width: number;
   },
 ) {
-  const layoutState = createEditorLayoutState(state, {
-    height: options.height,
-    top: 0,
-    width: options.width,
-  });
+  const layoutState = createEditorLayoutState(
+    state,
+    {
+      height: options.height,
+      top: 0,
+      width: options.width,
+    },
+    undefined,
+    options.resources,
+  );
   const context = new RecordingCanvasContext();
 
   paintContent(state, layoutState, context as unknown as CanvasRenderingContext2D, {
@@ -948,6 +1123,7 @@ function renderPaintOperations(
     // active animations renders identically across runs. Tests that exercise
     // animation progression set their own `now`.
     now: options.now ?? 0,
+    resources: options.resources,
     textDecorations: options.textDecorations,
     theme: options.theme ?? resolvedLightTheme,
     width: options.width,

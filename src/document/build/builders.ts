@@ -7,6 +7,7 @@
 
 import { extractPlainTextFromBlockNodes, extractPlainTextFromInlineNodes } from "../query/text";
 import { canonicalizeMarks } from "../marks";
+import { normalizeResourceProtocol, resolveResourceProtocol } from "@/resources";
 import type {
   Block,
   BlockquoteBlock,
@@ -26,6 +27,7 @@ import type {
   ParagraphBlock,
   Raw,
   RawBlock,
+  Resource,
   TableBlock,
   TableCell,
   TableRow,
@@ -128,6 +130,23 @@ export function createMention(options: { name: string; userId: string }): Mentio
     name: options.name,
     type: "mention",
     userId: options.userId,
+  };
+}
+
+export function createResource(options: {
+  label: string;
+  protocol?: string;
+  url: string;
+}): Resource {
+  const protocol =
+    resolveResourceProtocol(options.url) ?? normalizeResourceProtocol(options.protocol ?? "") ?? "";
+
+  return {
+    id: "",
+    label: options.label,
+    protocol,
+    type: "resource",
+    url: options.url,
   };
 }
 

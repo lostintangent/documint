@@ -7,6 +7,7 @@ import {
   createTableCell as createDocumentTableCell,
   createText,
   defragmentTextInlines,
+  isReferenceInlineNode,
   iterateInlineNodeRanges,
   measureInlineNodeText,
   rebuildTableBlock,
@@ -143,9 +144,9 @@ function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): 
       );
       return children.length > 0 ? [{ ...node, children }] : [];
     }
-    default:
-      return [];
   }
+
+  return [];
 }
 
 export function extractInlineSelectionText(
@@ -195,12 +196,13 @@ function extractInlineNodeSlice(node: Inline, startOffset: number, endOffset: nu
     return "";
   }
 
+  if (isReferenceInlineNode(node)) {
+    return INLINE_OBJECT_REPLACEMENT_TEXT.slice(startOffset, endOffset);
+  }
+
   switch (node.type) {
     case "lineBreak":
       return "\n".slice(startOffset, endOffset);
-    case "image":
-    case "mention":
-      return INLINE_OBJECT_REPLACEMENT_TEXT.slice(startOffset, endOffset);
     case "code":
       return node.code.slice(startOffset, endOffset);
     case "link":

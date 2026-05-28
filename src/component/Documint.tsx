@@ -20,8 +20,7 @@ import {
   deleteThread,
   editComment,
   getDocument,
-  hasActiveCommentHighlightsInViewport,
-  hasAnimatedDecorationsInViewport,
+  hasContentAnimationsInViewport,
   insertTableColumn,
   insertTableRow,
   measureVisualCaretTarget,
@@ -35,9 +34,15 @@ import {
 } from "@/editor";
 import { paintContent, paintOverlay } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
-import type { DocumentPresence, DocumentUser, DocumintStorage, EditorTheme } from "@/types";
+import type {
+  DocumentPresence,
+  DocumentResourceReference,
+  DocumentUser,
+  DocumintStorage,
+  EditorTheme,
+} from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
-import { parseDocument, serializeDocument } from "@/markdown";
+import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
 import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
@@ -57,6 +62,14 @@ import { useImageHandles } from "./hooks/useImageHandles";
 import { useImages } from "./hooks/useImages";
 import { usePointer } from "./hooks/usePointer";
 import { usePresence } from "./hooks/usePresence";
+import {
+  useResourceProtocols,
+  useResources,
+  createActiveResourceKey,
+  type ActiveResourceSet,
+  type ResolvedResourceProtocols,
+  type ResourceProtocolRecord,
+} from "./hooks/useResources";
 import { useInput } from "./hooks/useInput";
 import { useRenderScheduler } from "./hooks/useRenderScheduler";
 import { useSelection } from "./hooks/useSelection";
@@ -88,6 +101,7 @@ import {
 import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
 export type { DocumintDecoration } from "./hooks/useDecorations";
+export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
 
 export type DocumintProps = {
   content: string;
@@ -98,11 +112,15 @@ export type DocumintProps = {
   keybindings?: EditorInputKeybinding[];
   decorations?: readonly DocumintDecoration[];
   presence?: DocumentPresence[];
+  protocols?: ResourceProtocolRecord;
+  resources?: ActiveResourceSet;
   storage?: DocumintStorage;
   users?: DocumentUser[];
 
   onContentChanged?: (content: string, document: Document) => void;
   onCommentChanged?: (change: CommentChange) => void;
+  onResourceOpened?: (resource: DocumentResourceReference) => void;
+  onResourcesRequested?: (resources: readonly DocumentResourceReference[]) => void;
   onUserMentioned?: (event: UserMentionEvent) => void;
 };
 
@@ -155,7 +173,15 @@ export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorThem
 
 export function Documint({ content, ...props }: DocumintProps) {
   const storeRef = useRef<DocumintStore | null>(null);
-  const contentDocument = useMemo(() => parseDocument(content), [content]);
+  const resourceProtocols = useResourceProtocols(props.protocols);
+  const markdownOptions = useMemo<MarkdownOptions>(
+    () => ({ resourceProtocols: [...resourceProtocols.protocols.keys()] }),
+    [resourceProtocols.key],
+  );
+  const contentDocument = useMemo(
+    () => parseDocument(content, markdownOptions),
+    [content, markdownOptions],
+  );
 
   if (!storeRef.current) {
     storeRef.current = createStore(contentDocument);
@@ -163,7 +189,13 @@ export function Documint({ content, ...props }: DocumintProps) {
 
   return (
     <DocumintStoreProvider store={storeRef.current}>
-      <DocumintHost content={content} {...props} contentDocument={contentDocument} />
+      <DocumintHost
+        content={content}
+        {...props}
+        contentDocument={contentDocument}
+        markdownOptions={markdownOptions}
+        resourceProtocols={resourceProtocols}
+      />
     </DocumintStoreProvider>
   );
 }
@@ -176,24 +208,51 @@ function DocumintHost({
   decorations,
   onCommentChanged,
   onContentChanged,
+  onResourceOpened,
+  onResourcesRequested,
   onUserMentioned,
   presence,
+  resources,
   storage,
   theme,
   users,
   contentDocument,
-}: DocumintProps & { contentDocument: Document }) {
+  markdownOptions,
+  resourceProtocols,
+}: DocumintProps & {
+  contentDocument: Document;
+  markdownOptions: MarkdownOptions;
+  resourceProtocols: ResolvedResourceProtocols;
+}) {
   const contentCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const lastEmittedContentRef = useRef(content);
+  const lastReconciledResourceProtocolKeyRef = useRef(resourceProtocols.key);
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
 
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
 
   const documentStorage = useMemo(() => new DocumentStorage(storage, window), [storage]);
-  const { hasLoadingImages, persistImage, resources: renderResources } = useImages(documentStorage);
+  const { hasLoadingImages, images, persistImage } = useImages(documentStorage);
+  const resourceRegistry = useResources({
+    onResourcesRequested,
+    resourceProtocols,
+    resources,
+  });
+  const activeResourceKey = useMemo(
+    () => createActiveResourceKey(resourceRegistry.active),
+    [resourceRegistry.active],
+  );
+  const lastPaintedActiveResourceKeyRef = useRef(activeResourceKey);
+  const renderResources = useMemo(
+    () => ({
+      images,
+      resourceRegistry,
+    }),
+    [images, resourceRegistry],
+  );
 
   const viewport = useViewport({
     renderResources,
@@ -316,6 +375,7 @@ function DocumintHost({
       const nextContent = serializeDocument(nextDocument);
 
       lastEmittedContentRef.current = nextContent;
+      lastReconciledResourceProtocolKeyRef.current = resourceProtocols.key;
       onContentChanged?.(nextContent, nextDocument);
     },
   );
@@ -490,10 +550,14 @@ function DocumintHost({
           return false;
         }
 
-        return (
-          hasAnimatedDecorationsInViewport(editorState, layoutState, textDecorations) ||
-          hasActiveCommentHighlightsInViewport(layoutState, commentRanges, commentPresence)
-        );
+        return hasContentAnimationsInViewport({
+          commentPresence,
+          commentRanges,
+          resourceRegistry,
+          state: editorState,
+          textDecorations,
+          viewport: layoutState,
+        });
       },
       isActive: idle.isActive,
       renderContent,
@@ -529,6 +593,7 @@ function DocumintHost({
     enableTouchKeyDown: documentCompletions.leaf !== null || search.leaf !== null,
     inputRef,
     keybindings,
+    markdownOptions,
     onActivity: idle.markActive,
     onBeforeInput: documentCompletions.handleBeforeInput,
     onKeyDown: (event) => search.handleKeyDown(event) || documentCompletions.handleKeyDown(event),
@@ -557,6 +622,7 @@ function DocumintHost({
     focusInput: input.focus,
     isEditable,
     onActivity: idle.markActive,
+    onResourceOpened,
     resolvePoint,
     storage: documentStorage,
   });
@@ -631,13 +697,28 @@ function DocumintHost({
   //     animation starts
 
   // Layout-affecting changes — invalidate the cache, then schedule a fresh
-  // paint. Doc-index changes are reconciled by the store transition bridge;
-  // we always invalidate here so the rAF that follows builds against the new
-  // state.
+  // paint. Active resource changes are paint-only; protocol metadata affects
+  // resource pill measurement, but active state only affects color/animation.
   useEffect(() => {
     invalidateLayout();
     scheduleFullRender();
-  }, [editorState.documentIndex, layoutWidth, preferredTheme, renderResources, viewportHeight]);
+  }, [
+    editorState.documentIndex,
+    images,
+    layoutWidth,
+    preferredTheme,
+    resourceProtocols.layoutKey,
+    viewportHeight,
+  ]);
+
+  useEffect(() => {
+    if (activeResourceKey === lastPaintedActiveResourceKeyRef.current) {
+      return;
+    }
+
+    lastPaintedActiveResourceKeyRef.current = activeResourceKey;
+    scheduleContentPaint();
+  }, [activeResourceKey]);
 
   // Selection changes — caret moves on overlay, range highlight on content.
   //
@@ -901,18 +982,20 @@ function DocumintHost({
   // estimated-bounds fallback when the target lands in a virtualized region.
 
   useLayoutEffect(() => {
-    if (content === lastEmittedContentRef.current) {
+    const resourceProtocolsChanged =
+      resourceProtocols.key !== lastReconciledResourceProtocolKeyRef.current;
+
+    if (content === lastEmittedContentRef.current && !resourceProtocolsChanged) {
       return;
     }
 
     const previousState = store.editor.getState();
-    const reconciliation = reconcileExternalContentChange(
-      previousState,
-      createEditorState(contentDocument),
-    );
+    const nextState = createEditorState(contentDocument);
+    const reconciliation = reconcileExternalContentChange(previousState, nextState);
     store.editor.replace(reconciliation.state);
     lastEmittedContentRef.current = content;
-  }, [content, contentDocument]);
+    lastReconciledResourceProtocolKeyRef.current = resourceProtocols.key;
+  }, [content, contentDocument, resourceProtocols.key]);
 
   /* Render */
 

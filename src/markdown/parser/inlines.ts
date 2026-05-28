@@ -8,16 +8,20 @@ import {
   createLink,
   createMention,
   createRaw,
+  createResource,
   createText,
   defragmentTextInlines,
+  extractPlainTextFromInlineNodes,
 } from "@/document";
 import type { Inline, Mark } from "@/document";
 import {
   inlineMarkSpecs,
   lineFeed,
+  resolveRegisteredMarkdownResourceProtocol,
   type InlineMarkDelimiter,
   type HtmlInlineMarkSpec,
 } from "../shared";
+import type { MarkdownParseContext } from "./context";
 
 // --- Single-character markers ---
 // Each begins a construct without a paired closing delimiter: an escape applies
@@ -78,11 +82,17 @@ const htmlInlineMarkSpecs: ReadonlyArray<HtmlInlineMarkSpec> = inlineMarkSpecs.f
   (spec) => spec.kind === "html",
 );
 
-export function parseInlines(source: string): Inline[] {
-  return parseInlineRange(source, 0, source.length, []);
+export function parseInlines(source: string, context: MarkdownParseContext): Inline[] {
+  return parseInlineRange(source, 0, source.length, [], context);
 }
 
-function parseInlineRange(source: string, start: number, end: number, marks: Mark[]): Inline[] {
+function parseInlineRange(
+  source: string,
+  start: number,
+  end: number,
+  marks: Mark[],
+  context: MarkdownParseContext,
+): Inline[] {
   const nodes: Inline[] = [];
   let index = start;
   let textStart = start;
@@ -94,7 +104,7 @@ function parseInlineRange(source: string, start: number, end: number, marks: Mar
       break;
     }
 
-    const token = readInlineToken(source, index, end, marks);
+    const token = readInlineToken(source, index, end, marks, context);
 
     if (token) {
       // `trimLeading` lets a token (the hard-break readers) reach back into
@@ -130,6 +140,7 @@ type InlineTokenReader = (
   index: number,
   end: number,
   marks: Mark[],
+  context: MarkdownParseContext,
 ) => InlineToken | null;
 
 // Order matters within a given lead character: the more specific reader
@@ -184,7 +195,22 @@ function buildInlineTokenStartPattern() {
 }
 
 function escapeInlineTokenStartForCharacterClass(character: string) {
-  return character === lineFeed ? "\\n" : character.replace(/[\\\]\[\^-]/g, "\\$&");
+  switch (character) {
+    case lineFeed:
+      return "\\n";
+    case "\\":
+      return "\\\\";
+    case "]":
+      return "\\]";
+    case "[":
+      return "\\x5B";
+    case "^":
+      return "\\x5E";
+    case "-":
+      return "\\-";
+    default:
+      return character;
+  }
 }
 
 function readInlineToken(
@@ -192,6 +218,7 @@ function readInlineToken(
   index: number,
   end: number,
   marks: Mark[],
+  context: MarkdownParseContext,
 ): InlineToken | null {
   const readers = inlineReadersByLeadChar.get(source[index] ?? "");
   if (!readers) {
@@ -199,7 +226,7 @@ function readInlineToken(
   }
 
   for (const read of readers) {
-    const token = read(source, index, end, marks);
+    const token = read(source, index, end, marks, context);
     if (token) {
       return token;
     }
@@ -242,7 +269,13 @@ function readInlineDirectiveToken(source: string, index: number, end: number) {
   };
 }
 
-function readHtmlMarkToken(source: string, index: number, end: number, marks: Mark[]) {
+function readHtmlMarkToken(
+  source: string,
+  index: number,
+  end: number,
+  marks: Mark[],
+  context: MarkdownParseContext,
+) {
   for (const spec of htmlInlineMarkSpecs) {
     if (!source.startsWith(spec.openTag, index)) {
       continue;
@@ -256,10 +289,13 @@ function readHtmlMarkToken(source: string, index: number, end: number, marks: Ma
 
     return {
       end: closeIndex + spec.closeTag.length,
-      nodes: parseInlineRange(source, index + spec.openTag.length, closeIndex, [
-        ...marks,
-        spec.mark,
-      ]),
+      nodes: parseInlineRange(
+        source,
+        index + spec.openTag.length,
+        closeIndex,
+        [...marks, spec.mark],
+        context,
+      ),
     };
   }
 
@@ -454,7 +490,13 @@ function readMentionToken(source: string, index: number, end: number) {
   };
 }
 
-function readLinkToken(source: string, index: number, end: number, marks: Mark[]) {
+function readLinkToken(
+  source: string,
+  index: number,
+  end: number,
+  marks: Mark[],
+  context: MarkdownParseContext,
+) {
   // Reject `[` that's the second byte of a malformed `![...]` image. Without
   // this guard, a failed image parse would leak through here and the bracketed
   // segment would be silently promoted to a link.
@@ -474,14 +516,32 @@ function readLinkToken(source: string, index: number, end: number, marks: Mark[]
     return null;
   }
 
+  const children = parseInlineRange(
+    source,
+    index + linkOpening.length,
+    labelEnd,
+    marks,
+    context,
+  );
+  const resourceProtocol = resolveRegisteredMarkdownResourceProtocol(
+    destination.url,
+    context.resourceProtocols,
+  );
+
   return {
     end: destination.end,
     nodes: [
-      createLink({
-        children: parseInlineRange(source, index + linkOpening.length, labelEnd, marks),
-        title: destination.title,
-        url: destination.url,
-      }),
+      resourceProtocol
+        ? createResource({
+            label: extractResourceLabel(children),
+            protocol: resourceProtocol,
+            url: destination.url,
+          })
+        : createLink({
+            children,
+            title: destination.title,
+            url: destination.url,
+          }),
     ],
   };
 }
@@ -534,6 +594,10 @@ function readLinkDestination(source: string, openParenIndex: number, end: number
   };
 }
 
+function extractResourceLabel(children: readonly Inline[]) {
+  return extractPlainTextFromInlineNodes(children);
+}
+
 function readImageWidth(source: string, index: number, end: number) {
   // Sticky regex anchors the match at `lastIndex`, so we can scan in place
   // without slicing the remaining source.
@@ -550,7 +614,13 @@ function readImageWidth(source: string, index: number, end: number) {
   };
 }
 
-function readDelimitedMarkToken(source: string, index: number, end: number, marks: Mark[]) {
+function readDelimitedMarkToken(
+  source: string,
+  index: number,
+  end: number,
+  marks: Mark[],
+  context: MarkdownParseContext,
+) {
   for (const spec of inlineMarkDelimiters) {
     if (!source.startsWith(spec.delimiter, index)) {
       continue;
@@ -582,7 +652,13 @@ function readDelimitedMarkToken(source: string, index: number, end: number, mark
 
     return {
       end: closeIndex + spec.delimiter.length,
-      nodes: parseInlineRange(source, contentStart, closeIndex, [...marks, spec.mark]),
+      nodes: parseInlineRange(
+        source,
+        contentStart,
+        closeIndex,
+        [...marks, spec.mark],
+        context,
+      ),
     };
   }
 

@@ -49,6 +49,13 @@ export type CanvasLinkHit = {
   url: string;
 };
 
+export type CanvasResourceHit = {
+  label: string;
+  protocol: string;
+  regionId: string;
+  url: string;
+};
+
 export type EditorHoverTarget =
   | {
       endOffset: number;
@@ -57,6 +64,14 @@ export type EditorHoverTarget =
       regionId: string;
       startOffset: number;
       title: string | null;
+      url: string;
+    }
+  | {
+      kind: "resource";
+      commentThreadIndex: number | null;
+      label: string;
+      protocol: string;
+      regionId: string;
       url: string;
     }
   | {
@@ -242,6 +257,10 @@ export function resolveLinkHitAtPoint(
     return null;
   }
 
+  return resolveLinkHit(state, hit);
+}
+
+function resolveLinkHit(state: EditorState, hit: EditorHit): CanvasLinkHit | null {
   const container = findContainer(state, hit.regionId);
 
   if (!container) {
@@ -262,6 +281,44 @@ export function resolveLinkHitAtPoint(
     startOffset: run.start,
     title: run.link.title,
     url: run.link.url,
+  };
+}
+
+export function resolveResourceHitAtPoint(
+  layout: DocumentLayout,
+  state: EditorState,
+  point: { x: number; y: number },
+): CanvasResourceHit | null {
+  const hit = resolveEditorHitAtPoint(layout, state, point);
+
+  if (!hit) {
+    return null;
+  }
+
+  return resolveResourceHit(state, hit);
+}
+
+function resolveResourceHit(state: EditorState, hit: EditorHit): CanvasResourceHit | null {
+  const container = findContainer(state, hit.regionId);
+
+  if (!container) {
+    return null;
+  }
+
+  const run = regionInlines(container).find(
+    (entry) =>
+      entry.node.type === "resource" && hit.offset >= entry.start && hit.offset <= entry.end,
+  );
+
+  if (run?.node.type !== "resource") {
+    return null;
+  }
+
+  return {
+    label: run.node.label,
+    protocol: run.node.protocol,
+    regionId: hit.regionId,
+    url: run.node.url,
   };
 }
 
@@ -291,7 +348,20 @@ export function resolveHoverTargetAtPoint(
     hit.offset,
     commentRanges,
   );
-  const linkHit = resolveLinkHitAtPoint(layout, state, point);
+  const resourceHit = resolveResourceHit(state, hit);
+
+  if (resourceHit) {
+    return {
+      commentThreadIndex,
+      kind: "resource",
+      label: resourceHit.label,
+      protocol: resourceHit.protocol,
+      regionId: resourceHit.regionId,
+      url: resourceHit.url,
+    };
+  }
+
+  const linkHit = resolveLinkHit(state, hit);
 
   if (linkHit) {
     return {
@@ -336,6 +406,17 @@ export function resolveTargetAtOffset(
   const commentThreadIndex = resolveCommentThreadIndexAtOffset(regionId, offset, commentRanges);
   const run =
     regionInlines(container).find((entry) => offset >= entry.start && offset <= entry.end) ?? null;
+
+  if (run?.node.type === "resource") {
+    return {
+      commentThreadIndex,
+      kind: "resource",
+      label: run.node.label,
+      protocol: run.node.protocol,
+      regionId,
+      url: run.node.url,
+    };
+  }
 
   if (run?.link) {
     return {

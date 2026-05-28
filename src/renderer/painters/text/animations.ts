@@ -7,6 +7,7 @@
 
 import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
 import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
+import { isReferenceInlineNode } from "@/document";
 import type { ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { splitGraphemes } from "@/editor/text/graphemes";
@@ -42,7 +43,7 @@ export function paintTextHighlights(
   const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
 
   for (const inline of visibleInlines) {
-    if (inline.node.type === "image" || inline.node.type === "mention") {
+    if (isReferenceInlineNode(inline.node)) {
       continue;
     }
 

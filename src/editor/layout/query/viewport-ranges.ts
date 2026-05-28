@@ -1,6 +1,8 @@
 // Owns visible line and block range queries over a prepared `DocumentLayout`.
 
-import type { DocumentLayout } from "../measure";
+import type { DocumentLayout, DocumentLayoutLine } from "../measure";
+import type { EditorLayoutState } from "../state";
+import { resolvePositionInViewport } from "./viewport-position";
 
 export function findDocumentLayoutBlockRange(layout: DocumentLayout, top: number, height: number) {
   if (layout.blocks.length === 0) {
@@ -60,6 +62,39 @@ export function findDocumentLayoutLineRange(layout: DocumentLayout, top: number,
     endIndex,
     startIndex,
   };
+}
+
+export function someVisibleDocumentLayoutLine(
+  viewport: EditorLayoutState,
+  predicate: (line: DocumentLayoutLine, lineIndex: number) => boolean,
+): boolean {
+  const { endIndex, startIndex } = findDocumentLayoutLineRange(
+    viewport.layout,
+    viewport.viewport.top,
+    viewport.viewport.height,
+  );
+
+  for (let lineIndex = startIndex; lineIndex < endIndex; lineIndex += 1) {
+    const line = viewport.layout.lines[lineIndex];
+    if (!line) {
+      continue;
+    }
+
+    if (
+      resolvePositionInViewport(viewport, {
+        bottom: line.top + line.height,
+        top: line.top,
+      }) !== "visible"
+    ) {
+      continue;
+    }
+
+    if (predicate(line, lineIndex)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function findFirstBlockIndexAtOrAfter(layout: DocumentLayout, y: number) {

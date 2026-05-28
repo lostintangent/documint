@@ -3,7 +3,7 @@
 // overestimation: the exact pass must always be free to extend past the
 // estimated bottom.
 
-import type { Block } from "@/document";
+import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { regionInlines, type RegionEntry } from "../../state";
 import type { LayoutCache } from "../state/cache";
@@ -50,11 +50,7 @@ export function estimateContainerHeight(
     options.width - left - options.paddingX - listInset - codeContentInset * 2,
   );
 
-  if (
-    regionInlines(container).some(
-      (inline) => inline.node.type === "image" || inline.node.type === "mention",
-    )
-  ) {
+  if (regionInlines(container).some((inline) => isReferenceInlineNode(inline.node))) {
     const font = resolveTextBlockFont(block);
     return measureTextContainerLines(
       cache,

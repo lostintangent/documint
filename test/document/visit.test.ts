@@ -3,12 +3,17 @@ import {
   createDocument,
   createBlockquoteBlock,
   createCode,
+  createImage,
   createParagraphTextBlock,
   createLink,
+  createLineBreak,
+  createMention,
   createParagraphBlock,
+  createResource,
   createText,
   extractPlainTextFromInlineNodes,
   findBlockById,
+  measureInlineNodeText,
   visitBlockTree,
   visitDocument,
 } from "@/document";
@@ -145,6 +150,41 @@ Second
     });
 
     expect(visited).toEqual(["root.0.children:0-6:plain ", "root.0.children:18-23: tail"]);
+  });
+
+  test("measures references as single text-coordinate offsets", () => {
+    const image = createImage({ alt: "Preview", url: "https://example.com/image.png" });
+    const mention = createMention({ name: "Jane Doe", userId: "user-123" });
+    const resource = createResource({
+      label: "Recording session",
+      protocol: "demo-resource:",
+      url: "demo-resource://recording/live",
+    });
+    const lineBreak = createLineBreak();
+    const snapshot = createDocument([
+      createParagraphBlock([
+        createText("a"),
+        image,
+        mention,
+        resource,
+        lineBreak,
+        createCode("bc"),
+        createText("z"),
+      ]),
+    ]);
+    const visited: string[] = [];
+
+    expect([image, mention, resource, lineBreak].map(measureInlineNodeText)).toEqual([
+      1, 1, 1, 1,
+    ]);
+
+    visitDocument(snapshot, {
+      enterPlainText(text, context) {
+        visited.push(`${context.startOffset}-${context.endOffset}:${text}`);
+      },
+    });
+
+    expect(visited).toEqual(["0-1:a", "7-8:z"]);
   });
 
   test("supports stopping traversal once a semantic target has been found", () => {

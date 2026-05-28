@@ -42,6 +42,15 @@ export {
 } from "./text/decorations";
 export { createLayoutCache } from "./layout/state/cache";
 export { hasRunningEditorAnimations as hasRunningAnimations } from "./state";
+export {
+  createResourceReference,
+  hasActiveResourcesInViewport,
+  resolveInlineResource,
+  resolveResource,
+} from "./resources";
+export type { ResolvedResource } from "./resources";
+export { hasContentAnimationsInViewport } from "./viewport-animations";
+export type { ContentAnimationViewportInputs } from "./viewport-animations";
 
 // State lifecycle, selection, and commands
 export {

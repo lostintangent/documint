@@ -33,8 +33,7 @@ import {
 } from "../../state";
 import {
   findLineEntryForRegionOffset,
-  findVisibleLineRange,
-  resolvePositionInViewport,
+  someVisibleDocumentLayoutLine,
   type EditorLayoutState,
 } from "../../layout";
 import type { EditorState } from "../../state/types";
@@ -158,42 +157,16 @@ export function hasActiveCommentHighlightsInViewport(
     return false;
   }
 
-  const { endIndex, startIndex } = findVisibleLineRange(
-    viewport.layout,
-    viewport.viewport.top,
-    viewport.viewport.height,
+  return someVisibleDocumentLayoutLine(viewport, (line) =>
+    ranges.some(
+      (range) =>
+        !range.resolved &&
+        commentPresence.has(range.threadIndex) &&
+        range.regionId === line.regionId &&
+        range.endOffset > line.start &&
+        range.startOffset < line.end,
+    ),
   );
-
-  for (let lineIndex = startIndex; lineIndex < endIndex; lineIndex += 1) {
-    const line = viewport.layout.lines[lineIndex];
-    if (!line) {
-      continue;
-    }
-
-    if (
-      resolvePositionInViewport(viewport, {
-        bottom: line.top + line.height,
-        top: line.top,
-      }) !== "visible"
-    ) {
-      continue;
-    }
-
-    if (
-      ranges.some(
-        (range) =>
-          !range.resolved &&
-          commentPresence.has(range.threadIndex) &&
-          range.regionId === line.regionId &&
-          range.endOffset > line.start &&
-          range.startOffset < line.end,
-      )
-    ) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 // Return the index (into `Document.comments`) of the comment whose range

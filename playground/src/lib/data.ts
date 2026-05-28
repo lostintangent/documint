@@ -85,6 +85,12 @@ At-mention available users directly in the document, like @[demo](demo).
 
 Use the Users control in the upper right to add more mentionable users while testing the playground.
 
+## 🔗 Resources
+
+Hosts can register custom link protocols and render those links as live resource pills.
+
+Try the active [Recording session](demo-resource://recording/live) resource and the inactive [Planning note](demo-note://note/complete) resource.
+
 ## 🎨 Decorations
 
 Hosts can define decorations from text patterns and use them to apply custom foreground colors, background colors, or pulse animations.

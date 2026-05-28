@@ -22,6 +22,7 @@ import {
 } from "react";
 import type { FocusInput } from "./useInput";
 import type { DocumentStorage } from "../lib/storage";
+import type { DocumentResourceReference } from "@/types";
 import {
   commentRangesSprig,
   editorStateSprig,
@@ -45,6 +46,7 @@ type UsePointerOptions = {
   focusInput: FocusInput;
   isEditable: boolean;
   onActivity: () => void;
+  onResourceOpened?: (resource: DocumentResourceReference) => void;
   storage: DocumentStorage;
 };
 
@@ -153,6 +155,7 @@ export function usePointer({
   focusInput,
   isEditable,
   onActivity,
+  onResourceOpened,
   resolvePoint,
   storage,
 }: UsePointerOptions): PointerController {
@@ -187,7 +190,12 @@ export function usePointer({
   // If the comment thread under the pointer disappears (e.g. resolved by
   // another user), the hover target is no longer meaningful — drop it.
   useEffect(() => {
-    if (hoverTarget && hoverTarget.kind !== "task-toggle" && !leaf) {
+    if (
+      hoverTarget &&
+      hoverTarget.kind !== "task-toggle" &&
+      hoverTarget.kind !== "resource" &&
+      !leaf
+    ) {
       setHoverTarget(null);
     }
   }, [hoverTarget, leaf]);
@@ -250,6 +258,14 @@ export function usePointer({
         previous?.kind !== "task-toggle" && previous?.commentThreadIndex === threadIndex
           ? previous
           : target,
+      );
+      return;
+    }
+
+    if (target.kind === "resource") {
+      cancelHide();
+      setHoverTarget((previous) =>
+        previous?.kind === "resource" && previous.url === target.url ? previous : target,
       );
       return;
     }
@@ -504,6 +520,16 @@ export function usePointer({
         event.stopPropagation();
         onActivity();
       }
+      return;
+    }
+
+    if (target?.kind === "resource") {
+      event.preventDefault();
+      event.stopPropagation();
+      onResourceOpened?.({
+        protocol: target.protocol,
+        url: target.url,
+      });
       return;
     }
 

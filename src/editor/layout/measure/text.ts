@@ -11,7 +11,7 @@ import {
   type RichInlineFragmentRange,
   type RichInlineItem,
 } from "@chenglou/pretext/rich-inline";
-import type { Block, Image, Mark, Mention } from "@/document";
+import { isReferenceInlineNode, type Block, type Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import {
   findInlinesInSpan,
@@ -22,8 +22,10 @@ import {
 } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import { codeTextFont, inlineTextHasCustomMetrics, resolveInlineTextStyle } from "../../text/fonts";
-import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./inline-image";
-import { measureInlineMentionWidth, mentionHorizontalPadding } from "./inline-mention";
+import {
+  resolveInlineReferenceMeasurement,
+  resolveInlineReferenceSignature,
+} from "./inline-reference";
 import {
   cacheLineBoundaries,
   cacheMeasuredLines,
@@ -32,24 +34,14 @@ import {
   type LayoutCache,
 } from "../state/cache";
 
-// Narrow helpers reading kind-specific data from an `InlineEntry`. The
-// discriminator is `inline.node.type` (the document's `Inline` union). Marks
-// only exist on text nodes; inline-code is the kind itself; mention/image
-// type-guards narrow `inline.node` for downstream attribute access.
+// Narrow helpers reading text-style data from an `InlineEntry`. Marks only
+// exist on text nodes; inline-code is the kind itself.
 function inlineMarks(run: InlineEntry): readonly Mark[] {
   return run.node.type === "text" ? run.node.marks : [];
 }
 
 function inlineIsCode(run: InlineEntry): boolean {
   return run.node.type === "code";
-}
-
-function isMentionInline(run: InlineEntry): run is InlineEntry & { node: Mention } {
-  return run.node.type === "mention";
-}
-
-function isImageInline(run: InlineEntry): run is InlineEntry & { node: Image } {
-  return run.node.type === "image";
 }
 
 export type TextLineBoundary = {
@@ -247,9 +239,15 @@ export function measureTextLineBoundaries(
     const segmentText = container.text.slice(segmentStart, segmentEnd);
     let offset = segmentStart - start;
 
-    if (run.node.type === "image") {
-      const imageWidth = resolveInlineImageDimensions(run, resources, availableWidth).width;
-      width += imageWidth;
+    const reference = resolveInlineReferenceMeasurement(run, context, {
+      availableWidth,
+      font,
+      lineHeight: 0,
+      resources,
+    });
+
+    if (reference) {
+      width += reference.width;
       offset += segmentText.length;
       boundaries.push({
         left: width,
@@ -260,17 +258,6 @@ export function measureTextLineBoundaries(
     }
 
     context.font = resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font;
-
-    if (isMentionInline(run)) {
-      width += measureInlineMentionWidth(context, run.node);
-      offset += segmentText.length;
-      boundaries.push({
-        left: width,
-        offset,
-      });
-
-      continue;
-    }
 
     for (const advance of measureTextBoundaryAdvances(cache, context, segmentText)) {
       width += advance.width;
@@ -341,7 +328,13 @@ function createMeasuredTextLines(
   }
 
   if (inlineProfile.hasRichInline) {
-    return createRichInlineMeasuredTextLines(container, font, availableWidth, lineHeight);
+    return createRichInlineMeasuredTextLines(
+      container,
+      font,
+      availableWidth,
+      lineHeight,
+      resources,
+    );
   }
 
   const prepared = prepareTextSegments(cache, text, font, resolveWhitespace(block, inlineProfile));
@@ -447,8 +440,15 @@ function createRichInlineMeasuredTextLines(
   font: string,
   availableWidth: number,
   lineHeight: number,
+  resources: DocumentResources,
 ) {
-  const { items, measurementItems } = createRichInlineMeasurementItems(container, font);
+  const { items, measurementItems } = createRichInlineMeasurementItems(
+    container,
+    font,
+    availableWidth,
+    lineHeight,
+    resources,
+  );
 
   if (items.length === 0) {
     return [
@@ -495,18 +495,27 @@ function createRichInlineMeasuredTextLines(
       ];
 }
 
-function createRichInlineMeasurementItems(container: RegionEntry, font: string) {
+function createRichInlineMeasurementItems(
+  container: RegionEntry,
+  font: string,
+  availableWidth: number,
+  lineHeight: number,
+  resources: DocumentResources,
+) {
   const items: RichInlineItem[] = [];
   const measurementItems: RichInlineMeasurementItem[] = [];
+  const context = getTextMeasurementContext();
 
   for (const run of regionInlines(container)) {
-    if (run.node.type === "mention") {
-      items.push({
-        break: "never",
-        extraWidth: mentionHorizontalPadding * 2,
-        font: resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font,
-        text: `@${run.node.name}`,
-      });
+    const reference = resolveInlineReferenceMeasurement(run, context, {
+      availableWidth,
+      font,
+      lineHeight,
+      resources,
+    });
+
+    if (reference?.richItem) {
+      items.push(reference.richItem);
       measurementItems.push({
         leadingTrimLength: 0,
         run,
@@ -583,7 +592,7 @@ function resolveRichInlineFragmentOffset(
 
   const { run } = measurementItem;
 
-  if (run.node.type === "mention") {
+  if (run.node.type === "mention" || run.node.type === "resource") {
     return side === "start" ? run.start : run.end;
   }
 
@@ -768,33 +777,26 @@ function flattenMeasuredInlineSegments(
   const segments: MeasuredTextSegment[] = [];
 
   for (const run of regionInlines(container)) {
-    if (run.node.type === "image") {
-      const dimensions = resolveInlineImageDimensions(run, resources, availableWidth);
+    const reference = resolveInlineReferenceMeasurement(run, context, {
+      availableWidth,
+      font,
+      lineHeight,
+      resources,
+    });
 
+    if (reference) {
       segments.push({
         breakable: true,
         end: run.end,
-        height: dimensions.height,
+        height: reference.height,
         start: run.start,
-        text: run.text,
-        width: dimensions.width,
+        text: reference.text,
+        width: reference.width,
       });
       continue;
     }
 
     context.font = resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font;
-
-    if (isMentionInline(run)) {
-      segments.push({
-        breakable: true,
-        end: run.end,
-        height: lineHeight,
-        start: run.start,
-        text: run.text,
-        width: measureInlineMentionWidth(context, run.node),
-      });
-      continue;
-    }
 
     let offset = run.start;
 
@@ -829,7 +831,7 @@ function resolveInlineMeasurementProfile(container: RegionEntry): InlineMeasurem
       hasHardBreak = true;
     }
 
-    if (isMentionInline(run) || runHasInlineCustomMetrics(run)) {
+    if (isReferenceInlineNode(run.node) || runHasInlineCustomMetrics(run)) {
       hasRichInline = true;
     }
   }
@@ -853,8 +855,9 @@ function requiresLocalInlineLayout(profile: InlineMeasurementProfile) {
 // by the indexer during typing, so unchanged regions hit this cache on every
 // keystroke instead of re-hashing their text and re-serializing every inline.
 //
-// Image regions are skipped because their identity also depends on mutable
-// `resources` state (load status, intrinsic dimensions); cheap to recompute.
+// Image/resource regions are skipped because their identity also depends on
+// mutable `resources` state (image load/intrinsic dimensions, resource protocol
+// labels/icons); cheap to recompute.
 const regionIdentityByInlines = new WeakMap<
   readonly InlineEntry[],
   { identity: string; path: string; text: string }
@@ -877,13 +880,17 @@ export function resolveRegionMeasurementCacheIdentity(
     return cached.identity;
   }
 
+  const { hasResourceDependency, signature } = resolveContainerMeasurementSignature(
+    container,
+    resources,
+  );
   const identity = [
     container.path,
     hashMeasurementText(container.text),
-    resolveContainerMeasurementSignature(container, resources),
+    signature,
   ].join(":");
 
-  if (!inlines.some((run) => run.node.type === "image")) {
+  if (!hasResourceDependency) {
     regionIdentityByInlines.set(inlines, {
       identity,
       path: container.path,
@@ -898,20 +905,26 @@ function resolveContainerMeasurementSignature(
   container: RegionEntry,
   resources: DocumentResources,
 ) {
-  return regionInlines(container)
-    .map((run) => `${run.start}-${run.end}:${resolveRunMeasurementSignature(run, resources)}`)
-    .join("|");
+  let hasResourceDependency = false;
+  let signature = "";
+
+  for (const run of regionInlines(container)) {
+    if (signature) {
+      signature += "|";
+    }
+
+    const reference = resolveInlineReferenceSignature(run, resources);
+
+    hasResourceDependency ||= reference?.hasMutableResourceDependency ?? false;
+    signature += `${run.start}-${run.end}:${
+      reference?.signature ?? resolveRunMeasurementSignature(run)
+    }`;
+  }
+
+  return { hasResourceDependency, signature };
 }
 
-function resolveRunMeasurementSignature(run: InlineEntry, resources: DocumentResources) {
-  if (isImageInline(run)) {
-    return resolveInlineImageSignature(run, resources);
-  }
-
-  if (isMentionInline(run)) {
-    return `mention:${run.node.userId}:${run.node.name}`;
-  }
-
+function resolveRunMeasurementSignature(run: InlineEntry) {
   return `${run.node.type}:${inlineIsCode(run) ? 1 : 0}:${inlineMarks(run).join(",")}:${run.link?.url ?? ""}`;
 }
 

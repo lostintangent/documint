@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createLayoutCache, createEditorLayoutState, resolveHoverTarget } from "@/editor";
-import { createDocumentIndex, regionInlines } from "@/editor/state";
+import { createDocumentIndex, createEditorState, regionInlines } from "@/editor/state";
 import { hitTestDocumentLayout, measureCaretTarget } from "@/editor/layout";
 import {
   resolveDragFocusPoint,
@@ -10,6 +10,7 @@ import {
 } from "@/editor/navigation";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
+import { fixtureOptions } from "../../../playground/src/lib/data";
 import type { DocumentResources } from "@/types";
 import { getRegion, getRegionByType, setup } from "../helpers";
 
@@ -323,7 +324,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
   expect(hit?.offset).toBe(0);
 });
 
-test("hit-tests image runs as atomic before-or-after caret stops", () => {
+test("hit-tests image runs as single reference caret stops", () => {
   const runtime = createDocumentIndex(
     parseDocument("before ![alt](https://example.com/image.png) after\n"),
   );
@@ -339,6 +340,7 @@ test("hit-tests image runs as atomic before-or-after caret stops", () => {
         },
       ],
     ]),
+    resourceRegistry: { active: new Set(), protocols: new Map() },
   };
   const layout = measureLayoutSlice(runtime, { width: 520 }, undefined, resources);
   const line = layout.lines[0];
@@ -378,6 +380,126 @@ test("hit-tests image runs as atomic before-or-after caret stops", () => {
 
   expect(leftHit?.offset).toBe(imageRun.start);
   expect(rightHit?.offset).toBe(imageRun.end);
+});
+
+test("resolves resource hover targets from registered resource inlines", () => {
+  const state = createEditorState(
+    parseDocument("[Recording](demo-resource://recording/live)\n", {
+      resourceProtocols: ["demo-resource:"],
+    }),
+  );
+  const resources: DocumentResources = {
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(["demo-resource://recording/live"]),
+      protocols: new Map([["demo-resource:", { icon: "R", label: "Demo resource" }]]),
+    },
+  };
+  const viewport = createEditorLayoutState(
+    state,
+    { height: 320, top: 0, width: 520 },
+    undefined,
+    resources,
+  );
+  const line = viewport.layout.lines[0];
+  const paragraph = state.documentIndex.regions[0];
+
+  if (!line || !paragraph) {
+    throw new Error("Expected resource paragraph layout");
+  }
+
+  const inlines = regionInlines(paragraph);
+  expect(inlines).toHaveLength(1);
+  expect(inlines[0]?.node.type).toBe("resource");
+  expect(inlines[0]?.link).toBeNull();
+
+  const hover = resolveHoverTarget(state, viewport, {
+    x: line.left + line.width / 2,
+    y: line.top + line.height / 2,
+  });
+
+  expect(hover).toMatchObject({
+    label: "Recording",
+    kind: "resource",
+    protocol: "demo-resource:",
+    url: "demo-resource://recording/live",
+  });
+
+  const leftEdgeHover = resolveHoverTarget(state, viewport, {
+    x: line.left + 1,
+    y: line.top + line.height / 2,
+  });
+
+  expect(leftEdgeHover).toMatchObject({
+    kind: "resource",
+    url: "demo-resource://recording/live",
+  });
+
+  const rightEdgeHover = resolveHoverTarget(state, viewport, {
+    x: line.left + line.width - 1,
+    y: line.top + line.height / 2,
+  });
+
+  expect(rightEdgeHover).toMatchObject({
+    kind: "resource",
+    url: "demo-resource://recording/live",
+  });
+});
+
+test("indexes playground tutorial demo resources as resource inlines", () => {
+  const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
+
+  if (!tutorial) {
+    throw new Error("Expected playground tutorial fixture");
+  }
+
+  const state = createEditorState(
+    parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
+  );
+  const resourceRegion = state.documentIndex.regions.find((region) =>
+    region.text.includes("Try the active"),
+  );
+
+  if (!resourceRegion) {
+    throw new Error("Expected playground resource paragraph");
+  }
+
+  const inlines = regionInlines(resourceRegion);
+  const resources = inlines.filter((inline) => inline.node.type === "resource");
+  const links = inlines.filter(
+    (inline) =>
+      inline.link?.url.startsWith("demo-resource:") || inline.link?.url.startsWith("demo-note:"),
+  );
+
+  expect([...state.documentIndex.resourceUrls]).toEqual([
+    "demo-resource://recording/live",
+    "demo-note://note/complete",
+  ]);
+  expect(resourceRegion.text).toBe("Try the active ￼ resource and the inactive ￼ resource.");
+  expect(resources.map((inline) => inline.node.type === "resource" && inline.node.url)).toEqual([
+    "demo-resource://recording/live",
+    "demo-note://note/complete",
+  ]);
+  expect(resources.every((inline) => inline.link === null)).toBe(true);
+  expect(links).toEqual([]);
+});
+
+test("keeps ordinary registered-protocol links as link hover targets without resource parsing", () => {
+  const state = createEditorState(parseDocument("[Recording](demo-resource://recording/live)\n"));
+  const viewport = createEditorLayoutState(state, { height: 320, top: 0, width: 520 });
+  const line = viewport.layout.lines[0];
+
+  if (!line) throw new Error("Expected link paragraph layout");
+
+  const hover = resolveHoverTarget(state, viewport, {
+    x: line.left + line.width / 2,
+    y: line.top + line.height / 2,
+  });
+
+  expect(hover).toMatchObject({
+    kind: "link",
+    url: "demo-resource://recording/live",
+  });
 });
 
 test("resolves task-toggle hover targets ahead of text hits", () => {

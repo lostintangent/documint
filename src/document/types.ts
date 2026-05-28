@@ -45,7 +45,7 @@ export type Block =
   | DirectiveBlock
   | RawBlock;
 
-export type Inline = Text | Link | Image | Mention | Code | LineBreak | Raw;
+export type Inline = Text | Link | Image | Mention | Resource | Code | LineBreak | Raw;
 
 // Every document node carries an `id` and a literal `type` discriminator. Block
 // nodes additionally carry a `plainText` projection for search/serialization.
@@ -166,6 +166,15 @@ export type Mention = DocumentNode<
   {
     name: string;
     userId: string;
+  }
+>;
+
+export type Resource = DocumentNode<
+  "resource",
+  {
+    label: string;
+    protocol: string;
+    url: string;
   }
 >;
 

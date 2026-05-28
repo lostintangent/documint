@@ -16,3 +16,8 @@ export const imageUrlsSprig = createSourceSprig(
   editorSource,
   (state) => state.documentIndex.imageUrls,
 );
+
+export const resourceUrlsSprig = createSourceSprig(
+  editorSource,
+  (state) => state.documentIndex.resourceUrls,
+);

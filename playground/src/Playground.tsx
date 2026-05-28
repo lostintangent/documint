@@ -8,8 +8,10 @@ import {
   type DocumintDecoration,
   type DocumintStorage,
   type UserMentionEvent,
+  lucideResourceIcon,
 } from "documint";
 import { Hand } from "lucide-react";
+import dynamicIconImports from "lucide-react/dynamicIconImports";
 import { HostEventPanel } from "./components/HostEventPanel";
 import { DiagnosticsPopover } from "./components/popovers/DiagnosticsPopover";
 import { UsersPopover } from "./components/popovers/UsersPopover";
@@ -86,6 +88,24 @@ const actions: DocumintActions = {
     },
   },
 };
+
+const [{ __iconNode: recordingIconNode }, { __iconNode: noteIconNode }] = await Promise.all([
+  dynamicIconImports.mic(),
+  dynamicIconImports["sticky-note"](),
+]);
+
+const protocols = {
+  "demo-resource:": {
+    icon: lucideResourceIcon(recordingIconNode),
+    label: "Demo resource",
+  },
+  "demo-note:": {
+    icon: lucideResourceIcon(noteIconNode),
+    label: "Demo note",
+  },
+};
+
+const activeResources = new Set(["demo-resource://recording/live"]);
 
 const fixtureSurfaceClassName =
   "grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border border-border/[0.08] bg-background/[0.82] max-[700px]:portrait:h-auto";
@@ -182,11 +202,17 @@ export function Playground() {
               theme={activeTheme ?? undefined}
               users={mentionUsers}
               presence={presence}
+              protocols={protocols}
+              resources={activeResources}
               storage={storage}
               actions={actions}
               decorations={decorations}
               onCommentChanged={handleCommentChanged}
               onContentChanged={setContent}
+              onResourceOpened={(resource) => {
+                window.alert(`Open resource: ${resource.url}`);
+              }}
+              onResourcesRequested={() => {}}
               onUserMentioned={handleUserMentioned}
             />
           </div>

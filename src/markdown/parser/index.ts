@@ -17,6 +17,7 @@ import { createDocument } from "@/document";
 import { lineFeed, type MarkdownOptions } from "../shared";
 import { parseBlocks } from "./blocks";
 import { extractCommentDirective } from "./comments";
+import { createMarkdownParseContext } from "./context";
 
 export type MarkdownLineCursor = {
   index: number;
@@ -28,7 +29,7 @@ const frontMatterFence = "---";
 export function parseDocument(source: string, options: MarkdownOptions = {}): Document {
   const cursor = createCursor(source);
   const frontMatter = readFrontMatter(cursor);
-  const blocks = parseBlocks(cursor, 0, options);
+  const blocks = parseBlocks(cursor, createMarkdownParseContext(options));
   const { comments, blocks: contentBlocks } = extractCommentDirective(blocks);
 
   return createDocument(contentBlocks, comments, frontMatter);
@@ -42,7 +43,7 @@ export function parseDocument(source: string, options: MarkdownOptions = {}): Do
 // returned blocks have unnormalized ids; that's fine because every paste
 // path splices them into a `Document`, which re-normalizes.
 export function parseFragmentBlocks(source: string, options: MarkdownOptions = {}): Block[] {
-  return parseBlocks(createCursor(source), 0, options);
+  return parseBlocks(createCursor(source), createMarkdownParseContext(options));
 }
 
 function createCursor(source: string): MarkdownLineCursor {

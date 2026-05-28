@@ -14,6 +14,7 @@ export {
   findDocumentLayoutLineForRegionOffset as findLineForRegionOffset,
   findDocumentLayoutBlockRange as findVisibleBlockRange,
   findDocumentLayoutLineRange as findVisibleLineRange,
+  someVisibleDocumentLayoutLine,
 
   // Resolve point and caret geometry.
   hitTestDocumentLayout,

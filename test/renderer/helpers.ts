@@ -64,10 +64,15 @@ export class RecordingCanvasContext {
     font: string;
     globalAlpha: number;
     globalCompositeOperation: GlobalCompositeOperation;
+    lineCap: CanvasLineCap;
+    lineJoin: CanvasLineJoin;
+    lineWidth: number;
     strokeStyle: string | CanvasGradient | CanvasPattern;
     textAlign: CanvasTextAlign;
     textBaseline: CanvasTextBaseline;
   }> = [];
+  lineCap: CanvasLineCap = "butt";
+  lineJoin: CanvasLineJoin = "miter";
   strokeStyle: string | CanvasGradient | CanvasPattern = "";
   textAlign: CanvasTextAlign = "start";
   textBaseline: CanvasTextBaseline = "alphabetic";
@@ -90,6 +95,12 @@ export class RecordingCanvasContext {
   clearRect() {}
 
   clip() {}
+
+  createLinearGradient(): CanvasGradient {
+    return {
+      addColorStop() {},
+    } as CanvasGradient;
+  }
 
   fill() {
     if (!this.pendingRoundedRect) {
@@ -161,6 +172,9 @@ export class RecordingCanvasContext {
     this.font = state.font;
     this.globalAlpha = state.globalAlpha;
     this.globalCompositeOperation = state.globalCompositeOperation;
+    this.lineCap = state.lineCap;
+    this.lineJoin = state.lineJoin;
+    this.lineWidth = state.lineWidth;
     this.strokeStyle = state.strokeStyle;
     this.textAlign = state.textAlign;
     this.textBaseline = state.textBaseline;
@@ -176,6 +190,9 @@ export class RecordingCanvasContext {
       font: this.font,
       globalAlpha: this.globalAlpha,
       globalCompositeOperation: this.globalCompositeOperation,
+      lineCap: this.lineCap,
+      lineJoin: this.lineJoin,
+      lineWidth: this.lineWidth,
       strokeStyle: this.strokeStyle,
       textAlign: this.textAlign,
       textBaseline: this.textBaseline,

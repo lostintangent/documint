@@ -3,7 +3,7 @@
 // ranges against the current editor document index so paint can read ranges by
 // editor region path.
 
-import { findVisibleLineRange, resolvePositionInViewport, type EditorLayoutState } from "../layout";
+import { someVisibleDocumentLayoutLine, type EditorLayoutState } from "../layout";
 import { resolveRegion, resolveRegionByPath, type EditorState } from "../state";
 
 export type TextDecoration = {
@@ -153,36 +153,12 @@ export function hasAnimatedDecorationsInViewport(
     return false;
   }
 
-  const { endIndex, startIndex } = findVisibleLineRange(
-    viewport.layout,
-    viewport.viewport.top,
-    viewport.viewport.height,
-  );
-
-  for (let lineIndex = startIndex; lineIndex < endIndex; lineIndex += 1) {
-    const line = viewport.layout.lines[lineIndex];
-    if (!line) {
-      continue;
-    }
-
-    if (
-      resolvePositionInViewport(viewport, {
-        bottom: line.top + line.height,
-        top: line.top,
-      }) !== "visible"
-    ) {
-      continue;
-    }
-
+  return someVisibleDocumentLayoutLine(viewport, (line) => {
     const regionPath = resolveRegion(state.documentIndex, line.regionId)?.path ?? null;
     const decorations = regionPath ? index.get(regionPath) : null;
 
-    if (decorations?.some((decoration) => isAnimatedDecorationOnLine(decoration, line))) {
-      return true;
-    }
-  }
-
-  return false;
+    return decorations?.some((decoration) => isAnimatedDecorationOnLine(decoration, line)) ?? false;
+  });
 }
 
 function isAnimatedDecorationOnLine(

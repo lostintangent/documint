@@ -1,6 +1,6 @@
 // Inline mention measurement policy. Mentions render as compact pills but
 // occupy one object-replacement character in editor text, so layout measures
-// the visual pill width for that single atomic offset.
+// the visual pill width for that single reference coordinate.
 
 import type { Mention } from "@/document";
 

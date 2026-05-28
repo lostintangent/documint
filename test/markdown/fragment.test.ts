@@ -17,6 +17,18 @@ describe("parseFragment classification", () => {
   ] as const)("classifies %s as `%s`", (_label, expectedKind, source) => {
     expect(parseFragment(source).kind).toBe(expectedKind);
   });
+
+  test("uses markdown options when classifying inline content", () => {
+    const fragment = parseFragment("[Recording](demo-resource://recording/live)\n", {
+      resourceProtocols: ["demo-resource:"],
+    });
+
+    expect(fragment.kind).toBe("inlines");
+    if (fragment.kind === "inlines") {
+      expect(fragment.inlines).toHaveLength(1);
+      expect(fragment.inlines[0]?.type).toBe("resource");
+    }
+  });
 });
 
 describe("parseFragment persistence-boundary isolation", () => {

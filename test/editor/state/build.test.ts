@@ -176,6 +176,34 @@ alpha
     expect(next.imageUrls).toBe(index.imageUrls);
   });
 
+  test("collects resource URLs per root and preserves the document-level reference across unrelated edits", () => {
+    const snapshot = parseDocument(
+      `[Recording](demo-resource://recording/live)
+
+just text
+
+[Note](demo-resource://note/complete)
+`,
+      { resourceProtocols: ["demo-resource:"] },
+    );
+    const index = createDocumentIndex(snapshot);
+
+    expect([...index.roots[0]!.resourceUrls]).toEqual(["demo-resource://recording/live"]);
+    expect([...index.roots[1]!.resourceUrls]).toEqual([]);
+    expect([...index.roots[2]!.resourceUrls]).toEqual(["demo-resource://note/complete"]);
+    expect([...index.resourceUrls]).toEqual([
+      "demo-resource://recording/live",
+      "demo-resource://note/complete",
+    ]);
+
+    const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("updated")]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+    expect(next.roots[0]).toBe(index.roots[0]);
+    expect(next.roots[0]!.resourceUrls).toBe(index.roots[0]!.resourceUrls);
+    expect(next.resourceUrls).toBe(index.resourceUrls);
+  });
+
   test("preserves list marker projections across unrelated root edits", () => {
     const snapshot = parseDocument(`1. alpha
 2. beta

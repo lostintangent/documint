@@ -42,7 +42,7 @@ import {
   type EditorState,
 } from "@/editor";
 import type { EditorInputCommand } from "@/types";
-import { parseFragment, serializeFragment } from "@/markdown";
+import { parseFragment, serializeFragment, type MarkdownOptions } from "@/markdown";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
 import {
@@ -58,6 +58,7 @@ type UseInputOptions = {
   inputRef: RefObject<HTMLTextAreaElement | null>;
 
   keybindings?: EditorInputKeybinding[];
+  markdownOptions?: MarkdownOptions;
 
   // Host callbacks the hook invokes.
   onActivity: () => void;
@@ -214,6 +215,7 @@ const DICTATION_FLUSH_OVERLAP_THRESHOLD = 16;
 export function useInput({
   inputRef,
   keybindings,
+  markdownOptions,
   enableTouchKeyDown = false,
   onActivity,
   onBeforeInput,
@@ -670,7 +672,7 @@ export function useInput({
       }
 
       event.preventDefault();
-      const fragment = parseFragment(pastedText);
+      const fragment = parseFragment(pastedText, markdownOptions);
       runInputCommand(pasteFragmentCommand, fragment, pastedText);
     },
   );

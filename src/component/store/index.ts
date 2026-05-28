@@ -37,6 +37,7 @@ export {
   documentIndexSprig,
   editorStateSprig,
   imageUrlsSprig,
+  resourceUrlsSprig,
   selectionSprig,
 } from "./editor/sprigs";
 export type { EditorStateTransition } from "./editor/transitions";

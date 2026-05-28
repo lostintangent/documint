@@ -31,7 +31,11 @@ export {
   measureCanvasLineOffsetLeft,
 } from "./line-lookup";
 
-export { findDocumentLayoutBlockRange, findDocumentLayoutLineRange } from "./viewport-ranges";
+export {
+  findDocumentLayoutBlockRange,
+  findDocumentLayoutLineRange,
+  someVisibleDocumentLayoutLine,
+} from "./viewport-ranges";
 
 export {
   resolvePositionInViewport,

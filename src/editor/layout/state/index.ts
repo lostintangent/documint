@@ -3,6 +3,7 @@
 // choose the visible region slice, then run exact layout only for that slice.
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
+import { emptyDocumentResources } from "@/editor/resources";
 import type { EditorState } from "../../state";
 import { createLayoutCache, type LayoutCache } from "./cache";
 import { resolveDocumentLayoutOptions, type DocumentLayoutOptions } from "../lib/options";
@@ -48,7 +49,7 @@ export function createEditorLayoutState(
   };
   const documentIndex = state.documentIndex;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
-  const resolvedResources: DocumentResources = resources ?? { images: new Map() };
+  const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
   // documentIndex.blockIndex is already `Map<string, BlockEntry>` keyed by
   // block id — exactly what we need. Reusing it skips a per-call O(N) Map

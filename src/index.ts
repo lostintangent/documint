@@ -12,16 +12,26 @@ export {
   type EditorInputKeybinding,
   type DocumintProps,
   type DocumintTheme,
+  type ResourceProtocolRecord,
+  type ActiveResourceSet,
   type UserMentionEvent,
+  lucideResourceIcon,
 } from "./component";
 
 export type {
+  DocumentResourceIcon,
+  DocumentResourceIconNode,
+  DocumentResourceVectorIcon,
   DocumentPresence,
+  DocumentResourceProtocol,
+  DocumentResourceReference,
   DocumentUser,
   DocumintStorage,
   EditorInputCommand,
   EditorTheme,
 } from "./types";
+
+export { normalizeResourceProtocol, resolveResourceProtocol } from "./resources";
 
 export type {
   Anchor,
@@ -34,6 +44,7 @@ export type {
   Mark,
   Raw,
   RawBlock,
+  Resource,
   Text,
 } from "./document";
 

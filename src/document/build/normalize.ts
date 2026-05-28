@@ -230,6 +230,8 @@ function inlineSeedFor(node: Inline, plainText?: string): string {
       return `${node.url}:${node.width ?? ""}:${node.alt ?? ""}`;
     case "mention":
       return `${node.userId}:${node.name}`;
+    case "resource":
+      return `${node.url}:${node.label}`;
     case "code":
       return node.code;
     case "text":

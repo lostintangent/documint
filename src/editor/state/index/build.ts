@@ -10,7 +10,7 @@
 // pays for the per-root delta, not for re-iterating the whole document.
 //
 // Per-document projections (`commentContainerIndex`, `listItemMarkers`,
-// `imageUrls`) live next to the primitive so the cache-reuse policies
+// `imageUrls`, `resourceUrls`) live next to the primitive so the cache-reuse policies
 // (`document.comments === prev.document.comments`, etc.) stay in one place.
 
 import { resolveCommentThread, type Document } from "@/document";
@@ -21,6 +21,8 @@ import type {
   RegionEntry,
   RootEntry,
 } from "./types";
+
+const EMPTY_URLS: ReadonlySet<string> = new Set();
 
 export function applyRootDelta(
   prev: DocumentIndex | null,
@@ -82,6 +84,7 @@ export function applyRootDelta(
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
     imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
+    resourceUrls: createDocumentResourceUrls(positionedRoots, prev?.resourceUrls),
     listItemMarkers: createDocumentListItemMarkers(positionedRoots, prev?.listItemMarkers),
     regionIndex,
     regionPathIndex,
@@ -146,10 +149,33 @@ function createDocumentImageUrls(
   roots: RootEntry[],
   previous: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> {
-  const next = new Set<string>();
+  return createDocumentUrlSet(roots, previous, (root) => root.imageUrls);
+}
+
+function createDocumentResourceUrls(
+  roots: RootEntry[],
+  previous: ReadonlySet<string> | undefined,
+): ReadonlySet<string> {
+  return createDocumentUrlSet(roots, previous, (root) => root.resourceUrls);
+}
+
+function createDocumentUrlSet(
+  roots: RootEntry[],
+  previous: ReadonlySet<string> | undefined,
+  readRootUrls: (root: RootEntry) => ReadonlySet<string>,
+): ReadonlySet<string> {
+  let next: Set<string> | null = null;
   for (const root of roots) {
-    for (const url of root.imageUrls) next.add(url);
+    for (const url of readRootUrls(root)) {
+      next ??= new Set();
+      next.add(url);
+    }
   }
+
+  if (!next) {
+    return previous && previous.size === 0 ? previous : EMPTY_URLS;
+  }
+
   return previous && areUrlSetsEqual(previous, next) ? previous : next;
 }
 

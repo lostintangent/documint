@@ -6,7 +6,7 @@
 
 import type { Block, Fragment, Inline } from "../types";
 
-export function extractPlainTextFromInlineNodes(nodes: Inline[]): string {
+export function extractPlainTextFromInlineNodes(nodes: readonly Inline[]): string {
   return nodes
     .map((node) => {
       switch (node.type) {
@@ -16,6 +16,8 @@ export function extractPlainTextFromInlineNodes(nodes: Inline[]): string {
           return node.alt ?? "";
         case "mention":
           return `@${node.name}`;
+        case "resource":
+          return node.label;
         case "code":
           return node.code;
         case "link":
@@ -70,7 +72,7 @@ export function extractBlockPlainText(node: Block): string {
 // per nesting level for callers like `createListItemBlock` /
 // `createBlockquoteBlock`. The cached read keeps the per-call cost
 // proportional to the immediate child count.
-export function extractPlainTextFromBlockNodes(nodes: Block[]): string {
+export function extractPlainTextFromBlockNodes(nodes: readonly Block[]): string {
   return nodes
     .map((node) => node.plainText)
     .join("\n")
@@ -81,14 +83,14 @@ export function extractPlainTextFromBlockNodes(nodes: Block[]): string {
 // — every node is an unmarked text node. Used by the fragment extractor
 // and the markdown bridge to take the `Fragment.text` fast path when the
 // slice carries no marks, links, images, or breaks.
-export function isPlainTextInlines(inlines: Inline[]): boolean {
+export function isPlainTextInlines(inlines: readonly Inline[]): boolean {
   return inlines.every((node) => node.type === "text" && node.marks.length === 0);
 }
 
 // Whether a block list could be losslessly represented as a plain string —
 // a single paragraph whose children are themselves plain text. Composes
 // `isPlainTextInlines` for the inline-level check.
-export function isPlainTextBlocks(blocks: Block[]): boolean {
+export function isPlainTextBlocks(blocks: readonly Block[]): boolean {
   if (blocks.length !== 1) {
     return false;
   }

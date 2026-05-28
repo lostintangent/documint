@@ -89,6 +89,8 @@ type ListMarkerContext = {
   start: number | null;
 };
 
+const EMPTY_URLS: ReadonlySet<string> = new Set();
+
 function resolveBlockContribution(block: Block): BlockContribution {
   // Cast is safe: the table's discriminator and the block's discriminator
   // are the same union; TypeScript just doesn't track the relationship.
@@ -101,6 +103,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
   // Collected during the inline walk below, alongside the work that's
   // already happening — no extra traversal.
   const imageUrls = new Set<string>();
+  let resourceUrls: Set<string> | null = null;
   const listItemMarkers = new Map<string, ListItemMarker>();
   let position = 0;
 
@@ -115,6 +118,10 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     const text = inlines.map((inline) => inline.text).join("");
     for (const inline of inlines) {
       if (inline.node.type === "image") imageUrls.add(inline.node.url);
+      if (inline.node.type === "resource") {
+        resourceUrls ??= new Set();
+        resourceUrls.add(inline.node.url);
+      }
     }
     pushRegion(
       block,
@@ -295,6 +302,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     blocks,
     end: position,
     imageUrls,
+    resourceUrls: resourceUrls ?? EMPTY_URLS,
     listItemMarkers,
     regionRange:
       regions.length > 0

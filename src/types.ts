@@ -9,6 +9,36 @@ export type DocumentImageResource = {
 
 export type DocumentResources = {
   images: Map<string, DocumentImageResource>;
+  resourceRegistry: DocumentResourceRegistry;
+};
+
+export type DocumentResourceProtocol = {
+  icon?: DocumentResourceIcon;
+  label: string;
+};
+
+export type DocumentResourceIcon = string | DocumentResourceVectorIcon;
+
+export type DocumentResourceVectorIcon = {
+  node: DocumentResourceIconNode;
+  type: "svg";
+};
+
+export type DocumentResourceIconNode = readonly DocumentResourceIconNodeElement[];
+
+export type DocumentResourceIconNodeElement = readonly [
+  elementName: string,
+  attrs: Readonly<Record<string, string>>,
+];
+
+export type DocumentResourceReference = {
+  protocol: string;
+  url: string;
+};
+
+export type DocumentResourceRegistry = {
+  active: ReadonlySet<string>;
+  protocols: ReadonlyMap<string, DocumentResourceProtocol>;
 };
 
 // Host-provided storage for reading/writing resources needed by the document.

@@ -16,14 +16,14 @@
 // with eviction, decode failure, and unmount. GC reclaims unused bitmaps
 // once their references drop from state.
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { type DocumentImageResource, type DocumentResources } from "@/types";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import type { DocumentImageResource } from "@/types";
 import type { DocumentStorage } from "../lib/storage";
 import { imageUrlsSprig, useSprig } from "../store";
 
 export type ImagesApi = {
   hasLoadingImages: boolean;
-  resources: DocumentResources | null;
+  images: Map<string, DocumentImageResource>;
   persistImage: (file: File) => Promise<string | null>;
 };
 
@@ -110,18 +110,9 @@ export function useImages(storage: DocumentStorage): ImagesApi {
     }
   });
 
-  const resources = useMemo(
-    () =>
-      imageResources.size === 0
-        ? null
-        : {
-            images: imageResources,
-          },
-    [imageResources],
-  );
   const hasLoadingImages = hasLoadingImageResource(imageResources);
 
-  return { hasLoadingImages, resources, persistImage };
+  return { hasLoadingImages, images: imageResources, persistImage };
 }
 
 /* Loading pipeline */

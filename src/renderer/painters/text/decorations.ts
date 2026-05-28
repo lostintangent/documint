@@ -16,6 +16,7 @@ import {
 } from "@/editor/state";
 import type { TextDecoration } from "@/editor/text/decorations";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
+import { isReferenceInlineNode } from "@/document";
 import {
   collectRangeBoundaries,
   filterRangesOverlappingSegment,
@@ -206,7 +207,7 @@ function forEachDecorationSegment(
 }
 
 function canPaintTextDecoration(inline: InlineEntry) {
-  return inline.node.type !== "image" && inline.node.type !== "mention";
+  return !isReferenceInlineNode(inline.node);
 }
 
 function paintDecorationSegments({

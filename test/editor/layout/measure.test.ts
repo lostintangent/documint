@@ -1,10 +1,17 @@
 import { expect, test } from "bun:test";
 import { createLayoutCache } from "@/editor/layout/state/cache";
-import { createDocumentIndex, insertLineBreak, setSelection, toggleMark } from "@/editor/state";
+import {
+  createDocumentIndex,
+  createEditorState,
+  insertLineBreak,
+  setSelection,
+  toggleMark,
+} from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
 import { measureCaretTarget } from "@/editor/layout";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
+import { fixtureOptions } from "../../../playground/src/lib/data";
 import type { DocumentResources } from "@/types";
 import { getRegion, setup } from "../helpers";
 
@@ -276,6 +283,141 @@ test("treats user mentions as single caret boundary units", () => {
   expect(afterMention!.left - beforeMention!.left).toBeGreaterThan(60);
 });
 
+test("measures registered resources as single pill units", () => {
+  const state = createEditorState(
+    parseDocument("Open [Recording](demo-resource://recording/live) now\n", {
+      resourceProtocols: ["demo-resource:"],
+    }),
+  );
+  const region = getRegion(state, "Open ￼ now");
+  const resources: DocumentResources = {
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(["demo-resource://recording/live"]),
+      protocols: new Map([
+        [
+          "demo-resource:",
+          {
+            icon: "R",
+            label: "Demo resource",
+          },
+        ],
+      ]),
+    },
+  };
+  const layout = measureLayoutSlice(state.documentIndex, { width: 420 }, undefined, resources);
+  const line = layout.lines.find((line) => line.regionId === region.id);
+
+  if (!line) {
+    throw new Error("Expected paragraph line");
+  }
+
+  const beforeResource = line.boundaries.find((boundary) => boundary.offset === 5);
+  const afterResource = line.boundaries.find((boundary) => boundary.offset === 6);
+
+  expect(beforeResource).toBeDefined();
+  expect(afterResource).toBeDefined();
+  expect(afterResource!.left - beforeResource!.left).toBeGreaterThan(80);
+  expect(afterResource!.left - beforeResource!.left).toBeLessThan(130);
+});
+
+test("recomputes cached resource measurements when protocol icons change", () => {
+  const cache = createLayoutCache();
+  const state = createEditorState(
+    parseDocument("Open [Recording](demo-resource://recording/live) now\n", {
+      resourceProtocols: ["demo-resource:"],
+    }),
+  );
+  const region = getRegion(state, "Open ￼ now");
+  const createResources = (icon: string): DocumentResources => ({
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(["demo-resource://recording/live"]),
+      protocols: new Map([["demo-resource:", { icon, label: "Demo resource" }]]),
+    },
+  });
+  const shortLayout = measureLayoutSlice(
+    state.documentIndex,
+    { width: 420 },
+    cache,
+    createResources("R"),
+  );
+  const longLayout = measureLayoutSlice(
+    state.documentIndex,
+    { width: 420 },
+    cache,
+    createResources("Recording"),
+  );
+  const readResourceWidth = (layout: typeof shortLayout) => {
+    const line = layout.lines.find((line) => line.regionId === region.id);
+
+    if (!line) {
+      throw new Error("Expected paragraph line");
+    }
+
+    const beforeResource = line.boundaries.find((boundary) => boundary.offset === 5);
+    const afterResource = line.boundaries.find((boundary) => boundary.offset === 6);
+
+    if (!beforeResource || !afterResource) {
+      throw new Error("Expected resource boundaries");
+    }
+
+    return afterResource.left - beforeResource.left;
+  };
+
+  expect(readResourceWidth(longLayout)).toBeGreaterThan(readResourceWidth(shortLayout) + 50);
+});
+
+test("lays out playground tutorial demo resources as single reference pill spans", () => {
+  const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
+
+  if (!tutorial) {
+    throw new Error("Expected playground tutorial fixture");
+  }
+
+  const state = createEditorState(
+    parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
+  );
+  const region = getRegion(
+    state,
+    "Try the active ￼ resource and the inactive ￼ resource.",
+  );
+  const resources: DocumentResources = {
+    images: new Map(),
+    resourceRegistry: {
+      active: new Set(["demo-resource://recording/live"]),
+      protocols: new Map([
+        ["demo-note:", { icon: "N", label: "Demo note" }],
+        ["demo-resource:", { icon: "R", label: "Demo resource" }],
+      ]),
+    },
+  };
+  const layout = measureLayoutSlice(state.documentIndex, { width: 900 }, undefined, resources);
+  const line = layout.lines.find((line) => line.regionId === region.id);
+
+  if (!line) {
+    throw new Error("Expected playground resource paragraph line");
+  }
+
+  const firstBefore = line.boundaries.find((boundary) => boundary.offset === 15);
+  const firstAfter = line.boundaries.find((boundary) => boundary.offset === 16);
+  const secondBefore = line.boundaries.find((boundary) => boundary.offset === 43);
+  const secondAfter = line.boundaries.find((boundary) => boundary.offset === 44);
+
+  expect(firstBefore).toBeDefined();
+  expect(firstAfter).toBeDefined();
+  expect(secondBefore).toBeDefined();
+  expect(secondAfter).toBeDefined();
+  expect(firstAfter!.left - firstBefore!.left).toBeGreaterThan(120);
+  expect(secondAfter!.left - secondBefore!.left).toBeGreaterThan(90);
+  expect(line.boundaries.some((boundary) => boundary.offset > 15 && boundary.offset < 16)).toBe(
+    false,
+  );
+  expect(line.boundaries.some((boundary) => boundary.offset > 43 && boundary.offset < 44)).toBe(
+    false,
+  );
+});
+
 test("uses authored image width when laying out image runs", () => {
   const runtime = createDocumentIndex(
     parseDocument("![Preview](https://example.com/preview.png){width=120}\n"),
@@ -292,6 +434,7 @@ test("uses authored image width when laying out image runs", () => {
         },
       ],
     ]),
+    resourceRegistry: { active: new Set(), protocols: new Map() },
   };
   const layout = measureLayoutSlice(
     runtime,

@@ -1,26 +1,26 @@
 // Inline construction and inline-query helpers. The construction primitive
 // (`flattenInlineNodes`) walks a document `Inline` tree into the editor's
 // flat `InlineEntry[]` projection; Link wrappers are unwrapped and propagated
-// to children via the orthogonal `link` field; atomic kinds (image, mention)
-// project to the object-replacement character so selection arithmetic stays
-// uniform across the flat character stream.
+// to children via the orthogonal `link` field; reference kinds project to the
+// object-replacement character so selection arithmetic stays uniform across
+// the flat character stream.
 //
 // `regionInlines` / `findInlinesInSpan` are the canonical accessors over
 // the resulting `InlineEntry[]`. They live alongside the construction
 // primitive so a contributor reading "where do region inlines come from?"
 // finds both projection and consumption in one place.
 
-import type { Inline, Link } from "@/document";
+import { isReferenceInlineNode, type Inline, type Link } from "@/document";
 import type { InlineEntry, RegionEntry } from "./types";
 
 // Contract: `INLINE_OBJECT_REPLACEMENT_TEXT.length === 1`. The document's
 // `measureInlineNodeText` (the single length oracle, exported from
-// `@/document`) returns `1` for atomic kinds (`image` / `mention`) on the
-// assumption that the editor projects them to a one-character placeholder.
+// `@/document`) returns `1` for references on the assumption that the editor
+// projects them to a one-character placeholder.
 // Widening the placeholder requires updating that oracle in lockstep.
 
-// Placeholder character (U+FFFC OBJECT REPLACEMENT CHARACTER) used for atomic
-// inline objects (image, mention) in the region text-space, so selection
+// Placeholder character (U+FFFC OBJECT REPLACEMENT CHARACTER) used for reference
+// inline objects in the region text-space, so selection
 // arithmetic and hit testing can treat the flat character stream uniformly.
 export const INLINE_OBJECT_REPLACEMENT_TEXT = "￼";
 
@@ -53,20 +53,21 @@ export function flattenInlineNodes(
 }
 
 // Maps a non-link Inline node to its projected character span in editor
-// selection-offset space. Atomic kinds (image, mention) project to a single
+// selection-offset space. References project to a single
 // placeholder; line breaks project to `\n`; text/code/raw use their own
 // content. This is the only place the projection table lives. The *length*
 // of the result must equal `measureInlineNodeText(node)` from `@/document` —
 // that helper is the canonical length oracle for this same coordinate space.
 function projectInlineText(node: Exclude<Inline, Link>): string {
+  if (isReferenceInlineNode(node)) {
+    return INLINE_OBJECT_REPLACEMENT_TEXT;
+  }
+
   switch (node.type) {
     case "text":
       return node.text;
     case "code":
       return node.code;
-    case "image":
-    case "mention":
-      return INLINE_OBJECT_REPLACEMENT_TEXT;
     case "lineBreak":
       return "\n";
     case "raw":

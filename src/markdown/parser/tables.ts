@@ -10,16 +10,17 @@ import {
   type MarkdownLineCursor,
 } from "./index";
 import { parseInlines } from "./inlines";
+import type { MarkdownParseContext } from "./context";
 
 const tableAlignmentCell = /^:?-+:?$/;
 
 // --- Public exports ---
 
-export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
+export function readTable(cursor: MarkdownLineCursor, context: MarkdownParseContext) {
   const headerLine = currentLine(cursor);
   const alignLine = peekLine(cursor, 1);
-  const headerContent = sliceIndentedContent(headerLine, baseIndent);
-  const alignmentContent = sliceIndentedContent(alignLine, baseIndent);
+  const headerContent = sliceIndentedContent(headerLine, context.baseIndent);
+  const alignmentContent = sliceIndentedContent(alignLine, context.baseIndent);
 
   if (!looksLikeTableRow(headerContent) || !looksLikeAlignmentRow(alignmentContent)) {
     return null;
@@ -31,7 +32,7 @@ export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
 
   while (cursor.index < cursor.lines.length) {
     const line = currentLine(cursor);
-    const content = sliceIndentedContent(line, baseIndent);
+    const content = sliceIndentedContent(line, context.baseIndent);
 
     if (isBlankLine(line) || !looksLikeTableRow(content)) {
       break;
@@ -44,7 +45,7 @@ export function readTable(cursor: MarkdownLineCursor, baseIndent: number) {
   return createTableBlock({
     align,
     rows: rows.map((row) =>
-      createTableRow(row.map((cell) => createTableCell(parseInlines(cell)))),
+      createTableRow(row.map((cell) => createTableCell(parseInlines(cell, context)))),
     ),
   });
 }

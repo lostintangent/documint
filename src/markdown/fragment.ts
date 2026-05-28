@@ -11,6 +11,7 @@
  */
 
 import { isPlainTextBlocks, type Fragment } from "@/document";
+import type { MarkdownOptions } from "./shared";
 import { parseFragmentBlocks } from "./parser";
 import { serializeBlocks, serializeInlines } from "./serializer";
 
@@ -24,12 +25,12 @@ import { serializeBlocks, serializeInlines } from "./serializer";
  *     `inlines`, an in-leaf inline splice.
  *   - Anything richer → `blocks`, the structural seam-merge.
  */
-export function parseFragment(source: string): Fragment {
+export function parseFragment(source: string, options: MarkdownOptions = {}): Fragment {
   if (source.length === 0) {
     return { kind: "text", text: "" };
   }
 
-  const blocks = parseFragmentBlocks(source);
+  const blocks = parseFragmentBlocks(source, options);
 
   if (isPlainTextBlocks(blocks)) {
     return { kind: "text", text: blocks[0]?.plainText ?? "" };

@@ -9,7 +9,9 @@
 
 import { blockContainerSpec } from "../containers";
 import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../paths";
-import type { Block, Document, Inline, TableBlock, TableCell, TableRow } from "../types";
+import type { Block, Document, Inline, LineBreak, TableBlock, TableCell, TableRow } from "../types";
+import type { Reference } from "./inlines";
+import { isReferenceInlineNode } from "./inlines";
 
 export type VisitControl = "skip" | "stop" | void;
 
@@ -44,10 +46,10 @@ export type InlineContainerVisitContext = {
 // `extractPlainTextFromInlineNodes` (which uses per-kind text like `@name`
 // for mentions and `alt` for images). Per-kind contribution:
 //
-//   lineBreak | image | mention -> 1 char each (atomic stops)
-//   code | text                  -> their `length`
-//   raw                          -> `source.length`
-//   link                         -> recursive sum of children
+//   lineBreak | references -> 1 char each (atomic stops)
+//   code | text            -> their `length`
+//   raw                    -> `source.length`
+//   link                   -> recursive sum of children
 //
 // The editor's selection-offset space is the same space — the editor adopts
 // these offsets directly for caret math, hit testing, and region addressing
@@ -368,22 +370,21 @@ function visitPlainText(
 //
 // Per-kind projection:
 //   - `lineBreak`            → 1 (projects to `\n`)
-//   - `image` / `mention`    → 1 (projects to a single object-replacement char)
+//   - references             → 1 (projects to a single object-replacement char)
 //   - `text` / `code` / `raw`→ length of the node's own text/source
 //   - `link`                 → recursive sum of children (links flatten)
 //
-// Cross-layer contract with the editor: the editor's index projects `image` /
-// `mention` to `INLINE_OBJECT_REPLACEMENT_TEXT` (a single `￼`) and `lineBreak`
-// to `\n`. The two implementations must agree that those project to one
-// character each. If the editor's placeholder ever widens, the `image` /
-// `mention` arms here have to widen with it.
+// Cross-layer contract with the editor: the editor's index projects references
+// to `INLINE_OBJECT_REPLACEMENT_TEXT` (a single `￼`) and `lineBreak` to `\n`.
+// The two implementations must agree that those project to one character each.
+// If the editor's placeholder ever widens, the one-unit projection helper here
+// has to widen with it.
 export function measureInlineNodeText(node: Inline): number {
+  if (projectsToOneTextCoordinate(node)) {
+    return 1;
+  }
+
   switch (node.type) {
-    case "lineBreak":
-      return 1;
-    case "image":
-    case "mention":
-      return 1;
     case "code":
       return node.code.length;
     case "raw":
@@ -393,6 +394,10 @@ export function measureInlineNodeText(node: Inline): number {
     case "link":
       return node.children.reduce((sum, child) => sum + measureInlineNodeText(child), 0);
   }
+}
+
+function projectsToOneTextCoordinate(node: Inline): node is Reference | LineBreak {
+  return node.type === "lineBreak" || isReferenceInlineNode(node);
 }
 
 // Each `Inline` paired with its `[start, end)` extent in inline text-coordinate

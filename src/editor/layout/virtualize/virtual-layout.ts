@@ -4,8 +4,9 @@
 
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
+import { createResourceIconSignature, resolveResourceProtocol } from "@/resources";
 import { isContainerBlock, isInertBlock } from "../../state/index/query";
-import { regionInlines, type DocumentIndex, type RegionEntry } from "../../state";
+import type { DocumentIndex, RegionEntry } from "../../state";
 import {
   getVirtualLayout,
   setVirtualLayout,
@@ -243,28 +244,52 @@ function createVirtualLayoutCacheKey(
     options.lineHeight,
     options.blockGap,
     resolveImageResourceSignature(documentIndex, resources),
+    resolveResourceSignature(documentIndex, resources),
   ].join(":");
 }
 
 function resolveImageResourceSignature(documentIndex: DocumentIndex, resources: DocumentResources) {
-  // Short-circuit on documents with no image inlines. The indexer maintains
-  // `imageUrls` (a set of image URLs reachable from the document); when it's
-  // empty we skip a full-document inline walk on every viewport build, which
-  // happens once per keystroke.
   if (documentIndex.imageUrls.size === 0) {
     return "";
   }
 
-  return documentIndex.regions
-    .flatMap((container) =>
-      regionInlines(container)
-        .filter((inline) => inline.node.type === "image")
-        .map((inline) => {
-          // Narrowed: inline.node is Image.
-          const image = inline.node as Extract<typeof inline.node, { type: "image" }>;
-          const resource = resources.images.get(image.url);
-          return `${image.url}:${image.width ?? 0}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
-        }),
-    )
-    .join("|");
+  // The virtual-layout cache is scoped by `DocumentIndex`, so authored image
+  // dimensions are already captured by the weak-map key. The cache key only
+  // needs the mutable resource facts that can change while the document index
+  // stays the same.
+  let signature = "";
+
+  for (const url of documentIndex.imageUrls) {
+    const resource = resources.images.get(url);
+    if (signature) {
+      signature += "|";
+    }
+    signature += `${url}:${resource?.status ?? "loading"}:${resource?.intrinsicWidth ?? 0}:${resource?.intrinsicHeight ?? 0}`;
+  }
+
+  return signature;
+}
+
+function resolveResourceSignature(documentIndex: DocumentIndex, resources: DocumentResources) {
+  if (documentIndex.resourceUrls.size === 0 || resources.resourceRegistry.protocols.size === 0) {
+    return "";
+  }
+
+  let signature = "";
+
+  for (const url of documentIndex.resourceUrls) {
+    const protocol = resolveResourceProtocol(url) ?? "";
+    const protocolSpec = resources.resourceRegistry.protocols.get(protocol);
+
+    if (!protocolSpec) {
+      continue;
+    }
+
+    if (signature) {
+      signature += "|";
+    }
+    signature += `${url}:${createResourceIconSignature(protocolSpec.icon)}:${protocolSpec.label}`;
+  }
+
+  return signature;
 }

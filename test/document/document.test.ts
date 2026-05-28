@@ -15,8 +15,10 @@ import {
   createLink,
   createListBlock,
   createListItemBlock,
+  createMention,
   createParagraphBlock,
   createParagraphTextBlock,
+  createResource,
   createTableBlock,
   createTableCell,
   createTableRow,
@@ -26,6 +28,7 @@ import {
   createRaw,
   extractPlainTextFromBlockNodes,
   extractPlainTextFromInlineNodes,
+  isReferenceInlineNode,
   listAnchorContainers,
   type Block,
   type Inline,
@@ -91,6 +94,58 @@ describe("Document construction", () => {
     ]);
 
     expect(document.blocks.map((block) => block.type)).toEqual(["heading", "paragraph"]);
+  });
+
+  test("derives resource identity from its semantic reference fields", () => {
+    const createResourceDocument = (label: string, url = "demo-resource://recording/live") =>
+      createDocument([
+        createParagraphBlock([
+          createResource({
+            label,
+            url,
+          }),
+        ]),
+      ]);
+    const first = createResourceDocument("Recording session");
+    const second = createResourceDocument("Recording session");
+    const renamed = createResourceDocument("Planning note");
+    const retargeted = createResourceDocument("Recording session", "demo-resource://note/complete");
+
+    const resourceId = (document: ReturnType<typeof createResourceDocument>) => {
+      const block = document.blocks[0];
+      if (block?.type !== "paragraph" || block.children[0]?.type !== "resource") {
+        throw new Error("Expected resource paragraph");
+      }
+      return block.children[0].id;
+    };
+
+    expect(resourceId(first)).toBe(resourceId(second));
+    expect(resourceId(first)).not.toBe(resourceId(renamed));
+    expect(resourceId(first)).not.toBe(resourceId(retargeted));
+  });
+
+  test("canonicalizes resource protocols from urls and explicit protocol fallbacks", () => {
+    expect(
+      createResource({
+        label: "Recording session",
+        protocol: "ignored:",
+        url: "Demo-Resource://recording/live",
+      }).protocol,
+    ).toBe("demo-resource:");
+    expect(
+      createResource({
+        label: "Recording session",
+        protocol: "Demo-Resource",
+        url: "recording/live",
+      }).protocol,
+    ).toBe("demo-resource:");
+    expect(
+      createResource({
+        label: "Recording session",
+        protocol: "not a protocol",
+        url: "recording/live",
+      }).protocol,
+    ).toBe("");
   });
 });
 
@@ -183,9 +238,31 @@ describe("Plain text extraction", () => {
       createLineBreak(),
       createCode("code"),
       createImage({ alt: "alt text", url: "https://example.com/image.png" }),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createResource({
+        label: "Recording session",
+        protocol: "demo-resource:",
+        url: "demo-resource://recording/live",
+      }),
     ];
 
-    expect(extractPlainTextFromInlineNodes(nodes)).toBe("Plain link\ncodealt text");
+    expect(extractPlainTextFromInlineNodes(nodes)).toBe(
+      "Plain link\ncodealt text@Jane DoeRecording session",
+    );
+  });
+
+  test("classifies external-reference inlines through the semantic umbrella", () => {
+    const image = createImage({ alt: "Preview", url: "https://example.com/image.png" });
+    const mention = createMention({ name: "Jane Doe", userId: "user-123" });
+    const resource = createResource({
+      label: "Recording session",
+      protocol: "demo-resource:",
+      url: "demo-resource://recording/live",
+    });
+    const text = createText("plain");
+
+    expect([image, mention, resource].every(isReferenceInlineNode)).toBe(true);
+    expect(isReferenceInlineNode(text)).toBe(false);
   });
 
   test("extracts plain text from links and unsupported inline nodes", () => {

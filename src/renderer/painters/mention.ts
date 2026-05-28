@@ -5,7 +5,7 @@ import type { ResolvedEditorTheme } from "@/types";
 import type { DocumentLayout } from "@/editor/layout";
 import type { InlineEntry } from "@/editor/state";
 import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
-import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/measure";
+import { paintInlinePillBackground, resolveInlinePillBox } from "./pill";
 
 const mentionCornerRadius = 5;
 const mentionVerticalNudge = -1;
@@ -24,33 +24,14 @@ export function paintInlineMention(
     return;
   }
 
-  const baseline = line.top + resolveCenteredTextBaseline(line.height, context.font);
-  const metrics = resolveFontMetrics(context.font);
-  const top = baseline - metrics.ascent - mentionVerticalPadding + mentionVerticalNudge;
-  const height = metrics.ascent + metrics.descent + mentionVerticalPadding * 2;
-  const width = Math.max(0, right - left);
+  const box = resolveInlinePillBox(context, line, left, right, {
+    textVerticalNudge: mentionTextVerticalNudge,
+    verticalNudge: mentionVerticalNudge,
+    verticalPadding: mentionVerticalPadding,
+  });
 
   context.fillStyle = theme.mentionBackground;
-  paintRoundedRect(context, left, top, width, height, mentionCornerRadius);
+  paintInlinePillBackground(context, left, box.top, box.width, box.height, mentionCornerRadius);
   context.fillStyle = theme.mentionText;
-  context.fillText(
-    `@${inline.node.name}`,
-    left + mentionHorizontalPadding,
-    baseline + mentionVerticalNudge + mentionTextVerticalNudge,
-  );
-}
-
-function paintRoundedRect(
-  context: CanvasRenderingContext2D,
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const resolvedRadius = Math.min(radius, width / 2, height / 2);
-
-  context.beginPath();
-  context.roundRect(left, top, width, height, resolvedRadius);
-  context.fill();
+  context.fillText(`@${inline.node.name}`, left + mentionHorizontalPadding, box.textBaseline);
 }

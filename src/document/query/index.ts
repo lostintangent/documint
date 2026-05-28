@@ -3,5 +3,6 @@
 // no construction, no canonicalization.
 
 export * from "./anchors";
+export * from "./inlines";
 export * from "./text";
 export * from "./visit";

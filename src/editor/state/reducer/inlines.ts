@@ -16,8 +16,10 @@ import {
   createLink as createDocumentLinkNode,
   createMention as createDocumentMentionNode,
   createRaw as createDocumentUnsupportedInlineNode,
+  createResource as createDocumentResourceNode,
   createText as createDocumentTextNode,
   defragmentTextInlines,
+  isReferenceInlineNode,
   type Inline,
   type Link,
   type Text,
@@ -162,6 +164,10 @@ function replaceEditorInline(
   replacementText: string,
   context: EditContext,
 ): DraftEditorInline[] {
+  if (isReferenceInlineNode(inline.node)) {
+    return replaceReferenceEditorInline(inline, startOffset, endOffset, replacementText);
+  }
+
   switch (inline.node.type) {
     case "text":
     case "code":
@@ -169,9 +175,6 @@ function replaceEditorInline(
       return replaceTextLikeEditorInline(inline, startOffset, endOffset, replacementText);
     case "lineBreak":
       return replaceBreakEditorInline(inline, startOffset, endOffset, replacementText, context);
-    case "image":
-    case "mention":
-      return replaceAtomicEditorInline(inline, startOffset, endOffset, replacementText);
   }
 }
 
@@ -214,7 +217,7 @@ function replaceBreakEditorInline(
   return nextInlines;
 }
 
-function replaceAtomicEditorInline(
+function replaceReferenceEditorInline(
   inline: InlineEntry,
   startOffset: number,
   endOffset: number,
@@ -330,6 +333,11 @@ function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInl
 
   if (a.type !== b.type) return false;
   if (!sameLink(previous.link, next.link)) return false;
+  if (isReferenceInlineNode(a)) {
+    // References never merge — combining them into a single span would lose
+    // the per-instance external identity (url/userId/...).
+    return false;
+  }
 
   switch (a.type) {
     case "text":
@@ -337,11 +345,6 @@ function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInl
       return a.marks.join(",") === (b as Text).marks.join(",");
     case "raw":
       return a.originalType === (b as typeof a).originalType;
-    case "image":
-    case "mention":
-      // Atomic kinds never merge — combining them into a single span would
-      // lose the per-instance attributes (url/alt/userId/...).
-      return false;
     case "code":
     case "lineBreak":
       return true;
@@ -366,6 +369,12 @@ function editorInlineToDocumentInline(inline: InlineEntry | DraftEditorInline): 
       return createDocumentMentionNode({
         name: node.name,
         userId: node.userId,
+      });
+    case "resource":
+      return createDocumentResourceNode({
+        label: node.label,
+        protocol: node.protocol,
+        url: node.url,
       });
     case "code":
       return createDocumentInlineCodeNode(inline.text);

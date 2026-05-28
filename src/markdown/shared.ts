@@ -1,4 +1,5 @@
 import { markOrder, type Mark } from "@/document";
+import { normalizeResourceProtocol, resolveRegisteredResourceProtocol } from "@/resources";
 
 export type MarkdownOptions = {
   /**
@@ -15,6 +16,12 @@ export type MarkdownOptions = {
    * their natural width — smaller diffs, no padding noise.
    */
   padTableColumns?: boolean;
+  /**
+   * Parser knob. Links whose URL protocol appears in this collection parse as
+   * semantic resource inlines instead of ordinary editable links.
+   * Serialization always emits resources back as standard markdown links.
+   */
+  resourceProtocols?: Iterable<string>;
 };
 
 export const lineFeed = "\n";
@@ -22,6 +29,34 @@ export const lineFeed = "\n";
 export const blockquoteMarker = ">";
 export const fencedCodeMarker = "```";
 export const containerDirectiveClosingMarker = ":::";
+
+const emptyResourceProtocols: ReadonlySet<string> = new Set();
+
+export function normalizeResourceProtocols(
+  protocols: Iterable<string> | undefined,
+): ReadonlySet<string> {
+  if (!protocols) {
+    return emptyResourceProtocols;
+  }
+
+  const normalized = new Set<string>();
+  for (const protocol of protocols) {
+    const canonicalProtocol = normalizeResourceProtocol(protocol);
+
+    if (canonicalProtocol) {
+      normalized.add(canonicalProtocol);
+    }
+  }
+
+  return normalized;
+}
+
+export function resolveRegisteredMarkdownResourceProtocol(
+  url: string,
+  protocols: ReadonlySet<string>,
+) {
+  return resolveRegisteredResourceProtocol(url, protocols);
+}
 
 // --- Inline mark spec ---
 //

@@ -207,7 +207,11 @@ export const pointerViewSprig = createParameterizedSprig(
         : hoverTarget;
     const leaf = resolveContextualLeaf(target, threads, ranges);
     const cursor =
-      hoverTarget?.kind === "task-toggle" || leaf?.kind === "link" ? "pointer" : "text";
+      hoverTarget?.kind === "task-toggle" ||
+      hoverTarget?.kind === "resource" ||
+      leaf?.kind === "link"
+        ? "pointer"
+        : "text";
 
     return { cursor, leaf };
   },

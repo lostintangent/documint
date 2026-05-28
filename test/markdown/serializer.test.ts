@@ -7,6 +7,7 @@ import {
   createListBlock,
   createListItemBlock,
   createParagraphBlock,
+  createResource,
   createText,
 } from "@/document";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -71,6 +72,24 @@ describe("Inline canonicalization", () => {
   // --- Mentions ---
   test("preserves user mention identity through markdown export", () => {
     expectRoundTrip("Hello @[Jane Doe](user-123).\n");
+  });
+
+  test("emits resource inlines as markdown links", () => {
+    const document = createDocument([
+      createParagraphBlock([
+        createText("Use "),
+        createResource({
+          label: "Recording",
+          protocol: "demo-resource:",
+          url: "demo-resource://recording/live",
+        }),
+        createText(" now."),
+      ]),
+    ]);
+
+    expect(serializeDocument(document)).toBe(
+      "Use [Recording](demo-resource://recording/live) now.\n",
+    );
   });
 
   test("defensively escapes plain text that looks like a user mention", () => {

@@ -1,10 +1,10 @@
 // Owns per-line text run rendering. Walks the visible inlines on a line and
-// dispatches each by `kind`: images and mentions go to their dedicated
+// dispatches each by `kind`: references go to their dedicated
 // painters; inline code paints a code background plus monospace glyphs;
 // everything else paints as styled text with strikethrough/underline as
-// needed. Image and mention dispatch lives here so the inline iteration
+// needed. Reference dispatch lives here so the inline iteration
 // stays linear — the alternative would split inline visibility resolution
-// across three files.
+// across several files.
 
 import type { DocumentLayout } from "@/editor/layout";
 import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
@@ -12,6 +12,7 @@ import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { paintInlineImage } from "../image";
 import { paintInlineMention } from "../mention";
+import { paintInlineResource } from "../resource";
 import {
   editableTextBackgroundGeometry,
   paintTextBackground,
@@ -84,6 +85,20 @@ export function paintLineText(
 
     if (inline.node.type === "mention") {
       paintInlineMention(context, line, inline, theme, segmentLeft, segmentRight);
+      continue;
+    }
+
+    if (inline.node.type === "resource") {
+      paintInlineResource(
+        context,
+        line,
+        inline,
+        resources,
+        theme,
+        segmentLeft,
+        segmentRight,
+        ambientAnimationTime,
+      );
       continue;
     }
 

@@ -2,6 +2,7 @@
 // local line, region, and block geometry without doing viewport virtualization
 // or whole-document height estimation.
 import type { Block } from "@/document";
+import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources } from "@/types";
 import { isContainerBlock, isInertBlock, resolveRegion } from "../../state/index/query";
 import type { DocumentIndex, RegionEntry } from "../../state";
@@ -76,7 +77,7 @@ export function measureLayoutSlice(
   // post-measurement shift is needed.
   startY?: number,
 ): DocumentLayout {
-  const resolvedResources: DocumentResources = resources ?? { images: new Map() };
+  const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
   const lines: DocumentLayoutLine[] = [];
   const regionBounds = new Map<

@@ -1,12 +1,12 @@
 # Document Index
 
-The index layer is a *pure index over `Document`*. It adds editor coordinate space and O(1) lookups, and projects link wrappers and atomic inlines into a flat character-offset sequence — but it never duplicates document payload. Block payload is reached through entry references; inline payload is reached through flattened-inline node references. The document is the source of truth; the index says where things live in editor coordinate space and accelerates the queries editing needs.
+The index layer is a *pure index over `Document`*. It adds editor coordinate space and O(1) lookups, and projects link wrappers and reference inlines into a flat character-offset sequence — but it never duplicates document payload. Block payload is reached through entry references; inline payload is reached through flattened-inline node references. The document is the source of truth; the index says where things live in editor coordinate space and accelerates the queries editing needs.
 
 The mental model: if a field can be read from a `Block` or `Inline` node, the entry does not copy it. If a field is a coordinate the document doesn't have (`start`, `end`, `documentOrder`, `depth`, `path`), the entry owns it. If a field is a taxonomy classification the rest of the editor needs in O(1) (`kind`), the entry owns it.
 
 ## Invariants
 
-**Coordinate space.** Regions carry char offsets in *editor selection-offset space* — the editor's name for what the document calls inline text-coordinate space (see `src/document/query/visit.ts`). The two names refer to the same space; the editor adopts the document's coordinate convention directly. Regions in a root are joined by `\n` (one char each); atomic inline objects (image, mention) project to `￼` (one char); line breaks project to `\n` (one char). This is the coordinate system selection arithmetic, caret motion, and hit testing use, and it is distinct from the document/anchor offset space the document layer also defines for content-addressable positions.
+**Coordinate space.** Regions carry char offsets in *editor selection-offset space* — the editor's name for what the document calls inline text-coordinate space (see `src/document/query/visit.ts`). The two names refer to the same space; the editor adopts the document's coordinate convention directly. Regions in a root are joined by `\n` (one char each); reference inlines (image, mention, resource) project to `￼` (one char); line breaks project to `\n` (one char). This is the coordinate system selection arithmetic, caret motion, and hit testing use, and it is distinct from the document/anchor offset space the document layer also defines for content-addressable positions.
 
 **Identity discipline.** Roots, regions, blocks, and inlines reuse references whenever their underlying input is unchanged. Identity reuse is what lets layout caches and React effect deps prove what didn't change. Map containers themselves are new objects per edit (cheap clones), but their *entries* keep reference equality for unchanged roots. `imageUrls` is additionally value-compared because it's a React effect dep whose downstream consumers depend on identity for short-circuit equality.
 
@@ -50,14 +50,14 @@ divider:   ()  => ({ kind: "inert" })                             // inert leaf
 
 The visitor dispatches on `contribution.kind`, not on `block.type`, so adding a new inline-text or source-text block type doesn't require any per-type branches in the visitor itself. Editing primitives in `reducer/text.ts` dispatch through `BLOCK_TEXT_MUTATORS`, a sibling data table keyed by `block.type` (it needs the finer granularity because code and raw rebuild differently). New block types touch both tables; the visitor and reducer stay free of per-type branching.
 
-The discriminator on inline entries is `inline.node.type` — the document's `Inline` union — so adding an inline kind likewise touches the document layer and one case in `flattenInlineNodes`.
+The discriminator on inline entries is `inline.node.type` — the document's `Inline` union. Reference inlines share the document-layer `isReferenceInlineNode` predicate, so adding a new reference kind should extend the document predicate and only add editor-specific behavior where a higher layer needs distinct rendering, measurement, or interaction.
 
 ## What lives here
 
 - `types.ts` — entry shapes (`BlockEntry`, `RegionEntry`, `InlineEntry`, `RootEntry`), `DocumentIndex`, the `BlockKind` taxonomy, and `ListItemMarker`.
 - `inlines.ts` — `flattenInlineNodes` (the projection primitive), `regionInlines` / `findInlinesInSpan` (the canonical accessors), and `INLINE_OBJECT_REPLACEMENT_TEXT`. The length oracle is `measureInlineNodeText` from `@/document` — the index uses the document's canonical length helper rather than duplicating it. The `INLINE_OBJECT_REPLACEMENT_TEXT.length === 1` invariant is the cross-layer contract that keeps the two sides in lockstep.
 - `roots.ts` — root construction, root positioning, and `BLOCK_CONTRIBUTIONS` (the declarative table mapping each block type to how it contributes regions).
-- `build.ts` — `applyRootDelta`, the universal projection primitive, plus the per-document derived projections (`createCommentContainerIndex`, `createListItemMarkers`, `createDocumentImageUrls`).
+- `build.ts` — `applyRootDelta`, the universal projection primitive, plus the per-document derived projections (`createCommentContainerIndex`, `createListItemMarkers`, `createDocumentImageUrls`, `createDocumentResourceUrls`).
 - `query.ts` — core read algebra over the index: region/block lookup, structural-path lookup, table-cell resolution through document paths, primary-region resolution, ancestry traversal, editor-position comparison, and document-flow adjacency.
 - `splice.ts` — public splice API: `createDocumentIndex`, `spliceDocumentIndex`, `replaceDocumentMetadata`, `replaceEditorBlock`, `commitDocument`.
 

@@ -19,8 +19,8 @@ export type BlockKind = "container" | "inline-text" | "source-text" | "cells" | 
 // (their children appear as siblings) and propagated via the orthogonal
 // `link` field. The index adds only what the document doesn't carry:
 // `start`/`end` char offsets in the region's coordinate space, and the
-// projected `text` (which differs from `node`'s own text for atomic kinds
-// — image/mention project to `￼`, lineBreak projects to `\n`).
+// projected `text` (which differs from `node`'s own text for references
+// — image/mention/resource project to `￼`, lineBreak projects to `\n`).
 //
 // Inline entries only exist for inline-bearing regions (`content.kind ===
 // "inline-text"`). Source-bearing regions (code, raw blocks) hold raw text
@@ -118,8 +118,12 @@ export type RootEntry = {
   // URLs of image inlines reachable from this root. Collected during the
   // existing inline walk so the per-document image-resource hook can read
   // the set without re-walking the tree on every keystroke. Reused by
-  // reference when the root itself is reused (`canReuseRootEntry`).
+  // reference identity when the root itself is reused (`canReuseRootEntry`).
   imageUrls: ReadonlySet<string>;
+  // URLs of resource inlines reachable from this root. Collected during the
+  // existing inline walk so the component can notify the host about discovered
+  // resources and reconcile host-provided active resource state.
+  resourceUrls: ReadonlySet<string>;
   // List/task/ordered marker semantics for list items inside this root.
   // Collected while the root is already being walked so unrelated root edits
   // don't force a full-document marker rebuild.
@@ -145,6 +149,9 @@ export type DocumentIndex = {
   // consumers can use it directly as a React `useEffect` dep without
   // having to derive a content-based signature.
   imageUrls: ReadonlySet<string>;
+  // Union of resource URLs across every root, with the same reference-stable
+  // value-comparison policy as `imageUrls`.
+  resourceUrls: ReadonlySet<string>;
   listItemMarkers: ReadonlyMap<string, ListItemMarker>;
   regionIndex: Map<string, RegionEntry>;
   regionPathIndex: Map<string, RegionEntry>;
