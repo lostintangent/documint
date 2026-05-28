@@ -3,7 +3,7 @@
 // parsing upgrades registered protocols before layout and rendering see them.
 
 import type { DocumentLayout } from "@/editor/layout";
-import type { InlineEntry } from "@/editor/state";
+import type { IndexedInline } from "@/editor/state";
 import { resolveInlineResource } from "@/editor/resources";
 import {
   measureInlineResourceIconSegmentWidth,
@@ -24,7 +24,7 @@ const resourceTextVerticalNudge = 1;
 export function paintInlineResource(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  inline: InlineEntry,
+  inline: IndexedInline,
   resources: DocumentResources,
   theme: ResolvedEditorTheme,
   left: number,

@@ -1,7 +1,7 @@
 // Inline actions barrel. These helpers receive resolved inline context and
 // produce reducer actions; context resolution stays in `context.ts`.
 //
-// More specific inline actions live in sibling modules (marks, code, links)
+// More specific inline actions live in sibling modules (marks, links)
 // and are re-exported from here.
 
 import type { Inline } from "@/document";
@@ -16,7 +16,6 @@ import type { InlineContext } from "../../context";
 export type { InlineContainer, InlineContainerReplacement } from "./shared";
 
 export { toggleInlineMark } from "./marks";
-export { toggleInlineCode } from "./code";
 export { resolveImageResize, type ImageResizeTarget } from "./images";
 export { removeInlineLink, updateInlineLinkUrl, wrapInlineLink } from "./links";
 export { resolveMentionReplacement } from "./mentions";

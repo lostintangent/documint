@@ -65,7 +65,7 @@ export {
   setSelection,
   type CaretTextContext,
   type DocumentIndex,
-  type InlineEntry,
+  type IndexedInline,
   type EditorSelection,
   type EditorSelectionPoint,
   type EditorSelectionRange,

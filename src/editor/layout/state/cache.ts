@@ -4,7 +4,7 @@
 
 import type { PreparedTextWithSegments } from "@chenglou/pretext";
 import type { DocumentIndex } from "../../state";
-import type { DocumentLineBoundary as LineBoundary } from "../measure";
+import type { LineBoundary } from "../measure";
 
 export type VirtualLayout = {
   containerIndices: Map<string, number>;

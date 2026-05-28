@@ -12,6 +12,7 @@ import {
   resolveCommentThread,
 } from "@/document";
 import { parseDocument } from "@/markdown";
+import { createAnchoredThread } from "./helpers";
 
 describe("Comment anchors", () => {
   test("creates durable anchors from semantic text containers", () => {
@@ -29,40 +30,47 @@ describe("Comment anchors", () => {
     expect(extractQuoteFromContainer(container, 0, 14)).toBe("Review surface");
   });
 
-  test("repairs anchors against changed semantic content", () => {
-    const { thread } = createAnchoredThread(
+  test.each([
+    [
+      "surrounding content changes",
       "Review surface anchors survive markdown reloads.\n",
       15,
       30,
-      "Protect this anchored span.",
-    );
-    const edited = parseDocument(
       "Review surface editing keeps anchors survive markdown reloads.\n",
-    );
-    const resolution = resolveCommentThread(thread, edited);
-
-    expect(resolution.status).toBe("repaired");
-    expect(resolution.match?.startOffset).toBeGreaterThan(0);
-    expect(resolution.repair?.quote).toBe("anchors survive");
-  });
-
-  test("repairs anchors when the quoted text is edited in place", () => {
-    const { thread } = createAnchoredThread(
+      "anchors survive",
+      true,
+    ],
+    [
+      "quoted text is edited in place",
       "Typpoed person name appears here.\n",
       0,
       12,
-      "Fix the typo, keep the comment.",
-    );
-    const edited = parseDocument("Typoed person name appears here.\n");
-    const resolution = resolveCommentThread(thread, edited);
+      "Typoed person name appears here.\n",
+      "Typoed pers",
+      false,
+    ],
+  ] as const)(
+    "repairs anchors when %s",
+    (_label, source, startOffset, endOffset, editedSource, repairedQuote, moved) => {
+      const { thread } = createAnchoredThread(
+        parseDocument(source),
+        startOffset,
+        endOffset,
+        "Protect this anchored span.",
+      );
+      const resolution = resolveCommentThread(thread, parseDocument(editedSource));
 
-    expect(resolution.status).toBe("repaired");
-    expect(resolution.repair?.quote).toBe("Typoed pers");
-  });
+      expect(resolution.status).toBe("repaired");
+      expect(resolution.repair?.quote).toBe(repairedQuote);
+      if (moved) {
+        expect(resolution.match?.startOffset).toBeGreaterThan(0);
+      }
+    },
+  );
 
   test("keeps comments sticky when the containing block moves in the document", () => {
     const { thread } = createAnchoredThread(
-      "Alpha intro.\n\nUnique quoted phrase lives here.\n\nOmega tail.\n",
+      parseDocument("Alpha intro.\n\nUnique quoted phrase lives here.\n\nOmega tail.\n"),
       0,
       20,
       "This should move with the paragraph.",
@@ -80,7 +88,7 @@ describe("Comment anchors", () => {
 
   test("keeps comments sticky when a paragraph becomes a heading", () => {
     const { thread } = createAnchoredThread(
-      "Promote this line.\n",
+      parseDocument("Promote this line.\n"),
       0,
       12,
       "This should survive heading promotion.",
@@ -144,7 +152,7 @@ console.log("hi");
 describe("Comment threads", () => {
   test("serializes thread payloads deterministically and tracks status transitions", () => {
     const { thread } = createAnchoredThread(
-      "Review surface anchors survive.\n",
+      parseDocument("Review surface anchors survive.\n"),
       0,
       6,
       "Initial note.",
@@ -158,7 +166,7 @@ describe("Comment threads", () => {
 
   test("edits and deletes thread comments without moving thread ownership into the UI", () => {
     const { thread } = createAnchoredThread(
-      "Review surface anchors survive.\n",
+      parseDocument("Review surface anchors survive.\n"),
       0,
       6,
       "Initial note.",
@@ -180,32 +188,6 @@ describe("Comment threads", () => {
     expect(deletedThread).toBeNull();
   });
 });
-
-function createAnchoredThread(
-  source: string,
-  startOffset: number,
-  endOffset: number,
-  body: string,
-  options: { containerIndex?: number } = {},
-) {
-  const snapshot = parseDocument(source);
-  const container = listAnchorContainers(snapshot)[options.containerIndex ?? 0];
-
-  if (!container) {
-    throw new Error("Expected anchor container");
-  }
-
-  return {
-    container,
-    snapshot,
-    thread: createCommentThread({
-      anchor: createAnchorFromContainer(container, startOffset, endOffset),
-      body,
-      createdAt: "2026-04-05T12:00:00.000Z",
-      quote: extractQuoteFromContainer(container, startOffset, endOffset),
-    }),
-  };
-}
 
 function appendReply(thread: ReturnType<typeof createCommentThread>) {
   return {

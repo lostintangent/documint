@@ -2,31 +2,31 @@
 // (cold build, single-region edit, root splice, append, structural replace)
 // routes through this one function. Cold build is the degenerate case where
 // `prev` is `null`: clones are empty maps, and every positioned root
-// contributes its entries to the inserts.
+// contributes its indexed records to the inserts.
 //
 // The map-clone path (`new Map(prev)`) is dramatically faster in V8/JSC than
 // rebuilding via sequential `.set()` calls — empirically ~14× on a 3600-root
 // document. That's what makes the splice hot path fast: the typing edit only
 // pays for the per-root delta, not for re-iterating the whole document.
 //
-// Per-document projections (`commentContainerIndex`, `listItemMarkers`,
+// Per-document projections (`commentContainerIndex`, `listItems`,
 // `imageUrls`, `resourceUrls`) live next to the primitive so the cache-reuse policies
 // (`document.comments === prev.document.comments`, etc.) stay in one place.
 
 import { resolveCommentThread, type Document } from "@/document";
 import type {
-  BlockEntry,
+  IndexedBlock,
   DocumentIndex,
-  ListItemMarker,
-  RegionEntry,
-  RootEntry,
+  IndexedListItem,
+  EditableRegion,
+  IndexedRoot,
 } from "./types";
 
 const EMPTY_URLS: ReadonlySet<string> = new Set();
 
 export function applyRootDelta(
   prev: DocumentIndex | null,
-  positionedRoots: RootEntry[],
+  positionedRoots: IndexedRoot[],
   nextDocument: Document,
 ): DocumentIndex {
   // Fast path: roots are reference-identical (metadata-only change such as
@@ -46,7 +46,7 @@ export function applyRootDelta(
 
   // For each shared position, compare references:
   //   - same reference → reused, no work
-  //   - different reference → remove previous entries, then add next entries.
+  //   - different reference → remove previous records, then add next records.
   //     Same rootIndex does not imply stable block/region ids; root replacement
   //     and root insertion can both put different block ids at the same slot.
   if (prevRoots) {
@@ -54,22 +54,22 @@ export function applyRootDelta(
       const prevRoot = prevRoots[i]!;
       const positionedRoot = positionedRoots[i]!;
       if (positionedRoot === prevRoot) continue;
-      removeRootEntries(prevRoot, blockIndex, regionIndex, regionPathIndex);
-      addRootEntries(positionedRoot, blockIndex, regionIndex, regionPathIndex);
+      removeRootRecords(prevRoot, blockIndex, regionIndex, regionPathIndex);
+      addRootRecords(positionedRoot, blockIndex, regionIndex, regionPathIndex);
     }
-    // Trailing prev roots (deletions at tail) — remove their entries.
+    // Trailing prev roots (deletions at tail) — remove their records.
     for (let i = sharedLength; i < prevRoots.length; i += 1) {
-      removeRootEntries(prevRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+      removeRootRecords(prevRoots[i]!, blockIndex, regionIndex, regionPathIndex);
     }
   } else {
-    // Cold build (no prev): every positioned root contributes entries.
+    // Cold build (no prev): every positioned root contributes records.
     for (let i = 0; i < sharedLength; i += 1) {
-      addRootEntries(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+      addRootRecords(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
     }
   }
-  // Trailing positioned roots (additions at tail) — add their entries.
+  // Trailing positioned roots (additions at tail) — add their records.
   for (let i = sharedLength; i < positionedRoots.length; i += 1) {
-    addRootEntries(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+    addRootRecords(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
   }
 
   const blocks = positionedRoots.flatMap((root) => root.blocks);
@@ -85,7 +85,7 @@ export function applyRootDelta(
     document: nextDocument,
     imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
     resourceUrls: createDocumentResourceUrls(positionedRoots, prev?.resourceUrls),
-    listItemMarkers: createDocumentListItemMarkers(positionedRoots, prev?.listItemMarkers),
+    listItems: createDocumentListItems(positionedRoots, prev?.listItems),
     regionIndex,
     regionPathIndex,
     regions,
@@ -93,14 +93,14 @@ export function applyRootDelta(
   };
 }
 
-function removeRootEntries(
-  root: RootEntry,
-  blockIndex: Map<string, BlockEntry>,
-  regionIndex: Map<string, RegionEntry>,
-  regionPathIndex: Map<string, RegionEntry>,
+function removeRootRecords(
+  root: IndexedRoot,
+  blockIndex: Map<string, IndexedBlock>,
+  regionIndex: Map<string, EditableRegion>,
+  regionPathIndex: Map<string, EditableRegion>,
 ) {
-  for (const entry of root.blocks) {
-    blockIndex.delete(entry.block.id);
+  for (const indexedBlock of root.blocks) {
+    blockIndex.delete(indexedBlock.block.id);
   }
   for (const region of root.regions) {
     regionIndex.delete(region.id);
@@ -108,14 +108,14 @@ function removeRootEntries(
   }
 }
 
-function addRootEntries(
-  root: RootEntry,
-  blockIndex: Map<string, BlockEntry>,
-  regionIndex: Map<string, RegionEntry>,
-  regionPathIndex: Map<string, RegionEntry>,
+function addRootRecords(
+  root: IndexedRoot,
+  blockIndex: Map<string, IndexedBlock>,
+  regionIndex: Map<string, EditableRegion>,
+  regionPathIndex: Map<string, EditableRegion>,
 ) {
-  for (const entry of root.blocks) {
-    blockIndex.set(entry.block.id, entry);
+  for (const indexedBlock of root.blocks) {
+    blockIndex.set(indexedBlock.block.id, indexedBlock);
   }
   for (const region of root.regions) {
     regionIndex.set(region.id, region);
@@ -137,7 +137,7 @@ function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document)
         ? prev.commentContainerIndex
         : createCommentContainerIndex(nextDocument),
     document: nextDocument,
-    listItemMarkers: prev.listItemMarkers,
+    listItems: prev.listItems,
   };
 }
 
@@ -146,23 +146,23 @@ function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document)
 // downstream consumers (notably the image loader hook's effect dep) can
 // short-circuit on identity.
 function createDocumentImageUrls(
-  roots: RootEntry[],
+  roots: IndexedRoot[],
   previous: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> {
   return createDocumentUrlSet(roots, previous, (root) => root.imageUrls);
 }
 
 function createDocumentResourceUrls(
-  roots: RootEntry[],
+  roots: IndexedRoot[],
   previous: ReadonlySet<string> | undefined,
 ): ReadonlySet<string> {
   return createDocumentUrlSet(roots, previous, (root) => root.resourceUrls);
 }
 
 function createDocumentUrlSet(
-  roots: RootEntry[],
+  roots: IndexedRoot[],
   previous: ReadonlySet<string> | undefined,
-  readRootUrls: (root: RootEntry) => ReadonlySet<string>,
+  readRootUrls: (root: IndexedRoot) => ReadonlySet<string>,
 ): ReadonlySet<string> {
   let next: Set<string> | null = null;
   for (const root of roots) {
@@ -187,32 +187,32 @@ function areUrlSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolea
   return true;
 }
 
-// Builds the document-level list marker semantics map from per-root maps,
-// reusing the previous map when the marker values are unchanged.
-function createDocumentListItemMarkers(
-  roots: RootEntry[],
-  previous: ReadonlyMap<string, ListItemMarker> | undefined,
-): ReadonlyMap<string, ListItemMarker> {
-  const next = new Map<string, ListItemMarker>();
+// Builds the document-level contextual list-item map from per-root maps,
+// reusing the previous map when the projected values are unchanged.
+function createDocumentListItems(
+  roots: IndexedRoot[],
+  previous: ReadonlyMap<string, IndexedListItem> | undefined,
+): ReadonlyMap<string, IndexedListItem> {
+  const next = new Map<string, IndexedListItem>();
   for (const root of roots) {
-    for (const [id, marker] of root.listItemMarkers) next.set(id, marker);
+    for (const [id, item] of root.listItems) next.set(id, item);
   }
-  return previous && areListItemMarkerMapsEqual(previous, next) ? previous : next;
+  return previous && areListItemMapsEqual(previous, next) ? previous : next;
 }
 
-function areListItemMarkerMapsEqual(
-  a: ReadonlyMap<string, ListItemMarker>,
-  b: ReadonlyMap<string, ListItemMarker>,
+function areListItemMapsEqual(
+  a: ReadonlyMap<string, IndexedListItem>,
+  b: ReadonlyMap<string, IndexedListItem>,
 ): boolean {
   if (a.size !== b.size) return false;
-  for (const [id, marker] of a) {
+  for (const [id, item] of a) {
     const next = b.get(id);
-    if (!next || !areListItemMarkersEqual(marker, next)) return false;
+    if (!next || !areListItemsEqual(item, next)) return false;
   }
   return true;
 }
 
-function areListItemMarkersEqual(a: ListItemMarker, b: ListItemMarker): boolean {
+function areListItemsEqual(a: IndexedListItem, b: IndexedListItem): boolean {
   if (a.kind !== b.kind) return false;
   if (a.depth !== b.depth) return false;
   switch (a.kind) {

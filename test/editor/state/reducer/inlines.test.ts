@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Link, Mark } from "@/document";
-import type { InlineEntry } from "@/editor/state";
+import type { IndexedInline } from "@/editor/state";
 import {
   editorInlinesToDocumentInlines,
   replaceEditorInlines,
@@ -77,9 +77,9 @@ describe("Inline replacement", () => {
     });
   });
 
-  test("editing inline code runs preserves inline code semantics", () => {
+  test("editing code-marked runs preserves code mark semantics", () => {
     const nextInlines = replaceEditorInlines(
-      createInlines([{ kind: "code", text: "body" }]),
+      createInlines([{ kind: "text", marks: ["code"], text: "body" }]),
       0,
       4,
       "snippet",
@@ -87,42 +87,40 @@ describe("Inline replacement", () => {
     const nodes = editorInlinesToDocumentInlines(nextInlines);
 
     expect(nodes[0]).toMatchObject({
-      code: "snippet",
-      type: "code",
+      marks: ["code"],
+      text: "snippet",
+      type: "text",
     });
   });
 });
 
 type InlineInput = {
-  kind: "text" | "code" | "raw";
+  kind: "text" | "raw";
   link?: Link | null;
   marks?: readonly Mark[];
   originalType?: string;
   text: string;
 };
 
-function createInlines(inputs: InlineInput[]): InlineEntry[] {
+function createInlines(inputs: InlineInput[]): IndexedInline[] {
   let start = 0;
 
-  return inputs.map<InlineEntry>((input, index) => {
+  return inputs.map<IndexedInline>((input, index) => {
     const end = start + input.text.length;
-    const node: InlineEntry["node"] =
+    const node: IndexedInline["node"] =
       input.kind === "text"
         ? { id: `run:${index}`, marks: [...(input.marks ?? [])], text: input.text, type: "text" }
-        : input.kind === "code"
-          ? { code: input.text, id: `run:${index}`, type: "code" }
-          : {
-              id: `run:${index}`,
-              originalType: input.originalType ?? "raw",
-              source: input.text,
-              type: "raw",
-            };
-    const inline: InlineEntry = {
+        : {
+            id: `run:${index}`,
+            originalType: input.originalType ?? "raw",
+            source: input.text,
+            type: "raw",
+          };
+    const inline: IndexedInline = {
       end,
       link: input.link ?? null,
       node,
       start,
-      text: input.text,
     };
     start = end;
 

@@ -9,15 +9,15 @@
 // line of every list item (only the first wrapped line gets a marker).
 
 import {
-  resolveListItemMarker,
+  resolveIndexedListItem,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
   resolveUnorderedListMarkerBounds,
   type DocumentLayout,
 } from "@/editor/layout";
 import {
-  findAncestorBlockEntry,
-  type ListItemMarker,
+  findAncestorIndexedBlock,
+  type IndexedListItem,
   type EditorState,
 } from "@/editor/state";
 import {
@@ -29,7 +29,7 @@ import type { ResolvedEditorTheme } from "@/types";
 
 export type VisibleListMarker = {
   blockPath: string;
-  marker: ListItemMarker;
+  marker: IndexedListItem;
 };
 
 const unorderedMarkerRadius = 3;
@@ -67,7 +67,7 @@ export function resolveVisibleListMarkers(
       continue;
     }
 
-    const listItemEntry = findAncestorBlockEntry(
+    const listItemEntry = findAncestorIndexedBlock(
       editorState.documentIndex,
       line.blockId,
       "listItem",
@@ -77,7 +77,7 @@ export function resolveVisibleListMarkers(
       continue;
     }
 
-    const marker = resolveListItemMarker(editorState, listItemEntry.block.id);
+    const marker = resolveIndexedListItem(editorState, listItemEntry.block.id);
 
     if (!marker) {
       continue;
@@ -92,7 +92,7 @@ export function resolveVisibleListMarkers(
 export function paintListMarker(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  marker: ListItemMarker | null,
+  marker: IndexedListItem | null,
   textLeft: number,
   textBaseline: number,
   theme: ResolvedEditorTheme,
@@ -120,7 +120,7 @@ export function paintListMarker(
     context.fillStyle = pop ? resolveBlockPulseColor(markerTextColor, pop, theme) : markerTextColor;
 
     if (marker.kind === "ordered") {
-      paintOrderedListMarker(context, resolveListItemMarkerLabel(marker), textLeft, textBaseline);
+      paintOrderedListMarker(context, resolveIndexedListItemLabel(marker), textLeft, textBaseline);
     } else {
       paintUnorderedListMarker(context, marker, line);
     }
@@ -214,7 +214,7 @@ function paintOrderedListMarker(
 
 function paintUnorderedListMarker(
   context: CanvasRenderingContext2D,
-  marker: Extract<ListItemMarker, { kind: "unordered" }>,
+  marker: Extract<IndexedListItem, { kind: "unordered" }>,
   line: DocumentLayout["lines"][number],
 ) {
   const bounds = resolveUnorderedListMarkerBounds(line);
@@ -246,7 +246,7 @@ function paintUnorderedListMarker(
 }
 
 function resolveListMarkerCenter(
-  marker: ListItemMarker,
+  marker: IndexedListItem,
   line: DocumentLayout["lines"][number],
   textLeft: number,
   textBaseline: number,
@@ -258,7 +258,7 @@ function resolveListMarkerCenter(
   }
 
   if (marker.kind === "ordered") {
-    const label = resolveListItemMarkerLabel(marker);
+    const label = resolveIndexedListItemLabel(marker);
     const metrics = context.measureText(label);
     const y = textBaseline - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
 
@@ -273,6 +273,6 @@ function resolveListMarkerCenter(
   };
 }
 
-function resolveListItemMarkerLabel(marker: Extract<ListItemMarker, { kind: "ordered" }>) {
+function resolveIndexedListItemLabel(marker: Extract<IndexedListItem, { kind: "ordered" }>) {
   return `${marker.ordinal}.`;
 }

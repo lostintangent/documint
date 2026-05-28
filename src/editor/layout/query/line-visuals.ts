@@ -2,15 +2,15 @@
 // Given a prepared `DocumentLayout` plus editor state, these resolve content
 // insets (e.g. list-marker indent) and small per-line metric helpers
 // (visual-left, task checkbox bounds, inline image bounds). Ancestry walks
-// live in `editor/state` (`findAncestorBlockEntry`) — layout consumes them
+// live in `editor/state` (`findAncestorIndexedBlock`) — layout consumes them
 // as a primitive.
 
 import type { DocumentResources } from "@/types";
 import {
-  findAncestorBlockEntry,
+  findAncestorIndexedBlock,
   resolveRegion,
-  type InlineEntry,
-  type ListItemMarker,
+  type IndexedInline,
+  type IndexedListItem,
   type EditorState,
 } from "../../state";
 import {
@@ -24,7 +24,7 @@ import {
 import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/measure";
 import type { EditorLayoutState } from "../state";
 import { resolveInlineImageDimensions } from "../measure/inline-image";
-import type { DocumentLayout, DocumentLayoutLine } from "../measure";
+import type { DocumentLayout, LayoutLine } from "../measure";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
@@ -44,13 +44,13 @@ export function resolveLineVisualLeft(
 }
 
 export function resolveLineContentInset(state: EditorState, line: DocumentLayout["lines"][number]) {
-  const listItemEntry = findAncestorBlockEntry(state.documentIndex, line.blockId, "listItem");
+  const listItemEntry = findAncestorIndexedBlock(state.documentIndex, line.blockId, "listItem");
 
   if (!listItemEntry) {
     return 0;
   }
 
-  const marker = resolveListItemMarker(state, listItemEntry.block.id);
+  const marker = resolveIndexedListItem(state, listItemEntry.block.id);
 
   return marker?.kind === "task" ? TASK_MARKER_TEXT_INSET : LIST_MARKER_TEXT_INSET;
 }
@@ -59,7 +59,7 @@ export function resolveOrderedListMarkerAnchor(textLeft: number) {
   return textLeft - ORDERED_LIST_MARKER_GAP;
 }
 
-export function resolveTaskCheckboxBounds(line: DocumentLayoutLine) {
+export function resolveTaskCheckboxBounds(line: LayoutLine) {
   return {
     left: line.left,
     size: TASK_CHECKBOX_SIZE,
@@ -67,7 +67,7 @@ export function resolveTaskCheckboxBounds(line: DocumentLayoutLine) {
   };
 }
 
-export function resolveUnorderedListMarkerBounds(line: DocumentLayoutLine) {
+export function resolveUnorderedListMarkerBounds(line: LayoutLine) {
   const size = UNORDERED_LIST_MARKER_SIZE;
   const centerY = resolveTextOpticalCenter(line);
 
@@ -81,7 +81,7 @@ export function resolveUnorderedListMarkerBounds(line: DocumentLayoutLine) {
 
 export function resolveCodeBlockBackgroundBounds(
   layout: DocumentLayout,
-  line: DocumentLayoutLine,
+  line: LayoutLine,
   regionBounds: { bottom: number; left: number; right: number; top: number },
 ): InlineBounds {
   const left = Math.max(0, line.left - CODE_BLOCK_CONTENT_PADDING_X);
@@ -95,14 +95,14 @@ export function resolveCodeBlockBackgroundBounds(
   };
 }
 
-export function resolveListItemMarker(
+export function resolveIndexedListItem(
   state: EditorState,
   listItemId: string,
-): ListItemMarker | null {
-  return state.documentIndex.listItemMarkers.get(listItemId) ?? null;
+): IndexedListItem | null {
+  return state.documentIndex.listItems.get(listItemId) ?? null;
 }
 
-function resolveTextOpticalCenter(line: DocumentLayoutLine) {
+function resolveTextOpticalCenter(line: LayoutLine) {
   const baseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
   const { ascent, descent } = resolveFontMetrics(line.font);
 
@@ -114,7 +114,7 @@ export function measureInlineImageBounds(
   state: EditorState,
   viewport: EditorLayoutState,
   resources: DocumentResources,
-  run: InlineEntry,
+  run: IndexedInline,
 ): InlineBounds | null {
   const region = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
 

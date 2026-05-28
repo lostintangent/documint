@@ -5,7 +5,7 @@
 
 import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import { regionInlines, type RegionEntry } from "../../state";
+import { regionInlines, type EditableRegion } from "../../state";
 import type { LayoutCache } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
@@ -19,7 +19,7 @@ import {
 
 export function estimateContainerHeight(
   cache: LayoutCache,
-  container: RegionEntry,
+  container: EditableRegion,
   block: Block | null,
   depth: number,
   // List item content is shifted right by this inset (bullet or task
@@ -77,7 +77,7 @@ export function estimateContainerHeight(
 }
 
 export function estimateTableCellHeight(
-  region: RegionEntry,
+  region: EditableRegion,
   width: number,
   lineHeight: number,
   charWidth: number | undefined,
@@ -93,7 +93,7 @@ export function estimateTableCellHeight(
 }
 
 export function createContainerHeightCacheKey(
-  container: RegionEntry,
+  container: EditableRegion,
   listInset: number,
   codeContentInset: number,
   options: DocumentLayoutOptions,

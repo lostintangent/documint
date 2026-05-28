@@ -13,7 +13,7 @@ import { cursorLeafSprig, type CursorLeaf } from "../overlays/leaves/sprigs";
 type UseCursorOptions = {
   activeAt: number | null;
   isEditable: boolean;
-  layoutWidth: number;
+  viewportWidth: number;
   viewportHeight: number;
 
   // Host callbacks the hook invokes.
@@ -34,9 +34,9 @@ type CursorController = {
 
 type FocusVisibilityRequest = {
   bottom: number;
-  layoutWidth: number;
   scrollTop: number;
   top: number;
+  viewportWidth: number;
   viewportHeight: number;
 };
 
@@ -59,7 +59,7 @@ export function useCursor({
   activeAt,
   getScrollTop,
   isEditable,
-  layoutWidth,
+  viewportWidth,
   onVisibilityChange,
   scrollTo,
   viewportHeight,
@@ -91,9 +91,9 @@ export function useCursor({
 
     const focusVisibilityRequest: FocusVisibilityRequest = {
       bottom: scrollTarget.bottom,
-      layoutWidth,
       scrollTop: getScrollTop(),
       top: scrollTarget.top,
+      viewportWidth,
       viewportHeight,
     };
 
@@ -130,7 +130,7 @@ export function useCursor({
     }
 
     lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
-  }, [scrollTarget, layoutWidth, viewportHeight]);
+  }, [scrollTarget, viewportWidth, viewportHeight]);
 
   /* Caret blink loop */
 
@@ -168,9 +168,9 @@ function areFocusVisibilityRequestsEqual(
 ) {
   return (
     previous?.bottom === next.bottom &&
-    previous?.layoutWidth === next.layoutWidth &&
     previous?.scrollTop === next.scrollTop &&
     previous?.top === next.top &&
+    previous?.viewportWidth === next.viewportWidth &&
     previous?.viewportHeight === next.viewportHeight
   );
 }

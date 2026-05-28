@@ -5,7 +5,7 @@ import type { Block } from "@/document";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources } from "@/types";
 import { isContainerBlock, isInertBlock, resolveRegion } from "../../state/index/query";
-import type { DocumentIndex, RegionEntry } from "../../state";
+import type { DocumentIndex, EditableRegion } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
 import {
@@ -28,23 +28,27 @@ import {
 export type { DocumentLayoutOptions } from "../lib/options";
 export type { LayoutBlockExtent } from "../lib/marker-metrics";
 
-export type DocumentLineBoundary = TextLineBoundary;
+export type LineBoundary = TextLineBoundary;
 
-export type DocumentLayoutLine = {
+export type LayoutLine = {
+  // Identity: connects this visual row back to indexed editor content.
   blockId: string;
-  boundaries: DocumentLineBoundary[];
   regionId: string;
-  end: number;
-  font: string;
-  height: number;
-  left: number;
+  // Model span: offsets and text slice from the owning editable region.
   start: number;
-  text: string;
+  end: number;
+  // Geometry: document-space rectangle occupied by this visual row.
   top: number;
+  left: number;
   width: number;
+  height: number;
+  // Rendering and caret data.
+  text: string;
+  font: string;
+  boundaries: LineBoundary[];
 };
 
-export type DocumentLayoutBlock = {
+export type LayoutBlock = {
   bottom: number;
   depth: number;
   id: string;
@@ -53,11 +57,11 @@ export type DocumentLayoutBlock = {
 };
 
 export type DocumentLayout = {
-  blocks: DocumentLayoutBlock[];
+  blocks: LayoutBlock[];
   regionBounds: Map<string, { bottom: number; left: number; right: number; top: number }>;
   regionLineIndices: Map<string, number[]>;
   height: number;
-  lines: DocumentLayoutLine[];
+  lines: LayoutLine[];
   options: DocumentLayoutOptions;
   width: number;
 };
@@ -79,7 +83,7 @@ export function measureLayoutSlice(
 ): DocumentLayout {
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
-  const lines: DocumentLayoutLine[] = [];
+  const lines: LayoutLine[] = [];
   const regionBounds = new Map<
     string,
     { bottom: number; left: number; right: number; top: number }
@@ -102,12 +106,12 @@ export function measureLayoutSlice(
   // step can read its `type` without re-querying `blockIndex.get`.
   let previousLaidOutBlock: DocumentIndex["blocks"][number] | null = null;
 
-  for (const blockEntry of documentIndex.blocks) {
-    const block = blockMap.get(blockEntry.block.id) ?? null;
-    if (!block || isContainerBlock(blockEntry)) continue;
+  for (const indexedBlock of documentIndex.blocks) {
+    const block = blockMap.get(indexedBlock.block.id) ?? null;
+    if (!block || isContainerBlock(indexedBlock)) continue;
 
-    const isInert = isInertBlock(blockEntry);
-    const blockRegionsInScope = blockEntry.regionIds.filter((id) => visibleRegionIds.has(id));
+    const isInert = isInertBlock(indexedBlock);
+    const blockRegionsInScope = indexedBlock.regionIds.filter((id) => visibleRegionIds.has(id));
 
     // Skip text/table blocks whose regions aren't in this layout pass
     // (e.g. when called with a sliced regions array). Inert leaves are
@@ -121,7 +125,7 @@ export function measureLayoutSlice(
         runtimeBlocks,
         blockMap,
         previousLaidOutBlock.block.id,
-        blockEntry.block.id,
+        indexedBlock.block.id,
         resolvedOptions.blockGap,
       );
       // Extend the previous block's extent to include the trailing gap so
@@ -138,9 +142,9 @@ export function measureLayoutSlice(
       }
     }
 
-    const depth = blockEntry.depth;
+    const depth = indexedBlock.depth;
     const left = resolvedOptions.paddingX + depth * resolvedOptions.indentWidth;
-    const listInset = resolveListMarkerInset(documentIndex, blockEntry.block.id);
+    const listInset = resolveListMarkerInset(documentIndex, indexedBlock.block.id);
     const codeContentInset = block.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
     const contentLeft = left + codeContentInset;
     const availableWidth = Math.max(
@@ -152,12 +156,12 @@ export function measureLayoutSlice(
       // Inert leaves (dividers, etc.) reserve a fixed-height slot without
       // emitting lines; chrome is painted off `layout.blocks`.
       const bottom = y + resolvedOptions.lineHeight;
-      blockExtents.set(blockEntry.block.id, { top: y, bottom });
+      blockExtents.set(indexedBlock.block.id, { top: y, bottom });
       y = bottom;
     } else if (block.type === "table") {
       const tableContainers = blockRegionsInScope
         .map((id) => resolveRegion(documentIndex, id))
-        .filter((r): r is RegionEntry => r !== null);
+        .filter((r): r is EditableRegion => r !== null);
       y = layoutTable(
         lines,
         blockExtents,
@@ -190,7 +194,7 @@ export function measureLayoutSlice(
       }
     }
 
-    previousLaidOutBlock = blockEntry;
+    previousLaidOutBlock = indexedBlock;
   }
 
   // `layout.blocks` is the per-leaf-block bounding-box index used by the
@@ -198,7 +202,7 @@ export function measureLayoutSlice(
   // blocks (blockquote, list, listItem) are excluded — they have no own
   // geometry; their leaf descendants do. Sorted by `top` to support
   // binary-search visibility scoping in the paint pass.
-  const blocks: DocumentLayoutBlock[] = [];
+  const blocks: LayoutBlock[] = [];
   for (const entry of documentIndex.blocks) {
     const runtimeBlock = blockMap.get(entry.block.id);
     if (!runtimeBlock || isContainerBlock(entry)) continue;
@@ -225,7 +229,7 @@ export function measureLayoutSlice(
 }
 
 function layoutSingleContainer(
-  lines: DocumentLayoutLine[],
+  lines: LayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
   regionBounds: DocumentLayout["regionBounds"],
   container: DocumentIndex["regions"][number],
@@ -253,6 +257,15 @@ function layoutSingleContainer(
   for (const line of measuredLines) {
     const layoutLine = {
       blockId: container.block.id,
+      regionId: container.id,
+      start: line.start,
+      end: line.end,
+      top: y,
+      left,
+      width: line.width,
+      height: line.height,
+      text: line.text,
+      font,
       boundaries: measureTextLineBoundaries(
         cache,
         container,
@@ -263,16 +276,7 @@ function layoutSingleContainer(
         availableWidth,
         resources,
       ),
-      regionId: container.id,
-      end: line.end,
-      font,
-      height: line.height,
-      left,
-      start: line.start,
-      text: line.text,
-      top: y,
-      width: line.width,
-    } satisfies DocumentLayoutLine;
+    } satisfies LayoutLine;
 
     lines.push(layoutLine);
     updateBlockExtent(blockExtents, layoutLine);
@@ -294,7 +298,7 @@ function layoutSingleContainer(
   return y + blockPaddingY;
 }
 
-function createContainerLineIndices(lines: DocumentLayoutLine[]) {
+function createContainerLineIndices(lines: LayoutLine[]) {
   // Sort in place — table cell layout can interleave Y across the cells of
   // a row, so we need a single top-then-left order to feed binary search
   // in the paint/hit-test passes. (Cloning + `lines.push(...sortedLines)`
@@ -320,7 +324,7 @@ function createContainerLineIndices(lines: DocumentLayoutLine[]) {
 // `lines.filter(...)` (O(N) inside an N-region loop) plus a final full re-walk.
 function updateRegionBoundsFromLine(
   regionBounds: DocumentLayout["regionBounds"],
-  line: DocumentLayoutLine,
+  line: LayoutLine,
 ) {
   const current = regionBounds.get(line.regionId);
   const right = line.left + line.width;
@@ -346,7 +350,7 @@ function updateRegionBoundsFromLine(
 
 export function updateBlockExtent(
   blockExtents: Map<string, LayoutBlockExtent>,
-  line: Pick<DocumentLayoutLine, "blockId" | "height" | "top">,
+  line: Pick<LayoutLine, "blockId" | "height" | "top">,
 ) {
   const current = blockExtents.get(line.blockId);
   const nextBottom = line.top + line.height;

@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   createDocument,
   createBlockquoteBlock,
-  createCode,
   createImage,
   createParagraphTextBlock,
   createLink,
@@ -136,7 +135,7 @@ Second
       createParagraphBlock([
         createText("plain "),
         createText("bold", ["bold"]),
-        createCode("code"),
+        createText("code", ["code"]),
         createLink({ children: [createText("link")], url: "https://example.com" }),
         createText(" tail"),
       ]),
@@ -168,7 +167,7 @@ Second
         mention,
         resource,
         lineBreak,
-        createCode("bc"),
+        createText("bc", ["code"]),
         createText("z"),
       ]),
     ]);

@@ -5,10 +5,12 @@ import { PlaygroundPopover } from "./PlaygroundPopover";
 
 type ThemePopoverProps = {
   onThemeIdChange: (themeId: string) => void;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
   themeId: string;
 };
 
-export function ThemePopover({ onThemeIdChange, themeId }: ThemePopoverProps) {
+export function ThemePopover({ onThemeIdChange, onOpenChange, open, themeId }: ThemePopoverProps) {
   const activeThemeOption = getThemeOption(themeId);
   const showSwatch = activeThemeOption.id !== "system";
 
@@ -17,6 +19,8 @@ export function ThemePopover({ onThemeIdChange, themeId }: ThemePopoverProps) {
       ariaLabel="Select editor theme"
       icon={<Palette size={16} strokeWidth={2.1} />}
       iconStyle={showSwatch ? getThemeSwatchStyle(activeThemeOption) : undefined}
+      onOpenChange={onOpenChange}
+      open={open}
       size="sm"
       showSwatch={showSwatch}
     >

@@ -6,7 +6,7 @@
 import { type CaretTarget, type DocumentLayout } from "../layout";
 import type { EditorState } from "../state";
 import {
-  resolveBlockEntry,
+  resolveIndexedBlock,
   resolveRegion,
   resolveRegionOutsideRoot,
   resolveTableCellPosition,
@@ -28,7 +28,7 @@ export function moveCaretVerticallyInTable(
   }
 
   const currentCell = resolveTableCellPosition(currentContainer);
-  const tableBlock = resolveBlockEntry(state.documentIndex, currentContainer.block.id);
+  const tableBlock = resolveIndexedBlock(state.documentIndex, currentContainer.block.id);
 
   if (!currentCell || tableBlock?.block.type !== "table") {
     return null;
@@ -66,10 +66,10 @@ export function moveCaretVerticallyInTable(
 }
 
 function findTableExitContainer(state: EditorState, tableBlockId: string, direction: -1 | 1) {
-  const tableEntry = resolveBlockEntry(state.documentIndex, tableBlockId);
+  const indexedTable = resolveIndexedBlock(state.documentIndex, tableBlockId);
 
-  return tableEntry
-    ? resolveRegionOutsideRoot(state.documentIndex, tableEntry.rootIndex, direction)
+  return indexedTable
+    ? resolveRegionOutsideRoot(state.documentIndex, indexedTable.rootIndex, direction)
     : null;
 }
 

@@ -12,7 +12,7 @@ import {
   replaceBlockChildren,
   type Block,
 } from "@/document";
-import type { RegionEntry } from "../index/types";
+import type { EditableRegion } from "../index/types";
 import { editRegionInlines } from "../reducer/inlines";
 
 // Returns the part of `block` from its start up to `offset` within
@@ -20,7 +20,7 @@ import { editRegionInlines } from "../reducer/inlines";
 // Returns null if nothing remains.
 export function trimBlockToPrefix(
   block: Block,
-  targetRegion: RegionEntry,
+  targetRegion: EditableRegion,
   offset: number,
 ): Block | null {
   if (block.type === "table") {
@@ -39,7 +39,7 @@ export function trimBlockToPrefix(
 // Mirror of `trimBlockToPrefix` for the post-offset side.
 export function trimBlockToSuffix(
   block: Block,
-  targetRegion: RegionEntry,
+  targetRegion: EditableRegion,
   offset: number,
 ): Block | null {
   if (block.type === "table") {
@@ -57,7 +57,7 @@ export function trimBlockToSuffix(
 
 // Whether `block` directly is or transitively contains the leaf identified by
 // `region.block.id`. Shared by trimming and fragment path narrowing.
-export function blockContainsRegion(block: Block, region: RegionEntry): boolean {
+export function blockContainsRegion(block: Block, region: EditableRegion): boolean {
   if (block.id === region.block.id) {
     return true;
   }
@@ -66,7 +66,7 @@ export function blockContainsRegion(block: Block, region: RegionEntry): boolean 
   return children !== null && children.some((child) => blockContainsRegion(child, region));
 }
 
-function trimLeafBlockToPrefix(block: Block, region: RegionEntry, offset: number): Block | null {
+function trimLeafBlockToPrefix(block: Block, region: EditableRegion, offset: number): Block | null {
   if (offset === 0) {
     return null;
   }
@@ -84,7 +84,7 @@ function trimLeafBlockToPrefix(block: Block, region: RegionEntry, offset: number
   }
 }
 
-function trimLeafBlockToSuffix(block: Block, region: RegionEntry, offset: number): Block | null {
+function trimLeafBlockToSuffix(block: Block, region: EditableRegion, offset: number): Block | null {
   if (offset === region.text.length) {
     return null;
   }
@@ -112,7 +112,7 @@ function trimContainerBlock(
 
 function trimContainerChildrenToPrefix(
   children: Block[],
-  targetRegion: RegionEntry,
+  targetRegion: EditableRegion,
   offset: number,
 ): Block[] {
   const targetIndex = children.findIndex((child) => blockContainsRegion(child, targetRegion));
@@ -129,7 +129,7 @@ function trimContainerChildrenToPrefix(
 
 function trimContainerChildrenToSuffix(
   children: Block[],
-  targetRegion: RegionEntry,
+  targetRegion: EditableRegion,
   offset: number,
 ): Block[] {
   const targetIndex = children.findIndex((child) => blockContainsRegion(child, targetRegion));

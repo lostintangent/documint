@@ -1,3 +1,10 @@
+## 🗓️ v0.0.22 (05-28-26)
+
+- Added support for status messages in user presence
+- Added the notion of resource protocols
+- Inline code formatting can now compose with other formatting marks (e.g. underline, italics)
+- The comment thread leaf now auto-scrolls as new replies are added (either by you or an agent!)
+
 ## 🗓️ v0.0.21 (05-26-26)
 
 - Added initial search support (`CMD+F`)

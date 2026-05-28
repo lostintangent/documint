@@ -1,8 +1,8 @@
 import { listAnchorContainers, type AnchorContainer } from "@/document";
-import { createSemanticRegionIndex, type DocumentIndex, type RegionEntry } from "../state";
+import { createSemanticRegionIndex, type DocumentIndex, type EditableRegion } from "../state";
 
 type SemanticContainerProjection = {
-  runtimeContainer: RegionEntry | null;
+  runtimeContainer: EditableRegion | null;
   semanticContainer: AnchorContainer;
 };
 

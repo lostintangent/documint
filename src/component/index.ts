@@ -11,7 +11,7 @@ export {
   type UserMentionEvent,
 } from "./Documint";
 
-export { darkTheme, lightTheme, midnightTheme, mintTheme } from "./lib/themes";
+export { darkTheme, lightTheme } from "./lib/themes";
 
 export { defaultKeybindings, type EditorInputKeybinding } from "./lib/keybindings";
 

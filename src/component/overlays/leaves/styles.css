@@ -118,12 +118,7 @@
     var(--documint-leaf-accent) 24%,
     var(--documint-leaf-input-bg)
   );
-  --documint-leaf-control-divider-color: color-mix(
-    in srgb,
-    var(--documint-leaf-border) 72%,
-    transparent
-  );
-  --documint-leaf-divider-color: color-mix(in srgb, var(--documint-leaf-border) 60%, transparent);
+  --documint-leaf-divider-color: color-mix(in srgb, var(--documint-leaf-border) 72%, transparent);
   padding: 0.8rem;
   border: 1px solid var(--documint-leaf-border);
   border-radius: 0.95rem;
@@ -165,6 +160,26 @@
 
   & p {
     margin: 0;
+  }
+}
+
+.documint-leaf-divider {
+  flex: none;
+  background: var(
+    --documint-leaf-divider-color,
+    color-mix(in srgb, var(--documint-leaf-border) 72%, transparent)
+  );
+
+  &[data-orientation="horizontal"] {
+    width: 100%;
+    height: 1px;
+    margin: 0.2rem 0;
+  }
+
+  &[data-orientation="vertical"] {
+    justify-self: center;
+    width: 1px;
+    height: 1.15rem;
   }
 }
 
@@ -228,12 +243,6 @@
   }
 }
 
-.documint-leaf-menu-divider {
-  height: 1px;
-  margin: 0.15rem 0.2rem;
-  background: color-mix(in srgb, var(--documint-leaf-border) 72%, transparent);
-}
-
 /* -- Action: icon button used throughout leaf chrome -- */
 
 .documint-leaf-action {
@@ -286,13 +295,6 @@
   width: 1.45rem;
   min-width: 1.45rem;
   padding: 0;
-}
-
-.documint-search-divider {
-  justify-self: center;
-  width: 1px;
-  height: 1.15rem;
-  background: var(--documint-leaf-control-divider-color);
 }
 
 .documint-search-input-shell {
@@ -431,14 +433,12 @@
 .documint-comment-leaf-link {
   display: grid;
   gap: 0.3rem;
-  margin-bottom: 0.8rem;
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid var(--documint-leaf-divider-color);
 }
 
 .documint-comment-leaf-age {
   color: var(--documint-leaf-secondary-text);
   font-size: 0.76rem;
+  font-style: italic;
 }
 
 .documint-comment-actions {
@@ -449,6 +449,7 @@
 .documint-comment-message-meta span {
   color: var(--documint-leaf-secondary-text);
   font-size: 0.74rem;
+  font-style: italic;
 }
 
 /* Thread (scrollable list of comment messages) */
@@ -506,11 +507,9 @@
   position: relative;
   display: block;
   padding-top: 0.85rem;
-  border-top: 1px solid var(--documint-leaf-divider-color);
 
   &.is-standalone {
     padding-top: 0;
-    border-top: 0;
 
     &:not(.is-visible) {
       max-height: 0;
@@ -562,6 +561,10 @@
   object-fit: cover;
 }
 
+.documint-comment-presence-status {
+  font-style: italic;
+}
+
 @keyframes documint-comment-presence-pulse {
   0%,
   100% {
@@ -604,7 +607,7 @@
       pointer-events: none;
     }
 
-    & .documint-leaf-toolbar-divider {
+    & .documint-leaf-divider[data-orientation="vertical"] {
       opacity: 0;
     }
 
@@ -645,7 +648,7 @@
     transform var(--documint-comment-create-scale-duration) ease;
 }
 
-.documint-comment-leaf-create .documint-leaf-toolbar-divider {
+.documint-comment-leaf-create .documint-leaf-divider[data-orientation="vertical"] {
   opacity: 1;
   transition: opacity var(--documint-comment-create-fade-duration) ease;
 }
@@ -684,7 +687,7 @@
 .documint-link-leaf-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  align-items: flex-start;
+  align-items: center;
   gap: 0.6rem;
 
   /* Reserve a second track for the action buttons only when they're
@@ -705,11 +708,6 @@
   gap: 0.5rem;
 }
 
-.documint-link-leaf-divider {
-  margin: 0.2rem 0;
-  border-top: 1px solid var(--documint-leaf-divider-color);
-}
-
 .documint-link-leaf-title {
   color: var(--documint-leaf-text);
   font-size: 0.78rem;
@@ -718,7 +716,7 @@
 
 .documint-link-leaf-url-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.4rem;
   min-width: 0;
 }
@@ -733,7 +731,7 @@
 .documint-link-leaf-url {
   min-width: 0;
   color: var(--documint-leaf-secondary-text);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }

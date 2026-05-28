@@ -183,6 +183,70 @@ After
   expect(leadingGap).toBeGreaterThan(layout.options.blockGap);
 });
 
+test("uses larger trailing spacing around h1 headings between blocks", () => {
+  const runtime = createDocumentIndex(
+    parseDocument(`Before
+
+# Heading
+
+After
+`),
+  );
+  const layout = measureLayoutSlice(runtime, {
+    width: 420,
+  });
+  const beforeLine = layout.lines.find((line) => line.text === "Before");
+  const headingLine = layout.lines.find((line) => line.text === "Heading");
+  const afterLine = layout.lines.find((line) => line.text === "After");
+
+  if (!beforeLine || !headingLine || !afterLine) {
+    throw new Error("Expected h1 spacing fixture lines");
+  }
+
+  const leadingGap = headingLine.top - (beforeLine.top + beforeLine.height);
+  const trailingGap = afterLine.top - (headingLine.top + headingLine.height);
+
+  expect(leadingGap).toBe(layout.options.blockGap + 16);
+  expect(trailingGap).toBe(layout.options.blockGap + 24);
+});
+
+test("uses smaller trailing spacing around h3 and deeper headings", () => {
+  const runtime = createDocumentIndex(
+    parseDocument(`Before
+
+### Heading
+
+After
+
+#### Subheading
+
+End
+`),
+  );
+  const layout = measureLayoutSlice(runtime, {
+    width: 420,
+  });
+  const beforeLine = layout.lines.find((line) => line.text === "Before");
+  const headingLine = layout.lines.find((line) => line.text === "Heading");
+  const afterLine = layout.lines.find((line) => line.text === "After");
+  const subheadingLine = layout.lines.find((line) => line.text === "Subheading");
+  const endLine = layout.lines.find((line) => line.text === "End");
+
+  if (!beforeLine || !headingLine || !afterLine || !subheadingLine || !endLine) {
+    throw new Error("Expected h3+ spacing fixture lines");
+  }
+
+  const h3LeadingGap = headingLine.top - (beforeLine.top + beforeLine.height);
+  const h3TrailingGap = afterLine.top - (headingLine.top + headingLine.height);
+  const h4LeadingGap = subheadingLine.top - (afterLine.top + afterLine.height);
+  const h4TrailingGap = endLine.top - (subheadingLine.top + subheadingLine.height);
+
+  expect(h3LeadingGap).toBe(layout.options.blockGap + 16);
+  expect(h3TrailingGap).toBe(layout.options.blockGap + 6);
+  expect(h4LeadingGap).toBe(layout.options.blockGap + 10);
+  expect(h4TrailingGap).toBe(layout.options.blockGap);
+});
+
 test("recomputes cached line boundaries when inline mark state changes", () => {
   const cache = createLayoutCache();
   let state = setup("WWWWW WWWWW WWWWW");

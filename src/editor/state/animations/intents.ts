@@ -4,8 +4,8 @@
 
 import { containsColorEmoji } from "../../text/emoji";
 import { regionInlines } from "../index/inlines";
-import { isInlineTextRegion } from "../index/query";
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import { isInlineRegion } from "../index/query";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 import {
   normalizeSelection,
   resolveRegion,
@@ -49,12 +49,12 @@ export function resolveTextHighlightAnimation(
 }
 
 export function resolveTextHighlightAnimationForRegion(
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   insertedText: string,
 ): AnimationIntent | undefined {
   if (
-    !isInlineTextRegion(region) ||
+    !isInlineRegion(region) ||
     insertedText.length === 0 ||
     containsColorEmoji(insertedText)
   ) {
@@ -70,7 +70,7 @@ export function resolveTextHighlightAnimationForRegion(
 }
 
 export function resolveTextFadeAnimation(
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
 ): AnimationIntent | undefined {
@@ -109,7 +109,7 @@ function resolveTextPulseAnimation(
     return undefined;
   }
 
-  if (!isInlineTextRegion(context.region)) {
+  if (!isInlineRegion(context.region)) {
     return undefined;
   }
 
@@ -123,7 +123,7 @@ function resolveTextPulseAnimation(
 function resolveSameRegionSelectionContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-): { normalized: NormalizedEditorSelection; region: RegionEntry } | null {
+): { normalized: NormalizedEditorSelection; region: EditableRegion } | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (normalized.start.regionId !== normalized.end.regionId) {

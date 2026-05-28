@@ -1,7 +1,7 @@
 import { resolveRegion, type EditorSelection } from "../../../selection";
 import { moveGraphemeOffset } from "../../../../text/graphemes";
 import { regionInlines } from "../../../index/inlines";
-import type { RegionEntry } from "../../../index/types";
+import type { EditableRegion } from "../../../index/types";
 import type { EditorState, EditorStateAction } from "../../../types";
 import { resolveTextFadeAnimation } from "../../../animations/intents";
 
@@ -68,6 +68,6 @@ export function resolveCharacterDelete(
   };
 }
 
-function hasSoftLineBreakAtOffset(region: RegionEntry, offset: number) {
+function hasSoftLineBreakAtOffset(region: EditableRegion, offset: number) {
   return regionInlines(region).some((inline) => inline.node.type === "lineBreak" && inline.start === offset);
 }

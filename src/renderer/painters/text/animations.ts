@@ -6,7 +6,7 @@
 // runs so they paint last in the foreground sub-pipeline.
 
 import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
-import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
+import { findInlinesInRange, regionInlines, type EditableRegion } from "@/editor/state";
 import { isReferenceInlineNode } from "@/document";
 import type { ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
@@ -30,7 +30,7 @@ const textHighlightMinimumVisibleAlpha = 0.02;
 export function paintTextHighlights(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   textHighlights: ActiveTextHighlight[],
@@ -40,7 +40,7 @@ export function paintTextHighlights(
     return;
   }
 
-  const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
+  const visibleInlines = findInlinesInRange(regionInlines(container), line.start, line.end);
 
   for (const inline of visibleInlines) {
     if (isReferenceInlineNode(inline.node)) {
@@ -71,7 +71,6 @@ export function paintTextHighlights(
     const inlineStyle = resolveInlineTextStyle(
       line.font,
       inline.node.type === "text" ? inline.node.marks : [],
-      inline.node.type === "code",
     );
     context.font = inlineStyle.font;
     const segmentBaseline = textBaseline + inlineStyle.baselineShift;
@@ -118,7 +117,7 @@ export function paintTextHighlights(
 export function paintTextFades(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   textFades: ActiveTextFade[],
@@ -144,7 +143,7 @@ export function paintTextFades(
 export function paintTextPulses(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   textPulses: ActiveTextPulse[],

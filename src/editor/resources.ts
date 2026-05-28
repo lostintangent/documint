@@ -8,7 +8,7 @@ import type {
 import type { Resource } from "@/document";
 import { resolveResourceProtocol } from "@/resources";
 import { someVisibleDocumentLayoutLine, type EditorLayoutState } from "./layout";
-import { resolveRegion, type EditorState, type InlineEntry } from "./state";
+import { resolveRegion, type EditorState, type IndexedInline } from "./state";
 
 export type ResolvedResource = {
   icon: DocumentResourceIcon | null;
@@ -34,7 +34,7 @@ export function createResourceReference(
 }
 
 export function resolveInlineResource(
-  inline: InlineEntry,
+  inline: IndexedInline,
   registry: DocumentResourceRegistry,
 ): ResolvedResource | null {
   if (inline.node.type !== "resource") {
@@ -78,7 +78,7 @@ export function hasActiveResourcesInViewport(
 
   return someVisibleDocumentLayoutLine(viewport, (line) => {
     const region = resolveRegion(state.documentIndex, line.regionId);
-    if (region?.content.kind !== "inline-text") {
+    if (region?.content.kind !== "inlines") {
       return false;
     }
 

@@ -12,7 +12,7 @@ import {
   resolveImageAtSelection,
   type EditorLayoutState,
   type EditorSelection,
-  type InlineEntry,
+  type IndexedInline,
   type EditorSelectionRange,
   type EditorState,
   type CaretTarget,
@@ -61,7 +61,7 @@ export type SelectionView = {
 
 export type ImageAtCursor = {
   bounds: InlineBounds;
-  inline: InlineEntry;
+  inline: IndexedInline;
   maxWidth: number | null;
 };
 
@@ -98,11 +98,7 @@ const equalImageAtCursors = equalNullableBy<ImageAtCursor>((target) => [
 // Exported because the overlay leaf equality (`equalAnnotationLeaf`) reuses
 // it. Identity works on `marks` because marks are immutable in this codebase.
 export function equalSelectionFormatting(a: SelectionFormatting, b: SelectionFormatting) {
-  return (
-    a.code === b.code &&
-    a.supported === b.supported &&
-    equalArraysByIdentity(a.marks, b.marks)
-  );
+  return a.supported === b.supported && equalArraysByIdentity(a.marks, b.marks);
 }
 
 // Depends on `documentIndexSprig` rather than `editorStateSprig` so selection-

@@ -13,6 +13,7 @@ import {
   type RefObject,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -75,9 +76,9 @@ export type ViewportController = {
     scrollContainer: RefObject<HTMLDivElement | null>;
   };
   state: {
-    layoutWidth: number;
     scrollContentHeight: number;
     layout: EditorLayoutHandle;
+    viewportWidth: number;
     viewportHeight: number;
     viewportTop: number;
   };
@@ -131,16 +132,16 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   const layoutCacheRef = useRef(createLayoutCache());
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportMetricsRef = useRef<ViewportMetrics>({ height: 240, top: 0 });
-  const [surfaceWidth, setSurfaceWidth] = useState(0);
+  const [measuredViewportWidth, setMeasuredViewportWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(240);
   const [viewportTop, setViewportTopState] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(240);
-  const layoutWidth = resolveLayoutWidth(surfaceWidth);
+  const viewportWidth = resolveViewportWidth(measuredViewportWidth);
 
   /* Layout cache resolver */
 
   // The store's `get()` needs a way to build a fresh layout when the cache
-  // is empty. The resolver closes over hook state (theme, layout width,
+  // is empty. The resolver closes over hook state (theme, viewport width,
   // viewport metrics, resources) that changes between renders, so we keep
   // the latest closure in a ref. Every render writes the current closure to
   // `resolverRef.current`; the store keeps a single stable wrapper that
@@ -161,7 +162,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
         paddingX: theme.paddingX,
         paddingY: theme.paddingY,
         top: metrics.top,
-        width: layoutWidth,
+        width: viewportWidth,
       },
       layoutCacheRef.current,
       renderResources,
@@ -291,6 +292,31 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
 
   /* Resize observation */
 
+  const updateViewportSize = useEffectEvent(
+    (scrollContainer: HTMLDivElement, observedWidth?: number) => {
+      const nextMeasuredViewportWidth = readViewportWidth(scrollContainer, observedWidth);
+      const nextViewportHeight = readViewportHeight(scrollContainer);
+
+      viewportMetricsRef.current = {
+        ...viewportMetricsRef.current,
+        height: nextViewportHeight,
+      };
+      setMeasuredViewportWidth((previous) =>
+        previous === nextMeasuredViewportWidth ? previous : nextMeasuredViewportWidth,
+      );
+      setViewportHeight((previous) =>
+        previous === nextViewportHeight ? previous : nextViewportHeight,
+      );
+    },
+  );
+
+  useLayoutEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    updateViewportSize(scrollContainer);
+  }, [scrollContainerRef]);
+
   // Track container size changes. ResizeObserver is the only reliable signal
   // for layout-driven dimension changes. Wheel and touch scroll are handled
   // natively by the browser via `overflow: auto` on the scroll container —
@@ -304,17 +330,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
       const entry = entries[0];
       if (!entry) return;
 
-      const nextSurfaceWidth = Math.max(0, Math.floor(entry.contentRect.width));
-      const nextViewportHeight = readViewportHeight(scrollContainer);
-
-      viewportMetricsRef.current = {
-        ...viewportMetricsRef.current,
-        height: nextViewportHeight,
-      };
-      setSurfaceWidth((previous) => (previous === nextSurfaceWidth ? previous : nextSurfaceWidth));
-      setViewportHeight((previous) =>
-        previous === nextViewportHeight ? previous : nextViewportHeight,
-      );
+      updateViewportSize(scrollContainer, entry.contentRect.width);
     });
 
     observer.observe(scrollContainer);
@@ -345,17 +361,21 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
       scrollContainer: scrollContainerRef,
     },
     state: {
-      layoutWidth,
       scrollContentHeight,
       layout,
+      viewportWidth,
       viewportHeight,
       viewportTop,
     },
   };
 }
 
-function resolveLayoutWidth(surfaceWidth: number) {
-  return Math.max(240, Math.floor(surfaceWidth || 480));
+function resolveViewportWidth(measuredViewportWidth: number) {
+  return Math.floor(measuredViewportWidth || 480);
+}
+
+function readViewportWidth(scrollContainer: HTMLDivElement, observedWidth?: number) {
+  return Math.max(0, Math.floor(observedWidth ?? scrollContainer.clientWidth));
 }
 
 function readViewportHeight(scrollContainer: HTMLDivElement) {

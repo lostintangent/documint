@@ -8,7 +8,7 @@ import type { Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import { resolveInlineResource } from "@/editor/resources";
 import { createResourceIconSignature } from "@/resources";
-import type { InlineEntry } from "../../state";
+import { indexedInlineText, type IndexedInline } from "../../state";
 import { resolveInlineTextStyle } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./inline-image";
 import { measureInlineMentionWidth, mentionHorizontalPadding } from "./inline-mention";
@@ -31,7 +31,7 @@ export type InlineReferenceSignature = {
 };
 
 export function resolveInlineReferenceMeasurement(
-  run: InlineEntry,
+  run: IndexedInline,
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   {
     availableWidth,
@@ -51,12 +51,12 @@ export function resolveInlineReferenceMeasurement(
     return {
       height: dimensions.height,
       richItem: null,
-      text: run.text,
+      text: indexedInlineText(run),
       width: dimensions.width,
     };
   }
 
-  const styledFont = resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font;
+  const styledFont = resolveInlineTextStyle(font, inlineMarks(run)).font;
 
   if (run.node.type === "mention") {
     context.font = styledFont;
@@ -69,7 +69,7 @@ export function resolveInlineReferenceMeasurement(
         font: styledFont,
         text: `@${run.node.name}`,
       },
-      text: run.text,
+      text: indexedInlineText(run),
       width: measureInlineMentionWidth(context, run.node),
     };
   }
@@ -95,13 +95,13 @@ export function resolveInlineReferenceMeasurement(
       font: styledFont,
       text: resource.label,
     },
-    text: run.text,
+    text: indexedInlineText(run),
     width: measureInlineResourceWidth(context, resource),
   };
 }
 
 export function resolveInlineReferenceSignature(
-  run: InlineEntry,
+  run: IndexedInline,
   resources: DocumentResources,
 ): InlineReferenceSignature | null {
   if (run.node.type === "image") {
@@ -134,10 +134,6 @@ export function resolveInlineReferenceSignature(
   };
 }
 
-function inlineMarks(run: InlineEntry): readonly Mark[] {
+function inlineMarks(run: IndexedInline): readonly Mark[] {
   return run.node.type === "text" ? run.node.marks : [];
-}
-
-function inlineIsCode(run: InlineEntry): boolean {
-  return run.node.type === "code";
 }

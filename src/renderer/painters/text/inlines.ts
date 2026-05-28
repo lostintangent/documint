@@ -7,7 +7,7 @@
 // across several files.
 
 import type { DocumentLayout } from "@/editor/layout";
-import { findInlinesInSpan, regionInlines, type RegionEntry } from "@/editor/state";
+import { findInlinesInRange, regionInlines, type EditableRegion } from "@/editor/state";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { paintInlineImage } from "../image";
@@ -26,7 +26,7 @@ import {
 export function paintLineText(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   defaultColor: string,
@@ -40,7 +40,7 @@ export function paintLineText(
     return;
   }
 
-  const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
+  const visibleInlines = findInlinesInRange(regionInlines(container), line.start, line.end);
 
   if (visibleInlines.length === 0) {
     context.fillStyle = defaultColor;
@@ -64,7 +64,8 @@ export function paintLineText(
       end,
     );
     const inlineMarks = inline.node.type === "text" ? inline.node.marks : [];
-    const inlineStyle = resolveInlineTextStyle(line.font, inlineMarks, inline.node.type === "code");
+    const inlineIsCode = inlineMarks.includes("code");
+    const inlineStyle = resolveInlineTextStyle(line.font, inlineMarks);
     context.font = inlineStyle.font;
     const segmentBaseline = textBaseline + inlineStyle.baselineShift;
 
@@ -102,7 +103,7 @@ export function paintLineText(
       continue;
     }
 
-    if (inline.node.type === "code") {
+    if (inlineIsCode) {
       paintTextBackground(
         context,
         segmentLeft,
@@ -120,7 +121,10 @@ export function paintLineText(
         start,
         end,
         theme.inlineCodeText,
-        { strikethrough: false, underline: false },
+        {
+          strikethrough: inlineMarks.includes("strikethrough"),
+          underline: inlineMarks.includes("underline") || Boolean(inline.link),
+        },
       );
       continue;
     }

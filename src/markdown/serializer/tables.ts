@@ -14,7 +14,7 @@ const minimumTableDividerWidth = 3;
 
 export function serializeTable(block: TableBlock, indent: number, options: MarkdownOptions) {
   const rowValues = block.rows.map((row) =>
-    row.cells.map((cell) => serializeInlines(cell.children)),
+    row.cells.map((cell) => escapeTableCellPipes(serializeInlines(cell.children))),
   );
   const columnCount = Math.max(1, ...rowValues.map((row) => row.length));
   const headerRow = rowValues[0] ?? [];
@@ -102,4 +102,27 @@ function padTableCell(value: string, width: number, align: TableBlock["align"][n
   }
 
   return value.padEnd(width, " ");
+}
+
+// Table cell pipes are structural unless escaped. Only add a slash when the
+// pipe is not already escaped by an odd-length backslash run.
+function escapeTableCellPipes(value: string) {
+  let escaped = "";
+  let trailingBackslashes = 0;
+
+  for (const character of value) {
+    if (character === "|" && trailingBackslashes % 2 === 0) {
+      escaped += "\\";
+    }
+
+    escaped += character;
+
+    if (character === "\\") {
+      trailingBackslashes += 1;
+    } else {
+      trailingBackslashes = 0;
+    }
+  }
+
+  return escaped;
 }

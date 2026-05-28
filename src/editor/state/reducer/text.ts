@@ -35,7 +35,7 @@ import {
   resolveTableCellPosition,
 } from "../index/query";
 import { replaceDocumentMetadata, replaceEditorBlock, spliceDocumentIndex } from "../index/splice";
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 import {
   createDescendantPrimaryRegionTarget,
   createRegionTarget,
@@ -194,7 +194,7 @@ function replaceInSingleRegion(
 // reducer stay free of per-type branching.
 type BlockTextMutator<B extends Block> = (
   block: B,
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
   replacementText: string,
@@ -223,7 +223,7 @@ const BLOCK_TEXT_MUTATORS: {
 
 function replaceBlockRegionText(
   block: Block,
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
   replacementText: string,
@@ -239,7 +239,7 @@ function replaceBlockRegionText(
 
 function replaceTableCellText(
   block: Extract<Block, { type: "table" }>,
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
   replacementText: string,
@@ -269,7 +269,7 @@ function replaceTableCellText(
 }
 
 function replaceRegionSourceText(
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
   replacementText: string,
@@ -282,7 +282,7 @@ function replaceRegionSourceText(
 function finalizeCommentsAfterEdit(
   previousDocumentIndex: DocumentIndex,
   nextDocumentIndex: DocumentIndex,
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
   insertedText: string,

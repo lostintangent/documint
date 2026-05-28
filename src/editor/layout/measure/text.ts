@@ -14,11 +14,11 @@ import {
 import { isReferenceInlineNode, type Block, type Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import {
-  findInlinesInSpan,
-  isSourceTextRegion,
+  findInlinesInRange,
+  isSourceRegion,
   regionInlines,
-  type InlineEntry,
-  type RegionEntry,
+  type IndexedInline,
+  type EditableRegion,
 } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import { codeTextFont, inlineTextHasCustomMetrics, resolveInlineTextStyle } from "../../text/fonts";
@@ -34,14 +34,13 @@ import {
   type LayoutCache,
 } from "../state/cache";
 
-// Narrow helpers reading text-style data from an `InlineEntry`. Marks only
-// exist on text nodes; inline-code is the kind itself.
-function inlineMarks(run: InlineEntry): readonly Mark[] {
+// Narrow helper reading text-style data from an `IndexedInline`.
+function inlineMarks(run: IndexedInline): readonly Mark[] {
   return run.node.type === "text" ? run.node.marks : [];
 }
 
-function inlineIsCode(run: InlineEntry): boolean {
-  return run.node.type === "code";
+function inlineIsCode(run: IndexedInline): boolean {
+  return inlineMarks(run).includes("code");
 }
 
 export type TextLineBoundary = {
@@ -68,7 +67,7 @@ type MeasuredTextSegment = {
 
 type RichInlineMeasurementItem = {
   leadingTrimLength: number;
-  run: InlineEntry;
+  run: IndexedInline;
 };
 
 type InlineMeasurementProfile = {
@@ -158,7 +157,7 @@ function isAsciiText(text: string) {
 
 export function measureTextContainerLines(
   cache: LayoutCache,
-  container: RegionEntry,
+  container: EditableRegion,
   font: string,
   block: Block | null,
   availableWidth: number,
@@ -187,7 +186,7 @@ export function measureTextContainerLines(
 
 export function measureTextLineBoundaries(
   cache: LayoutCache,
-  container: RegionEntry,
+  container: EditableRegion,
   start: number,
   end: number,
   text: string,
@@ -215,7 +214,7 @@ export function measureTextLineBoundaries(
   ];
   let width = 0;
 
-  if (isSourceTextRegion(container)) {
+  if (isSourceRegion(container)) {
     let offset = 0;
     context.font = font;
 
@@ -231,7 +230,7 @@ export function measureTextLineBoundaries(
     return cacheLineBoundaries(cache, cacheKey, boundaries);
   }
 
-  const visibleRuns = findInlinesInSpan(regionInlines(container), start, end);
+  const visibleRuns = findInlinesInRange(regionInlines(container), start, end);
 
   for (const run of visibleRuns) {
     const segmentStart = Math.max(start, run.start);
@@ -257,7 +256,7 @@ export function measureTextLineBoundaries(
       continue;
     }
 
-    context.font = resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font;
+    context.font = resolveInlineTextStyle(font, inlineMarks(run)).font;
 
     for (const advance of measureTextBoundaryAdvances(cache, context, segmentText)) {
       width += advance.width;
@@ -294,7 +293,7 @@ function prepareTextSegments(
 
 function createMeasuredTextLines(
   cache: LayoutCache,
-  container: RegionEntry,
+  container: EditableRegion,
   font: string,
   block: Block | null,
   availableWidth: number,
@@ -367,7 +366,7 @@ function createMeasuredTextLines(
   // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
   // visual row after a trailing source newline. Materialize it so code-block
   // carets can land immediately after pressing Enter at end-of-source.
-  return isSourceTextRegion(container) && text.endsWith("\n")
+  return isSourceRegion(container) && text.endsWith("\n")
     ? materializeTrailingSourceTextLine(lines, text.length, lineHeight)
     : lines;
 }
@@ -404,7 +403,7 @@ function resolveMeasuredLineEnd(text: string, start: number, end: number) {
 // `pre-wrap` semantics, while `rich-inline` is a `white-space: normal` helper.
 function createInlineMeasuredTextLines(
   cache: LayoutCache,
-  container: RegionEntry,
+  container: EditableRegion,
   font: string,
   availableWidth: number,
   lineHeight: number,
@@ -436,7 +435,7 @@ function createInlineMeasuredTextLines(
 }
 
 function createRichInlineMeasuredTextLines(
-  container: RegionEntry,
+  container: EditableRegion,
   font: string,
   availableWidth: number,
   lineHeight: number,
@@ -496,7 +495,7 @@ function createRichInlineMeasuredTextLines(
 }
 
 function createRichInlineMeasurementItems(
-  container: RegionEntry,
+  container: EditableRegion,
   font: string,
   availableWidth: number,
   lineHeight: number,
@@ -507,6 +506,7 @@ function createRichInlineMeasurementItems(
   const context = getTextMeasurementContext();
 
   for (const run of regionInlines(container)) {
+    const runText = container.text.slice(run.start, run.end);
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
       font,
@@ -524,11 +524,11 @@ function createRichInlineMeasurementItems(
     }
 
     items.push({
-      font: resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font,
-      text: run.text,
+      font: resolveInlineTextStyle(font, inlineMarks(run)).font,
+      text: runText,
     });
     measurementItems.push({
-      leadingTrimLength: resolveLeadingCollapsibleLength(run.text),
+      leadingTrimLength: resolveLeadingCollapsibleLength(runText),
       run,
     });
   }
@@ -768,7 +768,7 @@ function layoutSegmentsIntoLines(
 function flattenMeasuredInlineSegments(
   cache: LayoutCache,
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-  container: RegionEntry,
+  container: EditableRegion,
   font: string,
   availableWidth: number,
   lineHeight: number,
@@ -777,6 +777,7 @@ function flattenMeasuredInlineSegments(
   const segments: MeasuredTextSegment[] = [];
 
   for (const run of regionInlines(container)) {
+    const runText = container.text.slice(run.start, run.end);
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
       font,
@@ -796,11 +797,11 @@ function flattenMeasuredInlineSegments(
       continue;
     }
 
-    context.font = resolveInlineTextStyle(font, inlineMarks(run), inlineIsCode(run)).font;
+    context.font = resolveInlineTextStyle(font, inlineMarks(run)).font;
 
     let offset = run.start;
 
-    for (const grapheme of splitBoundaryUnits(run.text)) {
+    for (const grapheme of splitBoundaryUnits(runText)) {
       const start = offset;
       const end = start + grapheme.length;
 
@@ -819,7 +820,7 @@ function flattenMeasuredInlineSegments(
   return segments;
 }
 
-function resolveInlineMeasurementProfile(container: RegionEntry): InlineMeasurementProfile {
+function resolveInlineMeasurementProfile(container: EditableRegion): InlineMeasurementProfile {
   let hasHardBreak = false;
   let hasImage = false;
   let hasRichInline = false;
@@ -859,12 +860,12 @@ function requiresLocalInlineLayout(profile: InlineMeasurementProfile) {
 // mutable `resources` state (image load/intrinsic dimensions, resource protocol
 // labels/icons); cheap to recompute.
 const regionIdentityByInlines = new WeakMap<
-  readonly InlineEntry[],
+  readonly IndexedInline[],
   { identity: string; path: string; text: string }
 >();
 
 export function resolveRegionMeasurementCacheIdentity(
-  container: RegionEntry,
+  container: EditableRegion,
   resources: DocumentResources,
 ) {
   const inlines = regionInlines(container);
@@ -902,7 +903,7 @@ export function resolveRegionMeasurementCacheIdentity(
 }
 
 function resolveContainerMeasurementSignature(
-  container: RegionEntry,
+  container: EditableRegion,
   resources: DocumentResources,
 ) {
   let hasResourceDependency = false;
@@ -924,7 +925,7 @@ function resolveContainerMeasurementSignature(
   return { hasResourceDependency, signature };
 }
 
-function resolveRunMeasurementSignature(run: InlineEntry) {
+function resolveRunMeasurementSignature(run: IndexedInline) {
   return `${run.node.type}:${inlineIsCode(run) ? 1 : 0}:${inlineMarks(run).join(",")}:${run.link?.url ?? ""}`;
 }
 
@@ -939,8 +940,8 @@ function hashMeasurementText(text: string) {
   return (hash >>> 0).toString(36);
 }
 
-function runHasInlineCustomMetrics(run: InlineEntry) {
-  return inlineTextHasCustomMetrics(inlineMarks(run), inlineIsCode(run));
+function runHasInlineCustomMetrics(run: IndexedInline) {
+  return inlineTextHasCustomMetrics(inlineMarks(run));
 }
 
 function getTextMeasurementContext() {

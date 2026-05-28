@@ -16,6 +16,8 @@ type PlaygroundPopoverProps = {
   icon: ReactNode;
   iconClassName?: string;
   iconStyle?: CSSProperties;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   size?: PlaygroundPopoverSize;
   showSwatch?: boolean;
 };
@@ -41,15 +43,30 @@ export function PlaygroundPopover({
   icon,
   iconClassName,
   iconStyle,
+  open: controlledOpen,
+  onOpenChange,
   size = "md",
   showSwatch = true,
 }: PlaygroundPopoverProps) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+
+  const setOpen = useCallback(
+    (nextOpen: boolean | ((current: boolean) => boolean)) => {
+      const resolvedOpen = typeof nextOpen === "function" ? nextOpen(open) : nextOpen;
+      onOpenChange?.(resolvedOpen);
+
+      if (controlledOpen == null) {
+        setUncontrolledOpen(resolvedOpen);
+      }
+    },
+    [controlledOpen, onOpenChange, open],
+  );
 
   const close = useCallback(() => {
     setOpen(false);
-  }, []);
+  }, [setOpen]);
 
   useEffect(() => {
     if (!open) {

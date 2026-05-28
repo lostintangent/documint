@@ -11,6 +11,7 @@ This layer is intentionally document-oriented. It recognizes the Documint markdo
 - **Canonical output protects stability.** Serialization should be predictable even when input markdown had equivalent alternate spellings, and dialect changes should update `SUPPORT.md` alongside parser, serializer, and tests.
 - **Round-trip preservation beats clever interpretation.** Unsupported or product-unknown syntax should survive as raw nodes when possible instead of being silently discarded or rewritten.
 - **Parser and serializer policy should share tables.** Block readers, inline token readers, and inline mark specs use registries so fast paths, paragraph interruption, escaping, and emission stay aligned.
+- **Policy should be semantic.** Prefer small declarative policies such as mark delimiters, literal content, and block-start predicates over one-off branches in parser or serializer code.
 
 ## Subsystem Map
 
@@ -30,4 +31,4 @@ This layer is intentionally document-oriented. It recognizes the Documint markdo
 
 ## Testing
 
-Markdown tests live in `test/markdown/`. Prefer focused parser/serializer tests plus golden round-trip fixtures for dialect behavior. Clipboard behavior belongs in fragment tests.
+Markdown tests live in `test/markdown/`. Prefer focused parser/serializer tests plus golden round-trip fixtures for dialect behavior. Group tests by syntax family, use table cases for alternate spellings, and keep shared setup/assertion helpers semantic. Clipboard behavior belongs in fragment tests.

@@ -33,10 +33,9 @@ These are the semantic node families currently representable in `Document` and t
 - Tables
 - Thematic breaks
 - Text
-- Inline code
+- Text marks: inline code, bold, italic, strikethrough, underline, superscript
 - Links
 - Images
-- Text marks: bold, italic, strikethrough, underline, superscript
 - Unsupported/raw block and inline content
 - Comment appendix payload
 
@@ -60,7 +59,7 @@ These are the semantic node families currently representable in `Document` and t
 | Fenced code blocks with tildes     | `~~~`                                      | `Intentional non-goal`         | Valid markdown, but backtick fences are the canonical Documint syntax.                 |
 | Indented code blocks               | 4-space indented code                      | `Intentional non-goal`         | Valid markdown, but not part of the canonical Documint authoring dialect.              |
 | Thematic breaks                    | `***`, `---`, `___`                        | `Supported semantically`       | Serializer canonicalizes to `***`.                                                     |
-| GFM tables                         | pipe tables                                | `Supported semantically`       | Alignment is supported; serializer emits canonical pipe tables.                        |
+| GFM tables                         | pipe tables                                | `Supported semantically`       | Alignment and escaped cell pipes are supported; serializer emits canonical pipe tables. |
 | Flexible table forms               | edge-valid GFM table syntax                | `Gap`                          | Current parser handles the canonical table shape, not the full GFM acceptance surface. |
 | HTML blocks, simple single-line    | `<aside>...</aside>`                       | `Preserved as unsupported/raw` | Preserved as unsupported semantic blocks.                                              |
 | HTML blocks, full CommonMark forms | multi-line HTML block start/end conditions | `Gap`                          | Spec coverage is broader than current implementation.                                  |
@@ -75,15 +74,15 @@ These are the semantic node families currently representable in `Document` and t
 | Bold                                 | `**bold**`                               | `Supported semantically`       | Canonical serializer emits `**`.                                                                     |
 | Italic                               | `*italic*`                               | `Supported semantically`       | Canonical serializer emits `*`.                                                                      |
 | Strikethrough                        | `~~strike~~`                             | `Supported semantically`       | GFM extension.                                                                                       |
-| Underline                            | `<ins>underline</ins>`                   | `Supported semantically`       | Markdown-only convention; serializes back as `<ins>`.                                                |
+| Underline                            | `<ins>underline</ins>` / `<u>underline</u>` | `Supported semantically`       | Markdown-only convention; serializes back as `<ins>`.                                                |
 | Superscript                          | `<sup>2</sup>`                           | `Supported semantically`       | Markdown-only convention; serializes back as `<sup>`.                                                |
-| Inline code                          | `` `code` ``                             | `Supported semantically`       | Serializer expands fence width when needed.                                                          |
+| Inline code                          | `` `code` ``                             | `Supported semantically`       | Represented as the composable code text mark; serializer expands fence width when needed.             |
 | Inline links                         | `[label](url "title")`                   | `Supported semantically`       | Inline destination/title only.                                                                       |
 | Registered resource links            | `[label](demo-resource://id)`            | `Supported semantically`       | Parses as a semantic resource inline when the host registers the URL protocol; serializes as a link. |
 | Inline images                        | `![alt](url "title")`                    | `Supported semantically`       | Width extension supported separately.                                                                |
 | Image width extension                | `![x](url){width=320}`                   | `Supported semantically`       | Documint-specific markdown policy.                                                                   |
 | Invalid width extension preservation | `{width=0}` etc.                         | `Supported semantically`       | Invalid width stays plain text in the paragraph stream.                                              |
-| Raw inline HTML                      | inline tags other than `<ins>` / `<sup>` | `Preserved as unsupported/raw` | Preserved where encountered, not modeled semantically.                                               |
+| Raw inline HTML                      | inline tags other than `<ins>` / `<u>` / `<sup>` | `Preserved as unsupported/raw` | Preserved where encountered, not modeled semantically.                                               |
 | Text directives                      | `:badge[text]{...}`                      | `Preserved as unsupported/raw` | Preserved as unsupported inline nodes.                                                               |
 | Hard line breaks                     | two-space break / explicit break         | `Supported semantically`       | Canonical serializer emits `<br>`.                                                                   |
 | Soft line breaks                     | newline in paragraph                     | `Canonicalized`                | Preserved through paragraph text shape as needed for current canonical output.                       |

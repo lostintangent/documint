@@ -3,7 +3,14 @@
 // not leak into the fragment classifier.
 
 import { describe, expect, test } from "bun:test";
+import type { Fragment } from "@/document";
 import { parseFragment, serializeFragment } from "@/markdown";
+
+const fragmentSerializeCases: Array<[label: string, fragment: Fragment, expected: string]> = [
+  ["text", { kind: "text", text: "hello" }, "hello"],
+  ["inlines", parseFragment("*hello*\n"), "*hello*"],
+  ["empty blocks", { kind: "blocks", blocks: [] }, ""],
+];
 
 describe("parseFragment classification", () => {
   // Each payload is narrowed to the lowest variant that losslessly fits it,
@@ -59,10 +66,12 @@ describe("parseFragment persistence-boundary isolation", () => {
 });
 
 describe("serializeFragment", () => {
-  test("emits each fragment variant with no wrapping", () => {
-    expect(serializeFragment({ kind: "text", text: "hello" })).toBe("hello");
-    expect(serializeFragment({ kind: "blocks", blocks: [] })).toBe("");
-  });
+  test.each(fragmentSerializeCases)(
+    "emits %s fragments with no wrapping",
+    (_label, fragment, expected) => {
+      expect(serializeFragment(fragment)).toBe(expected);
+    },
+  );
 
   test("round-trips a fragment with a leading divider without absorbing it", () => {
     const source = "---\n\nBody.";

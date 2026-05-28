@@ -29,7 +29,7 @@ import {
   resolveRegion,
   resolveRegionByPath,
   type DocumentIndex,
-  type RegionEntry,
+  type EditableRegion,
 } from "../../state";
 import {
   findLineEntryForRegionOffset,
@@ -278,7 +278,7 @@ export function resolveCommentThreadViewportPosition(
 export function updateCommentThreadsForRegionEdit(
   documentIndex: DocumentIndex,
   nextDocumentIndex: DocumentIndex,
-  region: RegionEntry,
+  region: EditableRegion,
   selectionStart: number,
   selectionEnd: number,
   insertedText: string,
@@ -336,14 +336,14 @@ export function updateCommentThreadsForRegionEdit(
 
 // --- Internal helpers ---
 
-// Adapt a runtime `RegionEntry` into the `AnchorContainer` shape used by the
+// Adapt a runtime `EditableRegion` into the `AnchorContainer` shape used by the
 // document-layer anchor primitives. The `containerOrdinal: -1` is a sentinel:
 // edit-time use never disambiguates by ordinal (we already know exactly which
 // region we're touching), so we skip the ordinal computation. Returns `null`
 // when the region isn't an anchorable kind (list markers, etc.).
 function toAnchorContainer(
   documentIndex: DocumentIndex,
-  region: RegionEntry,
+  region: EditableRegion,
 ): AnchorContainer | null {
   const containerKind = resolveAnchorContainerKind(documentIndex, region);
 
@@ -361,7 +361,7 @@ function toAnchorContainer(
 
 function resolveAnchorContainerKind(
   documentIndex: DocumentIndex,
-  region: RegionEntry,
+  region: EditableRegion,
 ): AnchorContainer["containerKind"] | null {
   if (region.tableCellPosition) {
     return "tableCell";

@@ -1,68 +1,87 @@
-// Owns vertical gap policy between adjacent laid-out blocks. Both exact layout
-// (`measure/`) and large-document estimation call into this so the two paths
-// stay in sync.
+// Owns semantic vertical gap policy between adjacent laid-out blocks. This
+// module decides the space between blocks; each block kind still defines its
+// own measured height elsewhere. Both exact layout (`measure/`) and
+// large-document estimation call into this so the two paths stay in sync.
 
 import type { Block } from "@/document";
-import type { BlockEntry } from "../../state";
+import type { IndexedBlock } from "../../state";
 
-const h1HeadingRuleTrailingGap = 24;
-const h2HeadingRuleOuterGap = 16;
-const LIST_SIBLING_GAP = 6;
-const BLOCKQUOTE_SIBLING_GAP = 10;
-const SAME_BLOCK_GAP = 4;
+// Heading extra gaps are multiples of the caller-provided standard block gap.
+const headingExtraGapRatiosByDepth = [
+  { leading: 1, trailing: 1.5 }, // h1
+  { leading: 1, trailing: 1 }, // h2
+  { leading: 1, trailing: 0.4 }, // h3
+  { leading: 0.625, trailing: 0 }, // h4
+  { leading: 0.625, trailing: 0 }, // h5
+  { leading: 0.625, trailing: 0 }, // h6
+] as const;
+const sharedAncestorGapByType = {
+  blockquote: 10,
+  list: 6,
+} satisfies Partial<Record<Block["type"], number>>;
+const sharedAncestorGapEntries = Object.entries(sharedAncestorGapByType) as Array<
+  [keyof typeof sharedAncestorGapByType, number]
+>;
 
 // Vertical gap between two adjacent laid-out blocks (text, table, inert),
 // keyed by their shared ancestry.
 export function resolveBlockGap(
-  runtimeBlocks: Map<string, BlockEntry>,
+  indexedBlocks: Map<string, IndexedBlock>,
   blockMap: Map<string, Block>,
   currentBlockId: string,
   nextBlockId: string,
-  fallbackGap: number,
+  blockGap: number,
 ) {
-  if (shareAncestorType(runtimeBlocks, currentBlockId, nextBlockId, "list")) {
-    return LIST_SIBLING_GAP;
+  const sharedAncestorGap = resolveSharedAncestorGap(indexedBlocks, currentBlockId, nextBlockId);
+  if (sharedAncestorGap !== null) {
+    return sharedAncestorGap;
   }
 
-  if (shareAncestorType(runtimeBlocks, currentBlockId, nextBlockId, "blockquote")) {
-    return BLOCKQUOTE_SIBLING_GAP;
+  const headingExtraGap =
+    resolveHeadingExtraGap(blockMap.get(currentBlockId), "trailing", blockGap) +
+    resolveHeadingExtraGap(blockMap.get(nextBlockId), "leading", blockGap);
+
+  if (headingExtraGap > 0) {
+    return blockGap + headingExtraGap;
   }
 
-  if (currentBlockId === nextBlockId) {
-    return SAME_BLOCK_GAP;
-  }
-
-  return (
-    fallbackGap +
-    resolveHeadingTrailingGap(blockMap.get(currentBlockId)) +
-    resolveHeadingLeadingGap(blockMap.get(nextBlockId))
-  );
+  return blockGap;
 }
 
-function resolveHeadingTrailingGap(block: Block | undefined) {
+function resolveSharedAncestorGap(
+  indexedBlocks: Map<string, IndexedBlock>,
+  currentBlockId: string,
+  nextBlockId: string,
+) {
+  for (const [type, gap] of sharedAncestorGapEntries) {
+    if (shareAncestorType(indexedBlocks, currentBlockId, nextBlockId, type)) {
+      return gap;
+    }
+  }
+
+  return null;
+}
+
+function resolveHeadingExtraGap(
+  block: Block | undefined,
+  side: "leading" | "trailing",
+  blockGap: number,
+) {
   if (block?.type !== "heading") {
     return 0;
   }
 
-  if (block.depth === 1) {
-    return h1HeadingRuleTrailingGap;
-  }
-
-  return block.depth === 2 ? h2HeadingRuleOuterGap : 0;
-}
-
-function resolveHeadingLeadingGap(block: Block | undefined) {
-  return block?.type === "heading" && block.depth === 2 ? h2HeadingRuleOuterGap : 0;
+  return Math.round(blockGap * (headingExtraGapRatiosByDepth[block.depth - 1]?.[side] ?? 0));
 }
 
 function shareAncestorType(
-  runtimeBlocks: Map<string, BlockEntry>,
+  indexedBlocks: Map<string, IndexedBlock>,
   leftBlockId: string,
   rightBlockId: string,
   type: Block["type"],
 ) {
-  const leftAncestors = collectAncestorIds(runtimeBlocks, leftBlockId, type);
-  const rightAncestors = collectAncestorIds(runtimeBlocks, rightBlockId, type);
+  const leftAncestors = collectAncestorIds(indexedBlocks, leftBlockId, type);
+  const rightAncestors = collectAncestorIds(indexedBlocks, rightBlockId, type);
 
   for (const ancestorId of leftAncestors) {
     if (rightAncestors.has(ancestorId)) {
@@ -74,19 +93,19 @@ function shareAncestorType(
 }
 
 function collectAncestorIds(
-  runtimeBlocks: Map<string, BlockEntry>,
+  indexedBlocks: Map<string, IndexedBlock>,
   blockId: string,
   type: Block["type"],
 ) {
   const ancestors = new Set<string>();
-  let current = runtimeBlocks.get(blockId) ?? null;
+  let current = indexedBlocks.get(blockId) ?? null;
 
   while (current) {
     if (current.block.type === type) {
       ancestors.add(current.block.id);
     }
 
-    current = current.parentBlockId ? (runtimeBlocks.get(current.parentBlockId) ?? null) : null;
+    current = current.parentBlockId ? (indexedBlocks.get(current.parentBlockId) ?? null) : null;
   }
 
   return ancestors;

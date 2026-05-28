@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   commitDocument,
   createDocumentIndex,
+  indexedInlineText,
   normalizeSelection,
   regionInlines,
 } from "@/editor/state";
@@ -39,7 +40,7 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       "text",
       "text",
       "text",
-      "code",
+      "text",
       "text",
       "mention",
       "text",
@@ -47,11 +48,14 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       "text",
     ]);
     expect(paragraphInlines[1]?.link?.url).toBe("https://example.com");
-    expect(paragraphInlines[5]?.text).toBe("\uFFFC");
+    expect(paragraphInlines[3]?.node.type === "text" && paragraphInlines[3].node.marks).toEqual([
+      "code",
+    ]);
+    expect(paragraphInlines[5] ? indexedInlineText(paragraphInlines[5]) : null).toBe("\uFFFC");
     const mentionNode = paragraphInlines[5]?.node;
     expect(mentionNode?.type === "mention" && mentionNode.name).toBe("Jane Doe");
     expect(mentionNode?.type === "mention" && mentionNode.userId).toBe("user-123");
-    expect(paragraphInlines[7]?.text).toBe("\uFFFC");
+    expect(paragraphInlines[7] ? indexedInlineText(paragraphInlines[7]) : null).toBe("\uFFFC");
     const imageNode = paragraphInlines[7]?.node;
     expect(imageNode?.type === "image" && imageNode.alt).toBe("alt text");
   });
@@ -64,8 +68,8 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       throw new Error("Expected paragraph container");
     }
 
-    const italicRun = regionInlines(paragraph).find((run) => run.text === "italic");
-    const boldRun = regionInlines(paragraph).find((run) => run.text === "bold");
+    const italicRun = regionInlines(paragraph).find((run) => indexedInlineText(run) === "italic");
+    const boldRun = regionInlines(paragraph).find((run) => indexedInlineText(run) === "bold");
 
     expect(italicRun?.node.type === "text" && italicRun.node.marks).toEqual(["italic"]);
     expect(boldRun?.node.type === "text" && boldRun.node.marks).toEqual(["bold"]);
@@ -79,7 +83,9 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       throw new Error("Expected paragraph container");
     }
 
-    const underlineRun = regionInlines(paragraph).find((run) => run.text === "underlined");
+    const underlineRun = regionInlines(paragraph).find(
+      (run) => indexedInlineText(run) === "underlined",
+    );
 
     expect(underlineRun?.node.type === "text" && underlineRun.node.marks).toEqual(["underline"]);
   });

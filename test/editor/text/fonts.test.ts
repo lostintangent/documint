@@ -5,7 +5,6 @@ test("resolves superscript as a scaled font with a raised baseline", () => {
   const style = resolveInlineTextStyle(
     "16px ui-sans-serif, system-ui, sans-serif",
     ["superscript"],
-    false,
   );
 
   expect(style.font).toContain("11.5px");
@@ -13,18 +12,17 @@ test("resolves superscript as a scaled font with a raised baseline", () => {
   expect(style.hasCustomMetrics).toBe(true);
 });
 
-test("does not apply superscript typography to inline code", () => {
+test("does not apply superscript typography to code-marked text", () => {
   const style = resolveInlineTextStyle(
     "16px ui-sans-serif, system-ui, sans-serif",
-    ["superscript"],
-    true,
+    ["code", "superscript"],
   );
 
   expect(style.font).toContain("15px ui-monospace");
   expect(style.baselineShift).toBe(0);
-  expect(inlineTextHasCustomMetrics(["superscript"], true)).toBe(true);
+  expect(inlineTextHasCustomMetrics(["code", "superscript"])).toBe(true);
 });
 
 test("treats decorative-only marks as normal text metrics", () => {
-  expect(inlineTextHasCustomMetrics(["underline", "strikethrough"], false)).toBe(false);
+  expect(inlineTextHasCustomMetrics(["underline", "strikethrough"])).toBe(false);
 });

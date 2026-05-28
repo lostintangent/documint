@@ -9,10 +9,10 @@
 
 import type { DocumentLayout } from "@/editor/layout";
 import {
-  findInlinesInSpan,
+  findInlinesInRange,
   regionInlines,
-  type InlineEntry,
-  type RegionEntry,
+  type IndexedInline,
+  type EditableRegion,
 } from "@/editor/state";
 import type { TextDecoration } from "@/editor/text/decorations";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
@@ -42,7 +42,7 @@ const decorationTextContrastStep = 0.05;
 export function paintTextDecorationBackgrounds(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
@@ -75,7 +75,7 @@ export function paintTextDecorationBackgrounds(
 export function paintTextDecorationOverlays(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
@@ -115,7 +115,7 @@ export function paintTextDecorationOverlays(
 function forEachDecorationSegment(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  container: RegionEntry | null,
+  container: EditableRegion | null,
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
@@ -140,7 +140,7 @@ function forEachDecorationSegment(
     return;
   }
 
-  const visibleInlines = findInlinesInSpan(regionInlines(container), line.start, line.end);
+  const visibleInlines = findInlinesInRange(regionInlines(container), line.start, line.end);
 
   if (visibleInlines.length === 0) {
     const segmentText = container.text.slice(line.start, line.end);
@@ -187,7 +187,6 @@ function forEachDecorationSegment(
     const inlineStyle = resolveInlineTextStyle(
       line.font,
       inline.node.type === "text" ? inline.node.marks : [],
-      inline.node.type === "code",
     );
     context.font = inlineStyle.font;
     const segmentBaseline = textBaseline + inlineStyle.baselineShift;
@@ -206,7 +205,7 @@ function forEachDecorationSegment(
   }
 }
 
-function canPaintTextDecoration(inline: InlineEntry) {
+function canPaintTextDecoration(inline: IndexedInline) {
   return !isReferenceInlineNode(inline.node);
 }
 

@@ -385,8 +385,6 @@ export function measureInlineNodeText(node: Inline): number {
   }
 
   switch (node.type) {
-    case "code":
-      return node.code.length;
     case "raw":
       return node.source.length;
     case "text":

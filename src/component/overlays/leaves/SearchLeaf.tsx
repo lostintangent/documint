@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { LeafDivider } from "./core/LeafDivider";
 
 type SearchLeafProps = {
   activeMatchNumber: number;
@@ -117,7 +118,7 @@ export function SearchLeaf({
       >
         <ChevronDown size={15} strokeWidth={2.2} />
       </button>
-      <span aria-hidden="true" className="documint-search-divider" />
+      <LeafDivider orientation="vertical" />
       <button
         aria-label="Close search"
         className="documint-leaf-action"

@@ -6,7 +6,7 @@ import type { DocumentResources } from "@/types";
 import type { DocumentIndex } from "../../state";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { LayoutBlockExtent } from "../lib/marker-metrics";
-import { updateBlockExtent, type DocumentLayout, type DocumentLayoutLine } from "./index";
+import { updateBlockExtent, type DocumentLayout, type LayoutLine } from "./index";
 import {
   measureTextContainerLines,
   measureTextLineBoundaries,
@@ -37,7 +37,7 @@ export const TABLE_CELL_PADDING_Y = 8;
 export const TABLE_MIN_WIDTH = 120;
 
 export function layoutTable(
-  lines: DocumentLayoutLine[],
+  lines: LayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
   regionBounds: DocumentLayout["regionBounds"],
   regions: DocumentIndex["regions"],
@@ -81,6 +81,15 @@ export function layoutTable(
       for (const line of cell.measuredLines) {
         const layoutLine = {
           blockId: cell.container.block.id,
+          regionId: cell.container.id,
+          start: line.start,
+          end: line.end,
+          top: lineTop,
+          left: cellLeft + TABLE_CELL_PADDING_X,
+          width: line.width,
+          height: line.height,
+          text: line.text,
+          font: cell.font,
           boundaries: measureTextLineBoundaries(
             cache,
             cell.container,
@@ -91,16 +100,7 @@ export function layoutTable(
             columnWidth - TABLE_CELL_PADDING_X * 2,
             resources,
           ),
-          regionId: cell.container.id,
-          end: line.end,
-          font: cell.font,
-          height: line.height,
-          left: cellLeft + TABLE_CELL_PADDING_X,
-          start: line.start,
-          text: line.text,
-          top: lineTop,
-          width: line.width,
-        } satisfies DocumentLayoutLine;
+        } satisfies LayoutLine;
 
         lines.push(layoutLine);
         updateBlockExtent(blockExtents, layoutLine);

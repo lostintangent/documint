@@ -166,6 +166,7 @@ describe("computed sprigs", () => {
           prefix: "alpha",
         },
         id: "user",
+        status: "Reviewing introduction",
         username: "User",
       },
     ]);
@@ -176,6 +177,7 @@ describe("computed sprigs", () => {
       regionId: getRegion(state, "alpha beta").id,
     });
     expect(presence?.viewport).toBeNull();
+    expect(presence?.status).toBe("Reviewing introduction");
     expect(resolvedPresenceSprig.read(store, undefined)).toBeUndefined();
   });
 
@@ -305,6 +307,34 @@ describe("computed sprigs", () => {
     expect(second).toBe(first);
   });
 
+  test("recomputes presence output when presence status changes", () => {
+    const state = setup("alpha beta\n");
+    const store = createStore(getDocument(state));
+    const first = resolvedPresenceSprig.read(store, [
+      {
+        cursor: {
+          prefix: "alpha",
+        },
+        id: "user",
+        status: "Reading",
+        username: "User",
+      },
+    ]);
+    const second = resolvedPresenceSprig.read(store, [
+      {
+        cursor: {
+          prefix: "alpha",
+        },
+        id: "user",
+        status: "Editing",
+        username: "User",
+      },
+    ]);
+
+    expect(second).not.toBe(first);
+    expect(second?.[0]?.status).toBe("Editing");
+  });
+
   test("derives the active comment thread index", () => {
     let state = setup("alpha beta\n");
     const region = getRegion(state, "alpha beta");
@@ -339,4 +369,3 @@ function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
 
   return true;
 }
-

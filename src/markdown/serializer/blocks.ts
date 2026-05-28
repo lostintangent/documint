@@ -6,7 +6,7 @@
  */
 
 import type { Block, ListBlock, ListItemBlock } from "@/document";
-import { blockTriggerLeadChars } from "../parser/blocks";
+import { shouldEscapeParagraphLineStart } from "../parser/blocks";
 import {
   blockquoteMarker,
   containerDirectiveClosingMarker,
@@ -250,50 +250,44 @@ function escapeParagraphLine(line: string) {
 }
 
 // Paragraph-line escape: neutralize lines that, at line start, would cause
-// the next parse to re-interpret the paragraph line as a different block
-// kind. Each predicate below mirrors the matching reader's gate in
-// `parser/blocks.ts` — we only escape when the parser would actually
-// re-parse. `**bold**` keeps its leading `*` untouched because the parser's
-// list-marker rule requires a space after the marker, and `**` is
-// delimited-emphasis territory anyway.
-//
-// The fast-reject uses `blockTriggerLeadChars` imported from the parser
-// registry (every char any reader could fire on), which is a superset of
-// the chars handled by the predicates below: we deliberately don't escape
-// leading `` ` ``, `_`, `|`, or `<` (fenced code at line start is rare in
-// real prose, `_` would break italics, `|` needs a two-line alignment row
-// to re-parse, raw-HTML round-tripping is best-effort). For lines whose
-// first char passes the fast-reject but matches no predicate, the cascade
-// returns the line unchanged.
-//
+// the next parse to re-interpret the paragraph line as a different block kind.
+// The predicate is derived from the parser's block-reader registry, with
+// raw-HTML intentionally excluded because markdown has no lossless backslash
+// escape for leading `<`.
 // Neutralization is a single leading backslash — the parser's
-// `markdownTextEscape` set covers `>`, `#`, `-`, `*`, `+`, `:`, and `.`. The
+// `markdownTextEscape` set covers every escaped leading marker used here. The
 // ordered-list case escapes the dot rather than the digit so the `1` stays
 // plain text.
 function escapeBlockStartPrefix(line: string): string {
-  const first = line[0];
-  if (first === undefined || !blockTriggerLeadChars.includes(first)) {
+  if (!shouldEscapeParagraphLineStart(line)) {
     return line;
   }
 
-  if (line.startsWith(">")) {
-    return `\\${line}`;
-  }
-  if (line.startsWith(":::")) {
-    return `\\${line}`;
-  }
-  if (/^#{1,6}(\s|$)/.test(line)) {
-    return `\\${line}`;
-  }
-  if (/^[-+*](\s|$)/.test(line)) {
-    return `\\${line}`;
-  }
   const orderedMatch = /^(\d+)\.(\s|$)/.exec(line);
+
   if (orderedMatch) {
     const digits = orderedMatch[1]!;
     return `${digits}\\${line.slice(digits.length)}`;
   }
-  return line;
+
+  switch (line[0]) {
+    case "`":
+    case "*":
+    case "_":
+      return escapeLeadingRun(line, line[0]);
+    default:
+      return `\\${line}`;
+  }
+}
+
+function escapeLeadingRun(line: string, marker: string) {
+  let index = 0;
+
+  while (line[index] === marker) {
+    index += 1;
+  }
+
+  return `${`\\${marker}`.repeat(index)}${line.slice(index)}`;
 }
 
 function indentText(indent: number) {

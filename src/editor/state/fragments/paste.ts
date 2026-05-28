@@ -9,7 +9,7 @@ import {
   type Fragment,
 } from "@/document";
 import { resolveInlineContext, type InlineContext } from "../commands/context";
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 import { normalizeSelection, resolveRegion, type EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
 import { resolveTextHighlightAnimation } from "../animations/intents";
@@ -197,6 +197,6 @@ function resolveFragmentDestinationContext(
   };
 }
 
-function isOpaqueRegion(region: RegionEntry): boolean {
+function isOpaqueRegion(region: EditableRegion): boolean {
   return region.block.type === "table" || region.block.type === "code";
 }

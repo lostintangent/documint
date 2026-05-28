@@ -1,7 +1,7 @@
 // Owns inline image sizing policy for document layout. Text measurement asks
 // this module for image dimensions instead of embedding resource rules inline.
 import type { DocumentResources } from "@/types";
-import type { InlineEntry } from "../../state";
+import type { IndexedInline } from "../../state";
 
 const IMAGE_FALLBACK_WIDTH = 240;
 const IMAGE_FALLBACK_ASPECT_RATIO = 9 / 16;
@@ -14,7 +14,7 @@ export type InlineImageDimensions = {
 };
 
 export function resolveInlineImageDimensions(
-  inline: InlineEntry,
+  inline: IndexedInline,
   resources: DocumentResources,
   availableWidth: number,
 ): InlineImageDimensions {
@@ -43,7 +43,7 @@ export function resolveInlineImageDimensions(
   };
 }
 
-export function resolveInlineImageSignature(inline: InlineEntry, resources: DocumentResources) {
+export function resolveInlineImageSignature(inline: IndexedInline, resources: DocumentResources) {
   if (inline.node.type !== "image") {
     return `${inline.node.type}:missing-image`;
   }

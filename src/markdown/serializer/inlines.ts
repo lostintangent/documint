@@ -6,7 +6,13 @@
  */
 
 import { defragmentTextInlines, type Inline, type Mark } from "@/document";
-import { inlineMarkSpecs, type InlineMarkSpec } from "../shared";
+import {
+  inlineMarkSpecs,
+  isDelimitedInlineMarkSpec,
+  type DelimitedInlineMarkSpec,
+  type HtmlInlineMarkSpec,
+  type InlineMarkSpec,
+} from "../shared";
 
 // --- Escape patterns ---
 // Mirror the inverse-escape patterns in `parser/inlines.ts`. The serializer
@@ -42,12 +48,10 @@ function serializeInline(node: Inline, nextNode?: Inline): string {
       return serializeMention(node);
     case "resource":
       return serializeResource(node);
-    case "code":
-      return serializeInlineCode(node.code);
     case "link":
       return serializeLink(node);
     case "text":
-      return applyMarks(escapeMarkdownText(node.text, nextNode), node.marks);
+      return serializeText(node, nextNode);
     case "raw":
       return node.source;
   }
@@ -57,6 +61,12 @@ function serializeInline(node: Inline, nextNode?: Inline): string {
 // coverage is enforced by `inlineMarkSpecByMark` in `shared.ts`; the
 // serializer should not repeat one row per semantic mark.
 const inlineMarkEmit = createInlineMarkEmit(inlineMarkSpecs);
+const literalContentMarks = new Set(
+  inlineMarkSpecs
+    .filter(isDelimitedInlineMarkSpec)
+    .filter((spec) => spec.content === "literal")
+    .map((spec) => spec.mark),
+);
 
 // Reduce wraps `marks[0]` innermost and the last mark outermost. The parser
 // builds the `marks` array by appending each mark as it descends into a
@@ -64,55 +74,89 @@ const inlineMarkEmit = createInlineMarkEmit(inlineMarkSpecs);
 // the outer-most delimiter in the source ends up first in the array. The
 // reverse mapping here — first-in-array becomes innermost-on-emit — is what
 // makes the round trip stable for nested marks like `***foo***`.
+function serializeText(node: Extract<Inline, { type: "text" }>, nextNode?: Inline) {
+  const value = hasLiteralContentMark(node.marks)
+    ? node.text
+    : escapeMarkdownText(node.text, nextNode);
+  return applyMarks(value, node.marks);
+}
+
 function applyMarks(value: string, marks: Mark[]) {
   if (marks.length === 0) {
     return value;
   }
   return marks.reduce((current, mark) => {
-    const [open, close] = inlineMarkEmit[mark];
-    return `${open}${current}${close}`;
+    return inlineMarkEmit[mark](current);
   }, value);
 }
 
-function createInlineMarkEmit(
-  specs: ReadonlyArray<InlineMarkSpec>,
-): Record<Mark, readonly [string, string]> {
-  return Object.fromEntries(
-    specs.map((spec) => [
-      spec.mark,
-      spec.kind === "html" ? [spec.openTag, spec.closeTag] : spec.emit,
-    ]),
-  ) as Record<Mark, readonly [string, string]>;
+function hasLiteralContentMark(marks: readonly Mark[]) {
+  return marks.some((mark) => literalContentMarks.has(mark));
 }
 
-function serializeInlineCode(value: string) {
-  // Fast path: typical inline-code content has no embedded backticks, so a
-  // single backtick suffices as the fence and no padding is needed. Skips
-  // the full-string scan that the variable-fence-width code below performs.
-  if (!value.includes("`")) {
-    return `\`${value}\``;
+type InlineMarkEmit = (value: string) => string;
+
+function createInlineMarkEmit(specs: ReadonlyArray<InlineMarkSpec>): Record<Mark, InlineMarkEmit> {
+  return Object.fromEntries(
+    specs.map((spec) => {
+      switch (spec.kind) {
+        case "delimiter": {
+          return [spec.mark, createDelimitedInlineMarkEmit(spec)];
+        }
+        case "html":
+          return [spec.mark, createHtmlInlineMarkEmit(spec)];
+      }
+    }),
+  ) as Record<Mark, InlineMarkEmit>;
+}
+
+function createHtmlInlineMarkEmit(spec: HtmlInlineMarkSpec): InlineMarkEmit {
+  const tag = spec.canonicalTag;
+  return (value) => `<${tag}>${value}</${tag}>`;
+}
+
+function createDelimitedInlineMarkEmit(spec: DelimitedInlineMarkSpec): InlineMarkEmit {
+  const delimiter = spec.canonicalDelimiter.delimiter;
+
+  if (spec.content === "literal") {
+    return (value) => serializeLiteralDelimitedMark(value, delimiter);
   }
 
-  let widestFence = 0;
-  let currentFence = 0;
+  return (value) => `${delimiter}${value}${delimiter}`;
+}
 
-  for (const character of value) {
-    if (character === "`") {
-      currentFence += 1;
+function serializeLiteralDelimitedMark(value: string, marker: string) {
+  if (!value.includes(marker)) {
+    return `${marker}${value}${marker}`;
+  }
 
-      if (currentFence > widestFence) {
-        widestFence = currentFence;
-      }
+  const fence = marker.repeat(findWidestMarkerRun(value, marker) + 1);
+  const padded = value.startsWith(marker) || value.endsWith(marker) ? ` ${value} ` : value;
+  return `${fence}${padded}${fence}`;
+}
 
+function findWidestMarkerRun(value: string, marker: string) {
+  if (marker.length === 0) {
+    return 0;
+  }
+
+  let widestRun = 0;
+  let currentRun = 0;
+  let index = 0;
+
+  while (index < value.length) {
+    if (value.startsWith(marker, index)) {
+      currentRun += 1;
+      widestRun = Math.max(widestRun, currentRun);
+      index += marker.length;
       continue;
     }
 
-    currentFence = 0;
+    currentRun = 0;
+    index += 1;
   }
 
-  const fence = "`".repeat(widestFence + 1);
-  const padded = value.startsWith("`") || value.endsWith("`") ? ` ${value} ` : value;
-  return `${fence}${padded}${fence}`;
+  return widestRun;
 }
 
 function serializeImage(node: Extract<Inline, { type: "image" }>) {

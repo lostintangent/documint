@@ -8,7 +8,7 @@ import {
   rebuildListBlock,
   type HeadingBlock,
 } from "@/document";
-import type { DocumentIndex, RegionEntry } from "../../../index/types";
+import type { DocumentIndex, EditableRegion } from "../../../index/types";
 import { resolveRegion } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import {
@@ -102,7 +102,7 @@ type TriggerContext =
 function resolveTriggerContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-  region: RegionEntry,
+  region: EditableRegion,
 ): TriggerContext | null {
   // Triggers can only fire inside paragraph and heading regions.
   // Everything else (code, table cells, dividers, …) splices without
@@ -137,7 +137,7 @@ function resolveTriggerContext(
 // ---- Trigger dispatch ------------------------------------------------------
 
 function matchTriggerForContext(
-  region: RegionEntry,
+  region: EditableRegion,
   text: string,
   start: number,
   end: number,
@@ -168,7 +168,7 @@ function matchTriggerForContext(
 // is determined by whichever side of the splice is non-empty at the tail:
 //   - cursor not at end of region → suffix is non-empty → region's last char wins
 //   - cursor at end of region     → suffix is empty     → text's last char wins
-function prospectiveEndsWithWhitespace(region: RegionEntry, text: string, end: number): boolean {
+function prospectiveEndsWithWhitespace(region: EditableRegion, text: string, end: number): boolean {
   const tail = end < region.text.length ? region.text : text;
   return tail.length > 0 && /\s/.test(tail[tail.length - 1]!);
 }

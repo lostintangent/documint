@@ -51,7 +51,7 @@ export function createEditorLayoutState(
   const resolvedOptions = resolveDocumentLayoutOptions(options);
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
-  // documentIndex.blockIndex is already `Map<string, BlockEntry>` keyed by
+  // documentIndex.blockIndex is already `Map<string, IndexedBlock>` keyed by
   // block id — exactly what we need. Reusing it skips a per-call O(N) Map
   // rebuild that contributed measurable cost on long-doc keystrokes.
   const runtimeBlocks = documentIndex.blockIndex;

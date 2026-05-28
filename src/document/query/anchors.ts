@@ -20,7 +20,7 @@
  * these primitives. This module never picks a winner — it returns candidates.
  */
 
-import type { Document } from "../types";
+import type { Block, Document } from "../types";
 import { visitDocument } from "./visit";
 
 // --- Anchor kinds ---
@@ -31,13 +31,22 @@ import { visitDocument } from "./visit";
 const ANCHOR_KINDS = ["text", "code", "tableCell"] as const;
 
 type AnchorKind = (typeof ANCHOR_KINDS)[number];
+const anchorKindSet = new Set<string>(ANCHOR_KINDS);
+
+const anchorKindByBlockType: Partial<Record<Block["type"], AnchorKind>> = {
+  code: "code",
+  heading: "text",
+  paragraph: "text",
+};
+
+const tableCellAnchorKind = "tableCell" satisfies AnchorKind;
 
 // The implicit kind for a `TextAnchor` with no `kind` set. Keeping a default
 // lets the common case stay out of the persisted payload entirely.
 export const DEFAULT_ANCHOR_KIND: AnchorKind = "text";
 
 export function isAnchorKind(value: unknown): value is AnchorKind {
-  return value === "text" || value === "code" || value === "tableCell";
+  return typeof value === "string" && anchorKindSet.has(value);
 }
 
 // Returns `undefined` when the kind matches the default. Used during anchor
@@ -51,16 +60,8 @@ export function normalizeAnchorKind(kind: AnchorKind | undefined): AnchorKind | 
 // source of truth for the closed mapping — used during semantic container
 // discovery and by editor-side adapters that bridge runtime regions back
 // into the algebra.
-export function anchorKindForBlockType(blockType: string): AnchorKind | null {
-  switch (blockType) {
-    case "heading":
-    case "paragraph":
-      return "text";
-    case "code":
-      return "code";
-    default:
-      return null;
-  }
+export function anchorKindForBlockType(blockType: Block["type"]): AnchorKind | null {
+  return anchorKindByBlockType[blockType] ?? null;
 }
 
 // --- Anchor types ---
@@ -134,30 +135,20 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
 
   visitDocument(document, {
     enterBlock(block) {
-      switch (block.type) {
-        case "heading":
-        case "paragraph":
-          containers.push({
-            containerKind: "text",
-            containerOrdinal: containers.length,
-            id: block.id,
-            text: block.plainText,
-          });
-          break;
+      const anchorKind = anchorKindForBlockType(block.type);
 
-        case "code":
-          containers.push({
-            containerKind: "code",
-            containerOrdinal: containers.length,
-            id: block.id,
-            text: block.plainText,
-          });
-          break;
+      if (anchorKind) {
+        containers.push({
+          containerKind: anchorKind,
+          containerOrdinal: containers.length,
+          id: block.id,
+          text: block.plainText,
+        });
       }
     },
     enterTableCell(cell) {
       containers.push({
-        containerKind: "tableCell",
+        containerKind: tableCellAnchorKind,
         containerOrdinal: containers.length,
         id: cell.id,
         text: cell.plainText,

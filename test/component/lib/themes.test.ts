@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
+import { darkTheme, lightTheme, resolveEditorTheme } from "@/component/lib/themes";
 
 test("resolves sparse theme text tokens from base text", () => {
   const theme = resolveEditorTheme({
@@ -40,12 +40,23 @@ test("preserves specific text color overrides", () => {
   expect(theme.headingText).toBe("#fbbf24");
 });
 
+test("resolves missing leaf background from global background", () => {
+  const { leafBackground: _leafBackground, ...themeWithoutLeafBackground } = lightTheme;
+  const theme = resolveEditorTheme({
+    ...themeWithoutLeafBackground,
+    background: "#101010",
+  });
+
+  expect(theme.leafBackground).toBe("#101010");
+});
+
 test("keeps bundled theme colors unchanged when resolved", () => {
   const theme = resolveEditorTheme(lightTheme);
 
   expect(theme.paragraphText).toBe("#1f2937");
   expect(theme.headingText).toBe("#1f2937");
   expect(theme.blockquoteText).toBe("#334155");
+  expect(theme.leafBackground).toBe("#fcfbf7");
   expect(theme.leafText).toBe("#1f2937");
   expect(theme.leafButtonText).toBe("#1f2937");
   expect(theme.leafSecondaryText).toBe("#334155");
@@ -56,6 +67,11 @@ test("bundled themes omit duplicate base text colors", () => {
   expect(lightTheme.headingText).toBeUndefined();
   expect(lightTheme.leafText).toBeUndefined();
   expect(lightTheme.leafButtonText).toBeUndefined();
+});
+
+test("bundled themes omit duplicate leaf backgrounds", () => {
+  expect(lightTheme.leafBackground).toBeUndefined();
+  expect(darkTheme.leafBackground).toBeUndefined();
 });
 
 function withoutTextTokens(theme: typeof lightTheme) {

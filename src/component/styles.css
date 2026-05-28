@@ -100,8 +100,16 @@
   pointer-events: none;
 }
 
-.documint-presence-indicator {
+.documint-presence-indicator-row {
   --documint-presence-indicator-size: 1.45rem;
+  position: relative;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  pointer-events: auto;
+}
+
+.documint-presence-indicator {
   display: inline-flex;
   flex-direction: row-reverse;
   align-items: center;
@@ -116,7 +124,7 @@
   cursor: pointer;
   font-family: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
   font-size: 0.66rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   pointer-events: auto;
 
@@ -155,6 +163,50 @@
 
 .documint-presence-indicator-arrow {
   display: block;
+}
+
+.documint-presence-indicator-status {
+  display: inline-flex;
+  align-items: center;
+  max-width: 0;
+  height: 100%;
+  overflow: hidden;
+  overflow-x: auto;
+  padding: 0;
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1;
+  scrollbar-width: none;
+  white-space: nowrap;
+  transition:
+    max-width 180ms ease,
+    padding 180ms ease;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.documint-presence-indicator > .documint-leaf-divider[data-orientation="vertical"] {
+  align-self: center;
+  height: 0.78rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.documint-presence-indicator-row:hover .documint-presence-indicator-status,
+.documint-presence-indicator:focus-visible .documint-presence-indicator-status {
+  max-width: min(12rem, calc(100vw - 5rem));
+  padding: 0 0.48rem 0 0.5rem;
+}
+
+.documint-presence-indicator-row:hover
+  .documint-presence-indicator
+  > .documint-leaf-divider[data-orientation="vertical"],
+.documint-presence-indicator:focus-visible > .documint-leaf-divider[data-orientation="vertical"] {
+  max-width: 1px;
+  opacity: 1;
 }
 
 .documint-resize-handle {

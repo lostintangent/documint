@@ -1,7 +1,7 @@
 // Owns paint policy for inline document images. The main paint module delegates
 // image-specific draw behavior here so text and image rendering stay separate.
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
-import type { InlineEntry } from "@/editor/state";
+import type { IndexedInline } from "@/editor/state";
 import type { DocumentLayout } from "@/editor/layout";
 import type { PaintRect } from "./geometry";
 
@@ -28,7 +28,7 @@ type ImagePlaceholderBox = PaintRect & {
 export function paintInlineImage(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  inline: InlineEntry,
+  inline: IndexedInline,
   resources: DocumentResources,
   theme: ResolvedEditorTheme,
   left: number,
@@ -132,7 +132,7 @@ function paintImageLoadingShimmer(
 }
 
 function resolvePaintedImageHeight(
-  inline: InlineEntry,
+  inline: IndexedInline,
   resources: DocumentResources,
   width: number,
 ) {

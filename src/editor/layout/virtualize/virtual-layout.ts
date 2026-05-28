@@ -6,7 +6,7 @@ import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { createResourceIconSignature, resolveResourceProtocol } from "@/resources";
 import { isContainerBlock, isInertBlock } from "../../state/index/query";
-import type { DocumentIndex, RegionEntry } from "../../state";
+import type { DocumentIndex, EditableRegion } from "../../state";
 import {
   getVirtualLayout,
   setVirtualLayout,
@@ -50,19 +50,19 @@ export function getOrCreateVirtualLayout(
   let regionCursor = 0;
   let previousLaidOutBlockId: string | null = null;
 
-  for (const blockEntry of documentIndex.blocks) {
-    const block = blockMap.get(blockEntry.block.id) ?? null;
-    if (!block || isContainerBlock(blockEntry)) continue;
+  for (const indexedBlock of documentIndex.blocks) {
+    const block = blockMap.get(indexedBlock.block.id) ?? null;
+    if (!block || isContainerBlock(indexedBlock)) continue;
 
-    const isInert = isInertBlock(blockEntry);
-    if (!isInert && blockEntry.regionIds.length === 0) continue;
+    const isInert = isInertBlock(indexedBlock);
+    if (!isInert && indexedBlock.regionIds.length === 0) continue;
 
     if (previousLaidOutBlockId !== null) {
       totalHeight += resolveBlockGap(
         runtimeBlocks,
         blockMap,
         previousLaidOutBlockId,
-        blockEntry.block.id,
+        indexedBlock.block.id,
         options.blockGap,
       );
     }
@@ -85,8 +85,8 @@ export function getOrCreateVirtualLayout(
         totalHeight = result.totalHeight;
       }
     } else {
-      const listInset = resolveListMarkerInset(documentIndex, blockEntry.block.id);
-      for (const _regionId of blockEntry.regionIds) {
+      const listInset = resolveListMarkerInset(documentIndex, indexedBlock.block.id);
+      for (const _regionId of indexedBlock.regionIds) {
         const container = documentIndex.regions[regionCursor];
         if (!container) {
           regionCursor += 1;
@@ -96,7 +96,7 @@ export function getOrCreateVirtualLayout(
           cache,
           container,
           block,
-          blockEntry.depth,
+          indexedBlock.depth,
           listInset,
           options,
           resources,
@@ -110,7 +110,7 @@ export function getOrCreateVirtualLayout(
       }
     }
 
-    previousLaidOutBlockId = blockEntry.block.id;
+    previousLaidOutBlockId = indexedBlock.block.id;
   }
 
   return setVirtualLayout(cache, documentIndex, cacheKey, {
@@ -211,7 +211,7 @@ function appendTableEstimateEntries({
 }
 
 function collectTableRowRegions(regions: DocumentIndex["regions"], startIndex: number) {
-  const rows = new Map<number, Array<{ index: number; region: RegionEntry }>>();
+  const rows = new Map<number, Array<{ index: number; region: EditableRegion }>>();
 
   for (const [index, region] of regions.entries()) {
     const rowIndex = region.tableCellPosition?.rowIndex;

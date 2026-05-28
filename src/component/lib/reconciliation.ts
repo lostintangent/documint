@@ -17,15 +17,15 @@ import {
   compareEditorPositions,
   countRootBlocks,
   createRootPrimaryRegionTarget,
-  isRootBlockEntry,
-  resolveBlockEntryForRegion,
+  isRootIndexedBlock,
+  resolveIndexedBlockForRegion,
   resolveRegion,
   resolveRegionByPath,
   resolveRootRegions,
   resolveSelectionTarget,
   setSelection,
   spliceDocumentIndex,
-  type RegionEntry,
+  type EditableRegion,
   type EditorSelection,
   type EditorSelectionPoint,
   type EditorState,
@@ -149,7 +149,7 @@ function resolveEquivalentSelectionPoint(
 //      once in `nextState` → use it.
 //   4. Same path → use it (after unique-text because paths shift when
 //      content is inserted above the selection).
-function resolveEquivalentRegion(previousRegion: RegionEntry, nextState: EditorState) {
+function resolveEquivalentRegion(previousRegion: EditableRegion, nextState: EditorState) {
   const sameIdRegion = resolveRegion(nextState.documentIndex, previousRegion.id);
 
   if (sameIdRegion) {
@@ -169,8 +169,8 @@ function resolveEquivalentRegion(previousRegion: RegionEntry, nextState: EditorS
   return resolveRegionByPath(nextState.documentIndex, previousRegion.path);
 }
 
-function resolveUniqueTextRegion(previousRegion: RegionEntry, nextState: EditorState) {
-  let match: RegionEntry | null = null;
+function resolveUniqueTextRegion(previousRegion: EditableRegion, nextState: EditorState) {
+  let match: EditableRegion | null = null;
 
   for (let rootIndex = 0; rootIndex < countRootBlocks(nextState.documentIndex); rootIndex += 1) {
     for (const candidate of resolveRootRegions(nextState.documentIndex, rootIndex)) {
@@ -319,9 +319,9 @@ function resolveSelectedEmptyRootParagraph(state: EditorState) {
     return null;
   }
 
-  const block = resolveBlockEntryForRegion(state.documentIndex, region.id);
+  const block = resolveIndexedBlockForRegion(state.documentIndex, region.id);
 
-  return block && isRootBlockEntry(block) ? region : null;
+  return block && isRootIndexedBlock(block) ? region : null;
 }
 
 // Pick the rootIndex in `nextState` where to insert the recreated empty
@@ -332,7 +332,7 @@ function resolveSelectedEmptyRootParagraph(state: EditorState) {
 function resolveRecreatedEmptyParagraphRootIndex(
   previousState: EditorState,
   nextState: EditorState,
-  previousRegion: RegionEntry,
+  previousRegion: EditableRegion,
 ) {
   const precedingRegion = findNearestNonEmptyRootRegion(
     previousState,

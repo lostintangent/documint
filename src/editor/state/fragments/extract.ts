@@ -40,8 +40,8 @@ import {
 import { editorInlinesToDocumentInlines, replaceEditorInlines } from "../reducer/inlines";
 import { blockContainsRegion, trimBlockToPrefix, trimBlockToSuffix } from "./blocks";
 import { regionInlines } from "../index/inlines";
-import { isSourceTextRegion } from "../index/query";
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import { isSourceRegion } from "../index/query";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 import { type EditorSelection } from "../selection";
 import { resolveFragmentSourceContext } from "./context";
 
@@ -57,7 +57,7 @@ export function extractFragment(
 
   switch (context.kind) {
     case "single-region":
-      if (!context.wholeRegion && isSourceTextRegion(context.region)) {
+      if (!context.wholeRegion && isSourceRegion(context.region)) {
         return classifySourceText(
           context.region.text.slice(
             context.normalized.start.offset,
@@ -134,7 +134,7 @@ function classifyBlocks(blocks: Block[]): Fragment {
 // `targetRegion`'s leaf. Siblings at every level are dropped so a whole
 // list-item selection produces a single-item list, a whole quoted-paragraph
 // selection produces a one-child blockquote, and so on.
-function narrowToRegionPath(block: Block, targetRegion: RegionEntry): Block | null {
+function narrowToRegionPath(block: Block, targetRegion: EditableRegion): Block | null {
   if (block.id === targetRegion.block.id) {
     return block;
   }
@@ -152,7 +152,7 @@ function narrowToRegionPath(block: Block, targetRegion: RegionEntry): Block | nu
 }
 
 function sliceRegionInlines(
-  region: RegionEntry,
+  region: EditableRegion,
   startOffset: number,
   endOffset: number,
 ): Inline[] {
@@ -170,9 +170,9 @@ function sliceRegionInlines(
 function extractWithinRoot(
   documentIndex: DocumentIndex,
   root: Block,
-  startRegion: RegionEntry,
+  startRegion: EditableRegion,
   startOffset: number,
-  endRegion: RegionEntry,
+  endRegion: EditableRegion,
   endOffset: number,
 ): Block[] {
   // A multi-cell selection inside a table can either cover the whole table
@@ -198,9 +198,9 @@ function extractWithinRoot(
 
 function coversWholeTable(
   documentIndex: DocumentIndex,
-  startRegion: RegionEntry,
+  startRegion: EditableRegion,
   startOffset: number,
-  endRegion: RegionEntry,
+  endRegion: EditableRegion,
   endOffset: number,
 ): boolean {
   const rootEntry = documentIndex.roots[startRegion.rootIndex];
@@ -218,9 +218,9 @@ function coversWholeTable(
 function extractTableRowSlice(
   documentIndex: DocumentIndex,
   table: Extract<Block, { type: "table" }>,
-  startRegion: RegionEntry,
+  startRegion: EditableRegion,
   startOffset: number,
-  endRegion: RegionEntry,
+  endRegion: EditableRegion,
   endOffset: number,
 ): Block[] {
   if (coversWholeTable(documentIndex, startRegion, startOffset, endRegion, endOffset)) {
@@ -267,9 +267,9 @@ function extractTableRowSlice(
 // classifier instead.
 function narrowToRange(
   block: Block,
-  startRegion: RegionEntry,
+  startRegion: EditableRegion,
   startOffset: number,
-  endRegion: RegionEntry,
+  endRegion: EditableRegion,
   endOffset: number,
 ): Block | null {
   const children = getBlockChildren(block);
@@ -316,9 +316,9 @@ function narrowToRange(
 
 function extractAcrossRoots(
   documentIndex: DocumentIndex,
-  startRegion: RegionEntry,
+  startRegion: EditableRegion,
   startOffset: number,
-  endRegion: RegionEntry,
+  endRegion: EditableRegion,
   endOffset: number,
 ): Block[] {
   return trimChildrenToRange(
@@ -340,10 +340,10 @@ function extractAcrossRoots(
 function trimChildrenToRange(
   children: Block[],
   startIndex: number,
-  startRegion: RegionEntry,
+  startRegion: EditableRegion,
   startOffset: number,
   endIndex: number,
-  endRegion: RegionEntry,
+  endRegion: EditableRegion,
   endOffset: number,
 ): Block[] {
   const head = trimBlockToSuffix(children[startIndex]!, startRegion, startOffset);

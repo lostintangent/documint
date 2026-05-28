@@ -10,18 +10,18 @@ import {
   type TableBlock,
 } from "@/document";
 import {
-  findAncestorBlockEntry,
+  findAncestorIndexedBlock,
   resolveBlock,
   resolveBlockChildIndices,
-  resolveBlockEntry,
-  resolveParentBlockEntry,
+  resolveIndexedBlock,
+  resolveParentIndexedBlock,
   resolveRegion,
   resolveRootBlock,
   resolveSiblingRootBlock,
   resolveTableCellPosition,
 } from "../index/query";
 import { resolveInlineContainer, type InlineContainer } from "./inlines";
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 import {
   isSelectionCollapsed,
   normalizeSelection,
@@ -44,7 +44,7 @@ export type TextContextFacts = {
 
 export type TextRangeContext = {
   endOffset: number;
-  region: RegionEntry;
+  region: EditableRegion;
   selection: EditorSelection;
   startOffset: number;
 };
@@ -82,7 +82,7 @@ export type BlockquoteTextBlockContext = TextContextFacts & {
 };
 
 export type CodeBlockContext = TextContextFacts & {
-  region: RegionEntry;
+  region: EditableRegion;
   rootIndex: number;
   selection: EditorSelection;
 };
@@ -194,12 +194,12 @@ function resolveBlockContextFromSelection(
   }
 
   if (region.block.type === "code") {
-    const blockEntry = resolveBlockEntry(documentIndex, region.block.id);
-    return blockEntry
+    const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
+    return indexedBlock
       ? {
           kind: "code",
           region,
-          rootIndex: blockEntry.rootIndex,
+          rootIndex: indexedBlock.rootIndex,
           selection,
           ...resolveTextContextFacts(documentIndex, region, selection),
         }
@@ -295,13 +295,13 @@ export function resolveDeletionContext(
 // --- Shared structural lookups ---
 
 export function findRootIndex(documentIndex: DocumentIndex, blockId: string) {
-  const blockEntry = resolveBlockEntry(documentIndex, blockId);
+  const indexedBlock = resolveIndexedBlock(documentIndex, blockId);
 
-  if (!blockEntry) {
+  if (!indexedBlock) {
     throw new Error(`Unknown root block: ${blockId}`);
   }
 
-  return blockEntry.rootIndex;
+  return indexedBlock.rootIndex;
 }
 
 export function resolveRootTextBlockContextFromSelection(
@@ -314,13 +314,13 @@ export function resolveRootTextBlockContextFromSelection(
     return null;
   }
 
-  const blockEntry = resolveBlockEntry(documentIndex, region.block.id);
+  const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
 
-  if (!blockEntry) {
+  if (!indexedBlock) {
     return null;
   }
 
-  const rootIndex = blockEntry.rootIndex;
+  const rootIndex = indexedBlock.rootIndex;
   const block = resolveRootBlock(documentIndex, rootIndex);
 
   if (!block || (block.type !== "heading" && block.type !== "paragraph")) {
@@ -370,27 +370,27 @@ function resolveBlockquoteTextBlockContextFromSelection(
     return null;
   }
 
-  const blockEntry = resolveBlockEntry(documentIndex, region.block.id);
-  const quoteEntry = findAncestorBlockEntry(
+  const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
+  const indexedQuote = findAncestorIndexedBlock(
     documentIndex,
-    blockEntry?.block.id ?? null,
+    indexedBlock?.block.id ?? null,
     "blockquote",
   );
 
-  const parentEntry = blockEntry ? resolveParentBlockEntry(documentIndex, blockEntry) : null;
+  const indexedParent = indexedBlock ? resolveParentIndexedBlock(documentIndex, indexedBlock) : null;
 
-  if (!blockEntry || !quoteEntry || parentEntry?.block.id !== quoteEntry.block.id) {
+  if (!indexedBlock || !indexedQuote || indexedParent?.block.id !== indexedQuote.block.id) {
     return null;
   }
 
-  const rootIndex = quoteEntry.rootIndex;
+  const rootIndex = indexedQuote.rootIndex;
   const rootBlock = resolveRootBlock(documentIndex, rootIndex);
 
   if (!rootBlock || rootBlock.type !== "blockquote") {
     return null;
   }
 
-  const childIndex = rootBlock.children.findIndex((child) => child.id === blockEntry.block.id);
+  const childIndex = rootBlock.children.findIndex((child) => child.id === indexedBlock.block.id);
   const block = rootBlock.children[childIndex];
 
   if (!block || (block.type !== "heading" && block.type !== "paragraph")) {
@@ -400,7 +400,7 @@ function resolveBlockquoteTextBlockContextFromSelection(
   return {
     ...resolveTextContextFacts(documentIndex, region, selection),
     block,
-    blockChildIndices: resolveBlockChildIndices(blockEntry),
+    blockChildIndices: resolveBlockChildIndices(indexedBlock),
     childIndex,
     region,
     quote: rootBlock,
@@ -441,40 +441,40 @@ export function resolveListItemContextFromSelection(
     return null;
   }
 
-  const paragraphEntry = resolveBlockEntry(documentIndex, region.block.id);
-  const itemEntry = findAncestorBlockEntry(
+  const indexedParagraph = resolveIndexedBlock(documentIndex, region.block.id);
+  const indexedItem = findAncestorIndexedBlock(
     documentIndex,
-    paragraphEntry?.block.id ?? null,
+    indexedParagraph?.block.id ?? null,
     "listItem",
   );
-  const listEntry = findAncestorBlockEntry(documentIndex, paragraphEntry?.block.id ?? null, "list");
+  const indexedList = findAncestorIndexedBlock(documentIndex, indexedParagraph?.block.id ?? null, "list");
 
-  if (!paragraphEntry || !itemEntry || !listEntry) {
+  if (!indexedParagraph || !indexedItem || !indexedList) {
     return null;
   }
 
-  const list = listEntry.block;
+  const list = indexedList.block;
 
   if (!list || list.type !== "list") {
     return null;
   }
 
-  const itemIndex = list.items.findIndex((child) => child.id === itemEntry.block.id);
+  const itemIndex = list.items.findIndex((child) => child.id === indexedItem.block.id);
   const item = list.items[itemIndex];
 
   if (!item) {
     return null;
   }
 
-  const parentItemEntry = resolveParentBlockEntry(documentIndex, listEntry);
-  const parentListEntry = parentItemEntry ? resolveParentBlockEntry(documentIndex, parentItemEntry) : null;
+  const indexedParentItem = resolveParentIndexedBlock(documentIndex, indexedList);
+  const indexedParentList = indexedParentItem ? resolveParentIndexedBlock(documentIndex, indexedParentItem) : null;
   const parentItem =
-    parentItemEntry?.block.type === "listItem"
-      ? parentItemEntry.block
+    indexedParentItem?.block.type === "listItem"
+      ? indexedParentItem.block
       : null;
   const parentList =
-    parentListEntry?.block.type === "list"
-      ? parentListEntry.block
+    indexedParentList?.block.type === "list"
+      ? indexedParentList.block
       : null;
   const parentItemIndex =
     parentList?.type === "list" && parentItem
@@ -485,20 +485,20 @@ export function resolveListItemContextFromSelection(
     ...resolveTextContextFacts(documentIndex, region, selection),
     region,
     item,
-    itemChildIndices: resolveBlockChildIndices(itemEntry),
+    itemChildIndices: resolveBlockChildIndices(indexedItem),
     itemIndex,
     list,
-    listChildIndices: resolveBlockChildIndices(listEntry),
+    listChildIndices: resolveBlockChildIndices(indexedList),
     parentItem: parentItem?.type === "listItem" ? parentItem : null,
     parentItemChildIndices:
-      parentItemEntry?.block.type === "listItem"
-        ? resolveBlockChildIndices(parentItemEntry)
+      indexedParentItem?.block.type === "listItem"
+        ? resolveBlockChildIndices(indexedParentItem)
         : null,
     parentItemIndex: parentItemIndex >= 0 ? parentItemIndex : null,
     parentList: parentList?.type === "list" ? parentList : null,
     parentListChildIndices:
-      parentListEntry?.block.type === "list" ? resolveBlockChildIndices(parentListEntry) : null,
-    rootIndex: listEntry.rootIndex,
+      indexedParentList?.block.type === "list" ? resolveBlockChildIndices(indexedParentList) : null,
+    rootIndex: indexedList.rootIndex,
   };
 }
 
@@ -533,16 +533,16 @@ function resolveTableCellContextFromRegion(
   }
 
   const tableCellPosition = resolveTableCellPosition(region);
-  const tableEntry = resolveBlockEntry(documentIndex, region.block.id);
+  const indexedTable = resolveIndexedBlock(documentIndex, region.block.id);
   const table =
-    tableEntry?.block.type === "table"
-      ? resolveRootBlock(documentIndex, tableEntry.rootIndex)
+    indexedTable?.block.type === "table"
+      ? resolveRootBlock(documentIndex, indexedTable.rootIndex)
       : null;
   const inlineContainer = resolveInlineContainer(documentIndex, region.id);
 
   if (
     !tableCellPosition ||
-    !tableEntry ||
+    !indexedTable ||
     !table ||
     table.type !== "table" ||
     !inlineContainer ||
@@ -556,7 +556,7 @@ function resolveTableCellContextFromRegion(
     documentIndex,
     inlineContainer,
     region,
-    rootIndex: tableEntry.rootIndex,
+    rootIndex: indexedTable.rootIndex,
     rowIndex: tableCellPosition.rowIndex,
     selection,
     table,

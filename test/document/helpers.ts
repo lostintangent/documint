@@ -2,6 +2,16 @@
 // trees, shared by any subsystem that produces or operates on one.
 
 import type { Block, Document, Inline } from "@/document";
+import {
+  createAnchorFromContainer,
+  createCommentThread,
+  createDocument,
+  createHeadingTextBlock,
+  createParagraphTextBlock,
+  extractQuoteFromContainer,
+  listAnchorContainers,
+  type AnchorContainer,
+} from "@/document";
 
 export function expectBlockAt<K extends Block["type"]>(
   document: Document,
@@ -52,4 +62,49 @@ export function findInline<K extends Inline["type"]>(
   }
 
   return found as Extract<Inline, { type: K }>;
+}
+
+export function createTestDocument(blocks: Block[]): Document {
+  return createDocument(blocks);
+}
+
+export function createSampleBlocks(): Block[] {
+  return [
+    createHeadingTextBlock({
+      depth: 1,
+      text: "Sample",
+    }),
+    createParagraphTextBlock("alpha"),
+  ];
+}
+
+export function expectAnchorContainerAt(document: Document, index: number): AnchorContainer {
+  const container = listAnchorContainers(document)[index];
+
+  if (!container) {
+    throw new Error(`Expected an anchor container at index ${index}`);
+  }
+
+  return container;
+}
+
+export function createAnchoredThread(
+  document: Document,
+  startOffset: number,
+  endOffset: number,
+  body: string,
+  options: { containerIndex?: number } = {},
+) {
+  const container = expectAnchorContainerAt(document, options.containerIndex ?? 0);
+
+  return {
+    container,
+    document,
+    thread: createCommentThread({
+      anchor: createAnchorFromContainer(container, startOffset, endOffset),
+      body,
+      createdAt: "2026-04-05T12:00:00.000Z",
+      quote: extractQuoteFromContainer(container, startOffset, endOffset),
+    }),
+  };
 }

@@ -3,8 +3,6 @@ export {
   defaultKeybindings,
   darkTheme,
   lightTheme,
-  midnightTheme,
-  mintTheme,
   type CommentChange,
   type DocumintAction,
   type DocumintActions,

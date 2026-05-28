@@ -35,6 +35,7 @@ const equalPresenceItem = (previous: EditorPresence, next: EditorPresence) => {
     previous.fullName === next.fullName &&
     previous.avatarUrl === next.avatarUrl &&
     previous.color === next.color &&
+    previous.status === next.status &&
     previous.commentThreadIndex === next.commentThreadIndex &&
     equalCursorPoints(previous.cursorPoint, next.cursorPoint) &&
     equalPresenceViewports(previous.viewport, next.viewport)

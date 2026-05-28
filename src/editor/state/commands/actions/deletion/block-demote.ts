@@ -4,7 +4,7 @@ import {
   type Block,
   type ListItemBlock,
 } from "@/document";
-import type { DocumentIndex, RegionEntry } from "../../../index/types";
+import type { DocumentIndex, EditableRegion } from "../../../index/types";
 import { firstInFlowRegionOfRoot, resolveRootBlock } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import { createRootPrimaryRegionTarget } from "../../../selection";
@@ -38,7 +38,7 @@ import { createRootPrimaryRegionTarget } from "../../../selection";
 
 export function resolveBlockDemotion(
   documentIndex: DocumentIndex,
-  region: RegionEntry,
+  region: EditableRegion,
 ): EditorStateAction | null {
   const firstInFlow = firstInFlowRegionOfRoot(documentIndex, region.rootIndex);
   if (!firstInFlow || firstInFlow.id !== region.id) {

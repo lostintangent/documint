@@ -3,7 +3,7 @@
 // selection target/query/formatting modules so callers can keep importing from
 // `state/selection`.
 
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 import { compareEditorPositions, resolveRegion } from "../index/query";
 import type { EditorState } from "../types";
 
@@ -33,7 +33,7 @@ export type EditorSelectionRange = {
 
 export type ResolvedRegionRange = {
   endOffset: number;
-  region: RegionEntry;
+  region: EditableRegion;
   selection: EditorSelection;
   startOffset: number;
 };

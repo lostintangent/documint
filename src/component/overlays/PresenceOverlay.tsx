@@ -2,6 +2,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import type { CSSProperties } from "react";
 import type { EditorPresence } from "@/editor";
 import { resolvePresenceName } from "../lib/presence";
+import { LeafDivider } from "./leaves/core/LeafDivider";
 
 type PresenceOverlayProps = {
   onSelect: (presence: EditorPresence) => void;
@@ -16,7 +17,11 @@ export function PresenceOverlay({ onSelect, presence }: PresenceOverlayProps) {
   return (
     <div aria-label="Presence" className="documint-presence-indicators">
       {presence.map((entry) => (
-        <PresenceIndicator key={entry.id} onSelect={() => onSelect(entry)} presence={entry} />
+        <PresenceIndicator
+          key={entry.id}
+          onSelect={() => onSelect(entry)}
+          presence={entry}
+        />
       ))}
     </div>
   );
@@ -31,47 +36,56 @@ function PresenceIndicator({
 }) {
   const viewport = presence.viewport;
   const initial = resolvePresenceInitial(presence);
+  const status = resolvePresenceStatus(presence);
   const DirectionIcon = viewport?.status === "above" ? ArrowUp : ArrowDown;
   const canScrollToPresence = viewport !== null && viewport.status !== "unresolved";
   const showDirection = viewport?.status === "above" || viewport?.status === "below";
 
   return (
-    <button
-      aria-label={resolvePresenceAriaLabel(presence)}
-      className="documint-presence-indicator"
-      data-status={viewport?.status ?? "unresolved"}
-      disabled={!canScrollToPresence}
-      onClick={canScrollToPresence ? onSelect : undefined}
+    <div
+      className="documint-presence-indicator-row"
       style={
         {
           "--documint-presence-color": presence.color ?? "var(--documint-leaf-accent)",
         } as CSSProperties
       }
-      type="button"
     >
-      <span className="documint-presence-indicator-avatar">
-        {presence.avatarUrl ? (
-          <img
-            alt=""
-            aria-hidden="true"
-            className="documint-presence-indicator-image"
-            draggable={false}
-            src={presence.avatarUrl}
-          />
-        ) : (
-          initial
-        )}
-      </span>
-      {showDirection ? (
-        <span className="documint-presence-indicator-direction" aria-hidden="true">
-          <DirectionIcon
-            className="documint-presence-indicator-arrow"
-            size={14}
-            strokeWidth={2.3}
-          />
+      <button
+        aria-label={resolvePresenceAriaLabel(presence)}
+        className="documint-presence-indicator"
+        data-status={viewport?.status ?? "unresolved"}
+        disabled={!canScrollToPresence}
+        onClick={canScrollToPresence ? onSelect : undefined}
+        type="button"
+      >
+        <span className="documint-presence-indicator-avatar">
+          {presence.avatarUrl ? (
+            <img
+              alt=""
+              aria-hidden="true"
+              className="documint-presence-indicator-image"
+              draggable={false}
+              src={presence.avatarUrl}
+            />
+          ) : (
+            initial
+          )}
         </span>
-      ) : null}
-    </button>
+        {status ? (
+          <span className="documint-presence-indicator-status">{status}</span>
+        ) : null}
+        {status && showDirection ? <LeafDivider orientation="vertical" /> : null}
+        {showDirection ? (
+          <span className="documint-presence-indicator-direction" aria-hidden="true">
+            <DirectionIcon
+              className="documint-presence-indicator-arrow"
+              size={14}
+              strokeWidth={2.3}
+            />
+          </span>
+        ) : null}
+      </button>
+    </div>
   );
 }
 
@@ -96,4 +110,9 @@ function resolvePresenceAriaLabel(presence: EditorPresence) {
   }
 
   return `${name} in viewport`;
+}
+
+function resolvePresenceStatus(presence: EditorPresence) {
+  const status = presence.status?.trim();
+  return status ? status : null;
 }

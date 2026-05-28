@@ -24,7 +24,7 @@ import {
   redo,
   setSelection,
   undo,
-  type RegionEntry,
+  type EditableRegion,
   type EditorState,
 } from "@/editor/state";
 import { getCommentState } from "@/editor";
@@ -749,7 +749,7 @@ function placeCaret(state: EditorState, regionText: string, position: CaretPosit
   return placeAt(state, getRegion(state, regionText), position);
 }
 
-function resolveOffset(region: RegionEntry, position: CaretPosition): number {
+function resolveOffset(region: EditableRegion, position: CaretPosition): number {
   if (position === "start") return 0;
   if (position === "end") return region.text.length;
   return position;

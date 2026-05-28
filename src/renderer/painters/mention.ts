@@ -3,7 +3,7 @@
 
 import type { ResolvedEditorTheme } from "@/types";
 import type { DocumentLayout } from "@/editor/layout";
-import type { InlineEntry } from "@/editor/state";
+import type { IndexedInline } from "@/editor/state";
 import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
 import { paintInlinePillBackground, resolveInlinePillBox } from "./pill";
 
@@ -15,7 +15,7 @@ const mentionTextVerticalNudge = 1;
 export function paintInlineMention(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  inline: InlineEntry,
+  inline: IndexedInline,
   theme: ResolvedEditorTheme,
   left: number,
   right: number,

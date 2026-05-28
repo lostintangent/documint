@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { LeafDivider } from "../core/LeafDivider";
 
 type LeafToolbarProps = {
   children: ReactNode;
@@ -23,10 +24,6 @@ type LeafToolbarButtonProps = {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
-};
-
-type LeafToolbarDividerProps = {
-  className?: string;
 };
 
 type LeafToolbarMenuProps = {
@@ -42,10 +39,6 @@ type LeafToolbarMenuItemProps = {
   icon: LucideIcon;
   text: string;
   value: string;
-};
-
-type LeafToolbarMenuDividerProps = {
-  className?: string;
 };
 
 const keepSelectionActive = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -75,9 +68,7 @@ function renderToolbarChild(child: ReactNode) {
   }
 
   if (child.type === LeafToolbarDivider) {
-    const { className } = child.props as LeafToolbarDividerProps;
-
-    return <div className={resolveClassName("documint-leaf-toolbar-divider", className)} />;
+    return <LeafDivider orientation="vertical" />;
   }
 
   if (child.type === LeafToolbarMenu) {
@@ -229,11 +220,7 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
   }
 
   if (child.type === LeafToolbarMenuDivider) {
-    const { className } = child.props as LeafToolbarMenuDividerProps;
-
-    return (
-      <div className={resolveClassName("documint-leaf-menu-divider", className)} role="separator" />
-    );
+    return <LeafDivider />;
   }
 
   if (child.type !== LeafToolbarMenuItem) {
@@ -274,7 +261,7 @@ function LeafToolbarButton(_props: LeafToolbarButtonProps) {
   return null;
 }
 
-function LeafToolbarDivider(_props: LeafToolbarDividerProps) {
+function LeafToolbarDivider() {
   return null;
 }
 
@@ -286,7 +273,7 @@ function LeafToolbarMenuItem(_props: LeafToolbarMenuItemProps) {
   return null;
 }
 
-function LeafToolbarMenuDivider(_props: LeafToolbarMenuDividerProps) {
+function LeafToolbarMenuDivider() {
   return null;
 }
 

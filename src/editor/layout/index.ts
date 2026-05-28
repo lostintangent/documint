@@ -28,7 +28,7 @@ export {
   resolveCaretVisualLeft,
   resolveLineContentInset,
   resolveLineVisualLeft,
-  resolveListItemMarker,
+  resolveIndexedListItem,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
   resolveUnorderedListMarkerBounds,

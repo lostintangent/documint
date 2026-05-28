@@ -36,7 +36,7 @@ function joinUsersAndPresence(
   for (const entry of presence) {
     const user = usersById.get(entry.userId);
     if (!user) continue;
-    resolved.push({ ...user, color: entry.color, cursor: entry.cursor });
+    resolved.push({ ...user, color: entry.color, cursor: entry.cursor, status: entry.status });
   }
 
   return resolved.length === 0 ? undefined : resolved;

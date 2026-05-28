@@ -4,7 +4,7 @@
 // future content search all share the same semantic text without markdown
 // syntax.
 
-import type { Block, Fragment, Inline } from "../types";
+import type { Block, Fragment, Inline, ListItemBlock, TableRow } from "../types";
 
 export function extractPlainTextFromInlineNodes(nodes: readonly Inline[]): string {
   return nodes
@@ -18,8 +18,6 @@ export function extractPlainTextFromInlineNodes(nodes: readonly Inline[]): strin
           return `@${node.name}`;
         case "resource":
           return node.label;
-        case "code":
-          return node.code;
         case "link":
           return extractPlainTextFromInlineNodes(node.children);
         case "text":
@@ -48,14 +46,22 @@ export function extractBlockPlainText(node: Block): string {
     case "paragraph":
       return extractPlainTextFromInlineNodes(node.children);
     case "list":
-      return node.items.map((child) => child.plainText).join("\n");
+      return extractListPlainText(node.items);
     case "table":
-      return node.rows.map((row) => row.cells.map((cell) => cell.plainText).join(" | ")).join("\n");
+      return extractTablePlainText(node.rows);
     case "divider":
       return "";
     case "raw":
       return node.source;
   }
+}
+
+export function extractListPlainText(items: readonly ListItemBlock[]): string {
+  return items.map((item) => item.plainText).join("\n");
+}
+
+export function extractTablePlainText(rows: readonly TableRow[]): string {
+  return rows.map((row) => row.cells.map((cell) => cell.plainText).join(" | ")).join("\n");
 }
 
 // Canonical plain-text projection of a block tree. The result is `.trim()`-ed

@@ -8,16 +8,16 @@ import {
 } from "../layout/query/line-lookup";
 import {
   resolveLineContentInset,
-  resolveListItemMarker,
+  resolveIndexedListItem,
   resolveTaskCheckboxBounds,
 } from "../layout/query/line-visuals";
-import type { DocumentLayout, DocumentLayoutLine } from "../layout/measure";
+import type { DocumentLayout, LayoutLine } from "../layout/measure";
 import {
-  findAncestorBlockEntry,
+  findAncestorIndexedBlock,
   isInertBlock,
   nextBlockInFlow,
   regionInlines,
-  resolveBlockEntry,
+  resolveIndexedBlock,
   resolveRegion,
   type EditorSelectionPoint,
   type EditorState,
@@ -221,13 +221,13 @@ export function resolveTaskCheckboxHitAtPoint(
     return null;
   }
 
-  const listItemEntry = findAncestorBlockEntry(state.documentIndex, line.blockId, "listItem");
+  const listItemEntry = findAncestorIndexedBlock(state.documentIndex, line.blockId, "listItem");
 
   if (!listItemEntry) {
     return null;
   }
 
-  const marker = resolveListItemMarker(state, listItemEntry.block.id);
+  const marker = resolveIndexedListItem(state, listItemEntry.block.id);
 
   if (marker?.kind !== "task") {
     return null;
@@ -445,7 +445,7 @@ export function resolveTargetAtOffset(
 // the wrong line when Y falls exactly on a line boundary.
 function resolveHitOnLine(
   state: EditorState,
-  line: DocumentLayoutLine,
+  line: LayoutLine,
   x: number,
 ): EditorHit | null {
   const region = resolveRegion(state.documentIndex, line.regionId);
@@ -468,7 +468,7 @@ function resolveHitOnLine(
 }
 
 type LayoutLineHit = {
-  line: DocumentLayoutLine;
+  line: LayoutLine;
   // Inert-redirect hits should snap to the start of the resolved line
   // rather than computing an offset from the original click x (the
   // click landed on the inert block, not on this line's content).
@@ -498,8 +498,8 @@ function resolveLayoutLineAtPoint(
       }
     }
 
-    const blockEntry = resolveBlockEntry(state.documentIndex, block.id);
-    if (blockEntry && isInertBlock(blockEntry)) {
+    const indexedBlock = resolveIndexedBlock(state.documentIndex, block.id);
+    if (indexedBlock && isInertBlock(indexedBlock)) {
       const nextLeaf = nextBlockInFlow(state.documentIndex, block.id);
       if (nextLeaf) {
         const firstLine = layout.lines.find((line) => line.blockId === nextLeaf.block.id);
@@ -528,7 +528,7 @@ function resolveCommentThreadIndexAtOffset(
 function resolveInteractiveLineAtPoint(
   layout: DocumentLayout,
   point: { x: number; y: number },
-): DocumentLayoutLine | null {
+): LayoutLine | null {
   return (
     layout.lines.find(
       (entry) => point.y >= entry.top - 4 && point.y <= entry.top + entry.height + 4,

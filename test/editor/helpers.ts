@@ -5,7 +5,7 @@ import {
   createDocumentFromEditorState,
   createEditorState,
   setSelection,
-  type RegionEntry,
+  type EditableRegion,
   type EditorState,
 } from "@/editor/state";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -24,7 +24,7 @@ export function toMarkdown(state: EditorState): string {
  * Find a region by its plain-text content. Throws if not found.
  * Pass an empty string to find the first empty region.
  */
-export function getRegion(state: EditorState, text: string): RegionEntry {
+export function getRegion(state: EditorState, text: string): EditableRegion {
   const region = state.documentIndex.regions.find((r) => r.text === text);
 
   if (!region) {
@@ -39,7 +39,7 @@ export function getRegion(state: EditorState, text: string): RegionEntry {
  * single block of a particular kind (heading, code block, etc.) and the
  * test wants to locate it independent of its content.
  */
-export function getRegionByType(state: EditorState, blockType: string): RegionEntry {
+export function getRegionByType(state: EditorState, blockType: string): EditableRegion {
   const region = state.documentIndex.regions.find((r) => r.block.type === blockType);
 
   if (!region) {
@@ -55,7 +55,7 @@ export function getRegionByType(state: EditorState, blockType: string): RegionEn
  */
 export function placeAt(
   state: EditorState,
-  region: RegionEntry,
+  region: EditableRegion,
   offset: number | "start" | "end",
 ): EditorState {
   const resolvedOffset = offset === "start" ? 0 : offset === "end" ? region.text.length : offset;
@@ -69,7 +69,7 @@ export function placeAt(
  */
 export function selectIn(
   state: EditorState,
-  region: RegionEntry,
+  region: EditableRegion,
   start: number,
   end: number,
 ): EditorState {
@@ -85,7 +85,7 @@ export function selectIn(
  */
 export function selectSubstring(
   state: EditorState,
-  region: RegionEntry,
+  region: EditableRegion,
   substring: string,
 ): EditorState {
   const start = region.text.indexOf(substring);

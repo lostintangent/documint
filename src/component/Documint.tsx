@@ -277,7 +277,7 @@ function DocumintHost({
     scrollTo,
   } = viewportActions;
 
-  const { layoutWidth, layout, viewportHeight, viewportTop } = viewportState;
+  const { layout, viewportWidth, viewportHeight, viewportTop } = viewportState;
 
   const { scrollContainer: scrollContainerRef } = viewportRefs;
 
@@ -470,7 +470,7 @@ function DocumintHost({
     const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, {
       paintHeight: layoutState.paintHeight,
       paintTop: layoutState.paintTop,
-      width: layoutWidth,
+      width: viewportWidth,
     });
 
     if (!preparedLayer) {
@@ -507,7 +507,7 @@ function DocumintHost({
     const preparedLayer = prepareCanvasLayer(overlayCanvasRef.current, {
       paintHeight: layoutState.paintHeight,
       paintTop: layoutState.paintTop,
-      width: layoutWidth,
+      width: viewportWidth,
     });
 
     if (!preparedLayer) {
@@ -581,9 +581,9 @@ function DocumintHost({
     activeAt: idle.activeAt,
     getScrollTop,
     isEditable,
-    layoutWidth,
     onVisibilityChange: scheduleOverlayPaint,
     scrollTo,
+    viewportWidth,
     viewportHeight,
   });
 
@@ -705,9 +705,9 @@ function DocumintHost({
   }, [
     editorState.documentIndex,
     images,
-    layoutWidth,
     preferredTheme,
     resourceProtocols.layoutKey,
+    viewportWidth,
     viewportHeight,
   ]);
 
@@ -766,7 +766,7 @@ function DocumintHost({
   // document leaves; the host arbitrates their priority and resolves their
   // anchors against the prepared layout.
 
-  const activeDocumentLeaf = selection.leaf ?? documentCompletions.leaf ?? pointer.leaf ?? cursor.leaf;
+  const activeDocumentLeaf = documentCompletions.leaf ?? pointer.leaf ?? selection.leaf ?? cursor.leaf;
 
   // Resolve the active leaf's anchor target into pixel geometry against
   // the prepared layout. Returns null when no leaf is active or its

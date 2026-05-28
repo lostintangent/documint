@@ -40,7 +40,6 @@ import {
   resolveInlineRangeReplacement,
   resolveImageResize,
   resolveMentionReplacement,
-  toggleInlineCode,
   toggleInlineMark,
   updateInlineLinkUrl,
   wrapInlineLink,
@@ -188,11 +187,6 @@ export const toggleMark = makeCommand(
     resolveInlineRangeReplacement(context, (inlineContainer, startOffset, endOffset) =>
       toggleInlineMark(inlineContainer, startOffset, endOffset, mark),
     ),
-  resolveInlineContext,
-);
-
-export const toggleCode = makeCommand(
-  (context: InlineContext) => resolveInlineRangeReplacement(context, toggleInlineCode),
   resolveInlineContext,
 );
 

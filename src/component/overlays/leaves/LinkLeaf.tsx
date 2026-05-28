@@ -4,6 +4,7 @@
 
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/LeafInput";
 
 type LinkLeafProps = {
@@ -101,9 +102,12 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
         )}
       </div>
 
-      {/* CMD+click hint */}
-      <div className="documint-link-leaf-divider" />
-      <div className="documint-link-leaf-hint">{openModifierLabel}click to open</div>
+      {!isEditing ? (
+        <>
+          <LeafDivider />
+          <div className="documint-link-leaf-hint">{openModifierLabel}click to open</div>
+        </>
+      ) : null}
     </div>
   );
 }

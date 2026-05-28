@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createDividerBlock, createParagraphTextBlock, spliceDocument } from "@/document";
 import { createDocumentIndex, spliceDocumentIndex, type DocumentIndex } from "@/editor/state";
-import { createRootEntry, positionRootEntries, rebuildRootEntry } from "@/editor/state/index/roots";
+import { createIndexedRoot, positionIndexedRoots, rebuildIndexedRoot } from "@/editor/state/index/roots";
 import {
   commitDocument,
   replaceDocumentMetadata,
@@ -17,8 +17,8 @@ describe("Document index build", () => {
 
 beta
 `);
-    const roots = positionRootEntries(
-      snapshot.blocks.map((block, rootIndex) => createRootEntry(block, rootIndex)),
+    const roots = positionIndexedRoots(
+      snapshot.blocks.map((block, rootIndex) => createIndexedRoot(block, rootIndex)),
     );
     const runtime = createDocumentIndex(snapshot);
 
@@ -35,9 +35,9 @@ beta
 
 alpha
 `);
-    const original = createRootEntry(snapshot.blocks[1]!, 1);
+    const original = createIndexedRoot(snapshot.blocks[1]!, 1);
     const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
-    const rebuilt = rebuildRootEntry(original, nextDocument.blocks[1]!);
+    const rebuilt = rebuildIndexedRoot(original, nextDocument.blocks[1]!);
 
     expect(rebuilt.rootIndex).toBe(1);
     expect(rebuilt.regions[0]?.path).toBe("root.1.children");
@@ -94,11 +94,11 @@ beta
     const nextDocument = spliceDocument(snapshot, 1, 0, [createParagraphTextBlock("")]);
     const next = spliceDocumentIndex(index, nextDocument, 1, 0);
 
-    expect(next.blocks.map((entry) => entry.block.plainText)).toEqual(["alpha", "", "beta"]);
+    expect(next.blocks.map((indexedBlock) => indexedBlock.block.plainText)).toEqual(["alpha", "", "beta"]);
     expectDocumentIndexMaps(next);
   });
 
-  test("preserves unchanged flat entries on same-length root replacement", () => {
+  test("preserves unchanged flat records on same-length root replacement", () => {
     const snapshot = parseDocument(`alpha
 
 beta
@@ -204,7 +204,7 @@ just text
     expect(next.resourceUrls).toBe(index.resourceUrls);
   });
 
-  test("preserves list marker projections across unrelated root edits", () => {
+  test("preserves indexed list items across unrelated root edits", () => {
     const snapshot = parseDocument(`1. alpha
 2. beta
 
@@ -214,16 +214,16 @@ plain
     const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("updated")]);
     const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
-    expect(next.roots[0]?.listItemMarkers).toBe(index.roots[0]?.listItemMarkers);
-    expect(next.listItemMarkers).toBe(index.listItemMarkers);
-    expect([...next.listItemMarkers.values()]).toEqual([
+    expect(next.roots[0]?.listItems).toBe(index.roots[0]?.listItems);
+    expect(next.listItems).toBe(index.listItems);
+    expect([...next.listItems.values()]).toEqual([
       { depth: 0, kind: "ordered", ordinal: 1 },
       { depth: 0, kind: "ordered", ordinal: 2 },
     ]);
     expectDocumentIndexMaps(next);
   });
 
-  test("projects nested unordered list markers as structural semantics", () => {
+  test("projects nested unordered list items with contextual semantics", () => {
     const index = createDocumentIndex(
       parseDocument(`- top
   - child
@@ -231,7 +231,7 @@ plain
 `),
     );
 
-    expect([...index.listItemMarkers.values()]).toEqual([
+    expect([...index.listItems.values()]).toEqual([
       { depth: 0, kind: "unordered" },
       { depth: 1, kind: "unordered" },
       { depth: 2, kind: "unordered" },
@@ -272,7 +272,9 @@ alpha
 
   test("replaces a nested editor block through the reducer", () => {
     const documentIndex = createDocumentIndex(parseDocument("- alpha\n"));
-    const paragraph = documentIndex.blocks.find((entry) => entry.block.type === "paragraph");
+    const paragraph = documentIndex.blocks.find(
+      (indexedBlock) => indexedBlock.block.type === "paragraph",
+    );
 
     if (!paragraph) {
       throw new Error("Expected paragraph block");
@@ -311,8 +313,8 @@ beta
     expect(next.regionIndex).toBe(index.regionIndex);
     expect(next.regionPathIndex).toBe(index.regionPathIndex);
     expect(next.imageUrls).toBe(index.imageUrls);
-    // listItemMarkers reuses when document.blocks identity holds.
-    expect(next.listItemMarkers).toBe(index.listItemMarkers);
+    // listItems reuses when document.blocks identity holds.
+    expect(next.listItems).toBe(index.listItems);
     // commentContainerIndex reuses when document.comments identity holds.
     expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
   });

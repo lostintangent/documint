@@ -6,7 +6,7 @@
 
 import { resolveRegion, type DocumentIndex, type EditorState } from "../../state";
 import { measureTextWidth } from "../../text/measure";
-import type { DocumentLayout, DocumentLayoutLine } from "../measure";
+import type { DocumentLayout, LayoutLine } from "../measure";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 import { resolveLineContentInset } from "./line-visuals";
 
@@ -75,7 +75,7 @@ export function resolveCaretHitTestX(
 
 function resolveCollapsedTrailingSpaceWidth(
   state: EditorState,
-  line: DocumentLayoutLine,
+  line: LayoutLine,
   offset: number,
 ) {
   if (offset <= line.end) {

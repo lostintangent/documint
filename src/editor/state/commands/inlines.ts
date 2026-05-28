@@ -1,11 +1,11 @@
 // Shared inline-region helpers. `InlineContainer` resolves editable document
 // regions whose backing data is `Inline[]`. The runtime data we need — block,
-// container path, table cell — is already on `RegionEntry` and the document
+// container path, table cell — is already on `EditableRegion` and the document
 // block; this resolver assembles them with no path-string parsing.
 
 import type { Block, HeadingBlock, Inline, ParagraphBlock, TableBlock, TableCell } from "@/document";
 import { resolveBlockPathForRegion, resolveRegion, resolveTableCellPosition } from "../index/query";
-import type { DocumentIndex, RegionEntry } from "../index/types";
+import type { DocumentIndex, EditableRegion } from "../index/types";
 
 export type InlineContainer =
   | {
@@ -38,11 +38,11 @@ export function resolveInlineContainer(documentIndex: DocumentIndex, regionId: s
 }
 
 // Build an `InlineContainer` from a resolved document block plus its
-// runtime `RegionEntry`. The region already carries `containerPath` and
+// runtime `EditableRegion`. The region already carries `containerPath` and
 // `tableCellPosition` from the index — no regex re-parsing required.
 function resolveInlineContainerFromRegion(
   block: Block,
-  region: RegionEntry,
+  region: EditableRegion,
   blockPath: string | null,
 ): InlineContainer | null {
   if (block.type === "heading" || block.type === "paragraph") {

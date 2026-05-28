@@ -2,8 +2,8 @@
 // stability is covered by `roundtrip.test.ts`.
 
 import { describe, expect, test } from "bun:test";
-import type { Inline } from "@/document";
-import { parseDocument, serializeDocument } from "@/markdown";
+import type { Inline, Mark } from "@/document";
+import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
 import { fixtureOptions } from "../../playground/src/lib/data";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
 
@@ -19,18 +19,18 @@ describe("Inline parsing", () => {
     ["two-or-more trailing spaces", "a  \nb\n"],
     ["backslash-newline", "a\\\nb\n"],
   ])("parses %s as a hard line break", (_label, source) => {
-    const paragraph = expectBlockAt(parseDocument(source), 0, "paragraph");
+    const paragraph = parseParagraph(source);
 
     expect(paragraph.children).toHaveLength(3);
-    expect(expectInlineAt(paragraph.children, 0, "text").text).toBe("a");
+    expectTextAt(paragraph.children, 0, "a");
     expectInlineAt(paragraph.children, 1, "lineBreak");
-    expect(expectInlineAt(paragraph.children, 2, "text").text).toBe("b");
+    expectTextAt(paragraph.children, 2, "b");
   });
 
   test.each([["<br/>"], ["<br />"], ["<BR>"], ["<Br/>"]])(
     "accepts %s as a self-closing / case-insensitive <br> spelling",
     (spelling) => {
-      const paragraph = expectBlockAt(parseDocument(`a${spelling}b\n`), 0, "paragraph");
+      const paragraph = parseParagraph(`a${spelling}b\n`);
 
       expect(paragraph.children).toHaveLength(3);
       expectInlineAt(paragraph.children, 1, "lineBreak");
@@ -41,18 +41,14 @@ describe("Inline parsing", () => {
     // A soft break is preserved as a literal `\n` inside the text run; the
     // layout's whitespace handling is what collapses it visually. There must
     // be no `lineBreak` inline produced.
-    const paragraph = expectBlockAt(parseDocument("a\nb\n"), 0, "paragraph");
+    const paragraph = parseParagraph("a\nb\n");
 
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
   });
 
   // --- Mentions ---
   test("parses user mentions as semantic inline nodes", () => {
-    const paragraph = expectBlockAt(
-      parseDocument("Hello @[Jane Doe](user-123)!\n"),
-      0,
-      "paragraph",
-    );
+    const paragraph = parseParagraph("Hello @[Jane Doe](user-123)!\n");
     const mention = expectInlineAt(paragraph.children, 1, "mention");
 
     expect(mention.name).toBe("Jane Doe");
@@ -61,13 +57,9 @@ describe("Inline parsing", () => {
   });
 
   test("parses registered protocol links as semantic resource nodes", () => {
-    const paragraph = expectBlockAt(
-      parseDocument("Use [Recording](demo-resource://recording/live) now.\n", {
-        resourceProtocols: ["demo-resource:"],
-      }),
-      0,
-      "paragraph",
-    );
+    const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n", {
+      resourceProtocols: ["demo-resource:"],
+    });
     const resource = expectInlineAt(paragraph.children, 1, "resource");
 
     expect(paragraph.children).toHaveLength(3);
@@ -79,13 +71,9 @@ describe("Inline parsing", () => {
   });
 
   test("canonicalizes registered resource protocols without trailing colons", () => {
-    const paragraph = expectBlockAt(
-      parseDocument("Use [Recording](demo-resource://recording/live) now.\n", {
-        resourceProtocols: ["demo-resource"],
-      }),
-      0,
-      "paragraph",
-    );
+    const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n", {
+      resourceProtocols: ["demo-resource"],
+    });
     const resource = expectInlineAt(paragraph.children, 1, "resource");
 
     expect(resource.protocol).toBe("demo-resource:");
@@ -93,12 +81,11 @@ describe("Inline parsing", () => {
   });
 
   test("parses registered protocol links with titles as semantic resource nodes", () => {
-    const paragraph = expectBlockAt(
-      parseDocument('Use [Recording](demo-resource://recording/live "ignored title") now.\n', {
+    const paragraph = parseParagraph(
+      'Use [Recording](demo-resource://recording/live "ignored title") now.\n',
+      {
         resourceProtocols: ["demo-resource:"],
-      }),
-      0,
-      "paragraph",
+      },
     );
     const resource = expectInlineAt(paragraph.children, 1, "resource");
 
@@ -109,12 +96,11 @@ describe("Inline parsing", () => {
   });
 
   test("uses the link text projection as the resource label", () => {
-    const paragraph = expectBlockAt(
-      parseDocument("Use [ **Recording** session ](demo-resource://recording/live) now.\n", {
+    const paragraph = parseParagraph(
+      "Use [ **Recording** session ](demo-resource://recording/live) now.\n",
+      {
         resourceProtocols: ["demo-resource:"],
-      }),
-      0,
-      "paragraph",
+      },
     );
     const resource = expectInlineAt(paragraph.children, 1, "resource");
 
@@ -122,16 +108,12 @@ describe("Inline parsing", () => {
   });
 
   test("keeps unknown protocol links as editable links", () => {
-    const paragraph = expectBlockAt(
-      parseDocument("Use [Recording](demo-resource://recording/live) now.\n"),
-      0,
-      "paragraph",
-    );
+    const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n");
 
     expectInlineAt(paragraph.children, 1, "link");
   });
 
-  test("parses playground tutorial demo-resource links as resources", () => {
+  test("parses playground tutorial resource links as resources", () => {
     const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
 
     if (!tutorial) {
@@ -139,7 +121,7 @@ describe("Inline parsing", () => {
     }
 
     const document = parseDocument(tutorial.markdown, {
-      resourceProtocols: ["demo-note:", "demo-resource:"],
+      resourceProtocols: ["demo-note:", "demo-resource:", "playground:"],
     });
     const inlines = document.blocks.flatMap((block) =>
       block.type === "paragraph" || block.type === "heading" ? block.children : [],
@@ -147,17 +129,23 @@ describe("Inline parsing", () => {
     const resourceNodes = inlines.filter(
       (inline): inline is Extract<Inline, { type: "resource" }> =>
         inline.type === "resource" &&
-        (inline.protocol === "demo-note:" || inline.protocol === "demo-resource:"),
+        (inline.protocol === "demo-note:" ||
+          inline.protocol === "demo-resource:" ||
+          inline.protocol === "playground:"),
     );
     const demoResourceLinks = collectInlineLinks(inlines).filter((link) =>
-      link.url.startsWith("demo-resource:") || link.url.startsWith("demo-note:"),
+      link.url.startsWith("demo-resource:") ||
+      link.url.startsWith("demo-note:") ||
+      link.url.startsWith("playground:"),
     );
 
     expect(resourceNodes.map((resource) => resource.url)).toEqual([
+      "playground:/theme",
       "demo-resource://recording/live",
       "demo-note://note/complete",
     ]);
     expect(resourceNodes.map((resource) => resource.label)).toEqual([
+      "theme picker",
       "Recording session",
       "Planning note",
     ]);
@@ -198,7 +186,7 @@ describe("Inline parsing", () => {
 
   // --- Edge cases that mimic hard-break / mark syntax but aren't ---
   test("preserves <br>-like tags that aren't actually `<br>` as raw HTML", () => {
-    const paragraph = expectBlockAt(parseDocument("a<bridge>b\n"), 0, "paragraph");
+    const paragraph = parseParagraph("a<bridge>b\n");
 
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
     expect(paragraph.children.some((child) => child.type === "raw")).toBe(true);
@@ -207,27 +195,36 @@ describe("Inline parsing", () => {
   test("does not treat an escaped backslash followed by newline as a hard break", () => {
     // `\\\\\n` in source = two literal backslashes + newline. The first
     // backslash escapes the second, leaving the `\n` as a soft break.
-    const paragraph = expectBlockAt(parseDocument("a\\\\\nb\n"), 0, "paragraph");
+    const paragraph = parseParagraph("a\\\\\nb\n");
 
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
   });
 
   test("does not treat intra-word underscores as italic delimiters", () => {
-    const paragraph = expectBlockAt(parseDocument("snake_case_identifier\n"), 0, "paragraph");
-    const text = expectInlineAt(paragraph.children, 0, "text");
+    const paragraph = parseParagraph("snake_case_identifier\n");
 
     expect(paragraph.children).toHaveLength(1);
-    expect(text.text).toBe("snake_case_identifier");
-    expect(text.marks).toEqual([]);
+    expectTextAt(paragraph.children, 0, "snake_case_identifier");
   });
 
-  test("parses superscript html as a semantic text mark", () => {
-    const paragraph = expectBlockAt(parseDocument("Area x<sup>2</sup>\n"), 0, "paragraph");
-    const superscript = expectInlineAt(paragraph.children, 1, "text");
+  test.each([
+    ["superscript", "Area x<sup>2</sup>\n", "2", ["superscript"], "Area x2"],
+    ["u underline", "A <u>small</u> note.\n", "small", ["underline"], "A small note."],
+  ] as const)(
+    "parses %s html as a semantic text mark",
+    (_label, source, text, marks, plainText) => {
+      const paragraph = parseParagraph(source);
 
-    expect(superscript.text).toBe("2");
-    expect(superscript.marks).toEqual(["superscript"]);
-    expect(paragraph.plainText).toBe("Area x2");
+      expectTextAt(paragraph.children, 1, text, marks);
+      expect(paragraph.plainText).toBe(plainText);
+    },
+  );
+
+  test("parses inline code as a composable text mark", () => {
+    const paragraph = parseParagraph("*`code`* and <ins>`underlined`</ins>\n");
+
+    expectTextAt(paragraph.children, 0, "code", ["code", "italic"]);
+    expectTextAt(paragraph.children, 2, "underlined", ["code", "underline"]);
   });
 });
 
@@ -243,21 +240,21 @@ describe("Backslash escapes", () => {
     ["\\:", ":"],
     ["\\\\", "\\"],
   ])("unescapes `%s` to plain text `%s`", (escaped, unescaped) => {
-    const paragraph = expectBlockAt(parseDocument(`${escaped}foo\n`), 0, "paragraph");
+    const paragraph = parseParagraph(`${escaped}foo\n`);
     expect(paragraph.plainText).toBe(`${unescaped}foo`);
   });
 
   test("preserves a backslash before an unrecognized character as literal `\\X`", () => {
     // CommonMark allows only ASCII punctuation to be escaped. `\a` is not a
     // recognized escape, so both characters survive into the text node.
-    const paragraph = expectBlockAt(parseDocument("a\\bc\n"), 0, "paragraph");
+    const paragraph = parseParagraph("a\\bc\n");
     expect(paragraph.plainText).toBe("a\\bc");
   });
 
   test("preserves a trailing backslash at end of input as literal `\\`", () => {
     // The reader returns null when `\` has no following character, so the
     // dispatcher's default one-char advance leaves it as text.
-    const paragraph = expectBlockAt(parseDocument("foo\\\n"), 0, "paragraph");
+    const paragraph = parseParagraph("foo\\\n");
     expect(paragraph.plainText).toBe("foo\\");
   });
 });
@@ -491,6 +488,23 @@ function summarizeRepresentativeNodes(document: ReturnType<typeof parseDocument>
     tableId: table.id,
     tableText: table.plainText,
   };
+}
+
+function parseParagraph(source: string, options?: MarkdownOptions) {
+  return expectBlockAt(parseDocument(source, options), 0, "paragraph");
+}
+
+function expectTextAt(
+  inlines: readonly Inline[],
+  index: number,
+  text: string,
+  marks: readonly Mark[] = [],
+) {
+  const inline = expectInlineAt(inlines, index, "text");
+
+  expect(inline.text).toBe(text);
+  expect(inline.marks).toEqual([...marks]);
+  return inline;
 }
 
 function collectInlineLinks(inlines: readonly Inline[]): Extract<Inline, { type: "link" }>[] {

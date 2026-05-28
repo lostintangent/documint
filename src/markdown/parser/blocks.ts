@@ -132,6 +132,7 @@ function readNextBlock(cursor: MarkdownLineCursor, context: MarkdownParseContext
 type BlockReader = {
   leadChars: string;
   canStart(line: string, content: string, context: MarkdownParseContext): boolean;
+  escapeParagraphStart?: boolean;
   interruptsParagraph?: (
     line: string,
     content: string,
@@ -180,6 +181,7 @@ const blockReaders: BlockReader[] = [
   {
     leadChars: "<",
     canStart: (_line, content) => looksLikeSimpleHtmlBlock(content.trim()),
+    escapeParagraphStart: false,
     read: readRawHtml,
   },
 ];
@@ -194,6 +196,27 @@ const blockReaders: BlockReader[] = [
 export const blockTriggerLeadChars = [
   ...new Set(blockReaders.flatMap((reader) => [...reader.leadChars])),
 ].join("");
+
+const rootParagraphEscapeContext: MarkdownParseContext = {
+  baseIndent: 0,
+  options: {},
+  resourceProtocols: new Set(),
+};
+
+export function shouldEscapeParagraphLineStart(line: string) {
+  const first = line[0];
+
+  if (first === undefined || !blockTriggerLeadChars.includes(first)) {
+    return false;
+  }
+
+  return blockReaders.some((reader) => {
+    return (
+      reader.escapeParagraphStart !== false &&
+      reader.canStart(line, line, rootParagraphEscapeContext)
+    );
+  });
+}
 
 // --- Block readers, in dispatcher order ---
 // Each returns a parsed Block on a successful match (advancing the cursor past

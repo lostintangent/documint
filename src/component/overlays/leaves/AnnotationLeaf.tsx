@@ -1,11 +1,12 @@
 import { getCommentThreadUpdatedAt, isResolvedCommentThread, type CommentThread } from "@/document";
-import { toggleCode, toggleMark, type EditorPresence, type SelectionFormatting } from "@/editor";
-import { Check, Code, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { toggleMark, type EditorPresence, type SelectionFormatting } from "@/editor";
+import { Check, Code, MessageSquarePlus, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
 import { useEditorCommand } from "../../store";
 import { resolvePresenceName } from "../../lib/presence";
+import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/LeafInput";
 import { LeafOutput } from "./core/LeafOutput";
 import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./formatting";
@@ -46,7 +47,6 @@ type AnnotationLeafProps = AnnotationCreateLeafProps | AnnotationThreadLeafProps
 const defaultCreateExpanded = false;
 const createToThreadTransitionMs = 220;
 const defaultFormatting: SelectionFormatting = {
-  code: false,
   marks: [],
   supported: true,
 };
@@ -66,6 +66,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const canEdit = props.canEdit;
   const link = props.link;
   const thread = threadProps?.thread ?? null;
+  const threadId = thread?.id ?? null;
   const comments = thread?.comments ?? [];
   const rootComment = comments[0] ?? null;
   const isResolved = thread ? isResolvedCommentThread(thread) : false;
@@ -78,11 +79,14 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const [isExpanded, setIsExpanded] = useState(defaultCreateExpanded);
   const [isTransitioningFromCreate, setIsTransitioningFromCreate] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const commentsListRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const hasScrolledThreadRef = useRef(false);
+  const scrolledThreadIdRef = useRef<string | null>(null);
   const completionSources = props.completionSources;
   const threadUpdatedAt = thread ? getCommentThreadUpdatedAt(thread) : null;
   const threadAge = threadUpdatedAt ? formatRelativeTime(threadUpdatedAt) : "";
-  const canMutateThread = canEdit && !isResolved;
+  const canMutateThread = canEdit;
   const canSaveEditedComment = canMutateThread && editDraft.trim().length > 0;
   const canReply = canMutateThread && replyDraft.trim().length > 0;
   const canCreate = canEdit && createDraft.trim().length > 0;
@@ -95,17 +99,16 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const deleteThread = threadProps?.onDeleteThread ?? noop;
   const toggleResolved = threadProps?.onToggleResolved ?? noop;
   const formatting = createProps?.formatting ?? defaultFormatting;
-  const activeCode = formatting.code;
   const activeFormattingMarks = formatting.marks;
+  const activeCode = activeFormattingMarks.includes("code");
   const formattingSupported = formatting.supported;
-  const toggleCodeCommand = useEditorCommand(toggleCode);
   const toggleMarkCommand = useEditorCommand(toggleMark);
   const actions = createProps?.actions ?? [];
   const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
     <LeafToolbar.Button
       active={activeFormattingMarks.includes(button.mark)}
       className="documint-comment-leaf-create-mark"
-      disabled={!formattingSupported || activeCode}
+      disabled={!formattingSupported}
       icon={button.icon}
       key={button.mark}
       label={button.label}
@@ -175,6 +178,30 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     };
   }, [canEdit, createMode, isExpanded]);
 
+  useLayoutEffect(() => {
+    if (!threadId || comments.length === 0) {
+      hasScrolledThreadRef.current = false;
+      scrolledThreadIdRef.current = null;
+      return;
+    }
+
+    const commentsList = commentsListRef.current;
+    if (!commentsList) {
+      return;
+    }
+
+    if (scrolledThreadIdRef.current !== threadId) {
+      hasScrolledThreadRef.current = false;
+      scrolledThreadIdRef.current = threadId;
+    }
+
+    commentsList.scrollTo({
+      behavior: hasScrolledThreadRef.current ? "smooth" : "auto",
+      top: commentsList.scrollHeight,
+    });
+    hasScrolledThreadRef.current = true;
+  }, [comments, threadId]);
+
   const cancelEditing = () => {
     setEditingCommentIndex(null);
     setEditDraft("");
@@ -229,6 +256,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       canReply={canReply}
       canSaveEditedComment={canSaveEditedComment}
       comments={comments}
+      commentsListRef={commentsListRef}
       composerRef={composerRef}
       editDraft={editDraft}
       editingCommentIndex={editingCommentIndex}
@@ -279,7 +307,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               disabled={!formattingSupported}
               icon={Code}
               label="Code"
-              onClick={toggleCodeCommand}
+              onClick={() => toggleMarkCommand("code")}
             />
             {trailingFormattingMarkButtons.map(renderFormattingMarkButton)}
             {actions.length > 0
@@ -315,6 +343,7 @@ function AnnotationLeafBody({
   canReply,
   canSaveEditedComment,
   comments,
+  commentsListRef,
   composerRef,
   editDraft,
   editingCommentIndex,
@@ -349,6 +378,7 @@ function AnnotationLeafBody({
   canReply: boolean;
   canSaveEditedComment: boolean;
   comments: CommentThread["comments"];
+  commentsListRef: RefObject<HTMLDivElement | null>;
   composerRef: RefObject<HTMLTextAreaElement | null>;
   editDraft: string;
   editingCommentIndex: number | null;
@@ -391,7 +421,11 @@ function AnnotationLeafBody({
               title={isResolved ? "Reopen comment" : "Resolve comment"}
               type="button"
             >
-              <Check size={14} strokeWidth={2.2} />
+              {isResolved ? (
+                <RotateCcw size={14} strokeWidth={2.2} />
+              ) : (
+                <Check size={14} strokeWidth={2.2} />
+              )}
             </button>
             <button
               className="documint-leaf-action documint-leaf-action-danger"
@@ -407,12 +441,18 @@ function AnnotationLeafBody({
         </div>
       ) : null}
       {showThreadChrome && link ? (
-        <div className="documint-comment-leaf-link">
-          {link.title ? <div className="documint-link-leaf-title">{link.title}</div> : null}
-          <div className="documint-link-leaf-url">{link.url}</div>
-        </div>
+        <>
+          <div className="documint-comment-leaf-link">
+            {link.title ? <div className="documint-link-leaf-title">{link.title}</div> : null}
+            <div className="documint-link-leaf-url">{link.url}</div>
+          </div>
+          <LeafDivider />
+        </>
       ) : null}
-      <div className={`documint-comment-thread${showRootComment ? "" : " is-empty"}`}>
+      <div
+        className={`documint-comment-thread${showRootComment ? "" : " is-empty"}`}
+        ref={commentsListRef}
+      >
         <article
           className={
             showRootComment
@@ -493,6 +533,7 @@ function AnnotationLeafBody({
           );
         })}
       </div>
+      {showThreadChrome ? <LeafDivider /> : null}
       <div
         className={`documint-comment-reply${showThreadChrome ? "" : " is-standalone"}${isComposerVisible ? " is-visible" : ""}`}
       >
@@ -528,6 +569,7 @@ function AnnotationLeafBody({
 
 function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
   const name = resolvePresenceName(presence);
+  const status = presence.status?.trim();
 
   return (
     <div className="documint-comment-presence">
@@ -549,7 +591,10 @@ function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
           />
         ) : null}
       </span>
-      <span>{name} is working on this...</span>
+      <span>
+        {name} is working on this
+        {status ? <span className="documint-comment-presence-status"> ({status})</span> : null}
+      </span>
     </div>
   );
 }

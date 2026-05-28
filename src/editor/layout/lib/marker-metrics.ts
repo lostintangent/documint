@@ -1,7 +1,7 @@
 // Owns list/task marker metrics shared by exact layout, virtualization, and
 // visual queries.
 
-import { findAncestorBlockEntry, type DocumentIndex } from "../../state";
+import { findAncestorIndexedBlock, type DocumentIndex } from "../../state";
 
 export const LIST_MARKER_TEXT_INSET = 18;
 export const ORDERED_LIST_MARKER_GAP = 8;
@@ -26,13 +26,13 @@ export type LayoutBlockExtent = {
 // the inset amount. Shared between measure (exact wrap) and large-document
 // estimation so both agree on what a list-item line can hold.
 export function resolveListMarkerInset(documentIndex: DocumentIndex, blockId: string): number {
-  const listItem = findAncestorBlockEntry(documentIndex, blockId, "listItem");
+  const listItem = findAncestorIndexedBlock(documentIndex, blockId, "listItem");
 
   if (!listItem) {
     return 0;
   }
 
-  const marker = documentIndex.listItemMarkers.get(listItem.block.id);
+  const marker = documentIndex.listItems.get(listItem.block.id);
 
   return marker?.kind === "task" ? TASK_MARKER_TEXT_INSET : LIST_MARKER_TEXT_INSET;
 }

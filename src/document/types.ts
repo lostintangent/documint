@@ -45,7 +45,7 @@ export type Block =
   | DirectiveBlock
   | RawBlock;
 
-export type Inline = Text | Link | Image | Mention | Resource | Code | LineBreak | Raw;
+export type Inline = Text | Link | Image | Mention | Resource | LineBreak | Raw;
 
 // Every document node carries an `id` and a literal `type` discriminator. Block
 // nodes additionally carry a `plainText` projection for search/serialization.
@@ -132,7 +132,7 @@ export type RawBlock = BlockNode<
   }
 >;
 
-export type Mark = "bold" | "italic" | "strikethrough" | "underline" | "superscript";
+export type Mark = "code" | "bold" | "italic" | "strikethrough" | "underline" | "superscript";
 
 export type Text = DocumentNode<
   "text",
@@ -179,8 +179,6 @@ export type Resource = DocumentNode<
 >;
 
 export type LineBreak = DocumentNode<"lineBreak">;
-
-export type Code = DocumentNode<"code", { code: string }>;
 
 export type Raw = DocumentNode<
   "raw",

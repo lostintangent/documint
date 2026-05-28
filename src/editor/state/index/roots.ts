@@ -1,8 +1,8 @@
 // Root construction and positioning: turns a document `Block` tree into a
-// `RootEntry` (the per-root scaffolding the index uses internally), then
+// `IndexedRoot` (the per-root scaffolding the index uses internally), then
 // places multiple roots in global char-offset / block-array / region-array
 // coordinate space. Reference identity for unchanged roots is preserved
-// through `canReuseRootEntry`.
+// through `canReuseIndexedRoot`.
 
 import {
   childBlockPath,
@@ -15,15 +15,15 @@ import {
   type Inline,
   type TableCell,
 } from "@/document";
-import { flattenInlineNodes } from "./inlines";
+import { flattenInlineNodes, indexedInlineText } from "./inlines";
 import type {
-  BlockEntry,
+  IndexedBlock,
   BlockKind,
-  InlineEntry,
-  ListItemMarker,
-  RegionContent,
-  RegionEntry,
-  RootEntry,
+  IndexedInline,
+  IndexedListItem,
+  EditableRegionContent,
+  EditableRegion,
+  IndexedRoot,
 } from "./types";
 
 // How a block contributes to the document's region/coordinate stream. Five
@@ -35,10 +35,10 @@ import type {
 //   - `cells`: emit one inline-bearing region per table cell (table)
 //   - `inert`: no region (divider, directive)
 //
-// Adding a new block type is one entry in `BLOCK_CONTRIBUTIONS` below. The
+// Adding a new block type is one indexedBlock in `BLOCK_CONTRIBUTIONS` below. The
 // visitor dispatches on contribution kind, so no per-type branching elsewhere
 // in this layer. The discriminator literals are constrained by `BlockKind`
-// (see types.ts) so contribution → BlockEntry.kind stays in lockstep.
+// (see types.ts) so contribution → IndexedBlock.kind stays in lockstep.
 type BlockContribution =
   | { kind: "container"; children: readonly Block[] }
   | { kind: "inline-text"; inlines: readonly Inline[] }
@@ -82,7 +82,7 @@ const BLOCK_CONTRIBUTIONS: {
   }),
 };
 
-type ListMarkerContext = {
+type ListContext = {
   depth: number;
   index: number;
   ordered: boolean;
@@ -97,25 +97,25 @@ function resolveBlockContribution(block: Block): BlockContribution {
   return (BLOCK_CONTRIBUTIONS[block.type] as (b: Block) => BlockContribution)(block);
 }
 
-export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry {
-  const blocks: BlockEntry[] = [];
-  const regions: RegionEntry[] = [];
+export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedRoot {
+  const blocks: IndexedBlock[] = [];
+  const regions: EditableRegion[] = [];
   // Collected during the inline walk below, alongside the work that's
   // already happening — no extra traversal.
   const imageUrls = new Set<string>();
   let resourceUrls: Set<string> | null = null;
-  const listItemMarkers = new Map<string, ListItemMarker>();
+  const listItems = new Map<string, IndexedListItem>();
   let position = 0;
 
   function appendInlineRegion(
     block: Block,
     path: string,
     containerPath: string,
-    inlines: InlineEntry[],
+    inlines: IndexedInline[],
     semanticRegionId: string,
     tableCellPosition: { cellIndex: number; rowIndex: number } | null = null,
   ) {
-    const text = inlines.map((inline) => inline.text).join("");
+    const text = inlines.map(indexedInlineText).join("");
     for (const inline of inlines) {
       if (inline.node.type === "image") imageUrls.add(inline.node.url);
       if (inline.node.type === "resource") {
@@ -127,7 +127,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
       block,
       path,
       containerPath,
-      { kind: "inline-text", inlines },
+      { kind: "inlines", inlines },
       semanticRegionId,
       text,
       tableCellPosition,
@@ -135,14 +135,14 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
   }
 
   function appendSourceRegion(block: Block, path: string, blockPath: string, source: string) {
-    pushRegion(block, path, blockPath, { kind: "source-text" }, block.id, source, null);
+    pushRegion(block, path, blockPath, { kind: "source" }, block.id, source, null);
   }
 
   function pushRegion(
     block: Block,
     path: string,
     containerPath: string,
-    content: RegionContent,
+    content: EditableRegionContent,
     semanticRegionId: string,
     text: string,
     tableCellPosition: { cellIndex: number; rowIndex: number } | null,
@@ -158,7 +158,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
       containerPath,
       content,
       // Local per-root order here; re-stamped to the global position when
-      // the root is positioned in `positionRootEntries` / `positionRootEntry`.
+      // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
       documentOrder: regions.length,
       end,
       id: `${block.id}:${path}`,
@@ -176,13 +176,13 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     path: string,
     depth: number,
     parentBlockId: string | null,
-    listMarkerContext: ListMarkerContext | null = null,
+    listContext: ListContext | null = null,
   ) {
     const contribution = resolveBlockContribution(block);
-    const blockEntry: BlockEntry = {
+    const indexedBlock: IndexedBlock = {
       block,
       // Local per-root index here; re-stamped to the global position when
-      // the root is positioned in `positionRootEntries` / `positionRootEntry`.
+      // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
       blockArrayIndex: blocks.length,
       depth,
       end: position,
@@ -194,9 +194,9 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
       start: position,
     };
 
-    blocks.push(blockEntry);
+    blocks.push(indexedBlock);
 
-    appendListItemMarker(block, listMarkerContext);
+    appendIndexedListItem(block, listContext);
 
     switch (contribution.kind) {
       case "container":
@@ -206,7 +206,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
             childBlockPath(path, index),
             depth + 1,
             block.id,
-            resolveChildListMarkerContext(block, index, listMarkerContext),
+            resolveChildListContext(block, index, listContext),
           );
         }
         break;
@@ -218,11 +218,11 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
           flattenInlineNodes(contribution.inlines),
           block.id,
         );
-        blockEntry.regionIds.push(regions.at(-1)!.id);
+        indexedBlock.regionIds.push(regions.at(-1)!.id);
         break;
       case "source-text":
         appendSourceRegion(block, sourcePath(path), path, contribution.source);
-        blockEntry.regionIds.push(regions.at(-1)!.id);
+        indexedBlock.regionIds.push(regions.at(-1)!.id);
         break;
       case "cells":
         for (const { cell, cellIndex, rowIndex } of contribution.cells) {
@@ -236,23 +236,23 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
             cell.id,
             { cellIndex, rowIndex },
           );
-          blockEntry.regionIds.push(regions.at(-1)!.id);
+          indexedBlock.regionIds.push(regions.at(-1)!.id);
         }
         break;
       case "inert":
         break;
     }
 
-    blockEntry.end = position;
+    indexedBlock.end = position;
   }
 
-  function appendListItemMarker(block: Block, context: ListMarkerContext | null) {
+  function appendIndexedListItem(block: Block, context: ListContext | null) {
     if (block.type !== "listItem") {
       return;
     }
 
     if (typeof block.checked === "boolean") {
-      listItemMarkers.set(block.id, {
+      listItems.set(block.id, {
         checked: block.checked,
         depth: context?.depth ?? 0,
         kind: "task",
@@ -261,7 +261,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     }
 
     if (context?.ordered) {
-      listItemMarkers.set(block.id, {
+      listItems.set(block.id, {
         depth: context.depth,
         kind: "ordered",
         ordinal: (context.start ?? 1) + context.index,
@@ -269,17 +269,17 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
       return;
     }
 
-    listItemMarkers.set(block.id, {
+    listItems.set(block.id, {
       depth: context?.depth ?? 0,
       kind: "unordered",
     });
   }
 
-  function resolveChildListMarkerContext(
+  function resolveChildListContext(
     block: Block,
     childIndex: number,
-    inherited: ListMarkerContext | null,
-  ): ListMarkerContext | null {
+    inherited: ListContext | null,
+  ): ListContext | null {
     if (block.type === "list") {
       return {
         depth: inherited ? inherited.depth + 1 : 0,
@@ -303,7 +303,7 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
     end: position,
     imageUrls,
     resourceUrls: resourceUrls ?? EMPTY_URLS,
-    listItemMarkers,
+    listItems,
     regionRange:
       regions.length > 0
         ? {
@@ -317,8 +317,8 @@ export function createRootEntry(rootBlock: Block, rootIndex: number): RootEntry 
   };
 }
 
-export function rebuildRootEntry(root: RootEntry, rootBlock: Block): RootEntry {
-  return createRootEntry(rootBlock, root.rootIndex);
+export function rebuildIndexedRoot(root: IndexedRoot, rootBlock: Block): IndexedRoot {
+  return createIndexedRoot(rootBlock, root.rootIndex);
 }
 
 // Positions a list of unpositioned roots in global char-offset, block-array,
@@ -327,15 +327,15 @@ export function rebuildRootEntry(root: RootEntry, rootBlock: Block): RootEntry {
 // to new objects when char or array offsets moved.
 //
 // Note: identity reuse is per-root. When a root's `start` or `blockRange`
-// shifts (e.g., insert-at-front), every block/region entry inside it is
-// re-stamped with new global indices and therefore loses reference identity.
-// Layout caches keyed by entry references should expect to refill on edits
-// that shift root positions.
-export function positionRootEntries(
-  roots: RootEntry[],
-  previousRoots: RootEntry[] | null = null,
+// shifts (e.g., insert-at-front), every indexed block and region inside it
+// is re-stamped with new global indices and therefore loses reference
+// identity. Layout caches keyed by index-record references should expect to
+// refill on edits that shift root positions.
+export function positionIndexedRoots(
+  roots: IndexedRoot[],
+  previousRoots: IndexedRoot[] | null = null,
 ) {
-  const positionedRoots: RootEntry[] = [];
+  const positionedRoots: IndexedRoot[] = [];
   let blockIndex = 0;
   let regionIndex = 0;
   let position = 0;
@@ -361,13 +361,13 @@ export function positionRootEntries(
             }
           : undefined,
       start: position,
-    } satisfies RootEntry;
+    } satisfies IndexedRoot;
     const previousRoot = previousRoots?.[rootIndex];
 
     positionedRoots.push(
-      canReuseRootEntry(previousRoot, root, nextRoot)
+      canReuseIndexedRoot(previousRoot, root, nextRoot)
         ? previousRoot
-        : positionRootEntry(root, nextRoot),
+        : positionIndexedRoot(root, nextRoot),
     );
 
     blockIndex = nextRoot.blockRange.end;
@@ -382,7 +382,7 @@ export function positionRootEntries(
   return positionedRoots;
 }
 
-function positionRootEntry(root: RootEntry, nextRoot: RootEntry): RootEntry {
+function positionIndexedRoot(root: IndexedRoot, nextRoot: IndexedRoot): IndexedRoot {
   const delta = nextRoot.start - root.start;
   const blockArrayStart = nextRoot.blockRange.start;
   const regionArrayStart = nextRoot.regionRange?.start ?? 0;
@@ -400,11 +400,11 @@ function positionRootEntry(root: RootEntry, nextRoot: RootEntry): RootEntry {
   };
 }
 
-function canReuseRootEntry(
-  previousRoot: RootEntry | undefined,
-  root: RootEntry,
-  nextRoot: RootEntry,
-): previousRoot is RootEntry {
+function canReuseIndexedRoot(
+  previousRoot: IndexedRoot | undefined,
+  root: IndexedRoot,
+  nextRoot: IndexedRoot,
+): previousRoot is IndexedRoot {
   return Boolean(
     previousRoot &&
       root === previousRoot &&
@@ -417,8 +417,8 @@ function canReuseRootEntry(
   );
 }
 
-function shiftEditorBlocks(blocks: BlockEntry[], delta: number, blockArrayStart: number) {
-  return blocks.map<BlockEntry>((block, index) => ({
+function shiftEditorBlocks(blocks: IndexedBlock[], delta: number, blockArrayStart: number) {
+  return blocks.map<IndexedBlock>((block, index) => ({
     ...block,
     blockArrayIndex: blockArrayStart + index,
     end: block.end + delta,
@@ -426,8 +426,8 @@ function shiftEditorBlocks(blocks: BlockEntry[], delta: number, blockArrayStart:
   }));
 }
 
-function shiftEditorRegions(regions: RegionEntry[], delta: number, regionArrayStart: number) {
-  return regions.map<RegionEntry>((region, index) => ({
+function shiftEditorRegions(regions: EditableRegion[], delta: number, regionArrayStart: number) {
+  return regions.map<EditableRegion>((region, index) => ({
     ...region,
     documentOrder: regionArrayStart + index,
     end: region.end + delta,

@@ -9,7 +9,6 @@ import {
   insertSoftLineBreak,
   regionInlines,
   resizeImage,
-  toggleCode,
   toggleMark,
 } from "@/editor/state";
 import { getRegion, placeAt, selectSubstring, setup, toMarkdown } from "../../helpers";
@@ -91,11 +90,11 @@ describe("Inline mark toggles", () => {
     const base = setup("Paragraph body.\n");
     const region = getRegion(base, "Paragraph body.");
     let state = selectSubstring(base, region, "body");
-    state = toggleCode(state) ?? state;
+    state = toggleMark(state, "code") ?? state;
 
     expect(toMarkdown(state)).toBe("Paragraph `body`.\n");
 
-    state = toggleCode(state) ?? state;
+    state = toggleMark(state, "code") ?? state;
 
     expect(toMarkdown(state)).toBe("Paragraph body.\n");
   });
@@ -103,9 +102,20 @@ describe("Inline mark toggles", () => {
   test("routes mod-e through inline code toggles", () => {
     const base = setup("Call fn here.\n");
     const region = getRegion(base, "Call fn here.");
-    const state = toggleCode(selectSubstring(base, region, "fn"));
+    const state = toggleMark(selectSubstring(base, region, "fn"), "code");
 
     expect(toMarkdown(state ?? base)).toBe("Call `fn` here.\n");
+  });
+
+  test("composes code with other inline marks", () => {
+    const base = setup("Call fn here.\n");
+    const region = getRegion(base, "Call fn here.");
+    let state = selectSubstring(base, region, "fn");
+    state = toggleMark(state, "code") ?? state;
+    state = toggleMark(state, "italic") ?? state;
+    state = toggleMark(state, "underline") ?? state;
+
+    expect(toMarkdown(state)).toBe("Call <ins>*`fn`*</ins> here.\n");
   });
 });
 

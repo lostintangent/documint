@@ -9,11 +9,12 @@ export type MarkSpec = {
 };
 
 export const markSpecByMark = {
-  bold: { order: 0 },
-  italic: { order: 1 },
-  strikethrough: { order: 2 },
-  underline: { order: 3 },
-  superscript: { order: 4 },
+  code: { order: 0 },
+  bold: { order: 1 },
+  italic: { order: 2 },
+  strikethrough: { order: 3 },
+  underline: { order: 4 },
+  superscript: { order: 5 },
 } satisfies Record<Mark, MarkSpec>;
 
 export const markOrder = defineMarkOrder(markSpecByMark);

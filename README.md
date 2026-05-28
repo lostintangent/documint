@@ -16,11 +16,11 @@ A canvas-based, batteries-included markdown editor for React.
 
 - **Context-aware toolbars ("leaves")** — Floating toolbars that appear based on what you're interacting with: text formatting options on selection, link editing on links, column/row controls on tables, and block insertion (headings, lists, quotes, tables) on empty lines.
 
-- **Configurable themes and keybindings** — Ships with built-in light and dark themes, follows the system theme by default, and lets you customize every theme value or start from presets like mint, midnight, and sunrise. Keybindings are configurable too — remap formatting shortcuts, navigation, and list operations to match your users' expectations.
+- **Configurable themes and keybindings** — Ships with built-in light and dark themes, follows the system theme by default, and lets you customize every theme value. Keybindings are configurable too — remap formatting shortcuts, navigation, and list operations to match your users' expectations.
 
 - **Comments and presence for review workflows** — Anchor comments to any range of text, with full threading (replies, resolution, deletion) and self-repairing quote-based matching after edits. External user and AI agent presence can be projected into the document as live cursors and viewport indicators without becoming document content.
 
-- **Fast and lightweight** — Canvas-based rendering optimized for hot-path performance even on large documents. A custom markdown parser, editor engine, and layout/rendering system all ship in a bundle <80 KB gzipped.
+- **Fast and lightweight** — Canvas-based rendering optimized for hot-path performance even on large documents. A custom markdown parser, editor engine, and layout/rendering system all ship in a bundle ~100 KB gzipped.
 
 ## Getting Started
 

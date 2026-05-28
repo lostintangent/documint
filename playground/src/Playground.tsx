@@ -89,12 +89,21 @@ const actions: DocumintActions = {
   },
 };
 
-const [{ __iconNode: recordingIconNode }, { __iconNode: noteIconNode }] = await Promise.all([
+const [
+  { __iconNode: themeIconNode },
+  { __iconNode: recordingIconNode },
+  { __iconNode: noteIconNode },
+] = await Promise.all([
+  dynamicIconImports.settings(),
   dynamicIconImports.mic(),
   dynamicIconImports["sticky-note"](),
 ]);
 
 const protocols = {
+  "playground:": {
+    icon: lucideResourceIcon(themeIconNode),
+    label: "Playground",
+  },
   "demo-resource:": {
     icon: lucideResourceIcon(recordingIconNode),
     label: "Demo resource",
@@ -114,6 +123,7 @@ export function Playground() {
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
+  const [themePopoverOpen, setThemePopoverOpen] = useState(false);
 
   const [users, setUsers] = useState<DocumentUser[]>([]);
   const [presence, setPresence] = useState<DocumentPresence[]>([]);
@@ -172,7 +182,12 @@ export function Playground() {
             </select>
           </label>
 
-          <ThemePopover onThemeIdChange={setThemeId} themeId={themeId} />
+          <ThemePopover
+            onOpenChange={setThemePopoverOpen}
+            onThemeIdChange={setThemeId}
+            open={themePopoverOpen}
+            themeId={themeId}
+          />
 
           <UsersPopover
             key={`${fixtureId}-users`}
@@ -210,6 +225,11 @@ export function Playground() {
               onCommentChanged={handleCommentChanged}
               onContentChanged={setContent}
               onResourceOpened={(resource) => {
+                if (resource.protocol === "playground:" && resource.url === "playground:/theme") {
+                  setThemePopoverOpen(true);
+                  return;
+                }
+
                 window.alert(`Open resource: ${resource.url}`);
               }}
               onResourcesRequested={() => {}}

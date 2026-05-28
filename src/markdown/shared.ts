@@ -63,67 +63,85 @@ export function resolveRegisteredMarkdownResourceProtocol(
 // Single source of truth for Documint markdown's mark syntax. One row per
 // supported `Mark`, carrying both parser and serializer policy:
 //
-//   - `delimiter` specs parse paired markdown delimiters and emit their
-//     canonical opening/closing delimiter.
-//   - `html` specs parse exact HTML tag pairs and emit those same tags.
-//   - `requireWordBoundary` — when true, the parser only accepts the
-//     delimiter when neither side touches a word character. Models the
-//     asymmetry between asterisk-italic (matches mid-word) and
-//     underscore-italic (must sit on word boundaries).
+//   - specs default to `delimiter`, which parses paired markdown delimiters.
+//     Their contents are parsed as inline markdown unless `content` is
+//     `literal`.
+//   - the first delimiter is the canonical serializer form. Literal content
+//     uses variable-width delimiter fencing so the authored text stays
+//     unparsed.
+//   - `html` specs parse exact HTML tag pairs and emit the first tag as the
+//     canonical serializer form.
+//   - delimiter `boundary` policies model where a delimiter may bind. This
+//     captures the asymmetry between asterisk-italic (can bind at any
+//     character) and underscore-italic (binds only at word boundaries).
 //
-// The parser derives delimiter and HTML-tag dispatch tables at module load.
-// The serializer derives a per-`Mark` emit table from the same specs. Adding
-// a mark with existing syntax families should be a single row here.
+// The input table stays terse; `inlineMarkSpecs` normalizes it at module load
+// so parser and serializer consume concrete policy instead of re-resolving
+// defaults and canonical forms.
 export type InlineMarkDelimiter = {
+  boundary?: "character" | "word";
   delimiter: string;
-  requireWordBoundary: boolean;
 };
 
+export type InlineMarkContentPolicy = "inlines" | "literal";
+export type InlineMarkDelimiterInput = string | InlineMarkDelimiter;
+export type InlineMarkDelimiterSet =
+  | string
+  | readonly [InlineMarkDelimiterInput, ...InlineMarkDelimiterInput[]];
+
 export type DelimitedInlineMarkSpecInput = {
-  kind: "delimiter";
-  emit: readonly [open: string, close: string];
-  delimiters: ReadonlyArray<InlineMarkDelimiter>;
+  kind?: "delimiter";
+  content?: InlineMarkContentPolicy;
+  delimiter: InlineMarkDelimiterSet;
 };
 
 export type HtmlInlineMarkSpecInput = {
   kind: "html";
-  openTag: string;
-  closeTag: string;
+  tag: string | readonly [string, ...string[]];
 };
 
-export type InlineMarkSpecInput = DelimitedInlineMarkSpecInput | HtmlInlineMarkSpecInput;
-export type DelimitedInlineMarkSpec = DelimitedInlineMarkSpecInput & { mark: Mark };
-export type HtmlInlineMarkSpec = HtmlInlineMarkSpecInput & { mark: Mark };
+export type InlineMarkSpecInput =
+  | DelimitedInlineMarkSpecInput
+  | HtmlInlineMarkSpecInput;
+export type DelimitedInlineMarkSpec = {
+  canonicalDelimiter: InlineMarkDelimiter;
+  content: InlineMarkContentPolicy;
+  delimiters: ReadonlyArray<InlineMarkDelimiter>;
+  kind: "delimiter";
+  mark: Mark;
+};
+export type HtmlInlineMarkSpec = {
+  canonicalTag: string;
+  kind: "html";
+  mark: Mark;
+  tags: ReadonlyArray<string>;
+};
 export type InlineMarkSpec = DelimitedInlineMarkSpec | HtmlInlineMarkSpec;
 
 const inlineMarkSpecByMark = {
+  code: {
+    content: "literal",
+    delimiter: "`",
+  },
   bold: {
-    kind: "delimiter",
-    emit: ["**", "**"],
-    delimiters: [{ delimiter: "**", requireWordBoundary: false }],
+    delimiter: "**",
   },
   italic: {
-    kind: "delimiter",
-    emit: ["*", "*"],
-    delimiters: [
-      { delimiter: "*", requireWordBoundary: false },
-      { delimiter: "_", requireWordBoundary: true },
+    delimiter: [
+      "*",
+      { boundary: "word", delimiter: "_" },
     ],
   },
   strikethrough: {
-    kind: "delimiter",
-    emit: ["~~", "~~"],
-    delimiters: [{ delimiter: "~~", requireWordBoundary: false }],
+    delimiter: "~~",
   },
   underline: {
     kind: "html",
-    openTag: "<ins>",
-    closeTag: "</ins>",
+    tag: ["ins", "u"],
   },
   superscript: {
     kind: "html",
-    openTag: "<sup>",
-    closeTag: "</sup>",
+    tag: "sup",
   },
 } satisfies Record<Mark, InlineMarkSpecInput>;
 
@@ -131,10 +149,60 @@ export const inlineMarkSpecs: ReadonlyArray<InlineMarkSpec> =
   defineInlineMarkSpecs(inlineMarkSpecByMark);
 
 function defineInlineMarkSpecs(specs: Record<Mark, InlineMarkSpecInput>): InlineMarkSpec[] {
-  return markOrder.map((mark) => ({
-    ...specs[mark],
+  return markOrder.map((mark) => defineInlineMarkSpec(mark, specs[mark]));
+}
+
+function defineInlineMarkSpec(mark: Mark, spec: InlineMarkSpecInput): InlineMarkSpec {
+  if (spec.kind === "html") {
+    const tags = resolveHtmlTags(spec);
+    return {
+      canonicalTag: tags[0],
+      kind: "html",
+      mark,
+      tags,
+    };
+  }
+
+  const delimiters = resolveDelimitedMarkDelimiters(spec);
+  return {
+    canonicalDelimiter: delimiters[0],
+    content: spec.content ?? "inlines",
+    delimiters,
+    kind: "delimiter",
     mark,
-  }));
+  };
+}
+
+export function isDelimitedInlineMarkSpec(
+  spec: InlineMarkSpec,
+): spec is DelimitedInlineMarkSpec {
+  return spec.kind === "delimiter";
+}
+
+export function isHtmlInlineMarkSpec(spec: InlineMarkSpec): spec is HtmlInlineMarkSpec {
+  return spec.kind === "html";
+}
+
+function resolveInlineMarkDelimiter(delimiter: InlineMarkDelimiterInput): InlineMarkDelimiter {
+  return typeof delimiter === "string" ? { delimiter } : delimiter;
+}
+
+function resolveDelimitedMarkDelimiters(
+  spec: DelimitedInlineMarkSpecInput,
+): ReadonlyArray<InlineMarkDelimiter> {
+  return isInlineMarkDelimiterList(spec.delimiter)
+    ? spec.delimiter.map(resolveInlineMarkDelimiter)
+    : [resolveInlineMarkDelimiter(spec.delimiter)];
+}
+
+function resolveHtmlTags(spec: HtmlInlineMarkSpecInput): ReadonlyArray<string> {
+  return typeof spec.tag === "string" ? [spec.tag] : spec.tag;
+}
+
+function isInlineMarkDelimiterList(
+  delimiter: InlineMarkDelimiterSet,
+): delimiter is readonly [InlineMarkDelimiterInput, ...InlineMarkDelimiterInput[]] {
+  return typeof delimiter !== "string";
 }
 
 /**

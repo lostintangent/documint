@@ -10,7 +10,7 @@ import {
 } from "@/document";
 import {
   isInertBlock,
-  isRootBlockEntry,
+  isRootIndexedBlock,
   nextBlockInFlow,
   nextRegionInFlow,
   previousBlockInFlow,
@@ -18,7 +18,7 @@ import {
   resolveBlockChildIndices,
   resolveRootBlock,
 } from "../../../index/query";
-import type { DocumentIndex, BlockEntry, RegionEntry } from "../../../index/types";
+import type { DocumentIndex, IndexedBlock, EditableRegion } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
 import {
   createDescendantPrimaryRegionTarget,
@@ -73,7 +73,7 @@ export type DeleteDirection = "backward" | "forward";
 
 export function resolveInFlowBoundaryDelete(
   documentIndex: DocumentIndex,
-  region: RegionEntry,
+  region: EditableRegion,
   empty: boolean,
   direction: DeleteDirection,
 ): EditorStateAction | null {
@@ -127,11 +127,11 @@ export function resolveInFlowBoundaryDelete(
 // precedes the caret region in a shared parent. Returns null in that case
 // so the caller falls back to the existing merge/empty rules.
 function resolveInertNeighborCollapse(
-  currentRegion: RegionEntry,
-  inertBlock: BlockEntry,
+  currentRegion: EditableRegion,
+  inertBlock: IndexedBlock,
   direction: DeleteDirection,
 ): EditorStateAction | null {
-  if (!isRootBlockEntry(inertBlock)) return null;
+  if (!isRootIndexedBlock(inertBlock)) return null;
 
   // Backward: inert block sat at a lower rootIndex than currentRegion.
   // Removing it shifts currentRegion's rootIndex down by one. Forward:
@@ -154,7 +154,7 @@ function resolveInertNeighborCollapse(
 // prepended without changing block kind. Code regions and table cells
 // are excluded because merging arbitrary paragraph content into them
 // isn't meaningful.
-function isTextMergeableRegion(region: RegionEntry): boolean {
+function isTextMergeableRegion(region: EditableRegion): boolean {
   return region.block.type === "paragraph" || region.block.type === "heading";
 }
 
@@ -163,8 +163,8 @@ function isTextMergeableRegion(region: RegionEntry): boolean {
 // touched. Cursor lands at the seam in the absorber.
 function resolveEmptyCollapse(
   documentIndex: DocumentIndex,
-  victim: RegionEntry,
-  absorber: RegionEntry,
+  victim: EditableRegion,
+  absorber: EditableRegion,
   direction: DeleteDirection,
 ): EditorStateAction | null {
   const victimRoot = resolveRootBlock(documentIndex, victim.rootIndex);
@@ -212,8 +212,8 @@ function resolveEmptyCollapse(
 // normalization reassigns one).
 function resolveMergeCollapse(
   documentIndex: DocumentIndex,
-  victim: RegionEntry,
-  absorber: RegionEntry,
+  victim: EditableRegion,
+  absorber: EditableRegion,
 ): EditorStateAction | null {
   const absorberBlock = absorber.block;
   const victimBlock = victim.block;
@@ -284,7 +284,7 @@ function resolveMergeCollapse(
 // stable (i.e. nothing the splice does shifts indices in the
 // region's ancestor chain).
 export function regionPathTarget(
-  region: RegionEntry,
+  region: EditableRegion,
   rootIndex: number,
   offset: number | "end" = 0,
 ): SelectionTarget {
@@ -342,7 +342,7 @@ function rebuiltAbsorberTarget(
 // child indices within that root are stable; only the rootIndex shifts
 // iff the victim's root splice changed the doc length.
 function crossRootAbsorberTarget(
-  absorber: RegionEntry,
+  absorber: EditableRegion,
   victimRootIndex: number,
   victimResidueLength: number,
   offset: number,
@@ -381,7 +381,7 @@ function crossRootAbsorberTarget(
 //      children, if any, get lifted at the list level by the parent walk).
 function applyEditsToBlock(
   rootBlock: Block,
-  victim: RegionEntry,
+  victim: EditableRegion,
   absorberBlockId: string,
   updatedAbsorberBlock: Block | undefined,
 ): Block[] {

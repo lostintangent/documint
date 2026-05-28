@@ -14,7 +14,7 @@ export {
   resolveCodeBlockBackgroundBounds,
   resolveLineContentInset,
   resolveLineVisualLeft,
-  resolveListItemMarker,
+  resolveIndexedListItem,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
   resolveUnorderedListMarkerBounds,

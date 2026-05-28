@@ -5,13 +5,17 @@
 // values) is computed here, so a builder's output is immediately usable as
 // the corresponding node type minus the deferred id assignment.
 
-import { extractPlainTextFromBlockNodes, extractPlainTextFromInlineNodes } from "../query/text";
+import {
+  extractListPlainText,
+  extractPlainTextFromBlockNodes,
+  extractPlainTextFromInlineNodes,
+  extractTablePlainText,
+} from "../query/text";
 import { canonicalizeMarks } from "../marks";
 import { normalizeResourceProtocol, resolveResourceProtocol } from "@/resources";
 import type {
   Block,
   BlockquoteBlock,
-  Code,
   CodeBlock,
   DirectiveBlock,
   DividerBlock,
@@ -83,14 +87,6 @@ export function createLineBreak(): LineBreak {
   return {
     id: "",
     type: "lineBreak",
-  };
-}
-
-export function createCode(code: string): Code {
-  return {
-    code,
-    id: "",
-    type: "code",
   };
 }
 
@@ -184,7 +180,7 @@ export function createListBlock(options: {
     id: "",
     items: options.items,
     ordered: options.ordered,
-    plainText: options.items.map((item) => item.plainText).join("\n"),
+    plainText: extractListPlainText(options.items),
     spread: options.spread ?? false,
     start: options.start ?? null,
     type: "list",
@@ -237,9 +233,7 @@ export function createTableBlock(options: {
   return {
     align: options.align ?? [],
     id: "",
-    plainText: options.rows
-      .map((row) => row.cells.map((cell) => cell.plainText).join(" | "))
-      .join("\n"),
+    plainText: extractTablePlainText(options.rows),
     rows: options.rows,
     type: "table",
   };

@@ -118,7 +118,7 @@ export type EditorTheme = {
   inlineCodeText?: string;
   insertHighlightText?: string;
   leafAccent: string;
-  leafBackground: string;
+  leafBackground?: string;
   leafBorder: string;
   leafInputBackground: string;
   leafButtonText?: string;
@@ -185,6 +185,7 @@ export type DocumentPresence = {
   userId: string;
   cursor?: Anchor;
   color?: string;
+  status?: string;
 };
 
 /**
@@ -196,4 +197,5 @@ export type DocumentPresence = {
 export type DocumentUserPresence = DocumentUser & {
   cursor?: Anchor;
   color?: string;
+  status?: string;
 };

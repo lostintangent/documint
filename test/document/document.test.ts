@@ -11,7 +11,6 @@ import {
   createCodeBlock,
   createHeadingTextBlock,
   createImage,
-  createCode,
   createLink,
   createListBlock,
   createListItemBlock,
@@ -33,6 +32,11 @@ import {
   type Block,
   type Inline,
 } from "@/document";
+import {
+  createSampleBlocks,
+  createTestDocument,
+  expectAnchorContainerAt,
+} from "./helpers";
 
 describe("Document construction", () => {
   test("builds stable semantic document identities from the same semantic content", () => {
@@ -62,11 +66,7 @@ describe("Document construction", () => {
 
   test("assigns runtime ids to comment threads", () => {
     const block = createParagraphTextBlock("Review this paragraph");
-    const container = listAnchorContainers(createDocument([block]))[0];
-
-    if (!container) {
-      throw new Error("Expected anchor container");
-    }
+    const container = expectAnchorContainerAt(createDocument([block]), 0);
 
     const thread = createCommentThread({
       anchor: createAnchorFromContainer(container, 0, "Review".length),
@@ -228,27 +228,53 @@ describe("Document splicing", () => {
 });
 
 describe("Plain text extraction", () => {
-  test("extracts plain text from semantic inline nodes", () => {
-    const nodes: Inline[] = [
-      createText("Plain "),
-      createLink({
-        children: [createText("link")],
-        url: "https://example.com",
-      }),
-      createLineBreak(),
-      createCode("code"),
-      createImage({ alt: "alt text", url: "https://example.com/image.png" }),
-      createMention({ name: "Jane Doe", userId: "user-123" }),
-      createResource({
-        label: "Recording session",
-        protocol: "demo-resource:",
-        url: "demo-resource://recording/live",
-      }),
-    ];
-
-    expect(extractPlainTextFromInlineNodes(nodes)).toBe(
+  const inlinePlainTextCases: Array<[string, Inline[], string]> = [
+    [
+      "semantic inline nodes",
+      [
+        createText("Plain "),
+        createLink({
+          children: [createText("link")],
+          url: "https://example.com",
+        }),
+        createLineBreak(),
+        createText("code", ["code"]),
+        createImage({ alt: "alt text", url: "https://example.com/image.png" }),
+        createMention({ name: "Jane Doe", userId: "user-123" }),
+        createResource({
+          label: "Recording session",
+          protocol: "demo-resource:",
+          url: "demo-resource://recording/live",
+        }),
+      ],
       "Plain link\ncodealt text@Jane DoeRecording session",
-    );
+    ],
+    [
+      "links and unsupported inline nodes",
+      [
+        createText("Before "),
+        createLink({
+          children: [
+            createText("alpha"),
+            createLineBreak(),
+            createImage({
+              alt: "preview",
+              url: "https://example.com/preview.png",
+            }),
+          ],
+          url: "https://example.com",
+        }),
+        createRaw({
+          originalType: "textDirective",
+          source: ":badge[raw]{disabled}",
+        }),
+      ],
+      "Before alpha\npreview:badge[raw]{disabled}",
+    ],
+  ];
+
+  test.each(inlinePlainTextCases)("extracts plain text from %s", (_label, nodes, expected) => {
+    expect(extractPlainTextFromInlineNodes(nodes)).toBe(expected);
   });
 
   test("classifies external-reference inlines through the semantic umbrella", () => {
@@ -263,31 +289,6 @@ describe("Plain text extraction", () => {
 
     expect([image, mention, resource].every(isReferenceInlineNode)).toBe(true);
     expect(isReferenceInlineNode(text)).toBe(false);
-  });
-
-  test("extracts plain text from links and unsupported inline nodes", () => {
-    const nodes: Inline[] = [
-      createText("Before "),
-      createLink({
-        children: [
-          createText("alpha"),
-          createLineBreak(),
-          createImage({
-            alt: "preview",
-            url: "https://example.com/preview.png",
-          }),
-        ],
-        url: "https://example.com",
-      }),
-      createRaw({
-        originalType: "textDirective",
-        source: ":badge[raw]{disabled}",
-      }),
-    ];
-
-    expect(extractPlainTextFromInlineNodes(nodes)).toBe(
-      "Before alpha\npreview:badge[raw]{disabled}",
-    );
   });
 
   test("extracts plain text from semantic block trees", () => {
@@ -383,17 +384,3 @@ describe("Anchor containers", () => {
     ]);
   });
 });
-
-function createTestDocument(blocks: Block[]) {
-  return createDocument(blocks);
-}
-
-function createSampleBlocks(): Block[] {
-  return [
-    createHeadingTextBlock({
-      depth: 1,
-      text: "Sample",
-    }),
-    createParagraphTextBlock("alpha"),
-  ];
-}

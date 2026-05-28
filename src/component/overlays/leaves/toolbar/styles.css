@@ -1,8 +1,6 @@
-/* Toolbar-specific styles (button, group, divider, and the menu trigger
-   shell + chevron). The menu container/item/divider styles themselves
-   live one level up in `overlays/leaves/styles.css` as `.documint-leaf-menu*`
-   so they can be shared by the toolbar's nested menu and other surfaces
-   (e.g. the completion popover in LeafInput). */
+/* Toolbar-specific styles (button, group, and the menu trigger shell +
+   chevron). Menu container/item styles and the shared divider primitive live
+   one level up in `overlays/leaves/styles.css`. */
 
 .documint-leaf-toolbar {
   display: inline-flex;
@@ -14,12 +12,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
-}
-
-.documint-leaf-toolbar-divider {
-  width: 1px;
-  height: 1.15rem;
-  background: var(--documint-leaf-control-divider-color);
 }
 
 .documint-leaf-toolbar-button {

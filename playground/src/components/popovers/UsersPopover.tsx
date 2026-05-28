@@ -101,6 +101,18 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
         </label>
 
         <label className={fieldLabelClassName}>
+          <span className={fieldCaptionClassName}>Status</span>
+          <input
+            className={fieldInputClassName}
+            disabled={auto.enabled}
+            onChange={(event) => manualForm.setStatus(event.target.value)}
+            placeholder="Reviewing comments"
+            type="text"
+            value={manualForm.status}
+          />
+        </label>
+
+        <label className={fieldLabelClassName}>
           <span className={fieldCaptionClassName}>Prefix</span>
           <input
             className={fieldInputClassName}
@@ -183,4 +195,3 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
     </PlaygroundPopover>
   );
 }
-

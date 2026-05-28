@@ -1,4 +1,4 @@
-// Public splice API: the entry points the rest of the codebase uses to
+// Public splice API: the indexedBlock points the rest of the codebase uses to
 // build or update a `DocumentIndex`. Each routes through `applyRootDelta`
 // after constructing the positioned roots. `createRuntimeEditableDocument` /
 // `collapseRuntimeEditableDocument` are the empty-document shim so a fresh
@@ -14,13 +14,13 @@ import {
 } from "@/document";
 import { getCommentState } from "../../anchors";
 import { applyRootDelta } from "./build";
-import { createRootEntry, positionRootEntries } from "./roots";
+import { createIndexedRoot, positionIndexedRoots } from "./roots";
 import type { DocumentIndex } from "./types";
 
 export function createDocumentIndex(document: Document): DocumentIndex {
   const runtimeDocument = createRuntimeEditableDocument(document);
-  const positionedRoots = positionRootEntries(
-    runtimeDocument.blocks.map((block, rootIndex) => createRootEntry(block, rootIndex)),
+  const positionedRoots = positionIndexedRoots(
+    runtimeDocument.blocks.map((block, rootIndex) => createIndexedRoot(block, rootIndex)),
   );
 
   return applyRootDelta(null, positionedRoots, runtimeDocument);
@@ -57,14 +57,14 @@ export function spliceDocumentIndex(
     ...model.roots.slice(0, rootIndex),
     ...nextDocument.blocks
       .slice(rootIndex, rootIndex + replacementCount)
-      .map((block, index) => createRootEntry(block, rootIndex + index)),
+      .map((block, index) => createIndexedRoot(block, rootIndex + index)),
     ...(canPreserveSuffixRoots
       ? model.roots.slice(rootIndex + count)
       : nextDocument.blocks
           .slice(rootIndex + replacementCount)
-          .map((block, index) => createRootEntry(block, rootIndex + replacementCount + index))),
+          .map((block, index) => createIndexedRoot(block, rootIndex + replacementCount + index))),
   ];
-  const positionedRoots = positionRootEntries(unpositionedRoots, model.roots);
+  const positionedRoots = positionIndexedRoots(unpositionedRoots, model.roots);
 
   return applyRootDelta(model, positionedRoots, nextDocument);
 }
@@ -97,13 +97,13 @@ export function replaceEditorBlock(
   targetBlockId: string,
   replacer: (block: Block) => Block | null,
 ): DocumentIndex | null {
-  const blockEntry = documentIndex.blockIndex.get(targetBlockId);
+  const indexedBlock = documentIndex.blockIndex.get(targetBlockId);
 
-  if (!blockEntry) {
+  if (!indexedBlock) {
     return null;
   }
 
-  const rootBlock = documentIndex.document.blocks[blockEntry.rootIndex];
+  const rootBlock = documentIndex.document.blocks[indexedBlock.rootIndex];
 
   if (!rootBlock) {
     return null;
@@ -122,8 +122,8 @@ export function replaceEditorBlock(
     return null;
   }
 
-  const nextDocument = spliceDocument(documentIndex.document, blockEntry.rootIndex, 1, nextRoots);
-  return spliceDocumentIndex(documentIndex, nextDocument, blockEntry.rootIndex, 1);
+  const nextDocument = spliceDocument(documentIndex.document, indexedBlock.rootIndex, 1, nextRoots);
+  return spliceDocumentIndex(documentIndex, nextDocument, indexedBlock.rootIndex, 1);
 }
 
 // An empty `Document` has no blocks, but the editor must always have at

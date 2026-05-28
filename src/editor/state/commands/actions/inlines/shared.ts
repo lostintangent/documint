@@ -3,7 +3,6 @@
 // `InlineContainerReplacement` the reducer can apply.
 import {
   childContainerPath,
-  createCode,
   createTableCell as createDocumentTableCell,
   createText,
   defragmentTextInlines,
@@ -136,8 +135,6 @@ function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): 
       const slicedText = node.text.slice(startOffset, endOffset);
       return slicedText.length > 0 ? [createText(slicedText, node.marks)] : [];
     }
-    case "code":
-      return [createCode(node.code.slice(startOffset, endOffset))];
     case "link": {
       const children = defragmentTextInlines(
         sliceInlineChildren(node.children, startOffset, endOffset),
@@ -203,8 +200,6 @@ function extractInlineNodeSlice(node: Inline, startOffset: number, endOffset: nu
   switch (node.type) {
     case "lineBreak":
       return "\n".slice(startOffset, endOffset);
-    case "code":
-      return node.code.slice(startOffset, endOffset);
     case "link":
       return extractInlineSelectionText(node.children, startOffset, endOffset);
     case "text":

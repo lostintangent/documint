@@ -8,20 +8,28 @@ import {
   createListItemBlock,
   createParagraphBlock,
   createResource,
+  createTableBlock,
+  createTableCell,
+  createTableRow,
   createText,
 } from "@/document";
 import { parseDocument, serializeDocument } from "@/markdown";
 import { expectBlockAt } from "../document/helpers";
 import { expectRoundTrip, expectStableRoundTrip } from "./helpers";
 
-describe("Inline canonicalization", () => {
-  // --- Marks ---
+describe("Inline marks", () => {
   test("canonicalizes underscore italic to asterisks", () => {
     expect(serializeDocument(parseDocument("_foo_\n"))).toBe("*foo*\n");
   });
 
   test("emits underline marks as ins html", () => {
     expectRoundTrip("Paragraph with <ins>underline</ins> text.\n");
+  });
+
+  test("canonicalizes u underline html to ins", () => {
+    expect(serializeDocument(parseDocument("Paragraph with <u>underline</u> text.\n"))).toBe(
+      "Paragraph with <ins>underline</ins> text.\n",
+    );
   });
 
   test("emits superscript marks as sup html", () => {
@@ -34,6 +42,18 @@ describe("Inline canonicalization", () => {
     ]);
 
     expect(serializeDocument(document)).toBe("<sup><ins>**marked**</ins></sup>\n");
+  });
+
+  test("emits inline code as the innermost composable mark", () => {
+    const document = createDocument([
+      createParagraphBlock([
+        createText("code", ["italic", "code"]),
+        createText(" and "),
+        createText("underlined", ["underline", "code"]),
+      ]),
+    ]);
+
+    expect(serializeDocument(document)).toBe("*`code`* and <ins>`underlined`</ins>\n");
   });
 
   test("defensively escapes intra-word underscores so the next parse stays plain text", () => {
@@ -49,8 +69,9 @@ describe("Inline canonicalization", () => {
   test("preserves unmatched ins html as authored markdown", () => {
     expectRoundTrip("Paragraph with <ins>unfinished underline text.\n");
   });
+});
 
-  // --- Line breaks ---
+describe("Line breaks", () => {
   // All four hard-break input forms canonicalize to a bare `<br>`. Omitting
   // a trailing `\n` keeps table cells single-line and avoids inflating
   // diffs in any renderer that doesn't reflow paragraph lines.
@@ -68,8 +89,9 @@ describe("Inline canonicalization", () => {
     // change the rendering in every external markdown renderer.
     expect(serializeDocument(parseDocument("a\nb\n"))).not.toContain("<br>");
   });
+});
 
-  // --- Mentions ---
+describe("Inline references", () => {
   test("preserves user mention identity through markdown export", () => {
     expectRoundTrip("Hello @[Jane Doe](user-123).\n");
   });
@@ -183,6 +205,28 @@ describe("Tables", () => {
       { padTableColumns: true },
     );
   });
+
+  test("preserves escaped pipes inside table cells", () => {
+    const source = `| Query |
+| ----- |
+| alpha \\| beta |
+`;
+
+    const table = expectBlockAt(parseDocument(source), 0, "table");
+    const cell = table.rows[1]?.cells[0];
+
+    expect(cell?.plainText).toBe("alpha | beta");
+    expectStableRoundTrip(source);
+  });
+
+  test("escapes semantic table cell pipes", () => {
+    const document = createTableDocument([["Query"], ["alpha | beta"]]);
+
+    expect(serializeDocument(document)).toBe(`| Query |
+| ----- |
+| alpha \\| beta |
+`);
+  });
 });
 
 describe("Comments", () => {
@@ -241,6 +285,9 @@ describe("Paragraph block-start escapes", () => {
     ["bullet marker (+)", "\\+ not a list\n"],
     ["ordered list marker", "1\\. not a list\n"],
     ["container directive", "\\:::callout\n"],
+    ["fenced code marker", "\\`\\`\\`not code\n"],
+    ["thematic break", "\\*\\*\\*\n"],
+    ["table row", "\\| not | a table |\n"],
   ])("round-trips a paragraph that would otherwise reparse as %s", (_label, canonical) => {
     expectRoundTrip(canonical);
   });
@@ -256,3 +303,14 @@ describe("Paragraph block-start escapes", () => {
     expectRoundTrip("**bold** at line start.\n");
   });
 });
+
+function createTableDocument(rows: string[][]) {
+  return createDocument([
+    createTableBlock({
+      align: rows[0]?.map(() => null) ?? [],
+      rows: rows.map((row) =>
+        createTableRow(row.map((cell) => createTableCell([createText(cell)]))),
+      ),
+    }),
+  ]);
+}

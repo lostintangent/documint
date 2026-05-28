@@ -2,7 +2,6 @@
  * Parses paragraph-like inline markdown into semantic inline nodes.
  */
 import {
-  createCode,
   createImage,
   createLineBreak,
   createLink,
@@ -16,19 +15,21 @@ import {
 import type { Inline, Mark } from "@/document";
 import {
   inlineMarkSpecs,
+  isDelimitedInlineMarkSpec,
+  isHtmlInlineMarkSpec,
   lineFeed,
   resolveRegisteredMarkdownResourceProtocol,
+  type InlineMarkContentPolicy,
   type InlineMarkDelimiter,
-  type HtmlInlineMarkSpec,
 } from "../shared";
 import type { MarkdownParseContext } from "./context";
 
 // --- Single-character markers ---
 // Each begins a construct without a paired closing delimiter: an escape applies
-// to the next character; backticks build a variable-width inline-code fence; a
-// colon starts a text directive; spaces are skipped inside link destinations.
+// to the next character; a configured literal mark can build a variable-width
+// fence; a colon starts a text directive; spaces are skipped inside link
+// destinations.
 const escapeMarker = "\\";
-const inlineCodeMarker = "`";
 const directiveMarker = ":";
 const spaceCharacter = " ";
 
@@ -65,22 +66,52 @@ const markdownDestinationEscape = /\\(.)/g;
 // sort is stable (ES2019+) and length-desc, so longer delimiters precede
 // their shorter prefixes — `**` matches before `*` — and equal-length
 // delimiters keep their source order (`*` before `_`).
-type ParsedInlineMarkDelimiter = InlineMarkDelimiter & { mark: Mark };
+type ParsedInlineMarkDelimiter = InlineMarkDelimiter & {
+  content: InlineMarkContentPolicy;
+  mark: Mark;
+};
+type ParsedHtmlMarkTag = {
+  closeTag: string;
+  mark: Mark;
+  openTag: string;
+};
 
-const inlineMarkDelimiters: ReadonlyArray<ParsedInlineMarkDelimiter> = inlineMarkSpecs
-  .filter((spec) => spec.kind === "delimiter")
-  .flatMap((spec) =>
-    spec.delimiters.map<ParsedInlineMarkDelimiter>((d) => ({
+const delimitedMarkDelimiters = collectInlineMarkDelimiters();
+const htmlMarkTags = collectHtmlMarkTags();
+
+function collectInlineMarkDelimiters(): ReadonlyArray<ParsedInlineMarkDelimiter> {
+  return inlineMarkSpecs
+    .filter(isDelimitedInlineMarkSpec)
+    .flatMap((spec) =>
+      spec.delimiters.map<ParsedInlineMarkDelimiter>((delimiter) => ({
+        content: spec.content,
+        mark: spec.mark,
+        boundary: delimiter.boundary,
+        delimiter: delimiter.delimiter,
+      })),
+    )
+    .sort((left, right) => right.delimiter.length - left.delimiter.length);
+}
+
+function collectDelimiterLeadChars(delimiters: ReadonlyArray<ParsedInlineMarkDelimiter>) {
+  return [
+    ...new Set(
+      delimiters
+        .map((spec) => spec.delimiter[0])
+        .filter((char): char is string => Boolean(char)),
+    ),
+  ];
+}
+
+function collectHtmlMarkTags(): ReadonlyArray<ParsedHtmlMarkTag> {
+  return inlineMarkSpecs.filter(isHtmlInlineMarkSpec).flatMap((spec) =>
+    spec.tags.map((tag) => ({
+      closeTag: `</${tag}>`,
       mark: spec.mark,
-      delimiter: d.delimiter,
-      requireWordBoundary: d.requireWordBoundary,
+      openTag: `<${tag}>`,
     })),
-  )
-  .sort((left, right) => right.delimiter.length - left.delimiter.length);
-
-const htmlInlineMarkSpecs: ReadonlyArray<HtmlInlineMarkSpec> = inlineMarkSpecs.filter(
-  (spec) => spec.kind === "html",
-);
+  );
+}
 
 export function parseInlines(source: string, context: MarkdownParseContext): Inline[] {
   return parseInlineRange(source, 0, source.length, [], context);
@@ -157,12 +188,11 @@ const inlineTokenReaders: ReadonlyArray<{
   { leadChars: [escapeMarker], read: readBackslashLineBreakToken },
   { leadChars: [escapeMarker], read: readGenericEscapeToken },
   { leadChars: [lineFeed], read: readTrailingSpaceLineBreakToken },
-  { leadChars: [inlineCodeMarker], read: readInlineCodeToken },
   { leadChars: ["!"], read: readImageToken },
   { leadChars: ["@"], read: readMentionToken },
   { leadChars: [linkOpening], read: readLinkToken },
   {
-    leadChars: inlineMarkDelimiters.map((spec) => spec.delimiter[0]),
+    leadChars: collectDelimiterLeadChars(delimitedMarkDelimiters),
     read: readDelimitedMarkToken,
   },
 ];
@@ -276,24 +306,24 @@ function readHtmlMarkToken(
   marks: Mark[],
   context: MarkdownParseContext,
 ) {
-  for (const spec of htmlInlineMarkSpecs) {
-    if (!source.startsWith(spec.openTag, index)) {
+  for (const tag of htmlMarkTags) {
+    if (!source.startsWith(tag.openTag, index)) {
       continue;
     }
 
-    const closeIndex = source.indexOf(spec.closeTag, index + spec.openTag.length);
+    const closeIndex = source.indexOf(tag.closeTag, index + tag.openTag.length);
 
     if (closeIndex < 0 || closeIndex >= end) {
       continue;
     }
 
     return {
-      end: closeIndex + spec.closeTag.length,
+      end: closeIndex + tag.closeTag.length,
       nodes: parseInlineRange(
         source,
-        index + spec.openTag.length,
+        index + tag.openTag.length,
         closeIndex,
-        [...marks, spec.mark],
+        [...marks, tag.mark],
         context,
       ),
     };
@@ -403,30 +433,6 @@ function readTrailingSpaceLineBreakToken(source: string, index: number) {
     end: index + 1,
     nodes: [createLineBreak()],
     trimLeading,
-  };
-}
-
-function readInlineCodeToken(source: string, index: number, end: number) {
-  if (source[index] !== inlineCodeMarker) {
-    return null;
-  }
-
-  let fenceWidth = 1;
-
-  while (index + fenceWidth < end && source[index + fenceWidth] === inlineCodeMarker) {
-    fenceWidth += 1;
-  }
-
-  const fence = inlineCodeMarker.repeat(fenceWidth);
-  const closeIndex = source.indexOf(fence, index + fenceWidth);
-
-  if (closeIndex < 0 || closeIndex >= end) {
-    return null;
-  }
-
-  return {
-    end: closeIndex + fenceWidth,
-    nodes: [createCode(source.slice(index + fenceWidth, closeIndex))],
   };
 }
 
@@ -621,48 +627,93 @@ function readDelimitedMarkToken(
   marks: Mark[],
   context: MarkdownParseContext,
 ) {
-  for (const spec of inlineMarkDelimiters) {
+  for (const spec of delimitedMarkDelimiters) {
     if (!source.startsWith(spec.delimiter, index)) {
       continue;
     }
 
-    // Use the escape-aware sequence scan so `**foo \** bar**` doesn't close
-    // prematurely on the escaped delimiter.
-    const closeIndex = findUnescapedSequence(
-      source,
-      spec.delimiter,
-      index + spec.delimiter.length,
-      end,
-    );
+    const delimiter = resolveOpeningDelimiter(source, index, spec);
+    const closeIndex = findDelimitedMarkClose(source, index, end, delimiter, spec.content);
 
-    if (closeIndex < 0) {
+    if (closeIndex < 0 || closeIndex >= end) {
       continue;
     }
 
-    if (spec.requireWordBoundary) {
-      const before = index > 0 ? source[index - 1] : "";
-      const after = source[closeIndex + spec.delimiter.length] ?? "";
-
-      if (wordCharacter.test(before) || wordCharacter.test(after)) {
-        continue;
-      }
+    if (
+      !delimiterCanBind(
+        source,
+        index,
+        closeIndex,
+        delimiter,
+        spec.boundary,
+      )
+    ) {
+      continue;
     }
 
-    const contentStart = index + spec.delimiter.length;
+    const contentStart = index + delimiter.length;
+    const contentEnd = closeIndex;
+    const endIndex = closeIndex + delimiter.length;
+    const marked = [...marks, spec.mark];
 
     return {
-      end: closeIndex + spec.delimiter.length,
-      nodes: parseInlineRange(
-        source,
-        contentStart,
-        closeIndex,
-        [...marks, spec.mark],
-        context,
-      ),
+      end: endIndex,
+      nodes:
+        spec.content === "literal"
+          ? [createText(source.slice(contentStart, contentEnd), marked)]
+          : parseInlineRange(source, contentStart, contentEnd, marked, context),
     };
   }
 
   return null;
+}
+
+function resolveOpeningDelimiter(
+  source: string,
+  index: number,
+  spec: ParsedInlineMarkDelimiter,
+) {
+  if (spec.content !== "literal") {
+    return spec.delimiter;
+  }
+
+  let width = 1;
+
+  while (source.startsWith(spec.delimiter, index + width * spec.delimiter.length)) {
+    width += 1;
+  }
+
+  return spec.delimiter.repeat(width);
+}
+
+function findDelimitedMarkClose(
+  source: string,
+  index: number,
+  end: number,
+  delimiter: string,
+  content: InlineMarkContentPolicy,
+) {
+  const contentStart = index + delimiter.length;
+
+  return content === "literal"
+    ? source.indexOf(delimiter, contentStart)
+    : findUnescapedSequence(source, delimiter, contentStart, end);
+}
+
+function delimiterCanBind(
+  source: string,
+  openIndex: number,
+  closeIndex: number,
+  closingDelimiter: string,
+  boundary: ParsedInlineMarkDelimiter["boundary"],
+) {
+  if (boundary !== "word") {
+    return true;
+  }
+
+  const before = openIndex > 0 ? source[openIndex - 1] : "";
+  const after = source[closeIndex + closingDelimiter.length] ?? "";
+  return !wordCharacter.test(before) && !wordCharacter.test(after);
 }
 
 // --- Text helpers ---

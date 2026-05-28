@@ -1,5 +1,5 @@
 import { useMemo, useRef, useEffectEvent } from "react";
-import { resizeImage, type InlineEntry } from "@/editor";
+import { resizeImage, type IndexedInline } from "@/editor";
 import type { DocumentResources } from "@/types";
 import { imageAtCursorSprig, useEditorCommand, useSprig } from "../store";
 import type { ResizeHandle } from "./useSelection";
@@ -14,7 +14,7 @@ export function useImageHandles(resources: DocumentResources | null): ResizeHand
   const dragStartWidthRef = useRef<number | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const dragDirectionRef = useRef<1 | -1>(1);
-  const draggedImageRef = useRef<InlineEntry | null>(null);
+  const draggedImageRef = useRef<IndexedInline | null>(null);
   const dragMaxWidthRef = useRef<number | null>(null);
 
   const onPointerDown = useEffectEvent(

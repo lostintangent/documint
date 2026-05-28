@@ -232,8 +232,6 @@ function inlineSeedFor(node: Inline, plainText?: string): string {
       return `${node.userId}:${node.name}`;
     case "resource":
       return `${node.url}:${node.label}`;
-    case "code":
-      return node.code;
     case "text":
       return `${node.text}:${node.marks.join(",")}`;
     case "raw":

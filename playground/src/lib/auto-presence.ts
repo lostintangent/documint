@@ -8,6 +8,12 @@ const minSnippetLength = 18;
 const maxSnippetLength = 90;
 const longLineThreshold = 42;
 const autoPresenceColor = "#f97316";
+const autoPresenceStatuses = [
+  "Reviewing this section",
+  "Checking the wording",
+  "Reading nearby comments",
+  "Editing context",
+];
 
 export function createRandomAutoPresence(content: string, userId: string): DocumentPresence | null {
   const candidates = extractVisibleTextCandidates(content);
@@ -21,6 +27,7 @@ export function createRandomAutoPresence(content: string, userId: string): Docum
   return {
     color: autoPresenceColor,
     cursor: Math.random() > 0.5 ? { prefix: text } : { suffix: text },
+    status: autoPresenceStatuses[Math.floor(Math.random() * autoPresenceStatuses.length)],
     userId,
   };
 }

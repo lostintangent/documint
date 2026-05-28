@@ -30,7 +30,7 @@ test("detects active resources only when their line is visible", () => {
     resources,
   );
   const resourceRegion = state.documentIndex.regions.find((region) =>
-    region.content.kind === "inline-text"
+    region.content.kind === "inlines"
       ? region.content.inlines.some((inline) => inline.node.type === "resource")
       : false,
   );

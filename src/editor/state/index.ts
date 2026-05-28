@@ -3,30 +3,35 @@ export { commitDocument, createDocumentIndex, spliceDocumentIndex } from "./inde
 
 // Types
 export type {
-  BlockEntry,
+  IndexedBlock,
   BlockKind,
   DocumentIndex,
-  InlineEntry,
-  ListItemMarker,
-  RegionEntry,
-  RootEntry,
+  IndexedInline,
+  IndexedListItem,
+  EditableRegion,
+  IndexedRoot,
 } from "./index/types";
 
 // Inline selectors
-export { findInlinesInSpan, regionInlines } from "./index/inlines";
+export {
+  findInlinesInRange,
+  indexedInlineText,
+  projectInlineText,
+  regionInlines,
+} from "./index/inlines";
 
 // Index queries
 export {
   compareEditorPositions,
   countRootBlocks,
   createSemanticRegionIndex,
-  findAncestorBlockEntry,
+  findAncestorIndexedBlock,
   firstInFlowRegionOfRoot,
   isContainerBlock,
   isInertBlock,
-  isInlineTextRegion,
-  isSourceTextRegion,
-  isRootBlockEntry,
+  isInlineRegion,
+  isSourceRegion,
+  isRootIndexedBlock,
   nextBlockInFlow,
   nextRegionInFlow,
   previousBlockInFlow,
@@ -34,13 +39,13 @@ export {
   resolveActiveBlockKey,
   resolveBlock,
   resolveBlockChildIndices,
-  resolveBlockEntry,
-  resolveBlockEntryForRegion,
+  resolveIndexedBlock,
+  resolveIndexedBlockForRegion,
   resolveBlockPathForRegion,
   resolveCommentThreadIndicesForRegion,
   resolveDescendantPrimaryRegion,
   resolveDocumentBoundaryRegion,
-  resolveParentBlockEntry,
+  resolveParentIndexedBlock,
   resolvePrimaryRegion,
   resolveRegion,
   resolveRegionByPath,

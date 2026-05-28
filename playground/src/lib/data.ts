@@ -1,4 +1,4 @@
-import { darkTheme, lightTheme, midnightTheme, mintTheme, type EditorTheme } from "documint";
+import { darkTheme, lightTheme, type EditorTheme } from "documint";
 
 export const slowSampleImagePath = "playground-slow-editor-shell.png";
 export const slowSampleImageSource =
@@ -8,7 +8,7 @@ const sampleMarkdown = `# 🎓 Tutorial Document
 
 Welcome to Documint 👋, a canvas-based markdown editor for rich documents with formatting, tables, images, comments, mentions, and custom decorations.
 
-Use the theme control in the upper right to preview how hosts can recolor the editor surface.
+Use the [theme picker](playground:/theme) to see how the editor can be themed in various ways.
 
 As you edit the document, the markdown updates on the right; you can also edit that markdown directly to update the document.
 
@@ -248,7 +248,6 @@ const sunriseTheme: EditorTheme = {
   inlineCodeBackground: "rgba(194, 65, 12, 0.08)",
   inlineCodeText: "#9a3412",
   leafAccent: "#ea580c",
-  leafBackground: "#fff7ed",
   leafBorder: "rgba(234, 88, 12, 0.24)",
   leafInputBackground: "rgba(194, 65, 12, 0.08)",
   leafSecondaryText: "#9a3412",
@@ -264,6 +263,77 @@ const sunriseTheme: EditorTheme = {
   tableBodyBackground: "rgba(255, 247, 237, 0.96)",
   tableBorder: "rgba(234, 88, 12, 0.24)",
   tableHeaderBackground: "rgba(255, 237, 213, 0.96)",
+};
+
+const mintTheme: EditorTheme = {
+  ...lightTheme,
+  activeBlockBackground: "rgba(16, 185, 129, 0.14)",
+  activeBlockFlash: "rgba(16, 185, 129, 0.26)",
+  background: "#f3fbf6",
+  blockquoteRule: "rgba(5, 150, 105, 0.22)",
+  blockquoteRuleActive: "rgba(6, 95, 70, 0.38)",
+  blockquoteText: "#166534",
+  codeBackground: "#052e16",
+  codeText: "#dcfce7",
+  commentHighlight: "rgba(52, 211, 153, 0.26)",
+  commentHighlightActive: "#10b981",
+  commentHighlightResolved: "rgba(187, 247, 208, 0.96)",
+  commentHighlightResolvedActive: "#059669",
+  headingRule: "rgba(20, 83, 45, 0.18)",
+  inlineCodeBackground: "rgba(20, 83, 45, 0.08)",
+  inlineCodeText: "#166534",
+  insertHighlightText: "#10b981",
+  leafAccent: "#059669",
+  leafBorder: "rgba(22, 163, 74, 0.24)",
+  leafInputBackground: "rgba(20, 83, 45, 0.08)",
+  leafResolvedBackground: "#d1fae5",
+  leafResolvedBorder: "#10b981",
+  leafSecondaryText: "#166534",
+  leafShadow: "0 14px 40px rgba(20, 83, 45, 0.14)",
+  linkText: "#047857",
+  selectionBackground: "rgba(52, 211, 153, 0.24)",
+  selectionHandleBackground: "#f3fbf6",
+  selectionHandleBorder: "#059669",
+  tableBodyBackground: "rgba(243, 251, 246, 0.96)",
+  tableBorder: "rgba(22, 163, 74, 0.24)",
+  tableHeaderBackground: "rgba(220, 252, 231, 0.96)",
+  text: "#14532d",
+};
+
+const midnightTheme: EditorTheme = {
+  ...darkTheme,
+  activeBlockBackground: "rgba(168, 85, 247, 0.16)",
+  activeBlockFlash: "rgba(243, 232, 255, 0.13)",
+  blockquoteRule: "rgba(196, 181, 253, 0.34)",
+  blockquoteRuleActive: "rgba(216, 180, 254, 0.44)",
+  caret: "#f5f3ff",
+  codeBackground: "#1e1b4b",
+  codeText: "#ede9fe",
+  commentHighlight: "rgba(167, 139, 250, 0.28)",
+  commentHighlightActive: "#c084fc",
+  commentHighlightResolved: "rgba(45, 212, 191, 0.22)",
+  commentHighlightResolvedActive: "#2dd4bf",
+  headingRule: "rgba(233, 213, 255, 0.24)",
+  inlineCodeBackground: "rgba(196, 181, 253, 0.16)",
+  inlineCodeText: "#f9a8d4",
+  insertHighlightText: "#c084fc",
+  leafAccent: "#d8b4fe",
+  leafBackground: "#12091f",
+  leafBorder: "rgba(139, 92, 246, 0.34)",
+  leafInputBackground: "rgba(196, 181, 253, 0.16)",
+  leafResolvedBackground: "rgba(45, 212, 191, 0.22)",
+  leafResolvedBorder: "#2dd4bf",
+  leafSecondaryText: "#ddd6fe",
+  leafShadow: "0 20px 48px rgba(2, 6, 23, 0.48), 0 0 0 1px rgba(196, 181, 253, 0.08)",
+  leafText: "#f5f3ff",
+  linkText: "#d8b4fe",
+  selectionBackground: "rgba(167, 139, 250, 0.26)",
+  selectionHandleBackground: "#12091f",
+  selectionHandleBorder: "#d8b4fe",
+  tableBodyBackground: "rgba(30, 27, 75, 0.88)",
+  tableBorder: "rgba(139, 92, 246, 0.34)",
+  tableHeaderBackground: "rgba(49, 46, 129, 0.94)",
+  text: "#ede9fe",
 };
 
 export const themeOptions = [

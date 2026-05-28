@@ -8,7 +8,7 @@
 
 import type { Block } from "@/document";
 import { resolveLineContentInset, type DocumentLayout } from "@/editor/layout";
-import { findAncestorBlockEntry, type EditorState } from "@/editor/state";
+import { findAncestorIndexedBlock, type EditorState } from "@/editor/state";
 import type { ResolvedEditorTheme } from "@/types";
 
 const blockquoteRuleBottomInset = 3;
@@ -142,7 +142,7 @@ export function resolveVisibleBlockquoteRegions(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    const blockquoteEntry = findAncestorBlockEntry(
+    const blockquoteEntry = findAncestorIndexedBlock(
       editorState.documentIndex,
       line.blockId,
       "blockquote",

@@ -10,10 +10,10 @@
 // fall-through that turned new container kinds into leaves). The registry
 // closes that leak — adding a container kind means one new entry below.
 //
-// Three operations per spec:
-//   - `read(block)`               returns the existing child list (typed as
-//     `Block[]` so callers don't have to discriminate). List items are blocks,
-//     so a list's read returns its `items` widened to `Block[]`.
+// Three operations per typed spec:
+//   - `read(block)`               returns the existing child list in its
+//     concrete shape. Lists own `ListItemBlock[]`; blockquotes/list items own
+//     ordinary `Block[]`.
 //   - `rebuild(block, children)`  returns a canonical copy with the new
 //     children, including a recomputed `plainText`. Used when the caller
 //     wants the canonical form.
@@ -31,8 +31,8 @@
 // (rows → cells → inlines), so the inline-container vocabulary handles them
 // instead.
 
-import { createBlockquoteBlock, rebuildListBlock, rebuildListItemBlock } from "./build";
-import type { Block, ListItemBlock } from "./types";
+import { createBlockquoteBlock, rebuildListBlock, rebuildListItemBlock } from "./build/builders";
+import type { Block, BlockquoteBlock, ListBlock, ListItemBlock } from "./types";
 
 type BlockContainerSpec = {
   read(block: Block): Block[];
@@ -40,27 +40,53 @@ type BlockContainerSpec = {
   withChildren(block: Block, children: Block[]): Block;
 };
 
-const BLOCK_CONTAINER_SPECS: { [K in Block["type"]]?: BlockContainerSpec } = {
-  blockquote: {
-    read: (block) => (block.type === "blockquote" ? block.children : []),
-    rebuild: (_block, children) => createBlockquoteBlock(children),
-    withChildren: (block, children) =>
-      block.type === "blockquote" ? { ...block, children } : block,
-  },
-  listItem: {
-    read: (block) => (block.type === "listItem" ? block.children : []),
-    rebuild: (block, children) => rebuildListItemBlock(block as ListItemBlock, children),
-    withChildren: (block, children) =>
-      block.type === "listItem" ? { ...block, children } : block,
-  },
-  list: {
-    read: (block) => (block.type === "list" ? block.items : []),
-    rebuild: (block, children) =>
-      block.type === "list" ? rebuildListBlock(block, children as ListItemBlock[]) : block,
-    withChildren: (block, children) =>
-      block.type === "list" ? { ...block, items: children as ListItemBlock[] } : block,
-  },
+type ContainerBlock = BlockquoteBlock | ListBlock | ListItemBlock;
+
+type TypedBlockContainerSpec<TBlock extends ContainerBlock, TChild extends Block> = {
+  read(block: TBlock): TChild[];
+  rebuild(block: TBlock, children: TChild[]): TBlock;
+  type: TBlock["type"];
+  withChildren(block: TBlock, children: TChild[]): TBlock;
 };
+
+const BLOCK_CONTAINER_SPECS: { [K in Block["type"]]?: BlockContainerSpec } = {
+  blockquote: defineBlockContainerSpec<BlockquoteBlock, Block>({
+    type: "blockquote",
+    read: (block) => block.children,
+    rebuild: (_block, children) => createBlockquoteBlock(children),
+    withChildren: (block, children) => ({ ...block, children }),
+  }),
+  listItem: defineBlockContainerSpec<ListItemBlock, Block>({
+    type: "listItem",
+    read: (block) => block.children,
+    rebuild: rebuildListItemBlock,
+    withChildren: (block, children) => ({ ...block, children }),
+  }),
+  list: defineBlockContainerSpec<ListBlock, ListItemBlock>({
+    type: "list",
+    read: (block) => block.items,
+    rebuild: (block, children) => rebuildListBlock(block, children),
+    withChildren: (block, children) => ({ ...block, items: children }),
+  }),
+};
+
+function defineBlockContainerSpec<TBlock extends ContainerBlock, TChild extends Block>(
+  spec: TypedBlockContainerSpec<TBlock, TChild>,
+): BlockContainerSpec {
+  return {
+    read(block) {
+      return block.type === spec.type ? spec.read(block as TBlock) : [];
+    },
+    rebuild(block, children) {
+      return block.type === spec.type ? spec.rebuild(block as TBlock, children as TChild[]) : block;
+    },
+    withChildren(block, children) {
+      return block.type === spec.type
+        ? spec.withChildren(block as TBlock, children as TChild[])
+        : block;
+    },
+  };
+}
 
 export function blockContainerSpec(block: Block): BlockContainerSpec | null {
   return BLOCK_CONTAINER_SPECS[block.type] ?? null;

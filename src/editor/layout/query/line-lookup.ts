@@ -1,6 +1,6 @@
 // Owns line lookup and line-boundary algebra over a prepared `DocumentLayout`.
 
-import type { DocumentLineBoundary, DocumentLayout, DocumentLayoutLine } from "../measure";
+import type { LineBoundary, DocumentLayout, LayoutLine } from "../measure";
 
 export function findDocumentLayoutLineAtY(layout: DocumentLayout, y: number) {
   let low = 0;
@@ -161,13 +161,13 @@ export function findDocumentLayoutLineEntryForRegionOffset(
 }
 
 export function measureCanvasLineOffsetLeft(
-  line: Pick<DocumentLayoutLine, "boundaries" | "left">,
+  line: Pick<LayoutLine, "boundaries" | "left">,
   localOffset: number,
 ) {
   return line.left + resolveBoundaryLeft(line.boundaries, localOffset);
 }
 
-export function resolveBoundaryOffset(boundaries: DocumentLineBoundary[], x: number) {
+export function resolveBoundaryOffset(boundaries: LineBoundary[], x: number) {
   if (boundaries.length === 0) {
     return 0;
   }
@@ -205,7 +205,7 @@ function findContainingRegionId(layout: DocumentLayout, point: { x: number; y: n
 }
 
 function collectLinesAtY(layout: DocumentLayout, y: number, seedIndex: number) {
-  const matches: Array<{ index: number; line: DocumentLayoutLine }> = [];
+  const matches: Array<{ index: number; line: LayoutLine }> = [];
 
   for (let index = seedIndex; index >= 0; index -= 1) {
     const line = layout.lines[index]!;
@@ -238,7 +238,7 @@ function collectLinesAtY(layout: DocumentLayout, y: number, seedIndex: number) {
 
 function findNearestHorizontalCandidate(
   layout: DocumentLayout,
-  candidates: Array<{ index: number; line: DocumentLayoutLine }>,
+  candidates: Array<{ index: number; line: LayoutLine }>,
   x: number,
 ) {
   let nearest = candidates[0] ?? null;
@@ -273,7 +273,7 @@ function resolveHorizontalDistance(x: number, extent: { left: number; right: num
   return 0;
 }
 
-function resolveBoundaryLeft(boundaries: DocumentLineBoundary[], offset: number) {
+function resolveBoundaryLeft(boundaries: LineBoundary[], offset: number) {
   for (const boundary of boundaries) {
     if (boundary.offset === offset) {
       return boundary.left;

@@ -95,15 +95,29 @@ function parseAlignmentRow(line: string) {
 }
 
 // Caller must have already verified `line` is a pipe-fenced row via
-// `looksLikeTableRow`. Returns the trimmed cell list. Every call site —
+// `looksLikeTableRow`. Returns the trimmed cell list, splitting only on
+// unescaped pipes so `a \| b` stays one semantic cell. Every call site —
 // `readTable` (twice), `looksLikeAlignmentRow`, `parseAlignmentRow` —
 // pre-gates with `looksLikeTableRow` (directly or transitively), so the
 // boundary check that used to live here was always redundant on the path
 // that reached it.
 function splitTableRow(line: string) {
-  return line
-    .trim()
-    .slice(1, -1)
-    .split("|")
-    .map((cell) => cell.trim());
+  const cells: string[] = [];
+  const body = line.trim().slice(1, -1);
+  let cellStart = 0;
+
+  for (let index = 0; index < body.length; index += 1) {
+    if (body[index] === "\\") {
+      index += 1;
+      continue;
+    }
+
+    if (body[index] === "|") {
+      cells.push(body.slice(cellStart, index).trim());
+      cellStart = index + 1;
+    }
+  }
+
+  cells.push(body.slice(cellStart).trim());
+  return cells;
 }

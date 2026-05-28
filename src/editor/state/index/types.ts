@@ -1,61 +1,57 @@
 // Editor model type definitions: the runtime representation of a document
-// as flattened roots, blocks, regions, editor inlines, and lookup indexes.
+// as flattened roots, indexed blocks, regions, indexed inlines, and lookup indexes.
 import type { Block, Document, Inline, Link } from "@/document";
 
 // Closed taxonomy of how a block contributes to editor coordinate space.
-// Stamped on `BlockEntry.kind` so callers can dispatch in O(1) without
+// Stamped on `IndexedBlock.kind` so callers can dispatch in O(1) without
 // re-classifying from `block.type`. The variant payloads live in roots.ts's
 // `BLOCK_CONTRIBUTIONS` table; this type is only the discriminator.
 //
 //   - `container`     - structural wrapper; recurse into children, no own region
-//   - `inline-text`   - text-bearing leaf; one region with flattened inlines
+//   - `inline-text`   - text-bearing leaf; one region with indexed inlines
 //   - `source-text`   - opaque-source leaf; one region with raw text
 //   - `cells`         - table; one inline-bearing region per cell
 //   - `inert`         - leaf with no editable region (divider, directive)
 export type BlockKind = "container" | "inline-text" | "source-text" | "cells" | "inert";
 
-// A flattened inline entry. References the source document Inline node
-// directly; the discriminator is `node.type`. Link wrappers are flattened
-// (their children appear as siblings) and propagated via the orthogonal
-// `link` field. The index adds only what the document doesn't carry:
-// `start`/`end` char offsets in the region's coordinate space, and the
-// projected `text` (which differs from `node`'s own text for references
-// — image/mention/resource project to `￼`, lineBreak projects to `\n`).
+// A document inline projected into the editor index. References the source
+// document Inline node directly; the discriminator is `node.type`. Link
+// wrappers are flattened (their children appear as siblings) and propagated
+// via the orthogonal `link` field. The index adds only what the document
+// doesn't carry: `start`/`end` char offsets in the region's coordinate space.
 //
-// Inline entries only exist for inline-bearing regions (`content.kind ===
-// "inline-text"`). Source-bearing regions (code, raw blocks) hold raw text
-// in `region.text` and carry no flattened inlines.
-export type InlineEntry = {
+// Indexed inlines only exist for inline-bearing editable regions
+// (`content.kind === "inlines"`). Source-bearing editable regions (code,
+// raw blocks) hold raw text in `region.text` and carry no indexed inlines.
+export type IndexedInline = {
   end: number;
   link: Link | null;
   node: Exclude<Inline, Link>;
   start: number;
-  text: string;
 };
 
-// Effective list-item marker semantics derived from document tree context.
-// The document owns the source facts (`ListBlock.ordered/start`,
-// `ListItemBlock.checked`, and nesting shape); the index caches the per-item
-// projection layout/paint needs in O(1). Rendered glyphs such as bullets or
-// ordered-label strings belong to the renderer, not this type.
-export type ListItemMarker =
+// A list item projected into the editor index. The document owns the source
+// facts (`ListBlock.ordered/start`, `ListItemBlock.checked`, and nesting
+// shape); the index flattens those contextual facts onto the item so layout,
+// navigation, and paint can read them in O(1).
+export type IndexedListItem =
   | { checked: boolean; depth: number; kind: "task" }
   | { depth: number; kind: "unordered" }
   | { depth: number; kind: "ordered"; ordinal: number };
 
-export type RegionEntry = {
-  // Direct reference to the document Block this region belongs to. For table
-  // regions, this is the `table` block (the cell is identified separately by
-  // `tableCellPosition`). For text/code/raw blocks it's the block itself.
+export type EditableRegion = {
+  // Direct reference to the document Block this editable region belongs to.
+  // For table cell regions, this is the `table` block (the cell is identified
+  // separately by `tableCellPosition`). For paragraph/heading/code/raw blocks
+  // it's the block itself.
   block: Block;
-  // What this region carries. Inline-bearing regions (paragraph, heading,
-  // table cell) flatten their Inline trees into `content.inlines`. Source-
-  // bearing regions (code, raw) just point at the block; their text comes
-  // from `region.text` or directly from `block.source` — no synthetic inline
-  // wrapper. Editing primitives dispatch on `content.kind`. The discriminators
-  // match the corresponding `BlockKind` values so contribution → content
-  // mapping is identity-preserving.
-  content: RegionContent;
+  // What this editable region carries. Inline regions (paragraph, heading,
+  // table cell) flatten their Inline trees into `content.inlines`; those
+  // inlines may be text, soft breaks, images, mentions, resources, or raw
+  // inline nodes. Source regions (code, raw) just point at the block; their
+  // text comes from `region.text` or directly from `block.source` — no
+  // synthetic inline wrapper. Editing primitives dispatch on `content.kind`.
+  content: EditableRegionContent;
   // Path to the structural container this region addresses (the parent of
   // `path`). For inline-bearing blocks this is the block's path; for table
   // cells it's the cell's path; for source regions it's the block's path.
@@ -78,17 +74,16 @@ export type RegionEntry = {
   text: string;
 };
 
-export type RegionContent =
-  | { kind: "inline-text"; inlines: readonly InlineEntry[] }
-  | { kind: "source-text" };
+export type EditableRegionContent =
+  | { kind: "inlines"; inlines: readonly IndexedInline[] }
+  | { kind: "source" };
 
-// A block entry in `DocumentIndex.blockIndex`. Carries a direct reference to
-// the source document `Block` (so `entry.block.type`, `entry.block.id`, and
-// the block's children are reached through one pointer hop, not duplicated)
-// plus the index-only metadata: char-offset coordinates, document-order
-// position, depth, parent, taxonomy kind, and the regions this block
-// contributes.
-export type BlockEntry = {
+// A block projected into the editor index. Carries a direct reference to the
+// source document `Block` (so `block.type`, `block.id`, and the block's
+// children are reached through one pointer hop, not duplicated) plus the
+// index-only metadata: char-offset coordinates, document-order position,
+// depth, parent, taxonomy kind, and the regions this block contributes.
+export type IndexedBlock = {
   block: Block;
   // Position of this block in `DocumentIndex.blocks`. Set by the indexer,
   // re-stamped on every root reposition. Used by navigation's block-flow
@@ -108,40 +103,40 @@ export type BlockEntry = {
   start: number;
 };
 
-// Internal optimization scaffolding. Groups all blocks and regions from a
-// single top-level document block, enabling incremental model rebuilds that
-// only reprocess the affected root.
-export type RootEntry = {
+// A top-level document block projected into the editor index. Groups every
+// indexed block and editable region reachable from that root, enabling
+// incremental model rebuilds that only reprocess the affected root.
+export type IndexedRoot = {
   blockRange: { end: number; start: number };
-  blocks: BlockEntry[];
+  blocks: IndexedBlock[];
   end: number;
   // URLs of image inlines reachable from this root. Collected during the
   // existing inline walk so the per-document image-resource hook can read
   // the set without re-walking the tree on every keystroke. Reused by
-  // reference identity when the root itself is reused (`canReuseRootEntry`).
+  // reference identity when the root itself is reused (`canReuseIndexedRoot`).
   imageUrls: ReadonlySet<string>;
   // URLs of resource inlines reachable from this root. Collected during the
   // existing inline walk so the component can notify the host about discovered
   // resources and reconcile host-provided active resource state.
   resourceUrls: ReadonlySet<string>;
-  // List/task/ordered marker semantics for list items inside this root.
-  // Collected while the root is already being walked so unrelated root edits
-  // don't force a full-document marker rebuild.
-  listItemMarkers: ReadonlyMap<string, ListItemMarker>;
+  // Contextual list-item projections inside this root. Collected while the
+  // root is already being walked so unrelated root edits don't force a
+  // full-document list-item rebuild.
+  listItems: ReadonlyMap<string, IndexedListItem>;
   regionRange: { end: number; start: number } | undefined;
-  regions: RegionEntry[];
+  regions: EditableRegion[];
   rootIndex: number;
   start: number;
 };
 
 // A flat, indexed projection of a `Document` for the editing engine: pre-flattened
-// blocks/regions, character-offset coordinates, and lookup tables for O(1) hot-path
+// blocks/editable regions, character-offset coordinates, and lookup tables for O(1) hot-path
 // access. Holds a reference back to the source `document`; carries no semantic
 // content of its own — every field is either a coordinate, a topology aid, an
 // index, or a runtime presentation projection.
 export type DocumentIndex = {
-  blockIndex: Map<string, BlockEntry>;
-  blocks: BlockEntry[];
+  blockIndex: Map<string, IndexedBlock>;
+  blocks: IndexedBlock[];
   commentContainerIndex: Map<string, number[]>;
   document: Document;
   // Union of image URLs across every root. Reference-stable when the URL
@@ -152,9 +147,9 @@ export type DocumentIndex = {
   // Union of resource URLs across every root, with the same reference-stable
   // value-comparison policy as `imageUrls`.
   resourceUrls: ReadonlySet<string>;
-  listItemMarkers: ReadonlyMap<string, ListItemMarker>;
-  regionIndex: Map<string, RegionEntry>;
-  regionPathIndex: Map<string, RegionEntry>;
-  regions: RegionEntry[];
-  roots: RootEntry[];
+  listItems: ReadonlyMap<string, IndexedListItem>;
+  regionIndex: Map<string, EditableRegion>;
+  regionPathIndex: Map<string, EditableRegion>;
+  regions: EditableRegion[];
+  roots: IndexedRoot[];
 };

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createCode,
   createHeadingTextBlock,
   createLink,
   createParagraphBlock,
@@ -128,7 +127,7 @@ describe("resolveBlockDecorationRanges", () => {
   test("does not match across inline code boundaries and preserves later offsets", () => {
     const block = createParagraphBlock([
       createText("foo"),
-      createCode("bar"),
+      createText("bar", ["code"]),
       createText("baz target"),
     ]);
 

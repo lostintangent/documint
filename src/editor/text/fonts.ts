@@ -11,7 +11,7 @@ export type InlineTextStyle = {
 
 type InlineMarkTypography = {
   affectsMetrics?: boolean;
-  appliesToInlineCode?: boolean;
+  appliesToCode?: boolean;
   baselineShiftRatio?: number;
   fontScale?: number;
   fontStyle?: "italic";
@@ -20,6 +20,9 @@ type InlineMarkTypography = {
 };
 
 const inlineMarkTypographyByMark: Record<Mark, InlineMarkTypography> = {
+  code: {
+    affectsMetrics: true,
+  },
   bold: {
     affectsMetrics: true,
     fontWeight: "700",
@@ -32,20 +35,17 @@ const inlineMarkTypographyByMark: Record<Mark, InlineMarkTypography> = {
   underline: {},
   superscript: {
     affectsMetrics: true,
-    appliesToInlineCode: false,
+    appliesToCode: false,
     baselineShiftRatio: -0.35,
     fontScale: 0.72,
     minimumFontSize: 8,
   },
 };
 
-export function resolveInlineTextStyle(
-  font: string,
-  marks: readonly Mark[],
-  inlineCode: boolean,
-): InlineTextStyle {
-  const baseFont = inlineCode ? codeTextFont : font;
-  const markTypography = resolveInlineMarkTypography(marks, inlineCode);
+export function resolveInlineTextStyle(font: string, marks: readonly Mark[]): InlineTextStyle {
+  const isCode = marks.includes("code");
+  const baseFont = isCode ? codeTextFont : font;
+  const markTypography = resolveInlineMarkTypography(marks, isCode);
   const styledFont =
     markTypography.fontScale === 1
       ? baseFont
@@ -60,21 +60,19 @@ export function resolveInlineTextStyle(
   return {
     baselineShift,
     font: parts.length > 0 ? `${parts.join(" ")} ${styledFont}` : styledFont,
-    hasCustomMetrics: inlineTextHasCustomMetrics(marks, inlineCode),
+    hasCustomMetrics: inlineTextHasCustomMetrics(marks),
   };
 }
 
-export function inlineTextHasCustomMetrics(marks: readonly Mark[], inlineCode: boolean) {
-  return (
-    inlineCode ||
-    marks.some((mark) => {
-      const typography = inlineMarkTypographyByMark[mark];
-      return typography.affectsMetrics === true && markAppliesToInlineCode(typography, inlineCode);
-    })
-  );
+export function inlineTextHasCustomMetrics(marks: readonly Mark[]) {
+  const isCode = marks.includes("code");
+  return marks.some((mark) => {
+    const typography = inlineMarkTypographyByMark[mark];
+    return typography.affectsMetrics === true && markAppliesToCode(typography, isCode);
+  });
 }
 
-function resolveInlineMarkTypography(marks: readonly Mark[], inlineCode: boolean) {
+function resolveInlineMarkTypography(marks: readonly Mark[], isCode: boolean) {
   let baselineShiftRatio = 0;
   let fontScale = 1;
   let fontStyle: InlineMarkTypography["fontStyle"];
@@ -84,7 +82,7 @@ function resolveInlineMarkTypography(marks: readonly Mark[], inlineCode: boolean
   for (const mark of marks) {
     const typography = inlineMarkTypographyByMark[mark];
 
-    if (!markAppliesToInlineCode(typography, inlineCode)) {
+    if (!markAppliesToCode(typography, isCode)) {
       continue;
     }
 
@@ -104,8 +102,8 @@ function resolveInlineMarkTypography(marks: readonly Mark[], inlineCode: boolean
   };
 }
 
-function markAppliesToInlineCode(typography: InlineMarkTypography, inlineCode: boolean) {
-  return !inlineCode || typography.appliesToInlineCode !== false;
+function markAppliesToCode(typography: InlineMarkTypography, isCode: boolean) {
+  return !isCode || typography.appliesToCode !== false;
 }
 
 function scaleFontSize(font: string, scale: number, minimumFontSize: number) {
