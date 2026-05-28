@@ -161,7 +161,6 @@
      leaking up into the generic LeafAnchor surface. */
   &:has([data-resolved="true"]) {
     border-color: var(--documint-leaf-resolved-border);
-    background: var(--documint-leaf-resolved-bg);
   }
 
   & p {
@@ -409,10 +408,6 @@
   }
 }
 
-.documint-leaf-shell:has([data-resolved="true"]) .documint-leaf-input {
-  border-color: var(--documint-leaf-resolved-border);
-}
-
 /* -- Comment leaf -- */
 
 .documint-comment-leaf:not(.documint-comment-leaf-create),
@@ -522,10 +517,6 @@
       overflow: hidden;
     }
   }
-}
-
-.documint-leaf-shell:has([data-resolved="true"]) .documint-comment-reply {
-  border-top-color: color-mix(in srgb, var(--documint-leaf-resolved-border) 72%, transparent);
 }
 
 .documint-comment-presence {

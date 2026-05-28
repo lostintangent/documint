@@ -160,6 +160,13 @@ function applyDocumentMutation(
 ): EditorState {
   const nextState = pushHistory(state, documentIndex);
 
+  if (!selection && canPreserveSelection(documentIndex, state.selection)) {
+    return {
+      ...nextState,
+      selection: state.selection,
+    };
+  }
+
   const resolvedSelection =
     resolveSelectionTarget(nextState.documentIndex, selection) ?? state.selection;
 
@@ -299,6 +306,22 @@ function clampSelectionPoint(
     regionId: region.id,
     offset: Math.max(0, Math.min(point.offset, region.text.length)),
   };
+}
+
+function canPreserveSelection(documentIndex: DocumentIndex, selection: EditorSelection): boolean {
+  return (
+    canPreserveSelectionPoint(documentIndex, selection.anchor) &&
+    canPreserveSelectionPoint(documentIndex, selection.focus)
+  );
+}
+
+function canPreserveSelectionPoint(
+  documentIndex: DocumentIndex,
+  point: EditorSelectionPoint,
+): boolean {
+  const region = resolveRegion(documentIndex, point.regionId);
+
+  return Boolean(region && point.offset >= 0 && point.offset <= region.text.length);
 }
 
 function didActiveBlockChange(

@@ -7,7 +7,7 @@ import {
   replyToThread,
   resolveThread,
 } from "@/editor/state";
-import { setup, getRegion } from "../../helpers";
+import { setup, getRegion, placeAt } from "../../helpers";
 
 function stateWithThread() {
   const state = setup("Hello world\n");
@@ -58,6 +58,18 @@ describe("Comment thread commands", () => {
 
     expect(resolved).not.toBeNull();
     expect(resolved!.documentIndex.document.comments[0]?.resolvedAt).toBeTruthy();
+  });
+
+  test("preserves selection identity when resolving a comment thread", () => {
+    let state = stateWithThread();
+    const region = getRegion(state, "Hello world");
+
+    state = placeAt(state, region, "Hello ".length);
+
+    const resolved = resolveThread(state, 0, true);
+
+    expect(resolved).not.toBeNull();
+    expect(resolved!.selection).toBe(state.selection);
   });
 
   test("unresolves a previously resolved thread", () => {

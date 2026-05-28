@@ -483,6 +483,28 @@ describe("List structure", () => {
     expect(toMarkdown(toggled)).toBe("- [x] ship it\n");
   });
 
+  test("preserves selection identity when toggling task-list state", () => {
+    let state = setup("- [ ] task\n\ncursor\n");
+    const cursor = getRegion(state, "cursor");
+
+    state = placeAt(state, cursor, "cursor".length);
+
+    const taskItem = state.documentIndex.blocks.find((entry) => entry.block.type === "listItem");
+
+    if (!taskItem) {
+      throw new Error("Expected task list item");
+    }
+
+    const toggled = toggleTask(state, taskItem.block.id);
+
+    if (!toggled) {
+      throw new Error("Expected task toggle state");
+    }
+
+    expect(toMarkdown(toggled)).toBe("- [x] task\n\ncursor\n");
+    expect(toggled.selection).toBe(state.selection);
+  });
+
   test("toggles nested semantic task-list state for rendered task items", () => {
     const state = setup("- parent\n  - [ ] ship nested\n");
     const rootList = state.documentIndex.document.blocks[0];
