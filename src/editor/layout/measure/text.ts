@@ -885,11 +885,7 @@ export function resolveRegionMeasurementCacheIdentity(
     container,
     resources,
   );
-  const identity = [
-    container.path,
-    hashMeasurementText(container.text),
-    signature,
-  ].join(":");
+  const identity = [container.path, hashMeasurementText(container.text), signature].join(":");
 
   if (!hasResourceDependency) {
     regionIdentityByInlines.set(inlines, {

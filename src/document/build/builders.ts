@@ -28,6 +28,7 @@ import type {
   ListItemBlock,
   Mark,
   Mention,
+  MentionTarget,
   ParagraphBlock,
   Raw,
   RawBlock,
@@ -120,12 +121,12 @@ export function createImage(options: {
   };
 }
 
-export function createMention(options: { name: string; userId: string }): Mention {
+export function createMention(target: MentionTarget): Mention {
   return {
     id: "",
-    name: options.name,
+    name: target.name,
     type: "mention",
-    userId: options.userId,
+    userId: target.userId,
   };
 }
 

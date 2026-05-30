@@ -37,10 +37,7 @@ export function createEditorStateTransition(
   };
 }
 
-function resolveChangedRootIndexes(
-  previous: EditorState,
-  next: EditorState,
-): readonly number[] {
+function resolveChangedRootIndexes(previous: EditorState, next: EditorState): readonly number[] {
   const previousBlocks = previous.documentIndex.document.blocks;
   const nextBlocks = next.documentIndex.document.blocks;
 

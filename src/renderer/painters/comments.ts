@@ -55,7 +55,10 @@ export function paintCommentHighlights(
 
     if (shouldPulse) {
       context.save();
-      context.globalAlpha *= resolveRestingPulseAlpha(ambientAnimationTime, restingPulseMinimumAlpha);
+      context.globalAlpha *= resolveRestingPulseAlpha(
+        ambientAnimationTime,
+        restingPulseMinimumAlpha,
+      );
     }
     context.fillRect(
       left,

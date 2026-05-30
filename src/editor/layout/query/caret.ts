@@ -73,11 +73,7 @@ export function resolveCaretHitTestX(
   return resolveCaretVisualLeft(state, layout, caret) + 1;
 }
 
-function resolveCollapsedTrailingSpaceWidth(
-  state: EditorState,
-  line: LayoutLine,
-  offset: number,
-) {
+function resolveCollapsedTrailingSpaceWidth(state: EditorState, line: LayoutLine, offset: number) {
   if (offset <= line.end) {
     return 0;
   }

@@ -407,13 +407,13 @@ function canReuseIndexedRoot(
 ): previousRoot is IndexedRoot {
   return Boolean(
     previousRoot &&
-      root === previousRoot &&
-      previousRoot.start === nextRoot.start &&
-      previousRoot.end === nextRoot.end &&
-      previousRoot.blockRange.start === nextRoot.blockRange.start &&
-      previousRoot.blockRange.end === nextRoot.blockRange.end &&
-      previousRoot.regionRange?.start === nextRoot.regionRange?.start &&
-      previousRoot.regionRange?.end === nextRoot.regionRange?.end,
+    root === previousRoot &&
+    previousRoot.start === nextRoot.start &&
+    previousRoot.end === nextRoot.end &&
+    previousRoot.blockRange.start === nextRoot.blockRange.start &&
+    previousRoot.blockRange.end === nextRoot.blockRange.end &&
+    previousRoot.regionRange?.start === nextRoot.regionRange?.start &&
+    previousRoot.regionRange?.end === nextRoot.regionRange?.end,
   );
 }
 

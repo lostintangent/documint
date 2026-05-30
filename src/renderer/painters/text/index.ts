@@ -15,12 +15,5 @@
 // glyphs.ts is internal to the text painter family.
 
 export { paintLineText } from "./inlines";
-export {
-  paintTextDecorationBackgrounds,
-  paintTextDecorationOverlays,
-} from "./decorations";
-export {
-  paintTextFades,
-  paintTextHighlights,
-  paintTextPulses,
-} from "./animations";
+export { paintTextDecorationBackgrounds, paintTextDecorationOverlays } from "./decorations";
+export { paintTextFades, paintTextHighlights, paintTextPulses } from "./animations";

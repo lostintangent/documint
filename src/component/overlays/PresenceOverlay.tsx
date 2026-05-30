@@ -17,11 +17,7 @@ export function PresenceOverlay({ onSelect, presence }: PresenceOverlayProps) {
   return (
     <div aria-label="Presence" className="documint-presence-indicators">
       {presence.map((entry) => (
-        <PresenceIndicator
-          key={entry.id}
-          onSelect={() => onSelect(entry)}
-          presence={entry}
-        />
+        <PresenceIndicator key={entry.id} onSelect={() => onSelect(entry)} presence={entry} />
       ))}
     </div>
   );
@@ -71,9 +67,7 @@ function PresenceIndicator({
             initial
           )}
         </span>
-        {status ? (
-          <span className="documint-presence-indicator-status">{status}</span>
-        ) : null}
+        {status ? <span className="documint-presence-indicator-status">{status}</span> : null}
         {status && showDirection ? <LeafDivider orientation="vertical" /> : null}
         {showDirection ? (
           <span className="documint-presence-indicator-direction" aria-hidden="true">

@@ -74,9 +74,7 @@ export function spliceDocumentIndex(
 // splice, not a metadata replace.
 export function replaceDocumentMetadata(model: DocumentIndex, document: Document): DocumentIndex {
   if (document.blocks !== model.document.blocks) {
-    throw new Error(
-      "Editor model metadata replacement requires preserving root blocks.",
-    );
+    throw new Error("Editor model metadata replacement requires preserving root blocks.");
   }
 
   return applyRootDelta(model, model.roots, document);

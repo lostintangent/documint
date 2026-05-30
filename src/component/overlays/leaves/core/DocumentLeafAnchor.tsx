@@ -159,7 +159,10 @@ function resolveHorizontalOffset({
   );
 }
 
-function arePlacementsEqual(left: DocumentLeafAnchorPlacement, right: DocumentLeafAnchorPlacement): boolean {
+function arePlacementsEqual(
+  left: DocumentLeafAnchorPlacement,
+  right: DocumentLeafAnchorPlacement,
+): boolean {
   return (
     left.horizontalOffset === right.horizontalOffset &&
     left.verticalPlacement === right.verticalPlacement

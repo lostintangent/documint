@@ -56,6 +56,38 @@ describe("Inline parsing", () => {
     expect(paragraph.plainText).toBe("Hello @Jane Doe!");
   });
 
+  test("parses bare mentions from explicit mention targets", () => {
+    const paragraph = parseParagraph("Hello @Jane Doe and @Jane.\n", {
+      mentionTargets: [
+        { name: "Jane", userId: "u-jane" },
+        { name: "Jane Doe", userId: "u-jane-doe" },
+      ],
+    });
+    const firstMention = expectInlineAt(paragraph.children, 1, "mention");
+    const secondMention = expectInlineAt(paragraph.children, 3, "mention");
+
+    expect(firstMention.name).toBe("Jane Doe");
+    expect(firstMention.userId).toBe("u-jane-doe");
+    expect(secondMention.name).toBe("Jane");
+    expect(secondMention.userId).toBe("u-jane");
+  });
+
+  test("leaves bare mentions as text without mention targets", () => {
+    const paragraph = parseParagraph("Hello @Jane.\n");
+
+    expect(paragraph.children).toHaveLength(1);
+    expectTextAt(paragraph.children, 0, "Hello @Jane.");
+  });
+
+  test("does not parse bare mentions embedded inside words", () => {
+    const paragraph = parseParagraph("email@Jane.com and @JaneDoe\n", {
+      mentionTargets: [{ name: "Jane", userId: "u-jane" }],
+    });
+
+    expect(paragraph.children).toHaveLength(1);
+    expectTextAt(paragraph.children, 0, "email@Jane.com and @JaneDoe");
+  });
+
   test("parses registered protocol links as semantic resource nodes", () => {
     const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n", {
       resourceProtocols: ["demo-resource:"],
@@ -133,10 +165,11 @@ describe("Inline parsing", () => {
           inline.protocol === "demo-resource:" ||
           inline.protocol === "playground:"),
     );
-    const demoResourceLinks = collectInlineLinks(inlines).filter((link) =>
-      link.url.startsWith("demo-resource:") ||
-      link.url.startsWith("demo-note:") ||
-      link.url.startsWith("playground:"),
+    const demoResourceLinks = collectInlineLinks(inlines).filter(
+      (link) =>
+        link.url.startsWith("demo-resource:") ||
+        link.url.startsWith("demo-note:") ||
+        link.url.startsWith("playground:"),
     );
 
     expect(resourceNodes.map((resource) => resource.url)).toEqual([
@@ -152,8 +185,8 @@ describe("Inline parsing", () => {
     expect(demoResourceLinks).toEqual([]);
   });
 
-  test("normalizes registered protocol iterables once for the whole document", () => {
-    const protocols = new Map([["demo-resource:", { label: "Demo" }]]).keys();
+  test("normalizes registered protocol arrays once for the whole document", () => {
+    const protocols = ["demo-resource:"];
     const document = parseDocument(
       "# Heading consumes inline parsing first\n\nUse [Recording](demo-resource://recording/live) now.\n",
       { resourceProtocols: protocols },
@@ -163,7 +196,7 @@ describe("Inline parsing", () => {
     expectInlineAt(paragraph.children, 1, "resource");
   });
 
-  test("does not cache mutable resource protocol iterables across parses", () => {
+  test("does not cache mutable resource protocol arrays across parses", () => {
     const protocols = ["demo-resource:"];
     const source = "Use [Recording](demo-resource://recording/live) now.\n";
 

@@ -18,7 +18,7 @@ import {
   isDelimitedInlineMarkSpec,
   isHtmlInlineMarkSpec,
   lineFeed,
-  resolveRegisteredMarkdownResourceProtocol,
+  resolveResourceProtocol,
   type InlineMarkContentPolicy,
   type InlineMarkDelimiter,
 } from "../shared";
@@ -42,6 +42,7 @@ const linkDestinationClosing = ")";
 
 // --- Regex matchers ---
 const wordCharacter = /[\p{L}\p{N}]/u;
+const bareMentionTerminator = /[\p{L}\p{N}_]/u;
 const textDirectiveNameStart = /[A-Za-z]/;
 const textDirectiveNameCharacter = /[-A-Za-z0-9_]/;
 // Sticky (`/y`) regex: `lastIndex` is set per call so the match is anchored
@@ -96,9 +97,7 @@ function collectInlineMarkDelimiters(): ReadonlyArray<ParsedInlineMarkDelimiter>
 function collectDelimiterLeadChars(delimiters: ReadonlyArray<ParsedInlineMarkDelimiter>) {
   return [
     ...new Set(
-      delimiters
-        .map((spec) => spec.delimiter[0])
-        .filter((char): char is string => Boolean(char)),
+      delimiters.map((spec) => spec.delimiter[0]).filter((char): char is string => Boolean(char)),
     ),
   ];
 }
@@ -468,7 +467,20 @@ function readImageToken(source: string, index: number, end: number) {
   };
 }
 
-function readMentionToken(source: string, index: number, end: number) {
+function readMentionToken(
+  source: string,
+  index: number,
+  end: number,
+  _marks: Mark[],
+  context: MarkdownParseContext,
+) {
+  return (
+    readBracketedMentionToken(source, index, end) ??
+    readBareMentionToken(source, index, end, context)
+  );
+}
+
+function readBracketedMentionToken(source: string, index: number, end: number) {
   if (!source.startsWith(mentionOpening, index)) {
     return null;
   }
@@ -494,6 +506,52 @@ function readMentionToken(source: string, index: number, end: number) {
       }),
     ],
   };
+}
+
+function readBareMentionToken(
+  source: string,
+  index: number,
+  end: number,
+  context: MarkdownParseContext,
+) {
+  if (
+    source[index] !== "@" ||
+    context.mentionTargets === null ||
+    !bareMentionCanOpen(source, index)
+  ) {
+    return null;
+  }
+
+  for (const target of context.mentionTargets) {
+    const nameStart = index + 1;
+    const nameEnd = nameStart + target.name.length;
+
+    if (
+      nameEnd <= end &&
+      source.startsWith(target.name, nameStart) &&
+      bareMentionCanClose(source[nameEnd])
+    ) {
+      return {
+        end: nameEnd,
+        nodes: [createMention(target)],
+      };
+    }
+  }
+
+  return null;
+}
+
+function bareMentionCanOpen(source: string, index: number) {
+  return (
+    index === 0 ||
+    source[index - 1] === spaceCharacter ||
+    source[index - 1] === lineFeed ||
+    source[index - 1] === "\t"
+  );
+}
+
+function bareMentionCanClose(character: string | undefined) {
+  return character === undefined || !bareMentionTerminator.test(character);
 }
 
 function readLinkToken(
@@ -522,17 +580,8 @@ function readLinkToken(
     return null;
   }
 
-  const children = parseInlineRange(
-    source,
-    index + linkOpening.length,
-    labelEnd,
-    marks,
-    context,
-  );
-  const resourceProtocol = resolveRegisteredMarkdownResourceProtocol(
-    destination.url,
-    context.resourceProtocols,
-  );
+  const children = parseInlineRange(source, index + linkOpening.length, labelEnd, marks, context);
+  const resourceProtocol = resolveResourceProtocol(destination.url, context.resourceProtocols);
 
   return {
     end: destination.end,
@@ -639,15 +688,7 @@ function readDelimitedMarkToken(
       continue;
     }
 
-    if (
-      !delimiterCanBind(
-        source,
-        index,
-        closeIndex,
-        delimiter,
-        spec.boundary,
-      )
-    ) {
+    if (!delimiterCanBind(source, index, closeIndex, delimiter, spec.boundary)) {
       continue;
     }
 
@@ -668,11 +709,7 @@ function readDelimitedMarkToken(
   return null;
 }
 
-function resolveOpeningDelimiter(
-  source: string,
-  index: number,
-  spec: ParsedInlineMarkDelimiter,
-) {
+function resolveOpeningDelimiter(source: string, index: number, spec: ParsedInlineMarkDelimiter) {
   if (spec.content !== "literal") {
     return spec.delimiter;
   }

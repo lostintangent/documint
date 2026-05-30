@@ -1,5 +1,8 @@
-import { markOrder, type Mark } from "@/document";
-import { normalizeResourceProtocol, resolveRegisteredResourceProtocol } from "@/resources";
+import { markOrder, type Mark, type MentionTarget } from "@/document";
+import {
+  normalizeResourceProtocol,
+  resolveRegisteredResourceProtocol as resolveRegisteredResourceProtocolFromUrl,
+} from "@/resources";
 
 export type MarkdownOptions = {
   /**
@@ -21,7 +24,14 @@ export type MarkdownOptions = {
    * semantic resource inlines instead of ordinary editable links.
    * Serialization always emits resources back as standard markdown links.
    */
-  resourceProtocols?: Iterable<string>;
+  resourceProtocols?: readonly string[];
+  /**
+   * Parser knob. Bare `@Name` text that exactly matches one of these targets
+   * parses as a semantic mention inline. Canonical `@[Name](user-id)` mention
+   * syntax is always supported; this option exists for host-authored surfaces
+   * like comments that already have a mention roster.
+   */
+  mentionTargets?: readonly MentionTarget[];
 };
 
 export const lineFeed = "\n";
@@ -30,13 +40,11 @@ export const blockquoteMarker = ">";
 export const fencedCodeMarker = "```";
 export const containerDirectiveClosingMarker = ":::";
 
-const emptyResourceProtocols: ReadonlySet<string> = new Set();
-
 export function normalizeResourceProtocols(
-  protocols: Iterable<string> | undefined,
-): ReadonlySet<string> {
-  if (!protocols) {
-    return emptyResourceProtocols;
+  protocols: readonly string[] | undefined,
+): ReadonlySet<string> | null {
+  if (!protocols?.length) {
+    return null;
   }
 
   const normalized = new Set<string>();
@@ -51,11 +59,8 @@ export function normalizeResourceProtocols(
   return normalized;
 }
 
-export function resolveRegisteredMarkdownResourceProtocol(
-  url: string,
-  protocols: ReadonlySet<string>,
-) {
-  return resolveRegisteredResourceProtocol(url, protocols);
+export function resolveResourceProtocol(url: string, protocols: ReadonlySet<string> | null) {
+  return protocols ? resolveRegisteredResourceProtocolFromUrl(url, protocols) : null;
 }
 
 // --- Inline mark spec ---
@@ -100,9 +105,7 @@ export type HtmlInlineMarkSpecInput = {
   tag: string | readonly [string, ...string[]];
 };
 
-export type InlineMarkSpecInput =
-  | DelimitedInlineMarkSpecInput
-  | HtmlInlineMarkSpecInput;
+export type InlineMarkSpecInput = DelimitedInlineMarkSpecInput | HtmlInlineMarkSpecInput;
 export type DelimitedInlineMarkSpec = {
   canonicalDelimiter: InlineMarkDelimiter;
   content: InlineMarkContentPolicy;
@@ -127,10 +130,7 @@ const inlineMarkSpecByMark = {
     delimiter: "**",
   },
   italic: {
-    delimiter: [
-      "*",
-      { boundary: "word", delimiter: "_" },
-    ],
+    delimiter: ["*", { boundary: "word", delimiter: "_" }],
   },
   strikethrough: {
     delimiter: "~~",
@@ -173,9 +173,7 @@ function defineInlineMarkSpec(mark: Mark, spec: InlineMarkSpecInput): InlineMark
   };
 }
 
-export function isDelimitedInlineMarkSpec(
-  spec: InlineMarkSpec,
-): spec is DelimitedInlineMarkSpec {
+export function isDelimitedInlineMarkSpec(spec: InlineMarkSpec): spec is DelimitedInlineMarkSpec {
   return spec.kind === "delimiter";
 }
 

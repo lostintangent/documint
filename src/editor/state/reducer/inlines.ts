@@ -183,8 +183,7 @@ function replaceTextLikeEditorInline(
   replacementText: string,
 ): DraftEditorInline[] {
   const inlineText = indexedInlineText(inline);
-  const nextText =
-    inlineText.slice(0, startOffset) + replacementText + inlineText.slice(endOffset);
+  const nextText = inlineText.slice(0, startOffset) + replacementText + inlineText.slice(endOffset);
 
   return nextText.length > 0
     ? [
@@ -386,7 +385,10 @@ function replaceInlineNodeText(node: IndexedInline["node"], text: string): Index
   }
 }
 
-function mergeInlineNodes(left: IndexedInline["node"], right: IndexedInline["node"]): IndexedInline["node"] {
+function mergeInlineNodes(
+  left: IndexedInline["node"],
+  right: IndexedInline["node"],
+): IndexedInline["node"] {
   switch (left.type) {
     case "text":
       return createDocumentTextNode(left.text + (right as Text).text, left.marks);

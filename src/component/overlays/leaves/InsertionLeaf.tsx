@@ -83,11 +83,7 @@ export function InsertionLeaf() {
         label="Insert blockquote"
         onClick={() => insertTextCommand("> ")}
       />
-      <LeafToolbar.Button
-        icon={Code2}
-        label="Insert code block"
-        onClick={insertCodeBlockCommand}
-      />
+      <LeafToolbar.Button icon={Code2} label="Insert code block" onClick={insertCodeBlockCommand} />
       <LeafToolbar.Button
         icon={Minus}
         label="Insert divider"

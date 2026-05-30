@@ -46,9 +46,7 @@ export function findRangeAtSegment<T extends TextRange>(
   start: number,
   end: number,
 ): T | null {
-  return (
-    ranges.find((range) => range.startOffset < end && range.endOffset > start) ?? null
-  );
+  return ranges.find((range) => range.startOffset < end && range.endOffset > start) ?? null;
 }
 
 // Returns every range overlapping the half-open segment [start, end).

@@ -91,7 +91,8 @@ export function resolveInlineReferenceMeasurement(
     richItem: {
       break: "never",
       extraWidth:
-        resourceHorizontalPadding * 2 + measureInlineResourceIconSegmentWidth(context, resource.icon),
+        resourceHorizontalPadding * 2 +
+        measureInlineResourceIconSegmentWidth(context, resource.icon),
       font: styledFont,
       text: resource.label,
     },

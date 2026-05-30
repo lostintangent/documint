@@ -26,7 +26,8 @@ export function measureInlineResourceIconSegmentWidth(
     return 0;
   }
 
-  const iconWidth = typeof icon === "string" ? context.measureText(icon).width : resourceVectorIconSize;
+  const iconWidth =
+    typeof icon === "string" ? context.measureText(icon).width : resourceVectorIconSize;
 
   return Math.max(
     resourceMinimumIconSegmentWidth,

@@ -1,6 +1,6 @@
 /**
- * Host-side reconciliation for external content snapshots. Keeps focus
- * sticky across a rebuilt editor state without entering the local editing
+ * Selection reconciliation for external content snapshots. Keeps focus sticky
+ * across a rebuilt editor state without entering the local editing
  * action-dispatch path.
  *
  * Reconciles:

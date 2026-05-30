@@ -60,9 +60,9 @@ test("detects active resources only when their line is visible", () => {
     },
   };
 
-  expect(hasActiveResourcesInViewport(state, beforeResourceViewport, resources.resourceRegistry)).toBe(
-    false,
-  );
+  expect(
+    hasActiveResourcesInViewport(state, beforeResourceViewport, resources.resourceRegistry),
+  ).toBe(false);
   expect(hasActiveResourcesInViewport(state, resourceViewport, resources.resourceRegistry)).toBe(
     true,
   );

@@ -169,6 +169,8 @@ export type Mention = DocumentNode<
   }
 >;
 
+export type MentionTarget = Pick<Mention, "name" | "userId">;
+
 export type Resource = DocumentNode<
   "resource",
   {

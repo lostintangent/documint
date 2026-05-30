@@ -163,6 +163,64 @@
   }
 }
 
+.documint-markdown-output {
+  --documint-list-indent: 1.7rem;
+  --documint-task-marker-gap: 0.5rem;
+  --documint-task-marker-width: 1rem;
+  display: grid;
+  gap: 0.65rem;
+  overflow-wrap: anywhere;
+
+  & ul,
+  & ol {
+    display: grid;
+    gap: 0.28rem;
+    margin: 0;
+    padding-inline-start: var(--documint-list-indent);
+  }
+
+  & ul {
+    list-style: disc;
+  }
+
+  & ol {
+    list-style: decimal;
+  }
+
+  & li {
+    padding-inline-start: 0.1rem;
+  }
+
+  & .documint-task-list-item {
+    display: grid;
+    grid-template-columns: var(--documint-task-marker-width) minmax(0, 1fr);
+    column-gap: var(--documint-task-marker-gap);
+    align-items: start;
+    margin-inline-start: calc(
+      (var(--documint-task-marker-width) + var(--documint-task-marker-gap)) * -1
+    );
+    list-style: none;
+  }
+
+  & .documint-task-list-item > input[type="checkbox"] {
+    margin: 0.2em 0 0;
+  }
+
+  & a {
+    color: var(--documint-leaf-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+  }
+}
+
+.documint-markdown-inline-code {
+  padding: 0.05em 0.24em;
+  background: var(--documint-inline-code-bg);
+  color: var(--documint-inline-code-text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
 .documint-leaf-divider {
   flex: none;
   background: var(

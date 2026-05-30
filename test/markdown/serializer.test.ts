@@ -13,7 +13,7 @@ import {
   createTableRow,
   createText,
 } from "@/document";
-import { parseDocument, serializeDocument } from "@/markdown";
+import { parseDocument, serializeCommentAppendix, serializeDocument } from "@/markdown";
 import { expectBlockAt } from "../document/helpers";
 import { expectRoundTrip, expectStableRoundTrip } from "./helpers";
 
@@ -230,6 +230,47 @@ describe("Tables", () => {
 });
 
 describe("Comments", () => {
+  test("serializes the trailing comment appendix without a document newline", () => {
+    const document = parseDocument(`Paragraph with a comment.
+
+:::documint-comments
+[
+  {
+    "anchor": {
+      "prefix": "Paragraph",
+      "suffix": " with a comment."
+    },
+    "comments": [
+      {
+        "body": "Reviewing this.",
+        "updatedAt": "2026-04-05T12:00:00.000Z"
+      }
+    ],
+    "quote": " with "
+  }
+]
+:::
+`);
+
+    expect(serializeCommentAppendix(document.comments)).toBe(`:::documint-comments
+[
+  {
+    "quote": " with ",
+    "anchor": {
+      "prefix": "Paragraph",
+      "suffix": " with a comment."
+    },
+    "comments": [
+      {
+        "body": "Reviewing this.",
+        "updatedAt": "2026-04-05T12:00:00.000Z"
+      }
+    ]
+  }
+]
+:::`);
+  });
+
   test("omits runtime comment thread ids from markdown output", () => {
     const document = parseDocument(`Paragraph with a comment.
 

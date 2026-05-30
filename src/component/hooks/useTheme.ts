@@ -85,6 +85,8 @@ function resolveThemePair(theme: DocumintTheme | undefined): DocumintThemePair {
 function createThemeStyles(theme: ResolvedEditorTheme): CSSProperties {
   return {
     "--documint-background": theme.background,
+    "--documint-inline-code-bg": theme.inlineCodeBackground,
+    "--documint-inline-code-text": theme.inlineCodeText,
     "--documint-leaf-button-text": theme.leafButtonText,
     "--documint-leaf-accent": theme.leafAccent,
     "--documint-leaf-bg": theme.leafBackground,

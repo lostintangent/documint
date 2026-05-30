@@ -3,7 +3,7 @@ import {
   reconcileExternalContentChange,
   resolveEquivalentSelection,
   restoreEquivalentSelection,
-} from "@/component/lib/reconciliation";
+} from "@/sync/external-reconciliation";
 import {
   createEditorState,
   createRootPrimaryRegionTarget,

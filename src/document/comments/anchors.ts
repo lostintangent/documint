@@ -369,10 +369,7 @@ function sharedCharacterSuffixLength(left: string, right: string, cap: number): 
   const limit = Math.min(cap, left.length, right.length);
   let length = 0;
 
-  while (
-    length < limit &&
-    left[left.length - 1 - length] === right[right.length - 1 - length]
-  ) {
+  while (length < limit && left[left.length - 1 - length] === right[right.length - 1 - length]) {
     length += 1;
   }
 

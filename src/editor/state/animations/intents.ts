@@ -53,11 +53,7 @@ export function resolveTextHighlightAnimationForRegion(
   startOffset: number,
   insertedText: string,
 ): AnimationIntent | undefined {
-  if (
-    !isInlineRegion(region) ||
-    insertedText.length === 0 ||
-    containsColorEmoji(insertedText)
-  ) {
+  if (!isInlineRegion(region) || insertedText.length === 0 || containsColorEmoji(insertedText)) {
     return undefined;
   }
 

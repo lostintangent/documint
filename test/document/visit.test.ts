@@ -12,6 +12,7 @@ import {
   createText,
   extractPlainTextFromInlineNodes,
   findBlockById,
+  mapInlines,
   measureInlineNodeText,
   visitBlockTree,
   visitDocument,
@@ -173,9 +174,7 @@ Second
     ]);
     const visited: string[] = [];
 
-    expect([image, mention, resource, lineBreak].map(measureInlineNodeText)).toEqual([
-      1, 1, 1, 1,
-    ]);
+    expect([image, mention, resource, lineBreak].map(measureInlineNodeText)).toEqual([1, 1, 1, 1]);
 
     visitDocument(snapshot, {
       enterPlainText(text, context) {
@@ -184,6 +183,36 @@ Second
     });
 
     expect(visited).toEqual(["0-1:a", "7-8:z"]);
+  });
+
+  test("maps inline lists with nested link children and stable paths", () => {
+    const inlines = [
+      createText("See "),
+      createLink({
+        children: [createText("alpha"), createMention({ name: "Jane", userId: "u-jane" })],
+        url: "https://example.com",
+      }),
+      createText("."),
+    ];
+
+    const mapped = mapInlines(inlines, (node, context, children) => {
+      if (node.type === "link") {
+        return `${context.path}:link(${children?.join("|")})`;
+      }
+      if (node.type === "mention") {
+        return `${context.path}:mention:${node.userId}`;
+      }
+      if (node.type === "text") {
+        return `${context.path}:text:${node.text}`;
+      }
+      return null;
+    });
+
+    expect(mapped).toEqual([
+      "root.0:text:See ",
+      "root.1:link(root.1.children.0:text:alpha|root.1.children.1:mention:u-jane)",
+      "root.2:text:.",
+    ]);
   });
 
   test("supports stopping traversal once a semantic target has been found", () => {

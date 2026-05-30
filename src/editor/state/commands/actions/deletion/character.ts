@@ -69,5 +69,7 @@ export function resolveCharacterDelete(
 }
 
 function hasSoftLineBreakAtOffset(region: EditableRegion, offset: number) {
-  return regionInlines(region).some((inline) => inline.node.type === "lineBreak" && inline.start === offset);
+  return regionInlines(region).some(
+    (inline) => inline.node.type === "lineBreak" && inline.start === offset,
+  );
 }

@@ -3,7 +3,14 @@
 // container path, table cell — is already on `EditableRegion` and the document
 // block; this resolver assembles them with no path-string parsing.
 
-import type { Block, HeadingBlock, Inline, ParagraphBlock, TableBlock, TableCell } from "@/document";
+import type {
+  Block,
+  HeadingBlock,
+  Inline,
+  ParagraphBlock,
+  TableBlock,
+  TableCell,
+} from "@/document";
 import { resolveBlockPathForRegion, resolveRegion, resolveTableCellPosition } from "../index/query";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 

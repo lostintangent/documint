@@ -37,7 +37,7 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
   }
 
   if (document.comments.length > 0) {
-    chunks.push(serializeCommentDirective(document.comments));
+    chunks.push(serializeCommentAppendix(document.comments));
   }
 
   const result = chunks.join(blockSeparator);
@@ -45,11 +45,14 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
   return result.endsWith(lineFeed) ? result : `${result}${lineFeed}`;
 }
 
-// The trailing comment appendix is markdown-only — comment threads have no
-// generic representation outside markdown persistence — so the emitter lives
-// here next to its only caller (`serializeDocument`) rather than getting its
-// own module like the parser side, where extraction logic earns one.
-function serializeCommentDirective(comments: Document["comments"]) {
+// The trailing comment appendix is markdown-only: comment threads have no
+// generic representation outside markdown persistence. Exposed for sync code
+// that needs canonical appendix text without serializing a full document.
+export function serializeCommentAppendix(comments: Document["comments"]) {
+  if (comments.length === 0) {
+    return "";
+  }
+
   return renderDirective({
     attributes: "",
     body: JSON.stringify(comments.map(serializeCommentThread), null, 2),

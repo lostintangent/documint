@@ -1,4 +1,4 @@
-import { reconcileExternalContentChange } from "@/component/lib/reconciliation";
+import { reconcileExternalContentChange } from "@/sync/external-reconciliation";
 import { resolveBlockDecorationRanges } from "@/component/decorations/ranges";
 import { createParagraphTextBlock, spliceDocument, type Document } from "@/document";
 import {

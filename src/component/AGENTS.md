@@ -19,4 +19,4 @@ This is the orchestration layer. Editing behavior, geometry, hit testing, and an
 - [`store/`](store/AGENTS.md) owns component-local reactive state, viewport cache publication, and derived view models.
 - `overlays/` owns portaled DOM UI around the canvas.
 - `completions/`, `decorations/`, and `worker/` own higher-level host features that feed declarative inputs into paint or overlays.
-- `lib/` owns stateless host helpers for keybindings, reconciliation, canvas DPI, pointers, markdown diffs, mentions, storage, diagnostics, and themes.
+- `lib/` owns stateless host helpers for keybindings, canvas DPI, pointers, mentions, storage, diagnostics, and themes. Embedder synchronization helpers live in [`src/sync`](../sync/AGENTS.md).

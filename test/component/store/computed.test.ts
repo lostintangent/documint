@@ -259,7 +259,9 @@ describe("computed sprigs", () => {
   // by the always-available emoji source. Kept here because there's no
   // other dedicated test for the source-builders today.
   test("composes mention and emoji completion sources from host users", () => {
-    const composeSources = (users: { id: string; username: string; fullName?: string }[] | undefined) => {
+    const composeSources = (
+      users: { id: string; username: string; fullName?: string }[] | undefined,
+    ) => {
       const mentionSource = createMentionCompletionSource(users);
       return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
     };

@@ -178,8 +178,7 @@ test("paints playground tutorial resources as pills, not links", () => {
   );
   const resourceBackgrounds = context.operations.filter(
     (operation) =>
-      operation.kind === "fillRect" &&
-      operation.fillStyle === resolvedLightTheme.commentHighlight,
+      operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.commentHighlight,
   );
 
   if (!recordingText || !noteText) {

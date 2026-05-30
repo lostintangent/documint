@@ -4,10 +4,6 @@ type LeafDividerProps = {
 
 export function LeafDivider({ orientation = "horizontal" }: LeafDividerProps) {
   return (
-    <div
-      aria-hidden="true"
-      className="documint-leaf-divider"
-      data-orientation={orientation}
-    />
+    <div aria-hidden="true" className="documint-leaf-divider" data-orientation={orientation} />
   );
 }

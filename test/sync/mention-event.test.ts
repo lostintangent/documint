@@ -1,23 +1,23 @@
 import { describe, expect, test } from "bun:test";
-import { resolveMarkdownLineDiff } from "@/component/lib/markdown-line-diff";
+import { resolveMentionLineChange } from "@/sync/mention-event";
 import { createEditorStateTransition } from "@/component/store/editor/transitions";
 import { insertMention } from "@/editor/state";
 import type { TextRangeTarget } from "@/editor";
 import { getRegion, setup } from "@test/editor/helpers";
 
-describe("resolveMarkdownLineDiff", () => {
+describe("resolveMentionLineChange", () => {
   test("returns the changed canonical markdown line", () => {
-    expect(resolveMarkdownLineDiff(...createMentionTransition("Hello @Ja\n", "Hello @Ja"))).toEqual(
-      {
-        lineMarkdown: "Hello @[Jane](u-jane) ",
-        lineNumber: 1,
-      },
-    );
+    expect(
+      resolveMentionLineChange(...createMentionTransition("Hello @Ja\n", "Hello @Ja")),
+    ).toEqual({
+      lineMarkdown: "Hello @[Jane](u-jane) ",
+      lineNumber: 1,
+    });
   });
 
   test("returns the line number for a later document line", () => {
     expect(
-      resolveMarkdownLineDiff(
+      resolveMentionLineChange(
         ...createMentionTransition("First paragraph\n\nSecond @Ja\n", "Second @Ja"),
       ),
     ).toEqual({
@@ -27,7 +27,7 @@ describe("resolveMarkdownLineDiff", () => {
   });
 
   test("returns the inserted mention line when the previous line had no other content", () => {
-    expect(resolveMarkdownLineDiff(...createMentionTransition("@Ja\n", "@Ja"))).toEqual({
+    expect(resolveMentionLineChange(...createMentionTransition("@Ja\n", "@Ja"))).toEqual({
       lineMarkdown: "@[Jane](u-jane) ",
       lineNumber: 1,
     });
@@ -35,7 +35,7 @@ describe("resolveMarkdownLineDiff", () => {
 
   test("returns the changed line inside a nested root fragment", () => {
     expect(
-      resolveMarkdownLineDiff(...createMentionTransition("> Intro\n> @Ja\n", "Intro\n@Ja")),
+      resolveMentionLineChange(...createMentionTransition("> Intro\n> @Ja\n", "Intro\n@Ja")),
     ).toEqual({
       lineMarkdown: "> @[Jane](u-jane) ",
       lineNumber: 2,
@@ -44,7 +44,7 @@ describe("resolveMarkdownLineDiff", () => {
 
   test("returns the changed table row for table cell mentions", () => {
     expect(
-      resolveMarkdownLineDiff(
+      resolveMentionLineChange(
         ...createMentionTransition("| A | B |\n| - | - |\n| @Ja | two |\n", "@Ja"),
       ),
     ).toEqual({
@@ -55,7 +55,7 @@ describe("resolveMarkdownLineDiff", () => {
 
   test("accounts for front matter before document blocks", () => {
     expect(
-      resolveMarkdownLineDiff(
+      resolveMentionLineChange(
         ...createMentionTransition("---\ntitle: Test\n---\n\nHello @Ja\n", "Hello @Ja"),
       ),
     ).toEqual({
@@ -68,7 +68,7 @@ describe("resolveMarkdownLineDiff", () => {
     const [transition, target] = createMentionTransition("Hello @Ja\n", "Hello @Ja");
 
     expect(
-      resolveMarkdownLineDiff(transition, {
+      resolveMentionLineChange(transition, {
         ...target,
         regionId: "missing-region",
       }),

@@ -15,11 +15,7 @@ import {
   resolveUnorderedListMarkerBounds,
   type DocumentLayout,
 } from "@/editor/layout";
-import {
-  findAncestorIndexedBlock,
-  type IndexedListItem,
-  type EditorState,
-} from "@/editor/state";
+import { findAncestorIndexedBlock, type IndexedListItem, type EditorState } from "@/editor/state";
 import {
   resolveBlockPulseColor,
   resolveBlockPulseScale,
@@ -225,12 +221,7 @@ function paintUnorderedListMarker(
   context.beginPath();
 
   if (variant === 2) {
-    context.fillRect(
-      bounds.left,
-      bounds.top,
-      bounds.width,
-      bounds.height,
-    );
+    context.fillRect(bounds.left, bounds.top, bounds.width, bounds.height);
     return;
   }
 
@@ -260,7 +251,8 @@ function resolveListMarkerCenter(
   if (marker.kind === "ordered") {
     const label = resolveIndexedListItemLabel(marker);
     const metrics = context.measureText(label);
-    const y = textBaseline - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+    const y =
+      textBaseline - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
 
     return { x: resolveOrderedListMarkerAnchor(textLeft) - metrics.width / 2, y };
   }

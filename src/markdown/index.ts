@@ -12,6 +12,6 @@
 export type { MarkdownOptions } from "./shared";
 
 export { parseDocument } from "./parser";
-export { serializeDocument } from "./serializer";
+export { serializeCommentAppendix, serializeDocument } from "./serializer";
 
 export { parseFragment, serializeFragment } from "./fragment";

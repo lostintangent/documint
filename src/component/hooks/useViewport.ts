@@ -185,10 +185,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   const commitLayout = useEffectEvent((): EditorLayoutState => {
     const layoutState = store.layout.commit();
     setScrollContentHeight((previous) => {
-      const nextHeight = resolveScrollContentHeight(
-        layoutState,
-        viewportMetricsRef.current.height,
-      );
+      const nextHeight = resolveScrollContentHeight(layoutState, viewportMetricsRef.current.height);
       return previous === nextHeight ? previous : nextHeight;
     });
     return layoutState;

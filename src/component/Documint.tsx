@@ -12,7 +12,6 @@ import {
 import {
   addComment,
   copySelection,
-  createEditorState,
   deleteComment,
   deleteTable,
   deleteTableColumn,
@@ -30,7 +29,6 @@ import {
   setSelection,
   updateLink,
   type EditorPresence,
-  type TextRangeTarget,
 } from "@/editor";
 import { paintContent, paintOverlay } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
@@ -42,7 +40,7 @@ import type {
   EditorTheme,
 } from "@/types";
 import { PresenceOverlay } from "./overlays/PresenceOverlay";
-import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
+import { parseDocument, type MarkdownOptions } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
 import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
@@ -81,9 +79,9 @@ import { emitDiagnostic } from "./lib/diagnostics";
 import { type EditorInputKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
 import { DocumentStorage } from "./lib/storage";
-import { reconcileExternalContentChange } from "./lib/reconciliation";
-import { resolveMarkdownLineDiff } from "./lib/markdown-line-diff";
+import { type DocumintPatch } from "@/sync/content-patch";
 import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations";
+import { useSync, type UserMentionEvent } from "./hooks/useSync";
 import {
   activeCommentIndexSprig,
   commentRangesSprig,
@@ -102,10 +100,14 @@ import { DOCUMINT_EDITOR_STYLES } from "./styles";
 
 export type { DocumintDecoration } from "./hooks/useDecorations";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
+export type { UserMentionEvent } from "./hooks/useSync";
+export type { DocumintPatch, DocumintPatchChange } from "@/sync/content-patch";
+export { applyDocumintPatch } from "@/sync/content-patch";
 
 export type DocumintProps = {
   content: string;
   className?: string;
+  revision?: string | null;
 
   actions?: DocumintActions;
   theme?: DocumintTheme;
@@ -117,7 +119,9 @@ export type DocumintProps = {
   storage?: DocumintStorage;
   users?: DocumentUser[];
 
-  onContentChanged?: (content: string, document: Document) => void;
+  // When `revision` is provided, `patch` is emitted for patchable edits and
+  // `content` is only the snapshot fallback when `patch` is null.
+  onContentChanged?: (content: string, document: Document, patch: DocumintPatch | null) => void;
   onCommentChanged?: (change: CommentChange) => void;
   onResourceOpened?: (resource: DocumentResourceReference) => void;
   onResourcesRequested?: (resources: readonly DocumentResourceReference[]) => void;
@@ -163,12 +167,6 @@ export type CommentChange =
       threadId: string;
     };
 
-export type UserMentionEvent = {
-  lineMarkdown: string;
-  lineNumber: number;
-  userId: string;
-};
-
 export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
 
 export function Documint({ content, ...props }: DocumintProps) {
@@ -213,6 +211,7 @@ function DocumintHost({
   onUserMentioned,
   presence,
   resources,
+  revision,
   storage,
   theme,
   users,
@@ -227,8 +226,6 @@ function DocumintHost({
   const contentCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const lastEmittedContentRef = useRef(content);
-  const lastReconciledResourceProtocolKeyRef = useRef(resourceProtocols.key);
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
 
@@ -296,35 +293,15 @@ function DocumintHost({
   const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
     return isEditable ? completionSources : undefined;
   }, [completionSources, isEditable]);
-  const emitUserMentioned = useEffectEvent(
-    ({
-      target,
-      transition,
-      userId,
-    }: {
-      target: TextRangeTarget;
-      transition: EditorStateTransition;
-      userId: string;
-    }) => {
-      // TODO: replace this hook-specific payload plumbing with a general
-      // command-effect channel once editor commands can report semantic effects.
-      const lineDiff = resolveMarkdownLineDiff(transition, target);
-
-      if (!lineDiff) {
-        return;
-      }
-
-      const event: UserMentionEvent = {
-        ...lineDiff,
-        userId,
-      };
-
-      if (process.env.NODE_ENV !== "production") {
-        emitDiagnostic("userMentioned", { ...event });
-      }
-      onUserMentioned?.(event);
-    },
-  );
+  const { emitContentChanged, emitUserMentioned } = useSync({
+    content,
+    contentDocument,
+    onContentChanged,
+    onUserMentioned,
+    resourceProtocolKey: resourceProtocols.key,
+    revision,
+    store,
+  });
   const documentCompletions = useDocumentCompletions({
     completionSources: documentCompletionSources,
     enabled: isEditable,
@@ -371,12 +348,7 @@ function DocumintHost({
 
       scheduleDecorationsForTransition(transition);
 
-      const nextDocument = getDocument(transition.next);
-      const nextContent = serializeDocument(nextDocument);
-
-      lastEmittedContentRef.current = nextContent;
-      lastReconciledResourceProtocolKeyRef.current = resourceProtocols.key;
-      onContentChanged?.(nextContent, nextDocument);
+      emitContentChanged(transition);
     },
   );
 
@@ -766,7 +738,8 @@ function DocumintHost({
   // document leaves; the host arbitrates their priority and resolves their
   // anchors against the prepared layout.
 
-  const activeDocumentLeaf = documentCompletions.leaf ?? pointer.leaf ?? selection.leaf ?? cursor.leaf;
+  const activeDocumentLeaf =
+    documentCompletions.leaf ?? pointer.leaf ?? selection.leaf ?? cursor.leaf;
 
   // Resolve the active leaf's anchor target into pixel geometry against
   // the prepared layout. Returns null when no leaf is active or its
@@ -777,11 +750,7 @@ function DocumintHost({
       return null;
     }
 
-    const measured = measureVisualCaretTarget(
-      editorState,
-      layout.get(),
-      activeDocumentLeaf.anchor,
-    );
+    const measured = measureVisualCaretTarget(editorState, layout.get(), activeDocumentLeaf.anchor);
     if (!measured) {
       return null;
     }
@@ -963,39 +932,6 @@ function DocumintHost({
   // callbacks, so this avoids per-frame churn during scrolls that move the
   // cursor leaf's anchor in and out of the viewport.
   const documentLeafContent = documentLeafAnchor ? resolveDocumentLeafContent() : null;
-
-  /* State machine */
-
-  // Effects that observe editor state changes for purposes other than rendering.
-
-  /* Reconciliation */
-
-  // External `content` prop changes — rebase the editor state onto the new
-  // content (selection follows via `reconcileExternalContentChange`, with a
-  // fallback to the new document's default selection point when the previous
-  // selection can't be unambiguously placed).
-  //
-  // No explicit scroll handling here: `useCursor`'s focus-visibility effect,
-  // reading `cursorScrollTargetSprig`, is the single owner of "keep the
-  // selection visible." It scrolls to the rebased selection (or the default
-  // doc-start fallback) once the new layout commits — including via the
-  // estimated-bounds fallback when the target lands in a virtualized region.
-
-  useLayoutEffect(() => {
-    const resourceProtocolsChanged =
-      resourceProtocols.key !== lastReconciledResourceProtocolKeyRef.current;
-
-    if (content === lastEmittedContentRef.current && !resourceProtocolsChanged) {
-      return;
-    }
-
-    const previousState = store.editor.getState();
-    const nextState = createEditorState(contentDocument);
-    const reconciliation = reconcileExternalContentChange(previousState, nextState);
-    store.editor.replace(reconciliation.state);
-    lastEmittedContentRef.current = content;
-    lastReconciledResourceProtocolKeyRef.current = resourceProtocols.key;
-  }, [content, contentDocument, resourceProtocols.key]);
 
   /* Render */
 

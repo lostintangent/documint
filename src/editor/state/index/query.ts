@@ -58,7 +58,10 @@ export function resolveIndexedBlockForRegion(documentIndex: DocumentIndex, regio
   return region ? resolveIndexedBlock(documentIndex, region.block.id) : null;
 }
 
-export function resolveParentIndexedBlock(documentIndex: DocumentIndex, indexedBlock: IndexedBlock) {
+export function resolveParentIndexedBlock(
+  documentIndex: DocumentIndex,
+  indexedBlock: IndexedBlock,
+) {
   return indexedBlock.parentBlockId
     ? resolveIndexedBlock(documentIndex, indexedBlock.parentBlockId)
     : null;

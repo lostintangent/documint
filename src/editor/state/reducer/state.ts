@@ -202,7 +202,8 @@ export function setSelection(
   return shouldFlash
     ? addActiveBlockFlashAnimation(
         nextState,
-        resolveBlockPathForRegion(nextState.documentIndex, nextState.selection.focus.regionId) ?? "",
+        resolveBlockPathForRegion(nextState.documentIndex, nextState.selection.focus.regionId) ??
+          "",
       )
     : nextState;
 }

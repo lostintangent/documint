@@ -59,10 +59,7 @@ export function extractFragment(
     case "single-region":
       if (!context.wholeRegion && isSourceRegion(context.region)) {
         return classifySourceText(
-          context.region.text.slice(
-            context.normalized.start.offset,
-            context.normalized.end.offset,
-          ),
+          context.region.text.slice(context.normalized.start.offset, context.normalized.end.offset),
         );
       }
 

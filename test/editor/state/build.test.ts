@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createDividerBlock, createParagraphTextBlock, spliceDocument } from "@/document";
 import { createDocumentIndex, spliceDocumentIndex, type DocumentIndex } from "@/editor/state";
-import { createIndexedRoot, positionIndexedRoots, rebuildIndexedRoot } from "@/editor/state/index/roots";
+import {
+  createIndexedRoot,
+  positionIndexedRoots,
+  rebuildIndexedRoot,
+} from "@/editor/state/index/roots";
 import {
   commitDocument,
   replaceDocumentMetadata,
@@ -94,7 +98,11 @@ beta
     const nextDocument = spliceDocument(snapshot, 1, 0, [createParagraphTextBlock("")]);
     const next = spliceDocumentIndex(index, nextDocument, 1, 0);
 
-    expect(next.blocks.map((indexedBlock) => indexedBlock.block.plainText)).toEqual(["alpha", "", "beta"]);
+    expect(next.blocks.map((indexedBlock) => indexedBlock.block.plainText)).toEqual([
+      "alpha",
+      "",
+      "beta",
+    ]);
     expectDocumentIndexMaps(next);
   });
 

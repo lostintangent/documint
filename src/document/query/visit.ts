@@ -424,6 +424,41 @@ export function* iterateInlineNodeRanges(nodes: readonly Inline[]): Iterable<Inl
   }
 }
 
+// Maps an inline list in semantic order, recursing through link children and
+// handing their mapped output to the link's visitor call. This is the producing
+// complement to the observe-only inline visitor above: callers that need nested
+// output (for example DOM/React rendering) should use this instead of walking
+// link children themselves.
+export function mapInlines<T>(
+  nodes: readonly Inline[],
+  visit: (node: Inline, context: InlineVisitContext, children: T[] | null) => T | null,
+): T[] {
+  return mapInlineChildren(nodes, visit, "root");
+}
+
+function mapInlineChildren<T>(
+  nodes: readonly Inline[],
+  visit: (node: Inline, context: InlineVisitContext, children: T[] | null) => T | null,
+  pathPrefix: string,
+): T[] {
+  const result: T[] = [];
+
+  for (const [index, node] of nodes.entries()) {
+    const path = indexedPath(pathPrefix, index);
+    const children =
+      node.type === "link"
+        ? mapInlineChildren(node.children, visit, childContainerPath(path))
+        : null;
+    const mapped = visit(node, { block: null, path }, children);
+
+    if (mapped !== null) {
+      result.push(mapped);
+    }
+  }
+
+  return result;
+}
+
 function stopTraversal(result: VisitControl, state: TraversalState): boolean {
   if (result !== "stop") {
     return false;

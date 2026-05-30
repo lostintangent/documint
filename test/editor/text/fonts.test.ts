@@ -2,10 +2,9 @@ import { expect, test } from "bun:test";
 import { inlineTextHasCustomMetrics, resolveInlineTextStyle } from "@/editor/text/fonts";
 
 test("resolves superscript as a scaled font with a raised baseline", () => {
-  const style = resolveInlineTextStyle(
-    "16px ui-sans-serif, system-ui, sans-serif",
-    ["superscript"],
-  );
+  const style = resolveInlineTextStyle("16px ui-sans-serif, system-ui, sans-serif", [
+    "superscript",
+  ]);
 
   expect(style.font).toContain("11.5px");
   expect(style.baselineShift).toBeLessThan(0);
@@ -13,10 +12,10 @@ test("resolves superscript as a scaled font with a raised baseline", () => {
 });
 
 test("does not apply superscript typography to code-marked text", () => {
-  const style = resolveInlineTextStyle(
-    "16px ui-sans-serif, system-ui, sans-serif",
-    ["code", "superscript"],
-  );
+  const style = resolveInlineTextStyle("16px ui-sans-serif, system-ui, sans-serif", [
+    "code",
+    "superscript",
+  ]);
 
   expect(style.font).toContain("15px ui-monospace");
   expect(style.baselineShift).toBe(0);

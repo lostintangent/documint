@@ -1,3 +1,8 @@
+## 🗓️ v0.0.23 (05-30-26)
+
+- Comments now support basic markdown rendering
+- The component now supports a `revision` prop, and publishes a `patch` property in the `onContentChanged` event, in order to better synchronize edits with a file/server
+
 ## 🗓️ v0.0.22 (05-28-26)
 
 - Added support for status messages in user presence

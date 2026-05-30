@@ -133,11 +133,7 @@ type BlockReader = {
   leadChars: string;
   canStart(line: string, content: string, context: MarkdownParseContext): boolean;
   escapeParagraphStart?: boolean;
-  interruptsParagraph?: (
-    line: string,
-    content: string,
-    context: MarkdownParseContext,
-  ) => boolean;
+  interruptsParagraph?: (line: string, content: string, context: MarkdownParseContext) => boolean;
   read(cursor: MarkdownLineCursor, context: MarkdownParseContext): Block | null;
 };
 
@@ -197,10 +193,11 @@ export const blockTriggerLeadChars = [
   ...new Set(blockReaders.flatMap((reader) => [...reader.leadChars])),
 ].join("");
 
-const rootParagraphEscapeContext: MarkdownParseContext = {
+const defaultContext: MarkdownParseContext = {
   baseIndent: 0,
+  mentionTargets: null,
   options: {},
-  resourceProtocols: new Set(),
+  resourceProtocols: null,
 };
 
 export function shouldEscapeParagraphLineStart(line: string) {
@@ -211,10 +208,7 @@ export function shouldEscapeParagraphLineStart(line: string) {
   }
 
   return blockReaders.some((reader) => {
-    return (
-      reader.escapeParagraphStart !== false &&
-      reader.canStart(line, line, rootParagraphEscapeContext)
-    );
+    return reader.escapeParagraphStart !== false && reader.canStart(line, line, defaultContext);
   });
 }
 

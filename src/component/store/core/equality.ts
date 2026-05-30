@@ -38,9 +38,7 @@ export function equalNullableBy<T>(
 
 // Wrap any non-nullable equality so it accepts `null` / `undefined`.
 // Two nullish values are equal; one nullish and one non-nullish is not.
-export function equalNullable<T>(
-  equalNonNull: Equality<T>,
-): Equality<T | null | undefined> {
+export function equalNullable<T>(equalNonNull: Equality<T>): Equality<T | null | undefined> {
   return (a, b) => {
     if (a === b) return true;
     if (!a || !b) return false;

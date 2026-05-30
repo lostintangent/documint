@@ -1,14 +1,27 @@
-import { getCommentThreadUpdatedAt, isResolvedCommentThread, type CommentThread } from "@/document";
+import {
+  getCommentThreadUpdatedAt,
+  isResolvedCommentThread,
+  type CommentThread,
+  type MentionTarget,
+} from "@/document";
 import { toggleMark, type EditorPresence, type SelectionFormatting } from "@/editor";
 import { Check, Code, MessageSquarePlus, Pencil, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
 import { useEditorCommand } from "../../store";
 import { resolvePresenceName } from "../../lib/presence";
 import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/LeafInput";
-import { LeafOutput } from "./core/LeafOutput";
+import { MarkdownOutput } from "./core/MarkdownOutput";
 import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./formatting";
 import { LeafToolbar } from "./toolbar/LeafToolbar";
 
@@ -407,6 +420,11 @@ function AnnotationLeafBody({
   composerPlaceholder: string;
   composerValue: string;
 }) {
+  const mentionTargets = useMemo(
+    () => resolveMentionTargets(completionSources),
+    [completionSources],
+  );
+
   return (
     <>
       {showThreadChrome ? (
@@ -461,9 +479,9 @@ function AnnotationLeafBody({
           }
         >
           {rootComment ? (
-            <LeafOutput
-              completionSources={completionSources}
-              onEdit={() => onBeginEditingComment(0, rootComment.body)}
+            <MarkdownOutput
+              mentionTargets={mentionTargets}
+              onDoubleClick={() => onBeginEditingComment(0, rootComment.body)}
               value={rootComment.body}
             />
           ) : null}
@@ -523,9 +541,9 @@ function AnnotationLeafBody({
                   value={editDraft}
                 />
               ) : (
-                <LeafOutput
-                  completionSources={completionSources}
-                  onEdit={() => onBeginEditingComment(actualIndex, comment.body)}
+                <MarkdownOutput
+                  mentionTargets={mentionTargets}
+                  onDoubleClick={() => onBeginEditingComment(actualIndex, comment.body)}
                   value={comment.body}
                 />
               )}
@@ -564,6 +582,20 @@ function AnnotationLeafBody({
         {mode === "thread" && presence ? <CommentPresenceStatus presence={presence} /> : null}
       </div>
     </>
+  );
+}
+
+function resolveMentionTargets(
+  completionSources: CompletionSource[] | undefined,
+): MentionTarget[] | undefined {
+  const source = completionSources?.find((candidate) => candidate.trigger === "@");
+
+  if (!source) {
+    return undefined;
+  }
+
+  return source.items.flatMap<MentionTarget>((item) =>
+    item.id ? [{ name: item.label, userId: item.id }] : [],
   );
 }
 

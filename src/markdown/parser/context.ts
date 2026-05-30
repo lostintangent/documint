@@ -1,9 +1,11 @@
+import type { MentionTarget } from "@/document";
 import { normalizeResourceProtocols, type MarkdownOptions } from "../shared";
 
 export type MarkdownParseContext = {
   baseIndent: number;
+  mentionTargets: readonly MentionTarget[] | null;
   options: MarkdownOptions;
-  resourceProtocols: ReadonlySet<string>;
+  resourceProtocols: ReadonlySet<string> | null;
 };
 
 export function createMarkdownParseContext(
@@ -12,6 +14,7 @@ export function createMarkdownParseContext(
 ): MarkdownParseContext {
   return {
     baseIndent,
+    mentionTargets: sortMentionTargets(options.mentionTargets),
     options,
     resourceProtocols: normalizeResourceProtocols(options.resourceProtocols),
   };
@@ -27,4 +30,14 @@ export function withBaseIndent(
         ...context,
         baseIndent,
       };
+}
+
+function sortMentionTargets(
+  targets: readonly MentionTarget[] | undefined,
+): readonly MentionTarget[] | null {
+  if (!targets?.length) {
+    return null;
+  }
+
+  return [...targets].sort((left, right) => right.name.length - left.name.length);
 }

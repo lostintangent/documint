@@ -377,7 +377,9 @@ function resolveBlockquoteTextBlockContextFromSelection(
     "blockquote",
   );
 
-  const indexedParent = indexedBlock ? resolveParentIndexedBlock(documentIndex, indexedBlock) : null;
+  const indexedParent = indexedBlock
+    ? resolveParentIndexedBlock(documentIndex, indexedBlock)
+    : null;
 
   if (!indexedBlock || !indexedQuote || indexedParent?.block.id !== indexedQuote.block.id) {
     return null;
@@ -447,7 +449,11 @@ export function resolveListItemContextFromSelection(
     indexedParagraph?.block.id ?? null,
     "listItem",
   );
-  const indexedList = findAncestorIndexedBlock(documentIndex, indexedParagraph?.block.id ?? null, "list");
+  const indexedList = findAncestorIndexedBlock(
+    documentIndex,
+    indexedParagraph?.block.id ?? null,
+    "list",
+  );
 
   if (!indexedParagraph || !indexedItem || !indexedList) {
     return null;
@@ -467,15 +473,11 @@ export function resolveListItemContextFromSelection(
   }
 
   const indexedParentItem = resolveParentIndexedBlock(documentIndex, indexedList);
-  const indexedParentList = indexedParentItem ? resolveParentIndexedBlock(documentIndex, indexedParentItem) : null;
-  const parentItem =
-    indexedParentItem?.block.type === "listItem"
-      ? indexedParentItem.block
-      : null;
-  const parentList =
-    indexedParentList?.block.type === "list"
-      ? indexedParentList.block
-      : null;
+  const indexedParentList = indexedParentItem
+    ? resolveParentIndexedBlock(documentIndex, indexedParentItem)
+    : null;
+  const parentItem = indexedParentItem?.block.type === "listItem" ? indexedParentItem.block : null;
+  const parentList = indexedParentList?.block.type === "list" ? indexedParentList.block : null;
   const parentItemIndex =
     parentList?.type === "list" && parentItem
       ? parentList.items.findIndex((child) => child.id === parentItem.id)

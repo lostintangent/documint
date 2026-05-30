@@ -442,10 +442,7 @@ test("lays out playground tutorial demo resources as single reference pill spans
   const state = createEditorState(
     parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
   );
-  const region = getRegion(
-    state,
-    "Try the active ￼ resource and the inactive ￼ resource.",
-  );
+  const region = getRegion(state, "Try the active ￼ resource and the inactive ￼ resource.");
   const resources: DocumentResources = {
     images: new Map(),
     resourceRegistry: {

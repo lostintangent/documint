@@ -25,10 +25,7 @@ type OverlayLeafSize = {
   width: number;
 };
 
-export function OverlayLeaf({
-  children,
-  open,
-}: OverlayLeafProps) {
+export function OverlayLeaf({ children, open }: OverlayLeafProps) {
   const [isPresent, setIsPresent] = useState(open);
   const [isVisible, setIsVisible] = useState(false);
   const [leafSize, setLeafSize] = useState<OverlayLeafSize>({ height: 0, width: 0 });

@@ -303,14 +303,12 @@ export const toggleTask = makeCommand((state, listItemId: string) => {
 
 // --- Block insertion & tables ---
 
-export const insertCodeBlock = makeCommand(
-  resolveCodeBlockInsertion,
-  (state) => resolveRootBlockInsertionContext(state.documentIndex, state.selection),
+export const insertCodeBlock = makeCommand(resolveCodeBlockInsertion, (state) =>
+  resolveRootBlockInsertionContext(state.documentIndex, state.selection),
 );
 
-export const insertTable = makeCommand(
-  resolveTableInsertion,
-  (state) => resolveRootBlockInsertionContext(state.documentIndex, state.selection),
+export const insertTable = makeCommand(resolveTableInsertion, (state) =>
+  resolveRootBlockInsertionContext(state.documentIndex, state.selection),
 );
 
 export const insertTableColumn = makeCommand(

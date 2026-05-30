@@ -32,11 +32,7 @@ import {
   type Block,
   type Inline,
 } from "@/document";
-import {
-  createSampleBlocks,
-  createTestDocument,
-  expectAnchorContainerAt,
-} from "./helpers";
+import { createSampleBlocks, createTestDocument, expectAnchorContainerAt } from "./helpers";
 
 describe("Document construction", () => {
   test("builds stable semantic document identities from the same semantic content", () => {

@@ -443,11 +443,7 @@ export function resolveTargetAtOffset(
 // Resolves a horizontal position on an already-identified line to a selection
 // hit. This avoids re-resolving the line from coordinates, which can land on
 // the wrong line when Y falls exactly on a line boundary.
-function resolveHitOnLine(
-  state: EditorState,
-  line: LayoutLine,
-  x: number,
-): EditorHit | null {
+function resolveHitOnLine(state: EditorState, line: LayoutLine, x: number): EditorHit | null {
   const region = resolveRegion(state.documentIndex, line.regionId);
 
   if (!region) {

@@ -1,16 +1,16 @@
 # Document Index
 
-The index layer is a *pure index over `Document`*. It adds editor coordinate space and O(1) lookups, and projects link wrappers and reference inlines into a flat character-offset sequence — but it never duplicates document payload. Block payload is reached through indexed-block references; inline payload is reached through indexed-inline references. The document is the source of truth; the index says where things live in editor coordinate space and accelerates the queries editing needs.
+The index layer is a _pure index over `Document`_. It adds editor coordinate space and O(1) lookups, and projects link wrappers and reference inlines into a flat character-offset sequence — but it never duplicates document payload. Block payload is reached through indexed-block references; inline payload is reached through indexed-inline references. The document is the source of truth; the index says where things live in editor coordinate space and accelerates the queries editing needs.
 
 The mental model: if a field can be read from a `Block` or `Inline` node, the indexed record does not copy it. If a field is a coordinate the document doesn't have (`start`, `end`, `documentOrder`, `depth`, `path`), the indexed record owns it. If a field is a taxonomy classification the rest of the editor needs in O(1) (`kind`), the indexed record owns it.
 
 ## Invariants
 
-**Coordinate space.** Editable regions carry char offsets in *editor selection-offset space* — the editor's name for what the document calls inline text-coordinate space (see `src/document/query/visit.ts`). The two names refer to the same space; the editor adopts the document's coordinate convention directly. Editable regions in a root are joined by `\n` (one char each); reference inlines (image, mention, resource) project to `￼` (one char); line breaks project to `\n` (one char). This is the coordinate system selection arithmetic, caret motion, and hit testing use, and it is distinct from the document/anchor offset space the document layer also defines for content-addressable positions. `region.text` is this editor-coordinate projection, not document `plainText`.
+**Coordinate space.** Editable regions carry char offsets in _editor selection-offset space_ — the editor's name for what the document calls inline text-coordinate space (see `src/document/query/visit.ts`). The two names refer to the same space; the editor adopts the document's coordinate convention directly. Editable regions in a root are joined by `\n` (one char each); reference inlines (image, mention, resource) project to `￼` (one char); line breaks project to `\n` (one char). This is the coordinate system selection arithmetic, caret motion, and hit testing use, and it is distinct from the document/anchor offset space the document layer also defines for content-addressable positions. `region.text` is this editor-coordinate projection, not document `plainText`.
 
 **Identity discipline.** Indexed roots, editable regions, indexed blocks, and indexed inlines reuse references whenever their underlying input is unchanged. Identity reuse is what lets layout caches and React effect deps prove what didn't change. Map containers themselves are new objects per edit (cheap clones), but their stored records keep reference equality for unchanged roots. `imageUrls` is additionally value-compared because it's a React effect dep whose downstream consumers depend on identity for short-circuit equality.
 
-Identity reuse is *per-root*. When a root's `start` or its `blockRange`/`regionRange` shifts (e.g., insert-at-front), the affected root is re-stamped — every `IndexedBlock` and `EditableRegion` inside it gets a new clone with updated global indices. Downstream caches keyed by index-record references should expect to refill on edits that shift root positions; caches keyed by block/region *id* survive that.
+Identity reuse is _per-root_. When a root's `start` or its `blockRange`/`regionRange` shifts (e.g., insert-at-front), the affected root is re-stamped — every `IndexedBlock` and `EditableRegion` inside it gets a new clone with updated global indices. Downstream caches keyed by index-record references should expect to refill on edits that shift root positions; caches keyed by block/region _id_ survive that.
 
 **Applies-as-a-delta.** Every projection update — cold build, single-region edit, root splice, append, structural replace — is one operation: `applyRootDelta(prev, positionedRoots, document)`. The cold path is the degenerate case where `prev` is `null`. There is no separate "build from scratch" code path; building from scratch is just applying an empty delta to an empty index. The metadata-only case (roots identical, document changed) takes the `refreshDocumentProjections` fast path and skips the map clones entirely. This is what makes the layer's hot path uniformly fast across input shapes.
 
@@ -21,10 +21,10 @@ Identity reuse is *per-root*. When a root's `start` or its `blockRange`/`regionR
 Three string identifiers travel with each editable region; they serve three different consumer classes and have three different stability requirements. Conflating them silently breaks at least one.
 
 - **`region.id`** — runtime address. Unique per editor session, used in selection points and as the key for `regionIndex`. Format: `${block.id}:${path}`. May change across rebuilds; consumers that need to survive rebuilds use `path` instead.
-- **`region.path`** — structural address. Derived from the region's position in the document tree (e.g., `root.1.children`, `root.2.rows.0.cells.1`). Stable across edits at the same structural position; survives any rebuild that preserves shape. Used by `regionPathIndex`, reconciliation, and markdown-line-diff.
-- **`region.semanticRegionId`** — anchor-container address. Identifies the *semantic* container an anchor projects into: the block id for paragraph/heading/code, or the cell id for table cells. Used by comments and anchors, which speak a content-addressable language distinct from runtime ids.
+- **`region.path`** — structural address. Derived from the region's position in the document tree (e.g., `root.1.children`, `root.2.rows.0.cells.1`). Stable across edits at the same structural position; survives any rebuild that preserves shape. Used by `regionPathIndex`, reconciliation, and mention-event payload generation.
+- **`region.semanticRegionId`** — anchor-container address. Identifies the _semantic_ container an anchor projects into: the block id for paragraph/heading/code, or the cell id for table cells. Used by comments and anchors, which speak a content-addressable language distinct from runtime ids.
 
-`region.containerPath` is a structural sibling to these three — the path of the *parent* container (block path or cell path). Inline-container resolution uses it directly so it doesn't have to regex-parse `path`.
+`region.containerPath` is a structural sibling to these three — the path of the _parent_ container (block path or cell path). Inline-container resolution uses it directly so it doesn't have to regex-parse `path`.
 
 ## Block taxonomy
 
@@ -65,7 +65,7 @@ Inline editable regions carry `content: { kind: "inlines", inlines }`; source ed
 
 ## What doesn't live here
 
-- **Anchor algebra** — `src/document/query/anchors.ts` (substrate) and `src/editor/anchors` (editor projection). Anchors project against runtime offsets but speak a content-addressable language. The index *exposes* `semanticRegionId` and `commentContainerIndex` for anchors to use; it does not own anchor resolution.
+- **Anchor algebra** — `src/document/query/anchors.ts` (substrate) and `src/editor/anchors` (editor projection). Anchors project against runtime offsets but speak a content-addressable language. The index _exposes_ `semanticRegionId` and `commentContainerIndex` for anchors to use; it does not own anchor resolution.
 - **Layout cache** — `src/editor/layout`. The index produces immutable snapshots; layout is the cache-aware measurement layer above.
 - **Document construction** — `src/document/build`. Builders, canonicalization, and id assignment live there; the index consumes finished `Document` values.
 - **Text mutation** — `src/editor/state/reducer/text.ts`. The reducer owns block mutation via `BLOCK_TEXT_MUTATORS`; the index produces the read-only projection the reducer needs.
