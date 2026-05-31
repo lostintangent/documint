@@ -39,9 +39,8 @@ export function createComputedSprig<const Deps extends readonly DocumintSprig<un
  * inner sprigs emits — the record's key-by-key equality (`Object.is` on
  * each field) preserves identity in the steady state.
  *
- * Reach for this when a consumer wants several derived values together as
- * one snapshot (e.g. `selectionViewSprig` packages formatting + handles +
- * normalized selection + viewport).
+ * Reach for this when a consumer genuinely wants several derived values
+ * together as one snapshot.
  */
 export function createRecordSprig<Values extends Record<string, DocumintSprig<unknown>>>(
   values: Values,

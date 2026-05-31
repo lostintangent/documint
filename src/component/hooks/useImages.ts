@@ -1,39 +1,61 @@
-// Owns the editor's image-resource pipeline. Given the set of image URLs
-// the document currently references (precomputed by the indexer during the
-// walk it does anyway), resolves each one to a Blob via DocumentStorage
-// (which handles remote vs. local routing) and decodes it into an
-// `ImageBitmap` for the canvas painter.
-//
-// Also owns the write path: `persistImage(file)` hands a pasted file to
-// the host's storage, decodes it locally, and stashes the result in state
-// under the path the host returned. The next render that splices
-// `![](path)` into the document finds the resource already loaded — no
-// "loading" flash, no readback round-trip through storage.
-//
-// Using `ImageBitmap` as the universal paint source is what keeps this
-// hook simple: the bitmap holds its own pixels, so there's no string
-// handle (object URL) whose lifecycle we'd otherwise have to coordinate
-// with eviction, decode failure, and unmount. GC reclaims unused bitmaps
-// once their references drop from state.
-
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import type { DocumentImageResource } from "@/types";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { resizeImage, type IndexedInline } from "@/editor";
+import type { DocumentImageResource, DocumentResourceRegistry, DocumentResources } from "@/types";
 import type { DocumentStorage } from "../lib/storage";
-import { imageUrlsSprig, useSprig } from "../store";
+import { imageAtCursorSprig, imageUrlsSprig, useEditorCommand, useSprig } from "../store";
+import type { ResizeHandle } from "../Documint";
+
+const IMAGE_MIN_WIDTH = 48;
+
+type ImageResizeDrag = {
+  direction: 1 | -1;
+  image: IndexedInline;
+  maxWidth: number | null;
+  pointerId: number;
+  startWidth: number;
+  startX: number;
+  startY: number;
+};
+
+type ImageHandleProps = {
+  onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void;
+};
 
 export type ImagesApi = {
   hasLoadingImages: boolean;
+  imageHandle: ResizeHandle | null;
   images: Map<string, DocumentImageResource>;
   persistImage: (file: File) => Promise<string | null>;
 };
 
-export function useImages(storage: DocumentStorage): ImagesApi {
+export function useImages(
+  storage: DocumentStorage,
+  resourceRegistry: DocumentResourceRegistry,
+): ImagesApi {
+  /* Referenced image resources */
+
   const imageUrls = useSprig(imageUrlsSprig);
   const [imageResources, setImageResources] = useState<Map<string, DocumentImageResource>>(
     new Map(),
   );
+  const renderResources = useMemo<DocumentResources>(
+    () => ({ images: imageResources, resourceRegistry }),
+    [imageResources, resourceRegistry],
+  );
 
-  const reconcileImageLoads = useEffectEvent((urls: ReadonlySet<string>) => {
+  /* Image loading */
+
+  const reconcileImageResources = useEffectEvent((urls: ReadonlySet<string>) => {
     if (typeof createImageBitmap === "undefined") {
       return;
     }
@@ -73,8 +95,10 @@ export function useImages(storage: DocumentStorage): ImagesApi {
   });
 
   useEffect(() => {
-    reconcileImageLoads(imageUrls);
-  }, [imageUrls]);
+    reconcileImageResources(imageUrls);
+  }, [imageUrls, storage]);
+
+  /* Bitmap cleanup */
 
   // Free evicted bitmaps after the painter has redrawn without them.
   // Deliberately not on unmount: state survives StrictMode remount, and
@@ -88,6 +112,8 @@ export function useImages(storage: DocumentStorage): ImagesApi {
     }
     previousResourcesRef.current = imageResources;
   }, [imageResources]);
+
+  /* Pasted image persistence */
 
   // Write a pasted blob to host storage and stash the decoded bitmap under
   // the returned path. Returns the path so the caller can splice the
@@ -112,7 +138,118 @@ export function useImages(storage: DocumentStorage): ImagesApi {
 
   const hasLoadingImages = hasLoadingImageResource(imageResources);
 
-  return { hasLoadingImages, images: imageResources, persistImage };
+  /* Selected image handle */
+
+  const imageAtCursor = useSprig(imageAtCursorSprig, renderResources);
+  const resizeSelectedImage = useEditorCommand(resizeImage);
+
+  /* Resize drag */
+
+  const resizeDragRef = useRef<ImageResizeDrag | null>(null);
+
+  const startImageResize = useEffectEvent(
+    (event: ReactPointerEvent<HTMLDivElement>, direction: 1 | -1) => {
+      if (!imageAtCursor) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      resizeDragRef.current = {
+        direction,
+        image: imageAtCursor.inline,
+        maxWidth: imageAtCursor.maxWidth,
+        pointerId: event.pointerId,
+        startWidth:
+          imageAtCursor.inline.node.type === "image"
+            ? (imageAtCursor.inline.node.width ?? imageAtCursor.bounds.width)
+            : imageAtCursor.bounds.width,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+    },
+  );
+
+  const resizeImageFromDrag = useEffectEvent((event: ReactPointerEvent<HTMLDivElement>) => {
+    const resizeDrag = resizeDragRef.current;
+    const draggedImage = resizeDrag?.image;
+
+    if (
+      !resizeDrag ||
+      resizeDrag.pointerId !== event.pointerId ||
+      draggedImage?.node.type !== "image"
+    ) {
+      return;
+    }
+
+    const dx = event.clientX - resizeDrag.startX;
+    const dy = event.clientY - resizeDrag.startY;
+    const newWidth = Math.min(
+      resizeDrag.maxWidth ?? Infinity,
+      Math.max(
+        IMAGE_MIN_WIDTH,
+        Math.round(resizeDrag.startWidth + resizeDrag.direction * (dx + dy)),
+      ),
+    );
+
+    resizeSelectedImage(
+      {
+        end: draggedImage.end,
+        image: draggedImage.node,
+        start: draggedImage.start,
+      },
+      newWidth,
+    );
+  });
+
+  const endImageResize = useEffectEvent((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    resizeDragRef.current = null;
+  });
+
+  /* Image handle props */
+
+  const startHandleProps = useMemo<ImageHandleProps>(
+    () => ({
+      onPointerCancel: endImageResize,
+      onPointerDown: (event) => startImageResize(event, -1),
+      onPointerMove: resizeImageFromDrag,
+      onPointerUp: endImageResize,
+    }),
+    [],
+  );
+
+  const endHandleProps = useMemo<ImageHandleProps>(
+    () => ({
+      onPointerCancel: endImageResize,
+      onPointerDown: (event) => startImageResize(event, 1),
+      onPointerMove: resizeImageFromDrag,
+      onPointerUp: endImageResize,
+    }),
+    [],
+  );
+
+  const imageHandle = useMemo((): ResizeHandle | null => {
+    if (!imageAtCursor) return null;
+    const { bounds } = imageAtCursor;
+    return {
+      start: { left: bounds.left, top: bounds.top, props: startHandleProps },
+      end: {
+        left: bounds.left + bounds.width,
+        props: endHandleProps,
+        top: bounds.top + bounds.height,
+      },
+    };
+  }, [imageAtCursor]);
+
+  /* Public API */
+
+  return { hasLoadingImages, imageHandle, images: imageResources, persistImage };
 }
 
 /* Loading pipeline */

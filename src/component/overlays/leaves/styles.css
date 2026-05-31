@@ -13,13 +13,20 @@
 
 /* -- Anchor: document leaves portal to page coordinates; fixed leaves render as editor chrome. -- */
 
-/* `--documint-leaf-anchor-height`, `--documint-leaf-bridge-height`, and
-   `--documint-leaf-padding-y` are JS-owned (set inline by `DocumentLeafAnchor`).
+/* `--documint-leaf-anchor-*`, `--documint-leaf-bridge-height`, and
+   `--documint-leaf-padding-y` are JS-owned (set inline by `LeafAnchor`).
    `position: absolute` against the initial containing block lets the
    browser move the leaf with host-page scrolls naturally. */
 .documint-leaf-anchor {
   position: absolute;
+  top: var(--documint-leaf-anchor-top, 0px);
+  left: var(--documint-leaf-anchor-left, 0px);
+  will-change: transform;
   z-index: 1000;
+
+  &[data-placement-ready="false"] {
+    visibility: hidden;
+  }
 
   &:has(> .documint-leaf-shell > .documint-completion-leaf) {
     z-index: 1100;
@@ -259,7 +266,8 @@
   left: 0;
   display: grid;
   gap: 0.2rem;
-  min-width: 10.5rem;
+  width: max-content;
+  min-width: max-content;
   padding: 0.35rem;
   border: 1px solid var(--documint-leaf-menu-border-color);
   border-radius: 0.8rem;
@@ -275,9 +283,9 @@
   appearance: none;
   display: inline-flex;
   align-items: center;
-  gap: 0.36rem;
+  gap: 0.77rem;
   width: 100%;
-  padding: 0.45rem 0.55rem;
+  padding: 0.45rem 0.58rem 0.45rem 0.42rem;
   border: 0;
   border-radius: 0.55rem;
   background: transparent;
@@ -289,6 +297,11 @@
 
   &:hover {
     background: var(--documint-leaf-menu-hover-bg);
+  }
+
+  &.active {
+    background: var(--documint-leaf-menu-hover-bg);
+    color: var(--documint-leaf-text);
   }
 
   &:disabled {

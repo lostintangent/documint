@@ -1,3 +1,7 @@
+## 🗓️ v0.0.24 (05-31-26)
+
+- The selection leaf now includes a menu to copy/cut/paste (which is really useful on mobile)
+
 ## 🗓️ v0.0.23 (05-30-26)
 
 - Comments now support basic markdown rendering

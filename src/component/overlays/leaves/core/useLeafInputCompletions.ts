@@ -24,11 +24,11 @@ import {
   type CompletionSource,
 } from "../../../completions/completions";
 import { resolveTextareaAnchor } from "../lib/textarea-anchor";
-import type { DocumentLeafResolution } from "./shared";
+import type { LeafAnchorResolution } from "./shared";
 
 export type LeafInputCompletionsController = {
   activeCompletion: ActiveCompletion | null;
-  anchor: DocumentLeafResolution | null;
+  anchor: LeafAnchorResolution | null;
   leafProps: CompletionLeafProps | null;
   handleBlur: () => void;
   handleChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
@@ -48,7 +48,7 @@ export function useLeafInputCompletions({
   value: string;
 }): LeafInputCompletionsController {
   const [activeCompletion, setActiveCompletion] = useState<ActiveCompletion | null>(null);
-  const [anchor, setAnchor] = useState<DocumentLeafResolution | null>(null);
+  const [anchor, setAnchor] = useState<LeafAnchorResolution | null>(null);
   const activeTriggerStart = activeCompletion?.triggerStart ?? null;
 
   const sortedSources = useMemo(
@@ -148,7 +148,7 @@ export function useLeafInputCompletions({
   }, [textareaRef]);
 
   // Track the completion anchor as long as a completion is active. LeafInput
-  // uses the same document-absolute DocumentLeafAnchor as document completions, so it
+  // uses the same page-absolute LeafAnchor as document completions, so it
   // keeps working when iOS scrolls the page to accommodate the virtual
   // keyboard. Recompute on ancestor scroll and viewport resize because the
   // source textarea can move inside any host container.

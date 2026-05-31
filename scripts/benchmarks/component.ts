@@ -9,7 +9,7 @@ import {
 } from "@/editor/state";
 import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
-import { runBenchmark } from "./shared";
+import { runBudgetedBenchmark } from "./shared";
 
 const decorationRules = [
   { color: "#d00", pattern: /\b(?:document|list|table|text|item)\b/gi },
@@ -26,40 +26,30 @@ export function createComponentBenchmarks(
   const fixture = createLongReconciliationFixture(1200);
 
   return [
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "component_decorations_medium",
       100,
-      budgets.decorations_medium,
       () =>
         void fixtures.mediumSnapshot.blocks.forEach((block, rootIndex) =>
           resolveBlockDecorationRanges(block, rootIndex, decorationRules),
         ),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "component_decorations_long",
       50,
-      budgets.decorations_long,
       () =>
         void fixtures.longSnapshot.blocks.forEach((block, rootIndex) =>
           resolveBlockDecorationRanges(block, rootIndex, decorationRules),
         ),
     ),
-    runBenchmark(
-      "component_reconcile_selection_long",
-      200,
-      budgets.reconcile_selection_long,
-      () => {
-        void reconcileExternalContentChange(fixture.selectedState, fixture.shiftedState);
-      },
-    ),
-    runBenchmark(
-      "component_reconcile_transient_empty_paragraph_long",
-      100,
-      budgets.reconcile_transient_empty_paragraph_long,
-      () => {
-        void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);
-      },
-    ),
+    runBudgetedBenchmark(budgets, "component_reconcile_selection_long", 200, () => {
+      void reconcileExternalContentChange(fixture.selectedState, fixture.shiftedState);
+    }),
+    runBudgetedBenchmark(budgets, "component_reconcile_transient_empty_paragraph_long", 100, () => {
+      void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);
+    }),
   ];
 }
 

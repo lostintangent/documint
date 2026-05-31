@@ -14,11 +14,15 @@ type InputDocumintThemePair = {
 };
 
 export function useTheme(theme: DocumintTheme | undefined) {
+  /* Theme resolution */
+
   const themePair = useMemo(() => resolveThemePair(theme), [theme]);
   const [preferredTheme, setPreferredTheme] = useState<ResolvedEditorTheme>(() =>
     resolvePreferredTheme(themePair),
   );
   const themeStyles = useMemo(() => createThemeStyles(preferredTheme), [preferredTheme]);
+
+  /* System color-scheme subscription */
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -42,6 +46,8 @@ export function useTheme(theme: DocumintTheme | undefined) {
       mediaQuery.removeListener(updateTheme);
     };
   }, [themePair]);
+
+  /* Public API */
 
   return {
     theme: preferredTheme,

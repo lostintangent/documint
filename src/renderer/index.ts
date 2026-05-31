@@ -17,7 +17,12 @@ import {
   findVisibleLineRange,
   resolveLineContentInset,
 } from "@/editor/layout";
-import { type EditorState, type NormalizedEditorSelection } from "@/editor/state";
+import {
+  resolveBlock,
+  resolveIndexedBlock,
+  type EditorState,
+  type NormalizedEditorSelection,
+} from "@/editor/state";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
@@ -125,7 +130,7 @@ export function paintContent(
     width,
   } = options;
   const resources = resourcesOption ?? emptyDocumentResources;
-  const { layout, blockMap: blockSnapshots, paintTop: viewportTop } = viewport;
+  const { layout, paintTop: viewportTop } = viewport;
 
   context.save();
   context.scale(devicePixelRatio, devicePixelRatio);
@@ -153,7 +158,6 @@ export function paintContent(
   const visibleHeadingRules = resolveVisibleHeadingRules(
     layout,
     state,
-    blockSnapshots,
     startIndex,
     endIndex,
     width,
@@ -172,7 +176,6 @@ export function paintContent(
     activeTextPulses,
     activeThreadIndex,
     ambientAnimationTime,
-    blockSnapshots,
     commentPresence,
     commentRanges,
     context,
@@ -193,7 +196,7 @@ export function paintContent(
     paintLineContainerBackground(
       context,
       line,
-      blockSnapshots.get(line.blockId) ?? null,
+      resolveBlock(state.documentIndex, line.blockId),
       layout.regionBounds.get(line.regionId) ?? null,
       state.documentIndex.regionIndex.get(line.regionId)?.tableCellPosition ?? null,
       theme,
@@ -281,7 +284,6 @@ type LineForegroundInputs = {
   activeTextPulses: Map<string, ActiveTextPulse[]>;
   activeThreadIndex: number | null;
   ambientAnimationTime: number;
-  blockSnapshots: Map<string, Block>;
   commentPresence: ReadonlyMap<number, EditorPresence>;
   commentRanges: EditorCommentRange[];
   context: CanvasRenderingContext2D;
@@ -303,8 +305,9 @@ function paintContentLine(
   line: EditorLayoutState["layout"]["lines"][number],
 ) {
   const { context, editorState, theme, width } = inputs;
-  const snapshotBlock = inputs.blockSnapshots.get(line.blockId) ?? null;
-  const runtimeBlockPath = editorState.documentIndex.blockIndex.get(line.blockId)?.path ?? null;
+  const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockId);
+  const snapshotBlock = indexedBlock?.block ?? null;
+  const runtimeBlockPath = indexedBlock?.path ?? null;
   const container = editorState.documentIndex.regionIndex.get(line.regionId) ?? null;
   const containerPath = container?.path ?? "";
   const visibleListMarker = inputs.visibleListMarkers.get(line.blockId) ?? null;

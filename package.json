@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -25,7 +25,7 @@
     "format": "oxfmt . '!test/goldens/**/*.md'",
     "typecheck": "tsc --noEmit",
     "benchmark": "bun run scripts/benchmarks/index.ts",
-    "benchmark:patch": "bun run scripts/benchmarks/content-patch.ts"
+    "benchmark:moby-dick": "bun run scripts/benchmarks/moby-dick.ts"
   },
   "devDependencies": {
     "@chenglou/pretext": "0.0.7",

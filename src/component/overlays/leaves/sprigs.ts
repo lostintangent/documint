@@ -18,7 +18,7 @@ import {
   type SelectionFormatting,
 } from "@/editor";
 import { createParameterizedSprig } from "../../store/core/computed";
-import { equalByKind, equalNullable } from "../../store/core/equality";
+import { equalByKind, equalNullable, equalShallowObject } from "../../store/core/equality";
 import {
   commentRangesSprig,
   commentThreadsSprig,
@@ -32,7 +32,7 @@ import {
 import { editorStateSprig } from "../../store/editor/sprigs";
 import { renderedLayoutSprig } from "../../store/layout/sprigs";
 import {
-  areDocumentLeafBasesEqual,
+  areLeafAnchorTargetsEqual,
   resolveContextualLeaf,
   type AnnotationLeaf,
   type InsertionLeaf,
@@ -72,15 +72,15 @@ export type PointerView = {
 // are just different subsets of the same per-kind functions.
 
 const equalAnnotationLeaf = (a: AnnotationLeaf, b: AnnotationLeaf): boolean =>
-  areDocumentLeafBasesEqual(a, b) &&
+  areLeafAnchorTargetsEqual(a, b) &&
   equalSelectionFormatting(a.formatting, b.formatting) &&
-  areSelectionRangesEqual(a.selection, b.selection);
+  equalShallowObject(a.selection, b.selection);
 
 const equalInsertionLeaf = (a: InsertionLeaf, b: InsertionLeaf): boolean =>
-  areDocumentLeafBasesEqual(a, b);
+  areLeafAnchorTargetsEqual(a, b);
 
 const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
-  areDocumentLeafBasesEqual(a, b) &&
+  areLeafAnchorTargetsEqual(a, b) &&
   a.endOffset === b.endOffset &&
   a.regionId === b.regionId &&
   a.startOffset === b.startOffset &&
@@ -88,7 +88,7 @@ const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
   a.url === b.url;
 
 const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
-  areDocumentLeafBasesEqual(a, b) &&
+  areLeafAnchorTargetsEqual(a, b) &&
   a.cellIndex === b.cellIndex &&
   a.columnCount === b.columnCount &&
   a.rowCount === b.rowCount &&
@@ -98,7 +98,7 @@ const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
 // immutable, so reference identity captures any meaningful change. If
 // threads ever gain in-place mutability, this needs to compare structurally.
 const equalThreadLeaf = (a: ThreadLeaf, b: ThreadLeaf): boolean =>
-  areDocumentLeafBasesEqual(a, b) &&
+  areLeafAnchorTargetsEqual(a, b) &&
   a.animateInitialComment === b.animateInitialComment &&
   a.link?.title === b.link?.title &&
   a.link?.url === b.link?.url &&
@@ -262,7 +262,7 @@ function resolveSelectionLeaf({
     return null;
   }
 
-  if (promotedThread && areSelectionRangesEqual(promotedThread.selection, selectionRange)) {
+  if (promotedThread && equalShallowObject(promotedThread.selection, selectionRange)) {
     const thread = threads[promotedThread.threadIndex];
     if (!thread) return null;
 
@@ -276,14 +276,6 @@ function resolveSelectionLeaf({
   }
 
   return resolveAnnotationLeaf(selectionRange, handles, formatting);
-}
-
-function areSelectionRangesEqual(previous: EditorSelectionRange, next: EditorSelectionRange) {
-  return (
-    previous.endOffset === next.endOffset &&
-    previous.regionId === next.regionId &&
-    previous.startOffset === next.startOffset
-  );
 }
 
 function resolveCursorLeaf({

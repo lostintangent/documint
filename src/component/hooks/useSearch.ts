@@ -50,18 +50,24 @@ const initialSearchState: SearchState = {
 };
 
 export function useSearch(): SearchController {
+  /* Search state */
+
   const store = useDocumintStore();
-  const [search, setSearch] = useState<SearchState>(initialSearchState);
+  const [searchState, setSearchState] = useState<SearchState>(initialSearchState);
   // Pinned eagerly on open so the first search render resolves against the
   // current document; refreshed only by document changes while search is open.
   const [openDocumentIndex, setOpenDocumentIndex] = useState<DocumentIndex | null>(null);
   const isApplyingSearchSelectionRef = useRef(false);
 
+  /* Editor commands */
+
   const selectMatch = useEditorCommand(selectSearchMatch);
   const collapseSelectionToStart = useEditorCommand(collapseSelection);
 
+  /* Document tracking */
+
   useEffect(() => {
-    if (!search.isOpen) {
+    if (!searchState.isOpen) {
       setOpenDocumentIndex(null);
       return;
     }
@@ -76,20 +82,22 @@ export function useSearch(): SearchController {
         transition.previous.selection !== transition.next.selection &&
         !isApplyingSearchSelectionRef.current
       ) {
-        setSearch(initialSearchState);
+        setSearchState(initialSearchState);
       }
     });
-  }, [search.isOpen, store]);
+  }, [searchState.isOpen, store]);
+
+  /* Match resolution */
 
   const matches = useMemo<readonly EditorSearchMatch[]>(() => {
-    if (!search.isOpen || !openDocumentIndex || search.query.length === 0) {
+    if (!searchState.isOpen || !openDocumentIndex || searchState.query.length === 0) {
       return emptyMatches;
     }
 
-    return resolveEditorSearchMatches(openDocumentIndex, search.query, {
-      caseSensitive: search.caseSensitive,
+    return resolveEditorSearchMatches(openDocumentIndex, searchState.query, {
+      caseSensitive: searchState.caseSensitive,
     });
-  }, [openDocumentIndex, search.caseSensitive, search.isOpen, search.query]);
+  }, [openDocumentIndex, searchState.caseSensitive, searchState.isOpen, searchState.query]);
 
   // Prefer identity; fall back to the last index when edits remove a match.
   const activeIndex = useMemo(() => {
@@ -97,11 +105,12 @@ export function useSearch(): SearchController {
       return 0;
     }
 
-    if (search.activeMatchKey) {
+    if (searchState.activeMatchKey) {
+      const activeMatchKey = searchState.activeMatchKey;
       const found = matches.findIndex(
         (match) =>
-          match.regionId === search.activeMatchKey!.regionId &&
-          match.startOffset === search.activeMatchKey!.startOffset,
+          match.regionId === activeMatchKey.regionId &&
+          match.startOffset === activeMatchKey.startOffset,
       );
 
       if (found !== -1) {
@@ -109,10 +118,12 @@ export function useSearch(): SearchController {
       }
     }
 
-    return Math.min(search.activeMatchIndex, matches.length - 1);
-  }, [matches, search.activeMatchKey, search.activeMatchIndex]);
+    return Math.min(searchState.activeMatchIndex, matches.length - 1);
+  }, [matches, searchState.activeMatchKey, searchState.activeMatchIndex]);
 
   const activeMatch = matches[activeIndex] ?? null;
+
+  /* Selection synchronization */
 
   const collapseSearchSelection = useEffectEvent(() => {
     try {
@@ -126,7 +137,7 @@ export function useSearch(): SearchController {
   // Selection is the active-match highlight; `useCursor` owns the resulting
   // scroll, including virtualized off-layout targets.
   useEffect(() => {
-    if (!search.isOpen || !activeMatch) {
+    if (!searchState.isOpen || !activeMatch) {
       return;
     }
 
@@ -140,12 +151,12 @@ export function useSearch(): SearchController {
     activeMatch?.endOffset,
     activeMatch?.regionId,
     activeMatch?.startOffset,
-    search.isOpen,
+    searchState.isOpen,
     selectMatch,
   ]);
 
   useEffect(() => {
-    if (!search.isOpen || activeMatch) {
+    if (!searchState.isOpen || activeMatch) {
       return;
     }
 
@@ -155,22 +166,24 @@ export function useSearch(): SearchController {
     activeMatch?.regionId,
     activeMatch?.startOffset,
     collapseSearchSelection,
-    search.isOpen,
+    searchState.isOpen,
   ]);
+
+  /* Search actions */
 
   const close = useEffectEvent(() => {
     collapseSearchSelection();
-    setSearch(initialSearchState);
+    setSearchState(initialSearchState);
   });
 
   const dismiss = useEffectEvent(() => {
-    if (search.query.length === 0) {
+    if (searchState.query.length === 0) {
       close();
       return;
     }
 
     collapseSearchSelection();
-    setSearch((current) => ({
+    setSearchState((current) => ({
       ...current,
       activeMatchKey: null,
       activeMatchIndex: 0,
@@ -186,7 +199,7 @@ export function useSearch(): SearchController {
     const nextIndex = (activeIndex + direction + matches.length) % matches.length;
     const nextMatch = matches[nextIndex]!;
 
-    setSearch((current) => ({
+    setSearchState((current) => ({
       ...current,
       activeMatchKey: { regionId: nextMatch.regionId, startOffset: nextMatch.startOffset },
       activeMatchIndex: nextIndex,
@@ -194,7 +207,7 @@ export function useSearch(): SearchController {
   });
 
   const updateQuery = useEffectEvent((query: string) => {
-    setSearch((current) => ({
+    setSearchState((current) => ({
       ...current,
       activeMatchKey: null,
       activeMatchIndex: 0,
@@ -203,11 +216,13 @@ export function useSearch(): SearchController {
   });
 
   const toggleCaseSensitive = useEffectEvent(() => {
-    setSearch((current) => ({
+    setSearchState((current) => ({
       ...current,
       caseSensitive: !current.caseSensitive,
     }));
   });
+
+  /* Keyboard handling */
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (isModFindEvent(event)) {
@@ -217,11 +232,11 @@ export function useSearch(): SearchController {
       const initial = resolveInitialSearch(
         store,
         editorState.documentIndex,
-        search.query,
-        search.caseSensitive,
+        searchState.query,
+        searchState.caseSensitive,
       );
       setOpenDocumentIndex(editorState.documentIndex);
-      setSearch((current) => ({
+      setSearchState((current) => ({
         ...current,
         activeMatchKey: initial.activeMatchKey,
         activeMatchIndex: initial.activeMatchIndex,
@@ -231,7 +246,7 @@ export function useSearch(): SearchController {
       return true;
     }
 
-    if (!search.isOpen) {
+    if (!searchState.isOpen) {
       return false;
     }
 
@@ -252,13 +267,15 @@ export function useSearch(): SearchController {
     return false;
   };
 
+  /* Public API */
+
   return {
     handleKeyDown,
-    leaf: search.isOpen
+    leaf: searchState.isOpen
       ? {
           activeMatchNumber: matches.length > 0 ? activeIndex + 1 : 0,
           canNavigate: matches.length > 0,
-          caseSensitive: search.caseSensitive,
+          caseSensitive: searchState.caseSensitive,
           kind: "search",
           matchCount: matches.length,
           onChange: updateQuery,
@@ -267,7 +284,7 @@ export function useSearch(): SearchController {
           onNext: () => moveActiveMatch(1),
           onPrevious: () => moveActiveMatch(-1),
           onToggleCaseSensitive: toggleCaseSensitive,
-          query: search.query,
+          query: searchState.query,
         }
       : null,
   };

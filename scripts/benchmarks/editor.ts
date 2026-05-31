@@ -30,7 +30,7 @@ import {
 import { resolveEditorHitAtPoint } from "@/editor/navigation";
 import { createLayoutCache } from "@/editor";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
-import { runBenchmark } from "./shared";
+import { runBudgetedBenchmark } from "./shared";
 
 export function createEditorBenchmarks(
   budgets: BenchmarkBudgetTree["editor"],
@@ -73,39 +73,39 @@ export function createEditorBenchmarks(
   return [
     // --- Import / export lifecycle ---
 
-    runBenchmark("editor_import_medium", 200, budgets.import_medium, () => {
+    runBudgetedBenchmark(budgets, "editor_import_medium", 200, () => {
       void createEditorState(fixtures.mediumSnapshot);
     }),
-    runBenchmark("editor_import", 100, budgets.import, () => {
+    runBudgetedBenchmark(budgets, "editor_import", 100, () => {
       void createEditorState(fixtures.longSnapshot);
     }),
-    runBenchmark("editor_import_rich", 200, budgets.import_rich, () => {
+    runBudgetedBenchmark(budgets, "editor_import_rich", 200, () => {
       void createEditorState(fixtures.richTablesSnapshot);
     }),
-    runBenchmark("editor_import_comments", 200, budgets.import_comments, () => {
+    runBudgetedBenchmark(budgets, "editor_import_comments", 200, () => {
       void createEditorState(fixtures.commentsSnapshot);
     }),
     // Cold-build cost of `createCommentContainerIndex`: O(C × N) per thread
     // because each thread runs `resolveCommentThread` against the document.
     // Reuse via `document.comments` identity hides this on edits, but every
     // import / undo / external-content reload pays it once.
-    runBenchmark("editor_import_comments_dense", 200, budgets.import_comments_dense, () => {
+    runBudgetedBenchmark(budgets, "editor_import_comments_dense", 200, () => {
       const denseSnapshot = createDenseCommentSnapshot(fixtures.mediumSnapshot, 60);
       void createEditorState(denseSnapshot);
     }),
-    runBenchmark("editor_export_medium", 200, budgets.export_medium, () => {
+    runBudgetedBenchmark(budgets, "editor_export_medium", 200, () => {
       void createDocumentFromEditorState(mediumState);
     }),
-    runBenchmark("editor_export", 100, budgets.export, () => {
+    runBudgetedBenchmark(budgets, "editor_export", 100, () => {
       void createDocumentFromEditorState(longState);
     }),
-    runBenchmark("editor_export_rich", 200, budgets.export_rich, () => {
+    runBudgetedBenchmark(budgets, "editor_export_rich", 200, () => {
       void createDocumentFromEditorState(richCodeState);
     }),
 
     // --- Typing (insertText) ---
 
-    runBenchmark("editor_typing_small", 200, budgets.typing_small, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_small", 200, () => {
       const editorState = selectCanvasText(
         fixtures.sampleSnapshot,
         "bootstrap",
@@ -113,7 +113,7 @@ export function createEditorBenchmarks(
       );
       void insertText(editorState, " editor");
     }),
-    runBenchmark("editor_typing_medium", 200, budgets.typing_medium, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_medium", 200, () => {
       const editorState = selectCanvasText(
         fixtures.mediumSnapshot,
         "Bullet item",
@@ -121,21 +121,21 @@ export function createEditorBenchmarks(
       );
       void insertText(editorState, " updated");
     }),
-    runBenchmark("editor_typing_long", 100, budgets.typing_long, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_long", 100, () => {
       void insertText(longEditingState, " updated");
     }),
-    runBenchmark("editor_splice_blocks_long", 100, budgets.splice_blocks_long, () => {
+    runBudgetedBenchmark(budgets, "editor_splice_blocks_long", 100, () => {
       void dispatch(longState, createMiddleRootReplacementAction(longState));
     }),
     // Full-frame: insertText + viewport layout. Approximates the actual
     // user-felt keystroke latency (state mutation + layout) on a long doc.
     // Excludes paint, which would require a real canvas context.
-    runBenchmark("editor_typing_long_full_frame", 100, budgets.typing_long_full_frame, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_long_full_frame", 100, () => {
       const nextState = insertText(longEditingState, " updated");
       if (!nextState) throw new Error("insertText returned null");
       void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
     }),
-    runBenchmark("editor_typing_code", 200, budgets.typing_code, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_code", 200, () => {
       const editorState = selectCanvasText(
         fixtures.richCodeSnapshot,
         'return "stable";',
@@ -143,17 +143,17 @@ export function createEditorBenchmarks(
       );
       void insertText(editorState, " // stage-5");
     }),
-    runBenchmark("editor_typing_table", 200, budgets.typing_table, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_table", 200, () => {
       const editorState = selectCanvasText(fixtures.richTablesSnapshot, "scrolls", 0);
       void insertText(editorState, "host-");
     }),
-    runBenchmark("editor_typing_comments_elsewhere", 200, budgets.typing_comments_elsewhere, () => {
+    runBudgetedBenchmark(budgets, "editor_typing_comments_elsewhere", 200, () => {
       void insertText(commentIrrelevantTypingState, " updated");
     }),
 
     // --- Backspace (deleteBackward) ---
 
-    runBenchmark("editor_backspace_medium", 200, budgets.backspace_medium, () => {
+    runBudgetedBenchmark(budgets, "editor_backspace_medium", 200, () => {
       const editorState = selectCanvasText(
         fixtures.blockquoteTransitionSnapshot,
         "closing line",
@@ -161,11 +161,11 @@ export function createEditorBenchmarks(
       );
       void deleteBackward(editorState);
     }),
-    runBenchmark("editor_backspace_long", 100, budgets.backspace_long, () => {
+    runBudgetedBenchmark(budgets, "editor_backspace_long", 100, () => {
       void deleteBackward(longEditingState);
     }),
     // Full-frame counterpart to editor_backspace_long. See typing_long_full_frame.
-    runBenchmark("editor_backspace_long_full_frame", 100, budgets.backspace_long_full_frame, () => {
+    runBudgetedBenchmark(budgets, "editor_backspace_long_full_frame", 100, () => {
       const nextState = deleteBackward(longEditingState);
       if (!nextState) return;
       void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
@@ -173,18 +173,18 @@ export function createEditorBenchmarks(
 
     // --- Enter (insertLineBreak) ---
 
-    runBenchmark("editor_linebreak_medium", 200, budgets.linebreak_medium, () => {
+    runBudgetedBenchmark(budgets, "editor_linebreak_medium", 200, () => {
       const editorState = selectCanvasText(fixtures.mediumSnapshot, "Bullet item", 3);
       void insertLineBreak(editorState);
     }),
-    runBenchmark("editor_linebreak_list", 200, budgets.linebreak_list, () => {
+    runBudgetedBenchmark(budgets, "editor_linebreak_list", 200, () => {
       const editorState = selectCanvasText(fixtures.nestedStructuralSnapshot, "gamma", 2);
       void insertLineBreak(editorState);
     }),
 
     // --- Comments ---
 
-    runBenchmark("editor_comment_toggle_dense", 200, budgets.comment_toggle_dense, () => {
+    runBudgetedBenchmark(budgets, "editor_comment_toggle_dense", 200, () => {
       const denseSnapshot = createDenseCommentSnapshot(fixtures.mediumSnapshot, 18);
       const editorState = createEditorState({
         ...denseSnapshot,
@@ -196,7 +196,7 @@ export function createEditorBenchmarks(
 
       void getCommentState(editorState.documentIndex);
     }),
-    runBenchmark("editor_comment_repair_dense", 100, budgets.comment_repair_dense, () => {
+    runBudgetedBenchmark(budgets, "editor_comment_repair_dense", 100, () => {
       const editorState = selectCanvasText(
         createDenseCommentSnapshot(fixtures.mediumSnapshot, 18),
         "Bullet item",
@@ -213,17 +213,17 @@ export function createEditorBenchmarks(
 
     // --- Hit testing ---
 
-    runBenchmark("editor_hit_test", 200, budgets.hit_test, () => {
+    runBudgetedBenchmark(budgets, "editor_hit_test", 200, () => {
       const { layout, point, state } = longInteractionFixture;
 
       void resolveEditorHitAtPoint(layout, state, point);
     }),
-    runBenchmark("editor_hit_test_xlarge", 100, budgets.hit_test_xlarge, () => {
+    runBudgetedBenchmark(budgets, "editor_hit_test_xlarge", 100, () => {
       const { layout, point, state } = xlargeInteractionFixture;
 
       void resolveEditorHitAtPoint(layout, state, point);
     }),
-    runBenchmark("editor_hit_test_huge", 50, budgets.hit_test_huge, () => {
+    runBudgetedBenchmark(budgets, "editor_hit_test_huge", 50, () => {
       const { layout, point, state } = hugeInteractionFixture;
 
       void resolveEditorHitAtPoint(layout, state, point);
@@ -231,7 +231,7 @@ export function createEditorBenchmarks(
 
     // --- Cursor navigation ---
 
-    runBenchmark("editor_cursor_move", 100, budgets.cursor_move, () => {
+    runBudgetedBenchmark(budgets, "editor_cursor_move", 100, () => {
       const { layout } = longInteractionFixture;
       let state = longInteractionFixture.state;
 
@@ -245,7 +245,7 @@ export function createEditorBenchmarks(
         state = nextState;
       }
     }),
-    runBenchmark("editor_cursor_move_xlarge", 50, budgets.cursor_move_xlarge, () => {
+    runBudgetedBenchmark(budgets, "editor_cursor_move_xlarge", 50, () => {
       const { layout } = xlargeInteractionFixture;
       let state = xlargeInteractionFixture.state;
 
@@ -259,7 +259,7 @@ export function createEditorBenchmarks(
         state = nextState;
       }
     }),
-    runBenchmark("editor_cursor_move_huge", 30, budgets.cursor_move_huge, () => {
+    runBudgetedBenchmark(budgets, "editor_cursor_move_huge", 30, () => {
       const { layout } = hugeInteractionFixture;
       let state = hugeInteractionFixture.state;
 
@@ -278,7 +278,7 @@ export function createEditorBenchmarks(
 
     // Copy on a long doc: select-all → extractFragment + serializeFragment.
     // Stresses the cross-root trim + serialize walk over every block.
-    runBenchmark("editor_copy_long", 100, budgets.copy_long, () => {
+    runBudgetedBenchmark(budgets, "editor_copy_long", 100, () => {
       const fragment = copySelection(longSelectAllState);
 
       if (fragment) {
@@ -289,7 +289,7 @@ export function createEditorBenchmarks(
     // Paste a multi-block fragment (the medium fixture, ≈100 blocks) into
     // a long doc. Stresses parseFragment, the structural seam-merge over a
     // long doc, and the comment finalize after the splice.
-    runBenchmark("editor_paste_blocks_long", 100, budgets.paste_blocks_long, () => {
+    runBudgetedBenchmark(budgets, "editor_paste_blocks_long", 100, () => {
       const fragment = parseFragment(fixtures.mediumMarkdown);
       void pasteFragment(longCaretState, fragment, fixtures.mediumMarkdown);
     }),
@@ -297,7 +297,7 @@ export function createEditorBenchmarks(
     // Paste a single paragraph with many marked runs (≈100 inline nodes
     // interleaving bold / italic / code / link). Stresses spliceInlineNodes
     // and the inline-defragment pass that runs at the seams.
-    runBenchmark("editor_paste_inlines_dense", 200, budgets.paste_inlines_dense, () => {
+    runBudgetedBenchmark(budgets, "editor_paste_inlines_dense", 200, () => {
       const fragment = parseFragment(denseInlinesSource);
       void pasteFragment(longCaretState, fragment, denseInlinesSource);
     }),

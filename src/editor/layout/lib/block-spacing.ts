@@ -27,7 +27,6 @@ const sharedAncestorGapEntries = Object.entries(sharedAncestorGapByType) as Arra
 // keyed by their shared ancestry.
 export function resolveBlockGap(
   indexedBlocks: Map<string, IndexedBlock>,
-  blockMap: Map<string, Block>,
   currentBlockId: string,
   nextBlockId: string,
   blockGap: number,
@@ -38,8 +37,8 @@ export function resolveBlockGap(
   }
 
   const headingExtraGap =
-    resolveHeadingExtraGap(blockMap.get(currentBlockId), "trailing", blockGap) +
-    resolveHeadingExtraGap(blockMap.get(nextBlockId), "leading", blockGap);
+    resolveHeadingExtraGap(indexedBlocks.get(currentBlockId)?.block, "trailing", blockGap) +
+    resolveHeadingExtraGap(indexedBlocks.get(nextBlockId)?.block, "leading", blockGap);
 
   if (headingExtraGap > 0) {
     return blockGap + headingExtraGap;

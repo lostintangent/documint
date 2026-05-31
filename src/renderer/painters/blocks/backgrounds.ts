@@ -11,7 +11,7 @@
 
 import type { Block } from "@/document";
 import { type DocumentLayout, resolveCodeBlockBackgroundBounds } from "@/editor/layout";
-import { type EditorState } from "@/editor/state";
+import { resolveIndexedBlock, type EditorState } from "@/editor/state";
 import type { ResolvedEditorTheme } from "@/types";
 import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../../animations";
 import {
@@ -175,7 +175,7 @@ export function paintActiveBlockHighlight({
     return;
   }
 
-  const activeBlock = editorState.documentIndex.blockIndex.get(activeBlockId) ?? null;
+  const activeBlock = resolveIndexedBlock(editorState.documentIndex, activeBlockId);
 
   if (!activeBlock) {
     return;

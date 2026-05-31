@@ -6,19 +6,21 @@
 //   2. Anchor frame  — viewport positioning, optional hover bridge
 //   3. Leaf shell    — bordered, shadowed container
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { equalShallowObject } from "../../../store/core/equality";
 import { OverlayPortal } from "../../OverlayPortal";
-import type { DocumentLeafResolution } from "./shared";
+import { getVisualViewportMetrics, resolveHorizontalOffset } from "./placement";
+import type { LeafAnchorResolution } from "./shared";
 
 // Pixel height of the hover bridge. JS-owned: written inline as
 // `--documint-leaf-bridge-height` so styles.css has one source of truth.
 export const LEAF_BRIDGE_HEIGHT = 12;
 
-type DocumentLeafAnchorProps = {
-  anchor: DocumentLeafResolution;
+type LeafAnchorProps = {
+  anchor: LeafAnchorResolution;
   children: ReactNode;
 };
 
-type DocumentLeafAnchorPlacement = {
+type LeafAnchorPlacement = {
   horizontalOffset: number;
   verticalPlacement: "above" | "below";
 };
@@ -28,16 +30,11 @@ type LeafShellSize = {
   width: number;
 };
 
-const DEFAULT_PLACEMENT: DocumentLeafAnchorPlacement = {
-  horizontalOffset: 0,
-  verticalPlacement: "below",
-};
-
-export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps) {
+export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const shellSizeRef = useRef<LeafShellSize | null>(null);
   const latestAnchorRef = useRef(anchor);
-  const [placement, setPlacement] = useState<DocumentLeafAnchorPlacement>(DEFAULT_PLACEMENT);
+  const [placement, setPlacement] = useState<LeafAnchorPlacement | null>(null);
   latestAnchorRef.current = anchor;
 
   // Anchor moves reuse shell size cached by ResizeObserver, avoiding a
@@ -50,7 +47,7 @@ export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps
 
     setPlacement((current) => {
       const next = resolveLeafPlacement(anchor, shellSize);
-      return arePlacementsEqual(current, next) ? current : next;
+      return current && equalShallowObject(current, next) ? current : next;
     });
   }, [anchor.left, anchor.top]);
 
@@ -66,7 +63,7 @@ export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps
       shellSizeRef.current = shellSize;
       setPlacement((current) => {
         const next = resolveLeafPlacement(latestAnchorRef.current, shellSize);
-        return arePlacementsEqual(current, next) ? current : next;
+        return current && equalShallowObject(current, next) ? current : next;
       });
     };
 
@@ -76,12 +73,10 @@ export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps
     // handled by the anchor-move effect above, using the cached shell size.
     const resizeObserver = new ResizeObserver(evaluatePlacement);
     resizeObserver.observe(shell);
-    window.visualViewport?.addEventListener("resize", evaluatePlacement);
     window.addEventListener("resize", evaluatePlacement);
 
     return () => {
       resizeObserver.disconnect();
-      window.visualViewport?.removeEventListener("resize", evaluatePlacement);
       window.removeEventListener("resize", evaluatePlacement);
     };
   }, []);
@@ -91,14 +86,17 @@ export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps
       <div
         className="documint-leaf-anchor"
         data-bridge={anchor.bridge}
-        data-placement={placement.verticalPlacement}
+        data-placement={placement?.verticalPlacement ?? "below"}
+        data-placement-ready={placement ? "true" : "false"}
         onPointerEnter={anchor.onPointerEnter}
         onPointerLeave={anchor.onPointerLeave}
         style={
           {
-            left: `${anchor.left + placement.horizontalOffset}px`,
-            top: `${anchor.top}px`,
             "--documint-leaf-anchor-height": `${anchor.anchorHeight}px`,
+            "--documint-leaf-anchor-left": placement
+              ? `${anchor.left + placement.horizontalOffset}px`
+              : "0px",
+            "--documint-leaf-anchor-top": placement ? `${anchor.top}px` : "0px",
             "--documint-leaf-bridge-height": `${LEAF_BRIDGE_HEIGHT}px`,
             "--documint-leaf-padding-y": `${anchor.paddingY}px`,
           } as CSSProperties
@@ -114,57 +112,21 @@ export function DocumentLeafAnchor({ anchor, children }: DocumentLeafAnchorProps
 }
 
 function resolveLeafPlacement(
-  anchor: DocumentLeafResolution,
+  anchor: LeafAnchorResolution,
   shellSize: LeafShellSize,
-): DocumentLeafAnchorPlacement {
-  const visualVp = window.visualViewport;
-  const visibleWidth = visualVp?.width ?? window.innerWidth;
-  const visibleHeight = visualVp?.height ?? window.innerHeight;
-  const visualOffsetLeft = visualVp?.offsetLeft ?? 0;
-  const visualOffsetTop = visualVp?.offsetTop ?? 0;
+): LeafAnchorPlacement {
+  const viewport = getVisualViewportMetrics();
   // Anchor coordinates are doc-absolute; convert to visible-viewport
   // relative to ask where the shell fits.
-  const anchorScreenLeft = anchor.left - window.scrollX - visualOffsetLeft;
-  const anchorScreenTop = anchor.top - window.scrollY - visualOffsetTop;
-  const spaceBelow = visibleHeight - anchorScreenTop;
+  const anchorViewportLeft = anchor.left - window.scrollX - viewport.offsetLeft;
+  const anchorViewportTop = anchor.top - window.scrollY - viewport.offsetTop;
+  const spaceBelow = viewport.height - anchorViewportTop;
 
   return {
     horizontalOffset: resolveHorizontalOffset({
-      anchorScreenLeft,
-      shellWidth: shellSize.width,
-      visibleWidth,
+      anchorViewportLeft,
+      floatingWidth: shellSize.width,
     }),
     verticalPlacement: shellSize.height + LEAF_BRIDGE_HEIGHT > spaceBelow ? "above" : "below",
   };
-}
-
-function resolveHorizontalOffset({
-  anchorScreenLeft,
-  shellWidth,
-  visibleWidth,
-}: {
-  anchorScreenLeft: number;
-  shellWidth: number;
-  visibleWidth: number;
-}): number {
-  const spaceRight = visibleWidth - anchorScreenLeft;
-
-  if (shellWidth <= spaceRight) {
-    return 0;
-  }
-
-  return Math.max(
-    -anchorScreenLeft,
-    Math.min(-shellWidth / 2, visibleWidth - anchorScreenLeft - shellWidth),
-  );
-}
-
-function arePlacementsEqual(
-  left: DocumentLeafAnchorPlacement,
-  right: DocumentLeafAnchorPlacement,
-): boolean {
-  return (
-    left.horizontalOffset === right.horizontalOffset &&
-    left.verticalPlacement === right.verticalPlacement
-  );
 }

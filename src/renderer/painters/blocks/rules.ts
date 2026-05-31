@@ -6,9 +6,8 @@
 // image-as-block, embed, display-math) are dispatched by `paintInertBlock`
 // over the visible block slice.
 
-import type { Block } from "@/document";
 import { resolveLineContentInset, type DocumentLayout } from "@/editor/layout";
-import { findAncestorIndexedBlock, type EditorState } from "@/editor/state";
+import { findAncestorIndexedBlock, resolveBlock, type EditorState } from "@/editor/state";
 import type { ResolvedEditorTheme } from "@/types";
 
 const blockquoteRuleBottomInset = 3;
@@ -41,7 +40,6 @@ export type VisibleBlockquoteRegion = {
 export function resolveVisibleHeadingRules(
   layout: DocumentLayout,
   editorState: EditorState,
-  blockSnapshots: Map<string, Block>,
   startIndex: number,
   endIndex: number,
   width: number,
@@ -50,7 +48,7 @@ export function resolveVisibleHeadingRules(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    const block = blockSnapshots.get(line.blockId);
+    const block = resolveBlock(editorState.documentIndex, line.blockId);
 
     if (block?.type !== "heading" || (block.depth !== 1 && block.depth !== 2)) {
       continue;

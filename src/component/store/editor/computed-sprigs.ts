@@ -11,7 +11,6 @@ import {
   resolveCursorViewportStatus,
   resolveImageAtSelection,
   type EditorLayoutState,
-  type EditorSelection,
   type IndexedInline,
   type EditorSelectionRange,
   type EditorState,
@@ -27,7 +26,7 @@ import {
   type DocumentCompletion,
 } from "../../completions/document-completions";
 import type { CompletionSource } from "../../completions/completions";
-import { createComputedSprig, createParameterizedSprig, createRecordSprig } from "../core/computed";
+import { createComputedSprig, createParameterizedSprig } from "../core/computed";
 import {
   equalArrayBy,
   equalArraysByIdentity,
@@ -37,7 +36,6 @@ import {
   equalNormalizedSelections,
   equalSelectionContexts,
 } from "../core/equality";
-import type { DocumintSprig } from "../core/sprigs";
 import { renderedLayoutSprig } from "../layout/sprigs";
 import { documentIndexSprig, editorStateSprig, selectionSprig } from "./sprigs";
 
@@ -49,14 +47,6 @@ export type { DocumentCompletion } from "../../completions/document-completions"
 export type SelectionHandles = {
   end: { left: number; top: number };
   start: { left: number; top: number };
-};
-
-export type SelectionView = {
-  formatting: SelectionFormatting;
-  handles: SelectionHandles | null;
-  normalized: NormalizedEditorSelection;
-  range: EditorSelectionRange | null;
-  layout: EditorLayoutState | null;
 };
 
 export type ImageAtCursor = {
@@ -166,14 +156,6 @@ export const selectionHandlesSprig = createComputedSprig(
   equalSelectionHandles,
 );
 
-export const selectionViewSprig: DocumintSprig<SelectionView> = createRecordSprig({
-  formatting: selectionFormattingSprig,
-  handles: selectionHandlesSprig,
-  normalized: normalizedSelectionSprig,
-  range: selectionRangeSprig,
-  layout: renderedLayoutSprig,
-});
-
 // `normalizedSelectionSprig` already covers selection + documentIndex via
 // its own deps, so it's the right subscription target. The rendered layout
 // ties the resolution to the painted frame. We read documentIndex / full
@@ -205,48 +187,6 @@ export const caretTargetSprig = createComputedSprig(
     return measureCaretTarget(store.editor.getState(), layout, normalizedSelection.end);
   },
   equalCaretTargets,
-);
-
-// View model for `useCursor`'s focus-visibility effect: the vertical extent
-// to scroll into view whenever the selection moves. Reads `caretTargetSprig`
-// when the focus point's line is measured in the prepared layout, and falls
-// back to the focus region's estimated bounds otherwise — so programmatic
-// far-jumps (search navigation, Cmd+Home/End, undo to off-screen positions)
-// still land at a sensible scroll position before the next layout pass.
-//
-// Niche: shaped for one consumer. Naming reflects that rather than
-// pretending it's a general selection-end primitive — consumers that need
-// pixel-precise caret geometry should read `caretTargetSprig` directly.
-export type CursorScrollTarget = {
-  bottom: number;
-  // Equality token: repeated `setSelection` calls should re-emit even when
-  // the caret bounds are unchanged, so a hidden offscreen caret can be
-  // requested again after manual scrolling.
-  selection: EditorSelection;
-  top: number;
-};
-
-const equalCursorScrollTargets = equalNullableBy<CursorScrollTarget>((target) => [
-  target.selection,
-  target.top,
-  target.bottom,
-]);
-
-export const cursorScrollTargetSprig = createComputedSprig(
-  [caretTargetSprig, selectionSprig, normalizedSelectionSprig, renderedLayoutSprig],
-  (_store, caretTarget, selection, normalizedSelection, layout): CursorScrollTarget | null => {
-    if (caretTarget) {
-      return { bottom: caretTarget.top + caretTarget.height, selection, top: caretTarget.top };
-    }
-
-    if (!layout) {
-      return null;
-    }
-
-    const bounds = layout.estimateRegionBounds(normalizedSelection.end.regionId);
-    return bounds ? { ...bounds, selection } : null;
-  },
-  equalCursorScrollTargets,
 );
 
 export const documentCompletionSprig = createParameterizedSprig(

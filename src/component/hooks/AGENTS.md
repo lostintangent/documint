@@ -14,8 +14,17 @@ Hooks should not own editing semantics. Pure editor behavior belongs in `src/edi
 
 ## Subsystem Map
 
-- `useViewport` owns scroll state, viewport dimensions, lazy layout resolution, pointer coordinates, drag-edge autoscroll, and programmatic scrolling.
-- `useRenderScheduler` owns coalesced rAF paint scheduling and render/paint intents.
-- `useInput` owns the hidden textarea bridge: keyboard, IME, clipboard, paste, keybindings, focus, and textarea positioning.
-- `usePointer`, `useSelection`, and `useCursor` own pointer, range, caret, blink, and leaf-candidate interaction lifetimes.
-- `useImages`, `useImageHandles`, `useDecorations`, `usePresence`, `useTheme`, and `useIdle` own their named host/browser concerns.
+- `useViewport` owns scroll state, viewport dimensions, the layout handle, coordinate translation, drag-edge autoscroll, and programmatic scrolling.
+- `useRender` owns coalesced rAF render intents, paint dispatch, and animation continuation.
+- `useInput` owns the hidden textarea bridge: native text/IME input, keyboard shortcuts, clipboard, focus, textarea positioning, and iOS undo priming.
+- `usePointer` owns hover targeting and pointer-driven editor interactions.
+- `useSelection` owns range-selection handles, selection-handle dragging, and selection-anchored leaves.
+- `useCursor` owns cursor reveal, cursor-anchored leaves, and caret blink state.
+- `useTheme` owns theme resolution, CSS variable projection, and system color-scheme subscription.
+- `useSync` owns external content reconciliation and local sync event emission.
+- `useSearch` owns find UI state, match resolution/navigation, and selection synchronization.
+- `useImages` owns referenced image loading/eviction, pasted-image persistence, and selected-image resize handles.
+- `usePresence` owns host user/presence joining and presence view-model subscriptions.
+- `useResources` owns resource protocol normalization, active-resource registry construction, and discovered-resource requests.
+- `useDecorations` owns decoration rule filtering, worker scheduling, and text-decoration results.
+- `useIdle` owns activity/idle transitions and the paused animation clock.

@@ -1,32 +1,20 @@
 import { resolvePresenceTargets, resolvePresenceViewport, type EditorPresence } from "@/editor";
 import type { DocumentUserPresence } from "@/types";
 import { createParameterizedSprig } from "./core/computed";
-import { equalArrayBy, equalMapBy, equalNullable, equalNullableBy } from "./core/equality";
+import {
+  equalArrayBy,
+  equalMapBy,
+  equalNullable,
+  equalSelectionPoints,
+  equalShallowObject,
+} from "./core/equality";
 import { commentStateSprig } from "./editor/computed-sprigs";
 import { documentIndexSprig } from "./editor/sprigs";
 import { renderedLayoutSprig } from "./layout/sprigs";
 
 /* Equality */
 
-const equalCursorPoints = equalNullableBy<NonNullable<EditorPresence["cursorPoint"]>>((point) => [
-  point.offset,
-  point.regionId,
-]);
-
-function equalPresenceViewports(
-  previous: EditorPresence["viewport"],
-  next: EditorPresence["viewport"],
-) {
-  if (previous === next) return true;
-  if (!previous || !next) return false;
-  if (previous.status !== next.status) return false;
-
-  if (previous.status === "unresolved") {
-    return true;
-  }
-
-  return next.status !== "unresolved" && previous.scrollTop === next.scrollTop;
-}
+const equalCursorPoints = equalNullable(equalSelectionPoints);
 
 const equalPresenceItem = (previous: EditorPresence, next: EditorPresence) => {
   return (
@@ -38,7 +26,7 @@ const equalPresenceItem = (previous: EditorPresence, next: EditorPresence) => {
     previous.status === next.status &&
     previous.commentThreadIndex === next.commentThreadIndex &&
     equalCursorPoints(previous.cursorPoint, next.cursorPoint) &&
-    equalPresenceViewports(previous.viewport, next.viewport)
+    equalShallowObject(previous.viewport, next.viewport)
   );
 };
 

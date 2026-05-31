@@ -9,7 +9,7 @@ export type EditorLayoutHandle = {
    * `invalidate()` clears the cache the instant any input changes.
    *
    * For hot pointer paths and hit testing — `usePointer`, `useInput`,
-   * and `resolveDocumentLeafAnchor` in the render body. These callers need
+   * and `resolveLeafAnchor` in the render body. These callers need
    * geometry that matches the live scroll/state, not the painted frame.
    */
   get: () => EditorLayoutState;

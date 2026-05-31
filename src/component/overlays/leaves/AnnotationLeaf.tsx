@@ -4,8 +4,26 @@ import {
   type CommentThread,
   type MentionTarget,
 } from "@/document";
-import { toggleMark, type EditorPresence, type SelectionFormatting } from "@/editor";
-import { Check, Code, MessageSquarePlus, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import {
+  deleteSelection,
+  toggleMark,
+  type EditorPresence,
+  type SelectionFormatting,
+} from "@/editor";
+import type { MarkdownOptions } from "@/markdown";
+import {
+  Check,
+  Clipboard,
+  ClipboardPaste,
+  Code,
+  Copy,
+  MessageSquarePlus,
+  Pencil,
+  RotateCcw,
+  Scissors,
+  Trash2,
+  Type,
+} from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -17,7 +35,8 @@ import {
 } from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
-import { useEditorCommand } from "../../store";
+import { type DocumintStore, useDocumintStore, useEditorCommand } from "../../store";
+import { copySelectionAsMarkdown, pastePlainText } from "../../lib/clipboard";
 import { resolvePresenceName } from "../../lib/presence";
 import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/LeafInput";
@@ -38,6 +57,7 @@ type AnnotationLeafBaseProps = {
 
 type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
   formatting: SelectionFormatting;
+  markdownOptions?: MarkdownOptions;
   mode: "create";
   onCreateThread: (body: string) => void;
   actions?: readonly DocumintAction<void>[];
@@ -71,6 +91,10 @@ const leadingFormattingMarkButtons = formattingMarkDescriptors.filter(
 const trailingFormattingMarkButtons = formattingMarkDescriptors.filter(
   (descriptor) => descriptor.group === "trailing",
 );
+const overflowFormattingMarkButtons = [
+  { group: "trailing", icon: Code, label: "Code", mark: "code" },
+  ...trailingFormattingMarkButtons,
+] satisfies readonly FormattingMarkDescriptor[];
 
 export function AnnotationLeaf(props: AnnotationLeafProps) {
   const createMode = props.mode === "create";
@@ -91,9 +115,11 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const [isInitialCommentVisible, setIsInitialCommentVisible] = useState(!animateInitialComment);
   const [isExpanded, setIsExpanded] = useState(defaultCreateExpanded);
   const [isTransitioningFromCreate, setIsTransitioningFromCreate] = useState(false);
+  const [isClipboardCopied, setIsClipboardCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const commentsListRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const clipboardCopiedTimeoutRef = useRef<number | null>(null);
   const hasScrolledThreadRef = useRef(false);
   const scrolledThreadIdRef = useRef<string | null>(null);
   const completionSources = props.completionSources;
@@ -113,10 +139,16 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const toggleResolved = threadProps?.onToggleResolved ?? noop;
   const formatting = createProps?.formatting ?? defaultFormatting;
   const activeFormattingMarks = formatting.marks;
-  const activeCode = activeFormattingMarks.includes("code");
   const formattingSupported = formatting.supported;
+  const store = useDocumintStore();
   const toggleMarkCommand = useEditorCommand(toggleMark);
+  const deleteSelectionCommand = useEditorCommand(deleteSelection);
+  const pastePlainTextCommand = useEditorCommand(pastePlainText);
+  const markdownOptions = createProps?.markdownOptions;
   const actions = createProps?.actions ?? [];
+  const hasActiveOverflowFormattingMark = overflowFormattingMarkButtons.some((button) =>
+    activeFormattingMarks.includes(button.mark),
+  );
   const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
     <LeafToolbar.Button
       active={activeFormattingMarks.includes(button.mark)}
@@ -128,12 +160,55 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       onClick={() => toggleMarkCommand(button.mark)}
     />
   );
+  const selectOverflowFormattingMark = (value: string) => {
+    const descriptor = overflowFormattingMarkButtons.find((button) => button.mark === value);
+
+    if (!descriptor) {
+      return;
+    }
+
+    toggleMarkCommand(descriptor.mark);
+  };
+  const showClipboardCopiedFeedback = () => {
+    setIsClipboardCopied(true);
+
+    if (clipboardCopiedTimeoutRef.current !== null) {
+      window.clearTimeout(clipboardCopiedTimeoutRef.current);
+    }
+
+    clipboardCopiedTimeoutRef.current = window.setTimeout(() => {
+      setIsClipboardCopied(false);
+      clipboardCopiedTimeoutRef.current = null;
+    }, 2000);
+  };
+  const selectClipboardAction = (value: string) => {
+    switch (value) {
+      case "copy":
+        showClipboardCopiedFeedback();
+        void copySelectedTextToClipboard(store);
+        break;
+      case "cut":
+        void cutSelectedTextToClipboard(store, deleteSelectionCommand);
+        break;
+      case "paste":
+        void pasteClipboardText(pastePlainTextCommand, markdownOptions);
+        break;
+    }
+  };
   const composerPlaceholder = canEdit
     ? createMode
       ? "Add a comment"
       : "Reply to this comment"
     : "Comment editing is disabled";
   const composerValue = createMode ? createDraft : replyDraft;
+
+  useEffect(() => {
+    return () => {
+      if (clipboardCopiedTimeoutRef.current !== null) {
+        window.clearTimeout(clipboardCopiedTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -311,18 +386,37 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
               label="Add comment"
               onClick={() => setIsExpanded(true)}
             />
+            <LeafToolbar.Menu
+              className="documint-comment-leaf-create-mark"
+              icon={isClipboardCopied ? Check : Clipboard}
+              label="Clipboard"
+              onSelect={selectClipboardAction}
+            >
+              <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
+              <LeafToolbar.MenuItem icon={Scissors} text="Cut" value="cut" />
+              <LeafToolbar.MenuDivider />
+              <LeafToolbar.MenuItem icon={ClipboardPaste} text="Paste" value="paste" />
+            </LeafToolbar.Menu>
             <LeafToolbar.Divider />
             {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
-            <LeafToolbar.Divider />
-            <LeafToolbar.Button
-              active={activeCode}
+            <LeafToolbar.Menu
+              active={hasActiveOverflowFormattingMark}
               className="documint-comment-leaf-create-mark"
-              disabled={!formattingSupported}
-              icon={Code}
-              label="Code"
-              onClick={() => toggleMarkCommand("code")}
-            />
-            {trailingFormattingMarkButtons.map(renderFormattingMarkButton)}
+              icon={Type}
+              label="More formatting"
+              onSelect={selectOverflowFormattingMark}
+            >
+              {overflowFormattingMarkButtons.map((button) => (
+                <LeafToolbar.MenuItem
+                  active={activeFormattingMarks.includes(button.mark)}
+                  disabled={!formattingSupported}
+                  icon={button.icon}
+                  key={button.mark}
+                  text={button.label}
+                  value={button.mark}
+                />
+              ))}
+            </LeafToolbar.Menu>
             {actions.length > 0
               ? [
                   <LeafToolbar.Divider key="actions-divider" />,
@@ -597,6 +691,58 @@ function resolveMentionTargets(
   return source.items.flatMap<MentionTarget>((item) =>
     item.id ? [{ name: item.label, userId: item.id }] : [],
   );
+}
+
+async function copySelectedTextToClipboard(store: DocumintStore) {
+  const markdown = copySelectionAsMarkdown(store.editor.getState());
+
+  if (markdown === null) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(markdown);
+  } catch {
+    // Clipboard access is permission- and secure-context-gated.
+  }
+}
+
+async function cutSelectedTextToClipboard(
+  store: DocumintStore,
+  deleteSelectionCommand: () => unknown,
+) {
+  const markdown = copySelectionAsMarkdown(store.editor.getState());
+
+  if (markdown === null) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(markdown);
+    deleteSelectionCommand();
+  } catch {
+    // Keep the selection intact if the browser refuses clipboard access.
+  }
+}
+
+async function pasteClipboardText(
+  pastePlainTextCommand: (text: string, markdownOptions?: MarkdownOptions) => unknown,
+  markdownOptions?: MarkdownOptions,
+) {
+  let text = "";
+
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    // Clipboard reads may be blocked even from a menu tap.
+    return;
+  }
+
+  if (!text) {
+    return;
+  }
+
+  pastePlainTextCommand(text, markdownOptions);
 }
 
 function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {

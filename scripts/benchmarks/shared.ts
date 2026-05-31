@@ -8,73 +8,14 @@ export type BenchmarkRecord = {
 };
 
 export type BenchmarkBudgetTree = {
-  component: {
-    decorations_long: number;
-    decorations_medium: number;
-    reconcile_selection_long: number;
-    reconcile_transient_empty_paragraph_long: number;
-  };
-  editor: {
-    backspace_long: number;
-    backspace_long_full_frame: number;
-    backspace_medium: number;
-    comment_repair_dense: number;
-    comment_toggle_dense: number;
-    copy_long: number;
-    cursor_move: number;
-    cursor_move_huge: number;
-    cursor_move_xlarge: number;
-    export: number;
-    export_medium: number;
-    export_rich: number;
-    hit_test: number;
-    hit_test_huge: number;
-    hit_test_xlarge: number;
-    import: number;
-    import_comments: number;
-    import_comments_dense: number;
-    import_medium: number;
-    import_rich: number;
-    linebreak_list: number;
-    linebreak_medium: number;
-    paste_blocks_long: number;
-    paste_inlines_dense: number;
-    splice_blocks_long: number;
-    typing_code: number;
-    typing_comments_elsewhere: number;
-    typing_long: number;
-    typing_long_full_frame: number;
-    typing_medium: number;
-    typing_small: number;
-    typing_table: number;
-  };
-  layout: {
-    canvas: number;
-    canvas_huge: number;
-    canvas_xlarge: number;
-    full_document_huge: number;
-    full_document_long: number;
-    full_document_xlarge: number;
-    scroll: number;
-    scroll_huge: number;
-    scroll_step: number;
-    scroll_step_huge: number;
-    scroll_step_xlarge: number;
-    scroll_xlarge: number;
-  };
-  markdown: {
-    document_to_markdown: number;
-    document_to_markdown_comments: number;
-    document_to_markdown_medium: number;
-    document_to_markdown_rich: number;
-    document_to_markdown_short: number;
-    markdown_to_document: number;
-    markdown_to_document_comments: number;
-    markdown_to_document_medium: number;
-    markdown_to_document_rich: number;
-    markdown_to_document_short: number;
-  };
+  component: BenchmarkBudgetGroup;
+  editor: BenchmarkBudgetGroup;
+  layout: BenchmarkBudgetGroup;
+  markdown: BenchmarkBudgetGroup;
+  sync: BenchmarkBudgetGroup;
 };
+
+export type BenchmarkBudgetGroup = Record<string, number>;
 
 export function percentile(values: number[], fraction: number) {
   const index = Math.min(values.length - 1, Math.max(0, Math.ceil(values.length * fraction) - 1));
@@ -111,4 +52,19 @@ export function runBenchmark(
     p95Ms: percentile(samples, 0.95),
     p99Ms: percentile(samples, 0.99),
   };
+}
+
+export function runBudgetedBenchmark(
+  budgets: BenchmarkBudgetGroup,
+  name: string,
+  iterations: number,
+  task: () => void,
+) {
+  const budgetMs = budgets[name];
+
+  if (budgetMs === undefined) {
+    throw new Error(`Missing benchmark budget: ${name}`);
+  }
+
+  return runBenchmark(name, iterations, budgetMs, task);
 }

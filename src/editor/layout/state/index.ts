@@ -1,13 +1,12 @@
 // Owns viewport-aware layout orchestration. Small/common documents use exact
 // full-document layout; larger documents use cheap whole-document estimates to
 // choose the visible region slice, then run exact layout only for that slice.
-import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { EditorState } from "../../state";
 import { createLayoutCache, type LayoutCache } from "./cache";
 import { resolveDocumentLayoutOptions, type DocumentLayoutOptions } from "../lib/options";
-import { buildDocumentBlockMap, measureLayoutSlice, type DocumentLayout } from "../measure";
+import { measureLayoutSlice, type DocumentLayout } from "../measure";
 import { createVirtualizedLayoutSlice } from "../virtualize";
 
 const FULL_LAYOUT_REGION_THRESHOLD = 96;
@@ -21,6 +20,7 @@ type CanvasViewport = {
 export type EditorViewport = {
   height: number;
   top: number;
+  width: number;
 };
 
 export type EditorLayoutState = {
@@ -30,7 +30,6 @@ export type EditorLayoutState = {
   paintTop: number;
   totalHeight: number;
   viewport: EditorViewport;
-  blockMap: Map<string, Block>;
 };
 
 export function createEditorLayoutState(
@@ -50,17 +49,12 @@ export function createEditorLayoutState(
   const documentIndex = state.documentIndex;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
-  const blockMap = buildDocumentBlockMap(documentIndex.document.blocks);
-  // documentIndex.blockIndex is already `Map<string, IndexedBlock>` keyed by
-  // block id — exactly what we need. Reusing it skips a per-call O(N) Map
-  // rebuild that contributed measurable cost on long-doc keystrokes.
-  const runtimeBlocks = documentIndex.blockIndex;
   let layout: DocumentLayout;
   let totalHeight: number;
   let estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
 
   if (documentIndex.regions.length <= FULL_LAYOUT_REGION_THRESHOLD) {
-    layout = measureLayoutSlice(documentIndex, resolvedOptions, cache, resolvedResources, blockMap);
+    layout = measureLayoutSlice(documentIndex, resolvedOptions, cache, resolvedResources);
     totalHeight = layout.height;
     estimateRegionBounds = (regionId) => {
       const bounds = layout.regionBounds.get(regionId);
@@ -69,12 +63,10 @@ export function createEditorLayoutState(
     };
   } else {
     const virtualized = createVirtualizedLayoutSlice({
-      blockMap,
       cache,
       documentIndex,
       options: resolvedOptions,
       resources: resolvedResources,
-      runtimeBlocks,
       state,
       viewport,
     });
@@ -85,7 +77,6 @@ export function createEditorLayoutState(
   }
 
   return {
-    blockMap,
     estimateRegionBounds,
     layout,
     paintHeight: Math.max(240, viewport.height + viewport.overscan * 2),
@@ -94,6 +85,7 @@ export function createEditorLayoutState(
     viewport: {
       height: viewport.height,
       top: viewport.top,
+      width: resolvedOptions.width,
     },
   };
 }

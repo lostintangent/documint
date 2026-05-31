@@ -19,7 +19,7 @@ import {
   type DecorationWorkerClient,
 } from "../worker/client";
 
-const decorationTransitionDebounceMs = 220;
+const DECORATION_TRANSITION_DEBOUNCE_MS = 220;
 const emptyDecorationRules: readonly DocumintDecoration[] = [];
 const emptyTextDecorations: TextDecorationIndex = new Map();
 
@@ -32,9 +32,8 @@ type UseDecorationsOptions = {
 };
 
 export function useDecorations({ contentDocument, decorations, store }: UseDecorationsOptions) {
-  const decorationClientRef = useRef<DecorationWorkerClient | null>(null);
-  const pendingRootIndexesRef = useRef<Set<number> | null>(null);
-  const pendingScheduleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* Decoration rules */
+
   const decorationRules = useMemo(() => {
     const effectiveRules = decorations?.filter(hasDecorationRuleStyle) ?? emptyDecorationRules;
     return effectiveRules.length === 0 ? emptyDecorationRules : effectiveRules;
@@ -44,17 +43,29 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
     () => resolveDecorationRulesKey(decorationRules),
     [decorationRules],
   );
+
+  /* Decoration state */
+
+  const decorationWorkerRef = useRef<DecorationWorkerClient | null>(null);
+  const pendingDecorationRootIndexesRef = useRef<Set<number> | null>(null);
+  const pendingDecorationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [textDecorations, setTextDecorations] = useState<TextDecorationIndex>(
     () => emptyTextDecorations,
   );
 
-  const clearPendingDecorationSchedule = () => {
-    if (pendingScheduleTimeoutRef.current !== null) {
-      clearTimeout(pendingScheduleTimeoutRef.current);
-      pendingScheduleTimeoutRef.current = null;
+  const clearPendingDecorationRequest = () => {
+    if (pendingDecorationTimerRef.current !== null) {
+      clearTimeout(pendingDecorationTimerRef.current);
+      pendingDecorationTimerRef.current = null;
     }
-    pendingRootIndexesRef.current = null;
+    pendingDecorationRootIndexesRef.current = null;
   };
+
+  const clearTextDecorations = () => {
+    setTextDecorations((current) => (current.size === 0 ? current : emptyTextDecorations));
+  };
+
+  /* Decoration results */
 
   const applyDecorationResult = useEffectEvent((result: DecorationJobResult) => {
     if (result.rulesKey !== decorationRulesKey || result.roots.length === 0) {
@@ -68,14 +79,16 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
     });
   });
 
+  /* Decoration jobs */
+
   const scheduleDecorations = useEffectEvent(
     (rootIndexes?: readonly number[], refreshGeneration = false) => {
       if (refreshGeneration) {
-        clearPendingDecorationSchedule();
+        clearPendingDecorationRequest();
       }
 
       if (!decorationsEnabled) {
-        setTextDecorations((current) => (current.size === 0 ? current : emptyTextDecorations));
+        clearTextDecorations();
         return;
       }
 
@@ -86,18 +99,18 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
       );
 
       if (roots.length === 0) {
-        setTextDecorations((current) => (current.size === 0 ? current : emptyTextDecorations));
+        clearTextDecorations();
         return;
       }
 
-      const client = decorationClientRef.current ?? createDecorationWorkerClient();
+      const client = decorationWorkerRef.current ?? createDecorationWorkerClient();
 
       if (!client) {
-        setTextDecorations((current) => (current.size === 0 ? current : emptyTextDecorations));
+        clearTextDecorations();
         return;
       }
 
-      decorationClientRef.current = client;
+      decorationWorkerRef.current = client;
 
       void client
         .run({
@@ -112,10 +125,10 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
           }
 
           // Drop the dead client so the next job creates a fresh worker.
-          if (decorationClientRef.current === client) {
-            decorationClientRef.current = null;
+          if (decorationWorkerRef.current === client) {
+            decorationWorkerRef.current = null;
           }
-          setTextDecorations((current) => (current.size === 0 ? current : emptyTextDecorations));
+          clearTextDecorations();
 
           if (process.env.NODE_ENV !== "production") {
             emitDiagnostic("decorationError", {
@@ -126,10 +139,12 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
     },
   );
 
+  /* Transition batching */
+
   const flushPendingDecorations = useEffectEvent(() => {
-    const pendingRootIndexes = pendingRootIndexesRef.current;
-    pendingRootIndexesRef.current = null;
-    pendingScheduleTimeoutRef.current = null;
+    const pendingRootIndexes = pendingDecorationRootIndexesRef.current;
+    pendingDecorationRootIndexesRef.current = null;
+    pendingDecorationTimerRef.current = null;
 
     if (!pendingRootIndexes || pendingRootIndexes.size === 0) {
       return;
@@ -147,28 +162,30 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
       return;
     }
 
-    const pendingRootIndexes = pendingRootIndexesRef.current ?? new Set<number>();
-    pendingRootIndexesRef.current = pendingRootIndexes;
+    const pendingRootIndexes = pendingDecorationRootIndexesRef.current ?? new Set<number>();
+    pendingDecorationRootIndexesRef.current = pendingRootIndexes;
 
     for (const rootIndex of transition.changedRootIndexes) {
       pendingRootIndexes.add(rootIndex);
     }
 
-    if (pendingScheduleTimeoutRef.current !== null) {
-      clearTimeout(pendingScheduleTimeoutRef.current);
+    if (pendingDecorationTimerRef.current !== null) {
+      clearTimeout(pendingDecorationTimerRef.current);
     }
 
-    pendingScheduleTimeoutRef.current = setTimeout(
+    pendingDecorationTimerRef.current = setTimeout(
       flushPendingDecorations,
-      decorationTransitionDebounceMs,
+      DECORATION_TRANSITION_DEBOUNCE_MS,
     );
   });
 
+  /* Worker lifecycle */
+
   useEffect(() => {
     return () => {
-      clearPendingDecorationSchedule();
-      decorationClientRef.current?.dispose();
-      decorationClientRef.current = null;
+      clearPendingDecorationRequest();
+      decorationWorkerRef.current?.dispose();
+      decorationWorkerRef.current = null;
     };
   }, []);
 
@@ -177,11 +194,13 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
       return;
     }
 
-    clearPendingDecorationSchedule();
-    decorationClientRef.current?.dispose();
-    decorationClientRef.current = null;
-    setTextDecorations((current) => (current.size === 0 ? current : emptyTextDecorations));
+    clearPendingDecorationRequest();
+    decorationWorkerRef.current?.dispose();
+    decorationWorkerRef.current = null;
+    clearTextDecorations();
   }, [decorationsEnabled]);
+
+  /* Generation refresh */
 
   useEffect(() => {
     if (!decorationsEnabled) {
@@ -190,6 +209,8 @@ export function useDecorations({ contentDocument, decorations, store }: UseDecor
 
     scheduleDecorations(undefined, true);
   }, [contentDocument, decorationRulesKey, decorationsEnabled]);
+
+  /* Public API */
 
   return { scheduleDecorationsForTransition, textDecorations };
 }

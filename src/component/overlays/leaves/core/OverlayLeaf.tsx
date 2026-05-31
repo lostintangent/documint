@@ -1,5 +1,5 @@
 // Animated leaf row rendered inside the fixed overlay layer. Unlike
-// `DocumentLeafAnchor`, this does not resolve document geometry; the layer
+// `LeafAnchor`, this does not resolve document geometry; the layer
 // positions it as editor chrome.
 import {
   useEffect,

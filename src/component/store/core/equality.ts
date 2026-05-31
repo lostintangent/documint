@@ -70,21 +70,23 @@ export function equalMapBy<K, V>(
   };
 }
 
-// Equality for plain-object records with string keys. Defaults to `Object.is`
-// on values; pass a custom `equalValue` for nested-structure values.
-export function equalRecordBy<V>(
-  equalValue: Equality<V> = defaultEquality,
-): Equality<Record<string, V>> {
-  return (a, b) => {
-    if (a === b) return true;
-    const aKeys = Object.keys(a);
-    if (aKeys.length !== Object.keys(b).length) return false;
-    for (const key of aKeys) {
-      if (!Object.hasOwn(b, key)) return false;
-      if (!equalValue(a[key]!, b[key]!)) return false;
-    }
-    return true;
-  };
+// Shallow equality for typed object snapshots. Compares the same enumerable
+// own property set with `Object.is` values. Two nullish values are equal; one
+// nullish and one object is not.
+export function equalShallowObject<T extends object>(
+  a: T | null | undefined,
+  b: T | null | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const aKeys = Object.keys(a) as Array<keyof T>;
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const key of aKeys) {
+    if (!Object.hasOwn(b, key)) return false;
+    if (!Object.is(a[key], b[key])) return false;
+  }
+  return true;
 }
 
 // Like `equalRecordBy` but pre-binds a fixed key set known at construction

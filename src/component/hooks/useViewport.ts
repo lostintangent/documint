@@ -55,7 +55,7 @@ export type ViewportController = {
      * is what the paint functions should draw against.
      */
     commitLayout: () => EditorLayoutState;
-    observeScrollContainer: (scrollContainer: HTMLDivElement) => void;
+    syncScrollContainer: (scrollContainer: HTMLDivElement) => void;
     /**
      * Notify the viewport that the editor state has transitioned. The viewport
      * decides whether the cached layout is still valid for the new state and
@@ -84,51 +84,11 @@ export type ViewportController = {
   };
 };
 
-/**
- * Owns all scroll behavior and viewport metrics for the editor.
- *
- * What this hook owns:
- *   - The scroll container DOM ref (created internally, exposed to the host
- *     via `refs.scrollContainer`).
- *   - Viewport metrics (width, height, scroll position, content height),
- *     tracked via `ResizeObserver` and the scroll event.
- *   - The lazily-prepared editor layout state — the heavy "what to paint
- *     where" structure used by hit testing and rendering.
- *   - Autoscroll while dragging a selection beyond the visible edge.
- *   - Coordinate translation: pointer/mouse event → document point.
- *
- * Contract with the host:
- *   - Apply `refs.scrollContainer` as the `ref` of the scroll container
- *     element, and wire its `onScroll` to a handler that calls
- *     `actions.observeScrollContainer(event.currentTarget)` (typically
- *     followed by a render schedule).
- *   - Spread `props.scrollContent.style` onto the inner scroll content wrapper
- *     so it sizes to the virtualized content height.
- *   - Call `actions.scrollTo(top)` for content reconciliation and focus
- *     visibility scroll-into-view.
- *   - Call `actions.commitLayout()` from the render path to retrieve the
- *     layout to paint with — that same call marks the layout as the
- *     rendered frame so reactive overlays stay in lockstep with the canvas.
- *   - Call `actions.reconcileEditorState(prev, next)` whenever the editor
- *     state transitions; the viewport decides whether the cached layout is
- *     still usable for the new state.
- *   - Call `actions.invalidateLayout()` when an input the layout depends on
- *     changes outside of doc/scroll (width, theme, resources, viewport
- *     height) before scheduling a render.
- *   - Read `state.layout.get()` from hit-test paths (recomputes if
- *     invalidated, returns cached otherwise). Lighter paint paths
- *     (content-only, overlay-only) read the latest layout via
- *     `state.layout.peekLatest()` and skip if it's `null`.
- *   - Read `state.layout` (the store-backed layout handle) and share it with
- *     the other hooks (usePointer, useInput, useSelection).
- *   - Wire `actions.resolvePoint` and `actions.autoScrollDuringDrag` into
- *     the other hooks that need them — this hook is the single owner of
- *     coordinate translation and drag-edge autoscroll.
- */
 export function useViewport({ renderResources, theme }: UseViewportOptions): ViewportController {
-  /* Internal state */
+  /* Store, refs, and viewport state */
 
   const store = useDocumintStore();
+  const layout = store.layout;
   const layoutCacheRef = useRef(createLayoutCache());
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const viewportMetricsRef = useRef<ViewportMetrics>({ height: 240, top: 0 });
@@ -148,7 +108,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // reads through the ref, so it sees fresh values on every call.
   //
   // Not `useEffectEvent` because layout may be computed during host render
-  // (e.g. `resolveDocumentLeafAnchor` reads `.get()` synchronously when the cache
+  // (e.g. `resolveLeafAnchor` reads `.get()` synchronously when the cache
   // was invalidated since the last paint); effect events disallow that.
   const resolverRef = useRef<() => EditorLayoutState>(undefined);
   resolverRef.current = (): EditorLayoutState => {
@@ -172,7 +132,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // Install the resolver once per store. The wrapper reads through the ref,
   // so the resolver doesn't need to be re-registered when its closure
   // updates. Installed during the first render that sees this store so
-  // synchronous-during-render readers like `resolveDocumentLeafAnchor` work
+  // synchronous-during-render readers like `resolveLeafAnchor` work
   // immediately, not after the first effect commit.
   const installedStoreRef = useRef<DocumintStore | null>(null);
   if (installedStoreRef.current !== store) {
@@ -180,7 +140,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
     installedStoreRef.current = store;
   }
 
-  const layout = store.layout;
+  /* Layout commit */
 
   const commitLayout = useEffectEvent((): EditorLayoutState => {
     const layoutState = store.layout.commit();
@@ -199,7 +159,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
     layout.invalidate();
   });
 
-  const observeScrollContainer = useEffectEvent((scrollContainer: HTMLDivElement) => {
+  const syncScrollContainer = useEffectEvent((scrollContainer: HTMLDivElement) => {
     const next = readViewportMetrics(scrollContainer);
     const topChanged = next.top !== viewportMetricsRef.current.top;
     viewportMetricsRef.current = next;
@@ -232,7 +192,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
     return scrollContainerRef.current?.scrollTop ?? viewportMetricsRef.current.top;
   });
 
-  /* Cache reuse policy */
+  /* Editor-state layout invalidation */
 
   // Decide whether the cached layout can be reused after an editor state
   // transition. The cache survives:
@@ -317,7 +277,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // Track container size changes. ResizeObserver is the only reliable signal
   // for layout-driven dimension changes. Wheel and touch scroll are handled
   // natively by the browser via `overflow: auto` on the scroll container —
-  // we just observe the resulting scroll events through `observeScrollContainer`
+  // we just sync the resulting scroll events through `syncScrollContainer`
   // to keep state in sync.
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -342,10 +302,10 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
       commitLayout,
       getScrollTop,
       invalidateLayout,
-      observeScrollContainer,
       reconcileEditorState,
       resolvePoint,
       scrollTo,
+      syncScrollContainer,
     },
     props: {
       scrollContent: {

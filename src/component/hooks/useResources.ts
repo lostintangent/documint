@@ -1,7 +1,3 @@
-// Owns the host-declared resource protocol/activity lifecycle. Protocols are
-// static parse/render metadata; active resources are dynamic host state for
-// the resource URLs the document index discovers.
-
 import { useEffect, useMemo, useRef } from "react";
 import { createResourceReference } from "@/editor";
 import { createResourceIconSignature, normalizeResourceProtocol } from "@/resources";
@@ -27,12 +23,16 @@ export type ResolvedResourceProtocols = {
 const emptyActiveResources = new Set<string>();
 
 export function useResourceProtocols(protocols: ResourceProtocolRecord | undefined) {
+  /* Protocol normalization */
+
   const normalizedProtocols = useMemo(() => normalizeResourceProtocolMap(protocols), [protocols]);
   const key = useMemo(() => createResourceProtocolKey(normalizedProtocols), [normalizedProtocols]);
   const layoutKey = useMemo(
     () => createResourceProtocolLayoutKey(normalizedProtocols),
     [normalizedProtocols],
   );
+
+  /* Public API */
 
   return useMemo(
     () => ({
@@ -53,10 +53,11 @@ export function useResources({
   resourceProtocols: ResolvedResourceProtocols;
   resources?: ActiveResourceSet;
 }): DocumentResourceRegistry {
+  /* Resource registry */
+
   const { protocols } = resourceProtocols;
   const activeResources = useMemo(() => normalizeActiveResources(resources), [resources]);
   const resourceUrls = useSprig(resourceUrlsSprig);
-  const lastRequestKeyRef = useRef("");
   const registry = useMemo(
     () => ({
       active: activeResources,
@@ -65,32 +66,38 @@ export function useResources({
     [activeResources, protocols],
   );
 
+  /* Discovered-resource requests */
+
+  const lastRequestedResourceKeyRef = useRef("");
+
   useEffect(() => {
     if (!onResourcesRequested) {
       return;
     }
 
     if (protocols.size === 0) {
-      lastRequestKeyRef.current = "";
+      lastRequestedResourceKeyRef.current = "";
       return;
     }
 
     const discovered = resolveDiscoveredResourceReferences(resourceUrls, protocols);
-    const requestKey = discovered
+    const discoveredResourceKey = discovered
       .map((resource) => resource.url)
       .sort()
       .join("\u0000");
 
-    if (!requestKey) {
-      lastRequestKeyRef.current = "";
+    if (!discoveredResourceKey) {
+      lastRequestedResourceKeyRef.current = "";
       return;
     }
 
-    if (requestKey !== lastRequestKeyRef.current) {
-      lastRequestKeyRef.current = requestKey;
+    if (discoveredResourceKey !== lastRequestedResourceKeyRef.current) {
+      lastRequestedResourceKeyRef.current = discoveredResourceKey;
       onResourcesRequested(discovered);
     }
   }, [resourceUrls, onResourcesRequested, protocols]);
+
+  /* Public API */
 
   return registry;
 }

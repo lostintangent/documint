@@ -1,7 +1,7 @@
 import { createEditorLayoutState, createEditorState, createLayoutCache } from "@/editor";
 import { parseDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
-import { runBenchmark } from "./shared";
+import { runBudgetedBenchmark } from "./shared";
 
 export function createLayoutBenchmarks(
   budgets: BenchmarkBudgetTree["layout"],
@@ -21,10 +21,10 @@ export function createLayoutBenchmarks(
   const scrollOffsets = [0, 720, 1440, 2160, 2880, 3600];
 
   return [
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_canvas",
       100,
-      budgets.canvas,
       () =>
         void createEditorLayoutState(
           longState,
@@ -36,10 +36,10 @@ export function createLayoutBenchmarks(
           layoutCache,
         ),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_canvas_xlarge",
       50,
-      budgets.canvas_xlarge,
       () =>
         void createEditorLayoutState(
           xlargeState,
@@ -51,10 +51,10 @@ export function createLayoutBenchmarks(
           layoutCache,
         ),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_canvas_huge",
       30,
-      budgets.canvas_huge,
       () =>
         void createEditorLayoutState(
           hugeState,
@@ -66,7 +66,7 @@ export function createLayoutBenchmarks(
           layoutCache,
         ),
     ),
-    runBenchmark("layout_scroll", 100, budgets.scroll, () => {
+    runBudgetedBenchmark(budgets, "layout_scroll", 100, () => {
       for (const top of scrollOffsets) {
         void createEditorLayoutState(
           longState,
@@ -79,10 +79,10 @@ export function createLayoutBenchmarks(
         );
       }
     }),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_scroll_step",
       200,
-      budgets.scroll_step,
       () =>
         void createEditorLayoutState(
           longState,
@@ -94,7 +94,7 @@ export function createLayoutBenchmarks(
           layoutCache,
         ),
     ),
-    runBenchmark("layout_scroll_xlarge", 50, budgets.scroll_xlarge, () => {
+    runBudgetedBenchmark(budgets, "layout_scroll_xlarge", 50, () => {
       for (const top of scrollOffsets) {
         void createEditorLayoutState(
           xlargeState,
@@ -107,10 +107,10 @@ export function createLayoutBenchmarks(
         );
       }
     }),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_scroll_step_xlarge",
       100,
-      budgets.scroll_step_xlarge,
       () =>
         void createEditorLayoutState(
           xlargeState,
@@ -122,7 +122,7 @@ export function createLayoutBenchmarks(
           layoutCache,
         ),
     ),
-    runBenchmark("layout_scroll_huge", 30, budgets.scroll_huge, () => {
+    runBudgetedBenchmark(budgets, "layout_scroll_huge", 30, () => {
       for (const top of scrollOffsets) {
         void createEditorLayoutState(
           hugeState,
@@ -135,10 +135,10 @@ export function createLayoutBenchmarks(
         );
       }
     }),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_scroll_step_huge",
       50,
-      budgets.scroll_step_huge,
       () =>
         void createEditorLayoutState(
           hugeState,
@@ -153,10 +153,10 @@ export function createLayoutBenchmarks(
     // Tall-viewport layout. Uses the public editor layout entrypoint while
     // forcing a viewport large enough to exercise more measured geometry than
     // the ordinary scroll benchmarks.
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_full_document_long",
       30,
-      budgets.full_document_long,
       () =>
         void createEditorLayoutState(longState, {
           height: 100_000,
@@ -164,10 +164,10 @@ export function createLayoutBenchmarks(
           width: 420,
         }),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_full_document_xlarge",
       20,
-      budgets.full_document_xlarge,
       () =>
         void createEditorLayoutState(xlargeState, {
           height: 100_000,
@@ -175,10 +175,10 @@ export function createLayoutBenchmarks(
           width: 420,
         }),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "layout_full_document_huge",
       10,
-      budgets.full_document_huge,
       () =>
         void createEditorLayoutState(hugeState, {
           height: 100_000,

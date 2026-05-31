@@ -1,6 +1,6 @@
 import { parseDocument, serializeDocument } from "@/markdown";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
-import { runBenchmark } from "./shared";
+import { runBudgetedBenchmark } from "./shared";
 
 export function createMarkdownBenchmarks(
   budgets: BenchmarkBudgetTree["markdown"],
@@ -18,64 +18,64 @@ export function createMarkdownBenchmarks(
   },
 ): BenchmarkRecord[] {
   return [
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "markdown_to_document_comments",
       200,
-      budgets.markdown_to_document_comments,
       () => void parseDocument(fixtures.commentsMarkdown),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "markdown_to_document_short",
       200,
-      budgets.markdown_to_document_short,
       () => void parseDocument(fixtures.sampleMarkdown),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "markdown_to_document_medium",
       200,
-      budgets.markdown_to_document_medium,
       () => void parseDocument(fixtures.mediumMarkdown),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "markdown_to_document",
       100,
-      budgets.markdown_to_document,
       () => void parseDocument(fixtures.longMarkdown),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "markdown_to_document_rich",
       200,
-      budgets.markdown_to_document_rich,
       () => void parseDocument(fixtures.richMixedMarkdown),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "document_to_markdown_comments",
       200,
-      budgets.document_to_markdown_comments,
       () => void serializeDocument(fixtures.commentsSnapshot),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "document_to_markdown_short",
       200,
-      budgets.document_to_markdown_short,
       () => void serializeDocument(fixtures.sampleSnapshot),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "document_to_markdown_medium",
       200,
-      budgets.document_to_markdown_medium,
       () => void serializeDocument(fixtures.mediumSnapshot),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "document_to_markdown",
       200,
-      budgets.document_to_markdown,
       () => void serializeDocument(fixtures.longSnapshot),
     ),
-    runBenchmark(
+    runBudgetedBenchmark(
+      budgets,
       "document_to_markdown_rich",
       200,
-      budgets.document_to_markdown_rich,
       () => void serializeDocument(fixtures.richMixedSnapshot),
     ),
   ];

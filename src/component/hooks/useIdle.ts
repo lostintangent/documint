@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
-const activityIdleDelayMs = 600;
+const ACTIVITY_IDLE_DELAY_MS = 600;
 
 export type IdleState = {
   activeAt: number | null;
@@ -14,9 +14,10 @@ type UseIdleOptions = {
 };
 
 export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
+  /* Activity state */
+
   const [activeAt, setActiveAt] = useState<number | null>(null);
   const activeAtRef = useRef<number | null>(null);
-  const animationOriginRef = useRef(performance.now());
   const idleTimerRef = useRef<number | null>(null);
 
   const clearIdleTimer = () => {
@@ -28,11 +29,22 @@ export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
     idleTimerRef.current = null;
   };
 
+  /* Animation clock */
+
+  const animationClockOriginRef = useRef(performance.now());
+
+  const resolveAnimationTime = useEffectEvent(
+    (now = performance.now()) => (activeAtRef.current ?? now) - animationClockOriginRef.current,
+  );
+
+  /* Activity transitions */
+
   const markIdle = useEffectEvent(() => {
     const activeAt = activeAtRef.current;
 
     if (activeAt !== null) {
-      animationOriginRef.current = performance.now() - (activeAt - animationOriginRef.current);
+      animationClockOriginRef.current =
+        performance.now() - (activeAt - animationClockOriginRef.current);
     }
 
     idleTimerRef.current = null;
@@ -51,15 +63,16 @@ export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
 
     clearIdleTimer();
 
-    idleTimerRef.current = window.setTimeout(markIdle, activityIdleDelayMs);
+    idleTimerRef.current = window.setTimeout(markIdle, ACTIVITY_IDLE_DELAY_MS);
   });
 
   const isActive = useEffectEvent(() => activeAtRef.current !== null);
-  const resolveAnimationTime = useEffectEvent(
-    (now = performance.now()) => (activeAtRef.current ?? now) - animationOriginRef.current,
-  );
+
+  /* Lifecycle */
 
   useEffect(() => clearIdleTimer, []);
+
+  /* Public API */
 
   return {
     activeAt,

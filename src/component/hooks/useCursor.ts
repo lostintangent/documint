@@ -1,12 +1,21 @@
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef } from "react";
 import {
   caretInViewportSprig,
-  cursorScrollTargetSprig,
+  caretTargetSprig,
   normalizedSelectionSprig,
+  renderedViewportSizeSprig,
+  selectionSprig,
+  useDocumintStore,
   useSprig,
-  type CursorScrollTarget,
 } from "../store";
 import { cursorLeafSprig, type CursorLeaf } from "../overlays/leaves/sprigs";
+import type {
+  CaretTarget,
+  EditorLayoutState,
+  EditorSelection,
+  NormalizedEditorSelection,
+} from "@/editor";
+import { equalShallowObject } from "../store/core/equality";
 
 /* Hook surface */
 
@@ -32,12 +41,17 @@ type CursorController = {
   isVisible: () => boolean;
 };
 
-type FocusVisibilityRequest = {
-  bottom: number;
-  scrollTop: number;
-  top: number;
+type CursorRevealIntent = {
+  selection: EditorSelection;
   viewportWidth: number;
   viewportHeight: number;
+};
+
+type CursorRevealTarget = {
+  bottom: number;
+  top: number;
+  viewportHeight: number;
+  viewportWidth: number;
 };
 
 /* Constants */
@@ -47,14 +61,8 @@ const CARET_BLINK_INTERVAL_MS = 530;
 
 // Padding above and below the caret when scrolling it into view, so it
 // doesn't sit flush against the viewport edge.
-const FOCUS_VISIBILITY_PADDING = 24;
+const CURSOR_REVEAL_PADDING = 24;
 
-/**
- * Owns caret browser lifetimes: contextual leaf data, blink cadence, viewport
- * status, and focus visibility. Selection moves scroll through
- * `cursorScrollTargetSprig`, whose estimated-bounds fallback lets off-layout
- * jumps such as search navigation land before the next layout pass.
- */
 export function useCursor({
   activeAt,
   getScrollTop,
@@ -64,88 +72,100 @@ export function useCursor({
   scrollTo,
   viewportHeight,
 }: UseCursorOptions): CursorController {
-  /* Internal state */
+  /* Shared cursor state */
 
-  const normalizedSel = useSprig(normalizedSelectionSprig);
+  const normalizedSelection = useSprig(normalizedSelectionSprig);
+  const selection = useSprig(selectionSprig);
+  const store = useDocumintStore();
+
+  /* Cursor leaf */
+
   const leaf = useSprig(cursorLeafSprig, isEditable);
+
+  /* Cursor reveal */
+
+  const caretTarget = useSprig(caretTargetSprig);
+  const renderedViewportSize = useSprig(renderedViewportSizeSprig);
+  const lastRevealIntentRef = useRef<CursorRevealIntent | null>(null);
+
+  /* Caret blink */
+
   const caretInViewport = useSprig(caretInViewportSprig);
-  const scrollTarget = useSprig(cursorScrollTargetSprig);
-  const shouldBlinkCaret =
-    normalizedSel.start.regionId === normalizedSel.end.regionId &&
-    normalizedSel.start.offset === normalizedSel.end.offset;
-  const cursorVisibleRef = useRef(true);
-  const lastFocusVisibilityRequestRef = useRef<FocusVisibilityRequest | null>(null);
-
-  /* Visibility */
-
-  const requestVisibilityPaint = useEffectEvent(() => {
+  const shouldBlinkCaret = normalizedSelection.collapsed;
+  const caretVisibleRef = useRef(true);
+  const requestCaretPaint = useEffectEvent(() => {
     onVisibilityChange();
   });
 
-  /* Focus visibility */
+  /* Cursor reveal effect */
 
-  // Dedupe identical visibility requests; layout/scroll changes may publish
-  // the same target more than once.
-  useEffect(() => {
-    if (!scrollTarget) return;
+  // Reveal focus after selection moves or viewport dimensions change. Plain
+  // scrolling republishes layout too, but it should not pull the viewport back
+  // to an unchanged selection.
+  useLayoutEffect(() => {
+    const revealTarget = resolveCursorRevealTarget({
+      caretTarget,
+      layout: store.layout.peekRendered(),
+      normalizedSelection,
+    });
 
-    const focusVisibilityRequest: FocusVisibilityRequest = {
-      bottom: scrollTarget.bottom,
-      scrollTop: getScrollTop(),
-      top: scrollTarget.top,
-      viewportWidth,
-      viewportHeight,
-    };
-
+    if (!revealTarget) return;
     if (
-      areFocusVisibilityRequestsEqual(lastFocusVisibilityRequestRef.current, focusVisibilityRequest)
+      revealTarget.viewportWidth !== viewportWidth ||
+      revealTarget.viewportHeight !== viewportHeight
     ) {
       return;
     }
 
-    const currentTop = focusVisibilityRequest.scrollTop;
-    const visibleTop = currentTop + FOCUS_VISIBILITY_PADDING;
-    const visibleBottom = currentTop + viewportHeight - FOCUS_VISIBILITY_PADDING;
+    const revealIntent: CursorRevealIntent = {
+      selection,
+      viewportWidth,
+      viewportHeight,
+    };
 
-    if (scrollTarget.top < visibleTop) {
-      const appliedTop = scrollTo(Math.max(0, scrollTarget.top - FOCUS_VISIBILITY_PADDING));
-      if (
-        isScrollTargetVisible(scrollTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
-      ) {
-        lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
-      }
+    if (equalShallowObject(lastRevealIntentRef.current, revealIntent)) {
       return;
     }
 
-    if (scrollTarget.bottom > visibleBottom) {
-      const appliedTop = scrollTo(
-        Math.max(0, scrollTarget.bottom - viewportHeight + FOCUS_VISIBILITY_PADDING),
-      );
-      if (
-        isScrollTargetVisible(scrollTarget, appliedTop, viewportHeight, FOCUS_VISIBILITY_PADDING)
-      ) {
-        lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
-      }
+    lastRevealIntentRef.current = revealIntent;
+
+    const currentTop = getScrollTop();
+    const visibleTop = currentTop + CURSOR_REVEAL_PADDING;
+    const visibleBottom = currentTop + viewportHeight - CURSOR_REVEAL_PADDING;
+
+    if (revealTarget.top < visibleTop) {
+      scrollTo(Math.max(0, revealTarget.top - CURSOR_REVEAL_PADDING));
       return;
     }
 
-    lastFocusVisibilityRequestRef.current = focusVisibilityRequest;
-  }, [scrollTarget, viewportWidth, viewportHeight]);
+    if (revealTarget.bottom > visibleBottom) {
+      scrollTo(Math.max(0, revealTarget.bottom - viewportHeight + CURSOR_REVEAL_PADDING));
+      return;
+    }
+  }, [
+    caretTarget,
+    normalizedSelection,
+    renderedViewportSize,
+    selection,
+    store.layout,
+    viewportWidth,
+    viewportHeight,
+  ]);
 
-  /* Caret blink loop */
+  /* Caret blink effect */
 
   // During activity the caret stays solid; idle collapsed selections blink.
   useEffect(() => {
-    cursorVisibleRef.current = true;
-    requestVisibilityPaint();
+    caretVisibleRef.current = true;
+    requestCaretPaint();
 
     if (!shouldBlinkCaret || !caretInViewport || activeAt !== null) {
       return;
     }
 
     const intervalId = window.setInterval(() => {
-      cursorVisibleRef.current = !cursorVisibleRef.current;
-      requestVisibilityPaint();
+      caretVisibleRef.current = !caretVisibleRef.current;
+      requestCaretPaint();
     }, CARET_BLINK_INTERVAL_MS);
 
     return () => {
@@ -158,28 +178,38 @@ export function useCursor({
   return {
     caretInViewport,
     leaf,
-    isVisible: () => cursorVisibleRef.current,
+    isVisible: () => caretVisibleRef.current,
   };
 }
 
-function areFocusVisibilityRequestsEqual(
-  previous: FocusVisibilityRequest | null,
-  next: FocusVisibilityRequest,
-) {
-  return (
-    previous?.bottom === next.bottom &&
-    previous?.scrollTop === next.scrollTop &&
-    previous?.top === next.top &&
-    previous?.viewportWidth === next.viewportWidth &&
-    previous?.viewportHeight === next.viewportHeight
-  );
-}
+function resolveCursorRevealTarget({
+  caretTarget,
+  layout,
+  normalizedSelection,
+}: {
+  caretTarget: CaretTarget | null;
+  layout: EditorLayoutState | null;
+  normalizedSelection: NormalizedEditorSelection;
+}): CursorRevealTarget | null {
+  if (!layout) {
+    return null;
+  }
 
-function isScrollTargetVisible(
-  target: CursorScrollTarget,
-  scrollTop: number,
-  visibleHeight: number,
-  padding: number,
-) {
-  return target.top >= scrollTop + padding && target.bottom <= scrollTop + visibleHeight - padding;
+  if (caretTarget) {
+    return {
+      bottom: caretTarget.top + caretTarget.height,
+      top: caretTarget.top,
+      viewportHeight: layout.viewport.height,
+      viewportWidth: layout.viewport.width,
+    };
+  }
+
+  const bounds = layout.estimateRegionBounds(normalizedSelection.end.regionId);
+  return bounds
+    ? {
+        ...bounds,
+        viewportHeight: layout.viewport.height,
+        viewportWidth: layout.viewport.width,
+      }
+    : null;
 }

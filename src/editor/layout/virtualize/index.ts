@@ -2,7 +2,6 @@
 // viewport slice selection, exact slice measurement, and refinement of cached
 // estimates from measured geometry.
 
-import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { type DocumentIndex, type EditorState } from "../../state";
 import { type LayoutCache } from "../state/cache";
@@ -29,34 +28,23 @@ export type VirtualizedLayoutSlice = {
 };
 
 export function createVirtualizedLayoutSlice({
-  blockMap,
   cache,
   documentIndex,
   options,
   resources,
-  runtimeBlocks,
   state,
   viewport,
 }: {
-  blockMap: Map<string, Block>;
   cache: LayoutCache;
   documentIndex: DocumentIndex;
   options: DocumentLayoutOptions;
   resources: DocumentResources;
-  runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>;
   state: EditorState;
   viewport: VirtualizedViewport;
 }): VirtualizedLayoutSlice {
   const expandedTop = Math.max(0, viewport.top - viewport.overscan);
   const expandedBottom = viewport.top + viewport.height + viewport.overscan;
-  const virtualLayout = getOrCreateVirtualLayout(
-    cache,
-    documentIndex,
-    blockMap,
-    runtimeBlocks,
-    options,
-    resources,
-  );
+  const virtualLayout = getOrCreateVirtualLayout(cache, documentIndex, options, resources);
   let sliceStartIndex = findVirtualLayoutEntryIndexAtOrAfter(virtualLayout, expandedTop);
   let sliceEndIndex = findVirtualLayoutEntryIndexAtOrAfter(virtualLayout, expandedBottom);
 
@@ -107,12 +95,10 @@ export function createVirtualizedLayoutSlice({
       options,
       cache,
       resources,
-      blockMap,
     );
   } else {
     const expandedSlice = expandViewportSliceToBlockBoundaries(
       documentIndex,
-      runtimeBlocks,
       virtualLayout.containerIndices,
       sliceStartIndex,
       sliceEndIndex,
@@ -131,7 +117,6 @@ export function createVirtualizedLayoutSlice({
       options,
       cache,
       resources,
-      blockMap,
       sliceTop,
     );
 

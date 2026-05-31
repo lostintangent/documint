@@ -2,9 +2,6 @@ import { useMemo } from "react";
 import type { DocumentPresence, DocumentUser, DocumentUserPresence } from "@/types";
 import { commentPresenceSprig, resolvedPresenceSprig, useSprig } from "../store";
 
-// Component-side presence bridge. The hook joins host user/presence props,
-// then subscribes to the sprigs needed by paint: resolved presence for the
-// overlay and comment-thread presence for content/leaf UI.
 export function usePresence({
   presence,
   users,
@@ -12,9 +9,19 @@ export function usePresence({
   presence?: DocumentPresence[];
   users?: DocumentUser[];
 }) {
-  const userPresence = useMemo(() => joinUsersAndPresence(users, presence), [users, presence]);
-  const commentPresence = useSprig(commentPresenceSprig, userPresence);
-  const resolvedPresence = useSprig(resolvedPresenceSprig, userPresence);
+  /* Host presence join */
+
+  const documentUserPresence = useMemo(
+    () => joinUsersAndPresence(users, presence),
+    [users, presence],
+  );
+
+  /* Presence view models */
+
+  const commentPresence = useSprig(commentPresenceSprig, documentUserPresence);
+  const resolvedPresence = useSprig(resolvedPresenceSprig, documentUserPresence);
+
+  /* Public API */
 
   return {
     commentPresence,

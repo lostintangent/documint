@@ -1,5 +1,3 @@
-// Host sync coordination: owns external content reconciliation bookkeeping and
-// local sync event emission for content patches and mention payloads.
 import { useEffectEvent, useLayoutEffect, useRef } from "react";
 import { createEditorState, getDocument, type TextRangeTarget } from "@/editor";
 import type { Document } from "@/document";
@@ -33,6 +31,8 @@ export function useSync({
   revision?: string | null;
   store: DocumintStore;
 }) {
+  /* Reconciliation bookkeeping */
+
   const lastEmittedContentRef = useRef(content);
   const lastReconciledRevisionRef = useRef(revision ?? null);
   const lastReconciledResourceProtocolKeyRef = useRef(resourceProtocolKey);
@@ -103,6 +103,8 @@ export function useSync({
     lastReconciledRevisionRef.current = revision ?? null;
     lastReconciledResourceProtocolKeyRef.current = resourceProtocolKey;
   }, [content, contentDocument, revision, resourceProtocolKey, store]);
+
+  /* Public API */
 
   return {
     emitContentChanged,

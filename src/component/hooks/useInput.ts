@@ -11,12 +11,10 @@ import {
   useState,
 } from "react";
 import {
-  copySelection,
   deleteBackward,
   deleteForward,
   deleteSelection,
   insertLineBreak,
-  insertLink,
   insertSoftLineBreak,
   insertImage,
   insertText,
@@ -26,7 +24,6 @@ import {
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
   moveCaretVertically,
-  pasteFragment,
   replaceTextRange,
   dedent,
   indent,
@@ -41,7 +38,8 @@ import {
   type EditorState,
 } from "@/editor";
 import type { EditorInputCommand } from "@/types";
-import { parseFragment, serializeFragment, type MarkdownOptions } from "@/markdown";
+import type { MarkdownOptions } from "@/markdown";
+import { copySelectionAsMarkdown, pastePlainText } from "../lib/clipboard";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
 import {
@@ -176,41 +174,6 @@ const INPUT_CONTEXT_WINDOW = 1024;
 // sentences or paragraphs).
 const DICTATION_FLUSH_OVERLAP_THRESHOLD = 16;
 
-/**
- * Owns the hidden browser input bridge — a 2x2 absolutely-positioned
- * `<textarea>` that the editor uses to talk to the operating system.
- *
- * What this hook owns:
- *   - Receiving native text input via `beforeinput` (insertions, deletions,
- *     line breaks, autocorrect replacements) and routing it to editor
- *     operations.
- *   - Keyboard shortcut handling on desktop (omitted on touch — see comment
- *     on `SharedInputHandlers`).
- *   - Clipboard (copy / cut / paste) on both the textarea and the canvas.
- *   - IME / autocapitalize / autocorrect compatibility (the textarea is the
- *     OS-visible input, so it must look real to iOS Safari).
- *   - iOS Shake-to-Undo: priming `UIUndoManager` so the gesture fires
- *     `beforeinput` with `historyUndo`/`historyRedo`, which we route to the
- *     editor's own undo stack.
- *   - Imperative `focus({offset, regionId})` — positions the textarea at the
- *     caret pixel coordinates first (so iOS scrolls the right area into view
- *     above the keyboard) and then calls `.focus()`.
- *   - The `:focus-visible` guard on canvas focus that bridges Tab-key focus
- *     to the textarea while ignoring pointer-driven canvas focus (which
- *     would otherwise open the keyboard on every tap).
- *
- * Contract with the host:
- *   - The host renders a hidden `<textarea ref={inputRef}>` inside the
- *     scroll container (positioning is owned here, but mounting is the
- *     host's responsibility).
- *   - The host spreads `inputHandlers` onto the textarea and `canvasHandlers`
- *     onto the canvas. They overlap on clipboard so either DOM target works
- *     as a paste target.
- *   - Other hooks (usePointer, useSelection) call `focus()` directly when
- *     they want the keyboard up; the host wires `input.focus` into them.
- *   - The host doesn't own input state — it lives entirely in the textarea
- *     value and the editor state, both managed here.
- */
 export function useInput({
   inputRef,
   keybindings,
@@ -221,19 +184,19 @@ export function useInput({
   onKeyDown,
   onImagePaste,
 }: UseInputOptions): InputController {
-  /* Internal state */
+  /* Store, device state, and editor commands */
 
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
   const isTouchPrimary = useIsTouchPrimary();
   const readCurrentState = () => store.editor.getState();
-  // When `primingRef.current === true`, the bridge is in the middle of
+  // When `isUndoStackPrimingRef.current === true`, the bridge is in the middle of
   // execCommand-ing a dummy insert+delete to seed iOS's UIUndoManager so
   // that Shake-to-Undo and related gestures dispatch `historyUndo`
   // beforeinput events (they only fire when the UA has undo history).
   // While this flag is set we skip `handleBeforeInput` / `handleInput` so
   // our own logic doesn't preventDefault the priming execCommands.
-  const primingRef = useRef(false);
+  const isUndoStackPrimingRef = useRef(false);
   const undoStackPrimedRef = useRef(false);
   const insertNativeText = useEditorCommand(insertNativeTextCommand);
   const replaceNativeText = useEditorCommand(replaceNativeTextCommand);
@@ -245,8 +208,7 @@ export function useInput({
   const applyKeyboardInput = useEditorCommand(applyKeyboardInputCommand);
   const deleteSelectionCommand = useEditorCommand(deleteSelection);
   const insertImageCommand = useEditorCommand(insertImage);
-  const insertLinkCommand = useEditorCommand(insertLink);
-  const pasteFragmentCommand = useEditorCommand(pasteFragment);
+  const pastePlainTextCommand = useEditorCommand(pastePlainText);
 
   const runInputCommand = useEffectEvent(
     <Args extends unknown[]>(
@@ -277,7 +239,7 @@ export function useInput({
     ).execCommand;
     if (typeof execCommand !== "function") return;
     try {
-      primingRef.current = true;
+      isUndoStackPrimingRef.current = true;
       execCommand.call(document, "insertText", false, "‌");
       execCommand.call(document, "delete");
     } catch {
@@ -285,7 +247,7 @@ export function useInput({
       // sandbox), undo via gesture just won't work — which is the same as
       // the pre-fix state.
     } finally {
-      primingRef.current = false;
+      isUndoStackPrimingRef.current = false;
       // Restore the textarea to its canonical shape in case the exec'd
       // insertion/deletion left any residue.
       syncInputContext(input, readCurrentState());
@@ -364,7 +326,7 @@ export function useInput({
     primeUndoStack();
   });
 
-  /* Native event handlers (beforeinput / input / keydown) */
+  /* Native text and keyboard input */
 
   /**
    * Maps native `beforeinput` event types to editor operations.
@@ -436,7 +398,7 @@ export function useInput({
       });
     }
 
-    if (primingRef.current) return;
+    if (isUndoStackPrimingRef.current) return;
 
     if (onBeforeInput?.(event)) {
       return;
@@ -555,7 +517,7 @@ export function useInput({
       });
     }
 
-    if (primingRef.current) return;
+    if (isUndoStackPrimingRef.current) return;
 
     // Textarea got cleared past INPUT_SEED (e.g. backspace on an empty
     // region). Re-seed it so further backspaces still fire `beforeinput`
@@ -602,35 +564,34 @@ export function useInput({
 
   /* Clipboard handlers */
 
-  // The editor speaks `Fragment`; the clipboard speaks markdown text. This
-  // hook is the only place where the two cross paths — `parseFragment` /
-  // `serializeFragment` adapt one to the other so the editor stays
-  // format-agnostic.
+  // Native clipboard events expose a synchronous clipboardData object. Shared
+  // editor-side clipboard policy lives in component/lib/clipboard so toolbar
+  // actions and native shortcuts agree on fragment serialization and paste.
 
   const handleCopy = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const fragment = copySelection(readCurrentState());
+      const markdown = copySelectionAsMarkdown(readCurrentState());
 
-      if (!fragment) {
+      if (markdown === null) {
         return;
       }
 
       event.preventDefault();
-      event.clipboardData.setData("text/plain", serializeFragment(fragment));
+      event.clipboardData.setData("text/plain", markdown);
     },
   );
 
   const handleCut = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       const state = readCurrentState();
-      const fragment = copySelection(state);
+      const markdown = copySelectionAsMarkdown(state);
 
-      if (!fragment) {
+      if (markdown === null) {
         return;
       }
 
       event.preventDefault();
-      event.clipboardData.setData("text/plain", serializeFragment(fragment));
+      event.clipboardData.setData("text/plain", markdown);
       runInputCommand(deleteSelectionCommand);
     },
   );
@@ -662,17 +623,8 @@ export function useInput({
         return;
       }
 
-      if (/^https?:\/\//.test(pastedText)) {
-        const transition = runInputCommand(insertLinkCommand, pastedText);
-        if (transition) {
-          event.preventDefault();
-          return;
-        }
-      }
-
       event.preventDefault();
-      const fragment = parseFragment(pastedText, markdownOptions);
-      runInputCommand(pasteFragmentCommand, fragment, pastedText);
+      runInputCommand(pastePlainTextCommand, pastedText, markdownOptions);
     },
   );
 
@@ -702,7 +654,7 @@ export function useInput({
     }
   });
 
-  /* Effects */
+  /* Textarea synchronization effects */
 
   // Mirror the editor state into the hidden textarea after every editor
   // state change so the OS sees up-to-date context (preceding chars,
@@ -747,6 +699,8 @@ export function useInput({
     input.addEventListener("beforeinput", listener);
     return () => input.removeEventListener("beforeinput", listener);
   }, [inputRef]);
+
+  /* Diagnostics */
 
   // Install diagnostic listeners (composition events on the input bridge,
   // document `selectionchange`). Production strips this call and the

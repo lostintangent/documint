@@ -17,20 +17,30 @@ export function estimateTextLayout(input: {
   const charWidth = input.charWidth ?? defaultDocumentLayoutOptions.charWidth;
   const lineHeight = input.lineHeight ?? defaultDocumentLayoutOptions.lineHeight;
   const charactersPerLine = Math.max(12, Math.floor(input.width / charWidth));
-  // Split on `\n` so hard line breaks contribute their own wrapped-line
-  // counts. `String.split` yields a trailing empty segment for a trailing
-  // newline, which naturally accounts for the extra empty line that the
-  // measured layout's post-loop emits in `layoutSegmentsIntoLines`.
-  const lineCount = input.text
-    .split("\n")
-    .reduce(
-      (total, segment) => total + Math.max(1, Math.ceil(segment.length / charactersPerLine)),
-      0,
-    );
+  const lineCount = countEstimatedLines(input.text, charactersPerLine);
 
   return {
     estimatedHeight: lineCount * lineHeight,
     lineCount,
     width: input.width,
   };
+}
+
+function countEstimatedLines(text: string, charactersPerLine: number) {
+  let lineCount = 0;
+  let segmentLength = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 0x0a) {
+      lineCount += Math.max(1, Math.ceil(segmentLength / charactersPerLine));
+      segmentLength = 0;
+      continue;
+    }
+
+    segmentLength += 1;
+  }
+
+  // Count the final segment. This also preserves the previous `split("\n")`
+  // behavior where a trailing newline contributes one empty visual line.
+  return lineCount + Math.max(1, Math.ceil(segmentLength / charactersPerLine));
 }

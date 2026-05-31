@@ -22,17 +22,15 @@ export {
   caretTargetSprig,
   commentRangesSprig,
   commentStateSprig,
-  cursorScrollTargetSprig,
   documentCompletionSprig,
   imageAtCursorSprig,
   normalizedSelectionSprig,
   selectionContextSprig,
-  selectionViewSprig,
-  type CursorScrollTarget,
+  selectionHandlesSprig,
   type DocumentCompletion,
   type ImageAtCursor,
 } from "./editor/computed-sprigs";
-export { renderedLayoutSprig } from "./layout/sprigs";
+export { renderedLayoutSprig, renderedViewportSizeSprig } from "./layout/sprigs";
 export {
   documentIndexSprig,
   editorStateSprig,

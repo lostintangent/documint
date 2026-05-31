@@ -5,7 +5,7 @@
 // `measureLayoutSlice`'s `startY`), so no coordinate shift is needed here.
 
 import type { DocumentResources } from "@/types";
-import { resolveRegion, type DocumentIndex } from "../../state";
+import { resolveIndexedBlock, resolveRegion, type DocumentIndex } from "../../state";
 import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
 import { CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
 import { resolveListMarkerInset } from "../lib/marker-metrics";
@@ -33,7 +33,6 @@ export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayou
 
 export function expandViewportSliceToBlockBoundaries(
   documentIndex: DocumentIndex,
-  runtimeBlocks: Map<string, DocumentIndex["blocks"][number]>,
   containerIndices: Map<string, number>,
   startIndex: number,
   endIndex: number,
@@ -43,7 +42,7 @@ export function expandViewportSliceToBlockBoundaries(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const container = documentIndex.regions[index]!;
-    const block = runtimeBlocks.get(container.block.id);
+    const block = resolveIndexedBlock(documentIndex, container.block.id);
 
     if (!block) {
       continue;

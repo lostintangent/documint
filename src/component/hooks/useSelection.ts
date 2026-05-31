@@ -5,19 +5,21 @@ import {
   type NormalizedEditorSelection,
   updateSelectionFromDrag,
 } from "@/editor";
-import { type HTMLAttributes, type PointerEvent, useEffectEvent, useRef, useState } from "react";
-import { selectionViewSprig, useEditorCommand, useSprig } from "../store";
+import { type PointerEvent, useEffectEvent, useRef, useState } from "react";
+import {
+  normalizedSelectionSprig,
+  selectionHandlesSprig,
+  useDocumintStore,
+  useEditorCommand,
+  useSprig,
+} from "../store";
 import {
   selectionLeafSprig,
   type PromotedSelectionThread,
   type SelectionLeaf,
 } from "../overlays/leaves/sprigs";
+import type { ResizeHandle } from "../Documint";
 import type { FocusInput } from "./useInput";
-
-export type ResizeHandle = {
-  start: { left: number; top: number; props: HTMLAttributes<HTMLDivElement> };
-  end: { left: number; top: number; props: HTMLAttributes<HTMLDivElement> };
-};
 
 type SelectionHandleKind = "start" | "end";
 
@@ -44,28 +46,6 @@ type SelectionController = {
   promoteLeafToThread: (threadIndex: number, animateInitialComment?: boolean) => void;
 };
 
-/**
- * Owns the selection-related UI affordances that live outside the canvas:
- * the start/end drag handles (touch UI for extending a range) and the
- * selection leaf (the comment-creation popover that anchors to a range).
- *
- * What this hook owns:
- *   - React handle props for the store-derived start/end selection handles.
- *   - The promoted-thread marker created when the host posts a new thread.
- *   - The handle drag gesture — pointer capture, hit testing via
- *     `resolvePoint`, autoscroll past the canvas edge during drag, and
- *     selection extension.
- *
- * Contract with the host:
- *   - The host renders `<div>`s for the start and end handles, spreading
- *     `startHandleProps` / `endHandleProps` onto each, and positions them
- *     using the pixel coordinates in `handles`.
- *   - The host renders the selection `leaf` as a contextual overlay,
- *     calling `promoteLeafToThread(threadIndex)` once a comment is posted.
- *   - The host wires `resolvePoint` and `autoScrollDuringDrag` from
- *     `useViewport`, and `focusInput` from `useInput`.
- *   - The host does not own any handle-drag state — it lives entirely here.
- */
 export function useSelection({
   autoScrollDuringDrag,
   isEditable,
@@ -75,17 +55,16 @@ export function useSelection({
 }: UseSelectionOptions): SelectionController {
   /* Derived selection state */
 
-  const [promotedThread, setPromotedThread] = useState<PromotedSelectionThread | null>(null);
-  const selection = useSprig(selectionViewSprig);
-  const selectionLeaf = useSprig(selectionLeafSprig, promotedThread);
+  const store = useDocumintStore();
+  const normalizedSelection = useSprig(normalizedSelectionSprig);
+  const selectionHandles = useSprig(selectionHandlesSprig);
   const setEditorSelection = useEditorCommand(setSelection);
   const dragSelectionHandle = useEditorCommand(updateSelectionFromDrag);
 
-  /* Internal state */
+  /* Selection leaf */
 
-  const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
-  const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
-  const dragPointerIdRef = useRef<number | null>(null);
+  const [promotedThread, setPromotedThread] = useState<PromotedSelectionThread | null>(null);
+  const selectionLeaf = useSprig(selectionLeafSprig, promotedThread);
 
   const promoteLeafToThread = useEffectEvent(
     (threadIndex: number, animateInitialComment = true) => {
@@ -106,6 +85,10 @@ export function useSelection({
 
   /* Handle drag */
 
+  const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
+  const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
+  const dragPointerIdRef = useRef<number | null>(null);
+
   const clearDrag = useEffectEvent((event?: PointerEvent<HTMLDivElement>) => {
     if (
       event &&
@@ -123,17 +106,18 @@ export function useSelection({
   const updateSelectionFromHandle = useEffectEvent((event: PointerEvent<HTMLDivElement>) => {
     const stationarySelectionPoint = stationarySelectionPointRef.current;
     const point = resolvePoint(event);
+    const layout = store.layout.peekRendered();
 
     if (
       !point ||
       !stationarySelectionPoint ||
       dragPointerIdRef.current !== event.pointerId ||
-      !selection.layout
+      !layout
     ) {
       return;
     }
 
-    const transition = dragSelectionHandle(selection.layout, point, stationarySelectionPoint);
+    const transition = dragSelectionHandle(layout, point, stationarySelectionPoint);
 
     if (!transition) {
       return;
@@ -150,11 +134,11 @@ export function useSelection({
       clearDrag(event);
     },
     onPointerDown: (event) => {
-      const stationarySelectionPoint = resolveStationarySelectionPoint(selection.normalized, kind);
+      const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSelection, kind);
       const draggedSelectionPoint =
-        kind === "start" ? selection.normalized.start : selection.normalized.end;
+        kind === "start" ? normalizedSelection.start : normalizedSelection.end;
 
-      if (!selection.handles) {
+      if (!selectionHandles) {
         return;
       }
 
@@ -192,10 +176,10 @@ export function useSelection({
 
   /* Public API */
 
-  const handle: ResizeHandle | null = selection.handles
+  const handle: ResizeHandle | null = selectionHandles
     ? {
-        start: { ...selection.handles.start, props: createHandleProps("start") },
-        end: { ...selection.handles.end, props: createHandleProps("end") },
+        start: { ...selectionHandles.start, props: createHandleProps("start") },
+        end: { ...selectionHandles.end, props: createHandleProps("end") },
       }
     : null;
 

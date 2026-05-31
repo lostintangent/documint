@@ -127,28 +127,6 @@ export function resolveHorizontalSwipeDirection(
   return dx < 0 ? "left" : "right";
 }
 
-/**
- * Owns all canvas pointer/click/dblclick interactions and hover state for
- * the editor.
- *
- * What this hook owns:
- *   - Hover state — which target is under the pointer and hide-on-leave
- *     timing. The resolved leaf/cursor view model is store-derived.
- *   - Drag-to-select on mouse/pen — anchor tracking, pointer capture, and
- *     autoscroll past the canvas edge.
- *   - Tap-to-place-caret on touch — deferred to `click` so the browser's
- *     native scroll-vs-tap disambiguation runs first.
- *   - Task toggles, double-click word selection, and Cmd/Ctrl-click link
- *     activation.
- *
- * Contract with the host:
- *   - The host provides DOM refs, coordinate translation, focus/activity
- *     callbacks, and storage for link activation.
- *   - The host spreads `canvasHandlers` onto the canvas, reads `cursor` for
- *     its style, and renders `leaf` with `leafHandlers` for contextual UI.
- *   - The host knows nothing about pointer types, drag anchors, hit testing,
- *     or gesture disambiguation — those live entirely in this hook.
- */
 export function usePointer({
   autoScrollDuringDrag,
   canvasRef,
@@ -159,7 +137,7 @@ export function usePointer({
   resolvePoint,
   storage,
 }: UsePointerOptions): PointerController {
-  /* Internal state */
+  /* Store state and editor commands */
 
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
@@ -171,10 +149,16 @@ export function usePointer({
   const dedentCommand = useEditorCommand(dedent);
   const toggleTaskItem = useEditorCommand(toggleTask);
   const dragEditorSelection = useEditorCommand(updateSelectionFromDrag);
+
+  /* Hover target and leaf */
+
   const [hoverTarget, setHoverTarget] = useState<EditorHoverTarget | null>(null);
   const { cursor, leaf } = useSprig(pointerViewSprig, hoverTarget);
   const hideTimeoutRef = useRef<number | null>(null);
   const isLeafHoveredRef = useRef(false);
+
+  /* Canvas gesture state */
+
   // Drag-to-select uses pointer capture; `lastPointerTypeRef` lets `click`
   // distinguish a touch tap (where pointerdown deferred) from a mouse/pen
   // click (where pointerdown already placed the caret).
@@ -298,7 +282,7 @@ export function usePointer({
     return point ? resolveHoverTargetAtPoint(point) : null;
   });
 
-  /* Pointer-capture helpers */
+  /* Gesture helpers */
 
   const releaseCanvasPointer = useEffectEvent((pointerId: number) => {
     const canvas = canvasRef.current;
