@@ -12,7 +12,6 @@ export type BenchmarkBudgetTree = {
   editor: BenchmarkBudgetGroup;
   layout: BenchmarkBudgetGroup;
   markdown: BenchmarkBudgetGroup;
-  sync: BenchmarkBudgetGroup;
 };
 
 export type BenchmarkBudgetGroup = Record<string, number>;

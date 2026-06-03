@@ -1,11 +1,9 @@
 import { useEffectEvent, useLayoutEffect, useRef } from "react";
-import { createEditorState, getDocument, type TextRangeTarget } from "@/editor";
+import { createEditorState, type TextRangeTarget } from "@/editor";
 import type { Document } from "@/document";
-import { serializeDocument } from "@/markdown";
+import { serializeDocument, type MarkdownOptions } from "@/markdown";
 import { emitDiagnostic } from "../lib/diagnostics";
-import { resolveDocumintPatch, type DocumintPatch } from "@/sync/content-patch";
-import { resolveMentionLineChange } from "@/sync/mention-event";
-import { reconcileExternalContentChange } from "@/sync/external-reconciliation";
+import { reconcileExternalContentChange, resolveMentionLineChange } from "../sync";
 import type { DocumintStore, EditorStateTransition } from "../store";
 
 export type UserMentionEvent = {
@@ -17,39 +15,38 @@ export type UserMentionEvent = {
 export function useSync({
   content,
   contentDocument,
+  markdownOptions,
   onContentChanged,
   onUserMentioned,
   resourceProtocolKey,
-  revision,
   store,
 }: {
   content: string;
   contentDocument: Document;
-  onContentChanged?: (content: string, document: Document, patch: DocumintPatch | null) => void;
+  markdownOptions: MarkdownOptions;
+  onContentChanged?: (content: string) => void;
   onUserMentioned?: (event: UserMentionEvent) => void;
   resourceProtocolKey: string;
-  revision?: string | null;
   store: DocumintStore;
 }) {
   /* Reconciliation bookkeeping */
 
   const lastEmittedContentRef = useRef(content);
-  const lastReconciledRevisionRef = useRef(revision ?? null);
+  const lastReconciledMarkdownOptionsRef = useRef(markdownOptions);
   const lastReconciledResourceProtocolKeyRef = useRef(resourceProtocolKey);
 
   /* Local event emission */
 
   const emitContentChanged = useEffectEvent((transition: EditorStateTransition) => {
-    const nextDocument = getDocument(transition.next);
-    const baseRevision = lastReconciledRevisionRef.current;
-    const patch = baseRevision !== null ? resolveDocumintPatch(transition, baseRevision) : null;
-    const nextContent = patch ? lastEmittedContentRef.current : serializeDocument(nextDocument);
+    // Emit the live runtime document, not the save-canonical commit document:
+    // trimming or empty-document collapse during the host echo can destabilize
+    // selection reconciliation, and comment anchors repair on their own path.
+    const nextContent = serializeDocument(transition.next.documentIndex.document, markdownOptions);
 
-    if (!patch) {
-      lastEmittedContentRef.current = nextContent;
-    }
+    lastEmittedContentRef.current = nextContent;
+    lastReconciledMarkdownOptionsRef.current = markdownOptions;
     lastReconciledResourceProtocolKeyRef.current = resourceProtocolKey;
-    onContentChanged?.(nextContent, nextDocument, patch);
+    onContentChanged?.(nextContent);
   });
 
   const emitUserMentioned = useEffectEvent(
@@ -87,11 +84,10 @@ export function useSync({
   useLayoutEffect(() => {
     const resourceProtocolsChanged =
       resourceProtocolKey !== lastReconciledResourceProtocolKeyRef.current;
+    const markdownOptionsChanged = markdownOptions !== lastReconciledMarkdownOptionsRef.current;
     const isEmittedContent = content === lastEmittedContentRef.current;
 
-    if (isEmittedContent && !resourceProtocolsChanged) {
-      lastEmittedContentRef.current = content;
-      lastReconciledRevisionRef.current = revision ?? null;
+    if (isEmittedContent && !resourceProtocolsChanged && !markdownOptionsChanged) {
       return;
     }
 
@@ -100,9 +96,9 @@ export function useSync({
     const reconciliation = reconcileExternalContentChange(previousState, nextState);
     store.editor.replace(reconciliation.state);
     lastEmittedContentRef.current = content;
-    lastReconciledRevisionRef.current = revision ?? null;
+    lastReconciledMarkdownOptionsRef.current = markdownOptions;
     lastReconciledResourceProtocolKeyRef.current = resourceProtocolKey;
-  }, [content, contentDocument, revision, resourceProtocolKey, store]);
+  }, [content, contentDocument, markdownOptions, resourceProtocolKey, store]);
 
   /* Public API */
 

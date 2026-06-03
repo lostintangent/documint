@@ -4,7 +4,6 @@ import { createComponentBenchmarks } from "./component";
 import { createEditorBenchmarks } from "./editor";
 import { createLayoutBenchmarks } from "./layout";
 import { createMarkdownBenchmarks } from "./markdown";
-import { createContentPatchBenchmarks } from "./content-patch";
 import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
 
 type RepeatedBudgetFailure = {
@@ -136,7 +135,6 @@ function createBenchmarks() {
       sampleSnapshot,
       xlargeSnapshot,
     }),
-    ...createContentPatchBenchmarks(manifest.benchmarks.sync),
   ];
 }
 

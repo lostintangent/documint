@@ -138,8 +138,12 @@ Markdown can be shown literally inside a code fence:
     },
     "comments": [
       {
-        "body": "Verify list-item comments survive structural edits.",
+        "body": "Comments support markdown formatting: **bold**, *italic*, <ins>underline</ins>, and \`inline code\`.\\n\\n- Keep review notes close to the quoted text.\\n- Use formatting when a comment needs structure.",
         "updatedAt": "2026-04-05T12:02:00.000Z"
+      },
+      {
+        "body": "@demo Comments also support bare at-mentions and lists:\\n\\n1. Mention a collaborator.\\n2. Add the follow-up items inline.",
+        "updatedAt": "2026-04-05T12:03:00.000Z"
       }
     ]
   },

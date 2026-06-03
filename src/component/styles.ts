@@ -1,4 +1,6 @@
-// Documint's runtime stylesheet, assembled from three CSS files via Bun's
+/// <reference path="./style-imports.d.ts" />
+
+// Documint's runtime stylesheet, assembled from CSS files via Bun's
 // text imports.
 //
 // Documint's CSS rules are an internal implementation detail. Embedders
@@ -8,7 +10,17 @@
 // specificity makes them resilient to common host-app CSS resets
 // (`button { ... }`, `* { ... }`, etc.) without surprising contributors.
 import editorCss from "./styles.css" with { type: "text" };
+import generatedCss from "./generated.css" with { type: "text" };
 import leafCss from "./overlays/leaves/styles.css" with { type: "text" };
-import toolbarCss from "./overlays/leaves/toolbar/styles.css" with { type: "text" };
 
-export const DOCUMINT_EDITOR_STYLES = `${editorCss}\n${leafCss}\n${toolbarCss}`;
+export const DOCUMINT_EDITOR_STYLES = `${editorCss}\n${leafCss}`;
+
+export const DOCUMINT_OVERLAY_PORTAL_STYLES = `
+.documint-overlay {
+  --documint-leaf-shadow-fallback: 0 14px 40px
+    color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
+}
+
+${generatedCss}
+${leafCss}
+`;

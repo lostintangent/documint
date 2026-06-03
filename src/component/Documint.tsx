@@ -51,11 +51,11 @@ import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseDocument, type MarkdownOptions } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
-import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
+import { CompletionLeaf } from "./overlays/leaves/core/CompletionLeaf";
 import type { CompletionSource } from "./completions/completions";
 import { createMentionCompletionSource, emojiCompletionSource } from "./completions/sources";
 import { InsertionLeaf } from "./overlays/leaves/InsertionLeaf";
-import { LeafAnchor } from "./overlays/leaves/core/LeafAnchor";
+import { LeafAnchor } from "./overlays/leaves/core/anchor/LeafAnchor";
 import { OverlayLeaf } from "./overlays/leaves/core/OverlayLeaf";
 import type { LeafAnchorResolution } from "./overlays/leaves/core/shared";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
@@ -86,7 +86,6 @@ import { emitDiagnostic } from "./lib/diagnostics";
 import { type EditorInputKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
 import { DocumentStorage } from "./lib/storage";
-import { type DocumintPatch } from "@/sync/content-patch";
 import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations";
 import { useSync, type UserMentionEvent } from "./hooks/useSync";
 import {
@@ -108,8 +107,6 @@ import { DOCUMINT_EDITOR_STYLES } from "./styles";
 export type { DocumintDecoration } from "./hooks/useDecorations";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
 export type { UserMentionEvent } from "./hooks/useSync";
-export type { DocumintPatch, DocumintPatchChange } from "@/sync/content-patch";
-export { applyDocumintPatch } from "@/sync/content-patch";
 
 export type ResizeHandle = {
   end: {
@@ -127,7 +124,6 @@ export type ResizeHandle = {
 export type DocumintProps = {
   content: string;
   className?: string;
-  revision?: string | null;
 
   actions?: DocumintActions;
   theme?: DocumintTheme;
@@ -139,9 +135,7 @@ export type DocumintProps = {
   storage?: DocumintStorage;
   users?: DocumentUser[];
 
-  // When `revision` is provided, `patch` is emitted for patchable edits and
-  // `content` is only the snapshot fallback when `patch` is null.
-  onContentChanged?: (content: string, document: Document, patch: DocumintPatch | null) => void;
+  onContentChanged?: (content: string) => void;
   onCommentChanged?: (change: CommentChange) => void;
   onResourceOpened?: (resource: DocumentResourceReference) => void;
   onResourcesRequested?: (resources: readonly DocumentResourceReference[]) => void;
@@ -231,7 +225,6 @@ function DocumintHost({
   onUserMentioned,
   presence,
   resources,
-  revision,
   storage,
   theme,
   users,
@@ -319,10 +312,10 @@ function DocumintHost({
   const { emitContentChanged, emitUserMentioned } = useSync({
     content,
     contentDocument,
+    markdownOptions,
     onContentChanged,
     onUserMentioned,
     resourceProtocolKey: resourceProtocols.key,
-    revision,
     store,
   });
   const documentCompletions = useDocumentCompletions({

@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { LeafButton, type LeafButtonProps } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
+import { clx } from "./core/lib/clx";
 
 type SearchLeafProps = {
   activeMatchNumber: number;
@@ -83,52 +85,35 @@ export function SearchLeaf({
         />
         <span className="documint-search-input-actions">
           {resultCount ? <span className="documint-search-count">{resultCount}</span> : null}
-          <button
-            aria-label="Match case"
+          <SearchButton
             aria-pressed={caseSensitive}
-            className="documint-search-case-toggle"
+            active={caseSensitive}
+            className="text-xs font-semibold leading-none"
+            hover="input"
             onClick={onToggleCaseSensitive}
             onPointerDown={preserveFocus}
             title="Match case"
-            type="button"
           >
             Aa
-          </button>
+          </SearchButton>
         </span>
       </div>
-      <button
-        aria-label="Previous match"
-        className="documint-leaf-action"
+      <SearchButton
         disabled={!canNavigate}
+        icon={ChevronUp}
         onClick={onPrevious}
         onPointerDown={preserveFocus}
         title="Previous match"
-        type="button"
-      >
-        <ChevronUp size={15} strokeWidth={2.2} />
-      </button>
-      <button
-        aria-label="Next match"
-        className="documint-leaf-action"
+      />
+      <SearchButton
         disabled={!canNavigate}
+        icon={ChevronDown}
         onClick={onNext}
         onPointerDown={preserveFocus}
         title="Next match"
-        type="button"
-      >
-        <ChevronDown size={15} strokeWidth={2.2} />
-      </button>
+      />
       <LeafDivider orientation="vertical" />
-      <button
-        aria-label="Close search"
-        className="documint-leaf-action"
-        onClick={onClose}
-        onPointerDown={preserveFocus}
-        title="Close search"
-        type="button"
-      >
-        <X size={15} strokeWidth={2.2} />
-      </button>
+      <SearchButton icon={X} onClick={onClose} onPointerDown={preserveFocus} title="Close search" />
     </div>
   );
 }
@@ -144,6 +129,16 @@ function resolveSearchResultCount(
   }
 
   return `${activeMatchNumber} / ${matchCount}`;
+}
+
+function SearchButton({ className, ...props }: Omit<LeafButtonProps, "iconSize">) {
+  return (
+    <LeafButton
+      {...props}
+      className={clx("w-[1.45rem] min-w-[1.45rem] !p-0", className)}
+      iconSize={15}
+    />
+  );
 }
 
 function preserveFocus(event: PointerEvent<HTMLButtonElement>) {

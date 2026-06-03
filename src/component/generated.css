@@ -1,0 +1,3 @@
+/* Replaced by `scripts/build/virtual-modules.ts` in browser builds and
+   Bun's dev server. The empty fallback keeps direct imports (e.g. tests)
+   cheap and avoids checking in a generated build artifact. */

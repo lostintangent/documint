@@ -181,15 +181,6 @@
       "editor_copy_long": 1.5,
       "editor_paste_blocks_long": 8,
       "editor_paste_inlines_dense": 7
-    },
-    "sync": {
-      "content_patch_code_middle": 1.2,
-      "content_patch_comment_appendix": 0.1,
-      "content_patch_list_item_merge": 12,
-      "content_patch_list_item_split": 20,
-      "content_patch_paragraph_edit": 0.1,
-      "content_patch_paragraph_split": 0.6,
-      "content_patch_table_cell": 2.5
     }
   }
 }

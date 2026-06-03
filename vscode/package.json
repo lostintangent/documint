@@ -1,0 +1,50 @@
+{
+  "name": "documint-vscode",
+  "displayName": "Documint",
+  "version": "0.0.1",
+  "description": "A canvas-based WYSIWYG Markdown editor for VS Code.",
+  "categories": [
+    "Other"
+  ],
+  "publisher": "lostintangent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lostintangent/documint"
+  },
+  "license": "MIT",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build:prod": "node esbuild.js --production",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "bun run build:prod"
+  },
+  "dependencies": {
+    "documint": "file:..",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "22.x",
+    "@vscode/vsce": "^3.9.1",
+    "@types/vscode": "^1.120.0",
+    "esbuild": "^0.27.3"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "documint.markdownEditor",
+        "displayName": "Documint",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "default"
+      }
+    ]
+  },
+  "engines": {
+    "vscode": "^1.120.0"
+  }
+}

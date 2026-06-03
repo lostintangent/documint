@@ -18,7 +18,6 @@ import type {
   EditorSelectionPoint,
   SelectionFormatting,
 } from "@/editor";
-import type { PointerEventHandler } from "react";
 import type { CompletionItem } from "../../../completions/completions";
 
 // Declarative anchoring intent emitted by leaf-producing hooks. Every
@@ -60,9 +59,12 @@ export type LeafAnchorResolution = {
   // Document-absolute anchor coordinates.
   left: number;
   top: number;
-  // Hover-bridge handlers — set only when `bridge: true`.
-  onPointerEnter?: PointerEventHandler<HTMLDivElement>;
-  onPointerLeave?: PointerEventHandler<HTMLDivElement>;
+  // Hover-bridge handlers — set only when `bridge: true`. The handlers
+  // don't read the event payload, so they're typed as no-arg callbacks
+  // compatible with both React synthetic events and native `addEventListener`
+  // (the anchor uses native listeners to bypass shadow-DOM event retargeting).
+  onPointerEnter?: () => void;
+  onPointerLeave?: () => void;
   // Extra vertical breathing room from the anchor, applied symmetrically
   // above or below (CSS variable `--documint-leaf-padding-y`).
   paddingY: number;

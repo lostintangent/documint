@@ -1,14 +1,11 @@
 import { useState } from "react";
 import {
   Documint,
-  applyDocumintPatch,
   type CommentChange,
-  type Document,
   type DocumentPresence,
   type DocumentUser,
   type DocumintActions,
   type DocumintDecoration,
-  type DocumintPatch,
   type DocumintStorage,
   type UserMentionEvent,
   lucideResourceIcon,
@@ -123,9 +120,7 @@ const fixtureSurfaceClassName =
   "grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border border-border/[0.08] bg-background/[0.82] max-[700px]:portrait:h-auto";
 
 export function Playground() {
-  const [fileContent, setFileContent] = useState<string>(fixtureOptions[0].markdown);
-  const [editorContent, setEditorContent] = useState<string>(fixtureOptions[0].markdown);
-  const [revision, setRevision] = useState(1);
+  const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
   const [themePopoverOpen, setThemePopoverOpen] = useState(false);
@@ -140,35 +135,15 @@ export function Playground() {
 
   const mentionUsers = users.some((user) => user.id === demoUser.id) ? users : [demoUser, ...users];
 
-  const acceptExternalSnapshot = (nextContent: string) => {
-    setFileContent(nextContent);
-    setEditorContent(nextContent);
-    setRevision((current) => current + 1);
-  };
-
   const handleFixtureChange = (nextFixtureId: string) => {
     const nextFixture = fixtureOptions.find((candidate) => candidate.id === nextFixtureId);
     if (!nextFixture) return;
 
     setFixtureId(nextFixture.id);
-    acceptExternalSnapshot(nextFixture.markdown);
+    setContent(nextFixture.markdown);
 
     setLastHostEvent(null);
     setHostEventVisible(false);
-  };
-
-  const handleEditorContentChanged = (
-    nextContent: string,
-    _document: Document,
-    patch: DocumintPatch | null,
-  ) => {
-    if (patch) {
-      setFileContent((previousContent) => applyDocumintPatch(previousContent, patch));
-      setRevision((current) => current + 1);
-      return;
-    }
-
-    acceptExternalSnapshot(nextContent);
   };
 
   const showHostEvent = (event: PlaygroundHostEvent) => {
@@ -216,7 +191,7 @@ export function Playground() {
 
           <UsersPopover
             key={`${fixtureId}-users`}
-            content={fileContent}
+            content={content}
             onUsersChange={setUsers}
             onPresenceChange={setPresence}
           />
@@ -238,8 +213,7 @@ export function Playground() {
         <div className="grid h-full min-h-0 min-w-0">
           <div className={fixtureSurfaceClassName}>
             <Documint
-              content={editorContent}
-              revision={String(revision)}
+              content={content}
               theme={activeTheme ?? undefined}
               users={mentionUsers}
               presence={presence}
@@ -249,7 +223,7 @@ export function Playground() {
               actions={actions}
               decorations={decorations}
               onCommentChanged={handleCommentChanged}
-              onContentChanged={handleEditorContentChanged}
+              onContentChanged={setContent}
               onResourceOpened={(resource) => {
                 if (resource.protocol === "playground:" && resource.url === "playground:/theme") {
                   setThemePopoverOpen(true);
@@ -269,9 +243,9 @@ export function Playground() {
             <textarea
               aria-label="Markdown source"
               className="font-code h-full min-h-full w-full resize-y rounded-none border-0 bg-background/90 p-4 text-[0.95rem] leading-[1.55]"
-              onChange={(event) => acceptExternalSnapshot(event.target.value)}
+              onChange={(event) => setContent(event.target.value)}
               spellCheck={false}
-              value={fileContent}
+              value={content}
             />
           </div>
         </div>

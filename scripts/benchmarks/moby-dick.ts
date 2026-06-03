@@ -1,8 +1,8 @@
 import "../../test/setup-canvas";
 import { mkdirSync } from "fs";
 import { createEditorLayoutState, createEditorState, createLayoutCache } from "@/editor";
-import { normalizeSelection, type EditorState } from "@/editor/state";
-import { parseDocument } from "@/markdown";
+import { insertText, normalizeSelection, setSelection, type EditorState } from "@/editor/state";
+import { parseDocument, serializeDocument } from "@/markdown";
 import { paintContent } from "@/renderer";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
 import type { BenchmarkRecord } from "./shared";
@@ -143,6 +143,20 @@ console.log(
   ).toFixed(1)}x a 60fps frame).`,
 );
 
+const editFixture = createTypingEditFixture(state);
+const typingFullEdit = runTypingBenchmarkSamples("typing_full_edit", 120, editFixture);
+const typingFullEditWithLayout = runTypingBenchmarkSamples(
+  "typing_full_edit_with_layout",
+  80,
+  editFixture,
+  (nextState) => {
+    void createEditorLayoutState(nextState, { ...viewport, top: 0 }, createLayoutCache());
+  },
+);
+
+console.log("Edit path");
+console.table([typingFullEdit, typingFullEditWithLayout].map(formatRecord));
+
 async function readMobyDickText() {
   if (await Bun.file(cachePath).exists()) {
     return Bun.file(cachePath).text();
@@ -265,6 +279,19 @@ function createPaintOptions(state: EditorState) {
   };
 }
 
+function createTypingEditFixture(baseState: EditorState) {
+  const region = baseState.documentIndex.regions.find((candidate) => candidate.text.length > 40);
+
+  if (!region) {
+    throw new Error("Expected an editable text region in Moby-Dick fixture.");
+  }
+
+  return {
+    offset: Math.floor(region.text.length / 2),
+    regionId: region.id,
+  };
+}
+
 function profileOnce<T>(name: string, task: () => T) {
   const startedAt = performance.now();
   const value = task();
@@ -304,6 +331,28 @@ function runBenchmarkSamples(name: string, iterations: number, task: () => void)
     p95Ms: percentile(samples, 0.95),
     p99Ms: percentile(samples, 0.99),
   };
+}
+
+function runTypingBenchmarkSamples(
+  name: string,
+  iterations: number,
+  fixture: ReturnType<typeof createTypingEditFixture>,
+  afterEdit?: (nextState: EditorState) => void,
+): BenchmarkRecord {
+  return runBenchmarkSamples(name, iterations, () => {
+    const previous = setSelection(state, {
+      offset: fixture.offset,
+      regionId: fixture.regionId,
+    });
+    const next = insertText(previous, " updated");
+
+    if (!next) {
+      throw new Error(`Expected typing edit to produce a state for ${name}.`);
+    }
+
+    void serializeDocument(next.documentIndex.document);
+    afterEdit?.(next);
+  });
 }
 
 function runFrameBenchmark(name: string, offsets: readonly number[], task: (top: number) => void) {

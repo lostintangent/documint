@@ -1,0 +1,51 @@
+/* Shadow-portal utilities generated for component-authored Tailwind classes.
+   Keep source discovery pointed at migrated leaf modules; do not safelist
+   utility inventories here. Documint's `--documint-*` variables remain the
+   runtime source of truth, so aliases use `@theme inline` to emit those vars
+   directly into utilities instead of creating an extra `--color-*` layer.
+
+   `@import "tailwindcss/theme.css"` brings in the default v4 design tokens
+   (`--spacing-*`, `--radius-*`, `--text-*`, etc.) so name-scale utilities
+   like `rounded-md`, `h-6`, `text-sm` resolve. We skip Tailwind's preflight
+   on purpose — leaves render inside a shadow portal and don't want a global
+   base reset interfering with shell typography. */
+@import "tailwindcss/theme.css";
+
+@theme inline {
+  --color-leaf-border: var(--documint-leaf-border);
+  --color-leaf-accent: var(--documint-leaf-accent);
+  --color-leaf-divider: var(
+    --documint-leaf-divider-color,
+    color-mix(in srgb, var(--documint-leaf-border) 72%, transparent)
+  );
+  --color-leaf-input-bg: var(--documint-leaf-input-bg);
+  --color-leaf-input-button-active-bg: var(--documint-leaf-input-button-active-bg);
+  --color-leaf-button: var(--documint-leaf-button-text);
+  --color-leaf-button-active-bg: var(--documint-leaf-button-active-bg);
+  --color-leaf-bg: var(--documint-leaf-bg);
+  --color-leaf-menu-border: color-mix(in srgb, var(--documint-leaf-border) 88%, transparent);
+  --color-leaf-secondary: var(--documint-leaf-secondary-text);
+  --color-leaf-text: var(--documint-leaf-text);
+  --font-leaf: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
+  --color-inline-code-bg: var(--documint-inline-code-bg);
+  --color-inline-code: var(--documint-inline-code-text);
+  --color-mention-bg: var(
+    --documint-mention-bg,
+    color-mix(in srgb, var(--documint-leaf-accent) 14%, transparent)
+  );
+  --color-mention: var(--documint-mention-text, var(--documint-leaf-accent));
+}
+
+@tailwind utilities source(none);
+
+/* Scan every leaf for utility classes. Everything rendered through
+   `OverlayPortal` lives inside a shadow root that only sees the styles
+   bundled into `DOCUMINT_OVERLAY_PORTAL_STYLES`, so any class authored
+   anywhere under `overlays/leaves/` must be picked up here. */
+@source "./overlays/leaves/**/*.tsx";
+
+/* HTML element names and CSS values that match utility names — without
+   this Tailwind would emit empty `.block`, `.fixed`, etc. just because
+   the words appear in TSX (`<table>`, `display: fixed`, Lucide icons
+   like `Table2`, action strings like "Insert table"). */
+@source not inline("block container fixed hidden inline italic resize table underline visible");

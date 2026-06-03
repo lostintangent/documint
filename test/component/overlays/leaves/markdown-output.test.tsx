@@ -9,7 +9,8 @@ describe("MarkdownOutput", () => {
     );
 
     expect(html).toContain("<p>Plain <strong>bold</strong> and <em>italic</em> with ");
-    expect(html).toContain('<code class="documint-markdown-inline-code">code</code>');
+    expect(html).toContain("bg-inline-code-bg");
+    expect(html).toContain(">code</code>");
   });
 
   test("renders semantic mentions and links from parsed inlines", () => {
@@ -17,7 +18,8 @@ describe("MarkdownOutput", () => {
       <MarkdownOutput value={"Ping @[Jane Doe](u-jane) via [docs](https://example.com)."} />,
     );
 
-    expect(html).toContain('<span class="documint-mention">@Jane Doe</span>');
+    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain(">@Jane Doe</span>");
     expect(html).toContain(
       '<a href="https://example.com" rel="noreferrer" target="_blank">docs</a>',
     );
@@ -31,7 +33,8 @@ describe("MarkdownOutput", () => {
       />,
     );
 
-    expect(html).toContain('<span class="documint-mention">@Jane Doe</span>');
+    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain(">@Jane Doe</span>");
   });
 
   test("renders parsed link urls directly", () => {
@@ -48,9 +51,8 @@ describe("MarkdownOutput", () => {
     );
 
     expect(html).toContain("<ul><li><p><strong>One</strong></p></li>");
-    expect(html).toContain(
-      '<li class="documint-task-list-item"><input disabled="" readOnly="" type="checkbox" checked=""/>',
-    );
+    expect(html).toContain('<li class="grid grid-cols-[1rem_minmax(0,1fr)]');
+    expect(html).toContain('<input class="m-0 mt-0.5"');
     expect(html).toContain("<p>Two</p></li></ul>");
     expect(html).toContain("<ol><li><p>Three</p></li><li><p>Four</p></li></ol>");
   });

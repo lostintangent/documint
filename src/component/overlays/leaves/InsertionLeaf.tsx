@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { insertCodeBlock, insertTable, insertText } from "@/editor";
 import { useEditorCommand } from "../../store";
-import { LeafToolbar } from "./toolbar/LeafToolbar";
+import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
 type HeadingAction = {
   icon: typeof Heading1;

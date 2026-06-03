@@ -1,6 +1,5 @@
 export {
   Documint,
-  applyDocumintPatch,
   defaultKeybindings,
   darkTheme,
   lightTheme,
@@ -8,8 +7,6 @@ export {
   type DocumintAction,
   type DocumintActions,
   type DocumintDecoration,
-  type DocumintPatch,
-  type DocumintPatchChange,
   type EditorInputKeybinding,
   type DocumintProps,
   type DocumintTheme,

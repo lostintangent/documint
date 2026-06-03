@@ -19,7 +19,6 @@ Each subsystem has its own `AGENTS.md` for local rules and ownership. Use this m
 - [`src/document`](src/document/AGENTS.md) - Semantic document truth: immutable block/inline trees, canonical IDs, plain-text projections, paths, queries, and comment threads as anchored annotations.
 - [`src/markdown`](src/markdown/AGENTS.md) - File and clipboard boundary: direct `markdown → Document → markdown` parsing, serialization, fragments, front matter, tables, and comment directives.
 - [`src/editor`](src/editor/AGENTS.md) - Framework-agnostic editor engine: document indexing, state, commands, selection, navigation, anchors, layout, hit testing, and text measurement.
-- [`src/sync`](src/sync/AGENTS.md) - Embedder synchronization: content patches, mention-event payloads, markdown line replacements, and external snapshot selection reconciliation.
 - [`src/renderer`](src/renderer/AGENTS.md) - Immediate-mode painting from prepared editor/layout inputs to canvas pixels.
 - [`src/component`](src/component/AGENTS.md) - React/browser host: content bridging, orchestration, effects, image loading, render scheduling, hooks, overlays, and leaf UI.
 - `playground` - Dogfooding app for real browser behavior.

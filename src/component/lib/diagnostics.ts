@@ -48,7 +48,7 @@ import { useEffect, type RefObject } from "react";
  *   - The dev server (`bun run dev`) doesn't need extra setup; Bun's
  *     HTML bundler substitutes `process.env.NODE_ENV` with
  *     `"development"` automatically, so the gates evaluate to `true`.
- *   - `scripts/build.ts` passes `define: { "process.env.NODE_ENV":
+ *   - `scripts/build/build.ts` passes `define: { "process.env.NODE_ENV":
  *     '"production"' }` to `Bun.build`, so every shipping build
  *     (publishable library, deployable playground demo) strips
  *     diagnostics.

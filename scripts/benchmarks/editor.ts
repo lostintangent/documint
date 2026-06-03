@@ -18,7 +18,7 @@ import {
   setSelection,
 } from "@/editor/state";
 import { dispatch } from "@/editor/state/reducer/state";
-import { parseFragment, serializeFragment } from "@/markdown";
+import { parseFragment, serializeDocument, serializeFragment } from "@/markdown";
 import {
   createEditorLayoutState,
   findLineEntryForRegionOffset,
@@ -127,12 +127,13 @@ export function createEditorBenchmarks(
     runBudgetedBenchmark(budgets, "editor_splice_blocks_long", 100, () => {
       void dispatch(longState, createMiddleRootReplacementAction(longState));
     }),
-    // Full-frame: insertText + viewport layout. Approximates the actual
-    // user-felt keystroke latency (state mutation + layout) on a long doc.
+    // Full-frame: insertText + snapshot serialization + viewport layout.
+    // Approximates the actual user-felt keystroke latency on a long doc.
     // Excludes paint, which would require a real canvas context.
     runBudgetedBenchmark(budgets, "editor_typing_long_full_frame", 100, () => {
       const nextState = insertText(longEditingState, " updated");
       if (!nextState) throw new Error("insertText returned null");
+      void serializeDocument(nextState.documentIndex.document);
       void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
     }),
     runBudgetedBenchmark(budgets, "editor_typing_code", 200, () => {
@@ -168,6 +169,7 @@ export function createEditorBenchmarks(
     runBudgetedBenchmark(budgets, "editor_backspace_long_full_frame", 100, () => {
       const nextState = deleteBackward(longEditingState);
       if (!nextState) return;
+      void serializeDocument(nextState.documentIndex.document);
       void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
     }),
 

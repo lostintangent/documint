@@ -1,5 +1,5 @@
 import { Columns2, Plus, Rows3, Table2, Trash2 } from "lucide-react";
-import { LeafToolbar } from "./toolbar/LeafToolbar";
+import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
 type TableLeafProps = {
   canDeleteColumn: boolean;

@@ -38,11 +38,12 @@ import type { DocumintAction } from "../../Documint";
 import { type DocumintStore, useDocumintStore, useEditorCommand } from "../../store";
 import { copySelectionAsMarkdown, pastePlainText } from "../../lib/clipboard";
 import { resolvePresenceName } from "../../lib/presence";
+import { LeafButton } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
-import { LeafInput } from "./core/LeafInput";
+import { LeafInput } from "./core/input/LeafInput";
 import { MarkdownOutput } from "./core/MarkdownOutput";
-import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./formatting";
-import { LeafToolbar } from "./toolbar/LeafToolbar";
+import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./core/lib/formatting";
+import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
 type AnnotationLink = {
   title: string | null;
@@ -152,7 +153,6 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
     <LeafToolbar.Button
       active={activeFormattingMarks.includes(button.mark)}
-      className="documint-comment-leaf-create-mark"
       disabled={!formattingSupported}
       icon={button.icon}
       key={button.mark}
@@ -379,61 +379,59 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     <div className={contentClassName} data-resolved={isResolved ? "true" : undefined} ref={rootRef}>
       <div className={showCreateChrome ? "documint-comment-leaf-create-shell" : undefined}>
         {showCreateChrome ? (
-          <LeafToolbar>
-            <LeafToolbar.Button
-              className="documint-comment-leaf-create-button"
-              icon={MessageSquarePlus}
-              label="Add comment"
-              onClick={() => setIsExpanded(true)}
-            />
-            <LeafToolbar.Menu
-              className="documint-comment-leaf-create-mark"
-              icon={isClipboardCopied ? Check : Clipboard}
-              label="Clipboard"
-              onSelect={selectClipboardAction}
-            >
-              <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
-              <LeafToolbar.MenuItem icon={Scissors} text="Cut" value="cut" />
-              <LeafToolbar.MenuDivider />
-              <LeafToolbar.MenuItem icon={ClipboardPaste} text="Paste" value="paste" />
-            </LeafToolbar.Menu>
-            <LeafToolbar.Divider />
-            {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
-            <LeafToolbar.Menu
-              active={hasActiveOverflowFormattingMark}
-              className="documint-comment-leaf-create-mark"
-              icon={Type}
-              label="More formatting"
-              onSelect={selectOverflowFormattingMark}
-            >
-              {overflowFormattingMarkButtons.map((button) => (
-                <LeafToolbar.MenuItem
-                  active={activeFormattingMarks.includes(button.mark)}
-                  disabled={!formattingSupported}
-                  icon={button.icon}
-                  key={button.mark}
-                  text={button.label}
-                  value={button.mark}
-                />
-              ))}
-            </LeafToolbar.Menu>
-            {actions.length > 0
-              ? [
-                  <LeafToolbar.Divider key="actions-divider" />,
-                  ...actions.map((action, index) => {
-                    return (
-                      <LeafToolbar.Button
-                        className="documint-comment-leaf-create-mark"
-                        icon={action.icon}
-                        key={`${action.label}:${index}`}
-                        label={action.label}
-                        onClick={() => action.onClick()}
-                      />
-                    );
-                  }),
-                ]
-              : null}
-          </LeafToolbar>
+          <div className="documint-comment-leaf-create-toolbar">
+            <LeafToolbar>
+              <LeafToolbar.Button
+                icon={MessageSquarePlus}
+                label="Add comment"
+                onClick={() => setIsExpanded(true)}
+              />
+              <LeafToolbar.Menu
+                icon={isClipboardCopied ? Check : Clipboard}
+                label="Clipboard"
+                onSelect={selectClipboardAction}
+              >
+                <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
+                <LeafToolbar.MenuItem icon={Scissors} text="Cut" value="cut" />
+                <LeafToolbar.MenuDivider />
+                <LeafToolbar.MenuItem icon={ClipboardPaste} text="Paste" value="paste" />
+              </LeafToolbar.Menu>
+              <LeafToolbar.Divider />
+              {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
+              <LeafToolbar.Menu
+                active={hasActiveOverflowFormattingMark}
+                icon={Type}
+                label="More formatting"
+                onSelect={selectOverflowFormattingMark}
+              >
+                {overflowFormattingMarkButtons.map((button) => (
+                  <LeafToolbar.MenuItem
+                    active={activeFormattingMarks.includes(button.mark)}
+                    disabled={!formattingSupported}
+                    icon={button.icon}
+                    key={button.mark}
+                    text={button.label}
+                    value={button.mark}
+                  />
+                ))}
+              </LeafToolbar.Menu>
+              {actions.length > 0
+                ? [
+                    <LeafToolbar.Divider key="actions-divider" />,
+                    ...actions.map((action, index) => {
+                      return (
+                        <LeafToolbar.Button
+                          icon={action.icon}
+                          key={`${action.label}:${index}`}
+                          label={action.label}
+                          onClick={() => action.onClick()}
+                        />
+                      );
+                    }),
+                  ]
+                : null}
+            </LeafToolbar>
+          </div>
         ) : null}
         <div className={showCreateChrome ? "documint-comment-leaf-create-content" : undefined}>
           {content}
@@ -525,30 +523,19 @@ function AnnotationLeafBody({
         <div className="documint-comment-leaf-header">
           <span className="documint-comment-leaf-age">{threadAge}</span>
           <div className="documint-comment-leaf-actions">
-            <button
-              className="documint-leaf-action"
-              aria-label={isResolved ? "Reopen comment" : "Resolve comment"}
+            <LeafButton
               disabled={!canEdit}
+              icon={isResolved ? RotateCcw : Check}
               onClick={onToggleResolved}
               title={isResolved ? "Reopen comment" : "Resolve comment"}
-              type="button"
-            >
-              {isResolved ? (
-                <RotateCcw size={14} strokeWidth={2.2} />
-              ) : (
-                <Check size={14} strokeWidth={2.2} />
-              )}
-            </button>
-            <button
-              className="documint-leaf-action documint-leaf-action-danger"
-              aria-label="Delete comment thread"
+            />
+            <LeafButton
+              danger
               disabled={!canEdit}
+              icon={Trash2}
               onClick={onDeleteThread}
               title="Delete comment thread"
-              type="button"
-            >
-              <Trash2 size={14} strokeWidth={2.2} />
-            </button>
+            />
           </div>
         </div>
       ) : null}
@@ -594,28 +581,21 @@ function AnnotationLeafBody({
                   <span>{formatRelativeTime(comment.updatedAt)}</span>
                   {canMutateThread ? (
                     <div className="documint-comment-leaf-actions">
-                      <button
-                        className="documint-leaf-action"
-                        aria-label="Edit comment"
+                      <LeafButton
                         disabled={!canMutateThread}
+                        icon={Pencil}
                         onClick={() => {
                           onBeginEditingComment(actualIndex, comment.body);
                         }}
                         title="Edit comment"
-                        type="button"
-                      >
-                        <Pencil size={14} strokeWidth={2.2} />
-                      </button>
-                      <button
-                        className="documint-leaf-action documint-leaf-action-danger"
-                        aria-label="Delete comment"
+                      />
+                      <LeafButton
+                        danger
                         disabled={!canMutateThread}
+                        icon={Trash2}
                         onClick={() => onDeleteComment(actualIndex)}
                         title="Delete comment"
-                        type="button"
-                      >
-                        <Trash2 size={14} strokeWidth={2.2} />
-                      </button>
+                      />
                     </div>
                   ) : null}
                 </div>

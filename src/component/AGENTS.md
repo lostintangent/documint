@@ -16,7 +16,8 @@ This is the orchestration layer. Editing behavior, geometry, hit testing, and an
 
 - `Documint.tsx` and `index.ts` own the public React component, controlled markdown bridge, host lifecycle, canvas layers, DOM entry points, and leaf arbitration.
 - [`hooks/`](hooks/AGENTS.md) owns browser lifetimes and interaction translation.
+- [`sync/`](sync/AGENTS.md) owns component-local embedder synchronization helpers: external snapshot selection reconciliation and mention-event payloads.
 - [`store/`](store/AGENTS.md) owns component-local reactive state, viewport cache publication, and derived view models.
 - `overlays/` owns portaled DOM UI around the canvas.
 - `completions/`, `decorations/`, and `worker/` own higher-level host features that feed declarative inputs into paint or overlays.
-- `lib/` owns stateless host helpers for keybindings, canvas DPI, pointers, mentions, storage, diagnostics, and themes. Embedder synchronization helpers live in [`src/sync`](../sync/AGENTS.md).
+- `lib/` owns stateless host helpers for keybindings, canvas DPI, pointers, mentions, storage, diagnostics, and themes.

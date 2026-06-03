@@ -7,7 +7,6 @@ A canvas-based, batteries-included markdown editor for React.
 ## Features
 
 - **Markdown in, markdown out** — Documents are parsed from markdown and serialized back to markdown. Full support for CommonMark, GFM tables, task lists, strikethrough, and fenced code blocks with language hints.
-
 - **Rich semantic editing** — Context-sensitive behavior that adapts to what you're editing. Enter splits a paragraph but adds a new row in a table. Backspace at the start of a list item dedents it. Tab indents a list but inserts a column in a table. The editor understands the structure of your document, so every gesture does the right thing.
 
 - **Subtle, delightful animations** — A typing trail highlights newly inserted text. Deleted text fades out before disappearing. List markers pop into place. Punctuation pulses with a soft ring on keystroke. Small details that make editing feel fun.
@@ -25,8 +24,8 @@ A canvas-based, batteries-included markdown editor for React.
 ## Getting Started
 
 1. Install the package: `npm install documint` (or `bun add documint`)
-2. Import the `Documint` component from the package
-3. Pass your markdown content to it and listen for changes
+1. Import the `Documint` component from the package
+1. Pass your markdown content to it and listen for changes
 
 ```tsx
 import { useState } from "react";
@@ -43,6 +42,8 @@ export function App() {
   return <Documint content={content} onContentChanged={setContent} />;
 }
 ```
+
+`onContentChanged` emits the full next markdown snapshot. Hosts that need minimal text edits can diff their previous content against the snapshot inside their own text model.
 
 ## Custom Actions
 

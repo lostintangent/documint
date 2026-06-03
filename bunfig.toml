@@ -1,5 +1,5 @@
 [serve.static]
-plugins = ["./scripts/decoration-worker-plugin.ts", "bun-plugin-tailwind"]
+plugins = ["./scripts/build/virtual-modules.ts", "bun-plugin-tailwind"]
 
 [test]
 preload = ["./test/setup-canvas.ts"]

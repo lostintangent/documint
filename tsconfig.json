@@ -14,9 +14,7 @@
       "documint": ["./src/index.ts"],
       "@/*": ["./src/*"],
       "@test/*": ["./test/*"]
-    },
-    "typeRoots": ["./node_modules/@types", "./types"],
-    "types": ["bun", "css"]
+    }
   },
   "include": ["playground", "src", "scripts", "test"]
 }

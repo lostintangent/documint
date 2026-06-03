@@ -41,7 +41,6 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
   }
 
   const result = chunks.join(blockSeparator);
-
   return result.endsWith(lineFeed) ? result : `${result}${lineFeed}`;
 }
 

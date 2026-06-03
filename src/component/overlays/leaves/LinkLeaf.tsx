@@ -4,8 +4,9 @@
 
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { LeafButton } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
-import { LeafInput } from "./core/LeafInput";
+import { LeafInput } from "./core/input/LeafInput";
 
 type LinkLeafProps = {
   url: string;
@@ -81,23 +82,9 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
 
         {showActions && (
           <div className="documint-link-leaf-actions">
-            <button
-              className="documint-leaf-action"
-              aria-label="Edit link"
-              onClick={beginEditing}
-              title="Edit link"
-            >
-              <Pencil size={14} strokeWidth={2.2} />
-            </button>
+            <LeafButton icon={Pencil} onClick={beginEditing} title="Edit link" />
 
-            <button
-              className="documint-leaf-action documint-leaf-action-danger"
-              aria-label="Remove link"
-              onClick={onDelete}
-              title="Remove link"
-            >
-              <Trash2 size={14} strokeWidth={2.2} />
-            </button>
+            <LeafButton danger icon={Trash2} onClick={onDelete} title="Remove link" />
           </div>
         )}
       </div>

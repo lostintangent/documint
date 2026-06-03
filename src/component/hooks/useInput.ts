@@ -480,6 +480,7 @@ export function useInput({
     // UIUndoManager pointer advances even when we preventDefault).
     if (event.inputType === "historyUndo") {
       event.preventDefault();
+      event.stopPropagation();
       runInputCommand(undoCommand);
       rePrimeUndoStack();
       return;
@@ -487,6 +488,7 @@ export function useInput({
 
     if (event.inputType === "historyRedo") {
       event.preventDefault();
+      event.stopPropagation();
       runInputCommand(redoCommand);
       rePrimeUndoStack();
       return;
@@ -547,6 +549,12 @@ export function useInput({
         return;
       }
 
+      const command = resolveEditorInputCommand(event.nativeEvent, keybindings);
+      if (command) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+
       const transition = runInputCommand(
         applyKeyboardInput,
         store.layout.get(),
@@ -559,6 +567,7 @@ export function useInput({
       }
 
       event.preventDefault();
+      event.stopPropagation();
     },
   );
 

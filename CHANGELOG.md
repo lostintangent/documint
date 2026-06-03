@@ -1,3 +1,7 @@
+## 🗓️ v0.0.25 (06-02-26)
+
+- Introduced a new VS Code extension (still super early!)
+
 ## 🗓️ v0.0.24 (05-31-26)
 
 - The selection leaf now includes a menu to copy/cut/paste (which is really useful on mobile)

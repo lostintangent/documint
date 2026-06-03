@@ -25,7 +25,11 @@ export function MarkdownOutput({ mentionTargets, onDoubleClick, value }: Markdow
 
   return createElement(
     "div",
-    { className: "documint-markdown-output", onDoubleClick },
+    {
+      className:
+        "grid gap-2.5 wrap-anywhere [&_:is(ul,ol)]:grid [&_:is(ul,ol)]:gap-1 [&_:is(ul,ol)]:m-0 [&_:is(ul,ol)]:ps-7 [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ps-0.5 [&_a]:text-leaf-accent [&_a]:underline [&_a]:underline-offset-2",
+      onDoubleClick,
+    },
     ...(Array.isArray(content) ? content : [content]),
   );
 }
@@ -73,9 +77,12 @@ function renderListItem(block: ListItemBlock): ReactNode {
 
   return createElement(
     "li",
-    { className: "documint-task-list-item" },
+    {
+      className: "grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2 items-start -ms-6 list-none",
+    },
     createElement("input", {
       checked: block.checked,
+      className: "m-0 mt-0.5",
       disabled: true,
       readOnly: true,
       type: "checkbox",
@@ -92,7 +99,11 @@ function renderInlines(nodes: readonly Inline[]): ReactNode[] {
       case "lineBreak":
         return <br />;
       case "mention":
-        return <span className="documint-mention">@{node.name}</span>;
+        return (
+          <span className="px-[0.3em] py-[0.05em] rounded-[0.4em] bg-mention-bg text-mention font-medium whitespace-nowrap">
+            @{node.name}
+          </span>
+        );
       case "link":
         return renderLink(node, children);
       default:
@@ -127,7 +138,11 @@ function renderText(node: Text): ReactNode {
       case "superscript":
         return <sup>{current}</sup>;
       case "code":
-        return <code className="documint-markdown-inline-code">{current}</code>;
+        return (
+          <code className="px-[0.24em] py-[0.05em] bg-inline-code-bg text-inline-code font-mono text-[0.92em]">
+            {current}
+          </code>
+        );
     }
   }, node.text);
 }
