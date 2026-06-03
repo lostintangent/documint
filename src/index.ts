@@ -1,3 +1,5 @@
+import type {} from "./env";
+
 export {
   Documint,
   defaultKeybindings,

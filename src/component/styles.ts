@@ -1,3 +1,4 @@
+// oxlint-disable-next-line typescript/triple-slash-reference
 /// <reference path="./style-imports.d.ts" />
 
 // Documint's runtime stylesheet, assembled from CSS files via Bun's
@@ -17,6 +18,7 @@ export const DOCUMINT_EDITOR_STYLES = `${editorCss}\n${leafCss}`;
 
 export const DOCUMINT_OVERLAY_PORTAL_STYLES = `
 .documint-overlay {
+  --tw-border-style: solid;
   --documint-leaf-shadow-fallback: 0 14px 40px
     color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
 }

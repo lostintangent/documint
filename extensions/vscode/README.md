@@ -1,6 +1,8 @@
 # 🌿 Documint (VS Code)
 
-Documint is a VS Code custom editor for Markdown files. It wraps the `documint` React editor so `*.md` files can be edited as structured Markdown while still saving plain Markdown back to disk.
+Documint is a VS Code custom editor for Markdown files. It wraps the `documint` React editor so `*.md` files can be edited as structured Markdown while still saving plain Markdown back to disk. 💯 💡 :
+
+This is 💯 and 
 
 ## Features
 

@@ -193,51 +193,11 @@
   }
 }
 
-/* -- Search: compact document find surface -- */
-
-.documint-search-leaf {
-  display: grid;
-  grid-template-columns: minmax(12.5rem, 18rem) repeat(2, 1.45rem) 0.5rem 1.45rem;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.documint-search-input-shell {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.38rem;
-  min-width: 0;
-  padding: 0.24rem 0.5rem;
-  border: 1px solid var(--documint-leaf-border);
-  border-radius: 0.62rem;
-  background: var(--documint-leaf-input-bg);
-  color: var(--documint-leaf-secondary-text);
-}
-
-.documint-search-input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--documint-leaf-text);
-  font: inherit;
-}
-
-.documint-search-input-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-}
-
-.documint-search-count {
-  min-width: 2.8rem;
-  color: var(--documint-leaf-secondary-text);
-  font-size: 0.78rem;
-  text-align: right;
-  white-space: nowrap;
-}
+/* -- Search: `SearchLeaf` is fully Tailwind-migrated; the only reason
+   `.documint-search-leaf` still exists as a marker class is the leaf
+   shell's `:has(> .documint-search-leaf)` rule above (which sets the
+   shell's toolbar-tight padding for this leaf). No styling rules live
+   here anymore. */
 
 /* -- Comment leaf -- */
 
@@ -490,53 +450,17 @@
     transform var(--documint-comment-create-scale-duration) ease;
 }
 
-/* -- Link leaf -- */
+/* -- Link metadata (title + url) -- */
 
-.documint-link-leaf {
-  display: grid;
-  gap: 0.3rem;
-  min-width: 0;
-  width: min(16rem, calc(100vw - 4rem));
-}
-
-.documint-link-leaf-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  gap: 0.6rem;
-
-  /* Reserve a second track for the action buttons only when they're
-     actually rendered — keeps the editing input full-width without a
-     dynamic className. */
-  &:has(.documint-link-leaf-actions) {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-}
-
-.documint-link-leaf-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
+/* These two classes survive only because `AnnotationLeaf` still uses them
+   to render link metadata inside a comment-thread leaf anchored to a link.
+   `LinkLeaf` itself is fully migrated to Tailwind utilities. Once
+   `AnnotationLeaf` migrates, both rules can be deleted. */
 
 .documint-link-leaf-title {
   color: var(--documint-leaf-text);
   font-size: 0.78rem;
   font-weight: 600;
-}
-
-.documint-link-leaf-url-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.documint-link-leaf-favicon {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
 }
 
 .documint-link-leaf-url {
@@ -545,10 +469,4 @@
   font-size: 0.78rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
-}
-
-.documint-link-leaf-hint {
-  color: var(--documint-leaf-secondary-text);
-  font-size: 0.74rem;
-  font-style: italic;
 }

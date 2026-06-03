@@ -1,3 +1,15 @@
+// Compact icon button used throughout leaf chrome. Two render shapes share
+// the same appearance and interaction behavior:
+//
+//   - icon-only:  centered square. Used when the icon alone communicates
+//                 the action — the `title` prop drives both the tooltip
+//                 and the accessible name.
+//   - labeled:    full-width row with icon + text aligned to the start.
+//                 Used inside vertical dropdown menus where each item
+//                 shares the row width. The visible label is the
+//                 accessible name; the tooltip is suppressed since it
+//                 would just duplicate.
+
 import type { LucideIcon } from "lucide-react";
 import { isValidElement, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { clx } from "./lib/clx";
@@ -9,17 +21,17 @@ export type LeafButtonProps = Omit<
   active?: boolean;
   children?: ReactNode;
   danger?: boolean;
+  // Picks the hover/active palette. `default` uses the leaf chrome accent;
+  // `input` uses the slightly darker variant for buttons inside textarea chrome.
   hover?: "default" | "input";
-  // A Lucide component (rendered with the leaf's standard size + stroke)
-  // or any ReactNode for non-Lucide icons (e.g. emoji/character in a
-  // styled span, as used by completion items).
+  // A Lucide component (rendered with leaf-standard size + stroke) or any
+  // ReactNode for non-Lucide icons (e.g. emoji in a styled span).
   icon?: LucideIcon | ReactNode;
   iconSize?: number;
+  // Visible label. When set, the button takes the labeled (full-width row) shape.
   label?: string;
-  // Required for icon-only buttons (drives both the tooltip and the
-  // accessible name). Optional when `label` is set, since the visible
-  // label already provides the accessible name and a tooltip would
-  // just duplicate it.
+  // Tooltip + accessible name. Required for icon-only buttons; optional
+  // when `label` is set (visible label already provides accessibility).
   title?: string;
 };
 
@@ -36,28 +48,19 @@ export function LeafButton({
   type = "button",
   ...props
 }: LeafButtonProps) {
-  // Two shapes share the same appearance/behavior:
-  //   - icon-only:  compact centered square (toolbar buttons, action chips).
-  //   - labeled:    full-width row with an icon and a text label aligned
-  //                 to the start (dropdown menu items, where the surrounding
-  //                 surface is a vertical list of equal-width rows).
-  const labeled = label !== undefined;
+  const isLabeled = label !== undefined;
 
   return (
     <button
       {...props}
-      // Accessible name: prefer the explicit `title` when set (lets callers
-      // give a more descriptive name than the visible label), otherwise
-      // fall back to the visible `label`.
       aria-label={title ?? label}
       className={clx(
-        "appearance-none inline-flex items-center h-[1.45rem] border-0 cursor-pointer [font:inherit] transition-colors duration-100 ease-in-out disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent",
-        // `h-[1.45rem]` and `min-w-[1.45rem]` use arbitrary values because
-        // Tailwind's `h-6 / min-w-6` (1.5rem) overshoots this compact scale
-        // by 0.8px, which reads as too chunky for the leaf chrome.
-        labeled
+        // `h-5.8` / `min-w-5.8` resolve via the custom `--spacing-5_8`
+        // (1.45rem) — `h-6` (1.5rem) overshoots by 0.8px and feels chunky.
+        "appearance-none inline-flex items-center h-5.8 border-0 cursor-pointer [font:inherit] transition-colors duration-100 ease-in-out disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent",
+        isLabeled
           ? "w-full justify-start gap-3 pl-1.5 pr-2.5 rounded-lg text-left"
-          : "justify-center min-w-[1.45rem] px-0.5 rounded-md",
+          : "justify-center min-w-5.8 px-0.5 rounded-md",
         danger ? "text-leaf-accent" : "text-leaf-button",
         hover === "input"
           ? "hover:bg-leaf-input-button-active-bg"
@@ -70,40 +73,34 @@ export function LeafButton({
           : "bg-transparent",
         className,
       )}
-      // Tooltip is only useful for icon-only buttons where the icon alone
-      // doesn't communicate the action. When a visible label is rendered,
-      // the tooltip would duplicate it and slow the interaction.
-      title={labeled ? undefined : title}
+      title={isLabeled ? undefined : title}
       type={type}
     >
-      {renderIcon(icon, iconSize, labeled)}
-      {label !== undefined ? <span className="whitespace-nowrap">{label}</span> : null}
+      {renderIcon(icon, iconSize, isLabeled)}
+      {label !== undefined && <span className="whitespace-nowrap">{label}</span>}
       {children}
     </button>
   );
 }
 
-function renderIcon(icon: LeafButtonProps["icon"], iconSize: number, labeled: boolean): ReactNode {
-  if (!icon) {
-    return null;
-  }
+function renderIcon(
+  icon: LeafButtonProps["icon"],
+  iconSize: number,
+  isLabeled: boolean,
+): ReactNode {
+  if (!icon) return null;
 
-  // A LucideIcon is a `forwardRef` exotic component — it's an object, not a
-  // function, so `typeof icon === "function"` would miss it. Discriminate
-  // instead via `isValidElement`: anything already a React element (custom
-  // icon markup the caller built with JSX) renders as-is; anything else is
-  // assumed to be a component type to invoke with leaf-standard sizing.
-  if (isValidElement(icon)) {
-    return icon;
-  }
+  // A LucideIcon is a `forwardRef` exotic component (object, not function),
+  // so we discriminate via `isValidElement`: React elements pass through
+  // as-is; component types get invoked with leaf-standard sizing.
+  if (isValidElement(icon)) return icon;
 
   const Icon = icon as LucideIcon;
   return (
     <Icon
-      // `flex-none -translate-y-px` only matters when there's a text
-      // sibling to align against; for icon-only buttons the parent's
-      // `justify-center items-center` already centers it.
-      className={labeled ? "flex-none -translate-y-px" : undefined}
+      // `flex-none -translate-y-px` only matters when a text sibling needs
+      // baseline alignment; icon-only buttons center the icon via the parent.
+      className={isLabeled ? "flex-none -translate-y-px" : undefined}
       size={iconSize}
       strokeWidth={2.2}
     />

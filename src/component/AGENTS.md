@@ -4,6 +4,8 @@ The component subsystem owns the React/browser host for Documint. It sits betwee
 
 This is the orchestration layer. Editing behavior, geometry, hit testing, and anchor semantics belong in [`src/editor`](../editor/AGENTS.md); paint policy belongs in [`src/renderer`](../renderer/AGENTS.md). Component owns when those capabilities run and how their results are exposed to React, DOM, and embedder code.
 
+![](AGENTS.assets/e0557a80-93df-4f9a-92a5-56b35fe4c9d4-image.png){width=792}
+
 ## Design Principles
 
 - **Orchestrate through editor APIs.** Component code should translate browser/app events into named `@/editor` capabilities, not recreate document-index, layout, anchor, or mutation logic locally.

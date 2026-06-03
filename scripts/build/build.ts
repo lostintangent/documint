@@ -93,7 +93,7 @@ if (mode === "prod" && libraryBuild) {
     [
       "dts-bundle-generator",
       "--project",
-      "tsconfig.json",
+      "tsconfig.declarations.json",
       "--out-file",
       "dist/index.d.ts",
       "--no-banner",

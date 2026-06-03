@@ -1,3 +1,8 @@
+// Floating toolbar shown when the caret sits inside a table cell.
+// Surfaces column/row insertion menus (left/right, above/below) and a
+// destructive "delete table" trigger. Menu action dispatch goes by
+// string value because `LeafToolbar.Menu`'s `onSelect` is string-typed.
+
 import { Columns2, Plus, Rows3, Table2, Trash2 } from "lucide-react";
 import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
@@ -21,10 +26,6 @@ const rowInsertActions = [
   { text: "Row below", value: "below" },
 ] as const;
 
-const deleteColumnAction = { text: "Delete column", value: "delete" } as const;
-const deleteRowAction = { text: "Delete row", value: "delete" } as const;
-const deleteTableAction = { text: "Delete table", value: "delete" } as const;
-
 export function TableLeaf({
   canDeleteColumn,
   canDeleteRow,
@@ -40,12 +41,11 @@ export function TableLeaf({
         icon={Columns2}
         label="Column actions"
         onSelect={(value) => {
-          if (value === deleteColumnAction.value) {
+          if (value === "delete") {
             onDeleteColumn();
-            return;
+          } else if (value === "left" || value === "right") {
+            onInsertColumn(value);
           }
-
-          onInsertColumn(value as "left" | "right");
         }}
       >
         {columnInsertActions.map(({ text, value }) => (
@@ -55,20 +55,19 @@ export function TableLeaf({
         <LeafToolbar.MenuItem
           disabled={!canDeleteColumn}
           icon={Trash2}
-          text={deleteColumnAction.text}
-          value={deleteColumnAction.value}
+          text="Delete column"
+          value="delete"
         />
       </LeafToolbar.Menu>
       <LeafToolbar.Menu
         icon={Rows3}
         label="Row actions"
         onSelect={(value) => {
-          if (value === deleteRowAction.value) {
+          if (value === "delete") {
             onDeleteRow();
-            return;
+          } else if (value === "above" || value === "below") {
+            onInsertRow(value);
           }
-
-          onInsertRow(value as "above" | "below");
         }}
       >
         {rowInsertActions.map(({ text, value }) => (
@@ -78,17 +77,13 @@ export function TableLeaf({
         <LeafToolbar.MenuItem
           disabled={!canDeleteRow}
           icon={Trash2}
-          text={deleteRowAction.text}
-          value={deleteRowAction.value}
+          text="Delete row"
+          value="delete"
         />
       </LeafToolbar.Menu>
       <LeafToolbar.Divider />
-      <LeafToolbar.Menu icon={Table2} label="Table actions" onSelect={() => onDeleteTable()}>
-        <LeafToolbar.MenuItem
-          icon={Trash2}
-          text={deleteTableAction.text}
-          value={deleteTableAction.value}
-        />
+      <LeafToolbar.Menu icon={Table2} label="Table actions" onSelect={onDeleteTable}>
+        <LeafToolbar.MenuItem icon={Trash2} text="Delete table" value="delete" />
       </LeafToolbar.Menu>
     </LeafToolbar>
   );

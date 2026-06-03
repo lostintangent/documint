@@ -6,11 +6,7 @@
     "jsx": "react-jsx",
     "moduleResolution": "Bundler",
     "strict": true,
-    "paths": {
-      "documint": ["../src/index.ts"],
-      "@/*": ["../src/*"]
-    },
     "noEmit": true
   },
-  "include": ["src/webview/**/*", "src/types.ts"]
+  "include": ["src/webview/**/*", "src/types.ts", "../../src/component/style-imports.d.ts"]
 }

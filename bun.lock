@@ -24,11 +24,22 @@
         "react-dom": "^19.0.0",
       },
     },
-    "vscode": {
+    "extensions/github": {
+      "name": "documint-github",
+      "version": "0.0.0",
+      "dependencies": {
+        "@chenglou/pretext": "0.0.7",
+        "documint": "file:../..",
+        "lucide-react": "^1.16.0",
+        "react": "^19.2.6",
+        "react-dom": "^19.2.6",
+      },
+    },
+    "extensions/vscode": {
       "name": "documint-vscode",
       "version": "0.0.1",
       "dependencies": {
-        "documint": "file:..",
+        "documint": "file:../..",
         "lucide-react": "^1.16.0",
         "react": "^19.2.6",
         "react-dom": "^19.2.6",
@@ -408,7 +419,9 @@
 
     "documint": ["documint@root:", {}],
 
-    "documint-vscode": ["documint-vscode@workspace:vscode"],
+    "documint-github": ["documint-github@workspace:extensions/github"],
+
+    "documint-vscode": ["documint-vscode@workspace:extensions/vscode"],
 
     "dom-serializer": ["dom-serializer@2.0.0", "", { "dependencies": { "domelementtype": "^2.3.0", "domhandler": "^5.0.2", "entities": "^4.2.0" } }, "sha512-wIkAryiqt/nV5EQKqQpo3SToSOV9J0DnbJqwK7Wv/Trc92zIAYZ4FlMu+JPFW1DfGFt81ZTCGgDEabffXeLyJg=="],
 

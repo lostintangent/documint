@@ -6,7 +6,7 @@
     "dist/index.d.ts"
   ],
   "workspaces": [
-    "vscode"
+    "extensions/*"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -22,13 +22,15 @@
     "build:dev": "bun run scripts/build/build.ts",
     "build:prod": "bun run scripts/build/build.ts --prod",
     "build:playground": "bun run scripts/build/build.ts --playground",
-    "vscode:package": "bun typecheck && cd vscode && bun package",
-    "vscode:install": "code-insiders --install-extension vscode/documint-*.vsix --force",
+    "vscode:package": "bun typecheck && cd extensions/vscode && bun package",
+    "vscode:install": "code-insiders --install-extension extensions/vscode/documint-*.vsix --force",
+    "github:install": "root=\"$PWD\" && cd \"$root/extensions/github\" && bun run build && target=\"$HOME/.copilot/extensions/documint\" && mkdir -p \"$(dirname \"$target\")\" && rm -rf \"$target\" && cp -R \"$root/extensions/github\" \"$target\"",
     "prepublishOnly": "bun run build:prod",
     "test": "bun test",
     "lint": "oxlint .",
     "format": "oxfmt . '!test/goldens/**/*.md'",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p vscode/tsconfig.json && tsc --noEmit -p vscode/tsconfig.webview.json",
+    "typecheck": "tsc --noEmit",
+    "typecheck:all": "bun typecheck && tsc --noEmit -p extensions/vscode/tsconfig.json && tsc --noEmit -p extensions/vscode/tsconfig.webview.json && tsc --noEmit -p extensions/github/tsconfig.json",
     "benchmark": "bun run scripts/benchmarks/index.ts",
     "benchmark:moby-dick": "bun run scripts/benchmarks/moby-dick.ts"
   },

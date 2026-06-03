@@ -1,14 +1,15 @@
-// Shared text input for leaves, which provides inline actions for cancelling
-// and saving an edit action, as well as configurable auto-completion (e.g. @mentions).
+// Multi-line text input shared by leaves. Wraps a textarea with inline
+// action buttons (cancel/save for edit actions, submit for compose) and
+// optionally renders an inline completion popover (e.g. @mentions, emoji).
 
 import { Check, SendHorizontal, X } from "lucide-react";
-import { CompletionLeaf } from "../CompletionLeaf";
+import { useRef, type KeyboardEvent, type RefObject } from "react";
 import { type CompletionSource } from "../../../../completions/completions";
-import { useCallback, useRef, type KeyboardEvent, type RefObject } from "react";
-import { useLeafInputCompletions } from "./useLeafInputCompletions";
 import { LeafAnchor } from "../anchor/LeafAnchor";
 import { LeafButton, type LeafButtonProps } from "../LeafButton";
+import { CompletionLeaf } from "../CompletionLeaf";
 import { clx } from "../lib/clx";
+import { useLeafInputCompletions } from "./useLeafInputCompletions";
 
 export type LeafInputActions =
   | {
@@ -60,33 +61,29 @@ export function LeafInput({
     handleKeyDown: handleCompletionKeyDown,
     handleSelect,
     leafProps,
-  } = useLeafInputCompletions({
-    completionSources,
-    onChange,
-    textareaRef,
-    value,
-  });
+  } = useLeafInputCompletions({ completionSources, onChange, textareaRef, value });
 
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (handleCompletionKeyDown(event)) return;
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Completion popover gets first crack at navigation keys.
+    if (handleCompletionKeyDown(event)) return;
 
-      if (event.key === "Escape" && actions.kind === "edit") {
-        event.preventDefault();
-        actions.onCancel();
+    if (event.key === "Escape" && actions.kind === "edit") {
+      event.preventDefault();
+      actions.onCancel();
+      return;
+    }
+
+    if (event.key === "Enter" && saveOnEnter) {
+      event.preventDefault();
+      if (actions.kind === "edit" && !actions.saveDisabled) {
+        actions.onSave();
+      } else if (actions.kind === "compose" && !actions.submitDisabled) {
+        actions.onSubmit();
       }
+    }
+  };
 
-      if (event.key === "Enter" && saveOnEnter) {
-        event.preventDefault();
-        if (actions.kind === "edit" && !actions.saveDisabled) {
-          actions.onSave();
-        } else if (actions.kind === "compose" && !actions.submitDisabled) {
-          actions.onSubmit();
-        }
-      }
-    },
-    [actions, handleCompletionKeyDown, saveOnEnter],
-  );
+  const showCompletion = activeCompletion && completionAnchor && leafProps;
 
   return (
     <div className="relative w-full min-w-0">
@@ -104,11 +101,11 @@ export function LeafInput({
         value={value}
       />
       {renderActions(actions)}
-      {activeCompletion && completionAnchor && leafProps ? (
+      {showCompletion && (
         <LeafAnchor anchor={completionAnchor}>
           <CompletionLeaf {...leafProps} />
         </LeafAnchor>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -144,9 +141,8 @@ function renderActions(actions: LeafInputActions) {
   );
 }
 
-// Icon button for the textarea's action chrome (cancel, save, submit). Keeps
-// the renderActions branches focused on what each variant renders, not the
-// repeated <button>/<Icon> markup.
+// Icon button positioned absolutely against the textarea's inset chrome.
+// Keeps the cancel/save/submit positioning logic in one place.
 function LeafInputAction({
   className,
   placement = "bottom",
@@ -156,10 +152,10 @@ function LeafInputAction({
     <LeafButton
       {...props}
       className={clx(
-        // The `+3px` on the bottom variant is an optical adjustment so the
-        // save button visually aligns with the textarea's baseline of typed
-        // text, not just with the matching `top-3` offset of the cancel.
         "absolute right-3",
+        // The `+3px` is an optical adjustment so the save button visually
+        // aligns with the textarea's typed-text baseline, not just with
+        // the matching `top-3` offset of the cancel button.
         placement === "top" ? "top-3" : "bottom-[calc(0.75rem+3px)]",
         className,
       )}

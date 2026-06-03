@@ -1,6 +1,6 @@
-// When you hover or focus on a link, this leaf displays the
-// link's associated URL and allows you to edit it. It also
-// provides a hint to CMD/CTRL+click to open the link.
+// Leaf shown when the caret hovers or lands on a link span: displays the
+// URL with a favicon, an inline editor when opened, and a modifier-key
+// hint for opening the link in a new tab.
 
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -16,26 +16,25 @@ type LinkLeafProps = {
   onDelete: () => void;
 };
 
+// Detected once at module load — the user's OS won't change while the
+// editor is alive.
+const OPEN_MODIFIER_LABEL = isMacLike() ? "CMD+" : "CTRL+";
+
 export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draftUrl, setDraftUrl] = useState("");
 
   const decodedUrl = safeDecodeUrl(url);
   const faviconUrl = resolveFaviconUrl(url);
-
   const showActions = canEdit && !isEditing;
   const canSave = canEdit && draftUrl.trim().length > 0;
 
-  const openModifierLabel = resolveOpenModifierLabel();
-
   const beginEditing = () => {
-    if (!canEdit) {
-      return;
-    }
-
     setDraftUrl(decodedUrl);
     setIsEditing(true);
   };
+
+  const cancelEditing = () => setIsEditing(false);
 
   const saveLink = () => {
     onSave(encodeURI(draftUrl.trim()));
@@ -43,15 +42,22 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
   };
 
   return (
-    <div className="documint-link-leaf">
-      {title && <div className="documint-link-leaf-title">{title}</div>}
+    <div className="grid gap-1.5 min-w-0 w-[min(16rem,calc(100vw-4rem))]">
+      {title && <div className="text-leaf-text text-xs font-semibold">{title}</div>}
 
-      <div className="documint-link-leaf-row">
+      {/* Row uses a second `auto` track for the action buttons when
+          they're shown; collapses to a single track so the editor input
+          fills the available width. */}
+      <div
+        className={`grid items-center gap-2.5 ${
+          showActions ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-1"
+        }`}
+      >
         {isEditing ? (
           <LeafInput
             actions={{
               kind: "edit",
-              onCancel: () => setIsEditing(false),
+              onCancel: cancelEditing,
               onSave: saveLink,
               saveDisabled: !canSave,
             }}
@@ -63,12 +69,12 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
             value={draftUrl}
           />
         ) : (
-          <div className="documint-link-leaf-url-row">
+          <div className="flex items-center gap-1.5 min-w-0">
             {faviconUrl && (
               <img
                 alt=""
                 aria-hidden="true"
-                className="documint-link-leaf-favicon"
+                className="flex-none w-4 h-4 rounded-xs"
                 key={faviconUrl}
                 onError={(event) => {
                   event.currentTarget.hidden = true;
@@ -76,37 +82,32 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
                 src={faviconUrl}
               />
             )}
-            <div className="documint-link-leaf-url">{decodedUrl}</div>
+            <div className="min-w-0 text-leaf-secondary text-xs wrap-anywhere">{decodedUrl}</div>
           </div>
         )}
 
         {showActions && (
-          <div className="documint-link-leaf-actions">
+          <div className="inline-flex items-center gap-2">
             <LeafButton icon={Pencil} onClick={beginEditing} title="Edit link" />
-
             <LeafButton danger icon={Trash2} onClick={onDelete} title="Remove link" />
           </div>
         )}
       </div>
 
-      {!isEditing ? (
+      {!isEditing && (
         <>
           <LeafDivider />
-          <div className="documint-link-leaf-hint">{openModifierLabel}click to open</div>
+          <div className="text-leaf-secondary text-xs italic">
+            {OPEN_MODIFIER_LABEL}click to open
+          </div>
         </>
-      ) : null}
+      )}
     </div>
   );
 }
 
-function resolveOpenModifierLabel() {
-  if (typeof navigator === "undefined") {
-    return "Ctrl+";
-  }
-
-  const platform = navigator.platform || navigator.userAgent;
-
-  return /Mac|iPhone|iPad|iPod/.test(platform) ? "CMD+" : "CTRL+";
+function isMacLike() {
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 }
 
 function safeDecodeUrl(url: string): string {

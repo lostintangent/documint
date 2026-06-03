@@ -1,3 +1,8 @@
+// Floating toolbar shown when the caret sits on an empty top-level
+// paragraph. Inserts block-level markdown — lists, headings, tables,
+// blockquotes, code blocks, dividers — by writing the corresponding
+// markdown prefix at the caret.
+
 import {
   Code2,
   Heading,
@@ -13,18 +18,15 @@ import {
   Minus,
   Table2,
   TextQuote,
+  type LucideIcon,
 } from "lucide-react";
 import { insertCodeBlock, insertTable, insertText } from "@/editor";
 import { useEditorCommand } from "../../store";
 import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
-type HeadingAction = {
-  icon: typeof Heading1;
-  label: string;
-  text: string;
-};
-
-const headingActions: HeadingAction[] = [
+// `text` is the markdown prefix inserted at the caret; `label` is the
+// visible menu-item display.
+const headingActions: { icon: LucideIcon; label: string; text: string }[] = [
   { icon: Heading1, label: "Heading 1", text: "# " },
   { icon: Heading2, label: "Heading 2", text: "## " },
   { icon: Heading3, label: "Heading 3", text: "### " },
@@ -33,12 +35,7 @@ const headingActions: HeadingAction[] = [
   { icon: Heading6, label: "Heading 6", text: "###### " },
 ];
 
-const tableActions = [
-  { columns: 2, text: "2 columns" },
-  { columns: 3, text: "3 columns" },
-  { columns: 4, text: "4 columns" },
-  { columns: 5, text: "5 columns" },
-];
+const tableColumnCounts = [2, 3, 4, 5] as const;
 
 export function InsertionLeaf() {
   const insertCodeBlockCommand = useEditorCommand(insertCodeBlock);
@@ -73,8 +70,13 @@ export function InsertionLeaf() {
         label="Insert table"
         onSelect={(value) => insertTableCommand(Number(value))}
       >
-        {tableActions.map(({ columns, text }) => (
-          <LeafToolbar.MenuItem icon={Table2} key={columns} text={text} value={String(columns)} />
+        {tableColumnCounts.map((columns) => (
+          <LeafToolbar.MenuItem
+            icon={Table2}
+            key={columns}
+            text={`${columns} columns`}
+            value={String(columns)}
+          />
         ))}
       </LeafToolbar.Menu>
       <LeafToolbar.Divider />

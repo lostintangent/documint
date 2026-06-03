@@ -1,6 +1,24 @@
-// Shared compact leaf toolbar with icon buttons, dividers, and nested menus.
-// This stays in one file because the compound API and its private views are
-// small, tightly coupled, and easier to read together than split apart.
+// Shared compact toolbar for leaf chrome. Houses icon buttons, vertical
+// dividers, and dropdown menus with optional separators. Stays in one
+// file because the compound API and its internal views are small, tightly
+// coupled, and easier to read together than split apart.
+//
+// Callers write declarative JSX:
+//
+//   <LeafToolbar>
+//     <LeafToolbar.Button icon={Foo} label="..." onClick={...} />
+//     <LeafToolbar.Divider />
+//     <LeafToolbar.Menu icon={Bar} label="..." onSelect={...}>
+//       <LeafToolbar.MenuItem icon={Baz} text="..." value="..." />
+//       <LeafToolbar.MenuDivider />
+//       <LeafToolbar.MenuItem icon={Qux} text="..." value="..." />
+//     </LeafToolbar.Menu>
+//   </LeafToolbar>
+//
+// The `LeafToolbar.*` sub-components are zero-render markers. The root
+// inspects each child's `type` reference, identifies which marker it
+// matches, and routes to the matching internal View component.
+
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import {
   Children,
@@ -17,6 +35,8 @@ import { LeafDivider } from "../LeafDivider";
 import { getVisualViewportMetrics, resolveHorizontalOffset } from "../anchor/placement";
 import { LeafButton } from "../LeafButton";
 import { clx } from "../lib/clx";
+
+/* === Public compound API === */
 
 type LeafToolbarProps = {
   children: ReactNode;
@@ -48,17 +68,6 @@ type LeafToolbarMenuItemProps = {
   value: string;
 };
 
-const suppressToolbarEvent = (event: {
-  preventDefault: () => void;
-  stopPropagation: () => void;
-}) => {
-  event.preventDefault();
-  event.stopPropagation();
-};
-
-const isPrimaryPointer = (event: ReactPointerEvent<HTMLButtonElement>) =>
-  event.isPrimary && event.button === 0;
-
 function LeafToolbarRoot({ children }: LeafToolbarProps) {
   return (
     <div className="documint-leaf-toolbar flex items-center gap-2">
@@ -67,27 +76,47 @@ function LeafToolbarRoot({ children }: LeafToolbarProps) {
   );
 }
 
+// Compound-API marker stubs. They render nothing on their own —
+// `renderToolbarChild` / `renderToolbarMenuChild` identify them by
+// reference and route to the matching internal View.
+function LeafToolbarButton(_props: LeafToolbarButtonProps) {
+  return null;
+}
+function LeafToolbarDivider() {
+  return null;
+}
+function LeafToolbarMenu(_props: LeafToolbarMenuProps) {
+  return null;
+}
+function LeafToolbarMenuItem(_props: LeafToolbarMenuItemProps) {
+  return null;
+}
+function LeafToolbarMenuDivider() {
+  return null;
+}
+
+export const LeafToolbar = Object.assign(LeafToolbarRoot, {
+  Button: LeafToolbarButton,
+  Divider: LeafToolbarDivider,
+  Menu: LeafToolbarMenu,
+  MenuDivider: LeafToolbarMenuDivider,
+  MenuItem: LeafToolbarMenuItem,
+});
+
+/* === Internal views === */
+
 function renderToolbarChild(child: ReactNode) {
-  if (!isValidElement(child)) {
-    return null;
-  }
+  if (!isValidElement(child)) return null;
 
   if (child.type === LeafToolbarButton) {
-    const props = child.props as LeafToolbarButtonProps;
-
-    return <LeafToolbarIconButton {...props} />;
+    return <LeafToolbarIconButton {...(child.props as LeafToolbarButtonProps)} />;
   }
-
   if (child.type === LeafToolbarDivider) {
     return <LeafDivider orientation="vertical" />;
   }
-
   if (child.type === LeafToolbarMenu) {
-    const props = child.props as LeafToolbarMenuProps;
-
-    return <LeafToolbarMenuView {...props} />;
+    return <LeafToolbarMenuView {...(child.props as LeafToolbarMenuProps)} />;
   }
-
   return null;
 }
 
@@ -132,6 +161,11 @@ function LeafToolbarMenuView({
   const [isOpen, setIsOpen] = useState(false);
   const [menuHorizontalOffset, setMenuHorizontalOffset] = useState<number | null>(null);
 
+  // Horizontal placement. The popover renders twice on open: first
+  // `position: fixed; visibility: hidden` so we can read its rendered
+  // width (see `resolveMenuPlacementStyle(null)`), then re-rendered at
+  // the computed `left` offset. `useLayoutEffect` runs the measurement
+  // before paint so the user never sees the off-screen first pass.
   useLayoutEffect(() => {
     if (!isOpen) {
       setMenuHorizontalOffset(null);
@@ -141,17 +175,12 @@ function LeafToolbarMenuView({
     const updateMenuHorizontalOffset = () => {
       const menuShell = menuShellRef.current;
       const menu = menuRef.current;
-      if (!menuShell || !menu) {
-        return;
-      }
-
+      if (!menuShell || !menu) return;
       setMenuHorizontalOffset(resolveMenuHorizontalOffset(menuShell, menu));
     };
 
     const menu = menuRef.current;
-    if (!menu) {
-      return;
-    }
+    if (!menu) return;
 
     const resizeObserver = new ResizeObserver(updateMenuHorizontalOffset);
     resizeObserver.observe(menu);
@@ -166,22 +195,21 @@ function LeafToolbarMenuView({
     };
   }, [isOpen]);
 
+  // Outside-click dismissal. `composedPath()` walks across shadow-DOM
+  // boundaries so portaled overlays don't fool the "is this in the menu?"
+  // check; `capture: true` runs before any descendant handler.
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
+    if (!isOpen) return;
 
     const handlePointerDown = (event: globalThis.PointerEvent) => {
       const menuShell = menuShellRef.current;
       const path = event.composedPath();
-
       if (menuShell && !path.includes(menuShell)) {
         setIsOpen(false);
       }
     };
 
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
-
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
     };
@@ -197,14 +225,9 @@ function LeafToolbarMenuView({
         label={label}
         onClick={() => setIsOpen((open) => !open)}
       />
-      {isOpen ? (
+      {isOpen && (
         <div
-          // Menu surface intentionally uses arbitrary values for `top` offset
-          // and `rounded` — both fall between Tailwind's scale steps in a way
-          // that's visually perceptible (radius sandwiched between rounded-xl
-          // and rounded-2xl, gap between mt-2.5 and mt-3). Snapping either
-          // direction shifts the menu's chrome enough to read as "off."
-          className="absolute top-[calc(100%+0.65rem)] left-0 grid gap-1 w-max min-w-max p-1.5 border border-leaf-menu-border rounded-[0.8rem] bg-leaf-bg [box-shadow:var(--documint-leaf-shadow,var(--documint-leaf-shadow-fallback))] text-leaf-text font-leaf text-sm"
+          className={MENU_SURFACE_CLASS}
           ref={menuRef}
           role="menu"
           style={resolveMenuPlacementStyle(menuHorizontalOffset)}
@@ -216,31 +239,9 @@ function LeafToolbarMenuView({
             }),
           )}
         </div>
-      ) : null}
+      )}
     </div>
   );
-}
-
-function resolveMenuHorizontalOffset(menuShell: HTMLElement, menu: HTMLElement): number {
-  const viewport = getVisualViewportMetrics();
-
-  return resolveHorizontalOffset({
-    anchorViewportLeft: menuShell.getBoundingClientRect().left - viewport.offsetLeft,
-    floatingWidth: menu.getBoundingClientRect().width,
-  });
-}
-
-function resolveMenuPlacementStyle(horizontalOffset: number | null): CSSProperties {
-  if (horizontalOffset === null) {
-    return {
-      left: 0,
-      position: "fixed",
-      top: 0,
-      visibility: "hidden",
-    };
-  }
-
-  return { left: `${horizontalOffset}px` };
 }
 
 function LeafToolbarMenuButton({
@@ -263,6 +264,8 @@ function LeafToolbarMenuButton({
       aria-expanded={isOpen}
       aria-haspopup="menu"
       aria-pressed={isActive}
+      // Show active state whenever the menu is open OR the action it
+      // represents is currently active (e.g. a formatting mark applied).
       active={isOpen || isActive}
       className={clx("gap-1", className)}
       icon={Icon}
@@ -280,7 +283,7 @@ function LeafToolbarMenuButton({
       <ChevronDown
         className={clx(
           "transition-transform duration-150 ease-in-out will-change-transform",
-          isOpen ? "rotate-180" : null,
+          isOpen && "rotate-180",
         )}
         size={13}
         strokeWidth={2.2}
@@ -290,25 +293,13 @@ function LeafToolbarMenuButton({
 }
 
 function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => void) {
-  if (!isValidElement(child)) {
-    return null;
-  }
+  if (!isValidElement(child)) return null;
 
-  if (child.type === LeafToolbarMenuDivider) {
-    return <LeafDivider />;
-  }
+  if (child.type === LeafToolbarMenuDivider) return <LeafDivider />;
+  if (child.type !== LeafToolbarMenuItem) return null;
 
-  if (child.type !== LeafToolbarMenuItem) {
-    return null;
-  }
-
-  const {
-    active = false,
-    disabled = false,
-    icon: Icon,
-    text,
-    value,
-  } = child.props as LeafToolbarMenuItemProps;
+  const { active = false, disabled = false, icon: Icon, text, value } =
+    child.props as LeafToolbarMenuItemProps;
 
   return (
     <LeafButton
@@ -327,30 +318,52 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
   );
 }
 
-function LeafToolbarButton(_props: LeafToolbarButtonProps) {
-  return null;
+/* === Utilities === */
+
+// Menu surface styling. The `top` offset and `rounded` values are
+// arbitrary because both fall between Tailwind scale steps in
+// visually perceptible ways — snapping either shifts the chrome
+// enough to read as "off."
+const MENU_SURFACE_CLASS =
+  "absolute top-[calc(100%+0.65rem)] left-0 grid gap-1 w-max min-w-max p-1.5 border border-leaf-border rounded-[0.8rem] bg-leaf-bg [box-shadow:var(--documint-leaf-shadow,var(--documint-leaf-shadow-fallback))] text-leaf-text font-leaf text-sm";
+
+// Suppresses the browser's default click handling so the toolbar's own
+// pointerdown logic owns the interaction (avoids stealing focus from
+// the editor surface, double-firing, etc.).
+const suppressToolbarEvent = (event: {
+  preventDefault: () => void;
+  stopPropagation: () => void;
+}) => {
+  event.preventDefault();
+  event.stopPropagation();
+};
+
+// Filters out secondary mouse buttons and multi-touch pointers so the
+// toolbar reacts only to the primary tap/click.
+const isPrimaryPointer = (event: ReactPointerEvent<HTMLButtonElement>) =>
+  event.isPrimary && event.button === 0;
+
+function resolveMenuHorizontalOffset(menuShell: HTMLElement, menu: HTMLElement): number {
+  const viewport = getVisualViewportMetrics();
+
+  return resolveHorizontalOffset({
+    anchorViewportLeft: menuShell.getBoundingClientRect().left - viewport.offsetLeft,
+    floatingWidth: menu.getBoundingClientRect().width,
+  });
 }
 
-function LeafToolbarDivider() {
-  return null;
-}
+// During the first measurement pass `menuHorizontalOffset` is null;
+// position the menu off-screen-but-rendered so its width is readable
+// without flashing.
+function resolveMenuPlacementStyle(horizontalOffset: number | null): CSSProperties {
+  if (horizontalOffset === null) {
+    return {
+      left: 0,
+      position: "fixed",
+      top: 0,
+      visibility: "hidden",
+    };
+  }
 
-function LeafToolbarMenu(_props: LeafToolbarMenuProps) {
-  return null;
+  return { left: `${horizontalOffset}px` };
 }
-
-function LeafToolbarMenuItem(_props: LeafToolbarMenuItemProps) {
-  return null;
-}
-
-function LeafToolbarMenuDivider() {
-  return null;
-}
-
-export const LeafToolbar = Object.assign(LeafToolbarRoot, {
-  Button: LeafToolbarButton,
-  Divider: LeafToolbarDivider,
-  Menu: LeafToolbarMenu,
-  MenuDivider: LeafToolbarMenuDivider,
-  MenuItem: LeafToolbarMenuItem,
-});
