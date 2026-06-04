@@ -118,6 +118,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
     return buildEditorLayoutState(
       currentState,
       {
+        fontSize: theme.fontSize,
         height: metrics.height,
         paddingX: theme.paddingX,
         paddingY: theme.paddingY,

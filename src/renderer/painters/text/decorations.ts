@@ -34,6 +34,7 @@ import {
   paintTextBackground,
   resolveLineSegmentBounds,
 } from "./glyphs";
+import type { TextPaintContext } from "./context";
 
 const decorationPulseTextMaximumBaseBlend = 0.72;
 const minimumDecorationTextContrast = 4.5;
@@ -46,7 +47,7 @@ export function paintTextDecorationBackgrounds(
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
-  decorationAnimationTime: number,
+  paint: TextPaintContext,
 ) {
   forEachDecorationSegment(
     context,
@@ -55,6 +56,7 @@ export function paintTextDecorationBackgrounds(
     textLeft,
     textBaseline,
     textDecorations,
+    paint,
     (segment, decoration) => {
       if (!decoration.backgroundColor) {
         return;
@@ -62,7 +64,7 @@ export function paintTextDecorationBackgrounds(
 
       paintDecorationBackground(context, {
         color: decoration.backgroundColor,
-        decorationAnimationTime,
+        decorationAnimationTime: paint.ambientAnimationTime,
         left: segment.left,
         pulse: decoration.pulse === true,
         right: segment.right,
@@ -79,8 +81,8 @@ export function paintTextDecorationOverlays(
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
-  decorationAnimationTime: number,
   baseTextColor: string,
+  paint: TextPaintContext,
 ) {
   forEachDecorationSegment(
     context,
@@ -89,13 +91,18 @@ export function paintTextDecorationOverlays(
     textLeft,
     textBaseline,
     textDecorations,
+    paint,
     (segment, decoration) => {
       if (!decoration.color && !decoration.backgroundColor) {
         return;
       }
 
       paintClippedTextOverlay(context, {
-        color: resolveDecorationTextColor(decoration, decorationAnimationTime, baseTextColor),
+        color: resolveDecorationTextColor(
+          decoration,
+          paint.ambientAnimationTime,
+          baseTextColor,
+        ),
         eraseExistingGlyphs: true,
         height: line.height,
         left: segment.left,
@@ -119,6 +126,7 @@ function forEachDecorationSegment(
   textLeft: number,
   textBaseline: number,
   textDecorations: readonly TextDecoration[],
+  paint: TextPaintContext,
   paintSegment: (
     segment: {
       left: number;
@@ -185,7 +193,7 @@ function forEachDecorationSegment(
 
     const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
     const inlineStyle = resolveInlineTextStyle(
-      line.font,
+      { baseFontSize: paint.baseFontSize, font: line.font },
       inline.node.type === "text" ? inline.node.marks : [],
     );
     context.font = inlineStyle.font;

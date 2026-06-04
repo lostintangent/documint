@@ -68,6 +68,7 @@ import {
   paintTextPulses,
   paintTextDecorationBackgrounds,
   paintTextDecorationOverlays,
+  type TextPaintContext,
 } from "./painters/text";
 
 const emptyTextDecorationIndex: TextDecorationIndex = new Map();
@@ -318,6 +319,14 @@ function paintContentLine(
   const textBaseline = resolveLineTextBaseline(line);
   const defaultTextColor =
     snapshotBlock?.type === "code" ? theme.codeText : resolveTextColor(snapshotBlock, theme);
+  // Sourced from the layout snapshot (not theme) so painters use the same
+  // base font size the layout was measured with — see `layout.options`.
+  const textPaint: TextPaintContext = {
+    ambientAnimationTime: inputs.ambientAnimationTime,
+    baseFontSize: inputs.layout.options.fontSize,
+    resources: inputs.resources,
+    theme,
+  };
 
   context.font = line.font;
 
@@ -344,7 +353,7 @@ function paintContentLine(
       textLeft,
       textBaseline,
       lineTextDecorations,
-      inputs.ambientAnimationTime,
+      textPaint,
     );
   }
   paintSelectionHighlight(
@@ -381,9 +390,7 @@ function paintContentLine(
     textLeft,
     textBaseline,
     defaultTextColor,
-    inputs.resources,
-    theme,
-    inputs.ambientAnimationTime,
+    textPaint,
   );
   if (lineTextDecorations) {
     paintTextDecorationOverlays(
@@ -393,8 +400,8 @@ function paintContentLine(
       textLeft,
       textBaseline,
       lineTextDecorations,
-      inputs.ambientAnimationTime,
       defaultTextColor,
+      textPaint,
     );
   }
   paintTextHighlights(
@@ -404,7 +411,7 @@ function paintContentLine(
     textLeft,
     textBaseline,
     inputs.activeTextHighlights.get(containerPath) ?? [],
-    theme,
+    textPaint,
   );
   paintTextFades(
     context,
@@ -422,7 +429,7 @@ function paintContentLine(
     textLeft,
     textBaseline,
     inputs.activeTextPulses.get(containerPath) ?? [],
-    theme,
+    textPaint,
   );
 }
 

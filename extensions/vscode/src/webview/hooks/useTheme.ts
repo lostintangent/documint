@@ -91,6 +91,21 @@ function createVsCodeDocumintTheme(): EditorTheme {
     "--vscode-editor-lineHighlightBackground",
     colorWithAlpha(accent, 0.12, baseTheme.background),
   );
+  // VS Code exposes the editor font size as a `<n>px` string on the document
+  // root; mirror it so Documint's typography matches the user's editor
+  // settings out of the box. Heading sizes and inline code derive from this
+  // in the resolver, so picking up the right base value scales the whole
+  // hierarchy in lockstep.
+  //
+  // macOS gets a +2 nudge: VS Code's `editor.fontSize` default is 12 there
+  // (versus 14 on Windows/Linux), which is configured for code and reads too
+  // small for prose. Bumping by 2 on macOS lands the default at 14 (and
+  // tracks any custom editor size the user picked, just always 2 above).
+  // Windows/Linux pass through unchanged — their 14 default is already in
+  // prose-acceptable territory.
+  const editorFontSize = parseFontSize(rootStyle, bodyStyle);
+  const fontSize =
+    editorFontSize !== undefined && isMacOs() ? editorFontSize + 2 : editorFontSize;
 
   return {
     accent,
@@ -102,6 +117,7 @@ function createVsCodeDocumintTheme(): EditorTheme {
     commentHighlightActive: baseTheme.commentHighlightActive,
     commentHighlightResolved: baseTheme.commentHighlightResolved,
     commentHighlightResolvedActive: baseTheme.commentHighlightResolvedActive,
+    fontSize,
     imageSurfaceBackground: widgetBackground,
     imageSurfaceBorder: border,
     muted,
@@ -112,6 +128,23 @@ function createVsCodeDocumintTheme(): EditorTheme {
     ),
     text: editorForeground,
   };
+}
+
+function parseFontSize(
+  rootStyle: CSSStyleDeclaration,
+  bodyStyle: CSSStyleDeclaration,
+): number | undefined {
+  const raw =
+    rootStyle.getPropertyValue("--vscode-editor-font-size").trim() ||
+    bodyStyle.getPropertyValue("--vscode-editor-font-size").trim();
+  const match = raw.match(/^(\d+(?:\.\d+)?)(?:px)?$/);
+  return match ? Number.parseFloat(match[1]!) : undefined;
+}
+
+// VS Code webviews run in Chromium so navigator is reliably present. The
+// user-agent string is preferred over the deprecated `navigator.platform`.
+function isMacOs(): boolean {
+  return typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
 }
 
 function isVsCodeDarkTheme(): boolean {

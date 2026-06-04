@@ -107,6 +107,7 @@ export type EditorTheme = {
   commentHighlightResolved?: string;
   commentHighlightResolvedActive?: string;
   dividerRule?: string;
+  fontSize?: number;
   headingRule?: string;
   headingText?: string;
   imageLoadingOverlay?: string;

@@ -2,6 +2,7 @@ import type { EditorTheme, ResolvedEditorTheme } from "@/types";
 
 const DEFAULT_THEME_PADDING_X = 16;
 const DEFAULT_THEME_PADDING_Y = 18;
+const DEFAULT_THEME_FONT_SIZE = 16;
 
 // Semantic comment colors split by mode. Light mode uses solid pastels that
 // read well against light surfaces; dark mode uses translucent saturated
@@ -59,6 +60,12 @@ export const darkTheme: EditorTheme = {
   blockquoteText: "#cbd5e1",
   caret: "#f8fafc",
   codeText: "#dbeafe",
+  // Explicit rgba override of the resolver's color-mix default. The resource
+  // icon background pulse JS-blends commentHighlight via `blendCanvasColors`,
+  // whose parser doesn't understand color-mix() — leaving this unset would
+  // resolve to transparent in that one animation. Other consumers don't care,
+  // but it's cheap to pin the value here.
+  commentHighlight: "rgba(77, 147, 248, 0.32)",
   leafShadow: "0 18px 44px rgba(2, 6, 23, 0.42), 0 0 0 1px rgba(148, 163, 184, 0.06)",
   muted: "#64748b",
   selectionBackground: "rgba(56, 189, 248, 0.28)",
@@ -68,6 +75,7 @@ export const darkTheme: EditorTheme = {
 
 export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
   const { accent, background, muted, text } = theme;
+  const resolvedFontSize = theme.fontSize ?? DEFAULT_THEME_FONT_SIZE;
   const linkText = theme.linkText ?? accent;
   const headingRule = theme.headingRule ?? `color-mix(in srgb, ${text} 20%, transparent)`;
   const leafBorder = theme.leafBorder ?? `color-mix(in srgb, ${muted} 55%, transparent)`;
@@ -130,6 +138,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     commentHighlightResolvedActive:
       theme.commentHighlightResolvedActive ?? commentDefaults.resolvedActive,
     dividerRule: theme.dividerRule ?? headingRule,
+    fontSize: resolvedFontSize,
     headingRule,
     headingText: theme.headingText ?? text,
     // Image placeholder chrome — these surfaces appear briefly while images
@@ -167,7 +176,16 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     linkText,
     listMarkerText: theme.listMarkerText ?? muted,
     mentionBackground: theme.mentionBackground ?? inlineCodeBackground,
-    mentionText: theme.mentionText ?? linkText,
+    // Mention pills read against a subtle background tint, so the text needs
+    // to stay legible without shouting. Light themes leave it at linkText
+    // (already well-contrasted against light bg). Dark themes mix linkText
+    // toward `text` to soften the saturated accent — pure accent on the
+    // mention pill's faint background reads heavier than a link should.
+    // mentionText is consumed via direct `fillStyle`, never JS-blended, so
+    // a color-mix() string is safe here.
+    mentionText:
+      theme.mentionText ??
+      (isLight ? linkText : `color-mix(in srgb, ${linkText} 80%, ${text})`),
     paddingX: theme.paddingX ?? DEFAULT_THEME_PADDING_X,
     paddingY: theme.paddingY ?? DEFAULT_THEME_PADDING_Y,
     paragraphText: theme.paragraphText ?? text,

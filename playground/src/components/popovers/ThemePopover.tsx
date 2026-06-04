@@ -1,18 +1,40 @@
 import type { CSSProperties } from "react";
-import { Palette } from "lucide-react";
+import { Minus, Palette, Plus } from "lucide-react";
 import { getThemeOption, themeOptions } from "../../lib/data";
-import { PlaygroundPopover } from "./PlaygroundPopover";
+import { PlaygroundPopover, popoverControlClassName } from "./PlaygroundPopover";
+
+// Reasonable bounds for the font-size stepper. The lower edge keeps body text
+// legible at typical viewing distances; the upper edge keeps heading scale
+// (H1 = 2× base) from overflowing fixed leaf chrome at common widths.
+const MIN_FONT_SIZE = 11;
+const MAX_FONT_SIZE = 22;
 
 type ThemePopoverProps = {
-  onThemeIdChange: (themeId: string) => void;
+  fontSize: number;
+  onFontSizeChange: (fontSize: number) => void;
   onOpenChange?: (open: boolean) => void;
+  onThemeIdChange: (themeId: string) => void;
   open?: boolean;
   themeId: string;
 };
 
-export function ThemePopover({ onThemeIdChange, onOpenChange, open, themeId }: ThemePopoverProps) {
+export function ThemePopover({
+  fontSize,
+  onFontSizeChange,
+  onOpenChange,
+  onThemeIdChange,
+  open,
+  themeId,
+}: ThemePopoverProps) {
   const activeThemeOption = getThemeOption(themeId);
   const showSwatch = activeThemeOption.id !== "system";
+
+  const decrement = () => {
+    if (fontSize > MIN_FONT_SIZE) onFontSizeChange(fontSize - 1);
+  };
+  const increment = () => {
+    if (fontSize < MAX_FONT_SIZE) onFontSizeChange(fontSize + 1);
+  };
 
   return (
     <PlaygroundPopover
@@ -25,32 +47,58 @@ export function ThemePopover({ onThemeIdChange, onOpenChange, open, themeId }: T
       showSwatch={showSwatch}
     >
       {({ close }) => (
-        <div className="grid gap-[0.35rem]">
-          {themeOptions.map((option) => (
+        <div className="grid gap-3">
+          <div className="grid gap-[0.35rem]">
+            {themeOptions.map((option) => (
+              <button
+                className={`font-controls inline-flex cursor-pointer items-center gap-[0.55rem] rounded-xl border px-3 py-[0.55rem] text-left ${
+                  option.id === themeId
+                    ? "border-accent/40 bg-accent/[0.08]"
+                    : "border-border/[0.12] bg-background/[0.9]"
+                }`}
+                key={option.id}
+                onClick={() => {
+                  onThemeIdChange(option.id);
+                  close();
+                }}
+                style={getThemeOptionLabelStyle(option)}
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-[1.4rem] w-[1.4rem] flex-none items-center justify-center rounded-full border border-border/[0.14]"
+                  style={getThemeSwatchStyle(option)}
+                >
+                  <Palette size={16} strokeWidth={2.1} />
+                </span>
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 border-t border-border/[0.1] pt-[0.7rem]">
             <button
-              className={`font-controls inline-flex cursor-pointer items-center gap-[0.55rem] rounded-xl border px-3 py-[0.55rem] text-left ${
-                option.id === themeId
-                  ? "border-accent/40 bg-accent/[0.08]"
-                  : "border-border/[0.12] bg-background/[0.9]"
-              }`}
-              key={option.id}
-              onClick={() => {
-                onThemeIdChange(option.id);
-                close();
-              }}
-              style={getThemeOptionLabelStyle(option)}
+              aria-label="Decrease font size"
+              className={`${popoverControlClassName} inline-flex h-[1.8rem] w-[1.8rem] items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40`}
+              disabled={fontSize <= MIN_FONT_SIZE}
+              onClick={decrement}
               type="button"
             >
-              <span
-                aria-hidden="true"
-                className="inline-flex h-[1.4rem] w-[1.4rem] flex-none items-center justify-center rounded-full border border-border/[0.14]"
-                style={getThemeSwatchStyle(option)}
-              >
-                <Palette size={16} strokeWidth={2.1} />
-              </span>
-              {option.label}
+              <Minus size={14} strokeWidth={2.4} />
             </button>
-          ))}
+            <span className="font-controls flex-1 text-center text-[0.95rem] tabular-nums">
+              {fontSize}px
+            </span>
+            <button
+              aria-label="Increase font size"
+              className={`${popoverControlClassName} inline-flex h-[1.8rem] w-[1.8rem] items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40`}
+              disabled={fontSize >= MAX_FONT_SIZE}
+              onClick={increment}
+              type="button"
+            >
+              <Plus size={14} strokeWidth={2.4} />
+            </button>
+          </div>
         </div>
       )}
     </PlaygroundPopover>

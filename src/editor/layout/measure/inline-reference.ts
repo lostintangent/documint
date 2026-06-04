@@ -17,6 +17,7 @@ import {
   measureInlineResourceWidth,
   resourceHorizontalPadding,
 } from "./inline-resource";
+import type { BlockTypography } from "./text";
 
 export type InlineReferenceMeasurement = {
   height: number;
@@ -35,13 +36,11 @@ export function resolveInlineReferenceMeasurement(
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   {
     availableWidth,
-    font,
-    lineHeight,
+    typography,
     resources,
   }: {
     availableWidth: number;
-    font: string;
-    lineHeight: number;
+    typography: BlockTypography;
     resources: DocumentResources;
   },
 ): InlineReferenceMeasurement | null {
@@ -56,13 +55,13 @@ export function resolveInlineReferenceMeasurement(
     };
   }
 
-  const styledFont = resolveInlineTextStyle(font, inlineMarks(run)).font;
+  const styledFont = resolveInlineTextStyle(typography, inlineMarks(run)).font;
 
   if (run.node.type === "mention") {
     context.font = styledFont;
 
     return {
-      height: lineHeight,
+      height: typography.lineHeight,
       richItem: {
         break: "never",
         extraWidth: mentionHorizontalPadding * 2,
@@ -87,7 +86,7 @@ export function resolveInlineReferenceMeasurement(
   context.font = styledFont;
 
   return {
-    height: lineHeight,
+    height: typography.lineHeight,
     richItem: {
       break: "never",
       extraWidth:

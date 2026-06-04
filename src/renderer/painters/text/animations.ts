@@ -8,7 +8,6 @@
 import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
 import { findInlinesInRange, regionInlines, type EditableRegion } from "@/editor/state";
 import { isReferenceInlineNode } from "@/document";
-import type { ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { splitGraphemes } from "@/editor/text/graphemes";
 import { resolveFontMetrics } from "@/editor/text/measure";
@@ -21,6 +20,7 @@ import {
   type ActiveTextPulse,
 } from "../../animations";
 import { paintClippedTextOverlay, resolveLineSegmentBounds } from "./glyphs";
+import type { TextPaintContext } from "./context";
 
 const textPulseBaseRadius = 4;
 const textPulseRadiusGrowth = 4;
@@ -34,7 +34,7 @@ export function paintTextHighlights(
   textLeft: number,
   textBaseline: number,
   textHighlights: ActiveTextHighlight[],
-  theme: ResolvedEditorTheme,
+  paint: TextPaintContext,
 ) {
   if (!container || textHighlights.length === 0) {
     return;
@@ -69,7 +69,7 @@ export function paintTextHighlights(
 
     const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
     const inlineStyle = resolveInlineTextStyle(
-      line.font,
+      { baseFontSize: paint.baseFontSize, font: line.font },
       inline.node.type === "text" ? inline.node.marks : [],
     );
     context.font = inlineStyle.font;
@@ -101,7 +101,7 @@ export function paintTextHighlights(
 
       paintClippedTextOverlay(context, {
         alpha,
-        color: theme.insertHighlightText,
+        color: paint.theme.insertHighlightText,
         height: line.height,
         left: highlightLeft,
         text: segmentText,
@@ -147,7 +147,7 @@ export function paintTextPulses(
   textLeft: number,
   textBaseline: number,
   textPulses: ActiveTextPulse[],
-  theme: ResolvedEditorTheme,
+  paint: TextPaintContext,
 ) {
   if (!container || textPulses.length === 0) {
     return;
@@ -171,7 +171,7 @@ export function paintTextPulses(
     const { ascent, descent } = resolveFontMetrics(line.font);
     const glyphCenterY = textBaseline - Math.max(1, ascent * 0.42) + Math.max(0.5, descent * 0.15);
 
-    context.strokeStyle = resolveTextPulseColor(pulse, theme);
+    context.strokeStyle = resolveTextPulseColor(pulse, paint.theme);
     context.lineWidth = textPulseStrokeWidth;
     context.beginPath();
     context.arc((left + right) / 2, glyphCenterY, radius, 0, Math.PI * 2);

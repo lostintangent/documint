@@ -20,8 +20,7 @@ import { layoutTable } from "./table";
 import {
   measureTextContainerLines,
   measureTextLineBoundaries,
-  resolveTextBlockFont,
-  resolveTextBlockLineHeight,
+  resolveBlockTypography,
   type TextLineBoundary,
 } from "./text";
 
@@ -258,16 +257,14 @@ function layoutSingleContainer(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  const font = resolveTextBlockFont(block);
-  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
+  const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
   const blockPaddingY = block?.type === "code" ? CODE_BLOCK_BACKGROUND_PADDING_Y : 0;
   const measuredLines = measureTextContainerLines(
     cache,
     container,
-    font,
     block,
     availableWidth,
-    lineHeight,
+    typography,
     resources,
   );
   let y = top + blockPaddingY;
@@ -282,15 +279,15 @@ function layoutSingleContainer(
       width: line.width,
       height: line.height,
       text: line.text,
-      font,
+      font: typography.font,
       boundaries: measureTextLineBoundaries(
         cache,
         container,
         line.start,
         line.end,
         line.text,
-        font,
         availableWidth,
+        typography,
         resources,
       ),
     } satisfies LayoutLine;

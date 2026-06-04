@@ -10,8 +10,8 @@ import { updateBlockExtent, type DocumentLayout, type LayoutLine } from "./index
 import {
   measureTextContainerLines,
   measureTextLineBoundaries,
-  resolveTextBlockFont,
-  resolveTextBlockLineHeight,
+  resolveBlockTypography,
+  type BlockTypography,
 } from "./text";
 import type { LayoutCache } from "../state/cache";
 
@@ -21,8 +21,7 @@ type TableRowCell = {
 };
 
 type MeasuredTableRowCell = TableRowCell & {
-  font: string;
-  lineHeight: number;
+  typography: BlockTypography;
   measuredLines: Array<{
     end: number;
     height: number;
@@ -63,6 +62,7 @@ export function layoutTable(
       columnWidth,
       TABLE_CELL_PADDING_X,
       options.lineHeight,
+      options.fontSize,
       resources,
     );
     const rowHeight = Math.max(
@@ -89,15 +89,15 @@ export function layoutTable(
           width: line.width,
           height: line.height,
           text: line.text,
-          font: cell.font,
+          font: cell.typography.font,
           boundaries: measureTextLineBoundaries(
             cache,
             cell.container,
             line.start,
             line.end,
             line.text,
-            cell.font,
             columnWidth - TABLE_CELL_PADDING_X * 2,
+            cell.typography,
             resources,
           ),
         } satisfies LayoutLine;
@@ -150,28 +150,26 @@ function measureTableRowCells(
   columnWidth: number,
   TABLE_CELL_PADDING_X: number,
   fallbackLineHeight: number,
+  baseFontSize: number,
   resources: DocumentResources,
 ) {
   return [...cells]
     .sort((leftCell, rightCell) => leftCell.cellIndex - rightCell.cellIndex)
     .map<MeasuredTableRowCell>(({ cellIndex, container }) => {
-      const font = resolveTextBlockFont(block);
-      const lineHeight = resolveTextBlockLineHeight(block, fallbackLineHeight);
+      const typography = resolveBlockTypography(block, baseFontSize, fallbackLineHeight);
       const measuredLines = measureTextContainerLines(
         cache,
         container,
-        font,
         block,
         Math.max(40, columnWidth - TABLE_CELL_PADDING_X * 2),
-        lineHeight,
+        typography,
         resources,
       );
 
       return {
         cellIndex,
         container,
-        font,
-        lineHeight,
+        typography,
         measuredLines,
       };
     });

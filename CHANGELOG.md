@@ -1,3 +1,8 @@
+## 🗓️ v0.0.26 (06-04-26)
+
+- Added a new font size setting to the theme API
+- Added an initial canvas extension for the GitHub Copilot app
+
 ## 🗓️ v0.0.25 (06-02-26)
 
 - Introduced a new VS Code extension (still super early!)

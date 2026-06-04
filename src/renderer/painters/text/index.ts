@@ -17,3 +17,4 @@
 export { paintLineText } from "./inlines";
 export { paintTextDecorationBackgrounds, paintTextDecorationOverlays } from "./decorations";
 export { paintTextFades, paintTextHighlights, paintTextPulses } from "./animations";
+export type { TextPaintContext } from "./context";

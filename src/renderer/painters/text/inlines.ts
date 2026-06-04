@@ -8,7 +8,6 @@
 
 import type { DocumentLayout } from "@/editor/layout";
 import { findInlinesInRange, regionInlines, type EditableRegion } from "@/editor/state";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { paintInlineImage } from "../image";
 import { paintInlineMention } from "../mention";
@@ -22,6 +21,7 @@ import {
   textDecorationMinimumWidth,
   textDecorationThickness,
 } from "./glyphs";
+import type { TextPaintContext } from "./context";
 
 export function paintLineText(
   context: CanvasRenderingContext2D,
@@ -30,9 +30,7 @@ export function paintLineText(
   textLeft: number,
   textBaseline: number,
   defaultColor: string,
-  resources: DocumentResources,
-  theme: ResolvedEditorTheme,
-  ambientAnimationTime: number,
+  paint: TextPaintContext,
 ) {
   if (!container) {
     context.fillStyle = defaultColor;
@@ -65,7 +63,10 @@ export function paintLineText(
     );
     const inlineMarks = inline.node.type === "text" ? inline.node.marks : [];
     const inlineIsCode = inlineMarks.includes("code");
-    const inlineStyle = resolveInlineTextStyle(line.font, inlineMarks);
+    const inlineStyle = resolveInlineTextStyle(
+      { baseFontSize: paint.baseFontSize, font: line.font },
+      inlineMarks,
+    );
     context.font = inlineStyle.font;
     const segmentBaseline = textBaseline + inlineStyle.baselineShift;
 
@@ -75,17 +76,17 @@ export function paintLineText(
         context,
         line,
         inline,
-        resources,
-        theme,
+        paint.resources,
+        paint.theme,
         segmentLeft,
         imageWidth,
-        ambientAnimationTime,
+        paint.ambientAnimationTime,
       );
       continue;
     }
 
     if (inline.node.type === "mention") {
-      paintInlineMention(context, line, inline, theme, segmentLeft, segmentRight);
+      paintInlineMention(context, line, inline, paint.theme, segmentLeft, segmentRight);
       continue;
     }
 
@@ -94,11 +95,11 @@ export function paintLineText(
         context,
         line,
         inline,
-        resources,
-        theme,
+        paint.resources,
+        paint.theme,
         segmentLeft,
         segmentRight,
-        ambientAnimationTime,
+        paint.ambientAnimationTime,
       );
       continue;
     }
@@ -109,7 +110,7 @@ export function paintLineText(
         segmentLeft,
         segmentRight,
         segmentBaseline,
-        theme.inlineCodeBackground,
+        paint.theme.inlineCodeBackground,
         editableTextBackgroundGeometry,
       );
       paintInlineSegment(
@@ -120,7 +121,7 @@ export function paintLineText(
         segmentBaseline,
         start,
         end,
-        theme.inlineCodeText,
+        paint.theme.inlineCodeText,
         {
           strikethrough: inlineMarks.includes("strikethrough"),
           underline: inlineMarks.includes("underline") || Boolean(inline.link),
@@ -137,7 +138,7 @@ export function paintLineText(
       segmentBaseline,
       start,
       end,
-      inline.link ? theme.linkText : defaultColor,
+      inline.link ? paint.theme.linkText : defaultColor,
       {
         strikethrough: inlineMarks.includes("strikethrough"),
         underline: inlineMarks.includes("underline") || Boolean(inline.link),

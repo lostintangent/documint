@@ -159,7 +159,7 @@ function appendTableEstimateEntries({
   const columnCount = Math.max(1, ...block.rows.map((row) => row.cells.length));
   const columnWidth = tableWidth / columnCount;
   const cellWidth = Math.max(40, columnWidth - TABLE_CELL_PADDING_X * 2);
-  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
+  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight, options.fontSize);
   const rowCells = collectTableRowRegions(tableRegions, index);
   let nextTop = totalHeight;
 
@@ -232,11 +232,16 @@ function createVirtualLayoutCacheKey(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
+  // fontSize is keyed alongside lineHeight: an embedder that supplies an
+  // explicit lineHeight decouples the two, and a fontSize change there
+  // would otherwise reuse stale entries (heading sizes, code font, inline
+  // code metrics all shift with fontSize but not with lineHeight).
   return [
     options.width,
     options.paddingX,
     options.paddingY,
     options.indentWidth,
+    options.fontSize,
     options.lineHeight,
     options.blockGap,
     resolveImageResourceSignature(documentIndex, resources),

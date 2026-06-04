@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Documint,
+  darkTheme,
+  lightTheme,
   type CommentChange,
   type DocumentPresence,
   type DocumentUser,
   type DocumintActions,
   type DocumintDecoration,
   type DocumintStorage,
+  type DocumintTheme,
   type UserMentionEvent,
   lucideResourceIcon,
 } from "documint";
@@ -124,6 +127,7 @@ export function Playground() {
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
   const [themePopoverOpen, setThemePopoverOpen] = useState(false);
+  const [fontSize, setFontSize] = useState<number>(16);
 
   const [users, setUsers] = useState<DocumentUser[]>([]);
   const [presence, setPresence] = useState<DocumentPresence[]>([]);
@@ -132,6 +136,22 @@ export function Playground() {
   const [hostEventVisible, setHostEventVisible] = useState(false);
 
   const { theme: activeTheme } = getThemeOption(themeId);
+
+  // Merge the playground's `fontSize` knob into whichever theme is selected.
+  // For "system theme" (activeTheme = null), pass a light/dark pair sourced
+  // from the bundled themes so the embedder layer still does its own system
+  // color-scheme matching while honoring our fontSize choice. Memoize so
+  // Documint sees a stable theme object across renders that don't change
+  // either input.
+  const documintTheme = useMemo<DocumintTheme>(() => {
+    if (!activeTheme) {
+      return {
+        dark: { ...darkTheme, fontSize },
+        light: { ...lightTheme, fontSize },
+      };
+    }
+    return { ...activeTheme, fontSize };
+  }, [activeTheme, fontSize]);
 
   const mentionUsers = users.some((user) => user.id === demoUser.id) ? users : [demoUser, ...users];
 
@@ -183,6 +203,8 @@ export function Playground() {
           </label>
 
           <ThemePopover
+            fontSize={fontSize}
+            onFontSizeChange={setFontSize}
             onOpenChange={setThemePopoverOpen}
             onThemeIdChange={setThemeId}
             open={themePopoverOpen}
@@ -214,7 +236,7 @@ export function Playground() {
           <div className={fixtureSurfaceClassName}>
             <Documint
               content={content}
-              theme={activeTheme ?? undefined}
+              theme={documintTheme}
               users={mentionUsers}
               presence={presence}
               protocols={protocols}

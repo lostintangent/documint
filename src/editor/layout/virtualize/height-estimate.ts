@@ -12,9 +12,8 @@ import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from ".
 import { estimateTextLayout } from "./text-estimate";
 import {
   measureTextContainerLines,
+  resolveBlockTypography,
   resolveRegionMeasurementCacheIdentity,
-  resolveTextBlockFont,
-  resolveTextBlockLineHeight,
 } from "../measure/text";
 
 export function estimateContainerHeight(
@@ -43,7 +42,7 @@ export function estimateContainerHeight(
     return cached;
   }
 
-  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight);
+  const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
   const left = options.paddingX + depth * options.indentWidth;
   const availableWidth = Math.max(
     40,
@@ -51,25 +50,23 @@ export function estimateContainerHeight(
   );
 
   if (regionInlines(container).some((inline) => isReferenceInlineNode(inline.node))) {
-    const font = resolveTextBlockFont(block);
     return measureTextContainerLines(
       cache,
       container,
-      font,
       block,
       availableWidth,
-      lineHeight,
+      typography,
       resources,
     ).reduce((total, line) => total + line.height, 0);
   }
 
   const estimate = estimateTextLayout({
     charWidth: options.charWidth,
-    lineHeight,
+    lineHeight: typography.lineHeight,
     text: container.text,
     width: availableWidth,
   });
-  const estimatedHeight = Math.max(lineHeight, estimate.lineCount * lineHeight);
+  const estimatedHeight = Math.max(typography.lineHeight, estimate.lineCount * typography.lineHeight);
 
   return block?.type === "code"
     ? estimatedHeight + CODE_BLOCK_BACKGROUND_PADDING_Y * 2
@@ -99,5 +96,8 @@ export function createContainerHeightCacheKey(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.lineHeight}:${listInset}:${codeContentInset}`;
+  // fontSize joins lineHeight in the key: if an embedder pins lineHeight
+  // explicitly while fontSize varies, heading/code-derived heights would
+  // otherwise be served stale from this cache.
+  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.fontSize}:${options.lineHeight}:${listInset}:${codeContentInset}`;
 }

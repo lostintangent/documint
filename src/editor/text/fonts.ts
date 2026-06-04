@@ -1,12 +1,25 @@
 import type { Mark } from "@/document";
 import { resolveFontSize } from "./measure";
 
-export const codeTextFont = "15px ui-monospace, SFMono-Regular, Menlo, monospace";
+const MONOSPACE_STACK = "ui-monospace, SFMono-Regular, Menlo, monospace";
+
+// Inline code (and block code) render one px smaller than the document's
+// base font, the convention typesetters use to keep monospace glyphs from
+// reading visually heavier than surrounding sans-serif text at the same
+// nominal size.
+export function resolveCodeFont(baseFontSize: number) {
+  return `${Math.max(1, baseFontSize - 1)}px ${MONOSPACE_STACK}`;
+}
 
 export type InlineTextStyle = {
   baselineShift: number;
   font: string;
   hasCustomMetrics: boolean;
+};
+
+export type InlineTextTypography = {
+  baseFontSize: number;
+  font: string;
 };
 
 type InlineMarkTypography = {
@@ -42,9 +55,16 @@ const inlineMarkTypographyByMark: Record<Mark, InlineMarkTypography> = {
   },
 };
 
-export function resolveInlineTextStyle(font: string, marks: readonly Mark[]): InlineTextStyle {
+export function resolveInlineTextStyle(
+  typography: InlineTextTypography,
+  marks: readonly Mark[],
+): InlineTextStyle {
   const isCode = marks.includes("code");
-  const baseFont = isCode ? codeTextFont : font;
+  // Inline code uses the document-base code font even inside a heading, so
+  // `<code>` callouts read as code (smaller, monospaced) rather than scaled
+  // to the heading size. The block-level code font is also derived from
+  // `baseFontSize` upstream, keeping inline and block code in sync.
+  const baseFont = isCode ? resolveCodeFont(typography.baseFontSize) : typography.font;
   const markTypography = resolveInlineMarkTypography(marks, isCode);
   const styledFont =
     markTypography.fontScale === 1
@@ -55,7 +75,7 @@ export function resolveInlineTextStyle(font: string, marks: readonly Mark[]): In
   const baselineShift =
     markTypography.baselineShiftRatio === 0
       ? 0
-      : Math.round(resolveFontSize(font) * markTypography.baselineShiftRatio);
+      : Math.round(resolveFontSize(typography.font) * markTypography.baselineShiftRatio);
 
   return {
     baselineShift,
