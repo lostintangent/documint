@@ -5,6 +5,7 @@ export type CopilotJob = {
   state: string;
   cursor?: Anchor | null;
   threadId?: string | null;
+  message?: string;
 };
 
 export type ServerState = {

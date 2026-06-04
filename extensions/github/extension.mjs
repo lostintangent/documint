@@ -538,9 +538,19 @@ function startCopilotJob(document, request) {
 
 async function runCopilotJob(document, job, request) {
   let workerSession = null;
+  let unsubscribeStatus = null;
   try {
     const prompt = buildCopilotPrompt(document, request);
     workerSession = await createWorkerSession(document, job);
+    unsubscribeStatus = workerSession.on((event) => {
+      try {
+        const next = deriveJobStatus(event);
+        if (next && next !== job.message) {
+          job.message = next;
+          broadcast(document.key, jobEvent(document, job));
+        }
+      } catch {}
+    });
     broadcast(document.key, jobEvent(document, job));
     await workerSession.sendAndWait(
       {
@@ -557,6 +567,11 @@ async function runCopilotJob(document, job, request) {
     job.message = error instanceof Error ? error.message : String(error);
     await session.log(`Documint Copilot job failed: ${job.message}`, { level: "error" });
   } finally {
+    if (unsubscribeStatus) {
+      try {
+        unsubscribeStatus();
+      } catch {}
+    }
     if (workerSession) {
       await workerSession.disconnect().catch(() => {});
     }
@@ -565,6 +580,28 @@ async function runCopilotJob(document, job, request) {
     activeCopilotJobs.delete(job.id);
     broadcast(document.key, jobEvent(document, job));
   }
+}
+
+// Drives the presence status pill from worker session events. Intent gives
+// us model-authored prose; reasoning surfaces the first sentence of the
+// model's extended thinking (with a length cap), falling back to a generic
+// heartbeat when no content is available.
+function deriveJobStatus(event) {
+  if (!event || !event.type) {
+    return null;
+  }
+  if (event.type === "assistant.intent") {
+    return event.data?.intent?.trim() || null;
+  }
+  if (event.type === "assistant.reasoning") {
+    const content = event.data?.content?.trim();
+    if (!content) {
+      return "Thinking…";
+    }
+    const match = content.match(/^[^.!?\n]{1,140}[.!?]/);
+    return (match ? match[0] : content.slice(0, 140)).trim();
+  }
+  return null;
 }
 
 async function createWorkerSession(document, job) {
