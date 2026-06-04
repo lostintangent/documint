@@ -847,12 +847,10 @@ function parentWorkingDirectory() {
 }
 
 function subscribe(document, response, clientId) {
-  response.writeHead(200, {
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Content-Type": "text/event-stream",
-  });
-  response.write(`data: ${JSON.stringify({ type: "state", state: toClientState(document) })}\n\n`);
+  response.statusCode = 200;
+  response.setHeader("Cache-Control", "no-cache");
+  response.setHeader("Connection", "keep-alive");
+  response.setHeader("Content-Type", "text/event-stream");
 
   let set = subscribers.get(document.key);
   if (!set) {
@@ -870,6 +868,7 @@ function subscribe(document, response, clientId) {
       subscribers.delete(document.key);
     }
   });
+  response.write(`data: ${JSON.stringify({ type: "state", state: toClientState(document) })}\n\n`);
 }
 
 function broadcast(key, payload, options = {}) {

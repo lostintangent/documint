@@ -302,12 +302,9 @@ function createCopilotPresence(jobs: CopilotJob[], copilotUserId: string): Docum
       return [];
     }
 
-    const cursor = candidate.cursor ?? (candidate.threadId ? { threadId: candidate.threadId } : null);
-    if (!cursor) {
-      return [];
-    }
+    const cursor = candidate.cursor ?? (candidate.threadId ? { threadId: candidate.threadId } : undefined);
     const status = candidate.message?.trim();
-    return [{ userId: copilotUserId, color: "#8b5cf6", cursor, ...(status ? { status } : {}) }];
+    return [{ userId: copilotUserId, color: "#8b5cf6", ...(cursor ? { cursor } : {}), ...(status ? { status } : {}) }];
   });
 }
 
