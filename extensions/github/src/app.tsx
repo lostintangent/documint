@@ -81,23 +81,26 @@ function useDocumentState(instanceId: string | null) {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const saveFailureRef = useRef<FetchJsonError | null>(null);
 
+  const syncContent = useCallback((nextContent: string) => {
+    setContent((currentContent) => (currentContent === nextContent ? currentContent : nextContent));
+  }, []);
+
   const saveEdit = useCallback(
     async (content: string) => {
       const runSave = async () => {
         try {
-          const state = await fetchJson<ServerState>(`/api/content?instanceId=${encodeInstanceId(instanceId)}`, {
+          await fetchJson<ServerState>(`/api/content?instanceId=${encodeInstanceId(instanceId)}`, {
             method: "PUT",
             body: JSON.stringify({
               clientId,
               content,
             }),
           });
-          setContent(state.content);
           saveFailureRef.current = null;
           setLoadError(null);
         } catch (error) {
           if (isFetchJsonError(error) && error.status === 409 && error.payload.state) {
-            setContent(error.payload.state.content);
+            syncContent(error.payload.state.content);
             saveFailureRef.current = error;
             setLoadError("The file changed before this edit could be applied.");
           }
@@ -111,7 +114,7 @@ function useDocumentState(instanceId: string | null) {
       saveQueueRef.current = savePromise;
       await savePromise;
     },
-    [instanceId],
+    [instanceId, syncContent],
   );
 
   useEffect(() => {
@@ -120,23 +123,26 @@ function useDocumentState(instanceId: string | null) {
     }
   }, [instanceId]);
 
-  const handleServerEvent = useCallback((payload: ServerEvent) => {
-    if (payload.type === "state") {
-      setContent(payload.state.content);
-      setCopilotUser(payload.state.copilotUser);
-      setJobs(payload.state.jobs ?? []);
-      saveFailureRef.current = null;
-      setLoadError(null);
-    } else if (payload.type === "content") {
-      setContent(payload.content);
-      saveFailureRef.current = null;
-      setLoadError(null);
-    } else if (payload.type === "job") {
-      setJobs(payload.jobs ?? []);
-    } else if (payload.type === "error") {
-      setLoadError(payload.message);
-    }
-  }, []);
+  const handleServerEvent = useCallback(
+    (payload: ServerEvent) => {
+      if (payload.type === "state") {
+        syncContent(payload.state.content);
+        setCopilotUser(payload.state.copilotUser);
+        setJobs(payload.state.jobs ?? []);
+        saveFailureRef.current = null;
+        setLoadError(null);
+      } else if (payload.type === "content") {
+        syncContent(payload.content);
+        saveFailureRef.current = null;
+        setLoadError(null);
+      } else if (payload.type === "job") {
+        setJobs(payload.jobs ?? []);
+      } else if (payload.type === "error") {
+        setLoadError(payload.message);
+      }
+    },
+    [syncContent],
+  );
 
   useServerEvents({
     clientId,

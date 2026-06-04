@@ -105,6 +105,14 @@ If the document includes http-based images, then the editor will automatically l
 import { useState } from "react";
 import { Documint, DocumintStorage } from "documint";
 
+const storage = createInMemoryStorage();
+
+export function App() {
+  const [content, setContent] = useState("# Documint with Custom Storage");
+
+  return <Documint content={content} onContentChanged={setContent} storage={storage} />;
+}
+
 function createInMemoryStorage(): DocumintStorage {
   const files = new Map<string, Blob>();
 
@@ -117,14 +125,6 @@ function createInMemoryStorage(): DocumintStorage {
       return file.name;
     },
   };
-}
-
-const storage = createInMemoryStorage();
-
-export function App() {
-  const [content, setContent] = useState("# Documint with Custom Storage");
-
-  return <Documint content={content} onContentChanged={setContent} storage={storage} />;
 }
 ```
 
