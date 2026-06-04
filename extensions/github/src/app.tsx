@@ -303,7 +303,11 @@ function createCopilotPresence(jobs: CopilotJob[], copilotUserId: string): Docum
     }
 
     const cursor = candidate.cursor ?? (candidate.threadId ? { threadId: candidate.threadId } : null);
-    return cursor ? [{ userId: copilotUserId, color: "#8b5cf6", cursor }] : [];
+    if (!cursor) {
+      return [];
+    }
+    const status = candidate.message?.trim();
+    return [{ userId: copilotUserId, color: "#8b5cf6", cursor, ...(status ? { status } : {}) }];
   });
 }
 
