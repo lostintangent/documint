@@ -60,7 +60,7 @@ const virtualModuleSpecs: readonly VirtualModuleSpec[] = [
   },
   {
     // Compiled, minified Tailwind utilities for the shadow-portal overlay layer.
-    filter: /src\/component\/generated\.css$/,
+    filter: /src\/component\/overlays\/generated\.css$/,
     loader: "text",
     compile: compileTailwindStyles,
   },
@@ -113,7 +113,7 @@ async function compileTailwindStylesAndWriteToStdout() {
 
   try {
     const build = await Bun.build({
-      entrypoints: ["src/component/tailwind.css"],
+      entrypoints: ["src/component/overlays/styles.css"],
       outdir: outputDirectory,
       plugins: [tailwindPlugin],
       minify: true,

@@ -42,7 +42,7 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
   };
 
   return (
-    <div className="grid gap-1.5 min-w-0 w-[min(16rem,calc(100vw-4rem))]">
+    <div className="p-3 grid gap-1.5 min-w-0 w-[min(16rem,calc(100vw-4rem))]">
       {title && <div className="text-leaf-text text-xs font-semibold">{title}</div>}
 
       {/* Row uses a second `auto` track for the action buttons when

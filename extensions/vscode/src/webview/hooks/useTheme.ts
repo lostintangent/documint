@@ -58,60 +58,57 @@ function createVsCodeDocumintTheme(): EditorTheme {
 
   const editorBackground = readColor("--vscode-editor-background", baseTheme.background);
   const editorForeground = readColor("--vscode-editor-foreground", baseTheme.text);
-  const accent = readColor("--vscode-focusBorder", baseTheme.leafAccent);
+  const accent = readColor("--vscode-focusBorder", baseTheme.accent);
   const border = readColor(
     "--vscode-widget-border",
-    readColor("--vscode-panel-border", baseTheme.leafBorder),
+    readColor("--vscode-panel-border", baseTheme.muted),
   );
+  // `muted` is a dual-role neutral: used at full opacity for content (list
+  // markers, checkbox outlines, secondary text) and alpha'd for chrome
+  // (leafBorder etc.). VSCode's `--vscode-descriptionForeground` is the
+  // canonical "muted text" color; it reads as content at full opacity while
+  // still feeling subdued, which suits both halves of muted's role. Falls
+  // back to the chrome border if descriptionForeground isn't available.
+  const muted = readColor("--vscode-descriptionForeground", border);
   const widgetBackground = readColor(
     "--vscode-editorWidget-background",
     readColor("--vscode-quickInput-background", editorBackground),
   );
-  const codeBackground = readColor("--vscode-textCodeBlock-background", baseTheme.codeBackground);
+  // The resolver's mode-aware codeBackground default mirrors what most VS Code
+  // themes set --vscode-textCodeBlock-background to, so use the same formula
+  // as the fallback when the CSS var is missing.
+  const codeBackground = readColor(
+    "--vscode-textCodeBlock-background",
+    isDark
+      ? `color-mix(in srgb, ${editorForeground} 8%, ${editorBackground})`
+      : `color-mix(in srgb, ${editorForeground} 60%, #000)`,
+  );
   const selectionBackground = readColor(
     "--vscode-editor-selectionBackground",
-    baseTheme.selectionBackground,
+    baseTheme.selectionBackground ?? colorWithAlpha(accent, 0.28, baseTheme.background),
   );
   const lineHighlightBackground = readColor(
     "--vscode-editor-lineHighlightBackground",
-    colorWithAlpha(accent, 0.12, baseTheme.activeBlockBackground),
+    colorWithAlpha(accent, 0.12, baseTheme.background),
   );
 
   return {
+    accent,
     activeBlockBackground: lineHighlightBackground,
-    activeBlockFlash: colorWithAlpha(accent, 0.22, baseTheme.activeBlockFlash),
+    activeBlockFlash: colorWithAlpha(accent, 0.22, baseTheme.background),
     background: editorBackground,
-    blockquoteRule: colorWithAlpha(accent, 0.32, baseTheme.blockquoteRule),
-    blockquoteRuleActive: colorWithAlpha(accent, 0.56, baseTheme.blockquoteRuleActive),
-    checkboxCheckmark: editorBackground,
-    checkboxCheckedFill: accent,
-    checkboxCheckedStroke: accent,
-    checkboxUncheckedFill: editorBackground,
-    checkboxUncheckedStroke: border,
     codeBackground,
     commentHighlight: baseTheme.commentHighlight,
     commentHighlightActive: baseTheme.commentHighlightActive,
     commentHighlightResolved: baseTheme.commentHighlightResolved,
     commentHighlightResolvedActive: baseTheme.commentHighlightResolvedActive,
-    headingRule: border,
-    imageLoadingOverlay: colorWithAlpha(editorBackground, 0.48, baseTheme.imageLoadingOverlay),
-    imagePlaceholderIcon: colorWithAlpha(accent, 0.42, baseTheme.imagePlaceholderIcon),
     imageSurfaceBackground: widgetBackground,
     imageSurfaceBorder: border,
-    inlineCodeBackground: codeBackground,
-    leafAccent: accent,
-    leafBorder: border,
-    leafInputBackground: baseTheme.leafInputBackground,
-    leafResolvedBackground: baseTheme.leafResolvedBackground,
-    leafResolvedBorder: baseTheme.leafResolvedBorder,
+    muted,
     selectionBackground,
-    selectionHandleBackground: editorBackground,
-    selectionHandleBorder: accent,
-    tableBodyBackground: editorBackground,
-    tableBorder: border,
     tableHeaderBackground: readColor(
       "--vscode-sideBar-background",
-      colorWithAlpha(editorForeground, isDark ? 0.1 : 0.06, baseTheme.tableHeaderBackground),
+      colorWithAlpha(editorForeground, isDark ? 0.1 : 0.06, baseTheme.background),
     ),
     text: editorForeground,
   };

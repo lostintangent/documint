@@ -168,10 +168,11 @@ function serializeHeading(block: Extract<Block, { type: "heading" }>, indent: nu
 
 function serializeList(block: ListBlock, indent: number, options: MarkdownOptions) {
   const markerNumber = block.start ?? 1;
+  const itemSeparator = serializeListSeparator(block.compact);
 
   return block.items
     .map((item) => serializeListItem(item, indent, block.ordered, markerNumber, options))
-    .join(block.spread ? blockSeparator : lineFeed);
+    .join(itemSeparator);
 }
 
 function serializeListItem(
@@ -198,15 +199,20 @@ function serializeListItem(
     checkbox.length > 0,
     options,
   );
+  const childSeparator = serializeListSeparator(block.compact);
   const tail = rest
     .map((child) => serializeBlock(child, childIndent, options))
-    .join(block.spread ? blockSeparator : lineFeed);
+    .join(childSeparator);
 
   if (!tail) {
     return firstContent;
   }
 
-  return `${firstContent}${block.spread ? blockSeparator : lineFeed}${tail}`;
+  return `${firstContent}${childSeparator}${tail}`;
+}
+
+function serializeListSeparator(compact: boolean) {
+  return compact ? lineFeed : blockSeparator;
 }
 
 function serializeListItemFirstChild(

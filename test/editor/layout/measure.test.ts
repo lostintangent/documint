@@ -67,6 +67,37 @@ test("materializes a trailing empty line when the region ends on a soft break", 
   expect(containerLines[1]?.text).toBe("");
 });
 
+test("uses compact gaps between tight list items", () => {
+  const runtime = createDocumentIndex(parseDocument("- alpha\n- beta\n"));
+  const layout = measureLayoutSlice(runtime, { width: 4000 });
+  const alphaLine = layout.lines.find((line) => line.text === "alpha");
+  const betaLine = layout.lines.find((line) => line.text === "beta");
+
+  if (!alphaLine || !betaLine) {
+    throw new Error("Expected tight list lines");
+  }
+
+  const gap = betaLine.top - (alphaLine.top + alphaLine.height);
+
+  expect(gap).toBe(6);
+  expect(gap).toBeLessThan(layout.options.blockGap);
+});
+
+test("uses regular block gaps between loose list items", () => {
+  const runtime = createDocumentIndex(parseDocument("- alpha\n\n- beta\n"));
+  const layout = measureLayoutSlice(runtime, { width: 4000 });
+  const alphaLine = layout.lines.find((line) => line.text === "alpha");
+  const betaLine = layout.lines.find((line) => line.text === "beta");
+
+  if (!alphaLine || !betaLine) {
+    throw new Error("Expected loose list lines");
+  }
+
+  const gap = betaLine.top - (alphaLine.top + alphaLine.height);
+
+  expect(gap).toBe(layout.options.blockGap);
+});
+
 test("lays out table cells side by side within the same row", () => {
   const runtime = createDocumentIndex(
     parseDocument(`| Name | Value |

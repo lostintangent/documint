@@ -4,6 +4,7 @@ import { darkTheme, lightTheme, type EditorTheme } from "documint";
 type ColorMode = "dark" | "light";
 
 type GitHubDocumintTheme = {
+  accent: string;
   background: string;
   colorMode: ColorMode;
   text: string;
@@ -11,9 +12,14 @@ type GitHubDocumintTheme = {
 };
 
 const githubThemeFallbacks = {
-  dark: { background: "#0d1117", text: "#f0f6fc" },
-  light: { background: "#ffffff", text: "#1f2328" },
+  dark: { accent: "#4493f8", background: "#0d1117", text: "#f0f6fc" },
+  light: { accent: "#0969da", background: "#ffffff", text: "#1f2328" },
 };
+const accentColorVariables = [
+  "--fgColor-accent",
+  "--color-accent-fg",
+  "--color-accent-emphasis",
+];
 const backgroundColorVariables = [
   "--bgColor-default",
   "--color-canvas-default",
@@ -79,6 +85,7 @@ export function useTheme(): EditorTheme {
   }, []);
 
   useEffect(() => {
+    document.documentElement.style.setProperty("--documint-agent-accent", themeState.accent);
     document.documentElement.style.setProperty("--documint-agent-background", themeState.background);
     document.documentElement.style.setProperty("--documint-agent-text", themeState.text);
     document.documentElement.style.colorScheme = themeState.colorMode;
@@ -93,24 +100,20 @@ function createGitHubDocumintTheme(media = window.matchMedia("(prefers-color-sch
   const baseTheme = colorMode === "dark" ? darkTheme : lightTheme;
 
   return {
+    accent: colors.accent,
     background: colors.background,
     colorMode,
     text: colors.text,
     theme: {
       ...baseTheme,
+      accent: colors.accent,
       background: colors.background,
       text: colors.text,
       commentHighlightActive:
         colorMode === "dark" ? "rgba(139, 92, 246, 0.30)" : "rgba(124, 58, 237, 0.24)",
-      blockquoteText: colors.text,
-      headingText: colors.text,
-      leafBackground: colors.background,
-      leafButtonText: colors.text,
-      leafText: colors.text,
       mentionBackground:
         colorMode === "dark" ? "rgba(139, 92, 246, 0.16)" : "rgba(124, 58, 237, 0.12)",
       mentionText: colorMode === "dark" ? "#ddd6fe" : "#5b21b6",
-      paragraphText: colors.text,
     },
   };
 }
@@ -150,10 +153,13 @@ function resolveAppColorMode(media: MediaQueryList): ColorMode {
   return media.matches ? "dark" : "light";
 }
 
-function resolveGitHubAppColors(colorMode: ColorMode): { background: string; text: string } {
+function resolveGitHubAppColors(
+  colorMode: ColorMode,
+): { accent: string; background: string; text: string } {
   const styles = getComputedStyle(document.documentElement);
   const fallback = githubThemeFallbacks[colorMode];
   return {
+    accent: readCssColor(styles, accentColorVariables) ?? fallback.accent,
     background: readCssColor(styles, backgroundColorVariables) ?? fallback.background,
     text: readCssColor(styles, textColorVariables) ?? fallback.text,
   };
@@ -185,6 +191,7 @@ function normalizeCssColor(value: string): string | null {
 function areThemeStatesEqual(left: GitHubDocumintTheme, right: GitHubDocumintTheme): boolean {
   return (
     left.background === right.background &&
+    left.accent === right.accent &&
     left.colorMode === right.colorMode &&
     left.text === right.text &&
     areThemesEqual(left.theme, right.theme)

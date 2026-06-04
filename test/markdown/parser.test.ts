@@ -329,6 +329,41 @@ Paragraph with :badge[alpha]{disabled} inline.
     expect(item.checked).toBe(false);
     expect(paragraph.children).toEqual([]);
   });
+
+  test("parses blank-line-separated sibling bullets as one non-compact list", () => {
+    const document = parseDocument(`- alpha
+
+- beta
+`);
+    const list = expectBlockAt(document, 0, "list");
+
+    expect(document.blocks).toHaveLength(1);
+    expect(list.compact).toBe(false);
+    expect(list.items).toHaveLength(2);
+    expect(list.items[0]?.compact).toBe(true);
+    expect(list.items[1]?.compact).toBe(true);
+    expect(list.items[0]?.plainText).toBe("alpha");
+    expect(list.items[1]?.plainText).toBe("beta");
+  });
+
+  test("parses blank-line-separated child blocks as one non-compact list item", () => {
+    const document = parseDocument(`- alpha
+
+  beta
+`);
+    const list = expectBlockAt(document, 0, "list");
+    const item = list.items[0];
+
+    if (!item) {
+      throw new Error("Expected list item");
+    }
+
+    expect(list.compact).toBe(false);
+    expect(item.compact).toBe(false);
+    expect(item.children).toHaveLength(2);
+    expect(item.children[0]?.plainText).toBe("alpha");
+    expect(item.children[1]?.plainText).toBe("beta");
+  });
 });
 
 describe("Front matter", () => {

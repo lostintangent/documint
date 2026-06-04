@@ -101,8 +101,6 @@ function createThemeStyles(theme: ResolvedEditorTheme): CSSProperties {
     "--documint-leaf-font-family": '"Avenir Next", "Segoe UI", sans-serif',
     "--documint-leaf-shadow": theme.leafShadow,
     "--documint-leaf-secondary-text": theme.leafSecondaryText,
-    "--documint-leaf-resolved-bg": theme.leafResolvedBackground,
-    "--documint-leaf-resolved-border": theme.leafResolvedBorder,
     "--documint-leaf-text": theme.leafText,
     "--documint-mention-bg": theme.mentionBackground,
     "--documint-mention-text": theme.mentionText,

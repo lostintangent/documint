@@ -37,7 +37,7 @@ export function resolveListItemSplit(
   const nextChecked = typeof currentItem.checked === "boolean" ? false : currentItem.checked;
 
   if (offset === 0) {
-    const insertedItem = createInsertedListItem("", nextChecked, currentItem.spread);
+    const insertedItem = createInsertedListItem("", nextChecked, currentItem.compact);
 
     return {
       kind: "replace-block",
@@ -59,7 +59,7 @@ export function resolveListItemSplit(
   }
 
   if (offset === text.length) {
-    const insertedItem = createInsertedListItem("", nextChecked, currentItem.spread);
+    const insertedItem = createInsertedListItem("", nextChecked, currentItem.compact);
 
     return {
       kind: "replace-block",
@@ -81,7 +81,7 @@ export function resolveListItemSplit(
 
   const beforeText = text.slice(0, offset);
   const afterText = text.slice(offset);
-  const nextItem = createInsertedListItem(afterText, nextChecked, currentItem.spread);
+  const nextItem = createInsertedListItem(afterText, nextChecked, currentItem.compact);
   const updatedCurrentItem = rebuildListItemBlock(currentItem, [
     createParagraphTextBlock(beforeText),
   ]);
@@ -217,7 +217,7 @@ function liftEmptyNestedListItem(context: ListItemContext): EditorStateAction | 
   return buildLiftedListAction(context, (parentItem) => {
     const liftedChecked = typeof parentItem.checked === "boolean" ? false : parentItem.checked;
     return {
-      insertedItem: createInsertedListItem("", liftedChecked, parentItem.spread),
+      insertedItem: createInsertedListItem("", liftedChecked, parentItem.compact),
       trackInsertedPath: true,
     };
   });
@@ -227,7 +227,7 @@ function liftEmptyNestedListItem(context: ListItemContext): EditorStateAction | 
 // item alongside its (now-shrunken) parent in the grandparent list.
 // Shared between `resolveListItemDedent` (which moves the existing
 // item up a level) and `liftEmptyNestedListItem` (which replaces it
-// with a fresh empty item carrying the parent's checked/spread
+// with a fresh empty item carrying the parent's checked/compact
 // state). The factory builds the inserted item from the validated
 // parent item, so callers don't need to repeat the parent-fields
 // null check.
@@ -345,9 +345,9 @@ function appendNestedListItem(
   }
 
   const nestedList = createListBlock({
+    compact: context.list.compact,
     items: [item],
     ordered: context.list.ordered,
-    spread: context.list.spread,
     start: context.list.start,
   });
 

@@ -587,12 +587,12 @@ function resolveTextContextFacts(
 export function createInsertedListItem(
   text: string,
   checked: boolean | null,
-  spread: boolean,
+  compact: boolean,
 ): ListItemBlock {
   return createListItemBlock({
     checked,
     children: [createParagraphTextBlock(text)],
-    spread,
+    compact,
   });
 }
 

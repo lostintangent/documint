@@ -372,7 +372,7 @@ function readList(cursor: MarkdownLineCursor, context: MarkdownParseContext) {
   }
 
   const items: ListItemBlock[] = [];
-  let spread = false;
+  let compact = true;
 
   while (cursor.index < cursor.lines.length) {
     const line = currentLine(cursor);
@@ -384,22 +384,25 @@ function readList(cursor: MarkdownLineCursor, context: MarkdownParseContext) {
 
     cursor.index += 1;
     const itemLines = [marker.content];
-    let itemSpread = false;
+    let itemCompact = true;
 
     while (cursor.index < cursor.lines.length) {
       const candidate = currentLine(cursor);
       const candidateIndent = countIndent(candidate);
 
       if (isBlankLine(candidate)) {
-        // Stay inside the item only if the next non-blank line is still
-        // nested past `baseIndent` — otherwise the blank line ends the item.
-        const nextIndex = findNextNonEmptyLineIndex(cursor.lines, cursor.index + 1);
-
-        if (nextIndex < 0 || countIndent(cursor.lines[nextIndex] ?? "") <= context.baseIndent) {
+        const blankLine = classifyListBlankLine(cursor, context.baseIndent, firstMarker.ordered);
+        if (blankLine.kind === "next-item") {
+          compact = false;
+          cursor.index = blankLine.nextIndex;
           break;
         }
 
-        itemSpread = true;
+        if (blankLine.kind === "end-item") {
+          break;
+        }
+
+        itemCompact = false;
         itemLines.push("");
         cursor.index += 1;
         continue;
@@ -419,26 +422,52 @@ function readList(cursor: MarkdownLineCursor, context: MarkdownParseContext) {
       cursor.index += 1;
     }
 
-    spread ||= itemSpread;
+    compact &&= itemCompact;
 
     items.push(
       createListItemBlock({
         checked: marker.checked,
         children: parseListItemChildren(itemLines, context),
-        spread: itemSpread,
+        compact: itemCompact,
       }),
     );
   }
 
   return createListBlock({
+    compact,
     items,
     ordered: firstMarker.ordered,
-    spread,
     start:
       firstMarker.ordered && context.options.preserveOrderedListStart
         ? (firstMarker.start ?? 1)
         : null,
   });
+}
+
+type ListBlankLineClassification =
+  | { kind: "end-item" }
+  | { kind: "loosen-item" }
+  | { kind: "next-item"; nextIndex: number };
+
+function classifyListBlankLine(
+  cursor: MarkdownLineCursor,
+  baseIndent: number,
+  ordered: boolean,
+): ListBlankLineClassification {
+  const nextIndex = findNextNonEmptyLineIndex(cursor.lines, cursor.index + 1);
+
+  if (nextIndex < 0) {
+    return { kind: "end-item" };
+  }
+
+  const nextLine = cursor.lines[nextIndex] ?? "";
+  const nextMarker = readListMarker(nextLine, baseIndent);
+
+  if (nextMarker && nextMarker.ordered === ordered) {
+    return { kind: "next-item", nextIndex };
+  }
+
+  return countIndent(nextLine) <= baseIndent ? { kind: "end-item" } : { kind: "loosen-item" };
 }
 
 type ParsedListMarker = {

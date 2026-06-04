@@ -1,9 +1,8 @@
 // Horizontal (between sections of a vertical leaf) or vertical (between
 // groups in a horizontal toolbar) divider line. Keeps the
-// `documint-leaf-divider` class name and `data-orientation` attribute
-// because cross-element selector hooks in `overlays/leaves/styles.css`
-// and `tailwind.css` target them (e.g. comment-create animations,
-// `.presence-divider` opacity reveal).
+// `leaf-divider` class name and `data-orientation` attribute because
+// cross-element selector hooks in `overlays/styles.css` target them (e.g.
+// comment-create animations, `.presence-divider` opacity reveal).
 
 import { clx } from "./lib/clx";
 
@@ -15,8 +14,8 @@ type LeafDividerProps = {
 export function LeafDivider({ className, orientation = "horizontal" }: LeafDividerProps) {
   const baseClassName =
     orientation === "horizontal"
-      ? "documint-leaf-divider flex-none bg-leaf-divider w-full h-px my-1"
-      : "documint-leaf-divider flex-none bg-leaf-divider justify-self-center w-px h-5";
+      ? "leaf-divider flex-none bg-leaf-divider w-full h-px my-1"
+      : "leaf-divider flex-none bg-leaf-divider justify-self-center w-px h-5";
 
   return (
     <div

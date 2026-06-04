@@ -64,12 +64,15 @@ export type HeadingBlock = BlockNode<
   }
 >;
 
+// Compactness is tracked at both list levels: `ListBlock.compact` controls
+// spacing between sibling items; `ListItemBlock.compact` controls spacing
+// between multiple child blocks inside one item.
 export type ListBlock = BlockNode<
   "list",
   {
+    compact: boolean;
     items: ListItemBlock[];
     ordered: boolean;
-    spread: boolean;
     start: number | null;
   }
 >;
@@ -79,7 +82,7 @@ export type ListItemBlock = BlockNode<
   {
     checked: boolean | null;
     children: Block[];
-    spread: boolean;
+    compact: boolean;
   }
 >;
 

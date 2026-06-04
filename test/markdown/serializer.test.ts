@@ -139,6 +139,53 @@ describe("Lists", () => {
     expectRoundTrip(source, { preserveOrderedListStart: true });
   });
 
+  test("preserves non-compact list item separators", () => {
+    const source = "- alpha\n\n- beta\n";
+    const document = parseDocument(source);
+    const list = expectBlockAt(document, 0, "list");
+
+    expect(list.compact).toBe(false);
+    expectRoundTrip(source);
+  });
+
+  test("serializes non-compact lists with blank lines between items", () => {
+    const document = createDocument([
+      createListBlock({
+        compact: false,
+        items: [
+          createListItemBlock({
+            children: [createParagraphBlock([createText("alpha")])],
+          }),
+          createListItemBlock({
+            children: [createParagraphBlock([createText("beta")])],
+          }),
+        ],
+        ordered: false,
+      }),
+    ]);
+
+    expect(serializeDocument(document)).toBe("- alpha\n\n- beta\n");
+  });
+
+  test("serializes non-compact list items with blank lines between child blocks", () => {
+    const document = createDocument([
+      createListBlock({
+        items: [
+          createListItemBlock({
+            children: [
+              createParagraphBlock([createText("alpha")]),
+              createParagraphBlock([createText("beta")]),
+            ],
+            compact: false,
+          }),
+        ],
+        ordered: false,
+      }),
+    ]);
+
+    expect(serializeDocument(document)).toBe("- alpha\n\n  beta\n");
+  });
+
   test("preserves empty task list markers", () => {
     // A task list whose second item has no content is a shape the parser
     // would never produce on its own (an empty `- [ ]` line is normalized

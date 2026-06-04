@@ -164,11 +164,11 @@ export function ViewportAnchor({
     };
   }, [paddingY]);
 
-  const leafClassName = "documint-overlay-leaf";
+  const leafClassName = "overlay-leaf";
   const leafDataState = isVisible ? "open" : "closed";
   const leafStyle = {
-    "--documint-overlay-leaf-height": `${leafSize.height}px`,
-    "--documint-overlay-leaf-width": `${leafSize.width}px`,
+    "--overlay-leaf-height": `${leafSize.height}px`,
+    "--overlay-leaf-width": `${leafSize.width}px`,
   } as CSSProperties;
 
   return (
@@ -206,8 +206,8 @@ export function ViewportAnchor({
           >
             {isPresent && (
               <div className={leafClassName} data-state={leafDataState} style={leafStyle}>
-                <div className="documint-overlay-leaf-frame">
-                  <div className="documint-leaf-shell" ref={shellRef}>
+                <div className="overlay-leaf-frame">
+                  <div className="leaf-shell" ref={shellRef}>
                     {renderedChildrenRef.current}
                   </div>
                 </div>

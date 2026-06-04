@@ -3,7 +3,7 @@
 // own measured height elsewhere. Both exact layout (`measure/`) and
 // large-document estimation call into this so the two paths stay in sync.
 
-import type { Block } from "@/document";
+import type { Block, ListBlock, ListItemBlock } from "@/document";
 import type { IndexedBlock } from "../../state";
 
 // Heading extra gaps are multiples of the caller-provided standard block gap.
@@ -19,9 +19,6 @@ const sharedAncestorGapByType = {
   blockquote: 10,
   list: 6,
 } satisfies Partial<Record<Block["type"], number>>;
-const sharedAncestorGapEntries = Object.entries(sharedAncestorGapByType) as Array<
-  [keyof typeof sharedAncestorGapByType, number]
->;
 
 // Vertical gap between two adjacent laid-out blocks (text, table, inert),
 // keyed by their shared ancestry.
@@ -52,10 +49,28 @@ function resolveSharedAncestorGap(
   currentBlockId: string,
   nextBlockId: string,
 ) {
-  for (const [type, gap] of sharedAncestorGapEntries) {
-    if (shareAncestorType(indexedBlocks, currentBlockId, nextBlockId, type)) {
-      return gap;
-    }
+  if (shareAncestorType(indexedBlocks, currentBlockId, nextBlockId, "blockquote")) {
+    return sharedAncestorGapByType.blockquote;
+  }
+
+  const listItem = findSharedAncestor<ListItemBlock>(
+    indexedBlocks,
+    currentBlockId,
+    nextBlockId,
+    "listItem",
+  )?.block;
+  if (listItem) {
+    return listItem.compact ? sharedAncestorGapByType.list : null;
+  }
+
+  const list = findSharedAncestor<ListBlock>(
+    indexedBlocks,
+    currentBlockId,
+    nextBlockId,
+    "list",
+  )?.block;
+  if (list) {
+    return list.compact ? sharedAncestorGapByType.list : null;
   }
 
   return null;
@@ -79,16 +94,27 @@ function shareAncestorType(
   rightBlockId: string,
   type: Block["type"],
 ) {
-  const leftAncestors = collectAncestorIds(indexedBlocks, leftBlockId, type);
-  const rightAncestors = collectAncestorIds(indexedBlocks, rightBlockId, type);
+  return findSharedAncestor(indexedBlocks, leftBlockId, rightBlockId, type) !== null;
+}
 
-  for (const ancestorId of leftAncestors) {
-    if (rightAncestors.has(ancestorId)) {
-      return true;
+function findSharedAncestor<T extends Block>(
+  indexedBlocks: Map<string, IndexedBlock>,
+  leftBlockId: string,
+  rightBlockId: string,
+  type: Block["type"],
+) {
+  const rightAncestors = collectAncestorIds(indexedBlocks, rightBlockId, type);
+  let current = indexedBlocks.get(leftBlockId) ?? null;
+
+  while (current) {
+    if (current.block.type === type && rightAncestors.has(current.block.id)) {
+      return current as IndexedBlock & { block: T };
     }
+
+    current = current.parentBlockId ? (indexedBlocks.get(current.parentBlockId) ?? null) : null;
   }
 
-  return false;
+  return null;
 }
 
 function collectAncestorIds(

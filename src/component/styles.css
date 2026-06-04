@@ -6,16 +6,6 @@
   min-height: 0;
 }
 
-/* Default elevated-surface shadow shared by leaf overlays, menus, and
-   presence indicators. Both the host section and the overlay portal
-   wrapper carry it so descendants inherit the same value whether they're
-   rendered in-tree or portaled to document.body. */
-.documint,
-.documint-overlay {
-  --documint-leaf-shadow-fallback: 0 14px 40px
-    color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
-}
-
 .documint-scroll-container {
   position: relative;
   display: block;

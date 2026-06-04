@@ -7,6 +7,8 @@
 // around the portaled content, so the editor's visual identity travels
 // with the overlay even though it no longer descends from the host element.
 
+// oxlint-disable-next-line typescript/triple-slash-reference
+/// <reference path="../style-imports.d.ts" />
 import {
   createContext,
   useContext,
@@ -16,7 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { DOCUMINT_OVERLAY_PORTAL_STYLES } from "../styles";
+import overlayCss from "./generated.css" with { type: "text" };
 
 type OverlayPortalContextValue = {
   shadowRoot: ShadowRoot | null;
@@ -47,7 +49,7 @@ export function OverlayPortalProvider({
 
     const root = host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
-    style.textContent = DOCUMINT_OVERLAY_PORTAL_STYLES;
+    style.textContent = overlayCss;
     root.append(style);
 
     document.body.append(host);
@@ -74,7 +76,7 @@ export function OverlayPortal({ children }: { children: ReactNode }) {
   }
 
   return createPortal(
-    <div className="documint-overlay" style={{ display: "contents", ...context.themeStyles }}>
+    <div className="overlay" style={{ display: "contents", ...context.themeStyles }}>
       {children}
     </div>,
     context.shadowRoot,

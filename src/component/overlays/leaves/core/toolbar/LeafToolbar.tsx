@@ -70,7 +70,7 @@ type LeafToolbarMenuItemProps = {
 
 function LeafToolbarRoot({ children }: LeafToolbarProps) {
   return (
-    <div className="documint-leaf-toolbar flex items-center gap-2">
+    <div className="py-1.5 px-2.5 flex items-center gap-2">
       {Children.map(children, renderToolbarChild)}
     </div>
   );
@@ -320,12 +320,11 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
 
 /* === Utilities === */
 
-// Menu surface styling. The `top` offset and `rounded` values are
-// arbitrary because both fall between Tailwind scale steps in
-// visually perceptible ways — snapping either shifts the chrome
-// enough to read as "off."
+// Menu surface styling. Offset from the toolbar button by 0.625rem
+// (matches `top-2.5`) via `calc(100%+...)` so the menu floats just
+// below the trigger across button heights.
 const MENU_SURFACE_CLASS =
-  "absolute top-[calc(100%+0.65rem)] left-0 grid gap-1 w-max min-w-max p-1.5 border border-leaf-border rounded-[0.8rem] bg-leaf-bg [box-shadow:var(--documint-leaf-shadow,var(--documint-leaf-shadow-fallback))] text-leaf-text font-leaf text-sm";
+  "absolute top-[calc(100%+0.625rem)] left-0 grid gap-1 w-max min-w-max p-1.5 border border-leaf-border rounded-xl bg-leaf-bg [box-shadow:var(--documint-leaf-shadow,var(--leaf-shadow-fallback))] text-leaf-text font-leaf text-sm";
 
 // Suppresses the browser's default click handling so the toolbar's own
 // pointerdown logic owns the interaction (avoids stealing focus from

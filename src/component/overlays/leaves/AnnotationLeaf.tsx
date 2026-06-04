@@ -331,9 +331,13 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     setCreateDraft("");
   };
 
+  // Comfortable padding for thread mode and the expanded composer; the
+  // collapsed create chrome renders only a `LeafToolbar`, so it lets the
+  // toolbar own all the spacing (otherwise the two would stack).
+  const paddingClass = isExpandedCreateMode ? "p-3" : "";
   const contentClassName = showCreateChrome
-    ? `documint-comment-leaf documint-comment-leaf-create${isExpandedCreateMode ? " is-expanded" : ""}`
-    : "documint-comment-leaf";
+    ? `comment-leaf comment-leaf-create${isExpandedCreateMode ? " is-expanded" : ""}${paddingClass ? ` ${paddingClass}` : ""}`
+    : `comment-leaf ${paddingClass}`;
   const shouldRenderBody = showThreadChrome || showRootComment || showComposer;
 
   const content = shouldRenderBody ? (
@@ -376,10 +380,10 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   ) : null;
 
   return (
-    <div className={contentClassName} data-resolved={isResolved ? "true" : undefined} ref={rootRef}>
-      <div className={showCreateChrome ? "documint-comment-leaf-create-shell" : undefined}>
+    <div className={contentClassName} ref={rootRef}>
+      <div className={showCreateChrome ? "comment-leaf-create-shell" : undefined}>
         {showCreateChrome ? (
-          <div className="documint-comment-leaf-create-toolbar">
+          <div className="comment-leaf-create-toolbar">
             <LeafToolbar>
               <LeafToolbar.Button
                 icon={MessageSquarePlus}
@@ -433,7 +437,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
             </LeafToolbar>
           </div>
         ) : null}
-        <div className={showCreateChrome ? "documint-comment-leaf-create-content" : undefined}>
+        <div className={showCreateChrome ? "comment-leaf-create-content" : undefined}>
           {content}
         </div>
       </div>
@@ -520,9 +524,9 @@ function AnnotationLeafBody({
   return (
     <>
       {showThreadChrome ? (
-        <div className="documint-comment-leaf-header">
-          <span className="documint-comment-leaf-age">{threadAge}</span>
-          <div className="documint-comment-leaf-actions">
+        <div className="comment-leaf-header">
+          <span className="comment-leaf-age">{threadAge}</span>
+          <div className="comment-leaf-actions">
             <LeafButton
               disabled={!canEdit}
               icon={isResolved ? RotateCcw : Check}
@@ -541,22 +545,24 @@ function AnnotationLeafBody({
       ) : null}
       {showThreadChrome && link ? (
         <>
-          <div className="documint-comment-leaf-link">
-            {link.title ? <div className="documint-link-leaf-title">{link.title}</div> : null}
-            <div className="documint-link-leaf-url">{link.url}</div>
+          <div className="comment-leaf-link">
+            {link.title ? (
+              <div className="text-leaf-text text-xs font-semibold">{link.title}</div>
+            ) : null}
+            <div className="min-w-0 text-leaf-secondary text-xs wrap-anywhere">{link.url}</div>
           </div>
           <LeafDivider />
         </>
       ) : null}
       <div
-        className={`documint-comment-thread${showRootComment ? "" : " is-empty"}`}
+        className={`comment-thread${showRootComment ? "" : " is-empty"}`}
         ref={commentsListRef}
       >
         <article
           className={
             showRootComment
-              ? `documint-comment-message documint-comment-message-root${isInitialCommentVisible ? " is-visible" : ""}`
-              : "documint-comment-message documint-comment-message-root is-hidden"
+              ? `comment-message comment-message-root${isInitialCommentVisible ? " is-visible" : ""}`
+              : "comment-message comment-message-root is-hidden"
           }
         >
           {rootComment ? (
@@ -573,14 +579,14 @@ function AnnotationLeafBody({
 
           return (
             <article
-              className="documint-comment-message"
+              className="comment-message"
               key={`${comment.updatedAt}:${actualIndex}`}
             >
               {!isEditing ? (
-                <div className="documint-comment-message-meta">
+                <div className="comment-message-meta">
                   <span>{formatRelativeTime(comment.updatedAt)}</span>
                   {canMutateThread ? (
-                    <div className="documint-comment-leaf-actions">
+                    <div className="comment-leaf-actions">
                       <LeafButton
                         disabled={!canMutateThread}
                         icon={Pencil}
@@ -627,7 +633,7 @@ function AnnotationLeafBody({
       </div>
       {showThreadChrome ? <LeafDivider /> : null}
       <div
-        className={`documint-comment-reply${showThreadChrome ? "" : " is-standalone"}${isComposerVisible ? " is-visible" : ""}`}
+        className={`comment-reply${showThreadChrome ? "" : " is-standalone"}${isComposerVisible ? " is-visible" : ""}`}
       >
         <LeafInput
           actions={
@@ -730,20 +736,20 @@ function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
   const status = presence.status?.trim();
 
   return (
-    <div className="documint-comment-presence">
+    <div className="comment-presence">
       <span
         aria-hidden="true"
-        className="documint-comment-presence-dot"
+        className="comment-presence-dot"
         style={
           {
-            "--documint-comment-presence-color": presence.color ?? "var(--documint-leaf-accent)",
+            "--comment-presence-color": presence.color ?? "var(--documint-leaf-accent)",
           } as CSSProperties
         }
       >
         {presence.avatarUrl ? (
           <img
             alt=""
-            className="documint-comment-presence-avatar"
+            className="comment-presence-avatar"
             draggable={false}
             src={presence.avatarUrl}
           />
@@ -751,7 +757,7 @@ function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
       </span>
       <span>
         {name} is working on this
-        {status ? <span className="documint-comment-presence-status"> ({status})</span> : null}
+        {status ? <span className="comment-presence-status"> ({status})</span> : null}
       </span>
     </div>
   );

@@ -17,7 +17,7 @@ import { getVisualViewportMetrics, resolveHorizontalOffset } from "./placement";
 import type { DocumentAnchorResolution } from "../leaves/core/shared";
 
 // Pixel height of the hover bridge. JS-owned: written inline as
-// `--documint-leaf-bridge-height` so styles.css has one source of truth.
+// `--leaf-bridge-height` so overlays/styles.css has one source of truth.
 export const LEAF_BRIDGE_HEIGHT = 12;
 
 type DocumentAnchorProps = {
@@ -112,31 +112,31 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
   return (
     <OverlayPortal>
       <div
-        className="documint-leaf-anchor"
+        className="leaf-anchor"
         data-bridge={anchor.bridge}
         data-placement={placement?.verticalPlacement ?? "below"}
         data-placement-ready={placement ? "true" : "false"}
         ref={anchorRef}
         style={
           {
-            "--documint-leaf-anchor-height": `${anchor.anchorHeight}px`,
-            "--documint-leaf-anchor-left": placement
+            "--leaf-anchor-height": `${anchor.anchorHeight}px`,
+            "--leaf-anchor-left": placement
               ? `${anchor.left + placement.horizontalOffset}px`
               : "0px",
-            "--documint-leaf-anchor-top": placement ? `${anchor.top}px` : "0px",
-            "--documint-leaf-bridge-expand-left": placement
+            "--leaf-anchor-top": placement ? `${anchor.top}px` : "0px",
+            "--leaf-bridge-expand-left": placement
               ? `${Math.max(0, placement.horizontalOffset)}px`
               : "0px",
-            "--documint-leaf-bridge-expand-right": placement
+            "--leaf-bridge-expand-right": placement
               ? `${Math.max(0, -placement.horizontalOffset)}px`
               : "0px",
-            "--documint-leaf-bridge-height": `${LEAF_BRIDGE_HEIGHT}px`,
-            "--documint-leaf-padding-y": `${anchor.paddingY}px`,
+            "--leaf-bridge-height": `${LEAF_BRIDGE_HEIGHT}px`,
+            "--leaf-padding-y": `${anchor.paddingY}px`,
           } as CSSProperties
         }
       >
-        {anchor.bridge && <div className="documint-leaf-bridge" />}
-        <div className="documint-leaf-shell" ref={shellRef}>
+        {anchor.bridge && <div className="leaf-bridge" />}
+        <div className="leaf-shell" ref={shellRef}>
           {children}
         </div>
       </div>

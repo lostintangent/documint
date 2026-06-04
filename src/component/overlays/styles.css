@@ -1,0 +1,548 @@
+/* Tailwind v4 surface for Documint's overlay portal. Compiled to
+   `generated.css` and injected into the shadow root mounted under
+   `document.body` by `OverlayPortal`. Preflight is intentionally
+   excluded so global resets don't clobber the editor host's typography.
+
+   This file is the single source of CSS for the overlay portal:
+     - Tailwind theme tokens (`@theme inline`)
+     - Component-layer animations (`@layer components`)
+     - The portal wrapper + leaf chrome infrastructure (unlayered)
+     - AnnotationLeaf migration debt (unlayered, fenced)
+
+   `documint-` prefixes are dropped from classes and CSS variables
+   defined here because the CSS only ever lives inside the shadow root
+   — there's no host page to collide with. The `--documint-*` theme
+   variables that come from `useTheme.ts` keep their prefix because
+   they cross the main-DOM / shadow-root boundary as the embedder's
+   theme interface. */
+
+@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css" source(none);
+
+/* Documint's runtime theme lives in `--documint-*` variables set by the
+   embedder. `@theme inline` re-exposes those vars as Tailwind design
+   tokens (`bg-leaf-bg`, `text-leaf-accent`, …) without adding an extra
+   `--color-*` indirection layer. */
+@theme inline {
+  /* Surface colors */
+  --color-leaf-bg: var(--documint-leaf-bg);
+  --color-leaf-border: var(--documint-leaf-border);
+  --color-leaf-divider: var(
+    --leaf-divider-color,
+    color-mix(in srgb, var(--documint-leaf-border) 72%, transparent)
+  );
+  --color-leaf-input-bg: var(--documint-leaf-input-bg);
+
+  /* Text colors */
+  --color-leaf-text: var(--documint-leaf-text);
+  --color-leaf-secondary: var(--documint-leaf-secondary-text);
+  --color-leaf-accent: var(--documint-leaf-accent);
+
+  /* Button colors (foreground + hover/active backgrounds) */
+  --color-leaf-button: var(--documint-leaf-button-text);
+  --color-leaf-button-active-bg: var(--leaf-button-active-bg);
+  --color-leaf-input-button-active-bg: var(--leaf-input-button-active-bg);
+
+  /* Inline content — LeafMarkdown's mention pill and inline code */
+  --color-inline-code: var(--documint-inline-code-text);
+  --color-inline-code-bg: var(--documint-inline-code-bg);
+  --color-mention: var(--documint-mention-text, var(--documint-leaf-accent));
+  --color-mention-bg: var(
+    --documint-mention-bg,
+    color-mix(in srgb, var(--documint-leaf-accent) 14%, transparent)
+  );
+
+  /* Typography */
+  --font-leaf: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
+
+  /* Compact spacing step (1.45rem) for leaf button geometry, sitting
+     between Tailwind's `h-5` (1.25rem) and `h-6` (1.5rem). `h-6`
+     overshoots by 0.8px and reads as too chunky at this chrome scale. */
+  --spacing-5_8: 1.45rem;
+}
+
+/* Component classes for state-based animations that don't compose
+   cleanly as single utility variants. Each class encapsulates a
+   hover/focus reveal — Tailwind utilities still cover the rest of
+   the styling in the consumer's JSX. The dual `:hover` + `:focus-visible`
+   trigger pattern is the common reason something lives here: expressing
+   it inline would require naming two groups (row + button) and
+   duplicating every animated property under both variants.
+   Consumer rule: don't apply Tailwind utilities for properties a
+   component class controls — `@layer utilities` runs after this layer
+   in the cascade and would silently override the state-based rules. */
+@layer components {
+  /* Presence-indicator status text. Hidden by default; slides out (animated
+     `max-width` + padding) when the row is hovered or the button is
+     keyboard-focused. The `12rem`/`5rem` cap is "expand up to 12rem unless
+     that would push the indicator within 5rem of the viewport edge." */
+  .presence-status {
+    max-width: 0;
+    padding: 0;
+    transition:
+      max-width 180ms ease,
+      padding 180ms ease;
+  }
+  .presence-row:hover .presence-status,
+  .presence-button:focus-visible .presence-status {
+    max-width: min(12rem, calc(100vw - 5rem));
+    padding: 0 0.48rem 0 0.5rem;
+  }
+
+  /* Vertical divider inside a presence indicator. Same dual reveal
+     trigger as `.presence-status`, just animating opacity. */
+  .presence-divider {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .presence-row:hover .presence-button > .presence-divider,
+  .presence-button:focus-visible > .presence-divider {
+    opacity: 1;
+  }
+}
+
+/* === Portal wrapper ===
+
+   The single descendant of `OverlayPortal`'s shadow-root host. Sets the
+   Tailwind border-style fallback (preflight is excluded) and the leaf
+   shell's box-shadow fallback used when the embedder's theme doesn't
+   supply `--documint-leaf-shadow`. */
+.overlay {
+  --tw-border-style: solid;
+  --leaf-shadow-fallback: 0 14px 40px
+    color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
+}
+
+/* === Leaf anchor + shell infrastructure ===
+
+   Position, hover-bridge, and open/close animations for the two anchor
+   primitives (DocumentAnchor + ViewportAnchor) plus the shared leaf
+   shell and divider. Genuinely CSS-shaped work: sticky/absolute
+   positioning with `data-*` attribute state, JS-driven CSS vars for
+   sizes, and transition declarations on hot animation paths that
+   React shouldn't be re-rendering for. */
+
+/* `--leaf-anchor-*`, `--leaf-bridge-*`, and `--leaf-padding-y` are
+   JS-owned (set inline by `DocumentAnchor`). `position: absolute`
+   against the initial containing block lets the browser move the leaf
+   with host-page scrolls naturally. */
+.leaf-anchor {
+  position: absolute;
+  top: var(--leaf-anchor-top, 0px);
+  left: var(--leaf-anchor-left, 0px);
+  will-change: transform;
+  z-index: 1000;
+
+  &[data-placement-ready="false"] {
+    visibility: hidden;
+  }
+
+  /* CompletionLeaf (the inline completion popover) renders with
+     `role="listbox"`. Boost its z-index so it floats above any
+     surrounding leaf (e.g. an AnnotationLeaf containing a textarea
+     whose composer triggered the popover). */
+  &:has(> .leaf-shell > [role="listbox"]) {
+    z-index: 1100;
+  }
+
+  /* Hover: wrapper occupies the bridge gap so the bridge child can hand
+     off pointer events between anchor row and shell. */
+  &[data-bridge="true"] {
+    padding-top: var(--leaf-bridge-height);
+    margin-top: calc(var(--leaf-bridge-height) * -1);
+    pointer-events: auto;
+  }
+
+  /* Bridgeless (cursor + selection): wrapper is pointer-event-transparent
+     so canvas gestures pass through the gap area to the underlying canvas.
+     The shell carries the visual gap via its own margin-top below. */
+  &[data-bridge="false"] {
+    pointer-events: none;
+  }
+
+  /* Above-flip: render the bridge below the shell (column-reverse) and
+     translate up by the anchor row's height + paddingY so the shell sits
+     a bridge-height gap above the anchor — symmetric with below-mode. */
+  &[data-placement="above"] {
+    padding-top: 0;
+    margin-top: 0;
+    display: flex;
+    flex-direction: column-reverse;
+    transform: translateY(
+      calc(-100% - var(--leaf-anchor-height, 0px) - var(--leaf-padding-y, 0px))
+    );
+  }
+}
+
+.overlay-leaf {
+  flex: 0 0 auto;
+  position: relative;
+  width: var(--overlay-leaf-width);
+  height: var(--overlay-leaf-height);
+  opacity: 1;
+  pointer-events: none;
+  transition:
+    height 500ms ease,
+    opacity 500ms ease;
+
+  &[data-state="closed"] {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.overlay-leaf-frame {
+  position: absolute;
+  top: 0;
+  right: 0;
+  overflow: hidden;
+  padding: 1px;
+  transform: translateY(0);
+  transition: transform 500ms ease;
+}
+
+.overlay-leaf[data-state="closed"] .overlay-leaf-frame {
+  transform: translateY(-100%);
+}
+
+.overlay-leaf .leaf-shell {
+  pointer-events: auto;
+}
+
+.leaf-bridge {
+  width: calc(
+    100% + var(--leaf-bridge-expand-left, 0px) + var(--leaf-bridge-expand-right, 0px)
+  );
+  height: calc(var(--leaf-bridge-height) + var(--leaf-padding-y, 0px));
+  margin-left: calc(var(--leaf-bridge-expand-left, 0px) * -1);
+}
+
+/* Bridgeless: shell carries the gap to the anchor itself. */
+.leaf-anchor[data-bridge="false"] .leaf-shell {
+  margin-top: calc(var(--leaf-bridge-height) + var(--leaf-padding-y, 0px));
+}
+
+/* Above-flip for bridgeless: the gap belongs below the shell. */
+.leaf-anchor[data-placement="above"][data-bridge="false"] .leaf-shell {
+  margin-top: 0;
+  margin-bottom: calc(var(--leaf-bridge-height) + var(--leaf-padding-y, 0px));
+}
+
+/* The shell is just the leaf's visual chrome — border, background,
+   shadow, typography. Padding is a content concern owned by each leaf
+   (or by `LeafToolbar`, which any leaf can compose to inherit toolbar
+   spacing). */
+.leaf-shell {
+  --leaf-button-active-bg: color-mix(
+    in srgb,
+    var(--documint-leaf-accent) 22%,
+    var(--documint-leaf-bg)
+  );
+  --leaf-input-button-active-bg: color-mix(
+    in srgb,
+    var(--documint-leaf-accent) 32%,
+    var(--documint-leaf-input-bg)
+  );
+  --leaf-divider-color: color-mix(in srgb, var(--documint-leaf-border) 72%, transparent);
+  border: 1px solid var(--documint-leaf-border);
+  border-radius: 0.95rem;
+  background: var(--documint-leaf-bg);
+  box-shadow: var(--documint-leaf-shadow, var(--leaf-shadow-fallback));
+  color: var(--documint-leaf-text);
+  font-family: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  pointer-events: auto;
+
+  & p {
+    margin: 0;
+  }
+}
+
+.leaf-divider {
+  /* Visible divider styling. `LeafDivider` also sets Tailwind dimension
+     utilities, but these rules win (later in the portal stylesheet) and
+     apply the design-system-precise values: 0.2rem horizontal margin,
+     1.15rem vertical height. The class also acts as a hook surface for
+     selector rules elsewhere (comment-create animation,
+     `.presence-divider` opacity reveal above). */
+  flex: none;
+  background: var(
+    --leaf-divider-color,
+    color-mix(in srgb, var(--documint-leaf-border) 72%, transparent)
+  );
+
+  &[data-orientation="horizontal"] {
+    width: 100%;
+    height: 1px;
+    margin: 0.2rem 0;
+  }
+
+  &[data-orientation="vertical"] {
+    justify-self: center;
+    width: 1px;
+    height: 1.15rem;
+  }
+}
+
+/* === AnnotationLeaf migration debt ===
+
+   These rules will be removed when `AnnotationLeaf` migrates fully to
+   Tailwind utilities. Until then, they live here so there's a single
+   source of truth for non-generated CSS in the portal. */
+
+.comment-leaf:not(.comment-leaf-create),
+.comment-leaf-create.is-expanded {
+  width: var(--leaf-width, min(18rem, calc(100vw - 4rem)));
+}
+
+.comment-leaf-header,
+.comment-leaf-actions,
+.comment-message-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.comment-leaf-header {
+  margin-bottom: 0.7rem;
+}
+
+.comment-leaf-link {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.comment-leaf-age {
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.76rem;
+  font-style: italic;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.comment-message-meta span {
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+/* Thread (scrollable list of comment messages) */
+
+.comment-thread {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 16rem;
+  margin-bottom: 0.8rem;
+  overflow: auto;
+
+  &.is-empty {
+    max-height: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+  }
+}
+
+.comment-message {
+  display: grid;
+  gap: 0.55rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--leaf-divider-color);
+
+  &:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+}
+
+.comment-message-root {
+  transform: translateY(-8px) scaleY(0);
+  transform-origin: top left;
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    transform 180ms ease;
+
+  &.is-visible {
+    transform: translateY(0) scaleY(1);
+    opacity: 1;
+  }
+
+  &.is-hidden {
+    max-height: 0;
+    padding-bottom: 0;
+    border-bottom: 0;
+    overflow: hidden;
+  }
+}
+
+/* Reply (compose surface at the bottom of the thread) */
+
+.comment-reply {
+  position: relative;
+  display: block;
+  padding-top: 0.85rem;
+
+  &.is-standalone {
+    padding-top: 0;
+
+    &:not(.is-visible) {
+      max-height: 0;
+      overflow: hidden;
+    }
+  }
+}
+
+.comment-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  color: var(--documint-leaf-secondary-text);
+  font-size: 0.74rem;
+  line-height: 1.2;
+}
+
+.comment-presence-dot {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: var(--comment-presence-color, var(--documint-leaf-accent));
+  isolation: isolate;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: inherit;
+    background: var(--comment-presence-color, var(--documint-leaf-accent));
+    opacity: 0.28;
+    animation: comment-presence-pulse 1600ms ease-in-out infinite;
+    z-index: -1;
+  }
+}
+
+.comment-presence-avatar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.comment-presence-status {
+  font-style: italic;
+}
+
+@keyframes comment-presence-pulse {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: scale(0.72);
+  }
+
+  50% {
+    opacity: 0.1;
+    transform: scale(1.55);
+  }
+}
+
+/* Create chrome (the animated "add comment" toolbar that expands into a composer) */
+
+.comment-leaf-create {
+  --comment-create-scale-duration: 180ms;
+  --comment-create-fade-duration: 120ms;
+  height: auto;
+  overflow: visible;
+
+  &.is-expanded {
+    & .comment-leaf-create-shell {
+      width: 100%;
+      min-height: 5.5rem;
+
+      & > .comment-leaf-create-toolbar {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+      }
+    }
+
+    & .comment-leaf-create-toolbar {
+      opacity: 0;
+      transform: scale(0.72);
+      pointer-events: none;
+    }
+
+    & .leaf-divider[data-orientation="vertical"] {
+      opacity: 0;
+    }
+
+    & .comment-leaf-create-content {
+      position: relative;
+      z-index: 0;
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+  }
+}
+
+.comment-leaf-create-shell {
+  position: relative;
+  display: grid;
+  width: max-content;
+  height: 100%;
+
+  & > .comment-leaf-create-toolbar {
+    position: relative;
+    z-index: 0;
+  }
+}
+
+.comment-leaf-create .leaf-divider[data-orientation="vertical"] {
+  opacity: 1;
+  transition: opacity var(--comment-create-fade-duration) ease;
+}
+
+.comment-leaf-create-toolbar {
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: top left;
+  transition:
+    opacity var(--comment-create-fade-duration) ease,
+    transform var(--comment-create-scale-duration) ease;
+}
+
+.comment-leaf-create-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  opacity: 0;
+  transform: scale(0);
+  transform-origin: top left;
+  pointer-events: none;
+  transition:
+    opacity var(--comment-create-fade-duration) ease,
+    transform var(--comment-create-scale-duration) ease;
+}
+
+/* Scan sibling overlay modules for utility classes. */
+@source "./**/*.tsx";
+
+/* Exclude words that match utility names but appear as element types or
+   string content (`<table>`, `display: fixed`, Lucide icons like
+   `Table2`, action strings like "Insert table"). */
+@source not inline("block container fixed hidden inline resize rounded shadow table underline visible");

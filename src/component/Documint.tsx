@@ -2,6 +2,8 @@
  * Public React host for the canvas editor. The component owns content-format
  * bridging, DOM lifecycle, viewport coordination, and hidden-input plumbing.
  */
+// oxlint-disable-next-line typescript/triple-slash-reference
+/// <reference path="./style-imports.d.ts" />
 import {
   useEffect,
   useEffectEvent,
@@ -101,7 +103,7 @@ import {
   useEditorCommand,
   useSprig,
 } from "./store";
-import { DOCUMINT_EDITOR_STYLES } from "./styles";
+import editorCss from "./styles.css" with { type: "text" };
 
 export type { DocumintDecoration } from "./hooks/useDecorations";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
@@ -957,7 +959,7 @@ function DocumintHost({
         className={sectionClassName}
         style={{ ...themeStyles, height: "100%", minHeight: 0 }}
       >
-        <style>{DOCUMINT_EDITOR_STYLES}</style>
+        <style>{editorCss}</style>
         <div
           ref={scrollContainerRef}
           onScroll={handleScrollEvent}

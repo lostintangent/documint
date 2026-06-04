@@ -7,6 +7,8 @@ import { useStorage } from "./hooks/useStorage";
 import { useTheme } from "./hooks/useTheme";
 import { vscode } from "./vscode";
 
+const users = [{ id: "copilot", username: "copilot", fullName: "Copilot" }];
+
 function App() {
   const [content, setContent] = useState<string | null>(null);
 
@@ -39,6 +41,7 @@ function App() {
       onContentChanged={handleContentChanged}
       storage={storage}
       theme={theme}
+      users={users}
     />
   );
 }

@@ -9,7 +9,7 @@
 // Static styling lives in TSX as Tailwind utilities; the animated reveal
 // of the status text and the divider next to it lives as
 // `@layer components` classes (`.presence-status`, `.presence-divider`)
-// in `tailwind.css` since the dual hover-OR-focus-visible trigger doesn't
+// in `overlays/styles.css` since the dual hover-OR-focus-visible trigger doesn't
 // compose cleanly as a single utility variant.
 
 import { ArrowDown, ArrowUp } from "lucide-react";
@@ -37,7 +37,7 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
       className="presence-row relative inline-flex items-start gap-1.5 pointer-events-auto"
       style={
         {
-          "--documint-presence-color": presence.color ?? "var(--documint-leaf-accent)",
+          "--presence-color": presence.color ?? "var(--documint-leaf-accent)",
         } as CSSProperties
       }
     >
@@ -47,7 +47,7 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
           "presence-button",
           "inline-flex flex-row-reverse items-center min-w-5.8 h-5.8 p-0",
           "border border-leaf-border rounded-full bg-leaf-bg",
-          "[box-shadow:var(--documint-leaf-shadow,var(--documint-leaf-shadow-fallback))]",
+          "[box-shadow:var(--documint-leaf-shadow,var(--leaf-shadow-fallback))]",
           "text-leaf-text font-leaf text-[0.66rem] font-semibold leading-none",
           "cursor-pointer pointer-events-auto disabled:cursor-default disabled:opacity-70",
         )}
@@ -56,7 +56,7 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
         onClick={canScrollToPresence ? onSelect : undefined}
         type="button"
       >
-        <span className="inline-grid place-items-center w-5.8 h-5.8 p-px overflow-hidden rounded-full bg-[var(--documint-presence-color)] text-white">
+        <span className="inline-grid place-items-center w-5.8 h-5.8 p-px overflow-hidden rounded-full bg-[var(--presence-color)] text-white">
           {presence.avatarUrl ? (
             <img
               alt=""
@@ -71,7 +71,7 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
         </span>
         {status && (
           // `max-width` and `padding` come from `.presence-status` in
-          // `tailwind.css` (animates in/out on hover/focus); deliberately no
+          // `overlays/styles.css` (animates in/out on hover/focus); deliberately no
           // `max-w-*` or `p-*` utilities here — those would land in
           // `@layer utilities` and outrank the component class, blocking the
           // reveal.
@@ -80,16 +80,16 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
           </span>
         )}
         {status && showDirection && (
-          // `!h-[0.78rem]` overrides `LeafDivider`'s default `h-5`; the
-          // `presence-divider` class (in `tailwind.css`) handles the opacity
+          // `!h-3` overrides `LeafDivider`'s default `h-5`; the
+          // `presence-divider` class (in `overlays/styles.css`) handles the opacity
           // reveal that runs alongside the status text's slide-out.
           <LeafDivider
-            className="presence-divider self-center !h-[0.78rem]"
+            className="presence-divider self-center !h-3"
             orientation="vertical"
           />
         )}
         {showDirection && (
-          <span className="inline-flex items-center h-full pl-[0.36rem] pr-[0.42rem] text-leaf-text">
+          <span className="inline-flex items-center h-full px-1.5 text-leaf-text">
             <DirectionIcon size={14} strokeWidth={2.3} />
           </span>
         )}

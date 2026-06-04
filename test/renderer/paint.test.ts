@@ -503,7 +503,7 @@ test("paints insert highlights as a glyph overlay without splitting text runs", 
 });
 
 test("paints sparse theme text colors from the resolved base text", () => {
-  const state = setup("# Heading\n\nParagraph\n\n> Quote\n\n`inline`\n");
+  const state = setup("# Heading\n\nParagraph\n\n> Quote\n");
   const theme = resolveEditorTheme({
     ...withoutTextTokens(resolvedLightTheme),
     text: "#f5f5f5",
@@ -513,7 +513,6 @@ test("paints sparse theme text colors from the resolved base text", () => {
   expect(findFillTextOperation(context.operations, "Heading")?.fillStyle).toBe("#f5f5f5");
   expect(findFillTextOperation(context.operations, "Paragraph")?.fillStyle).toBe("#f5f5f5");
   expect(findFillTextOperation(context.operations, "Quote")?.fillStyle).toBe("#f5f5f5");
-  expect(findFillTextOperation(context.operations, "inline")?.fillStyle).toBe("#f5f5f5");
 });
 
 test("paints text color decorations as a glyph overlay without splitting text runs", () => {
@@ -1151,7 +1150,6 @@ function withoutTextTokens(theme: ResolvedEditorTheme) {
     codeText: _codeText,
     headingText: _headingText,
     imagePlaceholderText: _imagePlaceholderText,
-    inlineCodeText: _inlineCodeText,
     insertHighlightText: _insertHighlightText,
     leafButtonText: _leafButtonText,
     leafSecondaryText: _leafSecondaryText,

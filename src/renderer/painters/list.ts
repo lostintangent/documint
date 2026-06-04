@@ -153,7 +153,10 @@ function paintTaskCheckboxFrame(
   pop: ActiveBlockPulse | null = null,
 ) {
   const fillColor = checked ? theme.checkboxCheckedFill : theme.checkboxUncheckedFill;
-  const strokeColor = checked ? theme.checkboxCheckedStroke : theme.checkboxUncheckedStroke;
+  // Checked state has no separate stroke token — the stroke matches the
+  // fill so the visible outline stays the same dimensions as an unchecked
+  // checkbox without exposing a redundant theme property.
+  const strokeColor = checked ? fillColor : theme.checkboxUncheckedStroke;
 
   context.fillStyle = pop ? resolveBlockPulseColor(fillColor, pop, theme) : fillColor;
   context.strokeStyle = pop ? resolveBlockPulseColor(strokeColor, pop, theme) : strokeColor;

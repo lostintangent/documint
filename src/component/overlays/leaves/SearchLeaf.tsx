@@ -76,10 +76,7 @@ export function SearchLeaf({
   };
 
   return (
-    // `documint-search-leaf` is retained as a marker class only — the shell's
-    // `:has(> .documint-search-leaf)` rule in styles.css uses it to set the
-    // toolbar-tight padding around this leaf. Styling otherwise is Tailwind.
-    <div className="documint-search-leaf grid grid-cols-[minmax(12.5rem,18rem)_repeat(2,1.45rem)_0.5rem_1.45rem] items-center gap-1">
+    <div className="p-1.5 grid grid-cols-[minmax(12.5rem,18rem)_repeat(2,1.45rem)_0.5rem_1.45rem] items-center gap-1">
       <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 min-w-0 py-1 px-2 border border-leaf-border rounded-[0.62rem] bg-leaf-input-bg text-leaf-secondary">
         <Search aria-hidden="true" size={15} strokeWidth={2.2} />
         <input

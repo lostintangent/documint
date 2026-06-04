@@ -90,20 +90,20 @@ describe("Document builders", () => {
         items: [
           createListItemBlock({
             checked: true,
+            compact: false,
             children: [createParagraphTextBlock("first")],
-            spread: true,
           }),
         ],
+        compact: false,
         ordered: false,
-        spread: true,
       });
       const rebuiltList = rebuildListBlock(
         list,
         [
           createListItemBlock({
             checked: true,
+            compact: false,
             children: [createParagraphTextBlock("renamed")],
-            spread: true,
           }),
         ],
         {
@@ -134,7 +134,7 @@ describe("Document builders", () => {
       expect(rebuiltHeading.plainText).toBe("After");
       expect(rebuiltList.ordered).toBe(true);
       expect(rebuiltList.start).toBe(3);
-      expect(rebuiltList.spread).toBe(true);
+      expect(rebuiltList.compact).toBe(false);
       expect(rebuiltList.plainText).toBe("renamed");
       expect(rebuiltTable.align).toEqual(["center"]);
       expect(rebuiltTable.plainText).toBe("two");

@@ -352,11 +352,9 @@ function createListAction(
           createListItemBlock({
             checked: options.checked,
             children: [createParagraphTextBlock("")],
-            spread: false,
           }),
         ],
         ordered: options.ordered,
-        spread: false,
         start: options.start,
       }),
     ],

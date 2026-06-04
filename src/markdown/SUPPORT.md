@@ -54,7 +54,7 @@ These are the semantic node families currently representable in `Document` and t
 | Ordered list authored starts       | `3. item`                                  | `Supported semantically`       | Preserved only when `preserveOrderedListStart` is enabled; otherwise canonicalized.     |
 | Task lists                         | `- [ ] item`                               | `Supported semantically`       | Blank task items are preserved.                                                         |
 | Nested task lists                  | nested checkbox items                      | `Supported semantically`       | Covered by tests and editor behavior.                                                   |
-| Tight vs loose lists               | blank lines between items                  | `Supported semantically`       | Represented through list/list-item `spread`.                                            |
+| Tight vs loose lists               | blank lines between items                  | `Supported semantically`       | Represented through list/list-item `compact`.                                           |
 | Fenced code blocks with backticks  | ` ```ts `                                  | `Supported semantically`       | Language/meta round-trip.                                                               |
 | Fenced code blocks with tildes     | `~~~`                                      | `Intentional non-goal`         | Valid markdown, but backtick fences are the canonical Documint syntax.                  |
 | Indented code blocks               | 4-space indented code                      | `Intentional non-goal`         | Valid markdown, but not part of the canonical Documint authoring dialect.               |

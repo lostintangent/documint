@@ -1,106 +1,102 @@
 import { expect, test } from "bun:test";
 import { darkTheme, lightTheme, resolveEditorTheme } from "@/component/lib/themes";
 
-test("resolves sparse theme text tokens from base text", () => {
+test("preserves explicit overrides over derived defaults", () => {
   const theme = resolveEditorTheme({
-    ...withoutOptionalTokens(lightTheme),
-    background: "#101010",
-    text: "#f5f5f5",
-  });
-
-  expect(theme.background).toBe("#101010");
-  expect(theme.text).toBe("#f5f5f5");
-  expect(theme.caret).toBe("#f5f5f5");
-  expect(theme.paragraphText).toBe("#f5f5f5");
-  expect(theme.headingText).toBe("#f5f5f5");
-  expect(theme.blockquoteText).toBe("#f5f5f5");
-  expect(theme.codeText).toBe("#f5f5f5");
-  expect(theme.inlineCodeText).toBe("#f5f5f5");
-  expect(theme.leafText).toBe("#f5f5f5");
-  expect(theme.leafButtonText).toBe("#f5f5f5");
-  expect(theme.leafSecondaryText).toBe("#f5f5f5");
-  expect(theme.imagePlaceholderText).toBe("#f5f5f5");
-  expect(theme.linkText).toBe("#f5f5f5");
-  expect(theme.listMarkerText).toBe(theme.checkboxUncheckedStroke);
-  expect(theme.dividerRule).toBe(theme.headingRule);
-  expect(theme.leafShadow).toBe("");
-  expect(theme.mentionBackground).toBe(theme.inlineCodeBackground);
-  expect(theme.mentionText).toBe("#f5f5f5");
-});
-
-test("preserves specific text color overrides", () => {
-  const theme = resolveEditorTheme({
-    ...withoutTextTokens(lightTheme),
+    ...lightTheme,
     background: "#101010",
     headingText: "#fbbf24",
     text: "#f5f5f5",
   });
 
+  // paragraphText derives from text (omitted on lightTheme); headingText is
+  // explicitly overridden and must win over the same derivation.
   expect(theme.paragraphText).toBe("#f5f5f5");
   expect(theme.headingText).toBe("#fbbf24");
 });
 
 test("resolves missing leaf background from global background", () => {
-  const { leafBackground: _leafBackground, ...themeWithoutLeafBackground } = lightTheme;
   const theme = resolveEditorTheme({
-    ...themeWithoutLeafBackground,
+    ...lightTheme,
     background: "#101010",
   });
 
   expect(theme.leafBackground).toBe("#101010");
 });
 
-test("keeps bundled theme colors unchanged when resolved", () => {
-  const theme = resolveEditorTheme(lightTheme);
+test("resolves mode-aware semantic comment defaults based on background luminance", () => {
+  const lightResolved = resolveEditorTheme({
+    ...lightTheme,
+    background: "#ffffff",
+    text: "#000000",
+  });
+  expect(lightResolved.commentHighlightActive).toBe("#f4d35e");
+  expect(lightResolved.commentHighlightResolved).toBe("#cfe9d8");
+  expect(lightResolved.commentHighlightResolvedActive).toBe("#8dc4a0");
 
-  expect(theme.paragraphText).toBe("#1f2937");
-  expect(theme.headingText).toBe("#1f2937");
-  expect(theme.blockquoteText).toBe("#334155");
-  expect(theme.leafBackground).toBe("#fcfbf7");
-  expect(theme.leafText).toBe("#1f2937");
-  expect(theme.leafButtonText).toBe("#1f2937");
-  expect(theme.leafSecondaryText).toBe("#334155");
+  const darkResolved = resolveEditorTheme({
+    ...darkTheme,
+    background: "#000000",
+    text: "#ffffff",
+  });
+  expect(darkResolved.commentHighlightActive).toBe("#facc15");
+  expect(darkResolved.commentHighlightResolved).toBe("rgba(74, 222, 128, 0.24)");
+  expect(darkResolved.commentHighlightResolvedActive).toBe("#4ade80");
 });
 
-test("bundled themes omit duplicate base text colors", () => {
-  expect(lightTheme.paragraphText).toBeUndefined();
-  expect(lightTheme.headingText).toBeUndefined();
-  expect(lightTheme.leafText).toBeUndefined();
-  expect(lightTheme.leafButtonText).toBeUndefined();
+test("resolves mode-aware codeBackground default based on background luminance", () => {
+  // Light themes get a theme-tinted very-dark inverted code block; dark themes
+  // get a subtle lift from background.
+  const lightResolved = resolveEditorTheme({
+    ...lightTheme,
+    background: "#ffffff",
+    text: "#1f2937",
+  });
+  expect(lightResolved.codeBackground).toBe("color-mix(in srgb, #1f2937 60%, #000)");
+
+  const darkResolved = resolveEditorTheme({
+    ...darkTheme,
+    background: "#000000",
+    text: "#ffffff",
+  });
+  expect(darkResolved.codeBackground).toBe("color-mix(in srgb, #ffffff 8%, #000000)");
 });
 
-test("bundled themes omit duplicate leaf backgrounds", () => {
-  expect(lightTheme.leafBackground).toBeUndefined();
-  expect(darkTheme.leafBackground).toBeUndefined();
+test("resolves mode-aware inline code defaults based on background luminance", () => {
+  const lightResolved = resolveEditorTheme({
+    ...lightTheme,
+    background: "#ffffff",
+    text: "#1f2937",
+  });
+  expect(lightResolved.inlineCodeBackground).toBe(
+    "color-mix(in srgb, #1f2937 8%, transparent)",
+  );
+  expect(lightResolved.inlineCodeText).toBe("#7c2d12");
+
+  const darkResolved = resolveEditorTheme({
+    ...darkTheme,
+    background: "#000000",
+    text: "#ffffff",
+  });
+  expect(darkResolved.inlineCodeBackground).toBe("rgba(251, 191, 36, 0.16)");
+  expect(darkResolved.inlineCodeText).toBe("#fdba74");
 });
 
-function withoutTextTokens(theme: typeof lightTheme) {
-  const {
-    blockquoteText: _blockquoteText,
-    caret: _caret,
-    codeText: _codeText,
-    headingText: _headingText,
-    imagePlaceholderText: _imagePlaceholderText,
-    inlineCodeText: _inlineCodeText,
-    insertHighlightText: _insertHighlightText,
-    leafButtonText: _leafButtonText,
-    leafSecondaryText: _leafSecondaryText,
-    leafText: _leafText,
-    linkText: _linkText,
-    paragraphText: _paragraphText,
-    text: _text,
-    ...themeWithoutText
-  } = theme;
+test("mentionBackground falls back to resolved inline code background when both are omitted", () => {
+  // Regression guard: the resolver must thread the *resolved* inline code
+  // background into mentionBackground, not read it off the input theme — the
+  // latter is undefined when a theme relies on the mode-aware default.
+  const lightResolved = resolveEditorTheme({
+    ...lightTheme,
+    background: "#ffffff",
+    text: "#1f2937",
+  });
+  expect(lightResolved.mentionBackground).toBe(lightResolved.inlineCodeBackground);
 
-  return themeWithoutText;
-}
-
-function withoutOptionalTokens(theme: typeof lightTheme) {
-  const {
-    dividerRule: _dividerRule,
-    leafShadow: _leafShadow,
-    ...themeWithoutOptionalChrome
-  } = withoutTextTokens(theme);
-
-  return themeWithoutOptionalChrome;
-}
+  const darkResolved = resolveEditorTheme({
+    ...darkTheme,
+    background: "#000000",
+    text: "#ffffff",
+  });
+  expect(darkResolved.mentionBackground).toBe("rgba(251, 191, 36, 0.16)");
+});

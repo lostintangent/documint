@@ -66,7 +66,7 @@ export type DocumentAnchorResolution = {
   onPointerEnter?: () => void;
   onPointerLeave?: () => void;
   // Extra vertical breathing room from the anchor, applied symmetrically
-  // above or below (CSS variable `--documint-leaf-padding-y`).
+  // above or below (CSS variable `--leaf-padding-y`).
   paddingY: number;
 };
 
