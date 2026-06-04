@@ -108,7 +108,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // reads through the ref, so it sees fresh values on every call.
   //
   // Not `useEffectEvent` because layout may be computed during host render
-  // (e.g. `resolveLeafAnchor` reads `.get()` synchronously when the cache
+  // (e.g. `resolveDocumentAnchor` reads `.get()` synchronously when the cache
   // was invalidated since the last paint); effect events disallow that.
   const resolverRef = useRef<() => EditorLayoutState>(undefined);
   resolverRef.current = (): EditorLayoutState => {
@@ -132,7 +132,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
   // Install the resolver once per store. The wrapper reads through the ref,
   // so the resolver doesn't need to be re-registered when its closure
   // updates. Installed during the first render that sees this store so
-  // synchronous-during-render readers like `resolveLeafAnchor` work
+  // synchronous-during-render readers like `resolveDocumentAnchor` work
   // immediately, not after the first effect commit.
   const installedStoreRef = useRef<DocumintStore | null>(null);
   if (installedStoreRef.current !== store) {

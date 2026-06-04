@@ -1,12 +1,12 @@
 // Inline completion popover — vertical list of matches that the user
 // navigates with arrow keys and selects with Enter/click. Anchors to the
-// caret position via `LeafAnchor` (from `LeafInput` or
+// caret position via `DocumentAnchor` (from `LeafInput` or
 // `useDocumentCompletions`). Each row is a labeled `LeafButton`, so
 // appearance and hover/active states stay consistent with toolbar menus.
 
 import { useEffect, useRef, type PointerEvent } from "react";
-import type { CompletionItem } from "../../../completions/completions";
-import { LeafButton } from "./LeafButton";
+import type { CompletionItem } from "../../completions/completions";
+import { LeafButton } from "./core/LeafButton";
 
 type CompletionLeafProps = {
   activeIndex: number;

@@ -1,26 +1,31 @@
-// The leaf overlay primitive — a positioned, themed floating frame for
-// any leaf-level surface (comment thread, link editor, table editor,
-// insertion menu). Three visual layers:
+// Anchor that positions its content at a document-relative coordinate
+// (caret or range location) via the shared `OverlayPortal`. Three visual
+// layers stack inside:
 //
-//   1. OverlayPortal — host-app-defended placement, theme cascade
-//   2. Anchor frame  — viewport positioning, optional hover bridge
-//   3. Leaf shell    — bordered, shadowed container
+//   1. OverlayPortal — shadow root + stylesheet, host-app isolation
+//   2. Anchor frame  — viewport-aware placement, optional hover bridge
+//   3. Leaf shell    — bordered, themed container for the leaf content
+//
+// Used by every document-anchored leaf (insertion, table, link,
+// annotation, completion, comment thread). `ViewportAnchor` is its
+// counterpart for fixed editor-chrome positioning.
+
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { equalShallowObject } from "../../../../store/core/equality";
-import { OverlayPortal } from "../../../OverlayPortal";
+import { equalShallowObject } from "../../store/core/equality";
+import { OverlayPortal } from "../OverlayPortal";
 import { getVisualViewportMetrics, resolveHorizontalOffset } from "./placement";
-import type { LeafAnchorResolution } from "../shared";
+import type { DocumentAnchorResolution } from "../leaves/core/shared";
 
 // Pixel height of the hover bridge. JS-owned: written inline as
 // `--documint-leaf-bridge-height` so styles.css has one source of truth.
 export const LEAF_BRIDGE_HEIGHT = 12;
 
-type LeafAnchorProps = {
-  anchor: LeafAnchorResolution;
+type DocumentAnchorProps = {
+  anchor: DocumentAnchorResolution;
   children: ReactNode;
 };
 
-type LeafAnchorPlacement = {
+type DocumentAnchorPlacement = {
   horizontalOffset: number;
   verticalPlacement: "above" | "below";
 };
@@ -30,12 +35,12 @@ type LeafShellSize = {
   width: number;
 };
 
-export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
+export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const shellSizeRef = useRef<LeafShellSize | null>(null);
   const latestAnchorRef = useRef(anchor);
-  const [placement, setPlacement] = useState<LeafAnchorPlacement | null>(null);
+  const [placement, setPlacement] = useState<DocumentAnchorPlacement | null>(null);
   latestAnchorRef.current = anchor;
 
   // Hover-bridge pointer tracking. Native `pointerenter`/`pointerleave`
@@ -69,7 +74,7 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
     }
 
     setPlacement((current) => {
-      const next = resolveLeafPlacement(anchor, shellSize);
+      const next = resolvePlacement(anchor, shellSize);
       return current && equalShallowObject(current, next) ? current : next;
     });
   }, [anchor.left, anchor.top]);
@@ -85,7 +90,7 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
       const shellSize = { height: bounds.height, width: bounds.width };
       shellSizeRef.current = shellSize;
       setPlacement((current) => {
-        const next = resolveLeafPlacement(latestAnchorRef.current, shellSize);
+        const next = resolvePlacement(latestAnchorRef.current, shellSize);
         return current && equalShallowObject(current, next) ? current : next;
       });
     };
@@ -130,7 +135,7 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
           } as CSSProperties
         }
       >
-        {anchor.bridge ? <div className="documint-leaf-bridge" /> : null}
+        {anchor.bridge && <div className="documint-leaf-bridge" />}
         <div className="documint-leaf-shell" ref={shellRef}>
           {children}
         </div>
@@ -139,10 +144,10 @@ export function LeafAnchor({ anchor, children }: LeafAnchorProps) {
   );
 }
 
-function resolveLeafPlacement(
-  anchor: LeafAnchorResolution,
+function resolvePlacement(
+  anchor: DocumentAnchorResolution,
   shellSize: LeafShellSize,
-): LeafAnchorPlacement {
+): DocumentAnchorPlacement {
   const viewport = getVisualViewportMetrics();
   // Anchor coordinates are doc-absolute; convert to visible-viewport
   // relative to ask where the shell fits.

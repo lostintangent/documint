@@ -11,13 +11,13 @@ import {
 import { parseFragment } from "@/markdown";
 import { createElement, useMemo, type ReactNode } from "react";
 
-type MarkdownOutputProps = {
+type LeafMarkdownProps = {
   value: string;
   onDoubleClick?: () => void;
   mentionTargets?: readonly MentionTarget[];
 };
 
-export function MarkdownOutput({ mentionTargets, onDoubleClick, value }: MarkdownOutputProps) {
+export function LeafMarkdown({ mentionTargets, onDoubleClick, value }: LeafMarkdownProps) {
   const content = useMemo(
     () => renderMarkdownFragment(value, mentionTargets),
     [mentionTargets, value],

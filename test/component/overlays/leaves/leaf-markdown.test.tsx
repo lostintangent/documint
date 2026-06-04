@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownOutput } from "@/component/overlays/leaves/core/MarkdownOutput";
+import { LeafMarkdown } from "@/component/overlays/leaves/core/LeafMarkdown";
 
-describe("MarkdownOutput", () => {
+describe("LeafMarkdown", () => {
   test("renders text and inline formatting from markdown", () => {
     const html = renderToStaticMarkup(
-      <MarkdownOutput value={"Plain **bold** and *italic* with `code`."} />,
+      <LeafMarkdown value={"Plain **bold** and *italic* with `code`."} />,
     );
 
     expect(html).toContain("<p>Plain <strong>bold</strong> and <em>italic</em> with ");
@@ -15,7 +15,7 @@ describe("MarkdownOutput", () => {
 
   test("renders semantic mentions and links from parsed inlines", () => {
     const html = renderToStaticMarkup(
-      <MarkdownOutput value={"Ping @[Jane Doe](u-jane) via [docs](https://example.com)."} />,
+      <LeafMarkdown value={"Ping @[Jane Doe](u-jane) via [docs](https://example.com)."} />,
     );
 
     expect(html).toContain("whitespace-nowrap");
@@ -27,7 +27,7 @@ describe("MarkdownOutput", () => {
 
   test("renders bare mentions when mention targets are provided", () => {
     const html = renderToStaticMarkup(
-      <MarkdownOutput
+      <LeafMarkdown
         mentionTargets={[{ name: "Jane Doe", userId: "u-jane" }]}
         value={"Ping @Jane Doe."}
       />,
@@ -38,7 +38,7 @@ describe("MarkdownOutput", () => {
   });
 
   test("renders parsed link urls directly", () => {
-    const html = renderToStaticMarkup(<MarkdownOutput value={"[custom](documint://thread/1)"} />);
+    const html = renderToStaticMarkup(<LeafMarkdown value={"[custom](documint://thread/1)"} />);
 
     expect(html).toContain(
       '<a href="documint://thread/1" rel="noreferrer" target="_blank">custom</a>',
@@ -47,7 +47,7 @@ describe("MarkdownOutput", () => {
 
   test("renders list blocks", () => {
     const html = renderToStaticMarkup(
-      <MarkdownOutput value={"- **One**\n- [x] Two\n\n3. Three\n4. Four"} />,
+      <LeafMarkdown value={"- **One**\n- [x] Two\n\n3. Three\n4. Four"} />,
     );
 
     expect(html).toContain("<ul><li><p><strong>One</strong></p></li>");
@@ -59,7 +59,7 @@ describe("MarkdownOutput", () => {
 
   test("omits unsupported blocks", () => {
     const html = renderToStaticMarkup(
-      <MarkdownOutput value={"# Heading\n\nFirst\n\n<div>raw</div>\n\n---"} />,
+      <LeafMarkdown value={"# Heading\n\nFirst\n\n<div>raw</div>\n\n---"} />,
     );
 
     expect(html).toContain("<p>First</p>");

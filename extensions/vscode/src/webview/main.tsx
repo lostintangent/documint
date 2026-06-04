@@ -26,8 +26,9 @@ function App() {
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  const handleContentChanged = (content: string) => {
-    vscode.postMessage({ type: "edit-content", content });
+  const handleContentChanged = (nextContent: string) => {
+    setContent(nextContent);
+    vscode.postMessage({ type: "edit-content", content: nextContent });
   };
 
   if (content === null) return null;

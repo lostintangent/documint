@@ -32,7 +32,7 @@ import {
   useState,
 } from "react";
 import { LeafDivider } from "../LeafDivider";
-import { getVisualViewportMetrics, resolveHorizontalOffset } from "../anchor/placement";
+import { getVisualViewportMetrics, resolveHorizontalOffset } from "../../../anchors/placement";
 import { LeafButton } from "../LeafButton";
 import { clx } from "../lib/clx";
 

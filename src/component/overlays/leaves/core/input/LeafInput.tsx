@@ -5,9 +5,9 @@
 import { Check, SendHorizontal, X } from "lucide-react";
 import { useRef, type KeyboardEvent, type RefObject } from "react";
 import { type CompletionSource } from "../../../../completions/completions";
-import { LeafAnchor } from "../anchor/LeafAnchor";
+import { DocumentAnchor } from "../../../anchors/DocumentAnchor";
 import { LeafButton, type LeafButtonProps } from "../LeafButton";
-import { CompletionLeaf } from "../CompletionLeaf";
+import { CompletionLeaf } from "../../CompletionLeaf";
 import { clx } from "../lib/clx";
 import { useLeafInputCompletions } from "./useLeafInputCompletions";
 
@@ -102,9 +102,9 @@ export function LeafInput({
       />
       {renderActions(actions)}
       {showCompletion && (
-        <LeafAnchor anchor={completionAnchor}>
+        <DocumentAnchor anchor={completionAnchor}>
           <CompletionLeaf {...leafProps} />
-        </LeafAnchor>
+        </DocumentAnchor>
       )}
     </div>
   );

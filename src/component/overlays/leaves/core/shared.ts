@@ -1,14 +1,14 @@
 // Type vocabulary and shared resolver for the leaf system. Document leaves
 // are contextual surfaces anchored to editor layout geometry. Fixed leaves
-// are viewport chrome and do not extend `LeafAnchorTarget`.
+// are viewport chrome and do not extend `DocumentAnchorTarget`.
 //
 //   1. Hooks (useCursor / useSelection / usePointer) emit a
-//      `LeafAnchorTarget` subtype — the declarative "I attach here,
+//      `DocumentAnchorTarget` subtype — the declarative "I attach here,
 //      render this kind of leaf" candidate.
 //   2. Documint resolves each candidate's anchor against the prepared
-//      layout into a `LeafAnchorResolution` — the geometric form
-//      `LeafAnchor` consumes.
-//   3. `LeafAnchor` renders the resolution; the kind discriminator picks
+//      layout into a `DocumentAnchorResolution` — the geometric form
+//      `DocumentAnchor` consumes.
+//   3. `DocumentAnchor` renders the resolution; the kind discriminator picks
 //      the leaf-specific React component (LinkLeaf, AnnotationLeaf, …).
 
 import { isResolvedCommentThread } from "@/document";
@@ -22,7 +22,7 @@ import type { CompletionItem } from "../../../completions/completions";
 
 // Declarative anchoring intent emitted by leaf-producing hooks. Every
 // document-backed leaf candidate kind extends this target.
-export type LeafAnchorTarget = {
+export type DocumentAnchorTarget = {
   // Document point the leaf attaches to. The host derives the line-bottom
   // y (`top`), caret-x (`left`), and line height (`anchorHeight`) from it.
   anchor: EditorSelectionPoint;
@@ -36,7 +36,7 @@ export type LeafAnchorTarget = {
 
 // Reference-stable comparison hooks use to skip leaf re-renders when the
 // underlying anchor target hasn't moved.
-export function areLeafAnchorTargetsEqual(previous: LeafAnchorTarget, next: LeafAnchorTarget) {
+export function areDocumentAnchorTargetsEqual(previous: DocumentAnchorTarget, next: DocumentAnchorTarget) {
   return (
     previous.anchor.regionId === next.anchor.regionId &&
     previous.anchor.offset === next.anchor.offset &&
@@ -45,10 +45,10 @@ export function areLeafAnchorTargetsEqual(previous: LeafAnchorTarget, next: Leaf
   );
 }
 
-// The fully-resolved geometric form of a `LeafAnchorTarget`. Hooks emit
+// The fully-resolved geometric form of a `DocumentAnchorTarget`. Hooks emit
 // the target (declarative); Documint resolves it against the prepared
 // layout, then adds the cross-cutting presentation flags.
-export type LeafAnchorResolution = {
+export type DocumentAnchorResolution = {
   // Line height at the anchor row. The above-flip uses this plus the
   // shell's own height to clear the anchor line.
   anchorHeight: number;
@@ -72,13 +72,13 @@ export type LeafAnchorResolution = {
 
 // Leaf shown when the caret sits on an empty top-level paragraph — the
 // block-insertion menu (heading, list, table, …).
-export type InsertionLeaf = LeafAnchorTarget & {
+export type InsertionLeaf = DocumentAnchorTarget & {
   kind: "insertion";
 };
 
 // Leaf shown when the caret sits inside a table cell — the table-editing
 // menu (insert/delete row/column, delete table).
-export type TableLeaf = LeafAnchorTarget & {
+export type TableLeaf = DocumentAnchorTarget & {
   cellIndex: number;
   columnCount: number;
   kind: "table";
@@ -89,7 +89,7 @@ export type TableLeaf = LeafAnchorTarget & {
 // Leaf shown when there's an active text selection — the annotation
 // toolbar (formatting marks + add-comment trigger). Promoting this leaf
 // after a comment is added produces a `ThreadLeaf`.
-export type AnnotationLeaf = LeafAnchorTarget & {
+export type AnnotationLeaf = DocumentAnchorTarget & {
   formatting: SelectionFormatting;
   kind: "annotation";
   selection: {
@@ -100,7 +100,7 @@ export type AnnotationLeaf = LeafAnchorTarget & {
 };
 
 // Leaf shown when hover or caret lands on a link span.
-export type LinkLeaf = LeafAnchorTarget & {
+export type LinkLeaf = DocumentAnchorTarget & {
   endOffset: number;
   kind: "link";
   regionId: string;
@@ -113,7 +113,7 @@ export type LinkLeaf = LeafAnchorTarget & {
 //   - usePointer / useCursor when hover or caret lands on a commented span.
 //   - useSelection when a selection-annotation leaf is promoted post-submit.
 // Both paths emit this same shape so the renderer doesn't normalize.
-export type ThreadLeaf = LeafAnchorTarget & {
+export type ThreadLeaf = DocumentAnchorTarget & {
   // Plays the entry animation for a freshly-promoted thread; false for
   // hover/cursor-derived threads.
   animateInitialComment: boolean;
@@ -129,9 +129,9 @@ export type ThreadLeaf = LeafAnchorTarget & {
 
 // Leaf shown while the caret is positioned after a completion trigger (e.g.
 // `:` for emoji, `@` for mentions) — the inline suggestion list. The anchor
-// points to the trigger character so `LeafAnchor` positions the popover
+// points to the trigger character so `DocumentAnchor` positions the popover
 // at that line's bottom, with the normal above/below flip.
-export type CompletionLeaf = LeafAnchorTarget & {
+export type CompletionLeaf = DocumentAnchorTarget & {
   activeIndex: number;
   kind: "completion";
   matches: readonly CompletionItem[];

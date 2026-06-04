@@ -4,6 +4,8 @@ A canvas-based, batteries-included markdown editor for React.
 
 > Try it out: [Documint playground](https://lostintangent.github.io/documint).
 
+pdifhj
+
 ## Features
 
 - **Markdown in, markdown out** — Documents are parsed from markdown and serialized back to markdown. Full support for CommonMark, GFM tables, task lists, strikethrough, and fenced code blocks with language hints.

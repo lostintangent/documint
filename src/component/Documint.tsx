@@ -47,17 +47,16 @@ import type {
   DocumintStorage,
   EditorTheme,
 } from "@/types";
-import { PresenceOverlay } from "./overlays/PresenceOverlay";
 import { parseDocument, type MarkdownOptions } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
-import { CompletionLeaf } from "./overlays/leaves/core/CompletionLeaf";
+import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
 import type { CompletionSource } from "./completions/completions";
 import { createMentionCompletionSource, emojiCompletionSource } from "./completions/sources";
 import { InsertionLeaf } from "./overlays/leaves/InsertionLeaf";
-import { LeafAnchor } from "./overlays/leaves/core/anchor/LeafAnchor";
-import { OverlayLeaf } from "./overlays/leaves/core/OverlayLeaf";
-import type { LeafAnchorResolution } from "./overlays/leaves/core/shared";
+import { DocumentAnchor } from "./overlays/anchors/DocumentAnchor";
+import { ViewportAnchor } from "./overlays/anchors/ViewportAnchor";
+import type { DocumentAnchorResolution } from "./overlays/leaves/core/shared";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { SearchLeaf } from "./overlays/leaves/SearchLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
@@ -759,7 +758,7 @@ function DocumintHost({
   // the prepared layout. Returns null when no leaf is active or its
   // anchor falls outside the editor's visible window — the same gate the
   // canvas painter applies to the caret.
-  const resolveLeafAnchor = (): LeafAnchorResolution | null => {
+  const resolveDocumentAnchor = (): DocumentAnchorResolution | null => {
     if (!activeDocumentLeaf) {
       return null;
     }
@@ -800,7 +799,7 @@ function DocumintHost({
       top: (scrollContainerBounds?.top ?? 0) + hostScrollY + anchorBottom - viewportTop,
     };
   };
-  const leafAnchor = resolveLeafAnchor();
+  const documentAnchor = resolveDocumentAnchor();
 
   const resolveDocumentLeafContent = () => {
     if (!activeDocumentLeaf) {
@@ -946,7 +945,7 @@ function DocumintHost({
   // Each branch of `resolveDocumentLeafContent` allocates several inline
   // callbacks, so this avoids per-frame churn during scrolls that move the
   // cursor leaf's anchor in and out of the viewport.
-  const documentLeafContent = leafAnchor ? resolveDocumentLeafContent() : null;
+  const documentLeafContent = documentAnchor ? resolveDocumentLeafContent() : null;
 
   /* Render */
 
@@ -989,18 +988,15 @@ function DocumintHost({
             wrap="off"
           />
 
-          <div
-            className="documint-fixed-overlay-layer"
-            style={{
-              paddingRight: `${preferredTheme.paddingX}px`,
-              top: `${preferredTheme.paddingY}px`,
-            }}
+          <ViewportAnchor
+            open={search.leaf !== null}
+            presence={resolvedPresence}
+            onPresenceSelect={scrollToPresence}
+            paddingX={preferredTheme.paddingX}
+            paddingY={preferredTheme.paddingY}
           >
-            <OverlayLeaf open={search.leaf !== null}>
-              {search.leaf ? <SearchLeaf {...search.leaf} /> : null}
-            </OverlayLeaf>
-            <PresenceOverlay onSelect={scrollToPresence} presence={resolvedPresence} />
-          </div>
+            {search.leaf ? <SearchLeaf {...search.leaf} /> : null}
+          </ViewportAnchor>
 
           {/* Scroll content wrapper (this forces a virtualized scroll height for the document, that is only partially rendered) */}
           <div {...viewportProps.scrollContent} className="documint-scroll-content">
@@ -1046,7 +1042,9 @@ function DocumintHost({
             )}
 
             {/* Leaf overlay */}
-            {leafAnchor ? <LeafAnchor anchor={leafAnchor}>{documentLeafContent}</LeafAnchor> : null}
+            {documentAnchor ? (
+              <DocumentAnchor anchor={documentAnchor}>{documentLeafContent}</DocumentAnchor>
+            ) : null}
           </div>
         </div>
       </section>

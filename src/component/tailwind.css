@@ -30,7 +30,7 @@
   --color-leaf-button-active-bg: var(--documint-leaf-button-active-bg);
   --color-leaf-input-button-active-bg: var(--documint-leaf-input-button-active-bg);
 
-  /* Inline content — MarkdownOutput's mention pill and inline code */
+  /* Inline content — LeafMarkdown's mention pill and inline code */
   --color-inline-code: var(--documint-inline-code-text);
   --color-inline-code-bg: var(--documint-inline-code-bg);
   --color-mention: var(--documint-mention-text, var(--documint-leaf-accent));
@@ -48,8 +48,48 @@
   --spacing-5_8: 1.45rem;
 }
 
-/* Scan migrated leaf modules for utility classes. */
-@source "./overlays/leaves/**/*.tsx";
+/* Component classes for state-based animations that don't compose
+   cleanly as single utility variants. Each class encapsulates a
+   hover/focus reveal — Tailwind utilities still cover the rest of
+   the styling in the consumer's JSX. The dual `:hover` + `:focus-visible`
+   trigger pattern is the common reason something lives here: expressing
+   it inline would require naming two groups (row + button) and
+   duplicating every animated property under both variants.
+   Consumer rule: don't apply Tailwind utilities for properties a
+   component class controls — `@layer utilities` runs after this layer
+   in the cascade and would silently override the state-based rules. */
+@layer components {
+  /* Presence-indicator status text. Hidden by default; slides out (animated
+     `max-width` + padding) when the row is hovered or the button is
+     keyboard-focused. The `12rem`/`5rem` cap is "expand up to 12rem unless
+     that would push the indicator within 5rem of the viewport edge." */
+  .presence-status {
+    max-width: 0;
+    padding: 0;
+    transition:
+      max-width 180ms ease,
+      padding 180ms ease;
+  }
+  .presence-row:hover .presence-status,
+  .presence-button:focus-visible .presence-status {
+    max-width: min(12rem, calc(100vw - 5rem));
+    padding: 0 0.48rem 0 0.5rem;
+  }
+
+  /* Vertical divider inside a presence indicator. Same dual reveal
+     trigger as `.presence-status`, just animating opacity. */
+  .presence-divider {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .presence-row:hover .presence-button > .presence-divider,
+  .presence-button:focus-visible > .presence-divider {
+    opacity: 1;
+  }
+}
+
+/* Scan migrated modules for utility classes. */
+@source "./overlays/**/*.tsx";
 
 /* Exclude words that match utility names but appear as element types or
    string content (`<table>`, `display: fixed`, Lucide icons like

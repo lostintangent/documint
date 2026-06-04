@@ -1,5 +1,5 @@
 // Floating search bar — the only fixed-position leaf (rendered as editor
-// chrome by `OverlayLeaf`, not as a document-anchored popover). Wraps a
+// chrome by `ViewportAnchor`, not as a document-anchored popover). Wraps a
 // text input with a leading magnifier and trailing case-toggle, plus
 // prev/next/close buttons. Driven entirely by host state via props; the
 // leaf itself owns no search logic, just the keyboard contract.
@@ -140,10 +140,10 @@ function resolveSearchResultCount(
   return `${activeMatchNumber} / ${matchCount}`;
 }
 
-// Search-bar icon button. `min-w-5.8` is inherited from `LeafButton`'s
-// icon-only branch and the outer grid stretches the button to fill its
+// Search-bar icon button. The outer grid stretches each button to its
 // 1.45rem column, so no width utilities are needed here. `!p-0` overrides
-// `LeafButton`'s `px-0.5` to keep the icon hard-centered within the cell.
+// `LeafButton`'s `px-0.5` so the icon hard-centers in the cell instead of
+// being offset by inline padding.
 function SearchButton({ className, ...props }: Omit<LeafButtonProps, "iconSize">) {
   return <LeafButton {...props} className={clx("!p-0", className)} iconSize={15} />;
 }

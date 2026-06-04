@@ -79,134 +79,16 @@
   pointer-events: none;
 }
 
-.documint-fixed-overlay-layer {
+/* Geometry sentinel for `ViewportAnchor`: a sticky, zero-height marker
+   pinned to the editor's top-right. Carries no visible content — the
+   actual leaf + presence chrome renders inside `OverlayPortal` (shadow
+   root) using this element's mirrored rect for positioning. The inline
+   `top` value (theme-derived `paddingY`) is set by `ViewportAnchor`. */
+.documint-viewport-anchor-sentinel {
   position: sticky;
-  z-index: 1050;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
   height: 0;
   overflow-anchor: none;
   pointer-events: none;
-}
-
-.documint-presence-indicators {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.45rem;
-  height: 0;
-  pointer-events: none;
-}
-
-.documint-presence-indicator-row {
-  --documint-presence-indicator-size: 1.45rem;
-  position: relative;
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 0.45rem;
-  pointer-events: auto;
-}
-
-.documint-presence-indicator {
-  display: inline-flex;
-  flex-direction: row-reverse;
-  align-items: center;
-  min-width: var(--documint-presence-indicator-size);
-  height: var(--documint-presence-indicator-size);
-  padding: 0;
-  border: 1px solid var(--documint-leaf-border);
-  border-radius: 999px;
-  background: var(--documint-leaf-bg);
-  box-shadow: var(--documint-leaf-shadow, var(--documint-leaf-shadow-fallback));
-  color: var(--documint-leaf-text);
-  cursor: pointer;
-  font-family: var(--documint-leaf-font-family, "Avenir Next", "Segoe UI", sans-serif);
-  font-size: 0.66rem;
-  font-weight: 600;
-  line-height: 1;
-  pointer-events: auto;
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.72;
-  }
-}
-
-.documint-presence-indicator-avatar {
-  display: inline-grid;
-  place-items: center;
-  width: var(--documint-presence-indicator-size);
-  height: var(--documint-presence-indicator-size);
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--documint-presence-color);
-  color: white;
-}
-
-.documint-presence-indicator-image {
-  display: block;
-  width: calc(100% - 2px);
-  height: calc(100% - 2px);
-  border-radius: inherit;
-  object-fit: cover;
-}
-
-.documint-presence-indicator-direction {
-  display: inline-flex;
-  align-items: center;
-  height: 100%;
-  padding: 0 0.42rem 0 0.36rem;
-  color: var(--documint-leaf-text);
-}
-
-.documint-presence-indicator-arrow {
-  display: block;
-}
-
-.documint-presence-indicator-status {
-  display: inline-flex;
-  align-items: center;
-  max-width: 0;
-  height: 100%;
-  overflow: hidden;
-  overflow-x: auto;
-  padding: 0;
-  color: var(--documint-leaf-secondary-text);
-  font-size: 0.72rem;
-  font-weight: 400;
-  line-height: 1;
-  scrollbar-width: none;
-  white-space: nowrap;
-  transition:
-    max-width 180ms ease,
-    padding 180ms ease;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-.documint-presence-indicator > .documint-leaf-divider[data-orientation="vertical"] {
-  align-self: center;
-  height: 0.78rem;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.documint-presence-indicator-row:hover .documint-presence-indicator-status,
-.documint-presence-indicator:focus-visible .documint-presence-indicator-status {
-  max-width: min(12rem, calc(100vw - 5rem));
-  padding: 0 0.48rem 0 0.5rem;
-}
-
-.documint-presence-indicator-row:hover
-  .documint-presence-indicator
-  > .documint-leaf-divider[data-orientation="vertical"],
-.documint-presence-indicator:focus-visible > .documint-leaf-divider[data-orientation="vertical"] {
-  max-width: 1px;
-  opacity: 1;
 }
 
 .documint-resize-handle {

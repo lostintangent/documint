@@ -41,7 +41,7 @@ import { resolvePresenceName } from "../../lib/presence";
 import { LeafButton } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/input/LeafInput";
-import { MarkdownOutput } from "./core/MarkdownOutput";
+import { LeafMarkdown } from "./core/LeafMarkdown";
 import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./core/lib/formatting";
 import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
@@ -560,7 +560,7 @@ function AnnotationLeafBody({
           }
         >
           {rootComment ? (
-            <MarkdownOutput
+            <LeafMarkdown
               mentionTargets={mentionTargets}
               onDoubleClick={() => onBeginEditingComment(0, rootComment.body)}
               value={rootComment.body}
@@ -615,7 +615,7 @@ function AnnotationLeafBody({
                   value={editDraft}
                 />
               ) : (
-                <MarkdownOutput
+                <LeafMarkdown
                   mentionTargets={mentionTargets}
                   onDoubleClick={() => onBeginEditingComment(actualIndex, comment.body)}
                   value={comment.body}

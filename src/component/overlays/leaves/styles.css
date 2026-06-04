@@ -11,7 +11,7 @@
 /* -- Anchor: document leaves portal to page coordinates; fixed leaves render as editor chrome. -- */
 
 /* `--documint-leaf-anchor-*`, `--documint-leaf-bridge-*`, and
-   `--documint-leaf-padding-y` are JS-owned (set inline by `LeafAnchor`).
+   `--documint-leaf-padding-y` are JS-owned (set inline by `DocumentAnchor`).
    `position: absolute` against the initial containing block lets the
    browser move the leaf with host-page scrolls naturally. */
 .documint-leaf-anchor {
@@ -161,7 +161,7 @@
   /* Comment-thread-specific resolved styling — `data-resolved` is set by
      AnnotationLeaf on its own root, not by the shared shell. We target it
      via :has() so the resolved state stays a comment concern instead of
-     leaking up into the generic LeafAnchor surface. */
+     leaking up into the generic DocumentAnchor surface. */
   &:has([data-resolved="true"]) {
     border-color: var(--documint-leaf-resolved-border);
   }
@@ -172,8 +172,12 @@
 }
 
 .documint-leaf-divider {
-  /* Fallback for fixed overlays that still render outside the shadow portal.
-     Shadow-portaled leaves get the same rules from LeafDivider's utilities. */
+  /* Visible divider styling. `LeafDivider` also sets Tailwind dimension
+     utilities, but these rules win (later in the portal stylesheet) and
+     apply the design-system-precise values: 0.2rem horizontal margin,
+     1.15rem vertical height. The class also acts as a hook surface for
+     selector rules elsewhere (comment-create animation,
+     `.presence-divider` opacity reveal in `tailwind.css`). */
   flex: none;
   background: var(
     --documint-leaf-divider-color,

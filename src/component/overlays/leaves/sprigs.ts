@@ -32,7 +32,7 @@ import {
 import { editorStateSprig } from "../../store/editor/sprigs";
 import { renderedLayoutSprig } from "../../store/layout/sprigs";
 import {
-  areLeafAnchorTargetsEqual,
+  areDocumentAnchorTargetsEqual,
   resolveContextualLeaf,
   type AnnotationLeaf,
   type InsertionLeaf,
@@ -72,15 +72,15 @@ export type PointerView = {
 // are just different subsets of the same per-kind functions.
 
 const equalAnnotationLeaf = (a: AnnotationLeaf, b: AnnotationLeaf): boolean =>
-  areLeafAnchorTargetsEqual(a, b) &&
+  areDocumentAnchorTargetsEqual(a, b) &&
   equalSelectionFormatting(a.formatting, b.formatting) &&
   equalShallowObject(a.selection, b.selection);
 
 const equalInsertionLeaf = (a: InsertionLeaf, b: InsertionLeaf): boolean =>
-  areLeafAnchorTargetsEqual(a, b);
+  areDocumentAnchorTargetsEqual(a, b);
 
 const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
-  areLeafAnchorTargetsEqual(a, b) &&
+  areDocumentAnchorTargetsEqual(a, b) &&
   a.endOffset === b.endOffset &&
   a.regionId === b.regionId &&
   a.startOffset === b.startOffset &&
@@ -88,7 +88,7 @@ const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
   a.url === b.url;
 
 const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
-  areLeafAnchorTargetsEqual(a, b) &&
+  areDocumentAnchorTargetsEqual(a, b) &&
   a.cellIndex === b.cellIndex &&
   a.columnCount === b.columnCount &&
   a.rowCount === b.rowCount &&
@@ -98,7 +98,7 @@ const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
 // immutable, so reference identity captures any meaningful change. If
 // threads ever gain in-place mutability, this needs to compare structurally.
 const equalThreadLeaf = (a: ThreadLeaf, b: ThreadLeaf): boolean =>
-  areLeafAnchorTargetsEqual(a, b) &&
+  areDocumentAnchorTargetsEqual(a, b) &&
   a.animateInitialComment === b.animateInitialComment &&
   a.link?.title === b.link?.title &&
   a.link?.url === b.link?.url &&
