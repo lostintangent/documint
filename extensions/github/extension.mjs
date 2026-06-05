@@ -434,7 +434,20 @@ async function handlePostCopilotUserMentionRequest({ request, response, url }) {
 
 async function handleEventsRequest({ response, url }) {
   const document = getRequestDocument(url);
-  await refreshDocumentFromDisk(document);
+  try {
+    await refreshDocumentFromDisk(document);
+  } catch (error) {
+    // A transient read/stat failure here (e.g. a concurrent Copilot write to
+    // the same file) must not surface as a non-2xx response: the browser
+    // EventSource transitions to CLOSED on non-2xx with no auto-reconnect,
+    // which permanently silences presence and content events for this canvas
+    // until it is reopened. Fall back to the cached document; the watcher
+    // will pick up the next successful refresh.
+    await session.log(
+      `Documint /events refresh failed for ${document.key}; serving cached state: ${error instanceof Error ? error.message : String(error)}`,
+      { level: "error" },
+    );
+  }
   subscribe(document, response, url.searchParams.get("clientId"));
 }
 
@@ -862,12 +875,30 @@ function subscribe(document, response, clientId) {
     response,
   };
   set.add(subscriber);
-  response.on("close", () => {
-    set.delete(subscriber);
+
+  const dropSubscriber = () => {
+    if (!set.delete(subscriber)) {
+      return;
+    }
     if (set.size === 0) {
       subscribers.delete(document.key);
     }
+  };
+
+  // Listen for both terminal signals: without an "error" listener Node
+  // surfaces stream errors as uncaughtException, and a half-open response
+  // that errors without firing "close" would otherwise linger in the set.
+  response.on("close", dropSubscriber);
+  response.on("error", (error) => {
+    void session
+      .log(
+        `Documint SSE subscriber errored for ${document.key}; dropping: ${error instanceof Error ? error.message : String(error)}`,
+        { level: "error" },
+      )
+      .catch(() => {});
+    dropSubscriber();
   });
+
   response.write(`data: ${JSON.stringify({ type: "state", state: toClientState(document) })}\n\n`);
 }
 
