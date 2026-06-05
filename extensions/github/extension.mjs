@@ -476,7 +476,7 @@ function handleCopilotMention(document, body) {
     source: body.source === "reply" ? "reply" : "comment",
     thread: body.thread && typeof body.thread === "object" ? body.thread : null,
     threadId: typeof body.threadId === "string" ? body.threadId : null,
-    trigger: typeof body.trigger === "string" ? body.trigger : "direct-mention",
+    trigger: readCommentTrigger(body.trigger),
   });
 }
 
@@ -538,7 +538,7 @@ function startCopilotJob(document, request) {
     state: "running",
     startedAt: new Date().toISOString(),
     threadId: request.threadId,
-    message: "Copilot is editing the markdown file.",
+    message: "Copilot is reviewing things.",
     cursor: request.cursor ?? null,
   };
   activeCopilotJobs.set(job.id, job);
@@ -788,40 +788,35 @@ async function getChildClient() {
   return childClientPromise;
 }
 
+const COMMENT_TRIAGE_RUBRIC = `First decide how to respond. The latest comment may be:
+(a) A request to change the document body — e.g. "fix this typo", "rewrite this paragraph", "add a section about X", "remove the second bullet", "merge these two paragraphs".
+(b) A request for information, feedback, or review — e.g. "what does this mean?", "is this section clear?", "explain the tradeoffs", "check whether this matches the implementation", "does this match what we agreed?". This includes off-document work such as inspecting the parent session's files or searching the repository before replying.
+(c) An acknowledgement or no-op — e.g. "thanks", "looks good", "approved", "resolved", "never mind".
+(d) A mix of (a) and (b).
+
+For (a) — edit the document body to satisfy the request, then reply in the thread with a brief summary of what changed.
+For (b) — do not change the document body. Reply in the thread with the answer, feedback, or analysis.
+For (c) — do not change the document body. Add a brief acknowledgement reply only if one would help the user; otherwise add nothing.
+For (d) — first make the body edit, then reply in the thread with both the answer to the question and a brief summary of the change.
+
+Default to preserving the document body. Only change the body when the latest comment clearly asks Copilot to change it. When in doubt, do not edit; reply with a clarifying question instead.`;
+
 function buildCopilotPrompt(document, request) {
-  const parentSessionId = session?.sessionId ?? "(unknown)";
-  const parentSessionWorkspace = session?.workspacePath ?? "(not available)";
-  const parentWorkingDirectoryPath = parentWorkingDirectory();
-  const threadJson = request.thread ? JSON.stringify(request.thread, null, 2) : "(thread payload unavailable)";
-  const timestamp = new Date().toISOString();
-  const completionReplyInstruction = request.threadId
-    ? `Before finishing, append a reply to the associated comment thread in the trailing :::documint-comments JSON. Match the thread by the provided payload (quote/anchor/existing comments; the persisted JSON may omit the runtime id), then add a new object to that thread's "comments" array with "updatedAt" set to "${timestamp}" and "body" set to a short completion note.`
-    : "No comment thread is associated with this request, so do not add a comment-thread reply.";
-  const documentMentionCleanupInstruction =
-    request.trigger === "document-mention"
-      ? "When the requested edit is complete, delete the inline @Copilot mention link from the markdown (for example, remove `@[Copilot](copilot)` from the mentioned line)."
-      : "No document-level @Copilot mention cleanup is needed for this request.";
-  const opener =
-    request.trigger === "document-mention"
-      ? "A Documint markdown document line mentioned @Copilot. Edit the backing markdown file directly to satisfy the instruction on that line."
-      : request.trigger === "thread-reply"
-      ? "A Documint markdown canvas reply was added to a thread that previously mentioned @Copilot. Edit the backing markdown file directly to satisfy the latest reply."
-      : "A Documint markdown canvas comment mentioned @Copilot. Edit the backing markdown file directly to satisfy the comment.";
-  return `${opener}
+  const filePath = document.filePath;
+  const isComment = isCommentRequest(request);
+  const isDocumentMention = request.trigger === "document-mention";
+  let opener;
+  let context;
 
-Parent Copilot session ID:
-${parentSessionId}
-
-Parent session working directory:
-${parentWorkingDirectoryPath}
-
-Parent session workspace:
-${parentSessionWorkspace}
-
-Backing file:
-${document.filePath}
-
-Comment source:
+  if (isComment) {
+    const threadJson = request.thread
+      ? JSON.stringify(request.thread, null, 2)
+      : "(thread payload unavailable)";
+    opener =
+      request.trigger === "thread-reply"
+        ? "A new reply was added to a Documint comment thread that previously mentioned @Copilot. Read the latest reply and decide how to respond."
+        : "A Documint comment thread mentioned @Copilot. Read the comment and decide how to respond.";
+    context = `Comment source:
 ${request.source}
 
 Thread ID:
@@ -830,29 +825,93 @@ ${request.threadId ?? "(none)"}
 Latest comment body:
 ${request.body || "(empty)"}
 
-Mentioned line number:
-${request.lineNumber ?? "(none)"}
-
-Mentioned line markdown:
-${request.lineMarkdown ?? "(none)"}
-
 Thread payload:
-${threadJson}
+${threadJson}`;
+  } else {
+    const instructionLabel = isDocumentMention
+      ? "Mentioned line markdown"
+      : "Supplied instructions";
+    const lineNumberSection = isDocumentMention
+      ? `\n\nMentioned line number:\n${request.lineNumber ?? "(none)"}`
+      : "";
+    opener = isDocumentMention
+      ? "A Documint markdown document line mentioned @Copilot. Edit the backing markdown file directly to satisfy the instruction on that line."
+      : "A Documint canvas action asked Copilot to edit the markdown file. Edit the backing markdown file directly to satisfy the supplied instructions.";
+    context = `Source:
+${request.source}
+
+${instructionLabel}:
+${request.body || "(empty)"}${lineNumberSection}`;
+  }
+  const instructions = [
+    isComment
+      ? `Always read ${filePath} before any file change, including a comment-thread reply (replies live in the trailing :::documint-comments JSON in this same file).`
+      : `Read ${filePath} before editing it, then modify that file directly without creating a copy.`,
+    `If a file edit is denied because the Documint document changed, re-read ${filePath} and retry the edit against the latest contents.`,
+    `Avoid shell commands for writing ${filePath}; use file editing tools so Documint can protect document revisions.`,
+    "Treat the parent Copilot session as the source of intent and working context for this Documint document.",
+    `Use the parent session working directory when you need to inspect project files, answer questions, or understand repository state before ${
+      isComment ? "replying or editing" : "editing the document"
+    }.`,
+    "Use the parent session workspace when you need persisted session context such as plan.md, checkpoints, files, or other session artifacts.",
+  ];
+
+  if (isComment) {
+    const timestamp = new Date().toISOString();
+    instructions.push(
+      "If you edit the document body, keep the edit scoped to the comment request and the parent session intent.",
+      "Preserve unrelated document body content and the trailing :::documint-comments directive.",
+      "If you update comment JSON, keep the Documint comment JSON valid.",
+      `To add a thread reply, append a new object to the matching thread's "comments" array in the trailing :::documint-comments JSON. Match the thread by the provided payload (quote/anchor/existing comments; the persisted JSON may omit the runtime id). Set "updatedAt" to "${timestamp}" and "body" to the reply text.`,
+      "No inline document-level @Copilot mention cleanup is needed for this request.",
+      "When finished, briefly summarize what changed; for reply-only responses, note that the response was posted in the thread.",
+    );
+  } else {
+    instructions.push(
+      "The instruction may require researching the parent session's files/context before deciding what document edit is appropriate.",
+      "Keep the final edit scoped to the instruction and the parent session intent.",
+      "Preserve unrelated document body content and the trailing :::documint-comments directive.",
+      "If you update comment JSON, keep the Documint comment JSON valid.",
+      "No comment thread is associated with this request; do not add a comment-thread reply.",
+    );
+    if (isDocumentMention) {
+      instructions.push(
+        "When the requested edit is complete, delete the inline @Copilot mention link from the markdown (for example, remove `@[Copilot](copilot)` from the mentioned line).",
+      );
+    }
+    instructions.push("When finished, briefly summarize what changed.");
+  }
+
+  return `${opener}${isComment ? `\n\n${COMMENT_TRIAGE_RUBRIC}` : ""}
+
+Parent Copilot session ID:
+${session?.sessionId ?? "(unknown)"}
+
+Parent session working directory:
+${parentWorkingDirectory()}
+
+Parent session workspace:
+${session?.workspacePath ?? "(not available)"}
+
+Backing file:
+${filePath}
+
+${context}
 
 Instructions:
-- Read ${document.filePath} before editing it, then modify that file directly without creating a copy.
-- If a file edit is denied because the Documint document changed, re-read ${document.filePath} and retry the edit against the latest contents.
-- Avoid shell commands for writing ${document.filePath}; use file editing tools so Documint can protect document revisions.
-- Treat the parent Copilot session as the source of intent and working context for this Documint document.
-- Use the parent session working directory when you need to inspect project files, answer questions, or understand repository state before editing the document.
-- Use the parent session workspace when you need persisted session context such as plan.md, checkpoints, files, or other session artifacts.
-- The comment or mention may require researching the parent session's files/context before deciding what document edit or comment reply is appropriate.
-- Keep the final edit scoped to the comment request and the parent session intent.
-- Preserve unrelated content and the trailing :::documint-comments directive.
-- If you update comment JSON, keep the Documint comment JSON valid.
-- ${completionReplyInstruction}
-- ${documentMentionCleanupInstruction}
-- When finished, briefly summarize what changed.`;
+${formatInstructionBullets(instructions)}`;
+}
+
+function isCommentRequest(request) {
+  return request.trigger === "direct-mention" || request.trigger === "thread-reply";
+}
+
+function readCommentTrigger(value) {
+  return value === "thread-reply" ? "thread-reply" : "direct-mention";
+}
+
+function formatInstructionBullets(instructions) {
+  return instructions.map((instruction) => `- ${instruction}`).join("\n");
 }
 
 function parentWorkingDirectory() {
