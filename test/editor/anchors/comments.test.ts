@@ -81,7 +81,17 @@ test("detects only unresolved presence-active comment highlights as animated", (
   const unresolvedCommentState = getCommentState(unresolvedState.documentIndex);
 
   const presenceMap = new Map<number, EditorPresence>([
-    [0, { commentThreadIndex: 0, cursorPoint: null, id: "user", username: "User", viewport: null }],
+    [
+      0,
+      {
+        commentThreadIndex: 0,
+        cursorPoint: null,
+        id: "user",
+        isOnUnresolvedCommentThread: true,
+        username: "User",
+        viewport: null,
+      },
+    ],
   ]);
 
   expect(

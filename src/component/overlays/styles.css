@@ -99,6 +99,24 @@
   .presence-button:focus-visible > .presence-divider {
     opacity: 1;
   }
+
+  .presence-avatar {
+    position: relative;
+    isolation: isolate;
+  }
+
+  .presence-avatar.is-pulsing::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: var(--presence-color, var(--documint-leaf-accent));
+    opacity: 0.28;
+    transform: scale(0.72);
+    animation: presence-avatar-pulse 1600ms ease-in-out infinite;
+    pointer-events: none;
+    z-index: -1;
+  }
 }
 
 /* === Portal wrapper ===
@@ -425,8 +443,12 @@
     border-radius: inherit;
     background: var(--comment-presence-color, var(--documint-leaf-accent));
     opacity: 0.28;
-    animation: comment-presence-pulse 1600ms ease-in-out infinite;
+    transform: scale(0.72);
     z-index: -1;
+  }
+
+  &.is-pulsing::after {
+    animation: comment-presence-pulse 1600ms ease-in-out infinite;
   }
 }
 
@@ -454,6 +476,26 @@
   50% {
     opacity: 0.1;
     transform: scale(1.55);
+  }
+}
+
+@keyframes presence-avatar-pulse {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: scale(0.72);
+  }
+
+  50% {
+    opacity: 0.1;
+    transform: scale(1.24);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .presence-avatar.is-pulsing::after,
+  .comment-presence-dot.is-pulsing::after {
+    animation: none;
   }
 }
 

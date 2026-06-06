@@ -659,7 +659,9 @@ function AnnotationLeafBody({
           rows={3}
           value={composerValue}
         />
-        {mode === "thread" && presence ? <CommentPresenceStatus presence={presence} /> : null}
+        {mode === "thread" && presence ? (
+          <CommentPresenceStatus isResolved={isResolved} presence={presence} />
+        ) : null}
       </div>
     </>
   );
@@ -731,7 +733,13 @@ async function pasteClipboardText(
   pastePlainTextCommand(text, markdownOptions);
 }
 
-function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
+function CommentPresenceStatus({
+  isResolved,
+  presence,
+}: {
+  isResolved: boolean;
+  presence: EditorPresence;
+}) {
   const name = resolvePresenceName(presence);
   const status = presence.status?.trim();
 
@@ -739,7 +747,7 @@ function CommentPresenceStatus({ presence }: { presence: EditorPresence }) {
     <div className="comment-presence">
       <span
         aria-hidden="true"
-        className="comment-presence-dot"
+        className={`comment-presence-dot${isResolved ? "" : " is-pulsing"}`}
         style={
           {
             "--comment-presence-color": presence.color ?? "var(--documint-leaf-accent)",

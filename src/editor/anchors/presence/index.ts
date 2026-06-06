@@ -12,6 +12,7 @@ import {
   findContextRanges,
   findOccurrences,
   isCommentThreadAnchor,
+  isResolvedCommentThread,
   type Anchor,
   type AnchorContainer,
   type TextAnchor,
@@ -35,6 +36,7 @@ export type EditorPresenceViewportStatus = EditorPresenceViewport["status"];
 export type EditorPresence = DocumentUserPresence & {
   commentThreadIndex: number | null;
   cursorPoint: EditorSelectionPoint | null;
+  isOnUnresolvedCommentThread: boolean;
   viewport: EditorPresenceViewport | null;
 };
 
@@ -78,6 +80,7 @@ function resolvePresenceTarget(
     return {
       commentThreadIndex: null,
       cursorPoint: null,
+      isOnUnresolvedCommentThread: false,
     };
   }
 
@@ -92,6 +95,7 @@ function resolvePresenceTarget(
       semanticContainers,
       containerProjection,
     ),
+    isOnUnresolvedCommentThread: false,
   };
 }
 
@@ -103,9 +107,12 @@ function resolveCommentThreadPresenceTarget(
     (thread) => thread.id === anchor.threadId,
   );
 
+  const thread = threadIndex >= 0 ? documentIndex.document.comments[threadIndex] : undefined;
+
   return {
-    commentThreadIndex: threadIndex >= 0 ? threadIndex : null,
+    commentThreadIndex: thread ? threadIndex : null,
     cursorPoint: null,
+    isOnUnresolvedCommentThread: thread ? !isResolvedCommentThread(thread) : false,
   };
 }
 

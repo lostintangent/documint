@@ -56,7 +56,13 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
         onClick={canScrollToPresence ? onSelect : undefined}
         type="button"
       >
-        <span className="inline-grid place-items-center w-5.8 h-5.8 p-px overflow-hidden rounded-full bg-[var(--presence-color)] text-white">
+        <span
+          className={clx(
+            "presence-avatar",
+            "inline-grid place-items-center w-5.8 h-5.8 p-px rounded-full bg-[var(--presence-color)] text-white",
+            presence.isOnUnresolvedCommentThread && "is-pulsing",
+          )}
+        >
           {presence.avatarUrl ? (
             <img
               alt=""

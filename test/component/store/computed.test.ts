@@ -13,7 +13,7 @@ import {
 import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/sprigs";
 import { commentPresenceSprig, resolvedPresenceSprig } from "@/component/store/presence";
 import { getDocument } from "@/editor";
-import { addComment, insertText, setSelection } from "@/editor/state";
+import { addComment, insertText, resolveThread, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
 
 describe("computed sprigs", () => {
@@ -220,12 +220,52 @@ describe("computed sprigs", () => {
             cursor: { threadId },
             cursorPoint: null,
             id: "user",
+            isOnUnresolvedCommentThread: true,
             username: "User",
             viewport: null,
           },
         ],
       ]),
     );
+  });
+
+  test("marks presence on unresolved comment threads", () => {
+    const state = setupPresenceCommentState();
+    const store = createStore(getDocument(state));
+    const [unresolvedThread, resolvedThread] = getDocument(state).comments;
+
+    if (!unresolvedThread || !resolvedThread) {
+      throw new Error("Expected comment threads");
+    }
+
+    const resolvedPresence = resolvedPresenceSprig.read(store, [
+      {
+        cursor: { threadId: unresolvedThread.id },
+        id: "unresolved-user",
+        username: "Unresolved",
+      },
+      {
+        cursor: { threadId: resolvedThread.id },
+        id: "resolved-user",
+        username: "Resolved",
+      },
+      {
+        cursor: { prefix: "alpha" },
+        id: "text-user",
+        username: "Text",
+      },
+    ]);
+
+    expect(
+      resolvedPresence?.map((presence) => [
+        presence.id,
+        presence.isOnUnresolvedCommentThread,
+      ]),
+    ).toEqual([
+      ["unresolved-user", true],
+      ["resolved-user", false],
+      ["text-user", false],
+    ]);
   });
 
   test("derives document completion from the active editor selection", () => {
@@ -370,4 +410,33 @@ function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
   }
 
   return true;
+}
+
+function setupPresenceCommentState() {
+  let state = setup("alpha beta gamma\n");
+  const region = getRegion(state, "alpha beta gamma");
+
+  state =
+    addComment(
+      state,
+      {
+        endOffset: "alpha".length,
+        regionId: region.id,
+        startOffset: 0,
+      },
+      "Unresolved thread",
+    ) ?? state;
+
+  state =
+    addComment(
+      state,
+      {
+        endOffset: "alpha beta".length,
+        regionId: region.id,
+        startOffset: "alpha ".length,
+      },
+      "Resolved thread",
+    ) ?? state;
+
+  return resolveThread(state, 1, true) ?? state;
 }

@@ -25,6 +25,7 @@ const equalPresenceItem = (previous: EditorPresence, next: EditorPresence) => {
     previous.color === next.color &&
     previous.status === next.status &&
     previous.commentThreadIndex === next.commentThreadIndex &&
+    previous.isOnUnresolvedCommentThread === next.isOnUnresolvedCommentThread &&
     equalCursorPoints(previous.cursorPoint, next.cursorPoint) &&
     equalShallowObject(previous.viewport, next.viewport)
   );

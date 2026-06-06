@@ -1139,6 +1139,7 @@ function createCommentPresence(threadIndex: number, color?: string): EditorPrese
     commentThreadIndex: threadIndex,
     cursorPoint: null,
     id: "user",
+    isOnUnresolvedCommentThread: true,
     username: "User",
     viewport: null,
   };
