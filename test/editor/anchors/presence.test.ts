@@ -144,6 +144,7 @@ test("resolves comment thread anchors as active threads without projecting a cur
 
   expect(presence?.commentThreadIndex).toBe(0);
   expect(presence?.cursorPoint).toBeNull();
+  expect(presence?.isOnUnresolvedCommentThread).toBe(true);
 });
 
 test("leaves missing comment thread anchors unresolved", () => {
@@ -159,6 +160,7 @@ test("leaves missing comment thread anchors unresolved", () => {
 
   expect(presence?.commentThreadIndex).toBeNull();
   expect(presence?.cursorPoint).toBeNull();
+  expect(presence?.isOnUnresolvedCommentThread).toBe(false);
 });
 
 test("leaves ambiguous or missing targets unresolved", () => {
@@ -355,6 +357,7 @@ test("keeps unresolved presence visible without a scroll target", () => {
           commentThreadIndex: null,
           cursorPoint: null,
           id: "unresolved",
+          isOnUnresolvedCommentThread: false,
           username: "Unresolved",
           viewport: null,
         },
@@ -366,6 +369,7 @@ test("keeps unresolved presence visible without a scroll target", () => {
       commentThreadIndex: null,
       cursorPoint: null,
       id: "unresolved",
+      isOnUnresolvedCommentThread: false,
       username: "Unresolved",
       viewport: {
         status: "unresolved",
@@ -389,6 +393,7 @@ function createResolvedCursor(username: string, region: EditableRegion): EditorP
       regionId: region.id,
     },
     id: username,
+    isOnUnresolvedCommentThread: false,
     username,
     viewport: null,
   };
