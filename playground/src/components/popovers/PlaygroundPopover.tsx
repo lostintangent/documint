@@ -129,7 +129,7 @@ export function PlaygroundPopover({
       </button>
       {open ? (
         <div
-          className={`font-controls absolute top-[calc(100%+0.5rem)] right-0 z-[2] grid gap-[0.85rem] rounded-2xl border border-border/[0.12] bg-background/[0.96] p-4 shadow-popover ${popoverWidthClassNameBySize[size]} ${flyoutClassName}`}
+          className={`font-controls absolute top-[calc(100%+0.5rem)] right-0 z-[100] grid gap-[0.85rem] rounded-2xl border border-border/[0.12] bg-background/[0.96] p-4 shadow-popover ${popoverWidthClassNameBySize[size]} ${flyoutClassName}`}
         >
           {typeof children === "function" ? children({ close }) : children}
         </div>

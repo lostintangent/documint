@@ -12,55 +12,59 @@
  * here because every parser module consumes them.
  */
 
-import type { Block, Document } from "@/document";
-import { createDocument } from "@/document";
+import type { Document, Fragment } from "@/document";
+import { createDocument, isPlainTextBlocks } from "@/document";
 import { lineFeed, type MarkdownOptions } from "../shared";
 import { parseBlocks } from "./blocks";
 import { extractCommentDirective } from "./comments";
 import { createMarkdownParseContext } from "./context";
 
-export type MarkdownLineCursor = {
-  index: number;
-  lines: string[];
-};
-
-const frontMatterFence = "---";
-
 export function parseDocument(source: string, options: MarkdownOptions = {}): Document {
   const cursor = createCursor(source);
+  const context = createMarkdownParseContext(options);
+
   const frontMatter = readFrontMatter(cursor);
-  const blocks = parseBlocks(cursor, createMarkdownParseContext(options));
+  const blocks = parseBlocks(cursor, context);
   const { comments, blocks: contentBlocks } = extractCommentDirective(blocks);
 
   return createDocument(contentBlocks, comments, frontMatter);
 }
 
-// Fragment-altitude parsing. Skips the persistence concerns `parseDocument`
-// owns (front matter detection, comment-directive extraction, document
-// normalization) so a clipboard payload like `---\n…\n---` does not silently
-// lose its leading divider as front matter, and a trailing
-// `:::documint-comments` directive isn't stripped from the fragment. The
-// returned blocks have unnormalized ids; that's fine because every paste
-// path splices them into a `Document`, which re-normalizes.
-export function parseFragmentBlocks(source: string, options: MarkdownOptions = {}): Block[] {
-  return parseBlocks(createCursor(source), createMarkdownParseContext(options));
+/**
+ * Parses clipboard markdown, classifying the result for paste routing:
+ *   - Empty source → `text` with `""`, so paste is a no-op at the inline
+ *     altitude instead of a structural splice of nothing.
+ *   - Plain text (single unmarked paragraph) → `text`, the inline-replace
+ *     fast path.
+ *   - Marked inlines (single paragraph with marks/links/images/breaks) →
+ *     `inlines`, an in-leaf inline splice.
+ *   - Anything richer → `blocks`, the structural seam-merge.
+ */
+export function parseFragment(source: string, options: MarkdownOptions = {}): Fragment {
+  if (source.length === 0) {
+    return { kind: "text", text: "" };
+  }
+
+  const cursor = createCursor(source);
+  const context = createMarkdownParseContext(options);
+
+  const blocks = parseBlocks(cursor, context);
+
+  if (isPlainTextBlocks(blocks)) {
+    return { kind: "text", text: blocks[0]?.plainText ?? "" };
+  }
+
+  if (blocks.length === 1 && blocks[0]?.type === "paragraph") {
+    return { kind: "inlines", inlines: blocks[0].children };
+  }
+
+  return { kind: "blocks", blocks };
 }
 
-function createCursor(source: string): MarkdownLineCursor {
-  const normalized = source.includes("\r") ? source.replace(/\r\n/g, lineFeed) : source;
-
-  return {
-    index: 0,
-    lines: normalized.split(lineFeed),
-  };
-}
-
-// Front matter is positionally significant: only a `---` on line 0 with a
-// matching closing `---` qualifies. Anything else (including a lone leading
-// `---`) falls through to the regular block parser as a divider.
+const frontMatterFence = "---";
 function readFrontMatter(cursor: MarkdownLineCursor): string | undefined {
   if (cursor.lines[0] !== frontMatterFence) {
-    return undefined;
+    return;
   }
 
   for (let close = 1; close < cursor.lines.length; close += 1) {
@@ -77,6 +81,20 @@ function readFrontMatter(cursor: MarkdownLineCursor): string | undefined {
 // --- Shared cursor and line helpers ---
 // Used by every parser module. Block-specific helpers (indent measurement,
 // list-continuation slicing, line-shape recognition) live in `./blocks`.
+
+export type MarkdownLineCursor = {
+  index: number;
+  lines: string[];
+};
+
+function createCursor(source: string): MarkdownLineCursor {
+  const normalized = source.includes("\r") ? source.replace(/\r\n/g, lineFeed) : source;
+
+  return {
+    index: 0,
+    lines: normalized.split(lineFeed),
+  };
+}
 
 export function currentLine(cursor: MarkdownLineCursor) {
   return peekLine(cursor, 0);

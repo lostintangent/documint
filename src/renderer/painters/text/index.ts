@@ -13,8 +13,9 @@
 //
 // The orchestrator reaches for the entry points re-exported here.
 // glyphs.ts is internal to the text painter family.
+// Text segment rows are resolved by `frame/line/text-segments.ts`; painters consume
+// them through `lineFrame.segments`.
 
 export { paintLineText } from "./inlines";
 export { paintTextDecorationBackgrounds, paintTextDecorationOverlays } from "./decorations";
 export { paintTextFades, paintTextHighlights, paintTextPulses } from "./animations";
-export type { TextPaintContext } from "./context";

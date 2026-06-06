@@ -1,9 +1,10 @@
-// Owns paint policy for inline document images. The main paint module delegates
-// image-specific draw behavior here so text and image rendering stay separate.
+// Owns paint policy for document image segments. The main paint module
+// delegates image-specific draw behavior here so text and image rendering stay
+// separate.
+import type { DocumentLayout, LayoutRect } from "@/editor/layout";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
-import type { IndexedInline } from "@/editor/state";
-import type { DocumentLayout } from "@/editor/layout";
-import type { PaintRect } from "./geometry";
+import type { DocumentFrameLine } from "../frame";
+import type { ImageSegment } from "../frame/line/text-segments";
 
 const imageFallbackAspectRatio = 9 / 16;
 const imageMinimumHeight = 48;
@@ -20,24 +21,26 @@ const imageLoadingCycleMs = 1800;
 const imageLoadingShimmerMinimumWidth = 48;
 const imageLoadingShimmerWidthScale = 0.22;
 
-type ImagePlaceholderBox = PaintRect & {
+type ImagePlaceholderBox = LayoutRect & {
   ambientAnimationTime: number;
   status: "error" | "loading";
 };
 
-export function paintInlineImage(
+export function paintImageSegment(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  inline: IndexedInline,
-  resources: DocumentResources,
-  theme: ResolvedEditorTheme,
-  left: number,
-  width: number,
-  ambientAnimationTime: number,
+  lineFrame: DocumentFrameLine,
+  segment: ImageSegment,
+  frameContext: {
+    clocks: { ambientAnimation: number };
+    resources: DocumentResources;
+    theme: ResolvedEditorTheme;
+  },
 ) {
-  const resource = inline.node.type === "image" ? resources.images.get(inline.node.url) : null;
-  const imageHeight = resolvePaintedImageHeight(inline, resources, width);
-  const box = resolveInlineImagePaintBox(line, left, width, imageHeight);
+  const { clocks, resources, theme } = frameContext;
+  const width = Math.max(24, segment.right - segment.left);
+  const resource = resources.images.get(segment.image.url) ?? null;
+  const imageHeight = resolvePaintedImageHeight(segment, resources, width);
+  const box = resolveImageSegmentPaintBox(lineFrame.layoutLine, segment.left, width, imageHeight);
 
   context.fillStyle = theme.imageSurfaceBackground;
   context.fillRect(box.left, box.top, box.width, box.height);
@@ -47,7 +50,7 @@ export function paintInlineImage(
   } else {
     paintImagePlaceholder(context, theme, {
       ...box,
-      ambientAnimationTime,
+      ambientAnimationTime: clocks.ambientAnimation,
       status: resource?.status === "error" ? "error" : "loading",
     });
   }
@@ -106,7 +109,7 @@ function paintImagePlaceholder(
 function paintImageLoadingShimmer(
   context: CanvasRenderingContext2D,
   theme: ResolvedEditorTheme,
-  box: PaintRect,
+  box: LayoutRect,
   ambientAnimationTime: number,
 ) {
   const shimmerWidth = Math.max(
@@ -132,15 +135,11 @@ function paintImageLoadingShimmer(
 }
 
 function resolvePaintedImageHeight(
-  inline: IndexedInline,
+  segment: ImageSegment,
   resources: DocumentResources,
   width: number,
 ) {
-  if (inline.node.type !== "image") {
-    return resolveFallbackImageHeight(width);
-  }
-
-  const resource = resources.images.get(inline.node.url);
+  const resource = resources.images.get(segment.image.url);
 
   if (!resource || resource.intrinsicWidth <= 0 || resource.intrinsicHeight <= 0) {
     return resolveFallbackImageHeight(width);
@@ -152,12 +151,12 @@ function resolvePaintedImageHeight(
   );
 }
 
-function resolveInlineImagePaintBox(
+function resolveImageSegmentPaintBox(
   line: DocumentLayout["lines"][number],
   left: number,
   width: number,
   height: number,
-): PaintRect {
+): LayoutRect {
   return {
     height,
     left,
@@ -166,7 +165,7 @@ function resolveInlineImagePaintBox(
   };
 }
 
-function resolveImagePlaceholderIconBox(box: PaintRect) {
+function resolveImagePlaceholderIconBox(box: LayoutRect) {
   const size = Math.max(
     imagePlaceholderIconMinimumSize,
     Math.min(

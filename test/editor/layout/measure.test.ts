@@ -436,6 +436,14 @@ test("treats user mentions as single caret boundary units", () => {
   expect(beforeMention).toBeDefined();
   expect(afterMention).toBeDefined();
   expect(afterMention!.left - beforeMention!.left).toBeGreaterThan(60);
+  expect(line.inlineReferences).toEqual([
+    {
+      end: 4,
+      kind: "mention",
+      start: 3,
+      width: afterMention!.left - beforeMention!.left,
+    },
+  ]);
 });
 
 test("measures registered resources as single pill units", () => {
@@ -474,6 +482,20 @@ test("measures registered resources as single pill units", () => {
   expect(afterResource).toBeDefined();
   expect(afterResource!.left - beforeResource!.left).toBeGreaterThan(80);
   expect(afterResource!.left - beforeResource!.left).toBeLessThan(130);
+  const resourceReference = line.inlineReferences?.[0];
+
+  if (resourceReference?.kind !== "resource") {
+    throw new Error("Expected resource inline reference metric");
+  }
+
+  expect(line.inlineReferences).toHaveLength(1);
+  expect(resourceReference).toMatchObject({
+    end: 6,
+    kind: "resource",
+    start: 5,
+    width: afterResource!.left - beforeResource!.left,
+  });
+  expect(resourceReference.iconSegmentWidth).toBeGreaterThan(0);
 });
 
 test("recomputes cached resource measurements when protocol icons change", () => {
@@ -599,4 +621,12 @@ test("uses authored image width when laying out image runs", () => {
 
   expect(layout.lines[0]?.width).toBe(120);
   expect(layout.lines[0]?.height).toBe(68);
+  expect(layout.lines[0]?.inlineReferences).toEqual([
+    {
+      end: 1,
+      kind: "image",
+      start: 0,
+      width: 120,
+    },
+  ]);
 });

@@ -4,7 +4,7 @@
 
 import type { EditorSelectionPoint, EditorState } from "../state";
 
-export type { DocumentLayout, DocumentLayoutOptions } from "./measure";
+export type { DocumentLayout, DocumentLayoutOptions, LayoutRect } from "./measure";
 export type { EditorLayoutState } from "./state";
 export type { DocumentCaretTarget as CaretTarget, InlineBounds } from "./query";
 
@@ -23,10 +23,8 @@ export {
 
   // Resolve geometry against prepared layout.
   measureInlineImageBounds,
-  resolveCodeBlockBackgroundBounds,
   resolveCaretHitTestX,
   resolveCaretVisualLeft,
-  resolveLineContentInset,
   resolveLineVisualLeft,
   resolveIndexedListItem,
   resolveOrderedListMarkerAnchor,
@@ -37,6 +35,7 @@ export {
   type ScrollRevealAlignment,
   type ViewportPositionStatus,
 } from "./query";
+export { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "./lib/code-block";
 
 export {
   // Build the editor layout state for the current viewport.

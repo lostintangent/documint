@@ -1,195 +1,91 @@
-// Owns per-line text run rendering. Walks the visible inlines on a line and
-// dispatches each by `kind`: references go to their dedicated
-// painters; inline code paints a code background plus monospace glyphs;
-// everything else paints as styled text with strikethrough/underline as
-// needed. Reference dispatch lives here so the inline iteration
-// stays linear — the alternative would split inline visibility resolution
-// across several files.
+// Owns per-line text segment rendering. Replacement segments go to their
+// dedicated painters; code segments paint a code background plus monospace
+// glyphs; everything else paints as styled text with strikethrough/underline.
 
 import type { DocumentLayout } from "@/editor/layout";
-import { findInlinesInRange, regionInlines, type EditableRegion } from "@/editor/state";
-import { resolveInlineTextStyle } from "@/editor/text/fonts";
-import { paintInlineImage } from "../image";
-import { paintInlineMention } from "../mention";
-import { paintInlineResource } from "../resource";
+import type { DocumentFrameLine } from "@/renderer/frame";
+import type { TextRunSegment } from "@/renderer/frame/line/text-segments";
+import type { DocumentResources, ResolvedEditorTheme } from "@/types";
+import { paintImageSegment } from "../image";
+import { paintMentionSegment } from "../mention";
+import { paintResourceSegment } from "../resource";
 import {
   editableTextBackgroundGeometry,
   paintTextBackground,
-  resolveLineSegmentBounds,
   resolveStrikethroughTop,
   resolveUnderlineTop,
   textDecorationMinimumWidth,
   textDecorationThickness,
 } from "./glyphs";
-import type { TextPaintContext } from "./context";
 
 export function paintLineText(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  container: EditableRegion | null,
-  textLeft: number,
-  textBaseline: number,
-  defaultColor: string,
-  paint: TextPaintContext,
+  lineFrame: DocumentFrameLine,
+  frameContext: {
+    clocks: { ambientAnimation: number };
+    resources: DocumentResources;
+    theme: ResolvedEditorTheme;
+  },
 ) {
-  if (!container) {
-    context.fillStyle = defaultColor;
-    context.fillText(line.text, textLeft, textBaseline);
-    return;
-  }
+  for (const segment of lineFrame.segments) {
+    context.font = segment.font;
 
-  const visibleInlines = findInlinesInRange(regionInlines(container), line.start, line.end);
-
-  if (visibleInlines.length === 0) {
-    context.fillStyle = defaultColor;
-    context.fillText(line.text, textLeft, textBaseline);
-    return;
-  }
-
-  for (const inline of visibleInlines) {
-    const start = Math.max(line.start, inline.start);
-    const end = Math.min(line.end, inline.end);
-    const segmentText = container.text.slice(start, end);
-
-    if (segmentText.length === 0) {
+    if (segment.atom === "image") {
+      paintImageSegment(context, lineFrame, segment, frameContext);
       continue;
     }
 
-    const { left: segmentLeft, right: segmentRight } = resolveLineSegmentBounds(
-      line,
-      textLeft,
-      start,
-      end,
-    );
-    const inlineMarks = inline.node.type === "text" ? inline.node.marks : [];
-    const inlineIsCode = inlineMarks.includes("code");
-    const inlineStyle = resolveInlineTextStyle(
-      { baseFontSize: paint.baseFontSize, font: line.font },
-      inlineMarks,
-    );
-    context.font = inlineStyle.font;
-    const segmentBaseline = textBaseline + inlineStyle.baselineShift;
-
-    if (inline.node.type === "image") {
-      const imageWidth = Math.max(24, segmentRight - segmentLeft);
-      paintInlineImage(
-        context,
-        line,
-        inline,
-        paint.resources,
-        paint.theme,
-        segmentLeft,
-        imageWidth,
-        paint.ambientAnimationTime,
-      );
+    if (segment.atom === "mention") {
+      paintMentionSegment(context, segment, frameContext.theme);
       continue;
     }
 
-    if (inline.node.type === "mention") {
-      paintInlineMention(context, line, inline, paint.theme, segmentLeft, segmentRight);
+    if (segment.atom === "resource") {
+      paintResourceSegment(context, segment, frameContext.clocks, frameContext.theme);
       continue;
     }
 
-    if (inline.node.type === "resource") {
-      paintInlineResource(
-        context,
-        line,
-        inline,
-        paint.resources,
-        paint.theme,
-        segmentLeft,
-        segmentRight,
-        paint.ambientAnimationTime,
-      );
-      continue;
-    }
-
-    if (inlineIsCode) {
+    if (segment.atom === "inline-code") {
       paintTextBackground(
         context,
-        segmentLeft,
-        segmentRight,
-        segmentBaseline,
-        paint.theme.inlineCodeBackground,
+        segment.left,
+        segment.right,
+        segment.baseline,
+        frameContext.theme.inlineCodeBackground,
         editableTextBackgroundGeometry,
       );
-      paintInlineSegment(
-        context,
-        line,
-        container.text,
-        textLeft,
-        segmentBaseline,
-        start,
-        end,
-        paint.theme.inlineCodeText,
-        {
-          strikethrough: inlineMarks.includes("strikethrough"),
-          underline: inlineMarks.includes("underline") || Boolean(inline.link),
-        },
-      );
-      continue;
     }
 
-    paintInlineSegment(
-      context,
-      line,
-      container.text,
-      textLeft,
-      segmentBaseline,
-      start,
-      end,
-      inline.link ? paint.theme.linkText : defaultColor,
-      {
-        strikethrough: inlineMarks.includes("strikethrough"),
-        underline: inlineMarks.includes("underline") || Boolean(inline.link),
-      },
-    );
+    paintTextRunSegment(context, lineFrame.layoutLine, segment);
   }
 }
 
-function paintInlineSegment(
+function paintTextRunSegment(
   context: CanvasRenderingContext2D,
   line: DocumentLayout["lines"][number],
-  containerText: string,
-  textLeft: number,
-  textBaseline: number,
-  startOffset: number,
-  endOffset: number,
-  baseColor: string,
-  decorations: {
-    strikethrough: boolean;
-    underline: boolean;
-  },
+  segment: TextRunSegment,
 ) {
-  const segmentText = containerText.slice(startOffset, endOffset);
-
-  if (segmentText.length === 0) {
+  if (segment.text.length === 0) {
     return;
   }
 
-  const { left: segmentLeft, right: segmentRight } = resolveLineSegmentBounds(
-    line,
-    textLeft,
-    startOffset,
-    endOffset,
-  );
-  context.fillStyle = baseColor;
-  context.fillText(segmentText, segmentLeft, textBaseline);
+  context.fillStyle = segment.color;
+  context.fillText(segment.text, segment.left, segment.baseline);
 
-  if (decorations.strikethrough) {
+  if (segment.strikethrough) {
     context.fillRect(
-      segmentLeft,
-      resolveStrikethroughTop(textBaseline, line.height, context.font),
-      Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
+      segment.left,
+      resolveStrikethroughTop(segment.baseline, line.height, context.font),
+      Math.max(textDecorationMinimumWidth, segment.right - segment.left),
       textDecorationThickness,
     );
   }
 
-  if (decorations.underline) {
+  if (segment.underline) {
     context.fillRect(
-      segmentLeft,
-      resolveUnderlineTop(textBaseline, line.height, context.font),
-      Math.max(textDecorationMinimumWidth, segmentRight - segmentLeft),
+      segment.left,
+      resolveUnderlineTop(segment.baseline, line.height, context.font),
+      Math.max(textDecorationMinimumWidth, segment.right - segment.left),
       textDecorationThickness,
     );
   }

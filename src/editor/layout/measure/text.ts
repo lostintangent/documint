@@ -25,6 +25,7 @@ import { resolveCodeFont, inlineTextHasCustomMetrics, resolveInlineTextStyle } f
 import {
   resolveInlineReferenceMeasurement,
   resolveInlineReferenceSignature,
+  type InlineReferenceLayoutMetric,
 } from "./inline-reference";
 import {
   cacheLineBoundaries,
@@ -48,9 +49,12 @@ export type TextLineBoundary = {
   offset: number;
 };
 
+export type TextInlineReference = InlineReferenceLayoutMetric;
+
 type MeasuredTextLine = {
   end: number;
   height: number;
+  inlineReferences: TextInlineReference[] | null;
   start: number;
   text: string;
   width: number;
@@ -60,12 +64,14 @@ type MeasuredTextSegment = {
   breakable: boolean;
   end: number;
   height: number;
+  inlineReference: TextInlineReference | null;
   start: number;
   text: string;
   width: number;
 };
 
 type RichInlineMeasurementItem = {
+  inlineReference: TextInlineReference | null;
   leadingTrimLength: number;
   run: IndexedInline;
 };
@@ -353,6 +359,7 @@ function createMeasuredTextLines(
       {
         end: 0,
         height: typography.lineHeight,
+        inlineReferences: null,
         start: 0,
         text: "",
         width: 0,
@@ -384,6 +391,7 @@ function createMeasuredTextLines(
     lines.push({
       end,
       height: typography.lineHeight,
+      inlineReferences: null,
       start,
       text: text.slice(start, end),
       width: line.width,
@@ -394,6 +402,7 @@ function createMeasuredTextLines(
     lines.push({
       end: text.length,
       height: typography.lineHeight,
+      inlineReferences: null,
       start: text.length,
       text: "",
       width: 0,
@@ -422,6 +431,7 @@ function materializeTrailingSourceTextLine(
     {
       end: offset,
       height: lineHeight,
+      inlineReferences: null,
       start: offset,
       text: "",
       width: 0,
@@ -459,6 +469,7 @@ function createInlineMeasuredTextLines(
       {
         end: 0,
         height: typography.lineHeight,
+        inlineReferences: null,
         start: 0,
         text: "",
         width: 0,
@@ -487,6 +498,7 @@ function createRichInlineMeasuredTextLines(
       {
         end: 0,
         height: typography.lineHeight,
+        inlineReferences: null,
         start: 0,
         text: "",
         width: 0,
@@ -496,6 +508,7 @@ function createRichInlineMeasuredTextLines(
 
   const prepared = prepareRichInline(items);
   const internalPrepared = prepared as InternalPreparedRichInline;
+  const inlineReferences = resolveInlineReferencesFromMeasurementItems(measurementItems);
   const lines: MeasuredTextLine[] = [];
 
   walkRichInlineLineRanges(prepared, availableWidth, (line) => {
@@ -508,6 +521,7 @@ function createRichInlineMeasuredTextLines(
     lines.push({
       end: range.end,
       height: typography.lineHeight,
+      inlineReferences: resolveLineInlineReferences(inlineReferences, range.start, range.end),
       start: range.start,
       text: container.text.slice(range.start, range.end),
       width: line.width,
@@ -520,11 +534,26 @@ function createRichInlineMeasuredTextLines(
         {
           end: 0,
           height: typography.lineHeight,
+          inlineReferences: null,
           start: 0,
           text: "",
           width: 0,
         },
       ];
+}
+
+function resolveInlineReferencesFromMeasurementItems(
+  measurementItems: RichInlineMeasurementItem[],
+) {
+  const references: TextInlineReference[] = [];
+
+  for (const item of measurementItems) {
+    if (item.inlineReference) {
+      references.push(item.inlineReference);
+    }
+  }
+
+  return references;
 }
 
 function createRichInlineMeasurementItems(
@@ -548,6 +577,7 @@ function createRichInlineMeasurementItems(
     if (reference?.richItem) {
       items.push(reference.richItem);
       measurementItems.push({
+        inlineReference: reference.inlineReference,
         leadingTrimLength: 0,
         run,
       });
@@ -559,6 +589,7 @@ function createRichInlineMeasurementItems(
       text: runText,
     });
     measurementItems.push({
+      inlineReference: null,
       leadingTrimLength: resolveLeadingCollapsibleLength(runText),
       run,
     });
@@ -699,6 +730,7 @@ function layoutSegmentsIntoLines(
       lines.push({
         end: lineStart,
         height: lineHeight,
+        inlineReferences: null,
         start: lineStart,
         text: "",
         width: 0,
@@ -743,6 +775,7 @@ function layoutSegmentsIntoLines(
       lines.push({
         end: lineEnd,
         height: maxHeight,
+        inlineReferences: resolveSegmentInlineReferences(segments, index, cursor),
         start: lineStart,
         text: text.slice(lineStart, lineEnd),
         width,
@@ -757,6 +790,7 @@ function layoutSegmentsIntoLines(
       lines.push({
         end: lineEnd,
         height: maxHeight,
+        inlineReferences: resolveSegmentInlineReferences(segments, index, breakIndex + 1),
         start: lineStart,
         text: text.slice(lineStart, lineEnd),
         width: widthAtBreak,
@@ -770,6 +804,7 @@ function layoutSegmentsIntoLines(
     lines.push({
       end: lineEnd,
       height: maxHeight,
+      inlineReferences: resolveSegmentInlineReferences(segments, index, Math.max(index + 1, cursor)),
       start: lineStart,
       text: text.slice(lineStart, lineEnd),
       width,
@@ -787,6 +822,7 @@ function layoutSegmentsIntoLines(
     lines.push({
       end: lastSegment.end,
       height: lineHeight,
+      inlineReferences: null,
       start: lastSegment.end,
       text: "",
       width: 0,
@@ -794,6 +830,36 @@ function layoutSegmentsIntoLines(
   }
 
   return lines;
+}
+
+function resolveSegmentInlineReferences(
+  segments: MeasuredTextSegment[],
+  startIndex: number,
+  endIndex: number,
+) {
+  const references: TextInlineReference[] = [];
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const reference = segments[index]?.inlineReference;
+
+    if (reference) {
+      references.push(reference);
+    }
+  }
+
+  return references.length > 0 ? references : null;
+}
+
+function resolveLineInlineReferences(
+  references: TextInlineReference[],
+  startOffset: number,
+  endOffset: number,
+) {
+  const lineReferences = references.filter(
+    (reference) => reference.end > startOffset && reference.start < endOffset,
+  );
+
+  return lineReferences.length > 0 ? lineReferences : null;
 }
 
 function flattenMeasuredInlineSegments(
@@ -819,6 +885,7 @@ function flattenMeasuredInlineSegments(
         breakable: true,
         end: run.end,
         height: reference.height,
+        inlineReference: reference.inlineReference,
         start: run.start,
         text: reference.text,
         width: reference.width,
@@ -838,6 +905,7 @@ function flattenMeasuredInlineSegments(
         breakable: /\s/.test(grapheme),
         end,
         height: typography.lineHeight,
+        inlineReference: null,
         start,
         text: grapheme,
         width: grapheme === "\n" ? 0 : measureGraphemeWidth(cache, context, grapheme),

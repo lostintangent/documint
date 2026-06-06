@@ -197,6 +197,10 @@ function escapeMarkdownText(value: string, nextNode?: Inline) {
     return value;
   }
 
+  // Text escaping protects three round-trip hazards: ordinary markdown
+  // metacharacters, literal `@[...]` prose that would otherwise parse as a
+  // mention, and the seam where a text node ending in `@` sits before a link
+  // node and would synthesize mention syntax after serialization.
   const escaped = value.replace(markdownTextEscapePattern, "\\$1").replace(/@(?=\[)/g, "\\@");
   return nextNode?.type === "link" && escaped.endsWith("@")
     ? `${escaped.slice(0, -1)}\\@`

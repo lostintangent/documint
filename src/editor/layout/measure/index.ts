@@ -22,12 +22,14 @@ import {
   measureTextLineBoundaries,
   resolveBlockTypography,
   type TextLineBoundary,
+  type TextInlineReference,
 } from "./text";
 
 export type { DocumentLayoutOptions } from "../lib/options";
 export type { LayoutBlockExtent } from "../lib/marker-metrics";
 
 export type LineBoundary = TextLineBoundary;
+export type LayoutInlineReference = TextInlineReference;
 
 export type LayoutLine = {
   // Identity: connects this visual row back to indexed editor content.
@@ -41,10 +43,19 @@ export type LayoutLine = {
   left: number;
   width: number;
   height: number;
+  contentInset: number;
   // Rendering and caret data.
   text: string;
   font: string;
   boundaries: LineBoundary[];
+  inlineReferences: LayoutInlineReference[] | null;
+};
+
+export type LayoutRect = {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
 };
 
 export type LayoutBlock = {
@@ -182,6 +193,7 @@ export function measureLayoutSlice(
           contentLeft,
           y,
           availableWidth,
+          listInset,
           resolvedOptions,
           resolvedResources,
         );
@@ -254,6 +266,7 @@ function layoutSingleContainer(
   left: number,
   top: number,
   availableWidth: number,
+  contentInset: number,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
@@ -278,8 +291,10 @@ function layoutSingleContainer(
       left,
       width: line.width,
       height: line.height,
+      contentInset,
       text: line.text,
       font: typography.font,
+      inlineReferences: line.inlineReferences,
       boundaries: measureTextLineBoundaries(
         cache,
         container,
@@ -300,7 +315,6 @@ function layoutSingleContainer(
 
   if (block?.type === "code") {
     const current = blockExtents.get(container.block.id);
-
     if (current) {
       blockExtents.set(container.block.id, {
         bottom: current.bottom + blockPaddingY,

@@ -1,4 +1,4 @@
-import type { Image, Inline, Mention, Resource } from "../types";
+import type { Image, Inline, Mention, Resource } from "../model/types";
 
 export type Reference = Image | Mention | Resource;
 

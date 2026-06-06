@@ -6,9 +6,10 @@ import type {
   DocumentResourceRegistry,
 } from "@/types";
 import type { Resource } from "@/document";
-import { resolveResourceProtocol } from "@/resources";
-import { someVisibleDocumentLayoutLine, type EditorLayoutState } from "./layout";
-import { resolveRegion, type EditorState, type IndexedInline } from "./state";
+import { resolveResourceProtocol } from "@/document";
+import { someVisibleDocumentLayoutLine } from "../layout/query";
+import type { EditorLayoutState } from "../layout/state";
+import { resolveRegion, type EditorState, type IndexedInline } from "../state";
 
 export type ResolvedResource = {
   icon: DocumentResourceIcon | null;
@@ -23,6 +24,26 @@ export const emptyDocumentResources: DocumentResources = {
   images: new Map(),
   resourceRegistry: { active: new Set(), protocols: new Map() },
 };
+
+export function createResourceIconSignature(icon: DocumentResourceIcon | null | undefined): string {
+  if (!icon) {
+    return "";
+  }
+
+  if (typeof icon === "string") {
+    return `text:${icon}`;
+  }
+
+  return `svg:${icon.node
+    .map(([elementName, attrs]) => {
+      const attrSignature = Object.entries(attrs)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value}`)
+        .join(",");
+      return `${elementName}(${attrSignature})`;
+    })
+    .join(";")}`;
+}
 
 export function createResourceReference(
   url: string,

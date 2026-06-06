@@ -12,7 +12,7 @@
  *
  * Comments owns the policy: scoring weights, similarity heuristics, and how
  * `matched` vs `repaired` is decided. The substrate (search, capture,
- * verification) lives in `src/document/anchors.ts`.
+ * verification) lives in `src/document/query/anchors.ts`.
  */
 
 import {
@@ -29,7 +29,7 @@ import {
   type AnchorMatch,
   type AnchorResolutionStatus,
 } from "../query/anchors";
-import type { Document } from "../types";
+import type { Document } from "../model/types";
 import type { CommentResolution, CommentThread } from "./types";
 
 // --- Scoring weights ---

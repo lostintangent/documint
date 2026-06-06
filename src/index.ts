@@ -31,7 +31,7 @@ export type {
   EditorTheme,
 } from "./types";
 
-export { normalizeResourceProtocol, resolveResourceProtocol } from "./resources";
+export { normalizeResourceProtocol, resolveResourceProtocol } from "./document";
 
 export type {
   Anchor,

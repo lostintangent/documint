@@ -4,12 +4,12 @@
 // The traversal engine here is observe-only (`visitDocument`,
 // `visitBlockTree`, `findBlockById`). For walk-and-rebuild use the `mapBlockTree`
 // primitive below. Both engines speak the canonical path vocabulary from
-// `./paths`, so a node's path here is the same string used by `nodeId` and
+// `../model/paths`, so a node's path here is the same string used by `nodeId` and
 // the editor's region index.
 
-import { blockContainerSpec } from "../containers";
-import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../paths";
-import type { Block, Document, Inline, LineBreak, TableBlock, TableCell, TableRow } from "../types";
+import { blockContainerSpec } from "../model/containers";
+import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../model/paths";
+import type { Block, Document, Inline, LineBreak, TableBlock, TableCell, TableRow } from "../model/types";
 import type { Reference } from "./inlines";
 import { isReferenceInlineNode } from "./inlines";
 

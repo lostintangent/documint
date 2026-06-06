@@ -11,8 +11,8 @@ import {
   extractPlainTextFromInlineNodes,
   extractTablePlainText,
 } from "../query/text";
-import { canonicalizeMarks } from "../marks";
-import { normalizeResourceProtocol, resolveResourceProtocol } from "@/resources";
+import { canonicalizeMarks } from "../model/marks";
+import { normalizeResourceProtocol, resolveResourceProtocol } from "../model/resources";
 import type {
   Block,
   BlockquoteBlock,
@@ -37,7 +37,7 @@ import type {
   TableCell,
   TableRow,
   Text,
-} from "../types";
+} from "../model/types";
 
 export function createParagraphBlock(children: Inline[]): ParagraphBlock {
   return {

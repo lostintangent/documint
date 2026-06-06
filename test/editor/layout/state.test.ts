@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
-import { createEditorLayoutState, createLayoutCache, insertText, setSelection } from "@/editor";
-import { resolveCodeBlockBackgroundBounds } from "@/editor/layout";
+import {
+  CODE_BLOCK_BACKGROUND_PADDING_Y,
+  createEditorLayoutState,
+  createLayoutCache,
+  insertText,
+  setSelection,
+} from "@/editor";
 import { createEditorState } from "@/editor/state";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
@@ -298,15 +303,10 @@ test("keeps visual block gaps consistent after code block backgrounds", () => {
     throw new Error("Expected code and paragraph lines");
   }
 
-  const codeBounds = codeLayout.regionBounds.get(codeLine.regionId);
-
-  if (!codeBounds) {
-    throw new Error("Expected code bounds");
-  }
-
   const paragraphGap = secondParagraph.top - (firstParagraph.top + firstParagraph.height);
-  const codeBackgroundBounds = resolveCodeBlockBackgroundBounds(codeLayout, codeLine, codeBounds);
-  const codeGap = paragraphAfterCode.top - (codeBackgroundBounds.top + codeBackgroundBounds.height);
+  const codeGap =
+    paragraphAfterCode.top -
+    (codeLine.top + codeLine.height + CODE_BLOCK_BACKGROUND_PADDING_Y);
 
   expect(codeGap).toBe(paragraphGap);
 });

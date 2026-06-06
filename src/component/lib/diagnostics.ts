@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from "react";
+import type { DocumentFrame } from "@/renderer";
 
 /**
  * Lightweight runtime instrumentation for the editor.
@@ -11,7 +12,8 @@ import { useEffect, type RefObject } from "react";
  * Diagnostics are an internal dev tool, not part of the library's public
  * API — `DIAGNOSTIC_EVENT` and {@link Diagnostic} are not re-exported
  * from `src/index.ts`. The playground reaches in directly via the `@/`
- * tsconfig path alias.
+ * tsconfig path alias. Render-frame events follow the same dev-only path
+ * and are consumed by playground-owned frame inspection.
  *
  * # Build-time gating
  *
@@ -56,6 +58,7 @@ import { useEffect, type RefObject } from "react";
 
 /** CustomEvent type the diagnostics subsystem dispatches. */
 export const DIAGNOSTIC_EVENT = "documint:diagnostic";
+export const RENDER_FRAME_EVENT = "documint:render-frame";
 
 /** Wire-format payload of a diagnostic event. */
 export type Diagnostic = {
@@ -63,6 +66,11 @@ export type Diagnostic = {
   kind: string;
   detail: Record<string, unknown>;
   ts: number;
+};
+
+export type RenderFrameEvent = {
+  canvas: HTMLCanvasElement;
+  frame: DocumentFrame;
 };
 
 const DIAGNOSTIC_KIND_PREFIX = "documint:";
@@ -87,21 +95,21 @@ let frameBudgetReady = false;
  * Emit a diagnostic event for any subscribed tool to render. Always wrap
  * call sites in `if (process.env.NODE_ENV !== "production")` so the
  * bundler can strip the call and its argument expressions in production.
- *
- * In non-browser test/tooling environments, falls back to `console.log` so
- * the diagnostic isn't silently dropped.
  */
 export function emitDiagnostic(kind: string, detail: Record<string, unknown>) {
   const namespacedKind = namespaceDiagnosticKind(kind);
 
-  if (typeof window === "undefined") {
-    // eslint-disable-next-line no-console
-    console.log(`[diag ${namespacedKind}]`, detail);
-    return;
-  }
   window.dispatchEvent(
     new CustomEvent<Diagnostic>(DIAGNOSTIC_EVENT, {
       detail: { kind: namespacedKind, detail, ts: Date.now() },
+    }),
+  );
+}
+
+export function emitRenderFrame(detail: RenderFrameEvent) {
+  window.dispatchEvent(
+    new CustomEvent<RenderFrameEvent>(RENDER_FRAME_EVENT, {
+      detail,
     }),
   );
 }
@@ -165,10 +173,6 @@ function getFrameBudgetFps() {
 }
 
 function sampleFrameBudget() {
-  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
-    return;
-  }
-
   frameBudgetSampling = true;
   frameBudgetSampleDeltas = [];
   let lastTimestamp: number | null = null;

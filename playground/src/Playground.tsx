@@ -17,6 +17,7 @@ import { Hand } from "lucide-react";
 import dynamicIconImports from "lucide-react/dynamicIconImports";
 import { HostEventPanel } from "./components/HostEventPanel";
 import { DiagnosticsPopover } from "./components/popovers/DiagnosticsPopover";
+import { FrameDebugOverlay } from "./components/FrameDebugOverlay";
 import { UsersPopover } from "./components/popovers/UsersPopover";
 import { ThemePopover } from "./components/popovers/ThemePopover";
 import {
@@ -134,6 +135,7 @@ export function Playground() {
 
   const [lastHostEvent, setLastHostEvent] = useState<PlaygroundHostEvent | null>(null);
   const [hostEventVisible, setHostEventVisible] = useState(false);
+  const [frameDebugEnabled, setFrameDebugEnabled] = useState(false);
 
   const { theme: activeTheme } = getThemeOption(themeId);
 
@@ -220,7 +222,12 @@ export function Playground() {
 
           {/* Live input-event log; gated so it ships with `bun run dev`
               but not with the deployable demo (`bun run build:playground`). */}
-          {process.env.NODE_ENV !== "production" ? <DiagnosticsPopover /> : null}
+          {process.env.NODE_ENV !== "production" ? (
+            <DiagnosticsPopover
+              frameDebugEnabled={frameDebugEnabled}
+              onFrameDebugEnabledChange={setFrameDebugEnabled}
+            />
+          ) : null}
         </div>
       </header>
 
@@ -272,6 +279,9 @@ export function Playground() {
           </div>
         </div>
       </section>
+      {process.env.NODE_ENV !== "production" ? (
+        <FrameDebugOverlay enabled={frameDebugEnabled} />
+      ) : null}
     </main>
   );
 }

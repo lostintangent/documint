@@ -31,7 +31,7 @@
 // (rows → cells → inlines), so the inline-container vocabulary handles them
 // instead.
 
-import { createBlockquoteBlock, rebuildListBlock, rebuildListItemBlock } from "./build/builders";
+import { createBlockquoteBlock, rebuildListBlock, rebuildListItemBlock } from "../build/builders";
 import type { Block, BlockquoteBlock, ListBlock, ListItemBlock } from "./types";
 
 type BlockContainerSpec = {

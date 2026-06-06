@@ -38,6 +38,14 @@ export type ActiveTextPulse = TextPulseAnimation & {
   progress: number;
 };
 
+export type ActiveAnimations = {
+  activeBlockFlashes: Map<string, ActiveBlockFlash>;
+  activeBlockPulses: Map<string, ActiveBlockPulse>;
+  activeTextFades: Map<string, ActiveTextFade[]>;
+  activeTextHighlights: Map<string, ActiveTextHighlight[]>;
+  activeTextPulses: Map<string, ActiveTextPulse[]>;
+};
+
 // List marker pop reaches full scale in the first half of its duration,
 // then blends color back to the base in the second half.
 const LIST_MARKER_POP_MIN_SCALE = 0.1;
@@ -45,49 +53,81 @@ const LIST_MARKER_POP_SCALE_RANGE = 0.9;
 const LIST_MARKER_POP_SCALE_SPEED = 2;
 const LIST_MARKER_POP_COLOR_SPEED = 2;
 
-export function resolveActiveTextHighlights(state: EditorState, now: number) {
-  return collectActiveAnimations<"text-highlight", TextHighlightAnimation>(
-    state,
-    now,
-    "text-highlight",
-    (a) => a.regionPath,
-  );
-}
+type ActiveEditorAnimation = EditorAnimation & { progress: number };
 
-export function resolveActiveBlockFlashes(state: EditorState, now: number) {
-  return collectActiveAnimation<"active-block-flash", ActiveBlockFlashAnimation>(
-    state,
-    now,
-    "active-block-flash",
-    (a) => a.blockPath,
-  );
-}
+type AnimationSpec = {
+  collect: (result: ActiveAnimations, animation: ActiveEditorAnimation) => void;
+  kind: EditorAnimation["kind"];
+  // Documents whether a row keeps one latest animation per key or many. The
+  // `collect` closure implements the policy so each row stays self-contained.
+  multiplicity: "many" | "one";
+};
 
-export function resolveActiveTextFades(state: EditorState, now: number) {
-  return collectActiveAnimations<"text-fade", TextFadeAnimation>(
-    state,
-    now,
-    "text-fade",
-    (a) => a.regionPath,
-  );
-}
+const animationSpecs: readonly AnimationSpec[] = [
+  {
+    collect: (result, animation) => {
+      const active = animation as ActiveBlockFlash;
+      result.activeBlockFlashes.set(active.blockPath, active);
+    },
+    kind: "active-block-flash",
+    multiplicity: "one",
+  },
+  {
+    collect: (result, animation) => {
+      const active = animation as ActiveBlockPulse;
+      result.activeBlockPulses.set(active.blockPath, active);
+    },
+    kind: "block-pulse",
+    multiplicity: "one",
+  },
+  {
+    collect: (result, animation) => {
+      const active = animation as ActiveTextFade;
+      collectMany(result.activeTextFades, active.regionPath, active);
+    },
+    kind: "text-fade",
+    multiplicity: "many",
+  },
+  {
+    collect: (result, animation) => {
+      const active = animation as ActiveTextHighlight;
+      collectMany(result.activeTextHighlights, active.regionPath, active);
+    },
+    kind: "text-highlight",
+    multiplicity: "many",
+  },
+  {
+    collect: (result, animation) => {
+      const active = animation as ActiveTextPulse;
+      collectMany(result.activeTextPulses, active.regionPath, active);
+    },
+    kind: "text-pulse",
+    multiplicity: "many",
+  },
+];
 
-export function resolveActiveTextPulses(state: EditorState, now: number) {
-  return collectActiveAnimations<"text-pulse", TextPulseAnimation>(
-    state,
-    now,
-    "text-pulse",
-    (a) => a.regionPath,
-  );
-}
+const animationSpecByKind = new Map(animationSpecs.map((spec) => [spec.kind, spec]));
 
-export function resolveActiveBlockPulses(state: EditorState, now: number) {
-  return collectActiveAnimation<"block-pulse", BlockPulseAnimation>(
-    state,
-    now,
-    "block-pulse",
-    (a) => a.blockPath,
-  );
+export function resolveActiveAnimations(state: EditorState, now: number): ActiveAnimations {
+  const result = createEmptyActiveAnimations();
+
+  for (const animation of state.animations) {
+    const spec = animationSpecByKind.get(animation.kind);
+
+    if (!spec) {
+      continue;
+    }
+
+    const progress = resolveAnimationProgress(animation, now);
+
+    if (progress === null) {
+      continue;
+    }
+
+    spec.collect(result, { ...animation, progress });
+  }
+
+  return result;
 }
 
 export function resolveTextFadeColor(baseColor: string, textFade: ActiveTextFade) {
@@ -123,73 +163,28 @@ export function resolveBlockPulseColor(
   return blendCanvasColors(theme.insertHighlightText, baseColor, colorProgress);
 }
 
-// Resolves active animations of a given kind into a keyed map of arrays,
-// filtering expired animations and computing normalized progress for each.
-function collectActiveAnimations<
-  TKind extends EditorAnimation["kind"],
-  TAnimation extends Extract<EditorAnimation, { kind: TKind }>,
->(
-  state: EditorState,
-  now: number,
-  kind: TKind,
-  getKey: (animation: TAnimation) => string,
-): Map<string, (TAnimation & { progress: number })[]> {
-  const result = new Map<string, (TAnimation & { progress: number })[]>();
-
-  for (const animation of state.animations) {
-    if (animation.kind !== kind) {
-      continue;
-    }
-
-    const typed = animation as TAnimation;
-    const progress = resolveAnimationProgress(typed, now);
-
-    if (progress === null) {
-      continue;
-    }
-
-    const active = { ...typed, progress };
-    const key = getKey(typed);
-    const existing = result.get(key);
-
-    if (existing) {
-      existing.push(active);
-    } else {
-      result.set(key, [active]);
-    }
-  }
-
-  return result;
+function createEmptyActiveAnimations(): ActiveAnimations {
+  return {
+    activeBlockFlashes: new Map(),
+    activeBlockPulses: new Map(),
+    activeTextFades: new Map(),
+    activeTextHighlights: new Map(),
+    activeTextPulses: new Map(),
+  };
 }
 
-// Single-value variant: keeps only the latest animation per key.
-function collectActiveAnimation<
-  TKind extends EditorAnimation["kind"],
-  TAnimation extends Extract<EditorAnimation, { kind: TKind }>,
->(
-  state: EditorState,
-  now: number,
-  kind: TKind,
-  getKey: (animation: TAnimation) => string,
-): Map<string, TAnimation & { progress: number }> {
-  const result = new Map<string, TAnimation & { progress: number }>();
+function collectMany<TAnimation>(
+  result: Map<string, TAnimation[]>,
+  key: string,
+  animation: TAnimation,
+) {
+  const existing = result.get(key);
 
-  for (const animation of state.animations) {
-    if (animation.kind !== kind) {
-      continue;
-    }
-
-    const typed = animation as TAnimation;
-    const progress = resolveAnimationProgress(typed, now);
-
-    if (progress === null) {
-      continue;
-    }
-
-    result.set(getKey(typed), { ...typed, progress });
+  if (existing) {
+    existing.push(animation);
+  } else {
+    result.set(key, [animation]);
   }
-
-  return result;
 }
 
 function resolveAnimationProgress(animation: EditorAnimation, now: number): number | null {

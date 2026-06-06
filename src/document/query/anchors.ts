@@ -20,7 +20,7 @@
  * these primitives. This module never picks a winner — it returns candidates.
  */
 
-import type { Block, Document } from "../types";
+import type { Block, Document } from "../model/types";
 import { visitDocument } from "./visit";
 
 // --- Anchor kinds ---

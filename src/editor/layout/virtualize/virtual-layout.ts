@@ -3,8 +3,8 @@
 // region bounds and total document height.
 
 import type { DocumentResources } from "@/types";
-import type { Block } from "@/document";
-import { createResourceIconSignature, resolveResourceProtocol } from "@/resources";
+import { resolveResourceProtocol, type Block } from "@/document";
+import { createResourceIconSignature } from "@/editor/resources";
 import { isContainerBlock, isInertBlock } from "../../state/index/query";
 import type { DocumentIndex, EditableRegion } from "../../state";
 import {

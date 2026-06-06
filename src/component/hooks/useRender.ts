@@ -1,10 +1,10 @@
 import { useEffect, useEffectEvent, useRef } from "react";
-import { hasRunningAnimations } from "@/editor";
+import { hasRunningAnimations as hasRunningEditorAnimations } from "@/editor";
 import { recordFpsFrame } from "../lib/diagnostics";
 import { useDocumintStore } from "../store";
 
 type UseRenderOptions = {
-  hasRunningOptionalContentAnimations?: () => boolean;
+  hasAmbientAnimationsInViewport?: () => boolean;
   isActive?: () => boolean;
   renderContent: () => void;
   renderOverlay: () => void;
@@ -35,7 +35,7 @@ function createPendingRenderIntents(): PendingRenderIntents {
 }
 
 export function useRender({
-  hasRunningOptionalContentAnimations,
+  hasAmbientAnimationsInViewport,
   isActive,
   renderContent,
   renderOverlay,
@@ -113,18 +113,18 @@ export function useRender({
   /* Animation continuation */
 
   const scheduleAnimationContinuation = useEffectEvent(() => {
-    const hasRunningEditorAnimations = hasRunningAnimations(
+    const hasRunningEditorAnimation = hasRunningEditorAnimations(
       store.editor.getState(),
       performance.now(),
     );
 
-    if (hasRunningEditorAnimations) {
+    if (hasRunningEditorAnimation) {
       pendingIntentsRef.current.contentPaint = true;
       requestFrame();
       return;
     }
 
-    if (isActive?.() === true || hasRunningOptionalContentAnimations?.() !== true) {
+    if (isActive?.() === true || hasAmbientAnimationsInViewport?.() !== true) {
       return;
     }
 

@@ -1,177 +1,57 @@
-// Owns table-specific surface chrome in the canvas paint path. The block
-// chrome family delegates here so generic line traversal stays focused on
-// document flow while table cells keep their own layering policy. The
-// stage-4 dispatcher in `blocks/backgrounds.ts` decides *whether* a table
-// cell needs a highlight; this file knows *how* to paint one.
-
-import type { DocumentLayout } from "@/editor/layout";
+import type { LayoutRect } from "@/editor/layout";
 import type { ResolvedEditorTheme } from "@/types";
-import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../animations";
-import type { PaintRect } from "./geometry";
+import { resolveActiveBlockFlashColor } from "../animations";
+import type { ActiveTableCellHighlightFrame, TableCellChromeFrame } from "../frame/chrome/table";
 
-const tableCellMinimumPaintWidth = 80;
-
-export type PaintRegionBounds =
-  DocumentLayout["regionBounds"] extends Map<string, infer Extent> ? Extent : never;
-
-type TableCellPaintRect = PaintRect;
-
-export function paintTableCellChrome({
-  context,
-  containerBounds,
-  isHeaderRow,
-  lineHeight,
-  theme,
-}: {
-  context: CanvasRenderingContext2D;
-  containerBounds: PaintRegionBounds;
-  isHeaderRow: boolean;
-  lineHeight: number;
-  theme: ResolvedEditorTheme;
-}) {
-  const cellRect = resolveTableCellPaintRect(containerBounds, lineHeight);
-
-  context.fillStyle = isHeaderRow ? theme.tableHeaderBackground : theme.tableBodyBackground;
-  context.fillRect(cellRect.left, cellRect.top, cellRect.width, cellRect.height);
-  paintTableCellBorder(context, cellRect, theme);
+export function paintTableCellChrome(
+  context: CanvasRenderingContext2D,
+  frame: TableCellChromeFrame,
+  theme: ResolvedEditorTheme,
+) {
+  context.fillStyle = frame.isHeaderRow ? theme.tableHeaderBackground : theme.tableBodyBackground;
+  paintRect(context, frame.rect);
+  paintTableCellBorder(context, frame.rect, theme);
 }
 
-// Paints the active-cell highlight band — the colored stripe that follows the
-// caret across the visible lines of the active table cell, plus the flash
-// overlay when an active-block flash is in flight. Caller is responsible for
-// deciding that the active block IS a table cell; this function trusts its
-// inputs.
-export function paintActiveTableCellHighlight({
-  activeFlash,
-  activeRegionId,
-  context,
-  endIndex,
-  layout,
-  regionBounds,
-  startIndex,
-  theme,
-  verticalBleed,
-}: {
-  activeFlash: ActiveBlockFlash | null;
-  activeRegionId: string;
-  context: CanvasRenderingContext2D;
-  endIndex: number;
-  layout: DocumentLayout;
-  regionBounds: Map<string, PaintRegionBounds>;
-  startIndex: number;
-  theme: ResolvedEditorTheme;
-  verticalBleed: number;
-}) {
-  const cellBounds = regionBounds.get(activeRegionId) ?? null;
-  const cellLineIndices = layout.regionLineIndices.get(activeRegionId) ?? null;
+export function paintActiveTableCellHighlight(
+  context: CanvasRenderingContext2D,
+  highlight: ActiveTableCellHighlightFrame,
+  theme: ResolvedEditorTheme,
+) {
+  paintTableCellBands(context, highlight.bands, theme.activeBlockBackground);
 
-  if (!cellBounds || !cellLineIndices || cellLineIndices.length === 0) {
-    return;
-  }
-
-  const firstVisibleCellLine = layout.lines[cellLineIndices[0]!] ?? null;
-
-  if (!firstVisibleCellLine) {
-    return;
-  }
-
-  const cellRect = resolveTableCellPaintRect(cellBounds, firstVisibleCellLine.height);
-
-  if (cellRect.width === 0) {
-    return;
-  }
-
-  const paintedHighlight = paintVisibleTableCellBand({
-    context,
-    endIndex,
-    fillStyle: theme.activeBlockBackground,
-    layout,
-    left: cellRect.left,
-    lineIndices: cellLineIndices,
-    startIndex,
-    verticalBleed,
-    width: cellRect.width,
-  });
-
-  if (activeFlash) {
-    paintVisibleTableCellBand({
+  if (highlight.activeFlash) {
+    paintTableCellBands(
       context,
-      endIndex,
-      fillStyle: resolveActiveBlockFlashColor(theme.activeBlockFlash, activeFlash),
-      layout,
-      left: cellRect.left,
-      lineIndices: cellLineIndices,
-      startIndex,
-      verticalBleed,
-      width: cellRect.width,
-    });
+      highlight.bands,
+      resolveActiveBlockFlashColor(theme.activeBlockFlash, highlight.activeFlash),
+    );
   }
 
-  if (!paintedHighlight) {
-    return;
-  }
-
-  paintTableCellBorder(context, cellRect, theme);
+  paintTableCellBorder(context, highlight.borderRect, theme);
 }
 
-function paintVisibleTableCellBand({
-  context,
-  endIndex,
-  fillStyle,
-  layout,
-  left,
-  lineIndices,
-  startIndex,
-  verticalBleed,
-  width,
-}: {
-  context: CanvasRenderingContext2D;
-  endIndex: number;
-  fillStyle: string | CanvasGradient | CanvasPattern;
-  layout: DocumentLayout;
-  left: number;
-  lineIndices: number[];
-  startIndex: number;
-  verticalBleed: number;
-  width: number;
-}) {
+function paintTableCellBands(
+  context: CanvasRenderingContext2D,
+  bands: readonly LayoutRect[],
+  fillStyle: string | CanvasGradient | CanvasPattern,
+) {
   context.fillStyle = fillStyle;
-  let painted = false;
 
-  for (const lineIndex of lineIndices) {
-    if (lineIndex < startIndex) {
-      continue;
-    }
-
-    if (lineIndex >= endIndex) {
-      break;
-    }
-
-    const line = layout.lines[lineIndex]!;
-    context.fillRect(left, line.top - verticalBleed, width, line.height);
-    painted = true;
+  for (const band of bands) {
+    paintRect(context, band);
   }
-
-  return painted;
-}
-
-function resolveTableCellPaintRect(
-  containerBounds: PaintRegionBounds,
-  lineHeight: number,
-): TableCellPaintRect {
-  return {
-    height: Math.max(containerBounds.bottom - containerBounds.top, lineHeight),
-    left: containerBounds.left,
-    top: containerBounds.top,
-    width: Math.max(containerBounds.right - containerBounds.left, tableCellMinimumPaintWidth),
-  };
 }
 
 function paintTableCellBorder(
   context: CanvasRenderingContext2D,
-  cellRect: TableCellPaintRect,
+  cellRect: LayoutRect,
   theme: ResolvedEditorTheme,
 ) {
   context.strokeStyle = theme.tableBorder;
   context.strokeRect(cellRect.left, cellRect.top, cellRect.width, cellRect.height);
+}
+
+function paintRect(context: CanvasRenderingContext2D, rect: LayoutRect) {
+  context.fillRect(rect.left, rect.top, rect.width, rect.height);
 }

@@ -2,128 +2,20 @@
 // a range selection exists (the selection highlight on the content canvas
 // stands in for it); presence carets always draw.
 
-import type { EditorPresence } from "@/editor/anchors";
-import {
-  findLineForRegionOffset,
-  measureCaretTarget,
-  resolveCaretVisualLeft,
-  type DocumentLayout,
-} from "@/editor/layout";
-import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
-import type { ResolvedEditorTheme } from "@/types";
-import { resolveCenteredTextTop, resolveFontMetrics } from "@/editor/text/measure";
+import type { OverlayCaretFrame } from "../frame";
 
-const caretOpticalTopInset = 1;
 const caretStrokeWidth = 2;
-const caretVerticalInset = 2;
 
-export function paintCaretOverlay({
-  context,
-  devicePixelRatio,
-  editorState,
-  height,
-  layout,
-  normalizedSelection,
-  presence,
-  showCaret,
-  theme,
-  viewportTop,
-  width,
-}: {
-  context: CanvasRenderingContext2D;
-  devicePixelRatio: number;
-  editorState: EditorState;
-  height: number;
-  layout: DocumentLayout;
-  normalizedSelection: NormalizedEditorSelection;
-  presence?: EditorPresence[];
-  showCaret: boolean;
-  theme: ResolvedEditorTheme;
-  viewportTop: number;
-  width: number;
-}) {
-  context.save();
-  context.scale(devicePixelRatio, devicePixelRatio);
-  context.clearRect(0, 0, width, height);
-
-  const hasRangeSelection =
-    normalizedSelection.start.regionId === normalizedSelection.end.regionId &&
-    normalizedSelection.start.offset !== normalizedSelection.end.offset;
-  const shouldPaintUserCaret = showCaret && !hasRangeSelection;
-
-  context.translate(0, -viewportTop);
-
-  if (shouldPaintUserCaret) {
-    paintCaret(context, editorState, layout, {
-      color: theme.caret,
-      offset: editorState.selection.focus.offset,
-      regionId: editorState.selection.focus.regionId,
-    });
-  }
-
-  if (presence) {
-    for (const presenceItem of presence) {
-      if (!presenceItem.cursorPoint) {
-        continue;
-      }
-
-      paintCaret(context, editorState, layout, {
-        color: presenceItem.color ?? theme.leafAccent,
-        offset: presenceItem.cursorPoint.offset,
-        regionId: presenceItem.cursorPoint.regionId,
-      });
-    }
-  }
-
-  context.restore();
-}
-
-function paintCaret(
+export function paintCaretOverlay(
   context: CanvasRenderingContext2D,
-  editorState: EditorState,
-  layout: DocumentLayout,
-  target: {
-    color: string;
-    offset: number;
-    regionId: string;
-  },
+  carets: readonly OverlayCaretFrame[],
 ) {
-  const caret = measureCaretTarget(layout, editorState.documentIndex, {
-    regionId: target.regionId,
-    offset: target.offset,
-  });
-
-  if (!caret) {
-    return;
+  for (const caret of carets) {
+    paintCaret(context, caret);
   }
-
-  const caretLeft = resolveCaretVisualLeft(editorState, layout, caret);
-  const metrics = resolveCaretPaintMetrics(layout, caret);
-
-  context.fillStyle = target.color;
-  context.fillRect(caretLeft, metrics.top, caretStrokeWidth, metrics.height);
 }
 
-function resolveCaretPaintMetrics(
-  layout: DocumentLayout,
-  caret: NonNullable<ReturnType<typeof measureCaretTarget>>,
-) {
-  const line = findLineForRegionOffset(layout, caret.regionId, caret.offset);
-  const font =
-    line?.font ??
-    '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  const { ascent, descent } = resolveFontMetrics(font);
-  const glyphHeight = Math.max(1, ascent + descent);
-  const height = Math.min(caret.height - caretVerticalInset, glyphHeight);
-  const top = line
-    ? Math.max(
-        line.top,
-        line.top + resolveCenteredTextTop(line.height, font) - caretOpticalTopInset,
-      )
-    : caret.top + Math.max(0, Math.floor((caret.height - height) / 2));
-
-  return {
-    height,
-    top,
-  };
+function paintCaret(context: CanvasRenderingContext2D, caret: OverlayCaretFrame) {
+  context.fillStyle = caret.color;
+  context.fillRect(caret.left, caret.top, caretStrokeWidth, caret.height);
 }

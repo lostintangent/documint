@@ -3,7 +3,7 @@ import { mkdirSync } from "fs";
 import { createEditorLayoutState, createEditorState, createLayoutCache } from "@/editor";
 import { insertText, normalizeSelection, setSelection, type EditorState } from "@/editor/state";
 import { parseDocument, serializeDocument } from "@/markdown";
-import { paintContent } from "@/renderer";
+import { createDocumentFrame, paintDocumentFrame } from "@/renderer";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
 import type { BenchmarkRecord } from "./shared";
 import { percentile } from "./shared";
@@ -83,11 +83,9 @@ const layoutScroll = runFrameBenchmark("scroll_layout_only", scrollOffsets, (top
 
 const paintAtPreparedTop = runBenchmarkSamples("paint_prepared_viewport", 120, () => {
   paintContext.reset();
-  paintContent(
-    state,
-    initialLayout,
+  paintDocumentFrame(
     paintContext as unknown as CanvasRenderingContext2D,
-    createPaintOptions(state),
+    createDocumentFrame(state, initialLayout, createPaintOptions(state)),
   );
 });
 
@@ -102,11 +100,9 @@ const scrollLayoutAndPaint = runFrameBenchmark("scroll_layout_and_paint", scroll
   );
 
   paintContext.reset();
-  paintContent(
-    state,
-    layout,
+  paintDocumentFrame(
     paintContext as unknown as CanvasRenderingContext2D,
-    createPaintOptions(state),
+    createDocumentFrame(state, layout, createPaintOptions(state)),
   );
 });
 

@@ -1,7 +1,7 @@
-// Public document boundary. The folder is organized into three buckets:
+// Public document boundary. The folder is organized into four buckets:
 //
-//   schema (root) — the data model and its addressing vocabulary.
-//                   `types.ts`, `paths.ts`, `containers.ts`.
+//   model/       — the closed semantic schema, addressing vocabulary,
+//                  container/resource policy, and inline mark canonicalization.
 //   build/        — producing canonical Documents. Per-node builders,
 //                   high-level operations, save-time canonicalization.
 //                   `normalize.ts` is internal and not re-exported.
@@ -16,8 +16,5 @@
 
 export * from "./build";
 export * from "./comments";
-export * from "./containers";
-export * from "./marks";
-export * from "./paths";
+export * from "./model";
 export * from "./query";
-export * from "./types";

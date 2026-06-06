@@ -4,7 +4,7 @@
 // future content search all share the same semantic text without markdown
 // syntax.
 
-import type { Block, Fragment, Inline, ListItemBlock, TableRow } from "../types";
+import type { Block, Fragment, Inline, ListItemBlock, TableRow } from "../model/types";
 
 export function extractPlainTextFromInlineNodes(nodes: readonly Inline[]): string {
   return nodes

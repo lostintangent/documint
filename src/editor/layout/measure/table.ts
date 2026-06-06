@@ -25,6 +25,7 @@ type MeasuredTableRowCell = TableRowCell & {
   measuredLines: Array<{
     end: number;
     height: number;
+    inlineReferences: LayoutLine["inlineReferences"];
     start: number;
     text: string;
     width: number;
@@ -88,8 +89,10 @@ export function layoutTable(
           left: cellLeft + TABLE_CELL_PADDING_X,
           width: line.width,
           height: line.height,
+          contentInset: 0,
           text: line.text,
           font: cell.typography.font,
+          inlineReferences: line.inlineReferences,
           boundaries: measureTextLineBoundaries(
             cache,
             cell.container,

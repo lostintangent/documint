@@ -1,3 +1,8 @@
+## 🗓️ v0.0.27 (06-06-26)
+
+- Presence avatars now pulse when working anchored to an unresolved comment
+- Added x-ray mode to the debug-time playground
+
 ## 🗓️ v0.0.26 (06-04-26)
 
 - Added a new font size setting to the theme API

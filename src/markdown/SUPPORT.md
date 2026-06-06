@@ -9,7 +9,7 @@ The markdown subsystem owns three concerns:
 - Serialize semantic `Document` snapshots back to canonical markdown
 - Preserve unsupported authored syntax losslessly when it matters
 
-The semantic boundary is defined by [../document/types.ts](../document/types.ts). If a feature cannot be represented by that model, the markdown subsystem must either preserve it as semantic `unsupported` content or declare it out of scope.
+The semantic boundary is defined by [../document/model/types.ts](../document/model/types.ts). If a feature cannot be represented by that model, the markdown subsystem must either preserve it as semantic `unsupported` content or declare it out of scope.
 
 ## Status Legend
 

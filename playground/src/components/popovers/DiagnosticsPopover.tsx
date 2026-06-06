@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Activity } from "lucide-react";
+import { Activity, Trash2 } from "lucide-react";
 // Imported directly from the library's internal diagnostics module rather
 // than from `documint`'s public API — diagnostics are dev-only tooling for
 // the playground, not a stable public surface.
 import { DIAGNOSTIC_EVENT, type Diagnostic } from "@/component/lib/diagnostics";
 import {
   PlaygroundPopover,
-  popoverControlClassName,
   popoverHeaderClassName,
   popoverTitleClassName,
 } from "./PlaygroundPopover";
@@ -21,16 +20,6 @@ const FPS_HEALTHY_RATIO = 0.9;
 type Entry = Diagnostic & { id: number };
 type FpsReading = { cap: number; capPending: boolean; value: number };
 
-const clearButtonClassName = `${popoverControlClassName} rounded-[0.6rem] px-[0.6rem] py-1 text-[0.8rem]`;
-const diagnosticListClassName = "grid min-h-0 content-start gap-[0.4rem] overflow-y-auto";
-const diagnosticEntryClassName =
-  "rounded-[0.55rem] border border-border/[0.08] bg-background/[0.9] px-[0.55rem] py-[0.45rem]";
-const diagnosticEntryHeaderClassName =
-  "font-controls mb-[0.3rem] flex items-center justify-between gap-2 text-[0.78rem]";
-const diagnosticDetailClassName = "m-0 whitespace-pre-wrap break-words text-[0.75rem]";
-const diagnosticFlyoutClassName =
-  "font-code max-h-[min(70vh,36rem)] grid-rows-[auto_minmax(0,1fr)] text-[0.78rem] leading-[1.4] max-[700px]:portrait:max-h-[min(60vh,30rem)]";
-
 /**
  * Live log of diagnostic events emitted by the editor (see
  * `src/component/lib/diagnostics.ts`). Renders as a popover next to the
@@ -41,28 +30,51 @@ const diagnosticFlyoutClassName =
  * behind `process.env.NODE_ENV !== "production"`, so the deployable demo
  * (and any other production-shaped build) tree-shakes this component away.
  */
-export function DiagnosticsPopover() {
+export function DiagnosticsPopover({
+  frameDebugEnabled,
+  onFrameDebugEnabledChange,
+}: {
+  frameDebugEnabled: boolean;
+  onFrameDebugEnabledChange: (enabled: boolean) => void;
+}) {
   const entries = useDiagnosticEntries();
   const listRef = useAutoScrollToBottom(entries.list);
 
   return (
     <PlaygroundPopover
       ariaLabel="Input diagnostics"
-      flyoutClassName={diagnosticFlyoutClassName}
+      flyoutClassName="font-code max-h-[min(70vh,36rem)] grid-rows-[auto_minmax(0,1fr)] text-[0.78rem] leading-[1.4] max-[700px]:portrait:max-h-[min(60vh,30rem)]"
       icon={<DiagnosticsIcon fps={entries.fps} />}
       size="lg"
       showSwatch={false}
     >
       <div className={popoverHeaderClassName}>
         <strong className={popoverTitleClassName}>
-          Input diagnostics
+          Diagnostics
           {entries.list.length > 0 ? ` (${entries.list.length})` : ""}
         </strong>
-        <button className={clearButtonClassName} onClick={entries.clear} type="button">
-          Clear
-        </button>
+        <div className="flex items-center">
+          <label className="font-controls flex cursor-pointer items-center gap-2 text-[0.82rem] text-muted">
+            <span>X-Ray</span>
+            <input
+              checked={frameDebugEnabled}
+              onChange={(event) => onFrameDebugEnabledChange(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+          <span aria-hidden="true" className="mx-2 h-[1.5rem] w-px bg-border/[0.14]" />
+          <button
+            aria-label="Clear diagnostics"
+            className="inline-flex h-[1.9rem] w-[1.9rem] items-center justify-center rounded-[0.55rem] border-0 bg-transparent p-0 text-muted transition-colors hover:text-foreground"
+            onClick={entries.clear}
+            title="Clear diagnostics"
+            type="button"
+          >
+            <Trash2 aria-hidden="true" size={14} strokeWidth={2.1} />
+          </button>
+        </div>
       </div>
-      <div className={diagnosticListClassName} ref={listRef}>
+      <div className="grid min-h-0 content-start gap-[0.4rem] overflow-y-auto" ref={listRef}>
         {entries.list.length === 0 ? (
           <p className="font-controls m-0 p-2 text-[0.85rem] text-muted">
             Waiting for input events… (focus the editor and type / dictate / move the caret)
@@ -102,12 +114,16 @@ function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
   const displayKind = formatDiagnosticKind(diagnostic.kind);
 
   return (
-    <div className={`${diagnosticEntryClassName} ${getDiagnosticKindClassName(displayKind)}`}>
-      <div className={diagnosticEntryHeaderClassName}>
+    <div
+      className={`rounded-[0.55rem] border border-border/[0.08] bg-background/[0.9] px-[0.55rem] py-[0.45rem] ${getDiagnosticKindClassName(displayKind)}`}
+    >
+      <div className="font-controls mb-[0.3rem] flex items-center justify-between gap-2 text-[0.78rem]">
         <span className="font-semibold text-slate-900">{displayKind}</span>
         <span className="text-muted">{formatTime(diagnostic.ts)}</span>
       </div>
-      <pre className={diagnosticDetailClassName}>{formatDetail(diagnostic.detail)}</pre>
+      <pre className="m-0 whitespace-pre-wrap break-words text-[0.75rem]">
+        {formatDetail(diagnostic.detail)}
+      </pre>
     </div>
   );
 }

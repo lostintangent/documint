@@ -2,75 +2,58 @@
 // resource metadata. Markdown persists references as ordinary links, but
 // parsing upgrades registered protocols before layout and rendering see them.
 
-import type { DocumentLayout } from "@/editor/layout";
-import type { IndexedInline } from "@/editor/state";
-import { resolveInlineResource } from "@/editor/resources";
-import {
-  measureInlineResourceIconSegmentWidth,
-  resourceHorizontalPadding,
-  resourceVectorIconSize,
-} from "@/editor/layout/measure/inline-resource";
-import type { DocumentResourceIcon, DocumentResources, ResolvedEditorTheme } from "@/types";
+import { resourceVectorIconSize } from "@/editor/layout/measure/inline-resource";
+import type { DocumentResourceIcon, ResolvedEditorTheme } from "@/types";
+import type { ResourceSegment } from "../frame/line/text-segments";
 import { blendCanvasColors } from "../animations/colors";
 import { resolveRestingPulseAlpha } from "../animations/pulse";
 import { paintSvgIconNode } from "./svg-icon";
-import { resolveInlinePillBox } from "./pill";
 
 const resourceCornerRadius = 6;
-const resourceVerticalNudge = -1;
-const resourceVerticalPadding = 3;
-const resourceTextVerticalNudge = 1;
 
-export function paintInlineResource(
+export function paintResourceSegment(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  inline: IndexedInline,
-  resources: DocumentResources,
+  segment: ResourceSegment,
+  clocks: { ambientAnimation: number },
   theme: ResolvedEditorTheme,
-  left: number,
-  right: number,
-  ambientAnimationTime: number,
 ) {
-  const resource = resolveInlineResource(inline, resources.resourceRegistry);
-
-  if (!resource) {
-    return;
-  }
-
-  const box = resolveInlinePillBox(context, line, left, right, {
-    textVerticalNudge: resourceTextVerticalNudge,
-    verticalNudge: resourceVerticalNudge,
-    verticalPadding: resourceVerticalPadding,
-  });
-  const colors = resolveResourceColors(resource.isActive, theme, ambientAnimationTime);
-  const iconSegmentWidth = measureInlineResourceIconSegmentWidth(context, resource.icon);
+  const { resource } = segment;
+  const { pill } = segment;
+  const colors = resolveResourceColors(resource.isActive, theme, clocks.ambientAnimation);
 
   context.save();
   context.beginPath();
-  context.roundRect(left, box.top, box.width, box.height, resourceCornerRadius);
+  context.roundRect(
+    pill.rect.left,
+    pill.rect.top,
+    pill.rect.width,
+    pill.rect.height,
+    resourceCornerRadius,
+  );
   context.clip();
   if (resource.icon) {
     context.fillStyle = colors.iconBackground;
-    context.fillRect(left, box.top, iconSegmentWidth, box.height);
+    context.fillRect(pill.rect.left, pill.rect.top, resource.iconSegmentWidth, pill.rect.height);
   }
   context.fillStyle = colors.labelBackground;
-  context.fillRect(left + iconSegmentWidth, box.top, box.width - iconSegmentWidth, box.height);
+  context.fillRect(
+    pill.rect.left + resource.iconSegmentWidth,
+    pill.rect.top,
+    pill.rect.width - resource.iconSegmentWidth,
+    pill.rect.height,
+  );
   context.restore();
 
   if (resource.icon) {
     paintResourceIcon(context, resource.icon, theme.background, {
-      baseline: box.textBaseline,
-      centerX: left + iconSegmentWidth / 2,
-      centerY: box.top + box.height / 2,
+      baseline: pill.textBaseline,
+      centerX: pill.rect.left + resource.iconSegmentWidth / 2,
+      centerY: pill.rect.top + pill.rect.height / 2,
     });
   }
 
   context.fillStyle = colors.text;
-  context.fillText(
-    resource.label,
-    left + iconSegmentWidth + resourceHorizontalPadding,
-    box.textBaseline,
-  );
+  context.fillText(resource.label, resource.labelLeft, pill.textBaseline);
 }
 
 function resolveResourceColors(
@@ -113,8 +96,9 @@ function paintResourceIcon(
   context.strokeStyle = color;
 
   if (typeof icon === "string") {
-    const metrics = context.measureText(icon);
-    context.fillText(icon, centerX - metrics.width / 2, baseline);
+    context.textAlign = "center";
+    context.fillText(icon, centerX, baseline);
+    context.textAlign = "start";
     return;
   }
 

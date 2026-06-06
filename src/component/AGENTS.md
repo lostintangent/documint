@@ -9,7 +9,7 @@ This is the orchestration layer. Editing behavior, geometry, hit testing, and an
 ## Design Principles
 
 - **Orchestrate through editor APIs.** Component code should translate browser/app events into named `@/editor` capabilities, not recreate document-index, layout, anchor, or mutation logic locally.
-- **The host owns render cadence.** `useRender` chooses the cheapest valid paint mode, and `useViewport` owns the cached `EditorLayoutHandle` those paint paths consume.
+- **The host owns render cadence.** `useRender` chooses the cheapest valid paint mode, `useViewport` owns the cached `EditorLayoutHandle` those paint paths consume, and `Documint` prepares renderer frame values before passing them to canvas paint calls.
 - **Derived view models belong in the store.** If code mostly reads store state, derives a view model, compares it, and mirrors it into local state, make it a sprig instead.
 - **Browser effects stay at the edge.** DOM refs, observers, timers, pointer capture, IME/composition, clipboard, focus, scroll, resize, async resources, and gesture state belong in hooks.
 - **Leaf UI is declarative and arbitrated once.** Hooks emit candidates; `Documint` resolves priority and geometry so insertion menus, links, comments, completions, and table UI share one placement contract.

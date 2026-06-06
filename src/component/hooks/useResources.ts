@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { createResourceReference } from "@/editor";
-import { createResourceIconSignature, normalizeResourceProtocol } from "@/resources";
+import { normalizeResourceProtocol } from "@/document";
+import { createResourceIconSignature, createResourceReference } from "@/editor";
 import type {
   DocumentResourceProtocol,
   DocumentResourceReference,

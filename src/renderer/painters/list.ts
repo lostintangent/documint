@@ -1,32 +1,14 @@
 // Owns list and task marker chrome in the canvas paint path. The main paint
 // module delegates here so document-line foreground rendering stays focused on
 // text, selection, and annotation layering.
-//
-// `resolveVisibleListMarkers` is the per-frame pre-derivation that follows the
-// same shape as `resolveVisibleHeadingRules` / `resolveVisibleBlockquoteRegions`:
-// the orchestrator builds it once over the visible block range, then per-line
-// paint is an O(1) map lookup. This avoids walking ancestors for every wrapped
-// line of every list item (only the first wrapped line gets a marker).
-
-import {
-  resolveIndexedListItem,
-  resolveOrderedListMarkerAnchor,
-  resolveTaskCheckboxBounds,
-  resolveUnorderedListMarkerBounds,
-  type DocumentLayout,
-} from "@/editor/layout";
-import { findAncestorIndexedBlock, type IndexedListItem, type EditorState } from "@/editor/state";
 import {
   resolveBlockPulseColor,
   resolveBlockPulseScale,
   type ActiveBlockPulse,
 } from "../animations";
+import type { DocumentFrameLine } from "../frame";
+import type { ListMarkerFrame } from "../frame/chrome/list-markers";
 import type { ResolvedEditorTheme } from "@/types";
-
-export type VisibleListMarker = {
-  blockPath: string;
-  marker: IndexedListItem;
-};
 
 const unorderedMarkerRadius = 3;
 const unorderedMarkerStrokeWidth = 1.5;
@@ -42,65 +24,21 @@ const taskCheckmarkPath = {
   start: { x: 3.5, y: 7.5 },
 };
 
-type TaskCheckboxBounds = ReturnType<typeof resolveTaskCheckboxBounds>;
-
-// Builds the per-frame map of list markers keyed by the first-line block id.
-// Only `line.start === 0` lines carry a marker, so wrapped lines never need a
-// lookup. The per-line foreground reads this map; `paintListMarker` already
-// no-ops on wrapped lines, so a miss on a non-marker line costs only `Map.get`.
-export function resolveVisibleListMarkers(
-  layout: DocumentLayout,
-  editorState: EditorState,
-  startIndex: number,
-  endIndex: number,
-): Map<string, VisibleListMarker> {
-  const visibleListMarkers = new Map<string, VisibleListMarker>();
-
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const line = layout.lines[index]!;
-
-    if (line.start !== 0 || visibleListMarkers.has(line.blockId)) {
-      continue;
-    }
-
-    const listItemEntry = findAncestorIndexedBlock(
-      editorState.documentIndex,
-      line.blockId,
-      "listItem",
-    );
-
-    if (!listItemEntry) {
-      continue;
-    }
-
-    const marker = resolveIndexedListItem(editorState, listItemEntry.block.id);
-
-    if (!marker) {
-      continue;
-    }
-
-    visibleListMarkers.set(line.blockId, { blockPath: listItemEntry.path, marker });
-  }
-
-  return visibleListMarkers;
-}
-
 export function paintListMarker(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  marker: IndexedListItem | null,
-  textLeft: number,
-  textBaseline: number,
+  lineFrame: DocumentFrameLine,
   theme: ResolvedEditorTheme,
-  pop: ActiveBlockPulse | null = null,
 ) {
-  if (!marker || line.start !== 0) {
+  const marker = lineFrame.listMarker;
+  const pop = lineFrame.blockPulse;
+
+  if (!marker) {
     return;
   }
 
   if (pop) {
     const scale = resolveBlockPulseScale(pop);
-    const center = resolveListMarkerCenter(marker, line, textLeft, textBaseline, context);
+    const center = resolveListMarkerCenter(marker, context);
 
     context.save();
     context.translate(center.x, center.y);
@@ -109,16 +47,16 @@ export function paintListMarker(
   }
 
   if (marker.kind === "task") {
-    paintTaskCheckbox(context, line, marker.checked, theme, pop);
+    paintTaskCheckbox(context, marker, theme, pop);
   } else {
     const markerTextColor = theme.listMarkerText;
 
     context.fillStyle = pop ? resolveBlockPulseColor(markerTextColor, pop, theme) : markerTextColor;
 
     if (marker.kind === "ordered") {
-      paintOrderedListMarker(context, resolveIndexedListItemLabel(marker), textLeft, textBaseline);
+      paintOrderedListMarker(context, marker);
     } else {
-      paintUnorderedListMarker(context, marker, line);
+      paintUnorderedListMarker(context, marker);
     }
   }
 
@@ -127,27 +65,24 @@ export function paintListMarker(
   }
 }
 
-export function paintTaskCheckbox(
+function paintTaskCheckbox(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  checked: boolean,
+  marker: Extract<ListMarkerFrame, { kind: "task" }>,
   theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
-  const checkboxBounds = resolveTaskCheckboxBounds(line);
+  paintTaskCheckboxFrame(context, marker.rect, marker.checked, theme, pop);
 
-  paintTaskCheckboxFrame(context, checkboxBounds, checked, theme, pop);
-
-  if (!checked) {
+  if (!marker.checked) {
     return;
   }
 
-  paintTaskCheckboxCheckmark(context, checkboxBounds, theme, pop);
+  paintTaskCheckboxCheckmark(context, marker.rect, theme, pop);
 }
 
 function paintTaskCheckboxFrame(
   context: CanvasRenderingContext2D,
-  checkboxBounds: TaskCheckboxBounds,
+  checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
   checked: boolean,
   theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
@@ -165,8 +100,8 @@ function paintTaskCheckboxFrame(
   context.roundRect(
     checkboxBounds.left,
     checkboxBounds.top,
-    checkboxBounds.size,
-    checkboxBounds.size,
+    checkboxBounds.width,
+    checkboxBounds.height,
     taskCheckboxCornerRadius,
   );
   context.fill();
@@ -175,7 +110,7 @@ function paintTaskCheckboxFrame(
 
 function paintTaskCheckboxCheckmark(
   context: CanvasRenderingContext2D,
-  checkboxBounds: TaskCheckboxBounds,
+  checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
   theme: ResolvedEditorTheme,
   pop: ActiveBlockPulse | null = null,
 ) {
@@ -201,22 +136,19 @@ function paintTaskCheckboxCheckmark(
 
 function paintOrderedListMarker(
   context: CanvasRenderingContext2D,
-  label: string,
-  textLeft: number,
-  textBaseline: number,
+  marker: Extract<ListMarkerFrame, { kind: "ordered" }>,
 ) {
   const previousTextAlign = context.textAlign;
   context.textAlign = "right";
-  context.fillText(label, resolveOrderedListMarkerAnchor(textLeft), textBaseline);
+  context.fillText(marker.label, marker.anchorX, marker.textBaseline);
   context.textAlign = previousTextAlign;
 }
 
 function paintUnorderedListMarker(
   context: CanvasRenderingContext2D,
-  marker: Extract<IndexedListItem, { kind: "unordered" }>,
-  line: DocumentLayout["lines"][number],
+  marker: Extract<ListMarkerFrame, { kind: "unordered" }>,
 ) {
-  const bounds = resolveUnorderedListMarkerBounds(line);
+  const bounds = marker.rect;
   const x = bounds.left + bounds.width / 2;
   const y = bounds.top + bounds.height / 2;
   const variant = marker.depth % 3;
@@ -239,35 +171,25 @@ function paintUnorderedListMarker(
   }
 }
 
-function resolveListMarkerCenter(
-  marker: IndexedListItem,
-  line: DocumentLayout["lines"][number],
-  textLeft: number,
-  textBaseline: number,
-  context: CanvasRenderingContext2D,
-) {
+function resolveListMarkerCenter(marker: ListMarkerFrame, context: CanvasRenderingContext2D) {
   if (marker.kind === "task") {
-    const bounds = resolveTaskCheckboxBounds(line);
-    return { x: bounds.left + bounds.size / 2, y: bounds.top + bounds.size / 2 };
+    const bounds = marker.rect;
+    return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
   }
 
   if (marker.kind === "ordered") {
-    const label = resolveIndexedListItemLabel(marker);
-    const metrics = context.measureText(label);
+    const metrics = context.measureText(marker.label);
     const y =
-      textBaseline - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+      marker.textBaseline -
+      (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
 
-    return { x: resolveOrderedListMarkerAnchor(textLeft) - metrics.width / 2, y };
+    return { x: marker.anchorX - metrics.width / 2, y };
   }
 
-  const bounds = resolveUnorderedListMarkerBounds(line);
+  const bounds = marker.rect;
 
   return {
     x: bounds.left + bounds.width / 2,
     y: bounds.top + bounds.height / 2,
   };
-}
-
-function resolveIndexedListItemLabel(marker: Extract<IndexedListItem, { kind: "ordered" }>) {
-  return `${marker.ordinal}.`;
 }

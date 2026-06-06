@@ -1,8 +1,10 @@
-import { markOrder, type Mark, type MentionTarget } from "@/document";
 import {
+  markOrder,
   normalizeResourceProtocol,
   resolveRegisteredResourceProtocol as resolveRegisteredResourceProtocolFromUrl,
-} from "@/resources";
+  type Mark,
+  type MentionTarget,
+} from "@/document";
 
 export type MarkdownOptions = {
   /**
@@ -40,28 +42,6 @@ export const blockquoteMarker = ">";
 export const fencedCodeMarker = "```";
 export const containerDirectiveClosingMarker = ":::";
 
-export function normalizeResourceProtocols(
-  protocols: readonly string[] | undefined,
-): ReadonlySet<string> | null {
-  if (!protocols?.length) {
-    return null;
-  }
-
-  const normalized = new Set<string>();
-  for (const protocol of protocols) {
-    const canonicalProtocol = normalizeResourceProtocol(protocol);
-
-    if (canonicalProtocol) {
-      normalized.add(canonicalProtocol);
-    }
-  }
-
-  return normalized;
-}
-
-export function resolveResourceProtocol(url: string, protocols: ReadonlySet<string> | null) {
-  return protocols ? resolveRegisteredResourceProtocolFromUrl(url, protocols) : null;
-}
 
 // --- Inline mark spec ---
 //
@@ -221,3 +201,28 @@ function isInlineMarkDelimiterList(
  * so persisted markdown stays stable across sessions.
  */
 export const commentDirectiveName = "documint-comments";
+
+// --- Resource protocol normalization and resolution ---//
+
+export function normalizeResourceProtocols(
+  protocols: readonly string[] | undefined,
+): ReadonlySet<string> | null {
+  if (!protocols?.length) {
+    return null;
+  }
+
+  const normalized = new Set<string>();
+  for (const protocol of protocols) {
+    const canonicalProtocol = normalizeResourceProtocol(protocol);
+
+    if (canonicalProtocol) {
+      normalized.add(canonicalProtocol);
+    }
+  }
+
+  return normalized;
+}
+
+export function resolveResourceProtocol(url: string, protocols: ReadonlySet<string> | null) {
+  return protocols ? resolveRegisteredResourceProtocolFromUrl(url, protocols) : null;
+}

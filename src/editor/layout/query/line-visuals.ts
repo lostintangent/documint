@@ -1,23 +1,18 @@
 // Owns line and inline visual helpers shared by paint, navigation, and hit-testing.
-// Given a prepared `DocumentLayout` plus editor state, these resolve content
-// insets (e.g. list-marker indent) and small per-line metric helpers
-// (visual-left, task checkbox bounds, inline image bounds). Ancestry walks
-// live in `editor/state` (`findAncestorIndexedBlock`) — layout consumes them
-// as a primitive.
+// Given a prepared `DocumentLayout` plus editor state where needed, these
+// resolve small per-line metric helpers (visual-left, task checkbox bounds,
+// inline image bounds).
 
 import type { DocumentResources } from "@/types";
 import {
-  findAncestorIndexedBlock,
   resolveRegion,
   type IndexedInline,
   type IndexedListItem,
   type EditorState,
 } from "../../state";
 import {
-  LIST_MARKER_TEXT_INSET,
   ORDERED_LIST_MARKER_GAP,
   TASK_CHECKBOX_SIZE,
-  TASK_MARKER_TEXT_INSET,
   UNORDERED_LIST_MARKER_GUTTER_INSET,
   UNORDERED_LIST_MARKER_SIZE,
 } from "../lib/marker-metrics";
@@ -25,7 +20,6 @@ import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/meas
 import type { EditorLayoutState } from "../state";
 import { resolveInlineImageDimensions } from "../measure/inline-image";
 import type { DocumentLayout, LayoutLine } from "../measure";
-import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
 export type InlineBounds = {
@@ -36,23 +30,10 @@ export type InlineBounds = {
 };
 
 export function resolveLineVisualLeft(
-  state: EditorState,
   line: DocumentLayout["lines"][number],
   offset: number,
 ) {
-  return measureCanvasLineOffsetLeft(line, offset) + resolveLineContentInset(state, line);
-}
-
-export function resolveLineContentInset(state: EditorState, line: DocumentLayout["lines"][number]) {
-  const listItemEntry = findAncestorIndexedBlock(state.documentIndex, line.blockId, "listItem");
-
-  if (!listItemEntry) {
-    return 0;
-  }
-
-  const marker = resolveIndexedListItem(state, listItemEntry.block.id);
-
-  return marker?.kind === "task" ? TASK_MARKER_TEXT_INSET : LIST_MARKER_TEXT_INSET;
+  return measureCanvasLineOffsetLeft(line, offset) + line.contentInset;
 }
 
 export function resolveOrderedListMarkerAnchor(textLeft: number) {
@@ -76,22 +57,6 @@ export function resolveUnorderedListMarkerBounds(line: LayoutLine) {
     left: line.left - UNORDERED_LIST_MARKER_GUTTER_INSET,
     top: centerY - size / 2,
     width: size,
-  };
-}
-
-export function resolveCodeBlockBackgroundBounds(
-  layout: DocumentLayout,
-  line: LayoutLine,
-  regionBounds: { bottom: number; left: number; right: number; top: number },
-): InlineBounds {
-  const left = Math.max(0, line.left - CODE_BLOCK_CONTENT_PADDING_X);
-  const right = Math.max(left, layout.width - layout.options.paddingX);
-
-  return {
-    height: regionBounds.bottom - regionBounds.top + CODE_BLOCK_BACKGROUND_PADDING_Y * 2,
-    left,
-    top: regionBounds.top - CODE_BLOCK_BACKGROUND_PADDING_Y,
-    width: right - left,
   };
 }
 
@@ -128,7 +93,7 @@ export function measureInlineImageBounds(
     return null;
   }
 
-  const textLeft = line.left + resolveLineContentInset(state, line);
+  const textLeft = line.left + line.contentInset;
   const left = textLeft + measureCanvasLineOffsetLeft(line, run.start - line.start) - line.left;
   const right = textLeft + measureCanvasLineOffsetLeft(line, run.end - line.start) - line.left;
   const { height } = resolveInlineImageDimensions(run, resources, line.width);

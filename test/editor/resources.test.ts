@@ -4,7 +4,6 @@ import {
   createLayoutCache,
   createEditorState,
   hasActiveResourcesInViewport,
-  hasContentAnimationsInViewport,
 } from "@/editor";
 import { parseDocument } from "@/markdown";
 import type { DocumentResources } from "@/types";
@@ -72,25 +71,4 @@ test("detects active resources only when their line is visible", () => {
       active: new Set(["demo-resource://note/complete"]),
     }),
   ).toBe(false);
-
-  expect(
-    hasContentAnimationsInViewport({
-      commentPresence: new Map(),
-      commentRanges: [],
-      resourceRegistry: resources.resourceRegistry,
-      state,
-      textDecorations: new Map(),
-      viewport: beforeResourceViewport,
-    }),
-  ).toBe(false);
-  expect(
-    hasContentAnimationsInViewport({
-      commentPresence: new Map(),
-      commentRanges: [],
-      resourceRegistry: resources.resourceRegistry,
-      state,
-      textDecorations: new Map(),
-      viewport: resourceViewport,
-    }),
-  ).toBe(true);
 });

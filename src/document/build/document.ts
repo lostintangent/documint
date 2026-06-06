@@ -7,7 +7,7 @@
 
 import type { CommentThread } from "../comments";
 import { createCommentThreadId } from "../comments/threads";
-import type { Block, Document } from "../types";
+import type { Block, Document } from "../model/types";
 import { normalizeRootBlock } from "./normalize";
 
 export function createDocument(

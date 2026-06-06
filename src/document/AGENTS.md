@@ -14,8 +14,8 @@ This is the semantic truth layer. Markdown creates it, editor indexing projects 
 
 ## Subsystem Map
 
-- `types.ts` defines the closed document, fragment, block, inline, and mark unions.
-- `paths.ts` and `containers.ts` define structural coordinates and container-block policy.
+- `index.ts` is the public document facade; keep cross-subsystem exports flowing through it.
+- `model/` owns the closed semantic schema and primitive model policies. `model/index.ts` is the model barrel, `model/types.ts` defines document/fragment/block/inline/mark unions, `model/paths.ts` defines structural coordinates, `model/containers.ts` defines container-block policy, `model/marks.ts` owns inline mark canonicalization, and `model/resources.ts` owns resource protocol normalization/resolution.
 - `build/` owns builders, construction/splice APIs, normalization, canonicalization, IDs, and `plainText`.
 - `query/` owns traversal, lookup, plain-text projection, and anchor algebra.
 - `comments/` owns persisted thread shape, immutable thread CRUD, serialization, and quote/context resolution.

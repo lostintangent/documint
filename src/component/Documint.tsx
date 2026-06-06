@@ -29,7 +29,9 @@ import {
   deleteThread,
   editComment,
   getDocument,
-  hasContentAnimationsInViewport,
+  hasActiveCommentHighlightsInViewport,
+  hasActiveResourcesInViewport,
+  hasAnimatedDecorationsInViewport,
   insertTableColumn,
   insertTableRow,
   measureVisualCaretTarget,
@@ -40,7 +42,12 @@ import {
   updateLink,
   type EditorPresence,
 } from "@/editor";
-import { paintContent, paintOverlay } from "@/renderer";
+import {
+  createDocumentFrame,
+  createOverlayFrame,
+  paintDocumentFrame,
+  paintOverlayFrame,
+} from "@/renderer";
 import type { LucideIcon } from "lucide-react";
 import type {
   DocumentPresence,
@@ -83,7 +90,7 @@ import { useSearch } from "./hooks/useSearch";
 import { useTheme } from "./hooks/useTheme";
 import { useViewport } from "./hooks/useViewport";
 import { prepareCanvasLayer } from "./lib/canvas";
-import { emitDiagnostic } from "./lib/diagnostics";
+import { emitDiagnostic, emitRenderFrame } from "./lib/diagnostics";
 import { type EditorInputKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
 import { DocumentStorage } from "./lib/storage";
@@ -298,6 +305,7 @@ function DocumintHost({
   const selectionContext = useSprig(selectionContextSprig);
   const commentRanges = useSprig(commentRangesSprig);
   const normalizedSel = useSprig(normalizedSelectionSprig);
+
   const isEditable = Boolean(onContentChanged);
   // Completion sources are pure derivations of the host-provided `users`
   // prop — no reactive editor input — so they live as a hook-local memo
@@ -434,9 +442,7 @@ function DocumintHost({
   };
 
   const idle = useIdle({
-    onIdle: () => {
-      scheduleContentPaint();
-    },
+    onIdle: () => scheduleContentPaint(),
   });
 
   /* Paint callbacks */
@@ -470,7 +476,7 @@ function DocumintHost({
 
     const now = performance.now();
 
-    paintContent(editorState, layoutState, context, {
+    const frame = createDocumentFrame(editorState, layoutState, {
       activeBlockId: selectionContext.block?.blockId ?? null,
       activeRegionId: editorState.selection.focus.regionId,
       activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
@@ -486,6 +492,14 @@ function DocumintHost({
       theme: preferredTheme,
       width,
     });
+
+    paintDocumentFrame(context, frame);
+    if (process.env.NODE_ENV !== "production" && contentCanvasRef.current) {
+      emitRenderFrame({
+        canvas: contentCanvasRef.current,
+        frame,
+      });
+    }
   });
 
   const renderOverlay = useEffectEvent((layoutState = layout.peekLatest()) => {
@@ -505,7 +519,7 @@ function DocumintHost({
 
     const { context, devicePixelRatio, height, width } = preparedLayer;
 
-    paintOverlay(editorState, layoutState, context, {
+    const frame = createOverlayFrame(editorState, layoutState, {
       devicePixelRatio,
       height,
       normalizedSelection: normalizedSel,
@@ -517,17 +531,23 @@ function DocumintHost({
       theme: preferredTheme,
       width,
     });
+    paintOverlayFrame(context, frame);
   });
 
   const renderViewport = useEffectEvent(() => {
     const layoutState = commitLayout();
+
     renderContent(layoutState);
     renderOverlay(layoutState);
   });
 
   const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
     useRender({
-      hasRunningOptionalContentAnimations: () => {
+      isActive: idle.isActive,
+      renderContent,
+      renderOverlay,
+      renderViewport,
+      hasAmbientAnimationsInViewport: () => {
         // Loading-image shimmer is content-only: keep the shared scheduler
         // ticking, but let resource changes below own layout invalidation.
         if (hasLoadingImages) {
@@ -539,19 +559,12 @@ function DocumintHost({
           return false;
         }
 
-        return hasContentAnimationsInViewport({
-          commentPresence,
-          commentRanges,
-          resourceRegistry,
-          state: editorState,
-          textDecorations,
-          viewport: layoutState,
-        });
+        return (
+          hasActiveResourcesInViewport(editorState, layoutState, resourceRegistry) ||
+          hasAnimatedDecorationsInViewport(editorState, layoutState, textDecorations) ||
+          hasActiveCommentHighlightsInViewport(layoutState, commentRanges, commentPresence)
+        );
       },
-      isActive: idle.isActive,
-      renderContent,
-      renderOverlay,
-      renderViewport,
     });
 
   // Sync `useViewport`'s scroll metrics and schedule a render after any
@@ -562,6 +575,7 @@ function DocumintHost({
     syncScrollContainer(scrollContainer);
     scheduleFullRender();
   });
+
   const handleScrollEvent = useEffectEvent((event: UIEvent<HTMLDivElement>) => {
     handleViewportScroll(event.currentTarget);
   });
@@ -613,6 +627,7 @@ function DocumintHost({
     resolvePoint,
     storage: documentStorage,
   });
+
   const hoveredCommentThreadIndex =
     pointer.leaf?.kind === "thread" ? pointer.leaf.threadIndex : null;
 
@@ -698,15 +713,6 @@ function DocumintHost({
     viewportHeight,
   ]);
 
-  useEffect(() => {
-    if (activeResourceKey === lastPaintedActiveResourceKeyRef.current) {
-      return;
-    }
-
-    lastPaintedActiveResourceKeyRef.current = activeResourceKey;
-    scheduleContentPaint();
-  }, [activeResourceKey]);
-
   // Selection changes — caret moves on overlay, range highlight on content.
   //
   // Future: the selection range highlight (and comment-highlight markers
@@ -746,6 +752,15 @@ function DocumintHost({
   useEffect(() => {
     scheduleOverlayPaint();
   }, [resolvedPresence]);
+
+  useEffect(() => {
+    if (activeResourceKey === lastPaintedActiveResourceKeyRef.current) {
+      return;
+    }
+
+    lastPaintedActiveResourceKeyRef.current = activeResourceKey;
+    scheduleContentPaint();
+  }, [activeResourceKey]);
 
   /* Leaf presentation */
 

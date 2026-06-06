@@ -1,7 +1,5 @@
 // Owns the low-level primitives every text painter draws through. Text runs,
 // decorations, and effects all paint into glyph space; they share three jobs:
-//   - converting line-relative offsets into absolute x coordinates
-//     (`resolveLineSegmentBounds`)
 //   - drawing a colored or rounded background behind glyph rows
 //     (`paintTextBackground`)
 //   - re-drawing text glyphs at a new color clipped to a sub-range, with
@@ -9,7 +7,6 @@
 // Keeping these here means a new text effect (squiggles, etc.) has a single
 // place to reach for instead of re-deriving each primitive.
 
-import { measureLineOffsetLeft, type DocumentLayout } from "@/editor/layout";
 import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/measure";
 
 export const textDecorationMinimumWidth = 2;
@@ -30,18 +27,6 @@ export type TextBackgroundGeometry = {
   topPadding: number;
   verticalNudge: number;
 };
-
-export function resolveLineSegmentBounds(
-  line: DocumentLayout["lines"][number],
-  textLeft: number,
-  startOffset: number,
-  endOffset: number,
-) {
-  return {
-    left: textLeft + (measureLineOffsetLeft(line, startOffset - line.start) - line.left),
-    right: textLeft + (measureLineOffsetLeft(line, endOffset - line.start) - line.left),
-  };
-}
 
 export function resolveStrikethroughTop(textBaseline: number, lineHeight: number, font: string) {
   const { ascent } = resolveFontMetrics(font);

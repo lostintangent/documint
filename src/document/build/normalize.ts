@@ -20,10 +20,10 @@
 // through automatically: adding a property to a node type doesn't require
 // touching normalize.
 
-import { blockContainerSpec } from "../containers";
-import { childBlockPath, rootBlockPath, tableCellPath, tableRowPath } from "../paths";
+import { blockContainerSpec } from "../model/containers";
+import { childBlockPath, rootBlockPath, tableCellPath, tableRowPath } from "../model/paths";
 import { extractPlainTextFromInlineNodes } from "../query/text";
-import type { Block, Inline, TableRow } from "../types";
+import type { Block, Inline, TableRow } from "../model/types";
 
 export function normalizeRootBlock(block: Block, rootIndex: number): Block {
   return normalizeBlockNode(block, rootBlockPath(rootIndex));

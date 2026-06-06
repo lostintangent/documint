@@ -13,7 +13,7 @@
 // nothing changed) so callers can use them as cheap no-op-aware filters.
 
 import { mapBlockTree } from "../query/visit";
-import type { Block, Inline, Mark, TableRow } from "../types";
+import type { Block, Inline, Mark, TableRow } from "../model/types";
 import { createText, rebuildTableBlock, rebuildTextBlock } from "./builders";
 
 // Restore the canonical form after a mutation that fragmented adjacent

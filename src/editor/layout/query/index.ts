@@ -11,8 +11,6 @@ export {
 
 export {
   measureInlineImageBounds,
-  resolveCodeBlockBackgroundBounds,
-  resolveLineContentInset,
   resolveLineVisualLeft,
   resolveIndexedListItem,
   resolveOrderedListMarkerAnchor,

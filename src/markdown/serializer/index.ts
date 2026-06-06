@@ -5,9 +5,10 @@
  * table serialization live in sibling modules.
  */
 
-import type { Document } from "@/document";
+import type { Document, Fragment } from "@/document";
 import { commentDirectiveName, lineFeed, type MarkdownOptions } from "../shared";
 import { blockSeparator, renderDirective, serializeBlocks } from "./blocks";
+import { serializeInlines } from "./inlines";
 
 export { serializeBlocks } from "./blocks";
 export { serializeInlines } from "./inlines";
@@ -42,6 +43,19 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
 
   const result = chunks.join(blockSeparator);
   return result.endsWith(lineFeed) ? result : `${result}${lineFeed}`;
+}
+
+export function serializeFragment(fragment: Fragment): string {
+  switch (fragment.kind) {
+    case "text":
+      return fragment.text;
+
+    case "inlines":
+      return serializeInlines(fragment.inlines);
+      
+    case "blocks":
+      return serializeBlocks(fragment.blocks);
+  }
 }
 
 // The trailing comment appendix is markdown-only: comment threads have no

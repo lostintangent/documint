@@ -8,7 +8,6 @@ import { resolveRegion, type DocumentIndex, type EditorState } from "../../state
 import { measureTextWidth } from "../../text/measure";
 import type { DocumentLayout, LayoutLine } from "../measure";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
-import { resolveLineContentInset } from "./line-visuals";
 
 export type DocumentCaretTarget = {
   blockId: string;
@@ -56,7 +55,7 @@ export function resolveCaretVisualLeft(
 
   return (
     caret.left +
-    resolveLineContentInset(state, resolvedLine) +
+    resolvedLine.contentInset +
     resolveCollapsedTrailingSpaceWidth(state, resolvedLine, caret.offset)
   );
 }

@@ -8,15 +8,10 @@
 // phase isn't a runtime branch.
 
 import type { DocumentLayout } from "@/editor/layout";
-import {
-  findInlinesInRange,
-  regionInlines,
-  type IndexedInline,
-  type EditableRegion,
-} from "@/editor/state";
+import type { DocumentFrameLine } from "@/renderer/frame";
+import type { TextRunSegment, TextSegment } from "@/renderer/frame/line/text-segments";
+import { resolveLineSegmentBounds } from "@/renderer/frame/line/text-geometry";
 import type { TextDecoration } from "@/editor/text/decorations";
-import { resolveInlineTextStyle } from "@/editor/text/fonts";
-import { isReferenceInlineNode } from "@/document";
 import {
   collectRangeBoundaries,
   filterRangesOverlappingSegment,
@@ -24,7 +19,7 @@ import {
 } from "@/editor/text/ranges";
 import { blendCanvasColors, resolveOptionalCanvasColor } from "../../animations/colors";
 import {
-  resolveRestingPulseAlpha,
+  paintAmbientlyPulsing,
   resolveRestingPulseProgress,
   restingPulseMinimumAlpha,
 } from "../../animations/pulse";
@@ -32,9 +27,7 @@ import {
   editableTextBackgroundGeometry,
   paintClippedTextOverlay,
   paintTextBackground,
-  resolveLineSegmentBounds,
 } from "./glyphs";
-import type { TextPaintContext } from "./context";
 
 const decorationPulseTextMaximumBaseBlend = 0.72;
 const minimumDecorationTextContrast = 4.5;
@@ -42,179 +35,113 @@ const decorationTextContrastStep = 0.05;
 
 export function paintTextDecorationBackgrounds(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  container: EditableRegion | null,
-  textLeft: number,
-  textBaseline: number,
+  lineFrame: DocumentFrameLine,
   textDecorations: readonly TextDecoration[],
-  paint: TextPaintContext,
+  clocks: { ambientAnimation: number },
 ) {
-  forEachDecorationSegment(
-    context,
-    line,
-    container,
-    textLeft,
-    textBaseline,
-    textDecorations,
-    paint,
-    (segment, decoration) => {
-      if (!decoration.backgroundColor) {
-        return;
-      }
+  forEachDecoratedTextSegment(context, lineFrame, textDecorations, (segment, decoration) => {
+    if (!decoration.backgroundColor) {
+      return;
+    }
 
-      paintDecorationBackground(context, {
-        color: decoration.backgroundColor,
-        decorationAnimationTime: paint.ambientAnimationTime,
-        left: segment.left,
-        pulse: decoration.pulse === true,
-        right: segment.right,
-        textBaseline: segment.textBaseline,
-      });
-    },
-  );
+    paintDecorationBackground(context, {
+      color: decoration.backgroundColor,
+      decorationAnimationTime: clocks.ambientAnimation,
+      left: segment.left,
+      pulse: decoration.pulse === true,
+      right: segment.right,
+      textBaseline: segment.textBaseline,
+    });
+  });
 }
 
 export function paintTextDecorationOverlays(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  container: EditableRegion | null,
-  textLeft: number,
-  textBaseline: number,
+  lineFrame: DocumentFrameLine,
   textDecorations: readonly TextDecoration[],
-  baseTextColor: string,
-  paint: TextPaintContext,
+  clocks: { ambientAnimation: number },
 ) {
-  forEachDecorationSegment(
-    context,
-    line,
-    container,
-    textLeft,
-    textBaseline,
-    textDecorations,
-    paint,
-    (segment, decoration) => {
-      if (!decoration.color && !decoration.backgroundColor) {
-        return;
-      }
+  forEachDecoratedTextSegment(context, lineFrame, textDecorations, (segment, decoration) => {
+    if (!decoration.color && !decoration.backgroundColor) {
+      return;
+    }
 
-      paintClippedTextOverlay(context, {
-        color: resolveDecorationTextColor(
-          decoration,
-          paint.ambientAnimationTime,
-          baseTextColor,
-        ),
-        eraseExistingGlyphs: true,
-        height: line.height,
-        left: segment.left,
-        text: segment.segmentText,
-        textBaseline: segment.textBaseline,
-        textLeft: segment.segmentLeft,
-        top: line.top,
-        width: Math.max(0, segment.right - segment.left),
-      });
-    },
-  );
+    paintClippedTextOverlay(context, {
+      color: resolveDecorationTextColor(
+        decoration,
+        clocks.ambientAnimation,
+        segment.textColor,
+      ),
+      eraseExistingGlyphs: true,
+      height: lineFrame.layoutLine.height,
+      left: segment.left,
+      text: segment.text,
+      textBaseline: segment.textBaseline,
+      textLeft: segment.textLeft,
+      top: lineFrame.layoutLine.top,
+      width: Math.max(0, segment.right - segment.left),
+    });
+  });
 }
 
-// Shared walk over the visible inlines and their overlapping decoration
-// boundaries. The two phases differ only in what they do with each segment;
-// inline iteration, boundary collection, and segment geometry are identical.
-function forEachDecorationSegment(
+function forEachDecoratedTextSegment(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  container: EditableRegion | null,
-  textLeft: number,
-  textBaseline: number,
+  lineFrame: DocumentFrameLine,
   textDecorations: readonly TextDecoration[],
-  paint: TextPaintContext,
-  paintSegment: (
-    segment: {
-      left: number;
-      right: number;
-      segmentLeft: number;
-      segmentText: string;
-      textBaseline: number;
-    },
-    decoration: TextDecoration,
-  ) => void,
+  paintSegment: (segment: DecorationSegment, decoration: TextDecoration) => void,
 ) {
-  if (!container || textDecorations.length === 0) {
-    return;
-  }
-
-  const lineDecorations = filterRangesOverlappingSegment(textDecorations, line.start, line.end);
+  const lineDecorations = filterRangesOverlappingSegment(
+    textDecorations,
+    lineFrame.layoutLine.start,
+    lineFrame.layoutLine.end,
+  );
 
   if (lineDecorations.length === 0) {
     return;
   }
 
-  const visibleInlines = findInlinesInRange(regionInlines(container), line.start, line.end);
-
-  if (visibleInlines.length === 0) {
-    const segmentText = container.text.slice(line.start, line.end);
-    if (segmentText.length === 0) {
-      return;
+  for (const textSegment of lineFrame.segments) {
+    if (!isTextRunSegment(textSegment)) {
+      continue;
     }
 
-    const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, line.start, line.end);
-    context.font = line.font;
-    paintDecorationSegments({
-      line,
+    const segmentDecorations = filterRangesOverlappingSegment(
       lineDecorations,
-      paintSegment,
-      segmentLeft,
-      segmentText,
-      start: line.start,
-      end: line.end,
-      textLeft,
-      textBaseline,
-    });
-    return;
-  }
-
-  for (const inline of visibleInlines) {
-    if (!canPaintTextDecoration(inline)) {
-      continue;
-    }
-
-    const start = Math.max(line.start, inline.start);
-    const end = Math.min(line.end, inline.end);
-    const segmentText = container.text.slice(start, end);
-
-    if (segmentText.length === 0) {
-      continue;
-    }
-
-    const segmentDecorations = filterRangesOverlappingSegment(lineDecorations, start, end);
+      textSegment.start,
+      textSegment.end,
+    );
 
     if (segmentDecorations.length === 0) {
       continue;
     }
 
-    const { left: segmentLeft } = resolveLineSegmentBounds(line, textLeft, start, end);
-    const inlineStyle = resolveInlineTextStyle(
-      { baseFontSize: paint.baseFontSize, font: line.font },
-      inline.node.type === "text" ? inline.node.marks : [],
-    );
-    context.font = inlineStyle.font;
-    const segmentBaseline = textBaseline + inlineStyle.baselineShift;
-
+    context.font = textSegment.font;
     paintDecorationSegments({
-      line,
+      line: lineFrame.layoutLine,
       lineDecorations: segmentDecorations,
       paintSegment,
-      segmentLeft,
-      segmentText,
-      start,
-      end,
-      textLeft,
-      textBaseline: segmentBaseline,
+      segmentLeft: textSegment.left,
+      segmentText: textSegment.text,
+      start: textSegment.start,
+      end: textSegment.end,
+      textColor: textSegment.color,
+      textLeft: lineFrame.textLeft,
+      textBaseline: textSegment.baseline,
     });
   }
 }
 
-function canPaintTextDecoration(inline: IndexedInline) {
-  return !isReferenceInlineNode(inline.node);
+type DecorationSegment = {
+  left: number;
+  right: number;
+  text: string;
+  textBaseline: number;
+  textColor: string;
+  textLeft: number;
+};
+
+function isTextRunSegment(segment: TextSegment): segment is TextRunSegment {
+  return segment.atom === "inline-code" || segment.atom === "text";
 }
 
 function paintDecorationSegments({
@@ -223,6 +150,7 @@ function paintDecorationSegments({
   paintSegment,
   segmentLeft,
   segmentText,
+  textColor,
   start,
   end,
   textLeft,
@@ -230,18 +158,10 @@ function paintDecorationSegments({
 }: {
   line: DocumentLayout["lines"][number];
   lineDecorations: readonly TextDecoration[];
-  paintSegment: (
-    segment: {
-      left: number;
-      right: number;
-      segmentLeft: number;
-      segmentText: string;
-      textBaseline: number;
-    },
-    decoration: TextDecoration,
-  ) => void;
+  paintSegment: (segment: DecorationSegment, decoration: TextDecoration) => void;
   segmentLeft: number;
   segmentText: string;
+  textColor: string;
   start: number;
   end: number;
   textLeft: number;
@@ -265,7 +185,17 @@ function paintDecorationSegments({
       decorationEnd,
     );
 
-    paintSegment({ left, right, segmentLeft, segmentText, textBaseline }, textDecoration);
+    paintSegment(
+      {
+        left,
+        right,
+        text: segmentText,
+        textBaseline,
+        textColor,
+        textLeft: segmentLeft,
+      },
+      textDecoration,
+    );
   }
 }
 
@@ -292,13 +222,21 @@ function paintDecorationBackground(
     return;
   }
 
-  context.save();
-  context.globalAlpha *= resolveRestingPulseAlpha(
+  paintAmbientlyPulsing(
+    context,
     decorationAnimationTime,
+    () => {
+      paintTextBackground(
+        context,
+        left,
+        right,
+        textBaseline,
+        color,
+        editableTextBackgroundGeometry,
+      );
+    },
     restingPulseMinimumAlpha,
   );
-  paintTextBackground(context, left, right, textBaseline, color, editableTextBackgroundGeometry);
-  context.restore();
 }
 
 function resolveDecorationTextColor(

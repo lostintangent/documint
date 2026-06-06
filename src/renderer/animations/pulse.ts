@@ -13,3 +13,15 @@ export function resolveRestingPulseAlpha(time: number, minimumAlpha: number) {
 
   return minimumAlpha + (1 - minimumAlpha) * progress;
 }
+
+export function paintAmbientlyPulsing(
+  context: CanvasRenderingContext2D,
+  time: number,
+  paint: () => void,
+  minimumAlpha: number = restingPulseMinimumAlpha,
+) {
+  context.save();
+  context.globalAlpha *= resolveRestingPulseAlpha(time, minimumAlpha);
+  paint();
+  context.restore();
+}

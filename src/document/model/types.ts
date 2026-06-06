@@ -1,4 +1,4 @@
-import type { CommentThread } from "./comments";
+import type { CommentThread } from "../comments";
 
 export type Document = {
   blocks: Block[];

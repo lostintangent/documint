@@ -1,37 +1,28 @@
-// Owns paint policy for inline user mentions. Mentions are semantic inline
-// objects projected as one replacement character, then rendered as a pill.
+// Owns paint policy for user mention segments. Mentions are projected into the
+// text stream as replacement segments, then rendered as a pill.
 
 import type { ResolvedEditorTheme } from "@/types";
-import type { DocumentLayout } from "@/editor/layout";
-import type { IndexedInline } from "@/editor/state";
-import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
-import { paintInlinePillBackground, resolveInlinePillBox } from "./pill";
+import type { MentionSegment } from "../frame/line/text-segments";
+import { paintTextPillBackground } from "./pill";
 
 const mentionCornerRadius = 5;
-const mentionVerticalNudge = -1;
-const mentionVerticalPadding = 3;
-const mentionTextVerticalNudge = 1;
 
-export function paintInlineMention(
+export function paintMentionSegment(
   context: CanvasRenderingContext2D,
-  line: DocumentLayout["lines"][number],
-  inline: IndexedInline,
+  segment: MentionSegment,
   theme: ResolvedEditorTheme,
-  left: number,
-  right: number,
 ) {
-  if (inline.node.type !== "mention") {
-    return;
-  }
-
-  const box = resolveInlinePillBox(context, line, left, right, {
-    textVerticalNudge: mentionTextVerticalNudge,
-    verticalNudge: mentionVerticalNudge,
-    verticalPadding: mentionVerticalPadding,
-  });
+  const { pill } = segment;
 
   context.fillStyle = theme.mentionBackground;
-  paintInlinePillBackground(context, left, box.top, box.width, box.height, mentionCornerRadius);
+  paintTextPillBackground(
+    context,
+    pill.rect.left,
+    pill.rect.top,
+    pill.rect.width,
+    pill.rect.height,
+    mentionCornerRadius,
+  );
   context.fillStyle = theme.mentionText;
-  context.fillText(`@${inline.node.name}`, left + mentionHorizontalPadding, box.textBaseline);
+  context.fillText(`@${segment.mentionName}`, segment.textLeft, pill.textBaseline);
 }

@@ -6,8 +6,7 @@
 import type { RichInlineItem } from "@chenglou/pretext/rich-inline";
 import type { Mark } from "@/document";
 import type { DocumentResources } from "@/types";
-import { resolveInlineResource } from "@/editor/resources";
-import { createResourceIconSignature } from "@/resources";
+import { createResourceIconSignature, resolveInlineResource } from "@/editor/resources";
 import { indexedInlineText, type IndexedInline } from "../../state";
 import { resolveInlineTextStyle } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./inline-image";
@@ -21,10 +20,32 @@ import type { BlockTypography } from "./text";
 
 export type InlineReferenceMeasurement = {
   height: number;
+  inlineReference: InlineReferenceLayoutMetric;
   richItem: RichInlineItem | null;
   text: string;
   width: number;
 };
+
+export type InlineReferenceLayoutMetric =
+  | {
+      end: number;
+      kind: "image";
+      start: number;
+      width: number;
+    }
+  | {
+      end: number;
+      kind: "mention";
+      start: number;
+      width: number;
+    }
+  | {
+      end: number;
+      iconSegmentWidth: number;
+      kind: "resource";
+      start: number;
+      width: number;
+    };
 
 export type InlineReferenceSignature = {
   hasMutableResourceDependency: boolean;
@@ -49,6 +70,12 @@ export function resolveInlineReferenceMeasurement(
 
     return {
       height: dimensions.height,
+      inlineReference: {
+        end: run.end,
+        kind: "image",
+        start: run.start,
+        width: dimensions.width,
+      },
       richItem: null,
       text: indexedInlineText(run),
       width: dimensions.width,
@@ -59,9 +86,16 @@ export function resolveInlineReferenceMeasurement(
 
   if (run.node.type === "mention") {
     context.font = styledFont;
+    const width = measureInlineMentionWidth(context, run.node);
 
     return {
       height: typography.lineHeight,
+      inlineReference: {
+        end: run.end,
+        kind: "mention",
+        start: run.start,
+        width,
+      },
       richItem: {
         break: "never",
         extraWidth: mentionHorizontalPadding * 2,
@@ -69,7 +103,7 @@ export function resolveInlineReferenceMeasurement(
         text: `@${run.node.name}`,
       },
       text: indexedInlineText(run),
-      width: measureInlineMentionWidth(context, run.node),
+      width,
     };
   }
 
@@ -84,19 +118,26 @@ export function resolveInlineReferenceMeasurement(
   }
 
   context.font = styledFont;
+  const iconSegmentWidth = measureInlineResourceIconSegmentWidth(context, resource.icon);
+  const width = measureInlineResourceWidth(context, resource);
 
   return {
     height: typography.lineHeight,
+    inlineReference: {
+      end: run.end,
+      iconSegmentWidth,
+      kind: "resource",
+      start: run.start,
+      width,
+    },
     richItem: {
       break: "never",
-      extraWidth:
-        resourceHorizontalPadding * 2 +
-        measureInlineResourceIconSegmentWidth(context, resource.icon),
+      extraWidth: resourceHorizontalPadding * 2 + iconSegmentWidth,
       font: styledFont,
       text: resource.label,
     },
     text: indexedInlineText(run),
-    width: measureInlineResourceWidth(context, resource),
+    width,
   };
 }
 
