@@ -1,11 +1,16 @@
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
-import type { EditorLayoutState } from "@/editor/layout";
+import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import { findVisibleBlockRange, findVisibleLineRange } from "@/editor/layout";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
-import { resolveActiveAnimations } from "../animations";
+import type { DocumentResources, DocumintEffects, ResolvedEditorTheme } from "@/types";
+import {
+  resolveActiveEffects,
+  type EffectPolicy,
+  type ActiveBlockFlash,
+  type ActiveEditorEffect,
+} from "../effects";
 import { resolveDocumentFrameChrome, type DocumentFrameChrome } from "./chrome";
 import { resolveDocumentFrameLine, type DocumentFrameLine } from "./line";
 import { resolveSelectionRegionOrderRange } from "./selection-frame";
@@ -19,13 +24,18 @@ export function createDocumentFrame(
   options: CreateDocumentFrameOptions,
 ): DocumentFrame {
   const { layout, paintTop } = layoutState;
-  const ambientAnimation = options.ambientAnimationTime ?? options.now;
+  const ambientTime = options.ambientTime ?? options.now;
   const visibleLines = findVisibleLineRange(layout, paintTop, options.height);
   const visibleBlocks = findVisibleBlockRange(layout, paintTop, options.height);
-  const animations = resolveActiveAnimations(editorState, options.now);
+  const activeEffects = resolveActiveEffects(
+    options.effects ?? [],
+    options.now,
+    options.effectPolicy,
+    options.customEffects,
+  );
   const resources = options.resources ?? emptyDocumentResources;
   const clocks: DocumentFrameClocks = {
-    ambientAnimation,
+    ambientTime,
   };
   const commentRangesByRegion = groupCommentRangesByRegion(options.commentRanges);
   const textDecorations = options.textDecorations ?? emptyTextDecorationIndex;
@@ -34,7 +44,7 @@ export function createDocumentFrame(
     options.normalizedSelection,
   );
   const { chrome, listMarkerPlans } = resolveDocumentFrameChrome({
-    activeBlockFlashes: animations.activeBlockFlashes,
+    blockFlashes: activeEffects.blockFlashes,
     activeBlockId: options.activeBlockId,
     activeRegionId: options.activeRegionId,
     endBlockIndex: visibleBlocks.endIndex,
@@ -50,12 +60,12 @@ export function createDocumentFrame(
   for (let index = visibleLines.startIndex; index < visibleLines.endIndex; index += 1) {
     lines.push(
       resolveDocumentFrameLine({
-        activeBlockFlashes: animations.activeBlockFlashes,
+        blockFlashes: activeEffects.blockFlashes,
         activeBlockId: options.activeBlockId,
-        activeBlockPulses: animations.activeBlockPulses,
-        activeTextFades: animations.activeTextFades,
-        activeTextHighlights: animations.activeTextHighlights,
-        activeTextPulses: animations.activeTextPulses,
+        blockPulses: activeEffects.blockPulses,
+        textFades: activeEffects.textFades,
+        textHighlights: activeEffects.textHighlights,
+        textPulses: activeEffects.textPulses,
         activeThreadIndex: options.activeThreadIndex,
         commentPresence: options.commentPresence ?? emptyCommentPresence,
         commentRangesByRegion,
@@ -74,8 +84,14 @@ export function createDocumentFrame(
   }
 
   return {
+    activeBlockChangedEffect: resolveActiveBlockChangedEffectFrame(
+      lines,
+      chrome.activeTableCellHighlight,
+    ),
+    activeEffects: activeEffects.activeEditorEffects,
     chrome,
     clocks,
+    customEffects: options.customEffects,
     layer: {
       devicePixelRatio: options.devicePixelRatio,
       height: options.height,
@@ -85,6 +101,12 @@ export function createDocumentFrame(
     lines,
     resources,
     theme: options.theme,
+    viewport: {
+      height: layoutState.viewport.height,
+      left: 0,
+      top: layoutState.viewport.top,
+      width: layoutState.viewport.width,
+    },
   };
 }
 
@@ -92,10 +114,13 @@ type CreateDocumentFrameOptions = {
   activeBlockId: string | null;
   activeRegionId: string | null;
   activeThreadIndex: number | null;
-  ambientAnimationTime?: number;
+  ambientTime?: number;
   commentPresence?: ReadonlyMap<number, EditorPresence>;
   commentRanges: EditorCommentRange[];
+  customEffects?: DocumintEffects;
   devicePixelRatio: number;
+  effectPolicy?: EffectPolicy;
+  effects?: readonly ActiveEditorEffect[];
   height: number;
   normalizedSelection: NormalizedEditorSelection;
   now: number;
@@ -122,16 +147,20 @@ function groupCommentRangesByRegion(commentRanges: EditorCommentRange[]) {
 }
 
 export type DocumentFrame = {
+  readonly activeBlockChangedEffect: ActiveBlockChangedEffectFrame | null;
+  readonly activeEffects: readonly ActiveEditorEffect[];
   readonly chrome: DocumentFrameChrome;
   readonly clocks: DocumentFrameClocks;
+  readonly customEffects?: DocumintEffects;
   readonly layer: PaintLayerFrame;
   readonly lines: readonly DocumentFrameLine[];
   readonly resources: DocumentResources;
   readonly theme: ResolvedEditorTheme;
+  readonly viewport: LayoutRect;
 };
 
 type DocumentFrameClocks = {
-  readonly ambientAnimation: number;
+  readonly ambientTime: number;
 };
 
 export type PaintLayerFrame = {
@@ -140,3 +169,69 @@ export type PaintLayerFrame = {
   readonly paintTop: number;
   readonly width: number;
 };
+
+export type ActiveBlockChangedEffectFrame = {
+  readonly activeFlash: ActiveBlockFlash;
+  readonly bands: readonly LayoutRect[];
+  readonly borderRect?: LayoutRect;
+  readonly rect: LayoutRect;
+};
+
+function resolveActiveBlockChangedEffectFrame(
+  lines: readonly DocumentFrameLine[],
+  activeTableCellHighlight: DocumentFrameChrome["activeTableCellHighlight"],
+): ActiveBlockChangedEffectFrame | null {
+  if (activeTableCellHighlight?.activeFlash) {
+    return {
+      activeFlash: activeTableCellHighlight.activeFlash,
+      bands: activeTableCellHighlight.bands,
+      borderRect: activeTableCellHighlight.borderRect,
+      rect: activeTableCellHighlight.borderRect,
+    };
+  }
+
+  const bands: LayoutRect[] = [];
+  let activeFlash: ActiveBlockFlash | null = null;
+
+  for (const line of lines) {
+    const background = line.activeBlockBackground;
+
+    if (!background?.activeFlash) {
+      continue;
+    }
+
+    activeFlash ??= background.activeFlash;
+    bands.push(background.rect);
+  }
+
+  if (!activeFlash || bands.length === 0) {
+    return null;
+  }
+
+  return {
+    activeFlash,
+    bands,
+    rect: unionRects(bands),
+  };
+}
+
+function unionRects(rects: readonly LayoutRect[]): LayoutRect {
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+
+  for (const rect of rects) {
+    left = Math.min(left, rect.left);
+    right = Math.max(right, rect.left + rect.width);
+    top = Math.min(top, rect.top);
+    bottom = Math.max(bottom, rect.top + rect.height);
+  }
+
+  return {
+    height: Math.max(0, bottom - top),
+    left,
+    top,
+    width: Math.max(0, right - left),
+  };
+}

@@ -939,7 +939,7 @@ function insertNativeTextCommand(state: EditorState, value: string) {
 }
 
 // Replace a range of `charsToDelete` characters with `replacement`, in a
-// single editor action — one undo entry, one animation tick — instead of
+// single editor action — one undo entry, one semantic effect — instead of
 // N delete + M insert operations. The range ends `trailingOffset` chars
 // before the editor caret; `trailingOffset === 0` is the common case
 // (replacement abuts the caret), but macOS Text Replacements can extend

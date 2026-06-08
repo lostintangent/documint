@@ -1,21 +1,32 @@
 import { useEffect, useEffectEvent, useRef } from "react";
-import { hasRunningAnimations as hasRunningEditorAnimations } from "@/editor";
+import type { ActiveEditorEffect } from "@/renderer";
 import { recordFpsFrame } from "../lib/diagnostics";
-import { useDocumintStore } from "../store";
 
 type UseRenderOptions = {
   hasAmbientAnimationsInViewport?: () => boolean;
   isActive?: () => boolean;
-  renderContent: () => void;
+  renderContent: (activeEffects: readonly ActiveEditorEffect[]) => ContentPaintResult;
   renderOverlay: () => void;
-  renderViewport: () => void;
+  renderViewport: (activeEffects: readonly ActiveEditorEffect[]) => ContentPaintResult;
+};
+
+type ContentPaintResult = {
+  activeEffects: readonly ActiveEditorEffect[];
+};
+
+const noActiveContentEffects: ContentPaintResult = {
+  activeEffects: [],
 };
 
 type RenderController = {
   scheduleFullRender: () => void;
   scheduleFullPaint: () => void;
-  scheduleContentPaint: () => void;
+  scheduleContentPaint: (options?: ScheduleContentPaintOptions) => void;
   scheduleOverlayPaint: () => void;
+};
+
+type ScheduleContentPaintOptions = {
+  effects?: readonly ActiveEditorEffect[];
 };
 
 type PendingRenderIntents = {
@@ -43,8 +54,8 @@ export function useRender({
 }: UseRenderOptions): RenderController {
   /* Render state */
 
-  const store = useDocumintStore();
   const frameIdRef = useRef<number | null>(null);
+  const activeEffectsRef = useRef<readonly ActiveEditorEffect[]>([]);
   const pendingIntentsRef = useRef(createPendingRenderIntents());
 
   /* Frame request */
@@ -57,6 +68,12 @@ export function useRender({
     frameIdRef.current = window.requestAnimationFrame((frameTimestamp) => {
       flushRenderRequests(frameTimestamp);
     });
+  });
+
+  const paintContent = useEffectEvent(() => {
+    const contentPaint = renderContent(activeEffectsRef.current);
+    activeEffectsRef.current = contentPaint.activeEffects;
+    return contentPaint;
   });
 
   /* Frame flush */
@@ -75,29 +92,30 @@ export function useRender({
       process.env.NODE_ENV !== "production" ? performance.now() : frameTimestamp;
 
     if (shouldFullRender) {
-      renderViewport();
+      const contentPaint = renderViewport(activeEffectsRef.current);
+      activeEffectsRef.current = contentPaint.activeEffects;
       if (process.env.NODE_ENV !== "production") {
         recordFpsFrame(performance.now() - renderStartedAt);
       }
-      scheduleAnimationContinuation();
+      schedulePaintContinuation(contentPaint);
       return;
     }
 
     if (shouldFullPaint) {
-      renderContent();
+      const contentPaint = paintContent();
       renderOverlay();
       if (process.env.NODE_ENV !== "production") {
         recordFpsFrame(performance.now() - renderStartedAt);
       }
-      scheduleAnimationContinuation();
+      schedulePaintContinuation(contentPaint);
       return;
     }
 
     const painted = shouldContentPaint || shouldOverlayPaint;
 
     if (shouldContentPaint) {
-      renderContent();
-      scheduleAnimationContinuation();
+      const contentPaint = paintContent();
+      schedulePaintContinuation(contentPaint);
     }
     if (shouldOverlayPaint) {
       renderOverlay();
@@ -110,27 +128,24 @@ export function useRender({
     }
   });
 
-  /* Animation continuation */
+  /* Paint continuation */
 
-  const scheduleAnimationContinuation = useEffectEvent(() => {
-    const hasRunningEditorAnimation = hasRunningEditorAnimations(
-      store.editor.getState(),
-      performance.now(),
-    );
+  const schedulePaintContinuation = useEffectEvent(
+    (contentPaint: ContentPaintResult = noActiveContentEffects) => {
+      if (contentPaint.activeEffects.length > 0) {
+        pendingIntentsRef.current.contentPaint = true;
+        requestFrame();
+        return;
+      }
 
-    if (hasRunningEditorAnimation) {
+      if (isActive?.() === true || hasAmbientAnimationsInViewport?.() !== true) {
+        return;
+      }
+
       pendingIntentsRef.current.contentPaint = true;
       requestFrame();
-      return;
-    }
-
-    if (isActive?.() === true || hasAmbientAnimationsInViewport?.() !== true) {
-      return;
-    }
-
-    pendingIntentsRef.current.contentPaint = true;
-    requestFrame();
-  });
+    },
+  );
 
   /* Lifecycle */
 
@@ -157,7 +172,11 @@ export function useRender({
     requestFrame();
   });
 
-  const scheduleContentPaint = useEffectEvent(() => {
+  const scheduleContentPaint = useEffectEvent((options?: ScheduleContentPaintOptions) => {
+    if (options?.effects && options.effects.length > 0) {
+      activeEffectsRef.current = [...activeEffectsRef.current, ...options.effects];
+    }
+
     pendingIntentsRef.current.contentPaint = true;
     requestFrame();
   });

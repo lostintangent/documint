@@ -5,7 +5,7 @@
 //   - decorations.ts — host-supplied decoration index, painted in two
 //                      phases (`paintTextDecorationBackgrounds`,
 //                      `paintTextDecorationOverlays`)
-//   - animations.ts  — transient text animations: insert highlights, fades,
+//   - effects.ts      — transient text effects: insert highlights, fades,
 //                      pulses (`paintTextHighlights`,
 //                      `paintTextFades`, `paintTextPulses`)
 //   - glyphs.ts      — shared primitives all three call into
@@ -18,4 +18,4 @@
 
 export { paintLineText } from "./inlines";
 export { paintTextDecorationBackgrounds, paintTextDecorationOverlays } from "./decorations";
-export { paintTextFades, paintTextHighlights, paintTextPulses } from "./animations";
+export { paintTextFades, paintTextHighlights, paintTextPulses } from "./effects";

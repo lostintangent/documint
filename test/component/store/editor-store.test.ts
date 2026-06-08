@@ -4,7 +4,7 @@ import { editorSource } from "@/component/store/editor/sprigs";
 import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 import { createLayoutStore } from "@/component/store/layout/store";
-import { insertText, setSelection } from "@/editor/state";
+import { insertText, readEditorEffects, setSelection } from "@/editor/state";
 import { getRegion, placeAt, setup } from "@test/editor/helpers";
 
 describe("EditorStore", () => {
@@ -27,7 +27,7 @@ describe("EditorStore", () => {
       expect.objectContaining({
         documentChanged: true,
         changedRootIndexes: [0],
-        hasNewAnimations: true,
+        hasNewEffects: true,
         source: "local",
       }),
     );
@@ -43,7 +43,7 @@ describe("EditorStore", () => {
       expect.objectContaining({
         documentChanged: false,
         changedRootIndexes: [],
-        hasNewAnimations: false,
+        hasNewEffects: false,
         source: "local",
       }),
     );
@@ -76,6 +76,30 @@ describe("EditorStore", () => {
       }),
     );
     expect(store.getState()).toBe(next);
+  });
+
+  test("drains but does not publish effects from external replacements", () => {
+    const initial = setup("alpha\n");
+    const region = getRegion(initial, "alpha");
+    const next = insertText(placeAt(initial, region, "end"), "!");
+
+    if (!next) {
+      throw new Error("Expected insertText to produce a state");
+    }
+
+    expect(readEditorEffects(next).length).toBeGreaterThan(0);
+
+    const store = createEditorStore(initial);
+    const transition = store.replace(next);
+
+    expect(transition).toEqual(
+      expect.objectContaining({
+        effects: [],
+        hasNewEffects: false,
+        source: "external",
+      }),
+    );
+    expect(readEditorEffects(next)).toEqual([]);
   });
 
   test("source sprigs notify only when the selected slice changes", () => {

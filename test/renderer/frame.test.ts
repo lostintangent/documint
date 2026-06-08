@@ -10,10 +10,16 @@ import {
   setSelection,
   type EditorState,
 } from "@/editor/state";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
+import type { DocumintEffects, DocumentResources, ResolvedEditorTheme } from "@/types";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
 import { parseDocument, type MarkdownOptions } from "@/markdown";
-import { createDocumentFrame, createOverlayFrame, type DocumentFrame } from "@/renderer";
+import {
+  createDocumentFrame,
+  createOverlayFrame,
+  type DocumentFrame,
+  type ActiveEditorEffect,
+} from "@/renderer";
+import type { EffectPolicy } from "@/renderer/effects";
 import type { DocumentFrameLine } from "@/renderer/frame";
 import { emptyDocumentResources } from "@/editor/resources";
 import { setup } from "../editor/helpers";
@@ -117,6 +123,83 @@ describe("DocumentFrame line range rows", () => {
       pulse: true,
     });
     expect(secondLine.commentHighlights[0]!.rect.top).toBeGreaterThan(secondLine.layoutLine.top);
+  });
+});
+
+describe("DocumentFrame effect policy", () => {
+  test("forwards custom effect policy into frame lines", () => {
+    const state = setup("alpha 🔥\n");
+    const region = state.documentIndex.regions[0];
+
+    if (!region) {
+      throw new Error("Expected paragraph region");
+    }
+
+    const effect: ActiveEditorEffect = {
+      kind: "text-inserted",
+      text: "🔥",
+      regionPath: region.path,
+      startOffset: region.text.indexOf("🔥"),
+      endOffset: region.text.length,
+      startedAt: 100,
+    };
+    const effectPolicy: EffectPolicy = {
+      duration: (currentEffect) => (currentEffect.kind === "text-inserted" ? 1000 : null),
+    };
+
+    const defaultFrame = createTestDocumentFrame(state, {
+      effects: [effect],
+      now: 110,
+    });
+    const customFrame = createTestDocumentFrame(state, {
+      effectPolicy,
+      effects: [effect],
+      now: 110,
+    });
+
+    expect(defaultFrame.activeEffects).toEqual([]);
+    expect(customFrame.activeEffects).toEqual([effect]);
+    expect(lineFrameForRegion(defaultFrame, region.id).textHighlights).toEqual([]);
+    expect(lineFrameForRegion(customFrame, region.id).textHighlights).toEqual([
+      expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
+    ]);
+  });
+
+  test("keeps default-skipped effects active when a matching custom handler exists", () => {
+    const state = setup("alpha 🔥\n");
+    const region = state.documentIndex.regions[0];
+
+    if (!region) {
+      throw new Error("Expected paragraph region");
+    }
+
+    const effect: ActiveEditorEffect = {
+      kind: "text-inserted",
+      text: "🔥",
+      regionPath: region.path,
+      startOffset: region.text.indexOf("🔥"),
+      endOffset: region.text.length,
+      startedAt: 100,
+    };
+
+    const defaultFrame = createTestDocumentFrame(state, {
+      effects: [effect],
+      now: 110,
+    });
+    const customFrame = createTestDocumentFrame(state, {
+      customEffects: {
+        textInserted: () => {},
+      },
+      effects: [effect],
+      now: 110,
+    });
+
+    expect(defaultFrame.activeEffects).toEqual([]);
+    expect(customFrame.activeEffects).toEqual([effect]);
+    expect(lineFrameForRegion(defaultFrame, region.id).textHighlights).toEqual([]);
+    expect(lineFrameForRegion(customFrame, region.id).textHighlights).toEqual([
+      expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
+    ]);
   });
 });
 
@@ -225,7 +308,11 @@ function createTestDocumentFrame(
     activeThreadIndex = null,
     commentPresence,
     commentRanges = [],
+    customEffects,
+    effectPolicy,
+    effects,
     height = 420,
+    now = 0,
     resources = emptyDocumentResources,
     theme = resolvedLightTheme,
     width = 420,
@@ -235,7 +322,11 @@ function createTestDocumentFrame(
     activeThreadIndex?: number | null;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     commentRanges?: EditorCommentRange[];
+    customEffects?: DocumintEffects;
+    effectPolicy?: EffectPolicy;
+    effects?: readonly ActiveEditorEffect[];
     height?: number;
+    now?: number;
     resources?: DocumentResources;
     theme?: ResolvedEditorTheme;
     width?: number;
@@ -262,9 +353,12 @@ function createTestDocumentFrame(
     commentPresence,
     commentRanges,
     devicePixelRatio: 1,
+    customEffects,
+    effectPolicy,
+    effects,
     height,
     normalizedSelection: normalizeSelection(state),
-    now: 0,
+    now,
     resources,
     theme,
     width,

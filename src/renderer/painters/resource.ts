@@ -5,8 +5,8 @@
 import { resourceVectorIconSize } from "@/editor/layout/measure/inline-resource";
 import type { DocumentResourceIcon, ResolvedEditorTheme } from "@/types";
 import type { ResourceSegment } from "../frame/line/text-segments";
-import { blendCanvasColors } from "../animations/colors";
-import { resolveRestingPulseAlpha } from "../animations/pulse";
+import { blendCanvasColors } from "../effects/colors";
+import { resolveRestingPulseAlpha } from "../effects/pulse";
 import { paintSvgIconNode } from "./svg-icon";
 
 const resourceCornerRadius = 6;
@@ -14,12 +14,12 @@ const resourceCornerRadius = 6;
 export function paintResourceSegment(
   context: CanvasRenderingContext2D,
   segment: ResourceSegment,
-  clocks: { ambientAnimation: number },
+  clocks: { ambientTime: number },
   theme: ResolvedEditorTheme,
 ) {
   const { resource } = segment;
   const { pill } = segment;
-  const colors = resolveResourceColors(resource.isActive, theme, clocks.ambientAnimation);
+  const colors = resolveResourceColors(resource.isActive, theme, clocks.ambientTime);
 
   context.save();
   context.beginPath();
@@ -59,7 +59,7 @@ export function paintResourceSegment(
 function resolveResourceColors(
   isActive: boolean,
   theme: ResolvedEditorTheme,
-  ambientAnimationTime: number,
+  ambientTime: number,
 ) {
   if (!isActive) {
     return {
@@ -69,7 +69,7 @@ function resolveResourceColors(
     };
   }
 
-  const pulseAlpha = resolveRestingPulseAlpha(ambientAnimationTime, 0.58);
+  const pulseAlpha = resolveRestingPulseAlpha(ambientTime, 0.58);
 
   return {
     iconBackground: blendCanvasColors(theme.text, theme.commentHighlight, pulseAlpha),

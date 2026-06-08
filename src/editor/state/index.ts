@@ -84,17 +84,15 @@ export type {
   SelectionTarget,
 } from "./selection";
 
-// Animations
-export { getEditorAnimationDuration, hasRunningEditorAnimations } from "./animations";
-
+// Semantic effects
+export { readEditorEffects, takeEditorEffects } from "./effects";
 export type {
-  ActiveBlockFlashAnimation,
-  TextFadeAnimation,
-  EditorAnimation,
-  TextHighlightAnimation,
-  BlockPulseAnimation,
-  TextPulseAnimation,
-} from "./animations";
+  ActiveBlockChangedEffect,
+  EditorEffect,
+  ListItemInsertedEffect,
+  TextDeletedEffect,
+  TextInsertedEffect,
+} from "./effects";
 
 // State
 export {

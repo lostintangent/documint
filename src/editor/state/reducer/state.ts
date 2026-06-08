@@ -17,12 +17,7 @@ import {
   type Document,
 } from "@/document";
 import { getCommentState } from "../../anchors";
-import {
-  addActiveBlockFlashAnimation,
-  addAnimationIntent,
-  getEditorAnimationTime,
-  pruneEditorAnimations,
-} from "../animations";
+import { recordEditorEffects, takeEditorEffects } from "../effects";
 import {
   resolveActiveBlockKey,
   resolveBlockPathForRegion,
@@ -52,7 +47,6 @@ export function createEditorState(document: Document): EditorState {
   const initialPoint = resolveDefaultSelectionPoint(documentIndex);
 
   return {
-    animations: [],
     documentIndex,
     future: [],
     history: [],
@@ -83,7 +77,15 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
   }
 
   const nextState = reduceEditorStateAction(state, action);
-  return nextState ? addAnimationIntent(nextState, action.animation) : null;
+  if (!nextState || !action.effect) {
+    return nextState;
+  }
+
+  // `reduceEditorStateAction` may emit derived effects while resolving the
+  // post-edit selection. Re-record them after the action effect so consumers
+  // see the edit's semantic event before selection-derived follow-ups.
+  const postEditEffects = takeEditorEffects(nextState);
+  return recordEditorEffects(nextState, [action.effect, ...postEditEffects]);
 }
 
 function reduceEditorStateAction(
@@ -199,13 +201,17 @@ export function setSelection(
 
   const shouldFlash = activeBlockChanged ?? didActiveBlockChange(state, nextState);
 
-  return shouldFlash
-    ? addActiveBlockFlashAnimation(
-        nextState,
-        resolveBlockPathForRegion(nextState.documentIndex, nextState.selection.focus.regionId) ??
-          "",
-      )
-    : nextState;
+  if (!shouldFlash) {
+    return nextState;
+  }
+
+  const blockPath =
+    resolveBlockPathForRegion(nextState.documentIndex, nextState.selection.focus.regionId) ?? "";
+
+  return recordEditorEffects(
+    nextState,
+    blockPath ? [{ blockPath, kind: "active-block-changed" }] : [],
+  );
 }
 
 export function setSelectionPoint(
@@ -228,7 +234,6 @@ export function pushHistory(state: EditorState, documentIndex: DocumentIndex): E
   const point = resolveDefaultSelectionPoint(documentIndex);
 
   return {
-    animations: pruneEditorAnimations(state.animations, getEditorAnimationTime()),
     documentIndex,
     future: [],
     history: [
@@ -277,7 +282,6 @@ function restoreHistoryEntry(
   stacks: { future: HistoryEntry[]; history: HistoryEntry[] },
 ): EditorState {
   return {
-    animations: [],
     documentIndex: createDocumentIndex(entry.document),
     future: stacks.future,
     history: stacks.history,

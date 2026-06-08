@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" role="img" aria-label="Cool neon duck in a moonlit lagoon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1020"/>
+      <stop offset="50%" stop-color="#102a43"/>
+      <stop offset="100%" stop-color="#0b3d5b"/>
+    </linearGradient>
+
+    <radialGradient id="moonGlow" cx="0.78" cy="0.18" r="0.4">
+      <stop offset="0%" stop-color="#c4f1ff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#c4f1ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1fb6ff" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#0a2437" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <linearGradient id="duckBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd86b"/>
+      <stop offset="100%" stop-color="#ffb347"/>
+    </linearGradient>
+
+    <linearGradient id="duckWing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffcc4d"/>
+      <stop offset="100%" stop-color="#ff9f43"/>
+    </linearGradient>
+
+    <linearGradient id="beak" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff8a00"/>
+      <stop offset="100%" stop-color="#ff4d00"/>
+    </linearGradient>
+
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#00111f" flood-opacity="0.5"/>
+    </filter>
+
+    <pattern id="stars" width="120" height="120" patternUnits="userSpaceOnUse">
+      <circle cx="18" cy="24" r="2" fill="#d6f6ff" opacity="0.7"/>
+      <circle cx="74" cy="38" r="1.6" fill="#d6f6ff" opacity="0.6"/>
+      <circle cx="44" cy="88" r="1.8" fill="#e7fbff" opacity="0.8"/>
+      <circle cx="102" cy="94" r="1.4" fill="#e7fbff" opacity="0.65"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bg)"/>
+  <rect width="1200" height="800" fill="url(#stars)" opacity="0.9"/>
+
+  <circle cx="930" cy="150" r="82" fill="#dbf7ff"/>
+  <circle cx="930" cy="150" r="82" fill="url(#moonGlow)"/>
+
+  <ellipse cx="600" cy="640" rx="520" ry="150" fill="url(#water)"/>
+
+  <g filter="url(#softGlow)" opacity="0.5">
+    <path d="M210 640 C340 580, 860 580, 990 640" fill="none" stroke="#55d6ff" stroke-width="5"/>
+    <path d="M170 680 C340 620, 860 620, 1030 680" fill="none" stroke="#1fb6ff" stroke-width="4"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <ellipse cx="600" cy="455" rx="230" ry="165" fill="url(#duckBody)"/>
+
+    <ellipse cx="675" cy="430" rx="128" ry="92" fill="url(#duckWing)"/>
+    <path d="M585 430 C640 375, 735 388, 780 445 C722 448, 655 472, 615 510" fill="#ffb24f" opacity="0.65"/>
+
+    <circle cx="430" cy="345" r="96" fill="url(#duckBody)"/>
+
+    <path d="M315 352 C266 338, 245 368, 283 394 C336 422, 410 413, 440 390 C402 377, 350 366, 315 352Z" fill="url(#beak)"/>
+
+    <circle cx="452" cy="324" r="13" fill="#131b2b"/>
+    <circle cx="456" cy="319" r="4" fill="#ffffff" opacity="0.85"/>
+
+    <path d="M410 375 C445 385, 480 382, 506 370" stroke="#e3942d" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+
+    <path d="M690 575 C675 620, 640 655, 592 668" stroke="#ff8a00" stroke-width="16" stroke-linecap="round" fill="none"/>
+    <path d="M760 568 C748 610, 716 648, 672 662" stroke="#ff8a00" stroke-width="16" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <ellipse cx="600" cy="690" rx="230" ry="38" fill="#33c8ff" opacity="0.28"/>
+
+  <text x="600" y="760" text-anchor="middle" fill="#d2f5ff" font-family="Avenir Next, Futura, sans-serif" font-size="44" letter-spacing="2" opacity="0.85">
+    NIGHT PADDLE
+  </text>
+</svg>

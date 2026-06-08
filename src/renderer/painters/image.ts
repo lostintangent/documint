@@ -22,7 +22,7 @@ const imageLoadingShimmerMinimumWidth = 48;
 const imageLoadingShimmerWidthScale = 0.22;
 
 type ImagePlaceholderBox = LayoutRect & {
-  ambientAnimationTime: number;
+  ambientTime: number;
   status: "error" | "loading";
 };
 
@@ -31,7 +31,7 @@ export function paintImageSegment(
   lineFrame: DocumentFrameLine,
   segment: ImageSegment,
   frameContext: {
-    clocks: { ambientAnimation: number };
+    clocks: { ambientTime: number };
     resources: DocumentResources;
     theme: ResolvedEditorTheme;
   },
@@ -50,7 +50,7 @@ export function paintImageSegment(
   } else {
     paintImagePlaceholder(context, theme, {
       ...box,
-      ambientAnimationTime: clocks.ambientAnimation,
+      ambientTime: clocks.ambientTime,
       status: resource?.status === "error" ? "error" : "loading",
     });
   }
@@ -74,7 +74,7 @@ function paintImagePlaceholder(
   context.clip();
 
   if (box.status === "loading") {
-    paintImageLoadingShimmer(context, theme, box, box.ambientAnimationTime);
+    paintImageLoadingShimmer(context, theme, box, box.ambientTime);
   }
 
   context.strokeStyle = theme.imagePlaceholderIcon;
@@ -110,14 +110,14 @@ function paintImageLoadingShimmer(
   context: CanvasRenderingContext2D,
   theme: ResolvedEditorTheme,
   box: LayoutRect,
-  ambientAnimationTime: number,
+  ambientTime: number,
 ) {
   const shimmerWidth = Math.max(
     imageLoadingShimmerMinimumWidth,
     Math.round(box.width * imageLoadingShimmerWidthScale),
   );
   const travelWidth = box.width + shimmerWidth * 2;
-  const progress = (ambientAnimationTime % imageLoadingCycleMs) / imageLoadingCycleMs;
+  const progress = (ambientTime % imageLoadingCycleMs) / imageLoadingCycleMs;
   const shimmerLeft = box.left - shimmerWidth + travelWidth * progress;
   const gradient = context.createLinearGradient(
     shimmerLeft,

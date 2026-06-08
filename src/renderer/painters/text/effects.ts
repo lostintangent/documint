@@ -1,4 +1,4 @@
-// Owns transient text animations: insert highlights (a flash that fades over
+// Owns transient text effects: insert highlights (a flash that fades over
 // freshly typed text), text fades (ghost text for deletions), and text
 // pulses (a radial ping at a punctuation insertion point). Each effect
 // reads its descriptor list from the orchestrator, filters to the current
@@ -11,14 +11,16 @@ import { collectRangeBoundaries, findRangeAtSegment } from "@/editor/text/ranges
 import type { DocumentFrameLine } from "@/renderer/frame";
 import type { TextRunSegment, TextSegment } from "@/renderer/frame/line/text-segments";
 import { resolveLineSegmentBounds } from "@/renderer/frame/line/text-geometry";
-import type { ResolvedEditorTheme } from "@/types";
+import type { TextDeletedEffectContext } from "@/types";
 import {
   resolveTextFadeColor,
   resolveTextPulseColor,
   type ActiveTextFade,
   type ActiveTextHighlight,
   type ActiveTextPulse,
-} from "../../animations";
+  type EffectEnvironment,
+  type PaintEffect,
+} from "../../effects";
 import { paintClippedTextOverlay } from "./glyphs";
 
 const textPulseBaseRadius = 4;
@@ -27,11 +29,12 @@ const textPulseStrokeWidth = 1.5;
 const textHighlightMinimumVisibleAlpha = 0.02;
 
 export function paintTextHighlights(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
   textHighlights: readonly ActiveTextHighlight[],
-  theme: ResolvedEditorTheme,
+  environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
+  const { context, paintEffect, theme } = environment;
+
   if (textHighlights.length === 0) {
     return;
   }
@@ -84,27 +87,80 @@ export function paintTextHighlights(
         highlightStart,
         highlightEnd,
       );
+      const width = Math.max(0, highlightRight - highlightLeft);
 
-      paintClippedTextOverlay(context, {
-        alpha,
-        color: theme.insertHighlightText,
-        height: lineFrame.layoutLine.height,
-        left: highlightLeft,
-        text: textSegment.text,
-        textBaseline: textSegment.baseline,
-        textLeft: textSegment.left,
-        top: lineFrame.layoutLine.top,
-        width: Math.max(0, highlightRight - highlightLeft),
-      });
+      paintEffect(
+        "textInserted",
+        {
+          anchor: {
+            x: highlightLeft,
+            y: textSegment.baseline,
+          },
+          progress: activeHighlight.progress,
+          text: activeHighlight.text,
+        },
+        ({ context }) => {
+          paintDefaultTextInsertedHighlight(context, {
+            alpha,
+            color: theme.insertHighlightText,
+            height: lineFrame.layoutLine.height,
+            left: highlightLeft,
+            text: textSegment.text,
+            textBaseline: textSegment.baseline,
+            textLeft: textSegment.left,
+            top: lineFrame.layoutLine.top,
+            width,
+          });
+        },
+      );
     }
   });
 }
 
-export function paintTextFades(
+function paintDefaultTextInsertedHighlight(
   context: CanvasRenderingContext2D,
+  {
+    alpha,
+    color,
+    height,
+    left,
+    text,
+    textBaseline,
+    textLeft,
+    top,
+    width,
+  }: {
+    alpha: number;
+    color: string;
+    height: number;
+    left: number;
+    text: string;
+    textBaseline: number;
+    textLeft: number;
+    top: number;
+    width: number;
+  },
+) {
+  paintClippedTextOverlay(context, {
+    alpha,
+    color,
+    height,
+    left,
+    text,
+    textBaseline,
+    textLeft,
+    top,
+    width,
+  });
+}
+
+export function paintTextFades(
   lineFrame: DocumentFrameLine,
   textFades: readonly ActiveTextFade[],
+  environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
+  const { paintEffect } = environment;
+
   if (textFades.length === 0) {
     return;
   }
@@ -121,17 +177,41 @@ export function paintTextFades(
       fade.startOffset,
     );
 
-    context.fillStyle = resolveTextFadeColor(lineFrame.defaultTextColor, fade);
-    context.fillText(fade.text, ghostLeft, lineFrame.textBaseline);
+    const color = resolveTextFadeColor(lineFrame.defaultTextColor, fade);
+
+    paintEffect(
+      "textDeleted",
+      {
+        color,
+        font: lineFrame.layoutLine.font,
+        left: ghostLeft,
+        progress: fade.progress,
+        text: fade.text,
+        textBaseline: lineFrame.textBaseline,
+      },
+      paintDefaultTextDeleted,
+    );
   }
 }
 
+function paintDefaultTextDeleted({
+  color,
+  context,
+  left,
+  text,
+  textBaseline,
+}: TextDeletedEffectContext) {
+  context.fillStyle = color;
+  context.fillText(text, left, textBaseline);
+}
+
 export function paintTextPulses(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
   textPulses: readonly ActiveTextPulse[],
-  theme: ResolvedEditorTheme,
+  environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
+  const { paintEffect, theme } = environment;
+
   if (textPulses.length === 0) {
     return;
   }
@@ -154,13 +234,49 @@ export function paintTextPulses(
     const { ascent, descent } = resolveFontMetrics(lineFrame.layoutLine.font);
     const glyphCenterY =
       lineFrame.textBaseline - Math.max(1, ascent * 0.42) + Math.max(0.5, descent * 0.15);
+    const color = resolveTextPulseColor(pulse, theme);
 
-    context.strokeStyle = resolveTextPulseColor(pulse, theme);
-    context.lineWidth = textPulseStrokeWidth;
-    context.beginPath();
-    context.arc((left + right) / 2, glyphCenterY, radius, 0, Math.PI * 2);
-    context.stroke();
+    paintEffect(
+      "textInserted",
+        {
+          anchor: {
+            x: left,
+            y: lineFrame.textBaseline,
+          },
+          progress: pulse.progress,
+          text: pulse.text,
+      },
+      ({ context }) => {
+        paintDefaultTextInsertedPulse(context, {
+          centerX: (left + right) / 2,
+          centerY: glyphCenterY,
+          color,
+          radius,
+        });
+      },
+    );
   }
+}
+
+function paintDefaultTextInsertedPulse(
+  context: CanvasRenderingContext2D,
+  {
+    centerX,
+    centerY,
+    color,
+    radius,
+  }: {
+    centerX: number;
+    centerY: number;
+    color: string;
+    radius: number;
+  },
+) {
+  context.strokeStyle = color;
+  context.lineWidth = textPulseStrokeWidth;
+  context.beginPath();
+  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.stroke();
 }
 
 function forEachTextRunSegment(
@@ -185,7 +301,9 @@ function isOffsetInLine(
 ) {
   return (
     offset >= lineFrame.layoutLine.start &&
-    (endBoundary === "include-end" ? offset <= lineFrame.layoutLine.end : offset < lineFrame.layoutLine.end)
+    (endBoundary === "include-end"
+      ? offset <= lineFrame.layoutLine.end
+      : offset < lineFrame.layoutLine.end)
   );
 }
 

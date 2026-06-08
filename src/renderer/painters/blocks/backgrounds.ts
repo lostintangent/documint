@@ -1,7 +1,11 @@
 import type { LayoutRect } from "@/editor/layout";
 import type { ResolvedEditorTheme } from "@/types";
-import { resolveActiveBlockFlashColor, type ActiveBlockFlash } from "../../animations";
-import type { DocumentFrameLine } from "../../frame";
+import {
+  resolveActiveBlockFlashColor,
+  type EffectEnvironment,
+  type PaintEffect,
+} from "../../effects";
+import type { ActiveBlockChangedEffectFrame, DocumentFrameLine } from "../../frame";
 import { paintTableCellChrome } from "../table";
 
 export function paintLineContainerBackground(
@@ -25,34 +29,68 @@ export function paintLineContainerBackground(
 }
 
 export function paintActiveBlockBackground(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  theme: ResolvedEditorTheme,
+  environment: EffectEnvironment,
 ) {
+  const { context, theme } = environment;
   const background = lineFrame.activeBlockBackground;
 
   if (!background) {
     return;
   }
 
-  paintActiveBlockRect(context, background.rect, background.activeFlash, theme);
+  context.fillStyle = theme.activeBlockBackground;
+  context.fillRect(
+    background.rect.left,
+    background.rect.top,
+    background.rect.width,
+    background.rect.height,
+  );
+
 }
 
-function paintActiveBlockRect(
-  context: CanvasRenderingContext2D,
-  rect: LayoutRect,
-  activeBlockFlash: ActiveBlockFlash | null,
-  theme: ResolvedEditorTheme,
+export function paintActiveBlockChangedEffect(
+  effect: ActiveBlockChangedEffectFrame | null,
+  environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
-  context.fillStyle = theme.activeBlockBackground;
-  context.fillRect(rect.left, rect.top, rect.width, rect.height);
-
-  if (!activeBlockFlash) {
+  if (!effect?.activeFlash) {
     return;
   }
 
-  context.fillStyle = resolveActiveBlockFlashColor(theme.activeBlockFlash, activeBlockFlash);
-  context.fillRect(rect.left, rect.top, rect.width, rect.height);
+  const { context, paintEffect } = environment;
+  paintEffect(
+    "activeBlockChanged",
+    {
+      progress: effect.activeFlash.progress,
+      rect: effect.rect,
+    },
+    ({ progress, theme }) => {
+      paintActiveBlockFlash(context, effect.bands, progress, theme);
+
+      if (effect.borderRect) {
+        context.strokeStyle = theme.tableBorder;
+        context.strokeRect(
+          effect.borderRect.left,
+          effect.borderRect.top,
+          effect.borderRect.width,
+          effect.borderRect.height,
+        );
+      }
+    },
+  );
+}
+
+function paintActiveBlockFlash(
+  context: CanvasRenderingContext2D,
+  bands: readonly LayoutRect[],
+  progress: number,
+  theme: ResolvedEditorTheme,
+) {
+  context.fillStyle = resolveActiveBlockFlashColor(theme.activeBlockFlash, { progress });
+
+  for (const band of bands) {
+    context.fillRect(band.left, band.top, band.width, band.height);
+  }
 }
 
 function paintRect(context: CanvasRenderingContext2D, rect: LayoutRect) {

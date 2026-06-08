@@ -43,7 +43,7 @@ export function DiagnosticsPopover({
   return (
     <PlaygroundPopover
       ariaLabel="Input diagnostics"
-      flyoutClassName="font-code max-h-[min(70vh,36rem)] grid-rows-[auto_minmax(0,1fr)] text-[0.78rem] leading-[1.4] max-[700px]:portrait:max-h-[min(60vh,30rem)]"
+      flyoutClassName="font-code max-h-[min(70vh,36rem)] grid-rows-[auto_minmax(0,1fr)] text-xs leading-snug max-sm:portrait:max-h-[min(60vh,30rem)]"
       icon={<DiagnosticsIcon fps={entries.fps} />}
       size="lg"
       showSwatch={false}
@@ -54,7 +54,7 @@ export function DiagnosticsPopover({
           {entries.list.length > 0 ? ` (${entries.list.length})` : ""}
         </strong>
         <div className="flex items-center">
-          <label className="font-controls flex cursor-pointer items-center gap-2 text-[0.82rem] text-muted">
+          <label className="font-controls flex cursor-pointer items-center gap-2 text-sm text-muted">
             <span>X-Ray</span>
             <input
               checked={frameDebugEnabled}
@@ -62,10 +62,10 @@ export function DiagnosticsPopover({
               type="checkbox"
             />
           </label>
-          <span aria-hidden="true" className="mx-2 h-[1.5rem] w-px bg-border/[0.14]" />
+          <span aria-hidden="true" className="mx-2 h-6 w-px bg-border/15" />
           <button
             aria-label="Clear diagnostics"
-            className="inline-flex h-[1.9rem] w-[1.9rem] items-center justify-center rounded-[0.55rem] border-0 bg-transparent p-0 text-muted transition-colors hover:text-foreground"
+            className="inline-flex size-7 items-center justify-center rounded-lg border-0 bg-transparent p-0 text-muted transition-colors hover:text-foreground"
             onClick={entries.clear}
             title="Clear diagnostics"
             type="button"
@@ -74,9 +74,9 @@ export function DiagnosticsPopover({
           </button>
         </div>
       </div>
-      <div className="grid min-h-0 content-start gap-[0.4rem] overflow-y-auto" ref={listRef}>
+      <div className="grid min-h-0 content-start gap-1.5 overflow-y-auto" ref={listRef}>
         {entries.list.length === 0 ? (
-          <p className="font-controls m-0 p-2 text-[0.85rem] text-muted">
+          <p className="font-controls m-0 p-2 text-sm text-muted">
             Waiting for input events… (focus the editor and type / dictate / move the caret)
           </p>
         ) : (
@@ -103,7 +103,7 @@ function FpsIcon({ fps }: { fps: FpsReading }) {
 
   return (
     <span
-      className={`font-controls inline-flex h-[1.3rem] min-w-[1.3rem] items-center justify-center rounded-full border px-[0.18rem] text-[0.58rem] leading-none font-semibold tabular-nums ${statusClassName}`}
+      className={`font-controls inline-flex h-5 min-w-5 items-center justify-center rounded-full border px-0.5 text-[0.58rem] leading-none font-semibold tabular-nums ${statusClassName}`}
     >
       {fps.value}
     </span>
@@ -115,13 +115,13 @@ function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
 
   return (
     <div
-      className={`rounded-[0.55rem] border border-border/[0.08] bg-background/[0.9] px-[0.55rem] py-[0.45rem] ${getDiagnosticKindClassName(displayKind)}`}
+      className={`rounded-lg border border-border/10 bg-background/90 px-2 py-2 ${getDiagnosticKindClassName(displayKind)}`}
     >
-      <div className="font-controls mb-[0.3rem] flex items-center justify-between gap-2 text-[0.78rem]">
+      <div className="font-controls mb-1 flex items-center justify-between gap-2 text-xs">
         <span className="font-semibold text-slate-900">{displayKind}</span>
         <span className="text-muted">{formatTime(diagnostic.ts)}</span>
       </div>
-      <pre className="m-0 whitespace-pre-wrap break-words text-[0.75rem]">
+      <pre className="m-0 whitespace-pre-wrap break-words text-xs">
         {formatDetail(diagnostic.detail)}
       </pre>
     </div>
@@ -223,21 +223,21 @@ function formatDiagnosticKind(kind: string) {
 function getDiagnosticKindClassName(kind: string) {
   switch (kind) {
     case "beforeinput":
-      return "border-l-[3px] border-l-sky-500";
+      return "border-l-4 border-l-sky-500";
     case "input":
-      return "border-l-[3px] border-l-indigo-500";
+      return "border-l-4 border-l-indigo-500";
     case "compositionstart":
     case "compositionupdate":
     case "compositionend":
-      return "border-l-[3px] border-l-amber-500";
+      return "border-l-4 border-l-amber-500";
     case "syncInputContext":
-      return "border-l-[3px] border-l-emerald-500";
+      return "border-l-4 border-l-emerald-500";
     case "editorStateEffect":
-      return "border-l-[3px] border-l-teal-500";
+      return "border-l-4 border-l-teal-500";
     case "selectionchange":
-      return "border-l-[3px] border-l-purple-500";
+      return "border-l-4 border-l-purple-500";
     default:
-      return "border-l-[3px] border-l-slate-300";
+      return "border-l-4 border-l-slate-300";
   }
 }
 

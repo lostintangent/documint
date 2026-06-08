@@ -7,27 +7,35 @@
   --color-muted: #475569;
   --color-border: #0f172a;
 
+  --font-prose: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
   --font-controls: "Avenir Next", "Segoe UI", sans-serif;
   --font-code: "SFMono-Regular", "Consolas", monospace;
 
-  --shadow-popover: 0 24px 60px rgba(15, 23, 42, 0.12);
-  --shadow-swatch: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 12%, transparent);
+  --shadow-popover: 0 24px 60px color-mix(in oklab, var(--color-border) 12%, transparent);
+  --shadow-swatch: inset 0 0 0 1px color-mix(in oklab, var(--color-border) 15%, transparent);
 }
 
-/* Playground tokens and page background */
-
-:root {
-  color: var(--color-foreground);
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
-  background-color: #e0f2fe;
-  background-image:
-    radial-gradient(circle at top left, rgba(191, 219, 254, 0.85), transparent 38%),
-    linear-gradient(180deg, #f8fafc 0%, #e0f2fe 100%);
-  background-attachment: fixed;
+@utility page-padding {
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
 }
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  :root {
+    color: var(--color-foreground);
+    font-family: var(--font-prose);
+    background-color: var(--color-sky-100);
+    background-image:
+      radial-gradient(circle at top left, color-mix(in oklab, var(--color-blue-200) 85%, transparent), transparent 38%),
+      linear-gradient(180deg, var(--color-slate-50) 0%, var(--color-sky-100) 100%);
+    background-attachment: fixed;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 }

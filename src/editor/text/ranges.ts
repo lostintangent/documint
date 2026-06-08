@@ -1,5 +1,5 @@
 // Owns generic offset-range algebra over `{ startOffset, endOffset }` values.
-// Both canvas paint (animations, text decorations) and other range-shaped
+// Both canvas paint effects/text decorations and other range-shaped
 // editor data (comment ranges, presence ranges) use the same three operations:
 // collect the boundary set inside a window, find the first range covering a
 // segment, filter the ranges overlapping a segment. Keeping the algorithms in

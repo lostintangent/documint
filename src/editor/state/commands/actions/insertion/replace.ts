@@ -3,9 +3,9 @@ import type { DocumentIndex } from "../../../index/types";
 import type { EditorSelection } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import {
-  resolveTextHighlightAnimation,
-  resolveTextHighlightAnimationForRegion,
-} from "../../../animations/intents";
+  resolveTextInsertedEffect,
+  resolveTextInsertedEffectForRegion,
+} from "../../../effects";
 
 export function resolveTextReplacement(
   documentIndex: DocumentIndex,
@@ -13,7 +13,7 @@ export function resolveTextReplacement(
   text: string,
 ): EditorStateAction {
   return {
-    animation: resolveTextHighlightAnimation(documentIndex, selection, text),
+    effect: resolveTextInsertedEffect(documentIndex, selection, text),
     kind: "splice-text",
     text,
   };
@@ -24,7 +24,7 @@ export function resolveTextRangeReplacement(
   text: string,
 ): EditorStateAction {
   return {
-    animation: resolveTextHighlightAnimationForRegion(context.region, context.startOffset, text),
+    effect: resolveTextInsertedEffectForRegion(context.region, context.startOffset, text),
     kind: "splice-text",
     range: context.selection,
     text,

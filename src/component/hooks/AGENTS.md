@@ -10,12 +10,12 @@ Hooks should not own editing semantics. Pure editor behavior belongs in `src/edi
 - **Use sprigs for durable derivations.** If a hook mostly reads state, derives a value, compares it, and stores it locally, move that derivation into the component store.
 - **Do not depend on `useEffectEvent` identity.** Never put a `useEffectEvent` result in an effect, layout-effect, or memo dependency array; invoke it inside the effect and omit it from deps.
 - **Viewport layout has one owner.** `useViewport` owns the lazy layout handle. Other hooks read the exposed handle rather than recomputing layout.
-- **Leaf UI and idle state are shared contracts.** Hooks emit leaf candidates for `Documint` to arbitrate, and interaction hooks mark `useIdle` so caret blink and optional animation continuation respond consistently. `useIdle` also owns the ambient animation clock that paint can freeze during activity and resume without phase jumps.
+- **Leaf UI and idle state are shared contracts.** Hooks emit leaf candidates for `Documint` to arbitrate, and interaction hooks mark `useIdle` so caret blink and optional paint continuation respond consistently. `useIdle` also owns the ambient animation clock that paint can freeze during activity and resume without phase jumps.
 
 ## Subsystem Map
 
 - `useViewport` owns scroll state, viewport dimensions, the layout handle, coordinate translation, drag-edge autoscroll, and programmatic scrolling.
-- `useRender` owns coalesced rAF render intents, paint dispatch, and animation continuation.
+- `useRender` owns coalesced rAF render intents, paint dispatch, timed semantic-effect retention, and active-effect continuation.
 - `useInput` owns the hidden textarea bridge: native text/IME input, keyboard shortcuts, clipboard, focus, textarea positioning, and iOS undo priming.
 - `usePointer` owns hover targeting and pointer-driven editor interactions.
 - `useSelection` owns range-selection handles, selection-handle dragging, and selection-anchored leaves.

@@ -11,7 +11,7 @@ type CopyStatusView = {
 };
 
 const hostEventCopyPillClassName =
-  "font-code [overflow-wrap:anywhere] whitespace-normal rounded-[0.4rem] border px-[0.35rem] py-[0.15rem] cursor-copy appearance-none text-left transition-colors duration-[140ms] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "font-code [overflow-wrap:anywhere] whitespace-normal rounded-md border px-1.5 py-0.5 cursor-copy appearance-none text-left transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 const HOST_EVENT_COPY_FEEDBACK_MS = 2_000;
 const copyStatusView: Record<CopyStatus, CopyStatusView> = {
   copied: {
@@ -25,7 +25,7 @@ const copyStatusView: Record<CopyStatus, CopyStatusView> = {
     title: "Copy failed",
   },
   idle: {
-    className: "border-border/[0.14] bg-background/[0.9] hover:bg-border/[0.06]",
+    className: "border-border/15 bg-background/90 hover:bg-border/5",
     title: "Copy to clipboard",
   },
 };
@@ -44,7 +44,7 @@ export function HostEventPanel({
   return (
     <section
       aria-live="polite"
-      className={`min-w-0 self-start overflow-hidden transition-[max-height,margin-bottom] duration-[180ms] ease-in-out ${
+      className={`min-w-0 self-start overflow-hidden transition-[max-height,margin-bottom] duration-150 ease-in-out ${
         visible ? "mb-4 max-h-[min(18rem,45vh)]" : "mb-0 max-h-0"
       }`}
       onTransitionEnd={(transitionEvent) => {
@@ -55,8 +55,8 @@ export function HostEventPanel({
     >
       <div className="min-w-0">
         {event ? (
-          <div className="font-controls grid min-w-0 translate-y-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-border/[0.08] bg-background/[0.82] px-3 py-[0.55rem] text-[0.85rem] opacity-100 transition-[opacity,transform] duration-[160ms] ease-in-out starting:translate-y-[-0.65rem] starting:opacity-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-[0.45rem]">
+          <div className="font-controls grid min-w-0 translate-y-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-3 rounded-xl border border-border/10 bg-background/80 px-3 py-2 text-sm opacity-100 transition-[opacity,transform] duration-150 ease-in-out starting:translate-y-[-0.65rem] starting:opacity-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="flex-none font-semibold">{event.title}</span>
               {event.fields.map(([key, value]) => (
                 <CopyableHostEventPill
@@ -77,7 +77,7 @@ export function HostEventPanel({
             </div>
             <button
               aria-label="Clear host event"
-              className="inline-flex h-[1.7rem] w-[1.7rem] cursor-pointer items-center justify-center rounded-full border border-border/[0.14] bg-background/[0.9] p-0 text-muted transition-colors duration-[140ms] hover:bg-border/[0.06] hover:text-inherit"
+              className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full border border-border/15 bg-background/90 p-0 text-muted transition-colors duration-150 hover:bg-border/5 hover:text-inherit"
               onClick={onClear}
               type="button"
             >
@@ -156,13 +156,13 @@ function CopyableHostEventPill({
       {copyStatus === "copied" ? (
         <Check
           aria-hidden
-          className="ml-[0.35rem] inline-block align-[-0.12rem]"
+          className="ml-1.5 inline-block align-[-0.12rem]"
           size={14}
           strokeWidth={2.4}
         />
       ) : null}
       {copyStatus === "failed" ? (
-        <span aria-hidden className="font-controls ml-[0.35rem] text-[0.72rem] font-semibold">
+        <span aria-hidden className="font-controls ml-1.5 text-xs font-semibold">
           Copy failed
         </span>
       ) : null}

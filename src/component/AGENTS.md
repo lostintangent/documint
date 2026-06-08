@@ -12,6 +12,7 @@ This is the orchestration layer. Editing behavior, geometry, hit testing, and an
 - **The host owns render cadence.** `useRender` chooses the cheapest valid paint mode, `useViewport` owns the cached `EditorLayoutHandle` those paint paths consume, and `Documint` prepares renderer frame values before passing them to canvas paint calls.
 - **Derived view models belong in the store.** If code mostly reads store state, derives a view model, compares it, and mirrors it into local state, make it a sprig instead.
 - **Browser effects stay at the edge.** DOM refs, observers, timers, pointer capture, IME/composition, clipboard, focus, scroll, resize, async resources, and gesture state belong in hooks.
+- **Semantic effect lifetime belongs here.** The editor emits semantic effects; `Documint` decides when they start running, `useRender` retains timed effects between frames, and renderer frame construction returns the effects that remain active.
 - **Leaf UI is declarative and arbitrated once.** Hooks emit candidates; `Documint` resolves priority and geometry so insertion menus, links, comments, completions, and table UI share one placement contract.
 
 ## Subsystem Map

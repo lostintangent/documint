@@ -19,6 +19,8 @@ export {
 } from "./component";
 
 export type {
+  ActiveBlockChangedEffectContext,
+  DocumintEffectHandler,
   DocumentResourceIcon,
   DocumentResourceIconNode,
   DocumentResourceVectorIcon,
@@ -26,9 +28,14 @@ export type {
   DocumentResourceProtocol,
   DocumentResourceReference,
   DocumentUser,
+  DocumintListMarkerPaintFrame,
+  DocumintEffects,
   DocumintStorage,
   EditorInputCommand,
   EditorTheme,
+  ListItemInsertedEffectContext,
+  TextDeletedEffectContext,
+  TextInsertedEffectContext,
 } from "./types";
 
 export { normalizeResourceProtocol, resolveResourceProtocol } from "./document";

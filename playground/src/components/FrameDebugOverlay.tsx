@@ -94,7 +94,7 @@ export function FrameDebugOverlay({ enabled }: { enabled: boolean }) {
     return null;
   }
 
-  return <canvas aria-hidden="true" className="pointer-events-none fixed z-[30]" ref={canvasRef} />;
+  return <canvas aria-hidden="true" className="pointer-events-none fixed z-30" ref={canvasRef} />;
 }
 
 function paintDebugOverlay(canvas: HTMLCanvasElement | null, renderFrame: RenderFrameEvent | null) {

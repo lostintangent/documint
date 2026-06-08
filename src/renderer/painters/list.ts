@@ -4,11 +4,12 @@
 import {
   resolveBlockPulseColor,
   resolveBlockPulseScale,
-  type ActiveBlockPulse,
-} from "../animations";
+  type EffectEnvironment,
+  type PaintEffect,
+} from "../effects";
 import type { DocumentFrameLine } from "../frame";
 import type { ListMarkerFrame } from "../frame/chrome/list-markers";
-import type { ResolvedEditorTheme } from "@/types";
+import type { DocumintListMarkerPaintFrame, ResolvedEditorTheme } from "@/types";
 
 const unorderedMarkerRadius = 3;
 const unorderedMarkerStrokeWidth = 1.5;
@@ -16,6 +17,8 @@ const unorderedMarkerStrokeWidth = 1.5;
 const taskCheckboxCornerRadius = 3;
 const taskCheckboxStrokeWidth = 1.5;
 const taskCheckmarkStrokeWidth = 2;
+
+type MarkerPulse = { progress: number };
 
 // Checkmark polyline within the 14×14 checkbox bounds: start → elbow → end.
 const taskCheckmarkPath = {
@@ -25,10 +28,10 @@ const taskCheckmarkPath = {
 };
 
 export function paintListMarker(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  theme: ResolvedEditorTheme,
+  environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
+  const { context, paintEffect, theme } = environment;
   const marker = lineFrame.listMarker;
   const pop = lineFrame.blockPulse;
 
@@ -36,6 +39,28 @@ export function paintListMarker(
     return;
   }
 
+  if (pop) {
+    const effectMarker = resolveListMarkerEffectFrame(marker, context);
+
+    paintEffect(
+      "listItemInserted",
+      { marker: effectMarker, progress: pop.progress },
+      ({ progress, theme }) => {
+        paintListMarkerDefault(context, marker, theme, { progress });
+      },
+    );
+    return;
+  }
+
+  paintListMarkerDefault(context, marker, theme);
+}
+
+function paintListMarkerDefault(
+  context: CanvasRenderingContext2D,
+  marker: ListMarkerFrame,
+  theme: ResolvedEditorTheme,
+  pop: MarkerPulse | null = null,
+) {
   if (pop) {
     const scale = resolveBlockPulseScale(pop);
     const center = resolveListMarkerCenter(marker, context);
@@ -69,7 +94,7 @@ function paintTaskCheckbox(
   context: CanvasRenderingContext2D,
   marker: Extract<ListMarkerFrame, { kind: "task" }>,
   theme: ResolvedEditorTheme,
-  pop: ActiveBlockPulse | null = null,
+  pop: MarkerPulse | null = null,
 ) {
   paintTaskCheckboxFrame(context, marker.rect, marker.checked, theme, pop);
 
@@ -85,7 +110,7 @@ function paintTaskCheckboxFrame(
   checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
   checked: boolean,
   theme: ResolvedEditorTheme,
-  pop: ActiveBlockPulse | null = null,
+  pop: MarkerPulse | null = null,
 ) {
   const fillColor = checked ? theme.checkboxCheckedFill : theme.checkboxUncheckedFill;
   // Checked state has no separate stroke token — the stroke matches the
@@ -112,7 +137,7 @@ function paintTaskCheckboxCheckmark(
   context: CanvasRenderingContext2D,
   checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
   theme: ResolvedEditorTheme,
-  pop: ActiveBlockPulse | null = null,
+  pop: MarkerPulse | null = null,
 ) {
   context.strokeStyle = pop
     ? resolveBlockPulseColor(theme.checkboxCheckmark, pop, theme)
@@ -191,5 +216,43 @@ function resolveListMarkerCenter(marker: ListMarkerFrame, context: CanvasRenderi
   return {
     x: bounds.left + bounds.width / 2,
     y: bounds.top + bounds.height / 2,
+  };
+}
+
+function resolveListMarkerEffectFrame(
+  marker: ListMarkerFrame,
+  context: CanvasRenderingContext2D,
+): DocumintListMarkerPaintFrame {
+  if (marker.kind === "ordered") {
+    // Ordered marker bounds depend on the actual canvas text metrics. The
+    // frame keeps the canvas context out of document-frame construction, so
+    // this painter resolves the public effect rect at the paint boundary.
+    const metrics = context.measureText(marker.label);
+    const ascent = metrics.actualBoundingBoxAscent;
+    const descent = metrics.actualBoundingBoxDescent;
+
+    return {
+      kind: "ordered",
+      label: marker.label,
+      rect: {
+        height: ascent + descent,
+        left: marker.anchorX - metrics.width,
+        top: marker.textBaseline - ascent,
+        width: metrics.width,
+      },
+    };
+  }
+
+  if (marker.kind === "task") {
+    return {
+      checked: marker.checked,
+      kind: "task",
+      rect: marker.rect,
+    };
+  }
+
+  return {
+    kind: "unordered",
+    rect: marker.rect,
   };
 }

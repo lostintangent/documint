@@ -22,7 +22,7 @@ export function paintLineText(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
   frameContext: {
-    clocks: { ambientAnimation: number };
+    clocks: { ambientTime: number };
     resources: DocumentResources;
     theme: ResolvedEditorTheme;
   },

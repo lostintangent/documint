@@ -1,5 +1,5 @@
 import type { DocumentLayout, LayoutRect } from "@/editor/layout";
-import type { ActiveBlockFlash } from "../../animations";
+import type { ActiveBlockFlash } from "../../effects";
 
 const tableCellMinimumPaintWidth = 80;
 const activeTableCellBandVerticalBleed = 2;

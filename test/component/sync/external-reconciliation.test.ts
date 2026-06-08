@@ -177,7 +177,7 @@ describe("offset reconciliation", () => {
 });
 
 describe("state restoration", () => {
-  test("restores selection without starting an active block flash", () => {
+  test("restores selection without mutating editor state shape", () => {
     const previousState = selectRegionText(
       createState("Alpha paragraph\n\nTarget paragraph\n"),
       1,
@@ -191,7 +191,7 @@ describe("state restoration", () => {
       anchor: [1, 6],
       focus: [1, 6],
     });
-    expect(restoredState?.animations).toEqual([]);
+    expect(restoredState).not.toHaveProperty("animations");
   });
 });
 

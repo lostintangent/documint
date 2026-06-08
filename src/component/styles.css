@@ -53,6 +53,7 @@
 .documint-content-canvas {
   position: absolute;
   inset: 0 auto auto 0;
+  z-index: 1;
   display: block;
   width: 100%;
   outline: none;
@@ -64,6 +65,7 @@
 .documint-overlay-canvas {
   position: absolute;
   inset: 0 auto auto 0;
+  z-index: 2;
   display: block;
   width: 100%;
   pointer-events: none;

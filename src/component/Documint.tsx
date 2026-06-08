@@ -47,12 +47,14 @@ import {
   createOverlayFrame,
   paintDocumentFrame,
   paintOverlayFrame,
+  type ActiveEditorEffect,
 } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
 import type {
   DocumentPresence,
   DocumentResourceReference,
   DocumentUser,
+  DocumintEffects,
   DocumintStorage,
   EditorTheme,
 } from "@/types";
@@ -137,6 +139,7 @@ export type DocumintProps = {
   theme?: DocumintTheme;
   keybindings?: EditorInputKeybinding[];
   decorations?: readonly DocumintDecoration[];
+  effects?: DocumintEffects;
   presence?: DocumentPresence[];
   protocols?: ResourceProtocolRecord;
   resources?: ActiveResourceSet;
@@ -226,6 +229,7 @@ function DocumintHost({
   content,
   keybindings,
   decorations,
+  effects,
   onCommentChanged,
   onContentChanged,
   onResourceOpened,
@@ -360,11 +364,12 @@ function DocumintHost({
 
       reconcileEditorState(transition.previous, transition.next);
 
-      if (transition.hasNewAnimations) {
-        // All editor animations are content-layer effects (block flash,
-        // text highlight/fade/pulse, block pulse).
-        // None affect layout or overlay, so a content paint is sufficient.
-        scheduleContentPaint();
+      if (transition.hasNewEffects) {
+        const startedAt = performance.now();
+        const startedEffects = transition.effects.map((effect) => ({ ...effect, startedAt }));
+        // All default editor effects are content-layer effects. None affect
+        // layout or overlay, so a content paint is sufficient.
+        scheduleContentPaint({ effects: startedEffects });
       }
 
       if (!transition.documentChanged) {
@@ -457,50 +462,56 @@ function DocumintHost({
   //     frame, and fires reactive subscribers. The layout cost is paid
   //     here, not on the lighter paint paths.
 
-  const renderContent = useEffectEvent((layoutState = layout.peekLatest()) => {
-    if (!layoutState) {
-      return;
-    }
+  const renderContent = useEffectEvent(
+    (activeEffects: readonly ActiveEditorEffect[], layoutState = layout.peekLatest()) => {
+      if (!layoutState) {
+        return { activeEffects };
+      }
 
-    const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, {
-      paintHeight: layoutState.paintHeight,
-      paintTop: layoutState.paintTop,
-      width: viewportWidth,
-    });
-
-    if (!preparedLayer) {
-      return;
-    }
-
-    const { context, devicePixelRatio, height, width } = preparedLayer;
-
-    const now = performance.now();
-
-    const frame = createDocumentFrame(editorState, layoutState, {
-      activeBlockId: selectionContext.block?.blockId ?? null,
-      activeRegionId: editorState.selection.focus.regionId,
-      activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
-      ambientAnimationTime: idle.resolveAnimationTime(now),
-      devicePixelRatio,
-      height,
-      commentRanges,
-      normalizedSelection: normalizedSel,
-      commentPresence,
-      now,
-      resources: renderResources,
-      textDecorations,
-      theme: preferredTheme,
-      width,
-    });
-
-    paintDocumentFrame(context, frame);
-    if (process.env.NODE_ENV !== "production" && contentCanvasRef.current) {
-      emitRenderFrame({
-        canvas: contentCanvasRef.current,
-        frame,
+      const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, {
+        paintHeight: layoutState.paintHeight,
+        paintTop: layoutState.paintTop,
+        width: viewportWidth,
       });
-    }
-  });
+
+      if (!preparedLayer) {
+        return { activeEffects };
+      }
+
+      const { context, devicePixelRatio, height, width } = preparedLayer;
+
+      const now = performance.now();
+
+      const frame = createDocumentFrame(editorState, layoutState, {
+        activeBlockId: selectionContext.block?.blockId ?? null,
+        activeRegionId: editorState.selection.focus.regionId,
+        activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
+        ambientTime: idle.resolveAnimationTime(now),
+        devicePixelRatio,
+        effects: activeEffects,
+        height,
+        commentRanges,
+        normalizedSelection: normalizedSel,
+        commentPresence,
+        customEffects: effects,
+        now,
+        resources: renderResources,
+        textDecorations,
+        theme: preferredTheme,
+        width,
+      });
+
+      paintDocumentFrame(context, frame);
+      if (process.env.NODE_ENV !== "production" && contentCanvasRef.current) {
+        emitRenderFrame({
+          canvas: contentCanvasRef.current,
+          frame,
+        });
+      }
+
+      return { activeEffects: frame.activeEffects };
+    },
+  );
 
   const renderOverlay = useEffectEvent((layoutState = layout.peekLatest()) => {
     if (!layoutState) {
@@ -534,11 +545,12 @@ function DocumintHost({
     paintOverlayFrame(context, frame);
   });
 
-  const renderViewport = useEffectEvent(() => {
+  const renderViewport = useEffectEvent((activeEffects: readonly ActiveEditorEffect[]) => {
     const layoutState = commitLayout();
+    const contentPaint = renderContent(activeEffects, layoutState);
 
-    renderContent(layoutState);
     renderOverlay(layoutState);
+    return contentPaint;
   });
 
   const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
@@ -686,7 +698,7 @@ function DocumintHost({
   //   - `scheduleFullPaint()` — paint content + overlay (cached layout).
   //     For state changes that move the caret AND change content (selection).
   //   - `scheduleContentPaint()` — paint only the content layer.
-  //     For changes that only restyle content (decorations, comment highlights, animations).
+  //     For changes that only restyle content (decorations, comment highlights, semantic effects).
   //   - `scheduleOverlayPaint()` — paint only the overlay layer.
   //     For cursor blink and text-cursor presence updates. Wired inline to
   //     `useCursor.onVisibilityChange` and reactive resolved presence changes.
@@ -695,12 +707,12 @@ function DocumintHost({
   //   - `handleViewportScroll` → `scheduleFullRender()` on scroll (native or
   //      programmatic). Inside the resulting `renderViewport` pass,
   //      the viewport store publishes the fresh viewport for reactive consumers.
-  //   - editor command transitions → `scheduleContentPaint()` when an
-  //     animation starts
+  //   - editor command transitions → `scheduleContentPaint()` when a
+  //     semantic effect starts
 
   // Layout-affecting changes — invalidate the cache, then schedule a fresh
   // paint. Active resource changes are paint-only; protocol metadata affects
-  // resource pill measurement, but active state only affects color/animation.
+  // resource pill measurement, but active state only affects color/effects.
   useEffect(() => {
     invalidateLayout();
     scheduleFullRender();

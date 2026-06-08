@@ -1,5 +1,5 @@
 // Owns canvas color math: blending two colors by progress, plus the parsing
-// and caching that makes repeated blend calls cheap. Animation effects compose
+// and caching that makes repeated blend calls cheap. Visual effects compose
 // their resolved colors on top of this primitive.
 
 export const transparentCanvasColor = "rgba(0, 0, 0, 0)";

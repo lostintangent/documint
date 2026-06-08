@@ -29,10 +29,10 @@ const swatchStyleByMode: Record<UsersMode, CSSProperties | undefined> = {
   empty: undefined,
 };
 
-const fieldLabelClassName = "font-controls grid gap-[0.35rem]";
-const fieldCaptionClassName = "text-[0.8rem] text-muted";
+const fieldLabelClassName = "font-controls grid gap-1.5";
+const fieldCaptionClassName = "text-xs text-muted";
 const fieldInputClassName =
-  "w-full rounded-xl border border-border/[0.14] bg-background/[0.9] px-3 py-2";
+  "w-full rounded-xl border border-border/15 bg-background/90 px-3 py-2";
 
 export function UsersPopover({ content, onUsersChange, onPresenceChange }: UsersPopoverProps) {
   const { auto, manualEntries, manualForm, mode, presence, users } = useUsers(content);
@@ -45,14 +45,14 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
   return (
     <PlaygroundPopover
       ariaLabel="Configure users"
-      flyoutClassName="max-[700px]:portrait:gap-3 max-[700px]:portrait:p-[0.85rem]"
+      flyoutClassName="max-sm:portrait:gap-3 max-sm:portrait:p-3"
       icon={<Users size={16} strokeWidth={2.1} />}
       iconStyle={swatchStyleByMode[mode]}
       showSwatch={mode !== "empty"}
     >
       <div className={popoverHeaderClassName}>
         <strong className={popoverTitleClassName}>Users</strong>
-        <label className="flex items-center gap-[0.6rem]">
+        <label className="flex items-center gap-2.5">
           <input
             checked={auto.enabled}
             onChange={(event) => auto.setEnabled(event.target.checked)}
@@ -140,7 +140,7 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
           <label className={`${fieldLabelClassName} min-w-20`}>
             <span className={fieldCaptionClassName}>Color</span>
             <input
-              className={`${fieldInputClassName} min-h-[2.6rem] p-[0.35rem]`}
+              className={`${fieldInputClassName} min-h-10 p-1.5`}
               disabled={auto.enabled}
               onChange={(event) => manualForm.setColor(event.target.value)}
               type="color"
@@ -149,7 +149,7 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
           </label>
 
           <button
-            className={`${popoverControlClassName} justify-self-end rounded-xl px-[0.85rem] py-2`}
+            className={`${popoverControlClassName} justify-self-end rounded-xl px-3 py-2`}
             disabled={auto.enabled || !manualForm.canAddEntry}
             onClick={manualForm.addEntry}
             type="button"
@@ -160,20 +160,20 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
       </div>
 
       {auto.enabled ? (
-        <p className="m-0 text-[0.9rem] text-muted">
+        <p className="m-0 text-sm text-muted">
           {auto.presence
             ? `Auto user: ${describeEntry(auto.user, auto.presence)}`
             : "Auto user: waiting for a suitable text run"}
         </p>
       ) : manualEntries.items.length > 0 ? (
         <>
-          <div aria-hidden="true" className="h-px bg-border/12" />
+          <div aria-hidden="true" className="h-px bg-border/15" />
           <div className="grid gap-3">
             {manualEntries.items.map((entry) => (
-              <div className="flex min-w-0 items-center gap-[0.65rem]" key={entry.user.id}>
+              <div className="flex min-w-0 items-center gap-2.5" key={entry.user.id}>
                 <span
                   aria-hidden="true"
-                  className="h-[0.8rem] w-[0.8rem] rounded-full shadow-swatch"
+                  className="size-3 rounded-full shadow-swatch"
                   style={{ backgroundColor: entry.presence.color ?? "#0ea5e9" }}
                 />
                 <span className="min-w-0 flex-1 truncate">

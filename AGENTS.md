@@ -29,7 +29,7 @@ Each subsystem has its own `AGENTS.md` for local rules and ownership. Use this m
 
 The pipeline stages run at different cadences. `markdown ↔ Document` happens at file and clipboard boundaries. `Document → EditorState` creates a new immutable state for mutations and selection moves. `EditorState → EditorLayoutState` is lazily recomputed only when layout-affecting inputs change: edits the cache cannot cover, scroll, or surface resize.
 
-Selection moves, animation ticks, and caret blinks reuse cached layout. Animations store descriptors such as `{ kind, startedAt, ...identifiers }`; paint resolves the current frame from `now`. The component host owns the coalesced `requestAnimationFrame` scheduler: interactions request paints, in-flight animations self-schedule content paints, and the 530ms caret blink repaints only the overlay.
+Selection moves, animation ticks, and caret blinks reuse cached layout. Editor actions emit semantic effects such as `{ kind, ...identifiers }`; the component host attaches runtime start times, and paint resolves the current frame from `now`. The component host owns the coalesced `requestAnimationFrame` scheduler: interactions request paints, in-flight animations self-schedule content paints, and the 530ms caret blink repaints only the overlay.
 
 ## Writing great code
 

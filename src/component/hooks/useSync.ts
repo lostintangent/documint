@@ -59,8 +59,8 @@ export function useSync({
       transition: EditorStateTransition;
       userId: string;
     }) => {
-      // TODO: replace this hook-specific payload plumbing with a general
-      // command-effect channel once editor commands can report semantic effects.
+      // TODO: replace this hook-specific payload plumbing with a typed
+      // semantic effect once mention commands join the editor effect channel.
       const lineDiff = resolveMentionLineChange(transition, target);
 
       if (!lineDiff) {

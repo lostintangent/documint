@@ -5,7 +5,7 @@ import {
   type EditorLayoutState,
   type LayoutRect,
 } from "@/editor/layout";
-import type { ActiveBlockFlash } from "../../animations";
+import type { ActiveBlockFlash } from "../../effects";
 import { resolveTableCellChromeFrame, type TableCellChromeFrame } from "../chrome/table";
 
 const activeLineVerticalBleed = 2;
@@ -22,7 +22,7 @@ export type ContainerBackgroundFrame =
   | ({ kind: "table-cell" } & TableCellChromeFrame);
 
 export function resolveDocumentFrameLineBackgrounds({
-  activeBlockFlashes,
+  blockFlashes,
   activeBlockId,
   block,
   containerBounds,
@@ -32,7 +32,7 @@ export function resolveDocumentFrameLineBackgrounds({
   tableCellPosition,
   width,
 }: {
-  activeBlockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, ActiveBlockFlash>;
   activeBlockId: string | null;
   block: Block | null;
   containerBounds: RegionBounds | null;
@@ -52,7 +52,7 @@ export function resolveDocumentFrameLineBackgrounds({
 
   return {
     activeBlockBackground: resolveActiveBlockBackgroundFrame({
-      activeBlockFlashes,
+      blockFlashes,
       activeBlockId,
       block,
       codeBlockBackgroundRect,
@@ -130,7 +130,7 @@ function resolveContainerBackgroundFrame({
 }
 
 function resolveActiveBlockBackgroundFrame({
-  activeBlockFlashes,
+  blockFlashes,
   activeBlockId,
   block,
   codeBlockBackgroundRect,
@@ -139,7 +139,7 @@ function resolveActiveBlockBackgroundFrame({
   runtimeBlockPath,
   width,
 }: {
-  activeBlockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, ActiveBlockFlash>;
   activeBlockId: string | null;
   block: Block | null;
   codeBlockBackgroundRect: LayoutRect | null;
@@ -165,7 +165,7 @@ function resolveActiveBlockBackgroundFrame({
   }
 
   return {
-    activeFlash: runtimeBlockPath ? (activeBlockFlashes.get(runtimeBlockPath) ?? null) : null,
+    activeFlash: runtimeBlockPath ? (blockFlashes.get(runtimeBlockPath) ?? null) : null,
     rect,
   };
 }

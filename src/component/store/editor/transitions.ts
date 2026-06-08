@@ -1,4 +1,4 @@
-import type { EditorState } from "@/editor";
+import type { EditorEffect, EditorState } from "@/editor";
 
 // `"external"` means the transition was driven by something outside the
 // editor (host props, network sync) and the host should not echo it back as
@@ -10,20 +10,18 @@ export type EditorStateTransition = {
   next: EditorState;
   source: EditorStateTransitionSource;
   documentChanged: boolean;
+  effects: readonly EditorEffect[];
   changedRootIndexes: readonly number[];
-  // True when the transition introduces animations that need to be painted.
-  // Asymmetric on purpose: a transition that clears animations
-  // (`[anim] → []`) is `false` because the host doesn't need to schedule a
-  // new paint for that — the in-flight animation loop already handles its
-  // own teardown frame. Read this as "are there new animations to kick
-  // off," not "did the animations field change."
-  hasNewAnimations: boolean;
+  // True when the transition emitted semantic effects that may start content
+  // layer effects. Effect lifetime is owned by the component, not state.
+  hasNewEffects: boolean;
 };
 
 export function createEditorStateTransition(
   previous: EditorState,
   next: EditorState,
   source: EditorStateTransitionSource,
+  effects: readonly EditorEffect[] = [],
 ): EditorStateTransition {
   const documentChanged = previous.documentIndex !== next.documentIndex;
 
@@ -32,8 +30,9 @@ export function createEditorStateTransition(
     next,
     source,
     documentChanged,
+    effects,
     changedRootIndexes: documentChanged ? resolveChangedRootIndexes(previous, next) : [],
-    hasNewAnimations: previous.animations !== next.animations && next.animations.length > 0,
+    hasNewEffects: effects.length > 0,
   };
 }
 

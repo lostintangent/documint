@@ -3,6 +3,7 @@
 
 import {
   paintActiveBlockBackground,
+  paintActiveBlockChangedEffect,
   paintBlockquoteRules,
   paintLineContainerBackground,
   paintHeadingRules,
@@ -28,13 +29,18 @@ import {
   type DocumentFrameLine,
   type OverlayFrame,
 } from "./frame";
-import { withPaintLayer } from "./canvas/layer";
+import {
+  createPaintEffect,
+  type EffectEnvironment,
+  type PaintEffect,
+} from "./effects";
 
 export { createDocumentFrame, createOverlayFrame };
+export type { ActiveEditorEffect } from "./effects";
 export type { DocumentFrame, OverlayFrame };
 
 export function paintDocumentFrame(context: CanvasRenderingContext2D, frame: DocumentFrame): void {
-  withPaintLayer(
+  paintLayer(
     context,
     frame.layer,
     () => {
@@ -73,14 +79,26 @@ function paintActiveBlockHighlightPass(context: CanvasRenderingContext2D, frame:
 }
 
 function paintLineForegroundPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
-  const linePaint: LinePaintContext = {
-    clocks: frame.clocks,
-    resources: frame.resources,
+  const baseEnvironment: EffectEnvironment = {
+    context,
     theme: frame.theme,
+    viewport: frame.viewport,
+  };
+  const environment: DocumentFrameEnvironment = {
+    ...baseEnvironment,
+    clocks: frame.clocks,
+    paintEffect: createPaintEffect(baseEnvironment, frame.customEffects),
+    resources: frame.resources,
   };
 
   for (const lineFrame of frame.lines) {
-    paintContentLine(context, lineFrame, linePaint);
+    paintActiveBlockBackground(lineFrame, environment);
+  }
+
+  paintActiveBlockChangedEffect(frame.activeBlockChangedEffect, environment);
+
+  for (const lineFrame of frame.lines) {
+    paintContentLine(context, lineFrame, environment);
   }
 }
 
@@ -90,9 +108,30 @@ function paintRulePass(context: CanvasRenderingContext2D, frame: DocumentFrame) 
 }
 
 export function paintOverlayFrame(context: CanvasRenderingContext2D, frame: OverlayFrame): void {
-  withPaintLayer(context, frame.layer, () => {
+  paintLayer(context, frame.layer, () => {
     paintCaretOverlay(context, frame.carets);
   });
+}
+
+function paintLayer(
+  context: CanvasRenderingContext2D,
+  layer: DocumentFrame["layer"],
+  paint: () => void,
+  background?: string,
+) {
+  context.save();
+  context.scale(layer.devicePixelRatio, layer.devicePixelRatio);
+  context.clearRect(0, 0, layer.width, layer.height);
+
+  if (background !== undefined) {
+    context.fillStyle = background;
+    context.fillRect(0, 0, layer.width, layer.height);
+  }
+
+  context.textBaseline = "alphabetic";
+  context.translate(0, -layer.paintTop);
+  paint();
+  context.restore();
 }
 
 // Per-line foreground sub-pipeline. Intentionally short and linear — each call
@@ -100,80 +139,79 @@ export function paintOverlayFrame(context: CanvasRenderingContext2D, frame: Over
 function paintContentLine(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  linePaint: LinePaintContext,
+  environment: DocumentFrameEnvironment,
 ) {
   context.font = lineFrame.layoutLine.font;
 
   for (const paintLineForeground of lineForegroundPainters) {
-    paintLineForeground(context, lineFrame, linePaint);
+    paintLineForeground(lineFrame, environment);
   }
 }
 
-type LinePaintContext = {
+type DocumentFrameEnvironment = EffectEnvironment & {
   clocks: DocumentFrame["clocks"];
+  paintEffect: PaintEffect;
   resources: DocumentFrame["resources"];
-  theme: DocumentFrame["theme"];
 };
 
 type LineForegroundPainter = (
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  linePaint: LinePaintContext,
+  environment: DocumentFrameEnvironment,
 ) => void;
 
 const lineForegroundPainters: LineForegroundPainter[] = [
-  // Active block background.
-  (context, lineFrame, linePaint) => {
-    paintActiveBlockBackground(context, lineFrame, linePaint.theme);
-  },
   // Decoration backgrounds below glyphs.
-  (context, lineFrame, linePaint) => {
+  (lineFrame, environment) => {
     if (lineFrame.textDecorations) {
       paintTextDecorationBackgrounds(
-        context,
+        environment.context,
         lineFrame,
         lineFrame.textDecorations,
-        linePaint.clocks,
+        environment.clocks,
       );
     }
   },
   // Selection highlight.
-  (context, lineFrame, linePaint) => {
-    paintSelectionHighlight(context, lineFrame, linePaint.theme);
+  (lineFrame, environment) => {
+    paintSelectionHighlight(environment.context, lineFrame, environment.theme);
   },
   // Comment highlights.
-  (context, lineFrame, linePaint) => {
-    paintCommentHighlights(context, lineFrame, linePaint.clocks.ambientAnimation);
+  (lineFrame, environment) => {
+    paintCommentHighlights(environment.context, lineFrame, environment.clocks.ambientTime);
   },
   // List marker.
-  (context, lineFrame, linePaint) => {
-    paintListMarker(context, lineFrame, linePaint.theme);
+  (lineFrame, environment) => {
+    paintListMarker(lineFrame, environment);
   },
   // Text and replacement segments.
-  (context, lineFrame, linePaint) => {
-    paintLineText(context, lineFrame, linePaint);
+  (lineFrame, environment) => {
+    paintLineText(environment.context, lineFrame, {
+      clocks: environment.clocks,
+      resources: environment.resources,
+      theme: environment.theme,
+    });
   },
   // Decoration overlays above glyphs.
-  (context, lineFrame, linePaint) => {
+  (lineFrame, environment) => {
     if (lineFrame.textDecorations) {
       paintTextDecorationOverlays(
-        context,
+        environment.context,
         lineFrame,
         lineFrame.textDecorations,
-        linePaint.clocks,
+        environment.clocks,
       );
     }
   },
   // Insert highlights.
-  (context, lineFrame, linePaint) => {
-    paintTextHighlights(context, lineFrame, lineFrame.activeTextHighlights, linePaint.theme);
+  (lineFrame, environment) => {
+    paintTextHighlights(lineFrame, lineFrame.textHighlights, environment);
   },
   // Delete fades.
-  (context, lineFrame, _linePaint) => {
-    paintTextFades(context, lineFrame, lineFrame.activeTextFades);
+  (lineFrame, environment) => {
+    paintTextFades(lineFrame, lineFrame.textFades, environment);
   },
   // Text pulses.
-  (context, lineFrame, linePaint) => {
-    paintTextPulses(context, lineFrame, lineFrame.activeTextPulses, linePaint.theme);
+  (lineFrame, environment) => {
+    paintTextPulses(lineFrame, lineFrame.textPulses, environment);
   },
 ];

@@ -1,7 +1,7 @@
 import type { DocumentIndex } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
 import type { EditorSelection } from "../../../selection";
-import { resolveInlineInsertionAnimation } from "../../../animations/intents";
+import { resolveTextInsertedEffect } from "../../../effects";
 import { resolvePairedDelimiterInsertion } from "./pairs";
 import { resolveInsertionTrigger } from "./triggers";
 
@@ -31,7 +31,7 @@ export function resolveTextInsertion(
   return (
     resolvePairedDelimiterInsertion(documentIndex, selection, text) ??
     resolveInsertionTrigger(documentIndex, selection, text) ?? {
-      animation: resolveInlineInsertionAnimation(documentIndex, selection, text),
+      effect: resolveTextInsertedEffect(documentIndex, selection, text),
       kind: "splice-text",
       text,
     }

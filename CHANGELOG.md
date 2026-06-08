@@ -1,3 +1,7 @@
+## 🗓️ v0.0.28 (06-08-26)
+
+- Introduced the ability to customize editor effects (e.g. text inserted animation)
+
 ## 🗓️ v0.0.27 (06-06-26)
 
 - Presence avatars now pulse when working anchored to an unresolved comment

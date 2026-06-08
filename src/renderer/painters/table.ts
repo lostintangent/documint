@@ -1,6 +1,5 @@
 import type { LayoutRect } from "@/editor/layout";
 import type { ResolvedEditorTheme } from "@/types";
-import { resolveActiveBlockFlashColor } from "../animations";
 import type { ActiveTableCellHighlightFrame, TableCellChromeFrame } from "../frame/chrome/table";
 
 export function paintTableCellChrome(
@@ -19,15 +18,6 @@ export function paintActiveTableCellHighlight(
   theme: ResolvedEditorTheme,
 ) {
   paintTableCellBands(context, highlight.bands, theme.activeBlockBackground);
-
-  if (highlight.activeFlash) {
-    paintTableCellBands(
-      context,
-      highlight.bands,
-      resolveActiveBlockFlashColor(theme.activeBlockFlash, highlight.activeFlash),
-    );
-  }
-
   paintTableCellBorder(context, highlight.borderRect, theme);
 }
 

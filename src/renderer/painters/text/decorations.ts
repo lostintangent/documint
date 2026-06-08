@@ -17,12 +17,12 @@ import {
   filterRangesOverlappingSegment,
   findRangeAtSegment,
 } from "@/editor/text/ranges";
-import { blendCanvasColors, resolveOptionalCanvasColor } from "../../animations/colors";
+import { blendCanvasColors, resolveOptionalCanvasColor } from "../../effects/colors";
 import {
   paintAmbientlyPulsing,
   resolveRestingPulseProgress,
   restingPulseMinimumAlpha,
-} from "../../animations/pulse";
+} from "../../effects/pulse";
 import {
   editableTextBackgroundGeometry,
   paintClippedTextOverlay,
@@ -37,7 +37,7 @@ export function paintTextDecorationBackgrounds(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
   textDecorations: readonly TextDecoration[],
-  clocks: { ambientAnimation: number },
+  clocks: { ambientTime: number },
 ) {
   forEachDecoratedTextSegment(context, lineFrame, textDecorations, (segment, decoration) => {
     if (!decoration.backgroundColor) {
@@ -46,7 +46,7 @@ export function paintTextDecorationBackgrounds(
 
     paintDecorationBackground(context, {
       color: decoration.backgroundColor,
-      decorationAnimationTime: clocks.ambientAnimation,
+      decorationTime: clocks.ambientTime,
       left: segment.left,
       pulse: decoration.pulse === true,
       right: segment.right,
@@ -59,7 +59,7 @@ export function paintTextDecorationOverlays(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
   textDecorations: readonly TextDecoration[],
-  clocks: { ambientAnimation: number },
+  clocks: { ambientTime: number },
 ) {
   forEachDecoratedTextSegment(context, lineFrame, textDecorations, (segment, decoration) => {
     if (!decoration.color && !decoration.backgroundColor) {
@@ -69,7 +69,7 @@ export function paintTextDecorationOverlays(
     paintClippedTextOverlay(context, {
       color: resolveDecorationTextColor(
         decoration,
-        clocks.ambientAnimation,
+        clocks.ambientTime,
         segment.textColor,
       ),
       eraseExistingGlyphs: true,
@@ -203,14 +203,14 @@ function paintDecorationBackground(
   context: CanvasRenderingContext2D,
   {
     color,
-    decorationAnimationTime,
+    decorationTime,
     left,
     pulse,
     right,
     textBaseline,
   }: {
     color: string;
-    decorationAnimationTime: number;
+    decorationTime: number;
     left: number;
     pulse: boolean;
     right: number;
@@ -224,7 +224,7 @@ function paintDecorationBackground(
 
   paintAmbientlyPulsing(
     context,
-    decorationAnimationTime,
+    decorationTime,
     () => {
       paintTextBackground(
         context,
@@ -241,7 +241,7 @@ function paintDecorationBackground(
 
 function resolveDecorationTextColor(
   decoration: TextDecoration,
-  decorationAnimationTime: number,
+  decorationTime: number,
   baseTextColor: string,
 ) {
   const restingColor = resolveContrastingDecorationTextColor(
@@ -253,7 +253,7 @@ function resolveDecorationTextColor(
     return restingColor;
   }
 
-  const pulseProgress = resolveRestingPulseProgress(decorationAnimationTime);
+  const pulseProgress = resolveRestingPulseProgress(decorationTime);
   const blendProgress = (1 - pulseProgress) * decorationPulseTextMaximumBaseBlend;
 
   return blendCanvasColors(restingColor, baseTextColor, blendProgress);

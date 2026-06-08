@@ -1,6 +1,6 @@
 // Paste insertion policy. This file turns a clipboard `Fragment` plus the
 // current editor state into the lowest-altitude editor action that can apply
-// it, including paste-specific fallback and animation intent.
+// it, including paste-specific fallback and semantic effects.
 
 import {
   createParagraphBlock,
@@ -12,7 +12,7 @@ import { resolveInlineContext, type InlineContext } from "../commands/context";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 import { normalizeSelection, resolveRegion, type EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
-import { resolveTextHighlightAnimation } from "../animations/intents";
+import { resolveTextInsertedEffect } from "../effects";
 import { insertInlines } from "../commands/actions/inlines";
 
 type FragmentDestinationContext = {
@@ -167,13 +167,13 @@ function withPastedInlineTextHighlight(
   action: EditorStateAction,
   fragment: Fragment,
 ): EditorStateAction {
-  const animation = resolveTextHighlightAnimation(
+  const effect = resolveTextInsertedEffect(
     context.documentIndex,
     context.selection,
     resolvePastedInlineText(action, fragment),
   );
 
-  return animation ? { ...action, animation } : action;
+  return effect ? { ...action, effect } : action;
 }
 
 function resolveFragmentDestinationContext(

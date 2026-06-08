@@ -125,7 +125,7 @@ export const normalizedSelectionSprig = createComputedSprig(
 );
 
 // Selection-derived sprigs track the selection + documentIndex slices
-// rather than the full editor state, so they don't recompute on animation-
+// rather than the full editor state, so they don't recompute on effect-
 // only transitions. The query helpers take a full EditorState, so the body
 // reads state imperatively at sprig-fire time; correctness still holds
 // because the slices cover everything the queries transitively read.

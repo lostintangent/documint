@@ -6,6 +6,7 @@ import {
   insertText,
   moveListItemDown,
   moveListItemUp,
+  readEditorEffects,
   toggleTask,
 } from "@/editor/state";
 import { redoEditorState, setSelection, undoEditorState } from "@/editor/state";
@@ -35,7 +36,7 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n- be\n- ta\n");
   });
 
-  test("reports a block pulse when Enter splits a regular list item", () => {
+  test("reports a list item inserted effect when Enter splits a regular list item", () => {
     let state = setup("- alpha\n");
     const target = state.documentIndex.regions[0];
 
@@ -48,10 +49,12 @@ describe("List structure", () => {
     const result = insertLineBreak(state);
 
     expect(result).not.toBeNull();
-    expect(result!.animations.some((a) => a.kind === "block-pulse")).toBe(true);
+    expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
+      true,
+    );
   });
 
-  test("does not trigger a block pulse when Enter splits a task list item", () => {
+  test("does not emit list item inserted effect when Enter splits a task list item", () => {
     let state = setup("- [ ] alpha\n");
     const target = state.documentIndex.regions[0];
 
@@ -64,7 +67,9 @@ describe("List structure", () => {
     const result = insertLineBreak(state);
 
     expect(result).not.toBeNull();
-    expect(result!.animations.some((a) => a.kind === "block-pulse")).toBe(false);
+    expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
+      false,
+    );
   });
 
   test("moves top-level list items up and down while preserving their nested subtree", () => {

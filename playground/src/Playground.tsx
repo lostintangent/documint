@@ -32,6 +32,7 @@ import {
   slowSampleImageSource,
   themeOptions,
 } from "./lib/data";
+import { effects } from "./lib/effects";
 
 // In-memory storage for reading/writing pasted images. Hosts in the wild would write to
 // disk, S3, etc.; the playground keeps blobs in a Map so paste-to-render
@@ -121,13 +122,14 @@ const protocols = {
 const activeResources = new Set(["demo-resource://recording/live"]);
 
 const fixtureSurfaceClassName =
-  "grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl border border-border/[0.08] bg-background/[0.82] max-[700px]:portrait:h-auto";
+  "grid h-full min-h-0 min-w-0 grid-rows-1 overflow-hidden rounded-2xl border border-border/10 bg-background/80 max-sm:portrait:h-auto";
 
 export function Playground() {
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
   const [themePopoverOpen, setThemePopoverOpen] = useState(false);
+  const [customEffectsEnabled, setCustomEffectsEnabled] = useState(false);
   const [fontSize, setFontSize] = useState<number>(16);
 
   const [users, setUsers] = useState<DocumentUser[]>([]);
@@ -184,15 +186,15 @@ export function Playground() {
   };
 
   return (
-    <main className="grid h-screen grid-rows-[auto_max-content_minmax(0,1fr)] gap-0 pt-[max(1rem,env(safe-area-inset-top))] pr-[max(1.5rem,env(safe-area-inset-right))] pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))]">
-      <header className="mb-4 flex flex-nowrap items-start justify-between gap-4 max-[700px]:portrait:flex-wrap">
-        <h1 className="m-0 text-[2em] font-bold">Documint Playground</h1>
+    <main className="grid h-screen grid-rows-[auto_max-content_minmax(0,1fr)] page-padding">
+      <header className="mb-4 flex items-start justify-between gap-4 max-sm:portrait:flex-wrap">
+        <h1 className="m-0 text-3xl font-bold">Documint Playground</h1>
 
-        <div className="relative flex flex-wrap items-center justify-end gap-[0.7rem] max-[700px]:portrait:w-full max-[700px]:portrait:justify-start">
-          <label className="font-controls grid gap-[0.35rem]">
+        <div className="relative flex flex-wrap items-center justify-end gap-3 max-sm:portrait:w-full max-sm:portrait:justify-start">
+          <label className="font-controls grid gap-1.5">
             <select
               aria-label="Select markdown fixture"
-              className="font-controls w-full rounded-xl border border-border/[0.14] bg-background/90 px-3 py-2"
+              className="font-controls w-full rounded-xl border border-border/15 bg-background/90 px-3 py-2"
               onChange={(event) => handleFixtureChange(event.target.value)}
               value={fixtureId}
             >
@@ -205,7 +207,9 @@ export function Playground() {
           </label>
 
           <ThemePopover
+            customEffectsEnabled={customEffectsEnabled}
             fontSize={fontSize}
+            onCustomEffectsEnabledChange={setCustomEffectsEnabled}
             onFontSizeChange={setFontSize}
             onOpenChange={setThemePopoverOpen}
             onThemeIdChange={setThemeId}
@@ -238,11 +242,12 @@ export function Playground() {
         visible={hostEventVisible}
       />
 
-      <section className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 portrait:grid-cols-[minmax(0,1fr)]">
+      <section className="grid h-full min-h-0 grid-cols-2 gap-6 portrait:grid-cols-1">
         <div className="grid h-full min-h-0 min-w-0">
           <div className={fixtureSurfaceClassName}>
             <Documint
               content={content}
+              effects={customEffectsEnabled ? effects : undefined}
               theme={documintTheme}
               users={mentionUsers}
               presence={presence}
@@ -267,11 +272,11 @@ export function Playground() {
           </div>
         </div>
 
-        <div className="grid h-full min-h-0 min-w-0 max-[700px]:portrait:hidden">
+        <div className="grid h-full min-h-0 min-w-0 max-sm:portrait:hidden">
           <div className={fixtureSurfaceClassName}>
             <textarea
               aria-label="Markdown source"
-              className="font-code h-full min-h-full w-full resize-y rounded-none border-0 bg-background/90 p-4 text-[0.95rem] leading-[1.55]"
+              className="font-code h-full min-h-full w-full resize-y rounded-none border-0 bg-background/90 p-4 text-base leading-normal"
               onChange={(event) => setContent(event.target.value)}
               spellCheck={false}
               value={content}

@@ -48,7 +48,7 @@ export function resolveListItemSplit(
         ...context.list.items.slice(context.itemIndex + 1),
       ]),
       blockId: context.list.id,
-      animation: resolveInsertedListItemAnimation(
+      effect: resolveInsertedListItemEffect(
         resolveInsertedItemPath(insertedItem, context.rootIndex, [
           ...context.listChildIndices,
           context.itemIndex,
@@ -69,7 +69,7 @@ export function resolveListItemSplit(
         ...context.list.items.slice(context.itemIndex + 1),
       ]),
       blockId: context.list.id,
-      animation: resolveInsertedListItemAnimation(
+      effect: resolveInsertedListItemEffect(
         resolveInsertedItemPath(insertedItem, context.rootIndex, [
           ...context.listChildIndices,
           context.itemIndex + 1,
@@ -95,7 +95,7 @@ export function resolveListItemSplit(
       ...context.list.items.slice(context.itemIndex + 1),
     ]),
     blockId: context.list.id,
-    animation: resolveInsertedListItemAnimation(
+    effect: resolveInsertedListItemEffect(
       resolveInsertedItemPath(nextItem, context.rootIndex, [
         ...context.listChildIndices,
         context.itemIndex + 1,
@@ -280,7 +280,7 @@ function buildLiftedListAction(
       ...context.parentList.items.slice(context.parentItemIndex + 1),
     ]),
     blockId: context.parentList.id,
-    animation: resolveInsertedListItemAnimation(insertedItemPath),
+    effect: resolveInsertedListItemEffect(insertedItemPath),
     selection: selectItem(
       context.rootIndex,
       context.parentListChildIndices,
@@ -299,8 +299,8 @@ function resolveInsertedItemPath(
     : resolveListItemPath(rootIndex, childIndices);
 }
 
-function resolveInsertedListItemAnimation(blockPath: string | undefined) {
-  return blockPath ? { blockPath, kind: "block-pulse" as const } : undefined;
+function resolveInsertedListItemEffect(blockPath: string | undefined) {
+  return blockPath ? { blockPath, kind: "list-item-inserted" as const } : undefined;
 }
 
 function appendNestedListItem(

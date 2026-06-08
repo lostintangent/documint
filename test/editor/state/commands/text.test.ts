@@ -12,6 +12,7 @@ import {
   deleteForward,
   deleteSelection,
   insertText,
+  readEditorEffects,
   regionInlines,
   replaceSelection,
   replaceTextRange,
@@ -80,7 +81,7 @@ describe("Text commands", () => {
     });
   });
 
-  test("replacing an explicit text range starts a highlight for the replacement text", () => {
+  test("replacing an explicit text range emits a text inserted effect", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const stateWithInsertion = insertText(placeAt(state, region, "end"), "x");
@@ -95,12 +96,13 @@ describe("Text commands", () => {
       throw new Error("Expected replaceTextRange to produce a new state");
     }
 
-    expect(nextState.animations).toEqual(
+    expect(readEditorEffects(nextState)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           endOffset: 1,
-          kind: "text-highlight",
+          kind: "text-inserted",
           startOffset: 0,
+          text: "A",
         }),
       ]),
     );

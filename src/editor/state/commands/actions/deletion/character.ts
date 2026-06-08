@@ -3,7 +3,7 @@ import { moveGraphemeOffset } from "../../../../text/graphemes";
 import { regionInlines } from "../../../index/inlines";
 import type { EditableRegion } from "../../../index/types";
 import type { EditorState, EditorStateAction } from "../../../types";
-import { resolveTextFadeAnimation } from "../../../animations/intents";
+import { resolveTextDeletedEffect } from "../../../effects";
 
 // Resolves the splice-text action for a single-grapheme delete at the
 // caret. Returns null when the selection is non-collapsed, the cursor
@@ -51,14 +51,15 @@ export function resolveCharacterDelete(
     return null;
   }
 
-  const shouldAnimateFade =
-    direction === "backward" &&
-    (endOffset === region.text.length || hasSoftLineBreakAtOffset(region, endOffset));
+  const placement =
+    endOffset === region.text.length
+      ? "line-end"
+      : hasSoftLineBreakAtOffset(region, endOffset)
+        ? "soft-line-break"
+        : "line-middle";
 
   return {
-    animation: shouldAnimateFade
-      ? resolveTextFadeAnimation(region, startOffset, endOffset)
-      : undefined,
+    effect: resolveTextDeletedEffect(region, startOffset, endOffset, direction, placement),
     kind: "splice-text",
     range: {
       anchor: { regionId: region.id, offset: startOffset },

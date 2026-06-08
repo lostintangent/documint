@@ -4,13 +4,13 @@ import type { EditableRegion } from "@/editor/state";
 import type { TextDecoration, TextDecorationIndex } from "@/editor/text/decorations";
 import { resolveCenteredTextBaseline } from "@/editor/text/measure";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
-import type { ActiveTextFade, ActiveTextHighlight, ActiveTextPulse } from "../../animations";
+import type { ActiveTextFade, ActiveTextHighlight, ActiveTextPulse } from "../../effects";
 import { resolveLineTextSegments, type TextSegment } from "./text-segments";
 
 export type DocumentFrameLineText = {
-  readonly activeTextFades: readonly ActiveTextFade[];
-  readonly activeTextHighlights: readonly ActiveTextHighlight[];
-  readonly activeTextPulses: readonly ActiveTextPulse[];
+  readonly textFades: readonly ActiveTextFade[];
+  readonly textHighlights: readonly ActiveTextHighlight[];
+  readonly textPulses: readonly ActiveTextPulse[];
   readonly defaultTextColor: string;
   readonly segments: readonly TextSegment[];
   readonly textBaseline: number;
@@ -19,9 +19,9 @@ export type DocumentFrameLineText = {
 };
 
 export function resolveDocumentFrameLineText({
-  activeTextFades,
-  activeTextHighlights,
-  activeTextPulses,
+  textFades,
+  textHighlights,
+  textPulses,
   block,
   container,
   layout,
@@ -30,9 +30,9 @@ export function resolveDocumentFrameLineText({
   textDecorations,
   theme,
 }: {
-  activeTextFades: Map<string, ActiveTextFade[]>;
-  activeTextHighlights: Map<string, ActiveTextHighlight[]>;
-  activeTextPulses: Map<string, ActiveTextPulse[]>;
+  textFades: Map<string, ActiveTextFade[]>;
+  textHighlights: Map<string, ActiveTextHighlight[]>;
+  textPulses: Map<string, ActiveTextPulse[]>;
   block: Block | null;
   container: EditableRegion | null;
   layout: EditorLayoutState["layout"];
@@ -42,11 +42,11 @@ export function resolveDocumentFrameLineText({
   theme: ResolvedEditorTheme;
 }): DocumentFrameLineText {
   const containerPath = container?.path ?? "";
-  const activeTextFadesForLine = container ? (activeTextFades.get(containerPath) ?? []) : [];
-  const activeTextHighlightsForLine = container
-    ? (activeTextHighlights.get(containerPath) ?? [])
+  const textFadesForLine = container ? (textFades.get(containerPath) ?? []) : [];
+  const textHighlightsForLine = container
+    ? (textHighlights.get(containerPath) ?? [])
     : [];
-  const activeTextPulsesForLine = container ? (activeTextPulses.get(containerPath) ?? []) : [];
+  const textPulsesForLine = container ? (textPulses.get(containerPath) ?? []) : [];
   const textDecorationsForLine = container ? (textDecorations.get(containerPath) ?? null) : null;
   const textLeft = line.left + line.contentInset;
   const textBaseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
@@ -63,9 +63,9 @@ export function resolveDocumentFrameLineText({
   });
 
   return {
-    activeTextFades: activeTextFadesForLine,
-    activeTextHighlights: activeTextHighlightsForLine,
-    activeTextPulses: activeTextPulsesForLine,
+    textFades: textFadesForLine,
+    textHighlights: textHighlightsForLine,
+    textPulses: textPulsesForLine,
     defaultTextColor,
     segments,
     textBaseline,

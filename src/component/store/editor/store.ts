@@ -1,4 +1,4 @@
-import type { EditorState } from "@/editor";
+import { takeEditorEffects, type EditorState } from "@/editor";
 import { createEditorStateTransition, type EditorStateTransition } from "./transitions";
 
 export type EditorTransitionListener = (transition: EditorStateTransition) => void;
@@ -32,7 +32,13 @@ export function createEditorStore(initialState: EditorState): EditorStore {
     }
 
     const previous = state;
-    const transition = createEditorStateTransition(previous, nextState, source);
+    const effects = takeEditorEffects(nextState);
+    const transition = createEditorStateTransition(
+      previous,
+      nextState,
+      source,
+      source === "local" ? effects : [],
+    );
     state = nextState;
 
     for (const listener of listeners) {

@@ -5,15 +5,24 @@
 // isolation.
 
 import { describe, expect, test } from "bun:test";
-import { createDocumentFrame, paintDocumentFrame } from "@/renderer";
+import {
+  createDocumentFrame,
+  paintDocumentFrame,
+  type ActiveEditorEffect,
+} from "@/renderer";
+import type { DocumintEffects } from "@/types";
 import { createEditorLayoutState } from "@/editor/layout";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import {
   createEditorState,
+  deleteBackward,
+  insertLineBreak,
   insertText,
   normalizeSelection,
+  readEditorEffects,
   setSelection,
+  type EditorEffect,
   type EditorState,
 } from "@/editor/state";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
@@ -133,6 +142,83 @@ describe("Block and chrome paint order", () => {
     if (!activeHighlight || activeHighlight.kind !== "fillRect") {
       throw new Error("Expected paragraph highlight fill");
     }
+  });
+
+  test("can compose custom active-block-changed effects once around a wrapped block", () => {
+    let state = setup("alpha\n\nbeta beta beta beta beta beta beta beta beta\n");
+    const second = state.documentIndex.regions.find((entry) => entry.text.startsWith("beta"));
+
+    if (!second) {
+      throw new Error("Expected second paragraph region");
+    }
+
+    state = setSelection(state, { regionId: second.id, offset: 0 });
+
+    const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        activeBlockChanged: {
+          compose: "after",
+          paint: ({ context, rect }) => {
+            receivedRects.push(rect);
+            context.strokeStyle = "#abcdef";
+            context.strokeRect(rect.left, rect.top, rect.width, rect.height);
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 220,
+      width: 140,
+    });
+    const customStrokeIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#abcdef",
+    );
+
+    expect(receivedRects).toHaveLength(1);
+    expect(receivedRects[0]?.height).toBeGreaterThan(24);
+    expect(receivedRects[0]?.width).toBe(140);
+    expect(customStrokeIndex).toBeGreaterThanOrEqual(0);
+  });
+
+  test("can compose custom active-block-changed effects for table cells", () => {
+    let state = setup(`| One | Two |
+| --- | --- |
+| alpha | beta |
+`);
+    const cell = state.documentIndex.regions.find((entry) => entry.text === "beta");
+
+    if (!cell) {
+      throw new Error("Expected table cell region");
+    }
+
+    state = setSelection(state, { regionId: cell.id, offset: 0 });
+
+    const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        activeBlockChanged: {
+          compose: "after",
+          paint: ({ context, rect }) => {
+            receivedRects.push(rect);
+            context.strokeStyle = "#fedcba";
+            context.strokeRect(rect.left, rect.top, rect.width, rect.height);
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 220,
+      width: 360,
+    });
+    const customStrokeIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#fedcba",
+    );
+
+    expect(receivedRects).toHaveLength(1);
+    expect(receivedRects[0]?.width).toBeGreaterThanOrEqual(80);
+    expect(receivedRects[0]?.width).toBeLessThan(360);
+    expect(customStrokeIndex).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -489,7 +575,11 @@ describe("Selections, comments, and text overlays", () => {
     state = setSelection(state, { regionId: container.id, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
-    const { context } = renderPaintOperations(state, { height: 180, width: 240 });
+    const { context } = renderPaintOperations(state, {
+      effects: readEditorEffects(state),
+      height: 180,
+      width: 240,
+    });
     const textOperations = context.operations.filter(
       (operation): operation is Extract<RecordingOperation, { kind: "fillText" }> =>
         operation.kind === "fillText",
@@ -510,6 +600,199 @@ describe("Selections, comments, and text overlays", () => {
     expect(highlightOverlayPaint).toBeDefined();
     expect(highlightOverlayPaint?.globalAlpha).toBeGreaterThan(0);
     expect(highlightOverlayPaint?.globalAlpha).toBeLessThanOrEqual(1);
+  });
+
+  test("passes a baseline-left insertion anchor and visible viewport to custom text-inserted effects", () => {
+    let highlightState = setup("alpha\n");
+    const highlightContainer = highlightState.documentIndex.regions[0];
+
+    if (!highlightContainer) {
+      throw new Error("Expected paragraph region");
+    }
+
+    highlightState = setSelection(highlightState, {
+      regionId: highlightContainer.id,
+      offset: highlightContainer.text.length,
+    });
+    highlightState = insertText(highlightState, "!") ?? highlightState;
+
+    let pulseState = setup("alpha\n");
+    const pulseContainer = pulseState.documentIndex.regions[0];
+
+    if (!pulseContainer) {
+      throw new Error("Expected paragraph region");
+    }
+
+    pulseState = setSelection(pulseState, {
+      regionId: pulseContainer.id,
+      offset: pulseContainer.text.length,
+    });
+    pulseState = insertText(pulseState, ".") ?? pulseState;
+
+    const receivedContexts: Array<{
+      anchor: { x: number; y: number };
+      text: string;
+      viewport: { height: number; left: number; top: number; width: number };
+    }> = [];
+
+    const customEffects = {
+      textInserted: ({ anchor, text, viewport }) => {
+        receivedContexts.push({ anchor, text, viewport });
+      },
+    } satisfies DocumintEffects;
+
+    renderPaintOperations(highlightState, {
+      customEffects: {
+        ...customEffects,
+      },
+      effects: readEditorEffects(highlightState),
+      height: 180,
+      width: 240,
+    });
+    renderPaintOperations(pulseState, {
+      customEffects: {
+        ...customEffects,
+      },
+      effects: readEditorEffects(pulseState),
+      height: 180,
+      width: 240,
+    });
+
+    expect(receivedContexts).toHaveLength(2);
+    expect(receivedContexts).toEqual(
+      expect.arrayContaining([
+        {
+          anchor: {
+            x: expect.any(Number),
+            y: expect.any(Number),
+          },
+          text: "!",
+          viewport: {
+            height: 180,
+            left: 0,
+            top: 0,
+            width: 240,
+          },
+        },
+        {
+          anchor: {
+            x: expect.any(Number),
+            y: expect.any(Number),
+          },
+          text: ".",
+          viewport: {
+            height: 180,
+            left: 0,
+            top: 0,
+            width: 240,
+          },
+        },
+      ]),
+    );
+    expect(receivedContexts[0]?.anchor.x).toBeGreaterThan(0);
+    expect(receivedContexts[0]?.anchor.y).toBeGreaterThan(0);
+    expect(receivedContexts[1]?.anchor.x).toBe(receivedContexts[0]?.anchor.x);
+    expect(receivedContexts[1]?.anchor.y).toBe(receivedContexts[0]?.anchor.y);
+  });
+
+  test("can compose custom text-inserted effects after the default paint", () => {
+    let state = setup("alpha\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected paragraph region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = insertText(state, "!") ?? state;
+
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        textInserted: {
+          compose: "after",
+          paint: ({ context, viewport }) => {
+            context.strokeStyle = "#ff00ff";
+            context.strokeRect(viewport.left, viewport.top, viewport.width, viewport.height);
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 180,
+      width: 240,
+    });
+
+    const highlightOverlayIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillText" &&
+        operation.text === "alpha!" &&
+        operation.fillStyle === resolvedLightTheme.insertHighlightText,
+    );
+    const customStrokeIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#ff00ff",
+    );
+
+    expect(highlightOverlayIndex).toBeGreaterThanOrEqual(0);
+    expect(customStrokeIndex).toBeGreaterThan(highlightOverlayIndex);
+  });
+
+  test("uses custom text-deleted effects in place of the default fade", () => {
+    let state = setup("alpha\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected paragraph region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = deleteBackward(state) ?? state;
+
+    const customTexts: string[] = [];
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        textDeleted: ({ context, left, text, textBaseline }) => {
+          customTexts.push(text);
+          context.fillText("custom-delete", left, textBaseline);
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 180,
+      width: 240,
+    });
+
+    expect(customTexts).toEqual(["a"]);
+    expect(findFillTextOperation(context.operations, "custom-delete")).toBeDefined();
+    expect(findFillTextOperation(context.operations, "a")).toBeNull();
+  });
+
+  test("supports explicit replace composition for custom effects", () => {
+    let state = setup("alpha\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected paragraph region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = deleteBackward(state) ?? state;
+
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        textDeleted: {
+          compose: "replace",
+          paint: ({ context, left, textBaseline }) => {
+            context.fillText("explicit-replace", left, textBaseline);
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 180,
+      width: 240,
+    });
+
+    expect(findFillTextOperation(context.operations, "explicit-replace")).toBeDefined();
+    expect(findFillTextOperation(context.operations, "a")).toBeNull();
   });
 
   test("paints sparse theme text colors from the resolved base text", () => {
@@ -768,7 +1051,7 @@ describe("Selections, comments, and text overlays", () => {
     expect(transparentTextOverlay.fillStyle).not.toBe(resolvedLightTheme.paragraphText);
 
     const { context: pausedContext } = renderPaintOperations(state, {
-      ambientAnimationTime: 1100,
+      ambientTime: 1100,
       height: 180,
       now: 1650,
       textDecorations,
@@ -785,7 +1068,7 @@ describe("Selections, comments, and text overlays", () => {
     expect(pausedBackground.globalAlpha).toBeCloseTo(0.42);
 
     const { context: resumedContext } = renderPaintOperations(state, {
-      ambientAnimationTime: 1100,
+      ambientTime: 1100,
       height: 180,
       now: 2200,
       textDecorations,
@@ -802,7 +1085,7 @@ describe("Selections, comments, and text overlays", () => {
     expect(resumedBackground.globalAlpha).toBeCloseTo(pausedBackground.globalAlpha);
   });
 
-  test("pulses presence-active comment highlights with the ambient animation clock", () => {
+  test("pulses presence-active comment highlights with ambient time", () => {
     const state = setup("alpha comment\n");
     const region = state.documentIndex.regions[0];
 
@@ -811,7 +1094,7 @@ describe("Selections, comments, and text overlays", () => {
     }
 
     const { context } = renderPaintOperations(state, {
-      ambientAnimationTime: 1100,
+      ambientTime: 1100,
       height: 180,
       commentRanges: [
         {
@@ -1093,14 +1376,107 @@ describe("List marker painting", () => {
     expect(marker).toBeDefined();
     expect(text.fillStyle).toBe("#14532d");
   });
+
+  test("can compose custom list-item-inserted effects before the default marker paint", () => {
+    let state = setup("- alpha\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected list item region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = insertLineBreak(state) ?? state;
+
+    const receivedMarkers: string[] = [];
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        listItemInserted: {
+          compose: "before",
+          paint: ({ context, marker }) => {
+            receivedMarkers.push(marker.kind);
+            context.fillStyle = "#123abc";
+            context.fillRect(
+              marker.rect.left,
+              marker.rect.top,
+              marker.rect.width,
+              marker.rect.height,
+            );
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 220,
+      width: 320,
+    });
+    const customFlashIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "fillRect" && operation.fillStyle === "#123abc",
+    );
+    const defaultMarkerIndex = context.operations.findIndex(
+      (operation, index) =>
+        index > customFlashIndex &&
+        operation.kind === "fillPath",
+    );
+
+    expect(receivedMarkers).toEqual(["unordered"]);
+    expect(customFlashIndex).toBeGreaterThanOrEqual(0);
+    expect(defaultMarkerIndex).toBeGreaterThan(customFlashIndex);
+  });
+
+  test("isolates canvas state between composed custom and default effects", () => {
+    let state = setup("- alpha\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected list item region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = insertLineBreak(state) ?? state;
+
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        listItemInserted: {
+          compose: "before",
+          paint: ({ context, marker }) => {
+            context.fillStyle = "#123abc";
+            context.globalAlpha = 0.25;
+            context.fillRect(
+              marker.rect.left,
+              marker.rect.top,
+              marker.rect.width,
+              marker.rect.height,
+            );
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 220,
+      width: 320,
+    });
+    const defaultMarker = context.operations.find(
+      (operation) =>
+        operation.kind === "fillPath" &&
+        operation.fillStyle === resolvedLightTheme.listMarkerText,
+    );
+
+    if (!defaultMarker || defaultMarker.kind !== "fillPath") {
+      throw new Error("Expected default marker paint after custom effect");
+    }
+
+    expect(defaultMarker.globalAlpha).toBe(1);
+  });
 });
 
 function renderPaintOperations(
   state: EditorState,
   options: {
-    ambientAnimationTime?: number;
+    ambientTime?: number;
     height: number;
     commentRanges?: EditorCommentRange[];
+    customEffects?: DocumintEffects;
+    effects?: readonly EditorEffect[];
     now?: number;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     resources?: DocumentResources;
@@ -1121,21 +1497,28 @@ function renderPaintOperations(
   );
   const context = new RecordingCanvasContext();
 
+  const now = options.now ?? 0;
+  const effects = options.effects?.map(
+    (effect): ActiveEditorEffect => ({ ...effect, startedAt: now }),
+  );
+
   const frame = createDocumentFrame(state, layoutState, {
     activeBlockId:
       state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.block.id ?? null,
     activeRegionId: state.selection.focus.regionId,
     activeThreadIndex: null,
-    ambientAnimationTime: options.ambientAnimationTime,
+    ambientTime: options.ambientTime,
+    customEffects: options.customEffects,
     devicePixelRatio: 1,
+    effects,
     height: options.height,
     commentRanges: options.commentRanges ?? [],
     normalizedSelection: normalizeSelection(state),
     commentPresence: options.commentPresence,
     // `now` defaults to 0 in tests so paint is deterministic: any state without
-    // active animations renders identically across runs. Tests that exercise
-    // animation progression set their own `now`.
-    now: options.now ?? 0,
+    // active timed effects renders identically across runs. Tests that
+    // exercise effect progression set their own `now`.
+    now,
     resources: options.resources,
     textDecorations: options.textDecorations,
     theme: options.theme ?? resolvedLightTheme,

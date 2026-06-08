@@ -13,7 +13,7 @@ import type {
   ActiveTextFade,
   ActiveTextHighlight,
   ActiveTextPulse,
-} from "../../animations";
+} from "../../effects";
 import type { ActiveBlockBackgroundFrame, ContainerBackgroundFrame } from "./backgrounds";
 import { resolveDocumentFrameLineBackgrounds } from "./backgrounds";
 import { resolveDocumentFrameLineList } from "./list";
@@ -35,12 +35,12 @@ export type DocumentFrameLine = DocumentFrameLineText & {
 };
 
 type ResolveDocumentFrameLineOptions = {
-  activeBlockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, ActiveBlockFlash>;
   activeBlockId: string | null;
-  activeBlockPulses: Map<string, ActiveBlockPulse>;
-  activeTextFades: Map<string, ActiveTextFade[]>;
-  activeTextHighlights: Map<string, ActiveTextHighlight[]>;
-  activeTextPulses: Map<string, ActiveTextPulse[]>;
+  blockPulses: Map<string, ActiveBlockPulse>;
+  textFades: Map<string, ActiveTextFade[]>;
+  textHighlights: Map<string, ActiveTextHighlight[]>;
+  textPulses: Map<string, ActiveTextPulse[]>;
   activeThreadIndex: number | null;
   commentPresence: ReadonlyMap<number, EditorPresence>;
   commentRangesByRegion: ReadonlyMap<string, EditorCommentRange[]>;
@@ -57,12 +57,12 @@ type ResolveDocumentFrameLineOptions = {
 };
 
 export function resolveDocumentFrameLine({
-  activeBlockFlashes,
+  blockFlashes,
   activeBlockId,
-  activeBlockPulses,
-  activeTextFades,
-  activeTextHighlights,
-  activeTextPulses,
+  blockPulses,
+  textFades,
+  textHighlights,
+  textPulses,
   activeThreadIndex,
   commentPresence,
   commentRangesByRegion,
@@ -83,9 +83,9 @@ export function resolveDocumentFrameLine({
   const container = editorState.documentIndex.regionIndex.get(line.regionId) ?? null;
   const containerBounds = layoutState.layout.regionBounds.get(line.regionId) ?? null;
   const text = resolveDocumentFrameLineText({
-    activeTextFades,
-    activeTextHighlights,
-    activeTextPulses,
+    textFades,
+    textHighlights,
+    textPulses,
     block,
     container,
     layout: layoutState.layout,
@@ -98,7 +98,7 @@ export function resolveDocumentFrameLine({
   return {
     ...text,
     ...resolveDocumentFrameLineBackgrounds({
-      activeBlockFlashes,
+      blockFlashes,
       activeBlockId,
       block,
       containerBounds,
@@ -119,7 +119,7 @@ export function resolveDocumentFrameLine({
       theme,
     }),
     ...resolveDocumentFrameLineList({
-      activeBlockPulses,
+      blockPulses,
       line,
       textBaseline: text.textBaseline,
       textLeft: text.textLeft,

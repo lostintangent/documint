@@ -1,16 +1,16 @@
 import type { DocumentFrameLine } from "../frame";
-import { paintAmbientlyPulsing } from "../animations/pulse";
+import { paintAmbientlyPulsing } from "../effects/pulse";
 
 export function paintCommentHighlights(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  ambientAnimationTime: number,
+  ambientTime: number,
 ) {
   for (const highlight of lineFrame.commentHighlights) {
     context.fillStyle = highlight.color;
 
     if (highlight.pulse) {
-      paintAmbientlyPulsing(context, ambientAnimationTime, () => {
+      paintAmbientlyPulsing(context, ambientTime, () => {
         paintCommentHighlightRect(context, highlight.rect);
       });
     } else {

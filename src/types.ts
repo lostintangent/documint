@@ -1,4 +1,5 @@
 import type { Anchor } from "@/document";
+import type { LayoutRect } from "@/editor/layout";
 
 export type EditorInputCommand =
   | "dedent"
@@ -84,6 +85,74 @@ export type EditorTheme = {
 };
 
 export type ResolvedEditorTheme = Required<EditorTheme>;
+
+export type EffectEnvironment = {
+  context: CanvasRenderingContext2D;
+  theme: ResolvedEditorTheme;
+  viewport: LayoutRect;
+};
+
+type EffectContext<TFields = object> = EffectEnvironment & TFields;
+
+type EffectComposition = "after" | "before" | "replace";
+
+export type DocumintEffectHandler<TContext> =
+  | ((context: TContext) => void)
+  | {
+      compose?: EffectComposition;
+      paint: (context: TContext) => void;
+    };
+
+export type ActiveBlockChangedEffectContext = EffectContext<{
+  progress: number;
+  rect: LayoutRect;
+}>;
+
+export type DocumintListMarkerPaintFrame =
+  | {
+      checked: boolean;
+      kind: "task";
+      rect: LayoutRect;
+    }
+  | {
+      kind: "ordered";
+      label: string;
+      rect: LayoutRect;
+    }
+  | {
+      kind: "unordered";
+      rect: LayoutRect;
+    };
+
+export type ListItemInsertedEffectContext = EffectContext<{
+  marker: DocumintListMarkerPaintFrame;
+  progress: number;
+}>;
+
+export type TextDeletedEffectContext = EffectContext<{
+  color: string;
+  font: string;
+  left: number;
+  progress: number;
+  text: string;
+  textBaseline: number;
+}>;
+
+export type TextInsertedEffectContext = EffectContext<{
+  anchor: {
+    x: number;
+    y: number;
+  };
+  progress: number;
+  text: string;
+}>;
+
+export type DocumintEffects = {
+  activeBlockChanged?: DocumintEffectHandler<ActiveBlockChangedEffectContext>;
+  listItemInserted?: DocumintEffectHandler<ListItemInsertedEffectContext>;
+  textDeleted?: DocumintEffectHandler<TextDeletedEffectContext>;
+  textInserted?: DocumintEffectHandler<TextInsertedEffectContext>;
+};
 
 // --- Users & presence ---
 //
@@ -205,4 +274,3 @@ export type DocumentResourceRegistry = {
   active: ReadonlySet<string>;
   protocols: ReadonlyMap<string, DocumentResourceProtocol>;
 };
-

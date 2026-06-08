@@ -63,7 +63,7 @@ export const darkTheme: EditorTheme = {
   // Explicit rgba override of the resolver's color-mix default. The resource
   // icon background pulse JS-blends commentHighlight via `blendCanvasColors`,
   // whose parser doesn't understand color-mix() — leaving this unset would
-  // resolve to transparent in that one animation. Other consumers don't care,
+  // resolve to transparent in that one paint effect. Other consumers don't care,
   // but it's cheap to pin the value here.
   commentHighlight: "rgba(77, 147, 248, 0.32)",
   leafShadow: "0 18px 44px rgba(2, 6, 23, 0.42), 0 0 0 1px rgba(148, 163, 184, 0.06)",
@@ -161,7 +161,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     // Insert-highlight pulses fade newly-inserted text from this color to
     // transparent. Defaults to `accent` directly: it ties the pulse to the
     // theme's brand hue, and stays as a plain canvas-parseable color so
-    // animations that JS-blend the value (list marker pop, etc.) can read it.
+    // paint effects that JS-blend the value (list marker pop, etc.) can read it.
     // Themes whose accent doesn't pop enough as a pulse override explicitly.
     insertHighlightText: theme.insertHighlightText ?? accent,
     leafAccent: theme.leafAccent ?? accent,

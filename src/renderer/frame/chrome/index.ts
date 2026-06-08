@@ -1,6 +1,6 @@
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import { resolveIndexedBlock, type EditorState } from "@/editor/state";
-import type { ActiveBlockFlash } from "../../animations";
+import type { ActiveBlockFlash } from "../../effects";
 import { resolveDividerRules } from "./divider-rules";
 import {
   resolveBlockquoteRuleFrames,
@@ -28,7 +28,7 @@ type ResolvedDocumentFrameChrome = {
 };
 
 export function resolveDocumentFrameChrome({
-  activeBlockFlashes,
+  blockFlashes,
   activeBlockId,
   activeRegionId,
   endBlockIndex,
@@ -39,7 +39,7 @@ export function resolveDocumentFrameChrome({
   startLineIndex,
   width,
 }: {
-  activeBlockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, ActiveBlockFlash>;
   activeBlockId: string | null;
   activeRegionId: string | null;
   endBlockIndex: number;
@@ -55,7 +55,7 @@ export function resolveDocumentFrameChrome({
     editorState,
     activeBlockId,
     activeRegionId,
-    activeBlockFlashes,
+    blockFlashes,
   );
 
   return {
@@ -99,7 +99,7 @@ function resolveActiveTableCellHighlightTarget(
   editorState: EditorState,
   activeBlockId: string | null,
   activeRegionId: string | null,
-  activeBlockFlashes: Map<string, ActiveBlockFlash>,
+  blockFlashes: Map<string, ActiveBlockFlash>,
 ): ActiveTableCellHighlightTarget | null {
   if (!activeBlockId || !activeRegionId) {
     return null;
@@ -118,7 +118,7 @@ function resolveActiveTableCellHighlightTarget(
   }
 
   return {
-    activeFlash: activeBlock.path ? (activeBlockFlashes.get(activeBlock.path) ?? null) : null,
+    activeFlash: activeBlock.path ? (blockFlashes.get(activeBlock.path) ?? null) : null,
     activeRegionId,
   };
 }

@@ -43,7 +43,6 @@ export {
   reconcileTextDecorationIndex,
 } from "./text/decorations";
 export { createLayoutCache } from "./layout/state/cache";
-export { hasRunningEditorAnimations as hasRunningAnimations } from "./state";
 export {
   createResourceIconSignature,
   createResourceReference,
@@ -62,10 +61,13 @@ export {
   getSelectionFormatting,
   getSelectionRange,
   normalizeSelection,
+  readEditorEffects,
   resolveImageAtSelection,
   setSelection,
+  takeEditorEffects,
   type CaretTextContext,
   type DocumentIndex,
+  type EditorEffect,
   type IndexedInline,
   type EditorSelection,
   type EditorSelectionPoint,

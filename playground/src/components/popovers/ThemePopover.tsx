@@ -1,7 +1,12 @@
 import type { CSSProperties } from "react";
 import { Minus, Palette, Plus } from "lucide-react";
 import { getThemeOption, themeOptions } from "../../lib/data";
-import { PlaygroundPopover, popoverControlClassName } from "./PlaygroundPopover";
+import {
+  PlaygroundPopover,
+  popoverControlClassName,
+  popoverHeaderClassName,
+  popoverTitleClassName,
+} from "./PlaygroundPopover";
 
 // Reasonable bounds for the font-size stepper. The lower edge keeps body text
 // legible at typical viewing distances; the upper edge keeps heading scale
@@ -10,7 +15,9 @@ const MIN_FONT_SIZE = 11;
 const MAX_FONT_SIZE = 22;
 
 type ThemePopoverProps = {
+  customEffectsEnabled: boolean;
   fontSize: number;
+  onCustomEffectsEnabledChange: (enabled: boolean) => void;
   onFontSizeChange: (fontSize: number) => void;
   onOpenChange?: (open: boolean) => void;
   onThemeIdChange: (themeId: string) => void;
@@ -19,7 +26,9 @@ type ThemePopoverProps = {
 };
 
 export function ThemePopover({
+  customEffectsEnabled,
   fontSize,
+  onCustomEffectsEnabledChange,
   onFontSizeChange,
   onOpenChange,
   onThemeIdChange,
@@ -48,13 +57,25 @@ export function ThemePopover({
     >
       {({ close }) => (
         <div className="grid gap-3">
-          <div className="grid gap-[0.35rem]">
+          <div className={popoverHeaderClassName}>
+            <strong className={popoverTitleClassName}>Theme</strong>
+            <label className="flex items-center gap-2.5">
+              <input
+                checked={customEffectsEnabled}
+                onChange={(event) => onCustomEffectsEnabledChange(event.target.checked)}
+                type="checkbox"
+              />
+              <span>Effects</span>
+            </label>
+          </div>
+
+          <div className="grid gap-1.5">
             {themeOptions.map((option) => (
               <button
-                className={`font-controls inline-flex cursor-pointer items-center gap-[0.55rem] rounded-xl border px-3 py-[0.55rem] text-left ${
+                className={`font-controls inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-left ${
                   option.id === themeId
-                    ? "border-accent/40 bg-accent/[0.08]"
-                    : "border-border/[0.12] bg-background/[0.9]"
+                    ? "border-accent/40 bg-accent/10"
+                    : "border-border/15 bg-background/90"
                 }`}
                 key={option.id}
                 onClick={() => {
@@ -66,7 +87,7 @@ export function ThemePopover({
               >
                 <span
                   aria-hidden="true"
-                  className="inline-flex h-[1.4rem] w-[1.4rem] flex-none items-center justify-center rounded-full border border-border/[0.14]"
+                  className="inline-flex size-6 flex-none items-center justify-center rounded-full border border-border/15"
                   style={getThemeSwatchStyle(option)}
                 >
                   <Palette size={16} strokeWidth={2.1} />
@@ -76,22 +97,22 @@ export function ThemePopover({
             ))}
           </div>
 
-          <div className="flex items-center gap-2 border-t border-border/[0.1] pt-[0.7rem]">
+          <div className="flex items-center gap-2 border-t border-border/10 pt-3">
             <button
               aria-label="Decrease font size"
-              className={`${popoverControlClassName} inline-flex h-[1.8rem] w-[1.8rem] items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40`}
+              className={`${popoverControlClassName} inline-flex size-7 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40`}
               disabled={fontSize <= MIN_FONT_SIZE}
               onClick={decrement}
               type="button"
             >
               <Minus size={14} strokeWidth={2.4} />
             </button>
-            <span className="font-controls flex-1 text-center text-[0.95rem] tabular-nums">
+            <span className="font-controls flex-1 text-center text-base tabular-nums">
               {fontSize}px
             </span>
             <button
               aria-label="Increase font size"
-              className={`${popoverControlClassName} inline-flex h-[1.8rem] w-[1.8rem] items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40`}
+              className={`${popoverControlClassName} inline-flex size-7 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40`}
               disabled={fontSize >= MAX_FONT_SIZE}
               onClick={increment}
               type="button"
