@@ -1,26 +1,26 @@
 # 🌿 Documint
 
-A canvas-based, batteries-included markdown editor for React.
+A canvas-based, batteries-included Markdown editor for React. Documint is built for usability and performance, using a fully bespoke Markdown parser, layout/renderer, component system ("leaves"), and reactive store ("sprigs"). This gives you a really nice WYSIWYG editor, without any of the dependency bloat 💪  
 
-> Try it out: [Documint playground](https://lostintangent.github.io/documint).
+> *Try it out:* [web playground](https://lostintangent.github.io/documint) and [VS Code extension](https://marketplace.visualstudio.com/items?itemName=lostintangent.documint-vscode).
 
 ## Features
 
 - **Markdown in, markdown out** — Documents are parsed from markdown and serialized back to markdown. Full support for CommonMark, GFM tables, task lists, strikethrough, and fenced code blocks with language hints.
 
-- **Rich semantic editing** — Context-sensitive behavior that adapts to what you're editing. Enter splits a paragraph but adds a new row in a table. Backspace at the start of a list item dedents it. Tab indents a list but inserts a column in a table. The editor understands the structure of your document, so every gesture does the right thing.
+- **Rich semantic editing** — Context-sensitive behavior that adapts to what you're editing. `Enter` splits a paragraph but adds a new row in a table. `Backspace` at the start of a list item dedents it. `Tab` indents a list but inserts a column in a table. The editor understands the structure of your document, so every gesture does the right thing.
 
-- **Subtle, delightful animations** — A typing trail highlights newly inserted text. Deleted text fades out before disappearing. List markers pop into place. Punctuation pulses with a soft ring on keystroke. Small details that make editing feel fun.
+- **Subtle, delightful animations** — A typing trail highlights newly inserted text. Deleted text fades out before disappearing. List markers pop into place. Punctuation pulses with a soft ring on keystroke. Small details that make everyday editing feel fun.
 
-- **Mobile-native editing** — Responsive layout with full support for iOS and Android gestures: auto-capitalization, auto-correct, auto-scroll on keyboard appearance, shake-to-undo, and selection handles all work as expected.
-
-- **Context-aware toolbars ("leaves")** — Floating toolbars that appear based on what you're interacting with: text formatting options on selection, link editing on links, column/row controls on tables, and block insertion (headings, lists, quotes, tables) on empty lines.
-
-- **Configurable themes and keybindings** — Ships with built-in light and dark themes, follows the system theme by default, and lets you customize every theme value. Keybindings are configurable too — remap formatting shortcuts, navigation, and list operations to match your users' expectations.
+- **Context-aware toolbars ("leaves")** — As you move around a documint, specialized toolbars will appear based on what you're interacting with: text formatting options on selection, link editing on links, column/row controls on tables, and block insertion (headings, lists, quotes, tables) on empty lines.
 
 - **Comments and presence for review workflows** — Anchor comments to any range of text, with full threading (replies, resolution, deletion) and self-repairing quote-based matching after edits. External user and AI agent presence can be projected into the document as live cursors and viewport indicators without becoming document content.
 
-- **Fast and lightweight** — Canvas-based rendering optimized for hot-path performance even on large documents. A custom markdown parser, editor engine, and layout/rendering system all ship in a bundle ~100 KB gzipped.
+- **Fast and lightweight** — Canvas-based rendering optimized for hot-path performance even on large documents (120 FPS). A custom markdown parser, editor engine, and layout/rendering system all ship in a bundle ~100 KB gzipped.
+
+- **Configurable themes and keybindings** — Ships with built-in light and dark themes, follows the system theme by default, and lets you customize every theme value. Keybindings are configurable too — remap formatting shortcuts, navigation, and list operations to match your users' expectations.
+
+- **Mobile-native editing** — Responsive layout with full support for iOS and Android gestures: auto-capitalization, auto-correct, auto-scroll on keyboard appearance, shake-to-undo, and selection handles all work as expected.
 
 ## Getting Started
 

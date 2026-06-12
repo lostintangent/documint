@@ -31,6 +31,4 @@ export type ActiveBlockPulse = {
   progress: number;
 };
 
-export type ActiveTextPulse = ActiveTextInsertion & {
-  offset: number;
-};
+export type ActiveTextPulse = ActiveTextInsertion;

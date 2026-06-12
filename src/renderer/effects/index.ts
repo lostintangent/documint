@@ -3,15 +3,12 @@
 // paint-ready effect groups they contribute to for the current frame.
 
 import type { DocumintEffects, ResolvedEditorTheme } from "@/types";
-import type { EditorEffect, TextDeletedEffect, TextInsertedEffect } from "@/editor/state";
-import { containsColorEmoji } from "@/editor/text/emoji";
+import type { EditorEffect } from "@/editor/state";
 import { blendCanvasColors, transparentCanvasColor } from "./colors";
+import { descriptorFor, type ActiveEffectGroups } from "./kinds";
 import type {
-  ActiveBlockFlash,
-  ActiveBlockPulse,
   ActiveEditorEffect,
   ActiveTextFade,
-  ActiveTextHighlight,
   ActiveTextPulse,
 } from "./types";
 
@@ -35,25 +32,17 @@ export type EffectPolicy = {
   duration: (effect: EditorEffect) => number | null;
 };
 
-const activeBlockChangedDurationMs = 300;
-const textDeletedDurationMs = 180;
-const textInsertedDurationMs = 1000;
-const listItemInsertedDurationMs = 500;
-const punctuationInsertedDurationMs = 140;
-
 // Default renderer policy. Hosts can wrap this value to override specific
 // effect durations while preserving the built-in behavior for the rest.
 export const defaultEffectPolicy: EffectPolicy = {
-  duration: getDefaultEffectDuration,
+  duration: (effect) => {
+    const descriptor = descriptorFor(effect);
+    return descriptor.animatesByDefault(effect) ? descriptor.duration(effect) : null;
+  },
 };
 
-export type ActiveEffects = {
+export type ActiveEffects = ActiveEffectGroups & {
   activeEditorEffects: readonly ActiveEditorEffect[];
-  blockFlashes: Map<string, ActiveBlockFlash>;
-  blockPulses: Map<string, ActiveBlockPulse>;
-  textFades: Map<string, ActiveTextFade[]>;
-  textHighlights: Map<string, ActiveTextHighlight[]>;
-  textPulses: Map<string, ActiveTextPulse[]>;
 };
 
 // List marker pop reaches full scale in the first half of its duration,
@@ -80,7 +69,7 @@ export function resolveActiveEffects(
     }
 
     activeEditorEffects.push(effect);
-    collectActiveEffect(result, effect, progress);
+    descriptorFor(effect).collect(result, effect, progress);
   }
 
   return { ...result, activeEditorEffects };
@@ -119,7 +108,7 @@ export function resolveBlockPulseColor(
   return blendCanvasColors(theme.insertHighlightText, baseColor, colorProgress);
 }
 
-function createEmptyActiveEffects(): Omit<ActiveEffects, "activeEditorEffects"> {
+function createEmptyActiveEffects(): ActiveEffectGroups {
   return {
     blockFlashes: new Map(),
     blockPulses: new Map(),
@@ -127,70 +116,6 @@ function createEmptyActiveEffects(): Omit<ActiveEffects, "activeEditorEffects"> 
     textHighlights: new Map(),
     textPulses: new Map(),
   };
-}
-
-function collectMany<TEffect>(
-  result: Map<string, TEffect[]>,
-  key: string,
-  item: TEffect,
-) {
-  const existing = result.get(key);
-
-  if (existing) {
-    existing.push(item);
-  } else {
-    result.set(key, [item]);
-  }
-}
-
-function collectActiveEffect(
-  result: Omit<ActiveEffects, "activeEditorEffects">,
-  effect: ActiveEditorEffect,
-  progress: number,
-) {
-  switch (effect.kind) {
-    case "active-block-changed":
-      result.blockFlashes.set(effect.blockPath, {
-        blockPath: effect.blockPath,
-        progress,
-      });
-      return;
-    case "list-item-inserted":
-      result.blockPulses.set(effect.blockPath, {
-        blockPath: effect.blockPath,
-        progress,
-      });
-      return;
-    case "text-deleted":
-      collectMany(result.textFades, effect.regionPath, {
-        progress,
-        regionPath: effect.regionPath,
-        startOffset: effect.startOffset,
-        text: effect.text,
-      });
-      return;
-    case "text-inserted":
-      if (effect.text === ".") {
-        collectMany(result.textPulses, effect.regionPath, {
-          endOffset: effect.endOffset,
-          offset: effect.startOffset,
-          progress,
-          regionPath: effect.regionPath,
-          startOffset: effect.startOffset,
-          text: effect.text,
-        });
-        return;
-      }
-
-      collectMany(result.textHighlights, effect.regionPath, {
-        endOffset: effect.endOffset,
-        progress,
-        regionPath: effect.regionPath,
-        startOffset: effect.startOffset,
-        text: effect.text,
-      });
-      return;
-  }
 }
 
 function resolveEffectProgress(
@@ -214,74 +139,12 @@ function resolveEffectProgress(
   return Math.max(0, Math.min(1, elapsed / durationMs));
 }
 
-function getDefaultEffectDuration(effect: EditorEffect): number | null {
-  switch (effect.kind) {
-    case "active-block-changed":
-      return activeBlockChangedDurationMs;
-    case "text-deleted":
-      if (!shouldAnimateTextDeletedEffect(effect)) {
-        return null;
-      }
-
-      return textDeletedDurationMs;
-    case "text-inserted":
-      if (!shouldAnimateTextInsertedEffect(effect)) {
-        return null;
-      }
-
-      return effect.text === "." ? punctuationInsertedDurationMs : textInsertedDurationMs;
-    case "list-item-inserted":
-      return listItemInsertedDurationMs;
-  }
-}
-
 function getCustomEffectDuration(
   effect: EditorEffect,
   customEffects: DocumintEffects | undefined,
 ): number | null {
-  if (!hasCustomEffectHandler(effect, customEffects)) {
-    return null;
-  }
-
-  switch (effect.kind) {
-    case "active-block-changed":
-      return activeBlockChangedDurationMs;
-    case "text-deleted":
-      return textDeletedDurationMs;
-    case "text-inserted":
-      return effect.text === "." ? punctuationInsertedDurationMs : textInsertedDurationMs;
-    case "list-item-inserted":
-      return listItemInsertedDurationMs;
-  }
-}
-
-function hasCustomEffectHandler(
-  effect: EditorEffect,
-  customEffects: DocumintEffects | undefined,
-) {
-  switch (effect.kind) {
-    case "active-block-changed":
-      return Boolean(customEffects?.activeBlockChanged);
-    case "text-deleted":
-      return Boolean(customEffects?.textDeleted);
-    case "text-inserted":
-      return Boolean(customEffects?.textInserted);
-    case "list-item-inserted":
-      return Boolean(customEffects?.listItemInserted);
-  }
-}
-
-function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
-  return (
-    effect.direction === "backward" &&
-    effect.textKind === "plain" &&
-    effect.placement !== "line-middle" &&
-    !containsColorEmoji(effect.text)
-  );
-}
-
-function shouldAnimateTextInsertedEffect(effect: TextInsertedEffect) {
-  return !containsColorEmoji(effect.text);
+  const descriptor = descriptorFor(effect);
+  return customEffects?.[descriptor.customHandlerKey] ? descriptor.duration(effect) : null;
 }
 
 function easeOutCubic(t: number) {

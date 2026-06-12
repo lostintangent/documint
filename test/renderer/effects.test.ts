@@ -24,7 +24,7 @@ describe("Renderer effect policy", () => {
       const activeEffects = resolveActiveEffects([insertedText(".")], now);
 
       expect(activeEffects.textPulses.get("root.0")).toEqual([
-        expect.objectContaining({ offset: 4 }),
+        expect.objectContaining({ startOffset: 4 }),
       ]);
       expect(activeEffects.textHighlights.get("root.0")).toBeUndefined();
     });

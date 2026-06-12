@@ -55,7 +55,7 @@ Selection moves, animation ticks, and caret blinks reuse cached layout. Editor a
 ## Definition of done
 
 1. The change works in the playground when browser behavior is involved.
-2. Relevant unit and golden tests pass.
-3. Markdown import/export stability is preserved.
-4. Undo/redo, selection, and comments are not corrupted.
-5. Benchmark p99 does not regress for hot paths.
+1. Relevant unit and golden tests pass.
+1. Markdown import/export stability is preserved.
+1. Undo/redo, selection, and comments are not corrupted.
+1. Benchmark p99 does not regress for hot paths.

@@ -217,15 +217,15 @@ export function paintTextPulses(
   }
 
   for (const pulse of textPulses) {
-    if (!isOffsetInLine(lineFrame, pulse.offset, "exclude-end")) {
+    if (!isOffsetInLine(lineFrame, pulse.startOffset, "exclude-end")) {
       continue;
     }
 
     const { left, right } = resolveLineSegmentBounds(
       lineFrame.layoutLine,
       lineFrame.textLeft,
-      pulse.offset,
-      pulse.offset + 1,
+      pulse.startOffset,
+      pulse.startOffset + 1,
     );
     const radius = Math.max(
       textPulseBaseRadius,
@@ -238,13 +238,13 @@ export function paintTextPulses(
 
     paintEffect(
       "textInserted",
-        {
-          anchor: {
-            x: left,
-            y: lineFrame.textBaseline,
-          },
-          progress: pulse.progress,
-          text: pulse.text,
+      {
+        anchor: {
+          x: left,
+          y: lineFrame.textBaseline,
+        },
+        progress: pulse.progress,
+        text: pulse.text,
       },
       ({ context }) => {
         paintDefaultTextInsertedPulse(context, {

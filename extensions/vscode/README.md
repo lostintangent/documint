@@ -1,17 +1,20 @@
 # 🌿 Documint (VS Code)
 
-Documint is a VS Code custom editor for Markdown files. It wraps the `documint` React editor so `*.md` files can be edited as structured Markdown while still saving plain Markdown back to disk. 💯 💡 :
+Documint is a WYSIWYG editor for Markdown. This extension integrates the [documint editor](https://npmjs.com/documint) into VS Code so that `*.md` files can be opened and edited.
 
-This is 💯 and 
+<img width="1000px" src="https://github.com/user-attachments/assets/67618adb-9e17-4529-aa5e-9c0888bb38bf" />
+
+## Getting started
+
+1. Install this extension and reload VS Code
+1. Open a `*.md` file
+1. Right-click the file's tab and click `Reopen Editor With...`
+1. Select `Documint`
 
 ## Features
 
-- Opens Markdown files with the `Documint` custom editor.
-- Keeps the VS Code text document in sync with edits made in the canvas editor.
-- Supports external file changes by pushing updated Markdown into the webview.
-- Reads local image assets from the current workspace and supports pasted/uploaded assets next to the Markdown file.
-
-## Known Issues
-
-- The extension currently provides the editor wrapper only; settings for themes, keybindings, and collaboration features are not exposed yet.
-- Local asset access is limited to the current workspace, or to the Markdown file's directory when no workspace folder is open.
+- Read, navigate (`CMD+F`), and edit markdown files
+- WYSIWYG support for headings, list, quotes, tables, and more
+- Paste-to-upload images into the current workspace
+- Emoji completion by simply typing `:`
+- Lots more!
