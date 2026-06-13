@@ -3,8 +3,7 @@ import { resolveBlockDecorationRanges } from "@/component/decorations/ranges";
 import { createParagraphTextBlock, spliceDocument, type Document } from "@/document";
 import {
   createEditorState,
-  createRootPrimaryRegionTarget,
-  resolveSelectionTarget,
+  resolveRootPrimaryRegion,
   setSelection,
 } from "@/editor/state";
 import { parseDocument } from "@/markdown";
@@ -97,10 +96,13 @@ function insertTransientEmptyRootParagraph(
     createParagraphTextBlock(""),
   ]);
   const nextState = createEditorState(nextDocument);
-  const selection = resolveSelectionTarget(
-    nextState.documentIndex,
-    createRootPrimaryRegionTarget(rootIndex),
-  );
+  const region = resolveRootPrimaryRegion(nextState.documentIndex, rootIndex);
+  const selection = region
+    ? {
+        anchor: { regionId: region.id, offset: 0 },
+        focus: { regionId: region.id, offset: 0 },
+      }
+    : null;
 
   if (!selection) {
     throw new Error(`Missing inserted empty paragraph at root index ${rootIndex}`);

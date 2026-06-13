@@ -7,8 +7,9 @@ import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import { regionInlines, type EditableRegion } from "../../state";
 import type { LayoutCache } from "../state/cache";
+import type { LayoutContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
-import { CODE_BLOCK_BACKGROUND_PADDING_Y, CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
+import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
 import { estimateTextLayout } from "./text-estimate";
 import {
   measureTextContainerLines,
@@ -20,22 +21,11 @@ export function estimateContainerHeight(
   cache: LayoutCache,
   container: EditableRegion,
   block: Block | null,
-  depth: number,
-  // List item content is shifted right by this inset (bullet or task
-  // checkbox); subtracting it here keeps the estimator's wrap math in
-  // step with measure's exact wrap. Non-list regions pass 0.
-  listInset: number,
+  contentMetrics: LayoutContentMetrics,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  const codeContentInset = block?.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
-  const cacheKey = createContainerHeightCacheKey(
-    container,
-    listInset,
-    codeContentInset,
-    options,
-    resources,
-  );
+  const cacheKey = createContainerHeightCacheKey(container, contentMetrics, options, resources);
   const cached = cache.measuredContainerHeights.get(cacheKey);
 
   if (cached !== undefined) {
@@ -43,18 +33,13 @@ export function estimateContainerHeight(
   }
 
   const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
-  const left = options.paddingX + depth * options.indentWidth;
-  const availableWidth = Math.max(
-    40,
-    options.width - left - options.paddingX - listInset - codeContentInset * 2,
-  );
 
   if (regionInlines(container).some((inline) => isReferenceInlineNode(inline.node))) {
     return measureTextContainerLines(
       cache,
       container,
       block,
-      availableWidth,
+      contentMetrics.availableWidth,
       typography,
       resources,
     ).reduce((total, line) => total + line.height, 0);
@@ -64,9 +49,12 @@ export function estimateContainerHeight(
     charWidth: options.charWidth,
     lineHeight: typography.lineHeight,
     text: container.text,
-    width: availableWidth,
+    width: contentMetrics.availableWidth,
   });
-  const estimatedHeight = Math.max(typography.lineHeight, estimate.lineCount * typography.lineHeight);
+  const estimatedHeight = Math.max(
+    typography.lineHeight,
+    estimate.lineCount * typography.lineHeight,
+  );
 
   return block?.type === "code"
     ? estimatedHeight + CODE_BLOCK_BACKGROUND_PADDING_Y * 2
@@ -91,13 +79,12 @@ export function estimateTableCellHeight(
 
 export function createContainerHeightCacheKey(
   container: EditableRegion,
-  listInset: number,
-  codeContentInset: number,
+  contentMetrics: Pick<LayoutContentMetrics, "codeContentInset" | "listInset">,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
   // fontSize joins lineHeight in the key: if an embedder pins lineHeight
   // explicitly while fontSize varies, heading/code-derived heights would
   // otherwise be served stale from this cache.
-  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.fontSize}:${options.lineHeight}:${listInset}:${codeContentInset}`;
+  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.fontSize}:${options.lineHeight}:${contentMetrics.listInset}:${contentMetrics.codeContentInset}`;
 }

@@ -7,11 +7,17 @@ import {
   type RootTextBlockContext,
 } from "../../context";
 import { previousRegionInFlow, resolveSiblingRootBlock } from "../../../index/query";
-import { createRootPrimaryRegionTarget, normalizeSelection } from "../../../selection";
-import { resolveTextReplacement } from "../insertion/replace";
+import { normalizeSelection, target } from "../../../selection";
+import { resolveSelectionTextReplacement } from "../insertion/replace";
+import { areCompatibleLists } from "../shared";
 import { regionPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
 import { resolveCharacterDelete } from "./character";
+
+type AdjacentLists = {
+  next: ListBlock;
+  previous: ListBlock;
+};
 
 // Structural delete dispatcher.
 //
@@ -76,7 +82,7 @@ function resolveExpandedSelectionDelete(state: EditorState): EditorStateAction |
     return null;
   }
 
-  return resolveTextReplacement(state.documentIndex, state.selection, "");
+  return resolveSelectionTextReplacement(state.documentIndex, state.selection, "");
 }
 
 function resolveBackwardOverride(
@@ -106,23 +112,41 @@ function mergeAdjacentListsAroundEmptyParagraph(
   ctx: RootTextBlockContext,
   documentIndex: DocumentIndex,
 ): EditorStateAction | null {
-  if (ctx.block.type !== "paragraph" || ctx.block.plainText.length !== 0) {
+  if (!isEmptyParagraph(ctx)) {
     return null;
   }
 
-  const previousRoot = resolveSiblingRootBlock(documentIndex, ctx.rootIndex, -1);
-  const nextRoot = resolveSiblingRootBlock(documentIndex, ctx.rootIndex, 1);
-
-  if (
-    !previousRoot ||
-    previousRoot.type !== "list" ||
-    !nextRoot ||
-    nextRoot.type !== "list" ||
-    !areCompatibleAdjacentLists(previousRoot, nextRoot)
-  ) {
+  const lists = resolveAdjacentCompatibleLists(documentIndex, ctx.rootIndex);
+  if (!lists) {
     return null;
   }
 
+  return mergeAdjacentLists(documentIndex, ctx, lists);
+}
+
+function isEmptyParagraph(ctx: RootTextBlockContext): boolean {
+  return ctx.block.type === "paragraph" && ctx.block.plainText.length === 0;
+}
+
+function resolveAdjacentCompatibleLists(
+  documentIndex: DocumentIndex,
+  rootIndex: number,
+): AdjacentLists | null {
+  const previous = resolveSiblingRootBlock(documentIndex, rootIndex, -1);
+  const next = resolveSiblingRootBlock(documentIndex, rootIndex, 1);
+
+  if (!previous || previous.type !== "list" || !next || next.type !== "list") {
+    return null;
+  }
+
+  return areCompatibleLists(previous, next) ? { next, previous } : null;
+}
+
+function mergeAdjacentLists(
+  documentIndex: DocumentIndex,
+  ctx: RootTextBlockContext,
+  lists: AdjacentLists,
+): EditorStateAction {
   // Land the caret where the universal in-flow rule would: at the end
   // of the previous-in-flow region (the deepest-last leaf of the
   // previous list, which may be inside a nested item rather than at
@@ -134,17 +158,13 @@ function mergeAdjacentListsAroundEmptyParagraph(
   const previousInFlow = previousRegionInFlow(documentIndex, ctx.region.id);
   const cursorTarget = previousInFlow
     ? regionPathTarget(previousInFlow, ctx.rootIndex - 1, "end")
-    : createRootPrimaryRegionTarget(ctx.rootIndex - 1, "end");
+    : target.root(ctx.rootIndex - 1, "end");
 
   return {
     kind: "splice-blocks",
     count: 3,
-    blocks: [rebuildListBlock(previousRoot, [...previousRoot.items, ...nextRoot.items])],
+    blocks: [rebuildListBlock(lists.previous, [...lists.previous.items, ...lists.next.items])],
     rootIndex: ctx.rootIndex - 1,
     selection: cursorTarget,
   };
-}
-
-function areCompatibleAdjacentLists(left: ListBlock, right: ListBlock) {
-  return left.ordered === right.ordered && left.start === right.start;
 }

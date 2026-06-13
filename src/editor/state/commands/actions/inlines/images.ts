@@ -23,6 +23,8 @@ export function resolveImageResize(
     }),
   ]);
 
+  // Resizing an existing image should preserve the current selection rather
+  // than move the caret to the resized object's replacement position.
   return {
     kind: "replace-block",
     block: replacement.block,

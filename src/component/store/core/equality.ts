@@ -89,23 +89,6 @@ export function equalShallowObject<T extends object>(
   return true;
 }
 
-// Like `equalRecordBy` but pre-binds a fixed key set known at construction
-// time. Skips the per-call `Object.keys` walk and the `hasOwn` check — use
-// this when both records are guaranteed to share the same closed key set
-// (e.g. inside `createRecordSprig`).
-export function equalRecordByKeys<V = unknown>(
-  keys: readonly string[],
-  equalValue: Equality<V> = defaultEquality,
-): Equality<Record<string, V>> {
-  return (a, b) => {
-    if (a === b) return true;
-    for (const key of keys) {
-      if (!equalValue(a[key]!, b[key]!)) return false;
-    }
-    return true;
-  };
-}
-
 // Array equality that compares items by reference identity (`Object.is`).
 // Used for arrays whose elements are themselves immutable structures
 // (marks, comment threads), where structural equality reduces to identity.

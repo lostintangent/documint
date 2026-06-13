@@ -10,18 +10,24 @@
 // dispatch, document index swap, selection clamping, and history.
 
 import {
+  childBlockPath,
   createDocument,
+  findBlockChildIndicesByReference,
+  rootBlockPath,
   spliceCommentThreads,
   spliceDocument,
   trimTrailingWhitespace,
+  type Block,
   type Document,
 } from "@/document";
 import { getCommentState } from "../../anchors";
-import { recordEditorEffects, takeEditorEffects } from "../effects";
+import { recordEditorEffects, takeEditorEffects, type EditorEffect } from "../effects";
 import {
   resolveActiveBlockKey,
+  resolveBlockChildIndices,
   resolveBlockPathForRegion,
   resolveDocumentBoundaryRegion,
+  resolveIndexedBlock,
 } from "../index/query";
 import {
   createDocumentIndex,
@@ -34,6 +40,7 @@ import type { EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
   resolveRegion,
   resolveSelectionTarget,
+  target,
   type EditorSelection,
   type EditorSelectionPoint,
   type SelectionTarget,
@@ -76,8 +83,14 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
     return null;
   }
 
-  const nextState = reduceEditorStateAction(state, action);
-  if (!nextState || !action.effect) {
+  // Block references in the action (selection targets, effects) are only
+  // meaningful against the raw payload, before normalization rebuilds every
+  // block object — so they're translated into positional form first, against
+  // the pre-edit index.
+  const materialized = materializeBlockReferences(state.documentIndex, action);
+
+  const nextState = reduceEditorStateAction(state, materialized);
+  if (!nextState || !materialized.effect) {
     return nextState;
   }
 
@@ -85,7 +98,7 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
   // post-edit selection. Re-record them after the action effect so consumers
   // see the edit's semantic event before selection-derived follow-ups.
   const postEditEffects = takeEditorEffects(nextState);
-  return recordEditorEffects(nextState, [action.effect, ...postEditEffects]);
+  return recordEditorEffects(nextState, [materialized.effect, ...postEditEffects]);
 }
 
 function reduceEditorStateAction(
@@ -153,6 +166,113 @@ function reduceEditorStateAction(
       );
     }
   }
+}
+
+/* Block-reference materialization */
+
+// Actions may address "the block I just built" by reference into their own
+// payload (`target.block(block)` selection targets, block-referenced effects).
+// Those references are translated here, before the edit applies: normalization
+// rebuilds every block object, so identity does not survive into the committed
+// document. The translation produces positional coordinates, which stay valid
+// post-normalize because id assignment is strictly positional — it never
+// reorders, inserts, or drops children.
+type MaterializedEditorStateAction = EditorStateAction & { effect?: EditorEffect };
+
+function materializeBlockReferences(
+  documentIndex: DocumentIndex,
+  action: EditorStateAction,
+): MaterializedEditorStateAction {
+  const blockSelection = blockReferenceSelection(action);
+  const blockEffect = action.effect?.kind === "list-item-inserted-block" ? action.effect : null;
+
+  if (action.kind !== "replace-block" && action.kind !== "splice-blocks") {
+    if (blockSelection || blockEffect) {
+      throw new Error("Block-reference selections and effects require a block payload action.");
+    }
+
+    return action as MaterializedEditorStateAction;
+  }
+
+  if (!blockSelection && !blockEffect) {
+    return action as MaterializedEditorStateAction;
+  }
+
+  const payload = resolveBlockPayloadBase(documentIndex, action);
+  const materialized = { ...action };
+
+  if (blockSelection) {
+    const located = locateBlockInPayload(payload, blockSelection.block);
+    materialized.selection = target.descendant(
+      located.rootIndex,
+      located.childIndices,
+      blockSelection.offset,
+    );
+  }
+
+  if (blockEffect) {
+    const located = locateBlockInPayload(payload, blockEffect.block);
+    materialized.effect = {
+      blockPath: located.childIndices.reduce(childBlockPath, rootBlockPath(located.rootIndex)),
+      kind: "list-item-inserted",
+    };
+  }
+
+  return materialized as MaterializedEditorStateAction;
+}
+
+function blockReferenceSelection(action: EditorStateAction) {
+  if (!("selection" in action) || action.kind === "set-selection") {
+    return null;
+  }
+
+  return action.selection?.kind === "block-primary-region" ? action.selection : null;
+}
+
+type BlockPayloadBase = {
+  baseChildIndices: readonly number[];
+  baseRootIndex: number;
+  roots: readonly Block[];
+};
+
+// The coordinate frame the action's payload lands in: `splice-blocks` payloads
+// are whole roots at `action.rootIndex`; a `replace-block` payload sits at the
+// replaced block's existing position, which the pre-edit index knows.
+function resolveBlockPayloadBase(
+  documentIndex: DocumentIndex,
+  action: Extract<EditorStateAction, { kind: "replace-block" | "splice-blocks" }>,
+): BlockPayloadBase {
+  if (action.kind === "splice-blocks") {
+    return { baseChildIndices: [], baseRootIndex: action.rootIndex, roots: action.blocks };
+  }
+
+  const indexedBlock = resolveIndexedBlock(documentIndex, action.blockId);
+
+  if (!indexedBlock) {
+    throw new Error(`Unknown block for block-reference target: ${action.blockId}`);
+  }
+
+  return {
+    baseChildIndices: resolveBlockChildIndices(indexedBlock),
+    baseRootIndex: indexedBlock.rootIndex,
+    roots: [action.block],
+  };
+}
+
+function locateBlockInPayload(
+  payload: BlockPayloadBase,
+  block: Block,
+): { childIndices: number[]; rootIndex: number } {
+  const found = findBlockChildIndicesByReference(payload.roots, block);
+
+  if (!found) {
+    throw new Error("Block-reference target is not present in the action's block payload.");
+  }
+
+  return {
+    childIndices: [...payload.baseChildIndices, ...found.childIndices],
+    rootIndex: payload.baseRootIndex + found.rootOffset,
+  };
 }
 
 function applyDocumentMutation(

@@ -1,18 +1,17 @@
-import { resolveRegion, type EditorSelection } from "../../../selection";
+import { isSelectionCollapsed, resolveRegion, type EditorSelection } from "../../../selection";
 import { moveGraphemeOffset } from "../../../../text/graphemes";
+import { effect } from "../../../effects";
 import { regionInlines } from "../../../index/inlines";
 import type { EditableRegion } from "../../../index/types";
 import type { EditorState, EditorStateAction } from "../../../types";
-import { resolveTextDeletedEffect } from "../../../effects";
 
 // Resolves the splice-text action for a single-grapheme delete at the
 // caret. Returns null when the selection is non-collapsed, the cursor
 // is at the boundary in the requested direction, or there is no
 // grapheme to delete (degenerate offsets).
 //
-// The action's `range` carries the deletion range so the reducer deletes
-// exactly one grapheme even though most text splices default to the current
-// editor selection.
+// The action's `range` carries the computed grapheme span. Without it,
+// `splice-text` would use the current collapsed selection and delete nothing.
 type CharacterDeleteAction = Extract<EditorStateAction, { kind: "splice-text" }> & {
   range: EditorSelection;
 };
@@ -21,31 +20,30 @@ export function resolveCharacterDelete(
   state: EditorState,
   direction: "backward" | "forward",
 ): CharacterDeleteAction | null {
-  if (
-    state.selection.anchor.regionId !== state.selection.focus.regionId ||
-    state.selection.anchor.offset !== state.selection.focus.offset
-  ) {
+  const selection = state.selection;
+
+  if (!isSelectionCollapsed(selection)) {
     return null;
   }
 
-  const region = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const point = selection.focus;
+  const region = resolveRegion(state.documentIndex, point.regionId);
 
   if (!region) {
     return null;
   }
 
-  if (direction === "forward" && state.selection.focus.offset >= region.text.length) {
+  if (
+    (direction === "backward" && point.offset <= 0) ||
+    (direction === "forward" && point.offset >= region.text.length)
+  ) {
     return null;
   }
 
   const startOffset =
-    direction === "backward"
-      ? moveGraphemeOffset(region.text, state.selection.focus.offset, -1)
-      : state.selection.focus.offset;
+    direction === "backward" ? moveGraphemeOffset(region.text, point.offset, -1) : point.offset;
   const endOffset =
-    direction === "backward"
-      ? state.selection.focus.offset
-      : moveGraphemeOffset(region.text, state.selection.focus.offset, 1);
+    direction === "backward" ? point.offset : moveGraphemeOffset(region.text, point.offset, 1);
 
   if (startOffset === endOffset) {
     return null;
@@ -59,13 +57,13 @@ export function resolveCharacterDelete(
         : "line-middle";
 
   return {
-    effect: resolveTextDeletedEffect(region, startOffset, endOffset, direction, placement),
     kind: "splice-text",
     range: {
       anchor: { regionId: region.id, offset: startOffset },
       focus: { regionId: region.id, offset: endOffset },
     },
     text: "",
+    effect: effect.textDeleted(region, startOffset, endOffset, direction, placement),
   };
 }
 

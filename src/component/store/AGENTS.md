@@ -17,7 +17,7 @@ The store owns the current immutable `EditorState`, caches the lazy `EditorLayou
 
 - `index.ts` exposes create-store APIs, sprig exports, and shared store types.
 - `react.tsx` owns provider, store access, `useSprig`, and command dispatch helpers.
-- `core/` owns the source/computed/parameterized/record sprig constructors and equality helpers.
+- `core/` owns the source/computed/parameterized sprig constructors and equality helpers.
 - `editor/` owns the editor event source, transitions, source sprigs, and editor-derived view models.
 - `layout/` owns the lazy latest layout, the rendered layout frame, and the layout source sprig.
 - `presence.ts` owns sprigs that join editor state with the rendered layout.
@@ -26,7 +26,7 @@ The store owns the current immutable `EditorState`, caches the lazy `EditorLayou
 
 A sprig is a `{ read, subscribe }` pair for a reactive value. Sprigs are the only reactive read primitive; hooks subscribe through `useSprig`, and equality/deduplication lives in the sprig layer rather than in hooks.
 
-Use `createSourceSprig` against a `SprigSource` descriptor to expose an external store (today: the editor and layout stores) as a sprig, `createComputedSprig` for derived values, `createParameterizedSprig` when stable host parameters are part of the key, and `createRecordSprig` to bundle several sprigs into one record. Parameterized sprigs have a single-entry cache per store, so callers must pass reference-stable params.
+Use `createSourceSprig` against a `SprigSource` descriptor to expose an external store (today: the editor and layout stores) as a sprig, `createComputedSprig` for derived values, and `createParameterizedSprig` when stable host parameters are part of the key. Parameterized sprigs have a single-entry cache per store, so callers must pass reference-stable params.
 
 ---
 

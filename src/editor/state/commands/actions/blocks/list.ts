@@ -4,145 +4,47 @@ import {
   rebuildListBlock,
   rebuildListItemBlock,
   type Block,
+  type ListBlock,
   type ListItemBlock,
 } from "@/document";
+import { effect } from "../../../effects";
+import { target } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import {
-  createDescendantPrimaryRegionTarget,
-  createRootPrimaryRegionTarget,
-} from "../../../selection";
-import { createInsertedListItem, resolveListItemPath, type ListItemContext } from "../../context";
+  createInsertedListItem,
+  replaceListItemLeadingParagraphText,
+  type ListItemContext,
+} from "../../context";
+import { isCompatibleListBlock } from "../shared";
+import { insertAt, moveItem, removeAt, replaceAt } from "./shared";
 
-// List action resolvers: splits, indent / dedent, item movement.
-// Backspace and forward-delete on a list item are handled by the
-// universal boundary-collapse rule and (for top-level first items)
-// the block-demotion override, both in `actions/deletion/`.
+// List block actions for Enter, Tab / Shift-Tab, and explicit item moves.
+// Delete behavior stays with the universal boundary-collapse rules and the
+// top-level list demotion override in `actions/deletion/`.
+//
+// Public resolvers in this file should read as: guard in list language,
+// rebuild in list language, declare caret/effects by semantic intent.
+// Array surgery and editor action envelopes stay in local helpers.
 
-// Selects the primary region of item at `itemIndex` within `parentIndices`.
-function selectItem(
-  rootIndex: number,
-  parentIndices: number[],
-  itemIndex: number,
-  offset: number | "end" = 0,
-) {
-  return createDescendantPrimaryRegionTarget(rootIndex, [...parentIndices, itemIndex, 0], offset);
-}
+type ListActionIntent = {
+  caret: ListItemBlock;
+  inserted?: ListItemBlock;
+};
 
-export function resolveListItemSplit(
+export function resolveListItemLineBreak(
   context: ListItemContext,
   offset: number,
 ): EditorStateAction | null {
-  const text = context.region.text;
-  const currentItem = context.item;
-  const nextChecked = typeof currentItem.checked === "boolean" ? false : currentItem.checked;
-
-  if (offset === 0) {
-    const insertedItem = createInsertedListItem("", nextChecked, currentItem.compact);
-
-    return {
-      kind: "replace-block",
-      block: rebuildListBlock(context.list, [
-        ...context.list.items.slice(0, context.itemIndex),
-        insertedItem,
-        currentItem,
-        ...context.list.items.slice(context.itemIndex + 1),
-      ]),
-      blockId: context.list.id,
-      effect: resolveInsertedListItemEffect(
-        resolveInsertedItemPath(insertedItem, context.rootIndex, [
-          ...context.listChildIndices,
-          context.itemIndex,
-        ]),
-      ),
-      selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex),
-    };
+  if (!atStartOfEmptyItem(context, offset)) {
+    return splitListItem(context, offset);
   }
 
-  if (offset === text.length) {
-    const insertedItem = createInsertedListItem("", nextChecked, currentItem.compact);
-
-    return {
-      kind: "replace-block",
-      block: rebuildListBlock(context.list, [
-        ...context.list.items.slice(0, context.itemIndex + 1),
-        insertedItem,
-        ...context.list.items.slice(context.itemIndex + 1),
-      ]),
-      blockId: context.list.id,
-      effect: resolveInsertedListItemEffect(
-        resolveInsertedItemPath(insertedItem, context.rootIndex, [
-          ...context.listChildIndices,
-          context.itemIndex + 1,
-        ]),
-      ),
-      selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex + 1),
-    };
+  if (context.parent) {
+    const insertedItem = createSiblingListItem(context.parent.item, "");
+    return liftItemToParentList(context, insertedItem, { inserted: insertedItem });
   }
 
-  const beforeText = text.slice(0, offset);
-  const afterText = text.slice(offset);
-  const nextItem = createInsertedListItem(afterText, nextChecked, currentItem.compact);
-  const updatedCurrentItem = rebuildListItemBlock(currentItem, [
-    createParagraphTextBlock(beforeText),
-  ]);
-
-  return {
-    kind: "replace-block",
-    block: rebuildListBlock(context.list, [
-      ...context.list.items.slice(0, context.itemIndex),
-      updatedCurrentItem,
-      nextItem,
-      ...context.list.items.slice(context.itemIndex + 1),
-    ]),
-    blockId: context.list.id,
-    effect: resolveInsertedListItemEffect(
-      resolveInsertedItemPath(nextItem, context.rootIndex, [
-        ...context.listChildIndices,
-        context.itemIndex + 1,
-      ]),
-    ),
-    selection: selectItem(context.rootIndex, context.listChildIndices, context.itemIndex + 1),
-  };
-}
-
-export function resolveStructuralListBlockSplit(
-  context: ListItemContext,
-  offset: number,
-): EditorStateAction | null {
-  if (offset !== 0 || context.region.text.length !== 0) {
-    return resolveListItemSplit(context, offset);
-  }
-
-  if (
-    context.parentItem &&
-    context.parentItemIndex !== null &&
-    context.parentItemChildIndices &&
-    context.parentList &&
-    context.parentListChildIndices
-  ) {
-    return liftEmptyNestedListItem(context);
-  }
-
-  const beforeItems = context.list.items.slice(0, context.itemIndex);
-  const afterItems = context.list.items.slice(context.itemIndex + 1);
-  const replacementBlocks: Block[] = [];
-
-  if (beforeItems.length > 0) {
-    replacementBlocks.push(rebuildListBlock(context.list, beforeItems));
-  }
-
-  replacementBlocks.push(createParagraphTextBlock(""));
-
-  if (afterItems.length > 0) {
-    replacementBlocks.push(rebuildListBlock(context.list, afterItems));
-  }
-
-  return {
-    kind: "splice-blocks",
-    blocks: replacementBlocks,
-    rootIndex: context.rootIndex,
-    selection: createRootPrimaryRegionTarget(context.rootIndex + (beforeItems.length > 0 ? 1 : 0)),
-  };
+  return exitList(context);
 }
 
 export function resolveListItemIndent(context: ListItemContext): EditorStateAction | null {
@@ -156,209 +58,207 @@ export function resolveListItemIndent(context: ListItemContext): EditorStateActi
     return null;
   }
 
-  const nextPreviousItem = appendNestedListItem(previousItem, context.item, context);
-
-  return {
-    kind: "replace-block",
-    block: rebuildListBlock(
-      context.list,
-      context.list.items.flatMap((child, index) => {
-        if (index === context.itemIndex - 1) {
-          return [nextPreviousItem.item];
-        }
-
-        if (index === context.itemIndex) {
-          return [];
-        }
-
-        return [child];
-      }),
-    ),
-    blockId: context.list.id,
-    selection: createDescendantPrimaryRegionTarget(
-      context.rootIndex,
-      nextPreviousItem.regionChildIndices,
-    ),
-  };
+  return replaceListItems(context.list, indentItemUnderPreviousSibling(context, previousItem), {
+    caret: context.item,
+  });
 }
 
 export function resolveListItemDedent(context: ListItemContext): EditorStateAction | null {
-  return buildLiftedListAction(context, () => ({ insertedItem: context.item }));
+  return liftItemToParentList(context, context.item);
 }
 
 export function resolveListItemMove(
   context: ListItemContext,
   direction: -1 | 1,
 ): EditorStateAction | null {
-  const targetIndex = context.itemIndex + direction;
+  const items = moveItem(context.list.items, context.itemIndex, context.itemIndex + direction);
 
-  if (targetIndex < 0 || targetIndex >= context.list.items.length) {
-    return null;
-  }
-
-  const nextChildren = [...context.list.items];
-  const [item] = nextChildren.splice(context.itemIndex, 1);
-
-  if (!item) {
-    return null;
-  }
-
-  nextChildren.splice(targetIndex, 0, item);
-
-  return {
-    kind: "replace-block",
-    block: rebuildListBlock(context.list, nextChildren),
-    blockId: context.list.id,
-    selection: selectItem(context.rootIndex, context.listChildIndices, targetIndex),
-  };
+  return items ? replaceListItems(context.list, items, { caret: context.item }) : null;
 }
 
-function liftEmptyNestedListItem(context: ListItemContext): EditorStateAction | null {
-  return buildLiftedListAction(context, (parentItem) => {
-    const liftedChecked = typeof parentItem.checked === "boolean" ? false : parentItem.checked;
-    return {
-      insertedItem: createInsertedListItem("", liftedChecked, parentItem.compact),
-      trackInsertedPath: true,
-    };
+function splitListItem(context: ListItemContext, offset: number): EditorStateAction | null {
+  if (offset === 0) {
+    return insertEmptyListItem(context, context.itemIndex);
+  }
+
+  if (offset === context.region.text.length) {
+    return insertEmptyListItem(context, context.itemIndex + 1);
+  }
+
+  return splitListItemTextAtOffset(context, offset);
+}
+
+function insertEmptyListItem(context: ListItemContext, insertIndex: number): EditorStateAction {
+  const insertedItem = createSiblingListItem(context.item, "");
+
+  return replaceListItems(context.list, insertAt(context.list.items, insertIndex, insertedItem), {
+    caret: insertedItem,
+    inserted: insertedItem,
   });
 }
 
-// Lifts the current item out of its nested list and inserts a new
-// item alongside its (now-shrunken) parent in the grandparent list.
-// Shared between `resolveListItemDedent` (which moves the existing
-// item up a level) and `liftEmptyNestedListItem` (which replaces it
-// with a fresh empty item carrying the parent's checked/compact
-// state). The factory builds the inserted item from the validated
-// parent item, so callers don't need to repeat the parent-fields
-// null check.
-function buildLiftedListAction(
+function splitListItemTextAtOffset(
   context: ListItemContext,
-  buildInsertion: (parentItem: ListItemBlock) => {
-    insertedItem: ListItemBlock;
-    trackInsertedPath?: boolean;
-  },
+  offset: number,
 ): EditorStateAction | null {
-  if (
-    !context.parentItem ||
-    context.parentItemIndex === null ||
-    !context.parentItemChildIndices ||
-    !context.parentList ||
-    !context.parentListChildIndices
-  ) {
+  const text = context.region.text;
+  const updatedItem = replaceListItemLeadingParagraphText(context.item, text.slice(0, offset));
+
+  if (!updatedItem) {
     return null;
   }
 
-  const remainingNestedChildren = context.list.items.filter(
-    (_, index) => index !== context.itemIndex,
+  const insertedItem = createSiblingListItem(context.item, text.slice(offset));
+  const items = insertAt(
+    replaceAt(context.list.items, context.itemIndex, updatedItem),
+    context.itemIndex + 1,
+    insertedItem,
   );
-  const updatedParentChildren = context.parentItem.children.flatMap((child) => {
-    if (child.type !== "list" || child.id !== context.list.id) {
-      return [child];
-    }
 
-    if (remainingNestedChildren.length === 0) {
-      return [];
-    }
-
-    return [rebuildListBlock(context.list, remainingNestedChildren)];
+  return replaceListItems(context.list, items, {
+    caret: insertedItem,
+    inserted: insertedItem,
   });
-  const updatedParentItem = rebuildListItemBlock(context.parentItem, updatedParentChildren);
-  const { insertedItem, trackInsertedPath = false } = buildInsertion(context.parentItem);
-  const insertedItemPath = trackInsertedPath
-    ? resolveInsertedItemPath(insertedItem, context.rootIndex, [
-        ...context.parentListChildIndices,
-        context.parentItemIndex + 1,
-      ])
-    : undefined;
+}
+
+function indentItemUnderPreviousSibling(
+  context: ListItemContext,
+  previousItem: ListItemBlock,
+): ListItemBlock[] {
+  const previousItemWithNestedItem = appendNestedListItem(
+    previousItem,
+    context.item,
+    context.list,
+  );
+  const itemsWithNestedItem = replaceAt(
+    context.list.items,
+    context.itemIndex - 1,
+    previousItemWithNestedItem,
+  );
+
+  return removeAt(itemsWithNestedItem, context.itemIndex);
+}
+
+function liftItemToParentList(
+  context: ListItemContext,
+  liftedItem: ListItemBlock,
+  intent: { inserted?: ListItemBlock } = {},
+): EditorStateAction | null {
+  if (!context.parent) {
+    return null;
+  }
+
+  const remainingNestedItems = removeAt(context.list.items, context.itemIndex);
+  const updatedParentItem = rebuildListItemBlock(
+    context.parent.item,
+    context.parent.item.children.flatMap((child) => {
+      if (child.type !== "list" || child.id !== context.list.id) {
+        return [child];
+      }
+
+      return remainingNestedItems.length > 0
+        ? [rebuildListBlock(context.list, remainingNestedItems)]
+        : [];
+    }),
+  );
+  const parentItems = insertAt(
+    replaceAt(context.parent.list.items, context.parent.itemIndex, updatedParentItem),
+    context.parent.itemIndex + 1,
+    liftedItem,
+  );
+
+  return replaceListItems(context.parent.list, parentItems, {
+    caret: liftedItem,
+    inserted: intent.inserted,
+  });
+}
+
+function exitList(context: ListItemContext): EditorStateAction {
+  const paragraph = createParagraphTextBlock("");
 
   return {
-    kind: "replace-block",
-    block: rebuildListBlock(context.parentList, [
-      ...context.parentList.items.slice(0, context.parentItemIndex),
-      updatedParentItem,
-      insertedItem,
-      ...context.parentList.items.slice(context.parentItemIndex + 1),
-    ]),
-    blockId: context.parentList.id,
-    effect: resolveInsertedListItemEffect(insertedItemPath),
-    selection: selectItem(
-      context.rootIndex,
-      context.parentListChildIndices,
-      context.parentItemIndex + 1,
-    ),
+    kind: "splice-blocks",
+    blocks: replaceItemWithRootBlock(context.list, context.itemIndex, paragraph),
+    rootIndex: context.rootIndex,
+    selection: target.block(paragraph),
   };
 }
 
-function resolveInsertedItemPath(
-  item: ListItemBlock,
-  rootIndex: number,
-  childIndices: number[],
-): string | undefined {
-  return typeof item.checked === "boolean"
-    ? undefined
-    : resolveListItemPath(rootIndex, childIndices);
+function replaceListItems(
+  list: ListBlock,
+  items: ListItemBlock[],
+  intent: ListActionIntent,
+): EditorStateAction {
+  return {
+    kind: "replace-block",
+    block: rebuildListBlock(list, items),
+    blockId: list.id,
+    effect: intent.inserted ? insertedListItemEffect(intent.inserted) : undefined,
+    selection: target.block(intent.caret),
+  };
 }
 
-function resolveInsertedListItemEffect(blockPath: string | undefined) {
-  return blockPath ? { blockPath, kind: "list-item-inserted" as const } : undefined;
+function insertedListItemEffect(item: ListItemBlock) {
+  return isTaskItem(item) ? undefined : effect.listItemInserted(item);
+}
+
+function createSiblingListItem(item: ListItemBlock, text: string) {
+  return createInsertedListItem(text, isTaskItem(item) ? false : item.checked, item.compact);
+}
+
+function atStartOfEmptyItem(context: ListItemContext, offset: number) {
+  return offset === 0 && context.region.text.length === 0;
+}
+
+function isTaskItem(item: ListItemBlock) {
+  return typeof item.checked === "boolean";
+}
+
+function replaceItemWithRootBlock(list: ListBlock, itemIndex: number, block: Block): Block[] {
+  const beforeItems = list.items.slice(0, itemIndex);
+  const afterItems = list.items.slice(itemIndex + 1);
+  const blocks: Block[] = [];
+
+  if (beforeItems.length > 0) {
+    blocks.push(rebuildListBlock(list, beforeItems));
+  }
+
+  blocks.push(block);
+
+  if (afterItems.length > 0) {
+    blocks.push(rebuildListBlock(list, afterItems));
+  }
+
+  return blocks;
 }
 
 function appendNestedListItem(
   previousItem: ListItemBlock,
   item: ListItemBlock,
-  context: ListItemContext,
-): { item: ListItemBlock; regionChildIndices: number[] } {
-  const existingNestedListIndex = previousItem.children.findIndex(
-    (child) =>
-      child.type === "list" &&
-      child.ordered === context.list.ordered &&
-      child.start === context.list.start,
+  list: ListBlock,
+): ListItemBlock {
+  const existingNestedList = previousItem.children.find((child): child is ListBlock =>
+    isCompatibleListBlock(child, list),
   );
 
-  if (existingNestedListIndex >= 0) {
-    const existingNestedList = previousItem.children[existingNestedListIndex];
-
-    if (!existingNestedList || existingNestedList.type !== "list") {
-      return {
-        item: previousItem,
-        regionChildIndices: [...context.listChildIndices, context.itemIndex - 1, 0],
-      };
-    }
-
-    return {
-      item: rebuildListItemBlock(
-        previousItem,
-        previousItem.children.map((child, index) =>
-          index === existingNestedListIndex
-            ? rebuildListBlock(existingNestedList, [...existingNestedList.items, item])
-            : child,
-        ),
+  if (existingNestedList) {
+    return rebuildListItemBlock(
+      previousItem,
+      previousItem.children.map((child) =>
+        child === existingNestedList
+          ? rebuildListBlock(existingNestedList, [...existingNestedList.items, item])
+          : child,
       ),
-      regionChildIndices: [
-        ...context.listChildIndices,
-        context.itemIndex - 1,
-        existingNestedListIndex,
-        existingNestedList.items.length,
-        0,
-      ],
-    };
+    );
   }
 
-  const nestedList = createListBlock({
-    compact: context.list.compact,
-    items: [item],
-    ordered: context.list.ordered,
-    start: context.list.start,
-  });
-
-  return {
-    item: rebuildListItemBlock(previousItem, [...previousItem.children, nestedList]),
-    regionChildIndices: [
-      ...context.listChildIndices,
-      context.itemIndex - 1,
-      previousItem.children.length,
-      0,
-      0,
-    ],
-  };
+  return rebuildListItemBlock(previousItem, [
+    ...previousItem.children,
+    createListBlock({
+      compact: list.compact,
+      items: [item],
+      ordered: list.ordered,
+      start: list.start,
+    }),
+  ]);
 }

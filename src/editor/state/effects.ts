@@ -1,4 +1,8 @@
-import type { EditorState } from "./types";
+// Semantic editor effects produced by state transitions. These are durable
+// state-layer facts for the host/renderer to interpret; timing and animation
+// policy live outside this subsystem.
+
+import type { Block } from "@/document";
 import { regionInlines } from "./index/inlines";
 import { isInlineRegion } from "./index/query";
 import type { DocumentIndex, EditableRegion } from "./index/types";
@@ -8,6 +12,7 @@ import {
   type EditorSelection,
   type NormalizedEditorSelection,
 } from "./selection";
+import type { EditorState } from "./types";
 
 export type TextInsertedEffect = {
   kind: "text-inserted";
@@ -43,6 +48,58 @@ export type EditorEffect =
   | TextDeletedEffect
   | TextInsertedEffect;
 
+export type BlockReferencedListItemInsertedEffect = {
+  block: Block;
+  kind: "list-item-inserted-block";
+};
+
+// Action-facing effect vocabulary. Commands use this to declare semantic edit
+// effects; helpers return `undefined` when the edit is not renderable as that
+// effect kind.
+export const effect = {
+  // Text inserted into the current selection. Used by ordinary typing and
+  // inline paste highlights.
+  textInsertedAtSelection(
+    documentIndex: DocumentIndex,
+    selection: EditorSelection,
+    insertedText: string,
+  ): TextInsertedEffect | undefined {
+    return resolveTextInsertedEffect(documentIndex, selection, insertedText);
+  },
+
+  // Text inserted into a known editable region. Used when the command already
+  // resolved the target region and can avoid re-normalizing selection.
+  textInsertedAtRegion(
+    region: EditableRegion,
+    startOffset: number,
+    insertedText: string,
+  ): TextInsertedEffect | undefined {
+    return resolveTextInsertedEffectForRegion(region, startOffset, insertedText);
+  },
+
+  // Text deleted from a known editable region. Used by character deletion,
+  // which computes grapheme boundaries before creating the splice action.
+  textDeleted(
+    region: EditableRegion,
+    startOffset: number,
+    endOffset: number,
+    direction: "backward" | "forward",
+    placement: "line-end" | "line-middle" | "soft-line-break",
+  ): TextDeletedEffect | undefined {
+    return resolveTextDeletedEffect(region, startOffset, endOffset, direction, placement);
+  },
+
+  // List item inserted from a block included in this action's payload.
+  // Dispatch materializes the block reference into the committed block path
+  // before exposing it as an `EditorEffect`.
+  listItemInserted(block: Block): BlockReferencedListItemInsertedEffect {
+    return { block, kind: "list-item-inserted-block" };
+  },
+};
+
+// Effects are the state layer's one side channel: callers may attach semantic
+// events to a returned EditorState, but no-op actions must not emit effects
+// onto a reused snapshot.
 const editorEffects = new WeakMap<EditorState, readonly EditorEffect[]>();
 
 export function recordEditorEffects(
@@ -74,7 +131,7 @@ export function takeEditorEffects(state: EditorState): readonly EditorEffect[] {
   return effects;
 }
 
-export function resolveTextInsertedEffect(
+function resolveTextInsertedEffect(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   insertedText: string,
@@ -96,7 +153,7 @@ export function resolveTextInsertedEffect(
   );
 }
 
-export function resolveTextInsertedEffectForRegion(
+function resolveTextInsertedEffectForRegion(
   region: EditableRegion,
   startOffset: number,
   insertedText: string,
@@ -114,7 +171,7 @@ export function resolveTextInsertedEffectForRegion(
   };
 }
 
-export function resolveTextDeletedEffect(
+function resolveTextDeletedEffect(
   region: EditableRegion,
   startOffset: number,
   endOffset: number,

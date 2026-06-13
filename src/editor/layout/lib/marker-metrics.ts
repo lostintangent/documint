@@ -19,6 +19,20 @@ export type LayoutBlockExtent = {
   top: number;
 };
 
+export function mergeLayoutBlockExtent(
+  blockExtents: Map<string, LayoutBlockExtent>,
+  blockId: string,
+  top: number,
+  bottom: number,
+) {
+  const current = blockExtents.get(blockId);
+
+  blockExtents.set(blockId, {
+    bottom: current ? Math.max(current.bottom, bottom) : bottom,
+    top: current ? Math.min(current.top, top) : top,
+  });
+}
+
 // List item content is rendered shifted right by the marker inset (bullet
 // or task checkbox) so the marker can sit in the gutter to its left.
 // Subtract this from `availableWidth` so wrap measurement matches the

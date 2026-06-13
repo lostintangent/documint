@@ -95,6 +95,33 @@ alpha beta delta
   expect(region?.text.slice(0, cursor?.cursorPoint?.offset)).toBe("alpha beta");
 });
 
+test("treats omitted presence anchor kind as text", () => {
+  const state = setup(`anchor target
+
+\`\`\`
+anchor target
+\`\`\`
+`);
+  const [cursor] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: {
+        prefix: "anchor",
+      },
+      id: "agent",
+      username: "Agent",
+    },
+  ]);
+
+  expect(cursor?.cursorPoint).not.toBeNull();
+
+  const region = cursor?.cursorPoint
+    ? state.documentIndex.regionIndex.get(cursor.cursorPoint.regionId)
+    : null;
+
+  expect(region?.block.type).toBe("paragraph");
+  expect(cursor?.cursorPoint?.offset).toBe("anchor".length);
+});
+
 test("preserves exact presence anchor text when matching", () => {
   const state = setup("alpha beta\n");
   const [exactCursor, trimmedCursor] = resolvePresenceTargets(state.documentIndex, [

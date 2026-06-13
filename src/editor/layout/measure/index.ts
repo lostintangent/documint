@@ -4,18 +4,18 @@
 import type { Block } from "@/document";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources } from "@/types";
-import { isContainerBlock, isInertBlock, resolveRegion } from "../../state/index/query";
+import { isContainerBlock, resolveRegion } from "../../state/index/query";
 import { resolveIndexedBlock, type DocumentIndex, type EditableRegion } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
+import { walkLayoutBlocks } from "../lib/block-walk";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
+import { resolveBlockContentMetrics } from "../lib/content-metrics";
 import {
   resolveDocumentLayoutOptions,
   type DocumentLayoutOptions,
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
-import { CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
-import { resolveBlockGap } from "../lib/block-spacing";
-import { resolveListMarkerInset, type LayoutBlockExtent } from "../lib/marker-metrics";
+import { mergeLayoutBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { layoutTable } from "./table";
 import {
   measureTextContainerLines,
@@ -94,7 +94,6 @@ export function measureLayoutSlice(
     string,
     { bottom: number; left: number; right: number; top: number }
   >();
-  const blockIndex = documentIndex.blockIndex;
   const blockExtents = new Map<string, LayoutBlockExtent>();
   const layoutBlocks = resolveLayoutBlockScope(documentIndex);
 
@@ -108,38 +107,30 @@ export function measureLayoutSlice(
   const visibleRegionIds = new Set(documentIndex.regions.map((r) => r.id));
   const seedY = startY ?? resolvedOptions.paddingY;
   let y = seedY;
-  // Cached as the runtime block, not just its id, so the trailing-gap
-  // step can read its `type` without re-querying `blockIndex.get`.
-  let previousLaidOutBlock: DocumentIndex["blocks"][number] | null = null;
-
-  for (const indexedBlock of layoutBlocks) {
+  for (const {
+    blockRegionsInScope,
+    gapBefore,
+    indexedBlock,
+    isInert,
+    previousLaidOutBlock,
+    previousLaidOutBlockIsInert,
+  } of walkLayoutBlocks(documentIndex, {
+    blockGap: resolvedOptions.blockGap,
+    layoutBlocks,
+    visibleRegionIds,
+  })) {
     const block = indexedBlock.block;
-    if (isContainerBlock(indexedBlock)) continue;
-
-    const isInert = isInertBlock(indexedBlock);
-    const blockRegionsInScope = indexedBlock.regionIds.filter((id) => visibleRegionIds.has(id));
-
-    // Skip text/table blocks whose regions aren't in this layout pass
-    // (e.g. when called with a sliced regions array). Inert leaves are
-    // always laid out — they're cheap and estimation accounts for their
-    // height so adjacent regions land at consistent Y.
-    if (!isInert && blockRegionsInScope.length === 0) continue;
 
     // Apply the inter-block gap before laying out (except for the first).
     if (previousLaidOutBlock !== null) {
-      y += resolveBlockGap(
-        blockIndex,
-        previousLaidOutBlock.block.id,
-        indexedBlock.block.id,
-        resolvedOptions.blockGap,
-      );
+      y += gapBefore;
       // Extend the previous block's extent to include the trailing gap so
       // that clicks in heading padding/rules still resolve to that block.
       // Inert leaves are exempt — their bounds should reflect only their
       // own geometry slot so paint can center chrome (e.g. the divider's
       // rule) symmetrically. Clicks in the gap below an inert leaf fall
       // through to the next block rather than snapping back.
-      if (!isInertBlock(previousLaidOutBlock)) {
+      if (!previousLaidOutBlockIsInert) {
         const previousExtent = blockExtents.get(previousLaidOutBlock.block.id);
         if (previousExtent) {
           previousExtent.bottom = Math.max(previousExtent.bottom, y);
@@ -147,15 +138,7 @@ export function measureLayoutSlice(
       }
     }
 
-    const depth = indexedBlock.depth;
-    const left = resolvedOptions.paddingX + depth * resolvedOptions.indentWidth;
-    const listInset = resolveListMarkerInset(documentIndex, indexedBlock.block.id);
-    const codeContentInset = block.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
-    const contentLeft = left + codeContentInset;
-    const availableWidth = Math.max(
-      40,
-      resolvedOptions.width - left - resolvedOptions.paddingX - listInset - codeContentInset * 2,
-    );
+    const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, resolvedOptions);
 
     if (isInert) {
       // Inert leaves (dividers, etc.) reserve a fixed-height slot without
@@ -174,7 +157,7 @@ export function measureLayoutSlice(
         tableContainers,
         cache,
         block,
-        left,
+        contentMetrics.left,
         y,
         resolvedOptions,
         resolvedResources,
@@ -190,17 +173,15 @@ export function measureLayoutSlice(
           container,
           cache,
           block,
-          contentLeft,
+          contentMetrics.contentLeft,
           y,
-          availableWidth,
-          listInset,
+          contentMetrics.availableWidth,
+          contentMetrics.listInset,
           resolvedOptions,
           resolvedResources,
         );
       }
     }
-
-    previousLaidOutBlock = indexedBlock;
   }
 
   // `layout.blocks` is the per-leaf-block bounding-box index used by the
@@ -380,11 +361,5 @@ export function updateBlockExtent(
   blockExtents: Map<string, LayoutBlockExtent>,
   line: Pick<LayoutLine, "blockId" | "height" | "top">,
 ) {
-  const current = blockExtents.get(line.blockId);
-  const nextBottom = line.top + line.height;
-
-  blockExtents.set(line.blockId, {
-    bottom: current ? Math.max(current.bottom, nextBottom) : nextBottom,
-    top: current ? Math.min(current.top, line.top) : line.top,
-  });
+  mergeLayoutBlockExtent(blockExtents, line.blockId, line.top, line.top + line.height);
 }

@@ -4,10 +4,9 @@
 // kind in every measurement phase.
 
 import type { RichInlineItem } from "@chenglou/pretext/rich-inline";
-import type { Mark } from "@/document";
 import type { DocumentResources } from "@/types";
 import { createResourceIconSignature, resolveInlineResource } from "@/editor/resources";
-import { indexedInlineText, type IndexedInline } from "../../state";
+import { indexedInlineText, inlineMarks, type IndexedInline } from "../../state";
 import { resolveInlineTextStyle } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./inline-image";
 import { measureInlineMentionWidth, mentionHorizontalPadding } from "./inline-mention";
@@ -173,8 +172,4 @@ export function resolveInlineReferenceSignature(
     hasMutableResourceDependency: true,
     signature: `resource:${resource.url}:${resource.label}:${createResourceIconSignature(resource.icon)}`,
   };
-}
-
-function inlineMarks(run: IndexedInline): readonly Mark[] {
-  return run.node.type === "text" ? run.node.marks : [];
 }

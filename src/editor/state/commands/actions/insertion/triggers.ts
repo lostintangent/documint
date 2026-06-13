@@ -6,17 +6,13 @@ import {
   createListItemBlock,
   createParagraphTextBlock,
   rebuildListBlock,
+  type Block,
   type HeadingBlock,
 } from "@/document";
 import type { DocumentIndex, EditableRegion } from "../../../index/types";
 import { resolveRegion } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
-import {
-  createDescendantPrimaryRegionTarget,
-  createRootPrimaryRegionTarget,
-  normalizeSelection,
-  type EditorSelection,
-} from "../../../selection";
+import { normalizeSelection, target, type EditorSelection } from "../../../selection";
 import {
   replaceListItemLeadingParagraphText,
   resolveListItemContextFromSelection,
@@ -238,37 +234,18 @@ const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
   {
     // Heading: `# ` through `###### `.
     pattern: compileCreatePattern(/#{1,6}/, { allowIndent: false }),
-    apply: (match, { rootIndex }) => ({
-      kind: "splice-blocks",
-      blocks: [
-        createHeadingTextBlock({
-          depth: match[1]!.length as HeadingBlock["depth"],
-          text: "",
-        }),
-      ],
-      rootIndex,
-      selection: createRootPrimaryRegionTarget(rootIndex),
-    }),
+    apply: (match, { rootIndex }) =>
+      createHeadingAction(rootIndex, match[1]!.length as HeadingBlock["depth"], ""),
   },
   {
     // Blockquote: `> `.
     pattern: compileCreatePattern(/>/, { allowIndent: false }),
-    apply: (_, { rootIndex }) => ({
-      kind: "splice-blocks",
-      blocks: [createBlockquoteBlock([createParagraphTextBlock("")])],
-      rootIndex,
-      selection: createDescendantPrimaryRegionTarget(rootIndex, [0]),
-    }),
+    apply: (_, { rootIndex }) => createBlockquoteAction(rootIndex),
   },
   {
     // Thematic break: `--- `.
     pattern: compileCreatePattern(/---/, { allowIndent: false }),
-    apply: (_, { rootIndex }) => ({
-      kind: "splice-blocks",
-      blocks: [createDividerBlock(), createParagraphTextBlock("")],
-      rootIndex,
-      selection: createRootPrimaryRegionTarget(rootIndex + 1),
-    }),
+    apply: (_, { rootIndex }) => createDividerAction(rootIndex),
   },
 ];
 
@@ -276,17 +253,8 @@ const HEADING_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
   {
     // Change heading depth by typing `#`s in front of existing heading text.
     pattern: compileTransformPattern(/#{1,6}/),
-    apply: (match, { rootIndex }) => ({
-      kind: "splice-blocks",
-      blocks: [
-        createHeadingTextBlock({
-          depth: match[1]!.length as HeadingBlock["depth"],
-          text: match[2]!,
-        }),
-      ],
-      rootIndex,
-      selection: createRootPrimaryRegionTarget(rootIndex),
-    }),
+    apply: (match, { rootIndex }) =>
+      createHeadingAction(rootIndex, match[1]!.length as HeadingBlock["depth"], match[2]!),
   },
 ];
 
@@ -338,29 +306,52 @@ function compileTransformPattern(body: RegExp): RegExp {
   return new RegExp(`^\\s*(${body.source})\\s(.+)$`);
 }
 
-// ---- Shared action factories -----------------------------------------------
+// ---- Trigger action factories ----------------------------------------------
+
+function createHeadingAction(
+  rootIndex: number,
+  depth: HeadingBlock["depth"],
+  text: string,
+): EditorStateAction {
+  const heading = createHeadingTextBlock({ depth, text });
+
+  return replaceRootWithBlocks(rootIndex, [heading], heading);
+}
+
+function createBlockquoteAction(rootIndex: number): EditorStateAction {
+  const paragraph = createParagraphTextBlock("");
+
+  return replaceRootWithBlocks(rootIndex, [createBlockquoteBlock([paragraph])], paragraph);
+}
+
+function createDividerAction(rootIndex: number): EditorStateAction {
+  const paragraph = createParagraphTextBlock("");
+
+  return replaceRootWithBlocks(rootIndex, [createDividerBlock(), paragraph], paragraph);
+}
 
 function createListAction(
   rootIndex: number,
   options: { checked: boolean | null; ordered: boolean; start: number | null },
 ): EditorStateAction {
-  return {
-    kind: "splice-blocks",
-    blocks: [
+  const paragraph = createParagraphTextBlock("");
+
+  return replaceRootWithBlocks(
+    rootIndex,
+    [
       createListBlock({
         items: [
           createListItemBlock({
             checked: options.checked,
-            children: [createParagraphTextBlock("")],
+            children: [paragraph],
           }),
         ],
         ordered: options.ordered,
         start: options.start,
       }),
     ],
-    rootIndex,
-    selection: createDescendantPrimaryRegionTarget(rootIndex, [0, 0]),
-  };
+    paragraph,
+  );
 }
 
 // Returns null when the list item's leading paragraph can't be rewritten
@@ -376,20 +367,31 @@ function transformListAction(
     return null;
   }
 
+  const transformedItem = { ...updatedItem, checked: options.checked };
+
   return {
     kind: "replace-block",
     block: rebuildListBlock(
       context.list,
       context.list.items.map((item, index) =>
-        index === context.itemIndex ? { ...updatedItem, checked: options.checked } : item,
+        index === context.itemIndex ? transformedItem : item,
       ),
       { ordered: options.ordered, start: options.start },
     ),
     blockId: context.list.id,
-    selection: createDescendantPrimaryRegionTarget(context.rootIndex, [
-      ...context.listChildIndices,
-      context.itemIndex,
-      0,
-    ]),
+    selection: target.block(transformedItem),
+  };
+}
+
+function replaceRootWithBlocks(
+  rootIndex: number,
+  blocks: Block[],
+  caret: Block,
+): EditorStateAction {
+  return {
+    kind: "splice-blocks",
+    blocks,
+    rootIndex,
+    selection: target.block(caret),
   };
 }

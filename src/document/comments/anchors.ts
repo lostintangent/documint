@@ -16,11 +16,10 @@
  */
 
 import {
-  clamp,
   createAnchorFromContainer,
   DEFAULT_ANCHOR_KIND,
+  enumerateTextAnchorRanges,
   extractQuoteFromContainer,
-  findContextRanges,
   findOccurrences,
   listAnchorContainers,
   prefixMatchesAt,
@@ -69,17 +68,25 @@ export function resolveCommentThread(
   snapshot: Document,
   previousMatch: AnchorMatch | null = null,
 ): CommentResolution {
+  return resolveCommentThreadInContainers(thread, listAnchorContainers(snapshot), previousMatch);
+}
+
+export function resolveCommentThreadInContainers(
+  thread: CommentThread,
+  containers: AnchorContainer[],
+  previousMatch: AnchorMatch | null = null,
+): CommentResolution {
   const anchorKind = thread.anchor.kind ?? DEFAULT_ANCHOR_KIND;
-  const containers = listAnchorContainers(snapshot).filter(
+  const candidateContainers = containers.filter(
     (container) => container.containerKind === anchorKind,
   );
-  const exactCandidates = collectExactQuoteCandidates(thread, containers);
+  const exactCandidates = collectExactQuoteCandidates(thread, candidateContainers);
 
   if (exactCandidates.length > 0) {
     return finalizeResolution(thread, exactCandidates, null, previousMatch);
   }
 
-  const contextCandidates = collectContextResolutionCandidates(thread, containers);
+  const contextCandidates = collectContextResolutionCandidates(thread, candidateContainers);
 
   if (contextCandidates.length > 0) {
     return finalizeResolution(thread, contextCandidates, "repaired", previousMatch);
@@ -133,62 +140,22 @@ function collectContextResolutionCandidates(thread: CommentThread, containers: A
 function collectContainerContextCandidates(thread: CommentThread, container: AnchorContainer) {
   const candidates: AnchorMatchCandidate[] = [];
   const originalLength = thread.quote.length;
-  const text = container.text;
-  const prefix = thread.anchor.prefix ?? "";
-  const suffix = thread.anchor.suffix ?? "";
 
-  // Prefix and suffix both present: enumerate every prefix→suffix range and
-  // score each as a candidate. The original-quote length informs the score so
-  // ranges close to the prior length rank higher.
-  if (prefix.length > 0 && suffix.length > 0) {
-    for (const range of findContextRanges(text, prefix, suffix)) {
-      candidates.push({
+  for (const range of enumerateTextAnchorRanges(container, thread.anchor, {
+    estimatedLength: originalLength,
+  })) {
+    candidates.push({
+      container,
+      endOffset: range.endOffset,
+      score: scoreContextCandidate(
+        thread,
         container,
-        endOffset: range.endOffset,
-        score: scoreContextCandidate(
-          thread,
-          container,
-          range.startOffset,
-          range.endOffset,
-          originalLength,
-        ),
-        startOffset: range.startOffset,
-      });
-    }
-
-    return candidates;
-  }
-
-  // Only one side of context survives: anchor at every occurrence and estimate
-  // the missing edge using the prior quote length.
-  if (prefix.length > 0) {
-    for (const prefixIndex of findOccurrences(text, prefix)) {
-      const startOffset = prefixIndex + prefix.length;
-      const endOffset = clamp(startOffset + originalLength, startOffset, text.length);
-
-      candidates.push({
-        container,
-        endOffset,
-        score: scoreContextCandidate(thread, container, startOffset, endOffset, originalLength),
-        startOffset,
-      });
-    }
-
-    return candidates;
-  }
-
-  if (suffix.length > 0) {
-    for (const suffixIndex of findOccurrences(text, suffix)) {
-      const endOffset = suffixIndex;
-      const startOffset = clamp(endOffset - originalLength, 0, endOffset);
-
-      candidates.push({
-        container,
-        endOffset,
-        score: scoreContextCandidate(thread, container, startOffset, endOffset, originalLength),
-        startOffset,
-      });
-    }
+        range.startOffset,
+        range.endOffset,
+        originalLength,
+      ),
+      startOffset: range.startOffset,
+    });
   }
 
   return candidates;

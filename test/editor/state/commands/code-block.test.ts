@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { insertCodeBlock, insertLineBreak } from "@/editor/state";
+import { deleteBackward, deleteForward, insertCodeBlock, insertLineBreak } from "@/editor/state";
 import { getRegion, placeAt, setup, toMarkdown } from "../../helpers";
 
 describe("Code block insertion", () => {
@@ -75,5 +75,53 @@ describe("Code block line breaks", () => {
 
     expect(toMarkdown(state)).toBe("```\nalpha\n\n\nbeta\n```\n");
     expect(state.documentIndex.regions).toHaveLength(1);
+  });
+});
+
+describe("Code block deletion", () => {
+  test("backspace at the start of an empty code block demotes it to an empty paragraph", () => {
+    let state = setup("```\n\n```\n");
+    const code = state.documentIndex.regions[0];
+
+    if (!code) {
+      throw new Error("Expected code region");
+    }
+
+    state = placeAt(state, code, 0);
+    state = deleteBackward(state) ?? state;
+
+    const paragraph = state.documentIndex.regions[0];
+
+    expect(toMarkdown(state)).toBe("\n");
+    expect(paragraph?.block.type).toBe("paragraph");
+    expect(paragraph?.text).toBe("");
+    expect(state.selection.focus.regionId).toBe(paragraph?.id);
+    expect(state.selection.focus.offset).toBe(0);
+  });
+
+  test("backspace at the start of a non-empty code block leaves source intact", () => {
+    let state = setup("Before\n\n```ts\nconst x = 1;\n```\n");
+    const code = state.documentIndex.regions.find((region) => region.block.type === "code");
+
+    if (!code) {
+      throw new Error("Expected code region");
+    }
+
+    state = placeAt(state, code, 0);
+    state = deleteBackward(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("Before\n\n```ts\nconst x = 1;\n```\n");
+    expect(state.documentIndex.regions.some((region) => region.block.type === "code")).toBe(true);
+  });
+
+  test("forward delete before a non-empty code block leaves source intact", () => {
+    let state = setup("Before\n\n```ts\nconst x = 1;\n```\n");
+    const paragraph = getRegion(state, "Before");
+
+    state = placeAt(state, paragraph, "end");
+    state = deleteForward(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("Before\n\n```ts\nconst x = 1;\n```\n");
+    expect(state.documentIndex.regions.some((region) => region.block.type === "code")).toBe(true);
   });
 });

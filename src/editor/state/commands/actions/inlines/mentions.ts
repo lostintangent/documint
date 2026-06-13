@@ -2,7 +2,7 @@
 import { createMention, createText } from "@/document";
 import type { InlineContext } from "../../context";
 import type { EditorStateAction } from "../../../types";
-import { spliceInlineContainer } from "./shared";
+import { createInlineReplacementAction, spliceInlineContainer } from "./shared";
 
 export function resolveMentionReplacement(
   context: InlineContext,
@@ -20,8 +20,5 @@ export function resolveMentionReplacement(
     ],
   );
 
-  return {
-    kind: "replace-block",
-    ...replacement,
-  };
+  return createInlineReplacementAction(replacement);
 }

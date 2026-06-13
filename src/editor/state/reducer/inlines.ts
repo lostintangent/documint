@@ -8,7 +8,9 @@
 // These primitives operate on IndexedInline arrays and produce either new
 // IndexedInline arrays or document-side Inline nodes ready to slot back into a
 // Block. Inline text is derived from the node or the owning region; it is not
-// duplicated here.
+// duplicated here. Structured inline commands use
+// commands/actions/inlines/shared.ts instead, where replacement payloads are
+// still document `Inline[]` trees.
 
 import {
   createImage as createDocumentImageNode,

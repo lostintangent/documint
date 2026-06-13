@@ -271,6 +271,48 @@ export function findContextRanges(
   return ranges;
 }
 
+// Enumerate the raw ranges described by a text anchor inside one container.
+// With both prefix and suffix, the range is the text between them. With one
+// side only, the known edge is exact and the missing edge is estimated from
+// `estimatedLength` so consumers that track spans can keep producing ranges.
+// Point-like consumers can omit `estimatedLength` and use the collapsed range.
+export function enumerateTextAnchorRanges(
+  target: AnchorContainer | string,
+  anchor: TextAnchor,
+  options: { estimatedLength?: number } = {},
+): Array<{ startOffset: number; endOffset: number }> {
+  const prefix = anchor.prefix ?? "";
+  const suffix = anchor.suffix ?? "";
+  const estimatedLength = Math.max(0, options.estimatedLength ?? 0);
+  const text = typeof target === "string" ? target : target.text;
+
+  if (prefix.length > 0 && suffix.length > 0) {
+    return findContextRanges(text, prefix, suffix);
+  }
+
+  if (prefix.length > 0) {
+    return findOccurrences(text, prefix).map((prefixIndex) => {
+      const startOffset = prefixIndex + prefix.length;
+      return {
+        endOffset: clamp(startOffset + estimatedLength, startOffset, text.length),
+        startOffset,
+      };
+    });
+  }
+
+  if (suffix.length > 0) {
+    return findOccurrences(text, suffix).map((suffixIndex) => {
+      const endOffset = suffixIndex;
+      return {
+        endOffset,
+        startOffset: clamp(endOffset - estimatedLength, 0, endOffset),
+      };
+    });
+  }
+
+  return [];
+}
+
 // Verify that `prefix` ends exactly at `position` in `text`. Returns `false`
 // for an absent prefix so consumers can score against optional descriptors
 // uniformly. The inverse of the prefix capture done by `captureContextWindows`.

@@ -1,18 +1,19 @@
 import {
-  childBlockPath,
   createListItemBlock,
   createParagraphTextBlock,
   rebuildListItemBlock,
-  rootBlockPath,
   type Block,
+  type CodeBlock,
+  type HeadingBlock,
+  type Inline,
   type ListBlock,
   type ListItemBlock,
+  type ParagraphBlock,
   type TableBlock,
+  type TableCell,
 } from "@/document";
 import {
   findAncestorIndexedBlock,
-  resolveBlock,
-  resolveBlockChildIndices,
   resolveIndexedBlock,
   resolveParentIndexedBlock,
   resolveRegion,
@@ -20,7 +21,6 @@ import {
   resolveSiblingRootBlock,
   resolveTableCellPosition,
 } from "../index/query";
-import { resolveInlineContainer, type InlineContainer } from "./inlines";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 import {
   isSelectionCollapsed,
@@ -34,6 +34,8 @@ import type { EditorState } from "../types";
 // editing context is active at the current selection?" so commands can stay
 // thin and route policy into the action layer. It also owns a small set of
 // shared structural lookup/build helpers that multiple action modules reuse.
+
+// --- Context shapes ---
 
 export type TextContextFacts = {
   atEnd: boolean;
@@ -59,6 +61,21 @@ export type InlineContext = TextRangeContext & {
   inlineContainer: InlineContainer;
 };
 
+export type InlineContainer =
+  | {
+      block: HeadingBlock | ParagraphBlock;
+      children: Inline[];
+      kind: "inlineBlock";
+      regionPath: string;
+    }
+  | {
+      block: TableBlock;
+      cell: TableCell;
+      children: Inline[];
+      kind: "tableCell";
+      regionPath: string;
+    };
+
 export type RootTextBlockContext = TextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
   region: DocumentIndex["regions"][number];
@@ -74,7 +91,6 @@ export type RootBlockInsertionContext = RootTextBlockContext & {
 
 export type BlockquoteTextBlockContext = TextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
-  blockChildIndices: number[];
   childIndex: number;
   region: DocumentIndex["regions"][number];
   quote: Extract<Block, { type: "blockquote" }>;
@@ -82,7 +98,7 @@ export type BlockquoteTextBlockContext = TextContextFacts & {
 };
 
 export type CodeBlockContext = TextContextFacts & {
-  region: EditableRegion;
+  region: EditableRegion & { block: CodeBlock };
   rootIndex: number;
   selection: EditorSelection;
 };
@@ -102,6 +118,10 @@ export type BlockContext =
 export type DeletionDirection = "backward" | "forward";
 
 export type DeletionContext =
+  | ({
+      atBoundary: boolean;
+      direction: DeletionDirection;
+    } & CodeBlockContext & { kind: "code" })
   | ({
       atBoundary: boolean;
       direction: DeletionDirection;
@@ -158,15 +178,6 @@ export function resolveInlineTargetContext(
   return range ? resolveInlineContextFromTextRange(state, range) : null;
 }
 
-function resolveInlineContextFromTextRange(
-  state: EditorState,
-  range: TextRangeContext,
-): InlineContext | null {
-  const inlineContainer = resolveInlineContainer(state.documentIndex, range.region.id);
-
-  return inlineContainer ? { ...range, inlineContainer } : null;
-}
-
 export function resolveInlineContext(state: EditorState): InlineContext | null {
   const selection = normalizeSelection(state);
 
@@ -177,6 +188,60 @@ export function resolveInlineContext(state: EditorState): InlineContext | null {
   const range = resolveTextRangeContext(state, selection.start.offset, selection.end.offset);
 
   return range ? resolveInlineContextFromTextRange(state, range) : null;
+}
+
+function resolveInlineContextFromTextRange(
+  state: EditorState,
+  range: TextRangeContext,
+): InlineContext | null {
+  const inlineContainer = resolveInlineContainer(state.documentIndex, range.region.id);
+
+  return inlineContainer ? { ...range, inlineContainer } : null;
+}
+
+function resolveInlineContainer(
+  documentIndex: DocumentIndex,
+  regionId: string,
+): InlineContainer | null {
+  const region = resolveRegion(documentIndex, regionId);
+
+  return region ? resolveInlineContainerFromRegion(region.block, region) : null;
+}
+
+// Build an `InlineContainer` from a resolved document block plus its runtime
+// `EditableRegion`. The region already carries the selection target path and
+// table-cell position from the index, so callers never parse path strings.
+function resolveInlineContainerFromRegion(
+  block: Block,
+  region: EditableRegion,
+): InlineContainer | null {
+  if (block.type === "heading" || block.type === "paragraph") {
+    return {
+      block,
+      children: block.children,
+      kind: "inlineBlock",
+      regionPath: region.path,
+    };
+  }
+
+  const tableCellPosition = resolveTableCellPosition(region);
+
+  if (block.type !== "table" || !tableCellPosition) {
+    return null;
+  }
+
+  const { rowIndex, cellIndex } = tableCellPosition;
+  const cell = block.rows[rowIndex]?.cells[cellIndex];
+
+  return cell
+    ? {
+        block,
+        cell,
+        children: cell.children,
+        kind: "tableCell",
+        regionPath: region.path,
+      }
+    : null;
 }
 
 export function resolveBlockContext(state: EditorState): BlockContext | null {
@@ -195,10 +260,11 @@ function resolveBlockContextFromSelection(
 
   if (region.block.type === "code") {
     const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
+    const codeRegion = region as EditableRegion & { block: CodeBlock };
     return indexedBlock
       ? {
           kind: "code",
-          region,
+          region: codeRegion,
           rootIndex: indexedBlock.rootIndex,
           selection,
           ...resolveTextContextFacts(documentIndex, region, selection),
@@ -284,25 +350,21 @@ export function resolveDeletionContext(
         nextSibling: ctx.quote.children[ctx.childIndex + 1] ?? null,
       };
     case "code":
+      return {
+        ...ctx,
+        kind: "code",
+        direction,
+        atBoundary,
+      };
     case "tableCell":
-      // No structural deletion semantic for code blocks or table cells —
-      // backspace/forward-delete inside these is handled by the
-      // character-delete or in-region splice paths upstream.
+      // No structural deletion semantic for table cells — backspace/forward-
+      // delete inside them is handled by character-delete or in-region splice
+      // paths upstream.
       return null;
   }
 }
 
-// --- Shared structural lookups ---
-
-export function findRootIndex(documentIndex: DocumentIndex, blockId: string) {
-  const indexedBlock = resolveIndexedBlock(documentIndex, blockId);
-
-  if (!indexedBlock) {
-    throw new Error(`Unknown root block: ${blockId}`);
-  }
-
-  return indexedBlock.rootIndex;
-}
+// --- Structural context resolvers ---
 
 export function resolveRootTextBlockContextFromSelection(
   documentIndex: DocumentIndex,
@@ -402,7 +464,6 @@ function resolveBlockquoteTextBlockContextFromSelection(
   return {
     ...resolveTextContextFacts(documentIndex, region, selection),
     block,
-    blockChildIndices: resolveBlockChildIndices(indexedBlock),
     childIndex,
     region,
     quote: rootBlock,
@@ -410,22 +471,18 @@ function resolveBlockquoteTextBlockContextFromSelection(
   };
 }
 
-export function resolveBlockById(documentIndex: DocumentIndex, blockId: string) {
-  return resolveBlock(documentIndex, blockId);
-}
+export type ListParentContext = {
+  item: ListItemBlock;
+  itemIndex: number;
+  list: ListBlock;
+};
 
 export type ListItemContext = TextContextFacts & {
   region: DocumentIndex["regions"][number];
   item: ListItemBlock;
-  itemChildIndices: number[];
   itemIndex: number;
   list: ListBlock;
-  listChildIndices: number[];
-  parentItem: ListItemBlock | null;
-  parentItemChildIndices: number[] | null;
-  parentItemIndex: number | null;
-  parentList: ListBlock | null;
-  parentListChildIndices: number[] | null;
+  parent: ListParentContext | null;
   rootIndex: number;
 };
 
@@ -479,27 +536,21 @@ export function resolveListItemContextFromSelection(
   const parentItem = indexedParentItem?.block.type === "listItem" ? indexedParentItem.block : null;
   const parentList = indexedParentList?.block.type === "list" ? indexedParentList.block : null;
   const parentItemIndex =
-    parentList?.type === "list" && parentItem
+    parentList && parentItem
       ? parentList.items.findIndex((child) => child.id === parentItem.id)
       : -1;
+  const parent =
+    parentItem && parentList && parentItemIndex >= 0
+      ? { item: parentItem, itemIndex: parentItemIndex, list: parentList }
+      : null;
 
   return {
     ...resolveTextContextFacts(documentIndex, region, selection),
     region,
     item,
-    itemChildIndices: resolveBlockChildIndices(indexedItem),
     itemIndex,
     list,
-    listChildIndices: resolveBlockChildIndices(indexedList),
-    parentItem: parentItem?.type === "listItem" ? parentItem : null,
-    parentItemChildIndices:
-      indexedParentItem?.block.type === "listItem"
-        ? resolveBlockChildIndices(indexedParentItem)
-        : null,
-    parentItemIndex: parentItemIndex >= 0 ? parentItemIndex : null,
-    parentList: parentList?.type === "list" ? parentList : null,
-    parentListChildIndices:
-      indexedParentList?.block.type === "list" ? resolveBlockChildIndices(indexedParentList) : null,
+    parent,
     rootIndex: indexedList.rootIndex,
   };
 }
@@ -607,8 +658,4 @@ export function replaceListItemLeadingParagraphText(
   }
 
   return rebuildListItemBlock(item, [createParagraphTextBlock(text), ...item.children.slice(1)]);
-}
-
-export function resolveListItemPath(rootIndex: number, childIndices: number[]) {
-  return childIndices.reduce(childBlockPath, rootBlockPath(rootIndex));
 }

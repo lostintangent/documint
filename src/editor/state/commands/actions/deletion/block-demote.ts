@@ -7,7 +7,7 @@ import {
 import type { DocumentIndex, EditableRegion } from "../../../index/types";
 import { firstInFlowRegionOfRoot, resolveRootBlock } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
-import { createRootPrimaryRegionTarget } from "../../../selection";
+import { target } from "../../../selection";
 
 // The block-demotion override for backward delete.
 //
@@ -20,10 +20,11 @@ import { createRootPrimaryRegionTarget } from "../../../selection";
 //                     through nested lists; see note in
 //                     `demoteRootBlock` if/when we want to preserve
 //                     nested structure at root).
+//   - empty code    → empty paragraph.
 //
 // Block kinds without a meaningful demoted form (paragraph — already
-// root text; code — multiline source can't fit a paragraph; table /
-// divider / directive / raw — no clean demote semantic) opt out by
+// root text; non-empty code — multiline source can't fit a paragraph;
+// table / divider / directive / raw — no clean demote semantic) opt out by
 // returning null from `demoteRootBlock`, and the gesture falls through
 // to the universal in-flow rule.
 //
@@ -40,8 +41,7 @@ export function resolveBlockDemotion(
   documentIndex: DocumentIndex,
   region: EditableRegion,
 ): EditorStateAction | null {
-  const firstInFlow = firstInFlowRegionOfRoot(documentIndex, region.rootIndex);
-  if (!firstInFlow || firstInFlow.id !== region.id) {
+  if (!isFirstInFlowRootRegion(documentIndex, region)) {
     return null;
   }
 
@@ -50,8 +50,9 @@ export function resolveBlockDemotion(
     return null;
   }
 
-  const demoted = demoteRootBlock(rootBlock);
-  if (!demoted) {
+  const blocks = demoteRootBlock(rootBlock);
+  const focusBlock = blocks?.[0];
+  if (!blocks || !focusBlock) {
     return null;
   }
 
@@ -59,9 +60,15 @@ export function resolveBlockDemotion(
     kind: "splice-blocks",
     rootIndex: region.rootIndex,
     count: 1,
-    blocks: demoted,
-    selection: createRootPrimaryRegionTarget(region.rootIndex),
+    blocks,
+    selection: target.block(focusBlock),
   };
+}
+
+function isFirstInFlowRootRegion(documentIndex: DocumentIndex, region: EditableRegion): boolean {
+  const firstInFlow = firstInFlowRegionOfRoot(documentIndex, region.rootIndex);
+
+  return Boolean(firstInFlow && firstInFlow.id === region.id);
 }
 
 // Returns the root-level demoted form of a block, or null when the
@@ -80,6 +87,8 @@ function demoteRootBlock(block: Block): Block[] | null {
       return [...block.children];
     case "list":
       return flattenListItemsToParagraphs(block.items);
+    case "code":
+      return block.source.length === 0 ? [createParagraphTextBlock("")] : null;
     default:
       return null;
   }

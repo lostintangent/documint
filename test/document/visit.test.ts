@@ -10,8 +10,11 @@ import {
   createParagraphBlock,
   createResource,
   createText,
+  createListBlock,
+  createListItemBlock,
   extractPlainTextFromInlineNodes,
   findBlockById,
+  findBlockChildIndicesByReference,
   mapInlines,
   measureInlineNodeText,
   visitBlockTree,
@@ -251,5 +254,40 @@ Second
     expect(resolved?.type).toBe("paragraph");
     expect(resolved?.plainText).toBe("Inside");
     expect(findBlockById(snapshot.blocks, "missing-block")).toBeNull();
+  });
+
+  test("locates blocks by reference identity in un-normalized trees", () => {
+    const paragraph = createParagraphTextBlock("inside item");
+    const item = createListItemBlock({ checked: null, children: [paragraph], compact: true });
+    const list = createListBlock({ compact: true, items: [item], ordered: false, start: null });
+    const intro = createParagraphTextBlock("intro");
+
+    expect(findBlockChildIndicesByReference([intro, list], list)).toEqual({
+      childIndices: [],
+      rootOffset: 1,
+    });
+    expect(findBlockChildIndicesByReference([intro, list], item)).toEqual({
+      childIndices: [0],
+      rootOffset: 1,
+    });
+    expect(findBlockChildIndicesByReference([intro, list], paragraph)).toEqual({
+      childIndices: [0, 0],
+      rootOffset: 1,
+    });
+    expect(findBlockChildIndicesByReference([intro, list], intro)).toEqual({
+      childIndices: [],
+      rootOffset: 0,
+    });
+  });
+
+  test("matches by object identity, not content equality", () => {
+    const original = createParagraphTextBlock("twin");
+    const twin = createParagraphTextBlock("twin");
+
+    expect(findBlockChildIndicesByReference([original], twin)).toBeNull();
+    expect(findBlockChildIndicesByReference([original], original)).toEqual({
+      childIndices: [],
+      rootOffset: 0,
+    });
   });
 });

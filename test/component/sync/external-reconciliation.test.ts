@@ -6,8 +6,7 @@ import {
 } from "@/component/sync";
 import {
   createEditorState,
-  createRootPrimaryRegionTarget,
-  resolveSelectionTarget,
+  resolveRootPrimaryRegion,
   setSelection,
   type EditorSelection,
   type EditorState,
@@ -247,10 +246,13 @@ function insertTransientEmptyRootParagraph(markdown: string, rootIndex: number) 
     createParagraphTextBlock(""),
   ]);
   const nextState = createEditorState(nextDocument);
-  const selection = resolveSelectionTarget(
-    nextState.documentIndex,
-    createRootPrimaryRegionTarget(rootIndex),
-  );
+  const region = resolveRootPrimaryRegion(nextState.documentIndex, rootIndex);
+  const selection = region
+    ? {
+        anchor: { regionId: region.id, offset: 0 },
+        focus: { regionId: region.id, offset: 0 },
+      }
+    : null;
 
   if (!selection) {
     throw new Error(`Missing inserted empty paragraph at root index ${rootIndex}`);

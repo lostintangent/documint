@@ -9,8 +9,8 @@
  */
 
 import {
-  findContextRanges,
-  findOccurrences,
+  DEFAULT_ANCHOR_KIND,
+  enumerateTextAnchorRanges,
   isCommentThreadAnchor,
   isResolvedCommentThread,
   type Anchor,
@@ -142,55 +142,23 @@ function resolvePresenceCursorPoint(
 }
 
 function filterAnchorContainers(containers: AnchorContainer[], anchor: TextAnchor) {
-  return anchor.kind
-    ? containers.filter((container) => container.containerKind === anchor.kind)
-    : containers;
+  const anchorKind = anchor.kind ?? DEFAULT_ANCHOR_KIND;
+
+  return containers.filter((container) => container.containerKind === anchorKind);
 }
 
 // Dispatch on which side of the anchor descriptor is present. Presence does
 // not score; it requires an unambiguous match, so each branch returns raw
 // candidates and the caller filters by `length === 1`.
 function collectAnchorMatches(containers: AnchorContainer[], anchor: TextAnchor) {
-  if (anchor.prefix && anchor.suffix) {
-    return collectBetweenTextMatches(containers, anchor.prefix, anchor.suffix);
-  }
-
-  if (anchor.prefix) {
-    return collectSingleTextMatches(containers, anchor.prefix, "after");
-  }
-
-  if (anchor.suffix) {
-    return collectSingleTextMatches(containers, anchor.suffix, "before");
-  }
-
-  return [];
-}
-
-function collectSingleTextMatches(
-  containers: AnchorContainer[],
-  text: string,
-  side: "after" | "before",
-) {
   const matches: PresenceMatch[] = [];
 
   for (const container of containers) {
-    for (const startOffset of findOccurrences(container.text, text)) {
+    for (const range of enumerateTextAnchorRanges(container, anchor)) {
       matches.push({
         container,
-        offset: side === "after" ? startOffset + text.length : startOffset,
+        offset: range.startOffset,
       });
-    }
-  }
-
-  return matches;
-}
-
-function collectBetweenTextMatches(containers: AnchorContainer[], prefix: string, suffix: string) {
-  const matches: PresenceMatch[] = [];
-
-  for (const container of containers) {
-    for (const range of findContextRanges(container.text, prefix, suffix)) {
-      matches.push({ container, offset: range.startOffset });
     }
   }
 

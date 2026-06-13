@@ -5,13 +5,14 @@ import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { DocumentIndex } from "../../state";
 import type { DocumentLayoutOptions } from "../lib/options";
-import type { LayoutBlockExtent } from "../lib/marker-metrics";
+import { mergeLayoutBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { updateBlockExtent, type DocumentLayout, type LayoutLine } from "./index";
 import {
   measureTextContainerLines,
   measureTextLineBoundaries,
   resolveBlockTypography,
   type BlockTypography,
+  type MeasuredTextLine,
 } from "./text";
 import type { LayoutCache } from "../state/cache";
 
@@ -22,19 +23,68 @@ type TableRowCell = {
 
 type MeasuredTableRowCell = TableRowCell & {
   typography: BlockTypography;
-  measuredLines: Array<{
-    end: number;
-    height: number;
-    inlineReferences: LayoutLine["inlineReferences"];
-    start: number;
-    text: string;
-    width: number;
-  }>;
+  measuredLines: MeasuredTextLine[];
+};
+
+export type TableColumnMetrics = {
+  cellWidth: number;
+  columnCount: number;
+  columnWidth: number;
+  tableWidth: number;
 };
 
 export const TABLE_CELL_PADDING_X = 10;
 export const TABLE_CELL_PADDING_Y = 8;
 export const TABLE_MIN_WIDTH = 120;
+
+export function resolveTableColumnMetrics(
+  block: Extract<Block, { type: "table" }>,
+  left: number,
+  options: DocumentLayoutOptions,
+): TableColumnMetrics {
+  const columnCount = Math.max(1, ...block.rows.map((row) => row.cells.length));
+  const tableWidth = Math.max(TABLE_MIN_WIDTH, options.width - left - options.paddingX);
+  const columnWidth = tableWidth / columnCount;
+
+  return {
+    cellWidth: Math.max(40, columnWidth - TABLE_CELL_PADDING_X * 2),
+    columnCount,
+    columnWidth,
+    tableWidth,
+  };
+}
+
+export function resolveTableRowHeight(lineHeight: number, cellContentHeights: number[]) {
+  return Math.max(
+    lineHeight + TABLE_CELL_PADDING_Y * 2,
+    ...cellContentHeights.map((height) => height + TABLE_CELL_PADDING_Y * 2),
+  );
+}
+
+export function groupTableRegionsByRow<Entry>(
+  regions: DocumentIndex["regions"],
+  createEntry: (
+    container: DocumentIndex["regions"][number],
+    index: number,
+    position: NonNullable<DocumentIndex["regions"][number]["tableCellPosition"]>,
+  ) => Entry,
+) {
+  const rows = new Map<number, Entry[]>();
+
+  for (const [index, container] of regions.entries()) {
+    const position = container.tableCellPosition;
+
+    if (!position) {
+      continue;
+    }
+
+    const current = rows.get(position.rowIndex) ?? [];
+    current.push(createEntry(container, index, position));
+    rows.set(position.rowIndex, current);
+  }
+
+  return rows;
+}
 
 export function layoutTable(
   lines: LayoutLine[],
@@ -48,9 +98,7 @@ export function layoutTable(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  const columnCount = Math.max(1, ...block.rows.map((row) => row.cells.length));
-  const tableWidth = Math.max(TABLE_MIN_WIDTH, options.width - left - options.paddingX);
-  const columnWidth = tableWidth / columnCount;
+  const { cellWidth, columnWidth } = resolveTableColumnMetrics(block, left, options);
   const rowCells = collectTableRowCells(regions);
 
   let y = top;
@@ -60,18 +108,15 @@ export function layoutTable(
       rowCells.get(rowIndex) ?? [],
       cache,
       block,
-      columnWidth,
-      TABLE_CELL_PADDING_X,
+      cellWidth,
       options.lineHeight,
       options.fontSize,
       resources,
     );
-    const rowHeight = Math.max(
-      options.lineHeight + TABLE_CELL_PADDING_Y * 2,
-      ...measuredCells.map(
-        (entry) =>
-          entry.measuredLines.reduce((total, line) => total + line.height, 0) +
-          TABLE_CELL_PADDING_Y * 2,
+    const rowHeight = resolveTableRowHeight(
+      options.lineHeight,
+      measuredCells.map((entry) =>
+        entry.measuredLines.reduce((total, line) => total + line.height, 0),
       ),
     );
 
@@ -99,7 +144,7 @@ export function layoutTable(
             line.start,
             line.end,
             line.text,
-            columnWidth - TABLE_CELL_PADDING_X * 2,
+            cellWidth,
             cell.typography,
             resources,
           ),
@@ -118,7 +163,7 @@ export function layoutTable(
       });
     }
 
-    updateBlockExtentBounds(blockExtents, block.id, y, y + rowHeight);
+    mergeLayoutBlockExtent(blockExtents, block.id, y, y + rowHeight);
     y += rowHeight;
   }
 
@@ -126,32 +171,17 @@ export function layoutTable(
 }
 
 function collectTableRowCells(regions: DocumentIndex["regions"]) {
-  const rows = new Map<number, TableRowCell[]>();
-
-  for (const container of regions) {
-    const position = container.tableCellPosition;
-
-    if (!position) {
-      continue;
-    }
-
-    const current = rows.get(position.rowIndex) ?? [];
-    current.push({
-      cellIndex: position.cellIndex,
-      container,
-    });
-    rows.set(position.rowIndex, current);
-  }
-
-  return rows;
+  return groupTableRegionsByRow<TableRowCell>(regions, (container, _index, position) => ({
+    cellIndex: position.cellIndex,
+    container,
+  }));
 }
 
 function measureTableRowCells(
   cells: TableRowCell[],
   cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
-  columnWidth: number,
-  TABLE_CELL_PADDING_X: number,
+  cellWidth: number,
   fallbackLineHeight: number,
   baseFontSize: number,
   resources: DocumentResources,
@@ -164,7 +194,7 @@ function measureTableRowCells(
         cache,
         container,
         block,
-        Math.max(40, columnWidth - TABLE_CELL_PADDING_X * 2),
+        cellWidth,
         typography,
         resources,
       );
@@ -176,18 +206,4 @@ function measureTableRowCells(
         measuredLines,
       };
     });
-}
-
-function updateBlockExtentBounds(
-  blockExtents: Map<string, LayoutBlockExtent>,
-  blockId: string,
-  top: number,
-  bottom: number,
-) {
-  const current = blockExtents.get(blockId);
-
-  blockExtents.set(blockId, {
-    bottom: current ? Math.max(current.bottom, bottom) : bottom,
-    top: current ? Math.min(current.top, top) : top,
-  });
 }

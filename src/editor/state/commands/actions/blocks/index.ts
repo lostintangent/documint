@@ -1,77 +1,55 @@
 import {
   createBlockquoteBlock,
-  createCodeBlock,
   createHeadingTextBlock,
   createParagraphTextBlock,
   type Block,
+  type BlockquoteBlock,
   type HeadingBlock,
   type ParagraphBlock,
 } from "@/document";
+import { target } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
-import {
-  createDescendantPrimaryRegionTarget,
-  createRootPrimaryRegionTarget,
-} from "../../../selection";
 import type {
   BlockquoteTextBlockContext,
-  RootBlockInsertionContext,
   RootTextBlockContext,
 } from "../../context";
+import { spliceAt } from "./shared";
 
-// Block-level action resolvers that aren't specific to lists or
-// tables: splits for paragraphs/headings/blockquotes and heading
-// depth shifts. Delete-only behavior (boundary collapse, block
-// demotion, the adjacent-compatible-list seam-merge) lives in
-// `actions/deletion/`.
+// Block-level action resolvers that aren't specific to lists, tables, or code
+// blocks: splits for paragraphs/headings/blockquotes and heading depth shifts.
+// Delete-only behavior (boundary collapse, block demotion, the
+// adjacent-compatible-list seam-merge) lives in `actions/deletion/`.
+//
+// Public resolvers should read as block behavior, not reducer plumbing:
+// decide the block operation, then declare the resulting caret intent.
+
+type BlockActionIntent = {
+  caret: Block;
+  offset?: number | "end";
+};
+
+type BlockSplit = {
+  blocks: Block[];
+  caret: Block;
+};
 
 export function resolveRootTextBlockSplit(
   ctx: RootTextBlockContext,
   offset: number,
 ): EditorStateAction {
-  const textLength = ctx.region.text.length;
-  const beforeText = ctx.region.text.slice(0, offset);
-  const afterText = ctx.region.text.slice(offset);
-  const focusRootIndex = offset === 0 && textLength > 0 ? ctx.rootIndex : ctx.rootIndex + 1;
+  const split = splitRootTextBlock(ctx.block, ctx.region.text, offset);
 
-  return {
-    kind: "splice-blocks",
-    blocks: buildTextBlockSplitBlocks(ctx.block, beforeText, afterText, offset, textLength),
-    rootIndex: ctx.rootIndex,
-    selection: createRootPrimaryRegionTarget(focusRootIndex),
-  };
+  return spliceRootBlocks(ctx.rootIndex, split.blocks, { caret: split.caret });
 }
 
 export function resolveBlockquoteTextBlockSplit(
   ctx: BlockquoteTextBlockContext,
   offset: number,
 ): EditorStateAction {
-  const text = ctx.region.text;
-  const beforeText = text.slice(0, offset);
-  const afterText = text.slice(offset);
-  const splitBlocks = buildTextBlockSplitBlocks(
-    ctx.block,
-    beforeText,
-    afterText,
-    offset,
-    text.length,
-  );
-  const focusChildIndices =
-    offset === 0
-      ? ctx.blockChildIndices
-      : [...ctx.blockChildIndices.slice(0, -1), ctx.blockChildIndices.at(-1)! + 1];
+  const split = splitQuotedTextBlock(ctx.block, ctx.region.text, offset);
+  const quote = replaceBlockquoteChild(ctx.quote, ctx.childIndex, split.blocks);
 
-  return {
-    kind: "splice-blocks",
-    blocks: [
-      createBlockquoteBlock([
-        ...ctx.quote.children.slice(0, ctx.childIndex),
-        ...splitBlocks,
-        ...ctx.quote.children.slice(ctx.childIndex + 1),
-      ]),
-    ],
-    rootIndex: ctx.rootIndex,
-    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, focusChildIndices),
-  };
+  return spliceRootBlocks(ctx.rootIndex, [quote], { caret: split.caret });
 }
 
 export function resolveStructuralBlockquoteSplit(
@@ -82,26 +60,9 @@ export function resolveStructuralBlockquoteSplit(
     return null;
   }
 
-  const beforeBlocks = ctx.quote.children.slice(0, ctx.childIndex);
-  const afterBlocks = ctx.quote.children.slice(ctx.childIndex + 1);
-  const blocks: Block[] = [];
+  const split = splitBlockquoteAtEmptyParagraph(ctx.quote, ctx.childIndex);
 
-  if (beforeBlocks.length > 0) {
-    blocks.push(createBlockquoteBlock(beforeBlocks));
-  }
-
-  blocks.push(createParagraphTextBlock(""));
-
-  if (afterBlocks.length > 0) {
-    blocks.push(createBlockquoteBlock(afterBlocks));
-  }
-
-  return {
-    kind: "splice-blocks",
-    blocks,
-    rootIndex: ctx.rootIndex,
-    selection: createRootPrimaryRegionTarget(ctx.rootIndex + (beforeBlocks.length > 0 ? 1 : 0)),
-  };
+  return spliceRootBlocks(ctx.rootIndex, split.blocks, { caret: split.caret });
 }
 
 export function resolveHeadingDepthShift(
@@ -112,18 +73,13 @@ export function resolveHeadingDepthShift(
     return null;
   }
 
-  const nextDepth = Math.max(1, Math.min(6, ctx.block.depth + direction)) as HeadingBlock["depth"];
+  const heading = shiftHeadingDepth(ctx.block, direction);
 
-  if (nextDepth === ctx.block.depth) {
+  if (!heading) {
     return { kind: "keep-state" };
   }
 
-  return {
-    kind: "splice-blocks",
-    blocks: [createHeadingTextBlock({ depth: nextDepth, text: ctx.block.plainText })],
-    rootIndex: ctx.rootIndex,
-    selection: createRootPrimaryRegionTarget(ctx.rootIndex, ctx.offset),
-  };
+  return spliceRootBlocks(ctx.rootIndex, [heading], { caret: heading, offset: ctx.offset });
 }
 
 export function resolveParagraphBlockquoteIndent(
@@ -133,20 +89,91 @@ export function resolveParagraphBlockquoteIndent(
     return null;
   }
 
+  return spliceRootBlocks(ctx.rootIndex, [createBlockquoteBlock([ctx.block])], {
+    caret: ctx.block,
+    offset: ctx.offset,
+  });
+}
+
+function splitRootTextBlock(
+  block: ParagraphBlock | HeadingBlock,
+  text: string,
+  offset: number,
+): BlockSplit {
+  const blocks = buildTextBlockSplitBlocks(block, text, offset);
+
+  // A non-empty root block split at its start places the caret in the inserted
+  // paragraph above. Empty-block Enter keeps the caret in the original block.
   return {
-    kind: "splice-blocks",
-    blocks: [createBlockquoteBlock([ctx.block])],
-    rootIndex: ctx.rootIndex,
-    selection: createDescendantPrimaryRegionTarget(ctx.rootIndex, [0], ctx.offset),
+    blocks,
+    caret: offset === 0 && text.length > 0 ? blocks[0]! : blocks[1]!,
   };
 }
 
-export function resolveCodeBlockInsertion(context: RootBlockInsertionContext): EditorStateAction {
+function splitQuotedTextBlock(
+  block: ParagraphBlock | HeadingBlock,
+  text: string,
+  offset: number,
+): BlockSplit {
+  const blocks = buildTextBlockSplitBlocks(block, text, offset);
+
+  return {
+    blocks,
+    caret: offset === 0 ? blocks[0]! : blocks[1]!,
+  };
+}
+
+function splitBlockquoteAtEmptyParagraph(
+  quote: BlockquoteBlock,
+  childIndex: number,
+): BlockSplit {
+  const beforeBlocks = quote.children.slice(0, childIndex);
+  const afterBlocks = quote.children.slice(childIndex + 1);
+  const paragraph = createParagraphTextBlock("");
+  const blocks: Block[] = [];
+
+  if (beforeBlocks.length > 0) {
+    blocks.push(createBlockquoteBlock(beforeBlocks));
+  }
+
+  blocks.push(paragraph);
+
+  if (afterBlocks.length > 0) {
+    blocks.push(createBlockquoteBlock(afterBlocks));
+  }
+
+  return {
+    blocks,
+    caret: paragraph,
+  };
+}
+
+function shiftHeadingDepth(block: HeadingBlock, direction: -1 | 1): HeadingBlock | null {
+  const nextDepth = Math.max(1, Math.min(6, block.depth + direction)) as HeadingBlock["depth"];
+
+  return nextDepth === block.depth
+    ? null
+    : createHeadingTextBlock({ depth: nextDepth, text: block.plainText });
+}
+
+function replaceBlockquoteChild(
+  quote: BlockquoteBlock,
+  childIndex: number,
+  blocks: Block[],
+): BlockquoteBlock {
+  return createBlockquoteBlock(spliceAt(quote.children, childIndex, 1, blocks));
+}
+
+function spliceRootBlocks(
+  rootIndex: number,
+  blocks: Block[],
+  intent: BlockActionIntent,
+): EditorStateAction {
   return {
     kind: "splice-blocks",
-    blocks: [createCodeBlock({ source: "" })],
-    rootIndex: context.rootIndex,
-    selection: createRootPrimaryRegionTarget(context.rootIndex),
+    blocks,
+    rootIndex,
+    selection: target.block(intent.caret, intent.offset),
   };
 }
 
@@ -157,19 +184,19 @@ export function resolveCodeBlockInsertion(context: RootBlockInsertionContext): E
 // heading and carries depth) and emits a fresh paragraph for "after".
 function buildTextBlockSplitBlocks(
   block: ParagraphBlock | HeadingBlock,
-  beforeText: string,
-  afterText: string,
+  text: string,
   offset: number,
-  textLength: number,
 ): Block[] {
   if (offset === 0) {
     return [createParagraphTextBlock(""), block];
   }
 
-  if (offset === textLength) {
+  if (offset === text.length) {
     return [block, createParagraphTextBlock("")];
   }
 
+  const beforeText = text.slice(0, offset);
+  const afterText = text.slice(offset);
   const beforeBlock =
     block.type === "heading"
       ? createHeadingTextBlock({ depth: block.depth, text: beforeText })

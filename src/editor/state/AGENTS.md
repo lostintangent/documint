@@ -8,17 +8,20 @@ This is a state-in/state-out layer. Browser events, DOM geometry, layout, clocks
 
 ## Design Principles
 
-- **State transitions are staged.** Commands resolve semantic context, action factories produce declarative `EditorStateAction`s, and the reducer is the only commit point that rewrites documents/indexes/history.
+- **State transitions are staged.** Commands resolve semantic context, actions declare the intended edit, and the reducer is the only commit point that rewrites documents, indexes, history, selection, effects, and anchors/comments.
+- **Commands should read like editor policy.** Action files should describe behavior in domain language first, with mechanical helpers pushed below the main flow. `commands/actions/blocks/list.ts` is the reference shape.
+- **Actions declare intent, not reducer mechanics.** Prefer semantic helpers over inline coordinate or splice arithmetic, and extract shared helpers only when they clarify repeated behavior.
+- **Selection targets are action vocabulary.** Use them to describe where selection should land after a rebuild; use concrete selections only when no rebuild boundary is involved.
 - **The reducer should not know the gesture.** It applies actions, resolves post-edit selections, materializes semantic effects, and keeps anchors/comments consistent without knowing whether the user typed, pasted, clicked, or accepted a completion.
-- **Selection targets survive rebuilds.** Use selection targets for post-edit landing positions that must resolve against the rebuilt document; use concrete selections only when no rebuild boundary is involved.
-- **Reuse mutation primitives.** Prefer existing text splice, inline rewrite, and structural fragment replacement paths over command-specific write paths.
+- **Reuse mutation primitives.** Prefer existing text, inline, fragment, and index rebuild paths over command-specific write paths.
+- **Hot paths stay explicit.** Prefer clear direct control flow when abstraction would add hidden work to index, text, or character-level editing paths.
 - **Effects are semantic, not visual policy.** State decides when a semantic edit occurred; component/renderer policy decides whether and how that effect animates.
 
 ## Subsystem Map
 
 - `commands/` owns the public editing API, command context, action factories, and input rules.
-- `index/` owns the hot-path `Document → DocumentIndex` projection and incremental rebuild helpers.
-- `selection/` owns selection primitives, normalization, selection targets, and selection queries.
+- `index/` owns the hot-path `Document → DocumentIndex` projection, lookup maps, and incremental rebuild helpers.
+- `selection/` owns selection primitives, normalization, action selection targets, and read-only selection queries.
 - `fragments/` owns editor policy for document `Fragment` extraction and insertion.
 - `reducer/` owns concrete state transitions, index rebuilds, selection resolution, history, and anchor/comment consistency.
 - `effects.ts` owns semantic effect resolution and the command-result effect side channel.

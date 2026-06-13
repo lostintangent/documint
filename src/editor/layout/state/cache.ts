@@ -4,7 +4,8 @@
 
 import type { PreparedTextWithSegments } from "@chenglou/pretext";
 import type { DocumentIndex } from "../../state";
-import type { LayoutInlineReference, LineBoundary } from "../measure";
+import type { LineBoundary } from "../measure";
+import type { MeasuredTextLine } from "../measure/text";
 
 export type VirtualLayout = {
   containerIndices: Map<string, number>;
@@ -20,17 +21,7 @@ export type LayoutCache = {
   graphemeWidths: Map<string, Map<string, number>>;
   lineBoundaries: Map<string, LineBoundary[]>;
   measuredContainerHeights: Map<string, number>;
-  measuredLines: Map<
-    string,
-    Array<{
-      end: number;
-      height: number;
-      inlineReferences: LayoutInlineReference[] | null;
-      start: number;
-      text: string;
-      width: number;
-    }>
-  >;
+  measuredLines: Map<string, MeasuredTextLine[]>;
   preparedText: Map<string, PreparedTextWithSegments>;
   virtualLayouts: WeakMap<DocumentIndex, Map<string, VirtualLayout>>;
 };
@@ -60,18 +51,7 @@ export function cachePreparedText(
   return cacheBoundedValue(cache.preparedText, key, value, MAX_PREPARED_TEXT_ENTRIES);
 }
 
-export function cacheMeasuredLines(
-  cache: LayoutCache,
-  key: string,
-  value: Array<{
-    end: number;
-    height: number;
-    inlineReferences: LayoutInlineReference[] | null;
-    start: number;
-    text: string;
-    width: number;
-  }>,
-) {
+export function cacheMeasuredLines(cache: LayoutCache, key: string, value: MeasuredTextLine[]) {
   return cacheBoundedValue(cache.measuredLines, key, value, MAX_MEASURED_LINE_ENTRIES);
 }
 

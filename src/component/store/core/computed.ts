@@ -1,13 +1,9 @@
 import type { DocumintStore } from "..";
-import { defaultEquality, equalRecordByKeys, type Equality } from "./equality";
+import { defaultEquality, type Equality } from "./equality";
 import type { DocumintSprig } from "./sprigs";
 
 type SprigResults<Deps extends readonly DocumintSprig<unknown>[]> = {
   [Index in keyof Deps]: Deps[Index] extends DocumintSprig<infer Value> ? Value : never;
-};
-
-type SprigRecordResults<Values extends Record<string, DocumintSprig<unknown>>> = {
-  [Key in keyof Values]: Values[Key] extends DocumintSprig<infer Value> ? Value : never;
 };
 
 /**
@@ -30,39 +26,6 @@ export function createComputedSprig<const Deps extends readonly DocumintSprig<un
     deps,
     (store, _params, ...values) => read(store, ...values),
     equal,
-  );
-}
-
-/**
- * Build a sprig that bundles several upstream sprigs into a single record,
- * keyed by the same names. The bundled value re-emits only when one of the
- * inner sprigs emits — the record's key-by-key equality (`Object.is` on
- * each field) preserves identity in the steady state.
- *
- * Reach for this when a consumer genuinely wants several derived values
- * together as one snapshot.
- */
-export function createRecordSprig<Values extends Record<string, DocumintSprig<unknown>>>(
-  values: Values,
-): DocumintSprig<SprigRecordResults<Values>> {
-  const entries = Object.entries(values) as Array<[string, Values[keyof Values]]>;
-  const deps = entries.map(([, value]) => value) as DocumintSprig<unknown>[];
-  const keys = entries.map(([key]) => key);
-
-  return createComputedSprig(
-    deps,
-    (_store, ...resolvedValues) => {
-      const record = {} as SprigRecordResults<Values>;
-
-      for (let index = 0; index < keys.length; index++) {
-        record[keys[index]! as keyof Values] = resolvedValues[
-          index
-        ] as SprigRecordResults<Values>[keyof Values];
-      }
-
-      return record;
-    },
-    equalRecordByKeys(keys) as Equality<SprigRecordResults<Values>>,
   );
 }
 

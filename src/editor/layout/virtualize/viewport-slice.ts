@@ -7,8 +7,7 @@
 import type { DocumentResources } from "@/types";
 import { resolveIndexedBlock, resolveRegion, type DocumentIndex } from "../../state";
 import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
-import { CODE_BLOCK_CONTENT_PADDING_X } from "../lib/code-block";
-import { resolveListMarkerInset } from "../lib/marker-metrics";
+import { resolveBlockContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { DocumentLayout } from "../measure";
 import { createContainerHeightCacheKey } from "./height-estimate";
@@ -79,15 +78,16 @@ export function updateMeasuredContainerHeights(
     const height = extent.bottom - extent.top;
     const container = resolveRegion(documentIndex, regionId);
     if (!container) continue;
-    // Mirror the inset applied when estimating this region —
+    const indexedBlock = resolveIndexedBlock(documentIndex, container.block.id);
+    if (!indexedBlock) continue;
+    // Mirror the metrics applied when estimating this region —
     // otherwise the cache key for the measured height won't match the
     // cache key the next estimate pass looks up, defeating the cache.
-    const listInset = resolveListMarkerInset(documentIndex, container.block.id);
-    const codeContentInset = container.block.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
+    const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
 
     cacheMeasuredContainerHeight(
       cache,
-      createContainerHeightCacheKey(container, listInset, codeContentInset, options, resources),
+      createContainerHeightCacheKey(container, contentMetrics, options, resources),
       height,
     );
   }

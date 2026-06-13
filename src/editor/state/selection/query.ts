@@ -100,11 +100,12 @@ function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
   }
 
   const offset = state.selection.anchor.offset;
+  const inlines = regionInlines(container);
 
   return (
-    regionInlines(container).find((entry) => offset > entry.start && offset < entry.end) ??
-    regionInlines(container).find((entry) => entry.end === offset) ??
-    regionInlines(container).find((entry) => entry.start === offset) ??
+    inlines.find((entry) => offset > entry.start && offset < entry.end) ??
+    inlines.find((entry) => entry.end === offset) ??
+    inlines.find((entry) => entry.start === offset) ??
     null
   );
 }

@@ -4,6 +4,7 @@ import {
   createCommentThread,
   deleteCommentFromThread,
   editCommentInThread,
+  enumerateTextAnchorRanges,
   extractQuoteFromContainer,
   getCommentThreadUpdatedAt,
   isResolvedCommentThread,
@@ -99,6 +100,21 @@ describe("Comment anchors", () => {
     expect(resolution.status).toBe("matched");
     expect(resolution.match?.containerKind).toBe("text");
     expect(resolution.repair?.quote).toBe("Promote this");
+  });
+
+  test("enumerates text anchor ranges from raw text", () => {
+    expect(
+      enumerateTextAnchorRanges("alpha beta omega", {
+        prefix: "alpha ",
+        suffix: "beta",
+      }),
+    ).toEqual([{ endOffset: 6, startOffset: 6 }]);
+    expect(
+      enumerateTextAnchorRanges("alpha beta omega", { prefix: "alpha " }, { estimatedLength: 4 }),
+    ).toEqual([{ endOffset: 10, startOffset: 6 }]);
+    expect(
+      enumerateTextAnchorRanges("alpha beta omega", { suffix: " omega" }, { estimatedLength: 4 }),
+    ).toEqual([{ endOffset: 10, startOffset: 6 }]);
   });
 
   test("lists nested anchor containers in visible order", () => {

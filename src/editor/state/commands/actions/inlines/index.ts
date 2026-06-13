@@ -7,6 +7,7 @@
 import type { Inline } from "@/document";
 import type { EditorStateAction } from "../../../types";
 import {
+  createInlineReplacementAction,
   spliceInlineContainer,
   type InlineContainer,
   type InlineContainerReplacement,
@@ -32,35 +33,21 @@ export function resolveInlineRangeReplacement(
 ): EditorStateAction | null {
   const replacement = applyEdit(context.inlineContainer, context.startOffset, context.endOffset);
 
-  return replacement
-    ? {
-        kind: "replace-block",
-        block: replacement.block,
-        blockId: replacement.blockId,
-        selection: replacement.selection,
-      }
-    : null;
+  return replacement ? createInlineReplacementAction(replacement) : null;
 }
 
 // Inserts a single inline node over a resolved inline range.
-export function insertInlineNode(context: InlineContext, node: Inline): EditorStateAction {
-  return {
-    kind: "replace-block",
-    ...spliceInlineContainer(context.inlineContainer, context.startOffset, context.endOffset, [
-      node,
-    ]),
-  };
-}
+export const insertInlineNode = (context: InlineContext, node: Inline): EditorStateAction =>
+  insertInlines(context, [node]);
 
 // Splices a sequence of inline nodes over a resolved inline range.
 export function insertInlines(context: InlineContext, inlines: Inline[]): EditorStateAction {
-  return {
-    kind: "replace-block",
-    ...spliceInlineContainer(
+  return createInlineReplacementAction(
+    spliceInlineContainer(
       context.inlineContainer,
       context.startOffset,
       context.endOffset,
       inlines,
     ),
-  };
+  );
 }

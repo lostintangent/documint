@@ -144,6 +144,50 @@ export function findBlockChildIndicesById(rootBlock: Block, blockId: string): nu
   return null;
 }
 
+// Reference-identity sibling of `findBlockChildIndicesById`: locate `target`
+// within `roots` by object identity and return its structural coordinates.
+// Exists for not-yet-normalized payload trees (editor action payloads), where
+// ids are still unassigned (`""`) and a reference is the only name a caller
+// has for "the block I just built". The returned coordinates remain valid
+// after normalization because id assignment is strictly positional — it never
+// reorders, inserts, or drops children.
+export function findBlockChildIndicesByReference(
+  roots: readonly Block[],
+  target: Block,
+): { childIndices: number[]; rootOffset: number } | null {
+  for (const [rootOffset, root] of roots.entries()) {
+    const childIndices = findChildIndicesByReference(root, target);
+
+    if (childIndices) {
+      return { childIndices, rootOffset };
+    }
+  }
+
+  return null;
+}
+
+function findChildIndicesByReference(block: Block, target: Block): number[] | null {
+  if (block === target) {
+    return [];
+  }
+
+  const children = blockContainerSpec(block)?.read(block);
+
+  if (!children) {
+    return null;
+  }
+
+  for (const [index, child] of children.entries()) {
+    const childIndices = findChildIndicesByReference(child, target);
+
+    if (childIndices) {
+      return [index, ...childIndices];
+    }
+  }
+
+  return null;
+}
+
 export function findBlockByChildIndices(
   rootBlock: Block | null,
   childIndices: readonly number[],

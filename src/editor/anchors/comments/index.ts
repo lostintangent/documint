@@ -18,7 +18,7 @@ import {
   createAnchorFromContainer,
   createCommentThread,
   extractQuoteFromContainer,
-  resolveCommentThread,
+  resolveCommentThreadInContainers,
   type AnchorContainer,
   type CommentResolution,
   type CommentThread,
@@ -102,13 +102,30 @@ export function getCommentState(state: EditorState): EditorCommentState;
 export function getCommentState(documentIndex: DocumentIndex): EditorCommentState;
 export function getCommentState(stateOrIndex: EditorState | DocumentIndex): EditorCommentState {
   const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
+  return resolveCommentStateForThreadIndices(
+    documentIndex,
+    documentIndex.document.comments.map((_, threadIndex) => threadIndex),
+  );
+}
+
+function resolveCommentStateForThreadIndices(
+  documentIndex: DocumentIndex,
+  threadIndices: readonly number[],
+): EditorCommentState {
   const containerProjection = projectAnchorContainersToEditor(documentIndex);
+  const semanticContainers = containerProjection.list();
   const threads = documentIndex.document.comments;
   const resolvedThreads = [...threads];
   const ranges: EditorCommentRange[] = [];
 
-  for (const [threadIndex, thread] of threads.entries()) {
-    const resolution = resolveCommentThread(thread, documentIndex.document);
+  for (const threadIndex of threadIndices) {
+    const thread = threads[threadIndex];
+
+    if (!thread) {
+      continue;
+    }
+
+    const resolution = resolveCommentThreadInContainers(thread, semanticContainers);
 
     if (!resolution.match) {
       continue;
@@ -182,10 +199,12 @@ export function resolveActiveCommentIndex(
   }
 
   const { anchor, focus } = state.selection;
+  const cmp = (
+    left: { offset: number; regionId: string },
+    right: { offset: number; regionId: string },
+  ) => compareEditorPositions(state.documentIndex, left, right, { unknown: "before" });
 
-  const orientation = compareEditorPositions(state.documentIndex, anchor, focus, {
-    unknown: "before",
-  });
+  const orientation = cmp(anchor, focus);
   const isCollapsed = orientation === 0;
   const [start, end] = orientation <= 0 ? [anchor, focus] : [focus, anchor];
 
@@ -195,37 +214,16 @@ export function resolveActiveCommentIndex(
 
     if (isCollapsed) {
       // Caret-in-range: rangeStart ≤ caret ≤ rangeEnd in document order.
-      if (
-        compareEditorPositions(state.documentIndex, rangeStart, start, {
-          unknown: "before",
-        }) <= 0 &&
-        compareEditorPositions(state.documentIndex, start, rangeEnd, {
-          unknown: "before",
-        }) <= 0
-      ) {
+      if (cmp(rangeStart, start) <= 0 && cmp(start, rangeEnd) <= 0) {
         return range.threadIndex;
       }
       continue;
     }
 
     // Open-interval overlap: max(selStart, rangeStart) < min(selEnd, rangeEnd).
-    const overlapStart =
-      compareEditorPositions(state.documentIndex, start, rangeStart, {
-        unknown: "before",
-      }) >= 0
-        ? start
-        : rangeStart;
-    const overlapEnd =
-      compareEditorPositions(state.documentIndex, end, rangeEnd, {
-        unknown: "before",
-      }) <= 0
-        ? end
-        : rangeEnd;
-    if (
-      compareEditorPositions(state.documentIndex, overlapStart, overlapEnd, {
-        unknown: "before",
-      }) < 0
-    ) {
+    const overlapStart = cmp(start, rangeStart) >= 0 ? start : rangeStart;
+    const overlapEnd = cmp(end, rangeEnd) <= 0 ? end : rangeEnd;
+    if (cmp(overlapStart, overlapEnd) < 0) {
       return range.threadIndex;
     }
   }
@@ -294,7 +292,7 @@ export function updateCommentThreadsForRegionEdit(
     return nextDocumentIndex.document.comments;
   }
 
-  const currentCommentState = getCommentState(documentIndex);
+  const currentCommentState = resolveCommentStateForThreadIndices(documentIndex, threadIndices);
   const rangesByThreadIndex = new Map(
     currentCommentState.ranges.map((range) => [range.threadIndex, range]),
   );
@@ -345,7 +343,7 @@ function toAnchorContainer(
   documentIndex: DocumentIndex,
   region: EditableRegion,
 ): AnchorContainer | null {
-  const containerKind = resolveAnchorContainerKind(documentIndex, region);
+  const containerKind = resolveAnchorContainerKind(region);
 
   if (!containerKind) {
     return null;
@@ -359,10 +357,7 @@ function toAnchorContainer(
   };
 }
 
-function resolveAnchorContainerKind(
-  documentIndex: DocumentIndex,
-  region: EditableRegion,
-): AnchorContainer["containerKind"] | null {
+function resolveAnchorContainerKind(region: EditableRegion): AnchorContainer["containerKind"] | null {
   if (region.tableCellPosition) {
     return "tableCell";
   }

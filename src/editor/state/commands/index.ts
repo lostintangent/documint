@@ -17,9 +17,8 @@
 // Commands never reach into reducer internals.
 
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "../reducer/state";
-import { resolveDocumentBoundaryRegion } from "../index/query";
+import { resolveBlock, resolveDocumentBoundaryRegion } from "../index/query";
 import {
-  resolveBlockById,
   resolveBlockContext,
   resolveInlineContext,
   resolveInlineTargetContext,
@@ -63,17 +62,20 @@ import {
   resolvePasteFragmentAction,
   resolvePasteFragmentContext,
 } from "../fragments";
-import { resolveTextRangeReplacement, resolveTextReplacement } from "./actions/insertion/replace";
+import {
+  resolveSelectionTextReplacement,
+  resolveTextRangeReplacement,
+} from "./actions/insertion/replace";
 import {
   resolveListItemDedent,
   resolveListItemIndent,
   resolveListItemMove,
 } from "./actions/blocks/list";
 import {
-  resolveCodeBlockInsertion,
   resolveHeadingDepthShift,
   resolveParagraphBlockquoteIndent,
 } from "./actions/blocks";
+import { resolveCodeBlockInsertion } from "./actions/blocks/code";
 import { resolveDeletion } from "./actions/deletion";
 import {
   resolveTableColumnDeletion,
@@ -107,7 +109,7 @@ export const insertSoftLineBreak = makeCommand(
 
 export const replaceSelection = makeCommand(
   (state, text: string): EditorStateAction =>
-    resolveTextReplacement(state.documentIndex, state.selection, text),
+    resolveSelectionTextReplacement(state.documentIndex, state.selection, text),
 );
 
 export const replaceTextRange = makeCommand(
@@ -288,7 +290,7 @@ export const moveListItemDown = makeCommand(
 );
 
 export const toggleTask = makeCommand((state, listItemId: string) => {
-  const block = resolveBlockById(state.documentIndex, listItemId);
+  const block = resolveBlock(state.documentIndex, listItemId);
 
   if (!block || block.type !== "listItem" || typeof block.checked !== "boolean") {
     return null;

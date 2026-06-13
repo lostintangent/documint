@@ -10,7 +10,7 @@
 // primitive so a contributor reading "where do region inlines come from?"
 // finds both projection and consumption in one place.
 
-import { isReferenceInlineNode, type Inline, type Link } from "@/document";
+import { isReferenceInlineNode, type Inline, type Link, type Mark } from "@/document";
 import type { IndexedInline, EditableRegion } from "./types";
 
 // Contract: `INLINE_OBJECT_REPLACEMENT_TEXT.length === 1`. The document's
@@ -75,6 +75,10 @@ export function projectInlineText(node: Exclude<Inline, Link>): string {
 
 export function indexedInlineText(inline: Pick<IndexedInline, "node">): string {
   return projectInlineText(inline.node);
+}
+
+export function inlineMarks(inline: Pick<IndexedInline, "node">): readonly Mark[] {
+  return inline.node.type === "text" ? inline.node.marks : [];
 }
 
 // Returns the indexed inlines for an inline-bearing region, or an empty array for

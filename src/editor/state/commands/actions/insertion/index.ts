@@ -1,8 +1,8 @@
 import type { DocumentIndex } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
 import type { EditorSelection } from "../../../selection";
-import { resolveTextInsertedEffect } from "../../../effects";
 import { resolvePairedDelimiterInsertion } from "./pairs";
+import { resolveSelectionTextReplacement } from "./replace";
 import { resolveInsertionTrigger } from "./triggers";
 
 // Text insertion dispatcher.
@@ -30,10 +30,7 @@ export function resolveTextInsertion(
 ): EditorStateAction | null {
   return (
     resolvePairedDelimiterInsertion(documentIndex, selection, text) ??
-    resolveInsertionTrigger(documentIndex, selection, text) ?? {
-      effect: resolveTextInsertedEffect(documentIndex, selection, text),
-      kind: "splice-text",
-      text,
-    }
+    resolveInsertionTrigger(documentIndex, selection, text) ??
+    resolveSelectionTextReplacement(documentIndex, selection, text)
   );
 }

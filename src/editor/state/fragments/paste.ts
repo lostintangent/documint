@@ -9,10 +9,10 @@ import {
   type Fragment,
 } from "@/document";
 import { resolveInlineContext, type InlineContext } from "../commands/context";
+import { effect } from "../effects";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 import { normalizeSelection, resolveRegion, type EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
-import { resolveTextInsertedEffect } from "../effects";
 import { insertInlines } from "../commands/actions/inlines";
 
 type FragmentDestinationContext = {
@@ -27,6 +27,8 @@ type PasteFragmentContext = {
   inlineContext: InlineContext | null;
   selection: EditorSelection;
 };
+
+// --- Paste context ----------------------------------------------------------
 
 export function resolvePasteFragmentContext(
   state: EditorState,
@@ -46,6 +48,8 @@ export function resolvePasteFragmentContext(
     selection: state.selection,
   };
 }
+
+// --- Paste action policy ----------------------------------------------------
 
 export function resolvePasteFragmentAction(
   context: PasteFragmentContext,
@@ -133,6 +137,8 @@ function resolveOpaqueFragmentFallback(
   return fallbackText.length > 0 ? { kind: "splice-text", text: fallbackText } : null;
 }
 
+// --- Paste effects ----------------------------------------------------------
+
 // The text that paste landed inline in the destination region. For `text` and
 // `inlines`, that's the whole payload. For a single-paragraph block fragment,
 // it's the paragraph's text because the seam merge absorbs it into the
@@ -167,14 +173,16 @@ function withPastedInlineTextHighlight(
   action: EditorStateAction,
   fragment: Fragment,
 ): EditorStateAction {
-  const effect = resolveTextInsertedEffect(
+  const insertedEffect = effect.textInsertedAtSelection(
     context.documentIndex,
     context.selection,
     resolvePastedInlineText(action, fragment),
   );
 
-  return effect ? { ...action, effect } : action;
+  return insertedEffect ? { ...action, effect: insertedEffect } : action;
 }
+
+// --- Destination classification --------------------------------------------
 
 function resolveFragmentDestinationContext(
   documentIndex: DocumentIndex,

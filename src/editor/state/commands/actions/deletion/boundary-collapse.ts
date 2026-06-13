@@ -1,6 +1,6 @@
 import {
   defragmentTextInlines,
-  findBlockChildIndicesById,
+  findBlockChildIndicesByReference,
   mapBlockTree,
   rebuildTextBlock,
   type Block,
@@ -21,8 +21,7 @@ import {
 import type { DocumentIndex, IndexedBlock, EditableRegion } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
 import {
-  createDescendantPrimaryRegionTarget,
-  createRootPrimaryRegionTarget,
+  target,
   type SelectionTarget,
 } from "../../../selection";
 
@@ -71,52 +70,80 @@ import {
 
 export type DeleteDirection = "backward" | "forward";
 
+type BoundaryMerge = {
+  absorber: EditableRegion;
+  victim: EditableRegion;
+};
+
 export function resolveInFlowBoundaryDelete(
   documentIndex: DocumentIndex,
   region: EditableRegion,
   empty: boolean,
   direction: DeleteDirection,
 ): EditorStateAction | null {
-  // Adjacent inert leaf wins over text-region neighbor. The block-flow
-  // walk includes inert blocks (which the region-flow walk skips), so
-  // an inert block between the caret region and the next text region
-  // is detected here and removed as a unit. A subsequent press
-  // resolves against the new adjacent leaf and applies normal merge.
-  const adjacent =
-    direction === "backward"
-      ? previousBlockInFlow(documentIndex, region.block.id)
-      : nextBlockInFlow(documentIndex, region.block.id);
-  if (adjacent && isInertBlock(adjacent)) {
-    return resolveInertNeighborCollapse(region, adjacent, direction);
+  const inertNeighbor = resolveAdjacentInertBlock(documentIndex, region, direction);
+  if (inertNeighbor) {
+    return resolveInertNeighborCollapse(region, inertNeighbor, direction);
   }
 
-  const neighbor =
-    direction === "backward"
-      ? previousRegionInFlow(documentIndex, region.id)
-      : nextRegionInFlow(documentIndex, region.id);
-
+  const neighbor = resolveAdjacentRegion(documentIndex, region, direction);
   if (!neighbor) {
     return null;
   }
 
   if (empty) {
-    // Empty current region: it's the victim regardless of direction.
-    // Cursor lands at the seam — end of the previous neighbor for
-    // backward, start of the next neighbor for forward.
     return resolveEmptyCollapse(documentIndex, region, neighbor, direction);
   }
 
-  // Non-empty: backward folds R into N; forward folds N into R. The
-  // absorber must accept inline content — code regions and table cells
-  // are excluded — otherwise we no-op.
+  const merge = resolveBoundaryMerge(region, neighbor, direction);
+
+  return merge ? resolveMergeCollapse(documentIndex, merge.victim, merge.absorber) : null;
+}
+
+// Adjacent inert leaf wins over text-region neighbor. The block-flow
+// walk includes inert blocks (which the region-flow walk skips), so
+// an inert block between the caret region and the next text region
+// is detected here and removed as a unit. A subsequent press
+// resolves against the new adjacent leaf and applies normal merge.
+function resolveAdjacentInertBlock(
+  documentIndex: DocumentIndex,
+  region: EditableRegion,
+  direction: DeleteDirection,
+): IndexedBlock | null {
+  const adjacent =
+    direction === "backward"
+      ? previousBlockInFlow(documentIndex, region.block.id)
+      : nextBlockInFlow(documentIndex, region.block.id);
+
+  return adjacent && isInertBlock(adjacent) ? adjacent : null;
+}
+
+function resolveAdjacentRegion(
+  documentIndex: DocumentIndex,
+  region: EditableRegion,
+  direction: DeleteDirection,
+): EditableRegion | null {
+  return direction === "backward"
+    ? previousRegionInFlow(documentIndex, region.id)
+    : nextRegionInFlow(documentIndex, region.id);
+}
+
+// Non-empty boundary collapse: backward folds the current region into
+// the previous region; forward folds the next region into the current
+// region. Both sides must be inline-text blocks. Code regions, table
+// cells, and other opaque regions are excluded because dropping or
+// flattening their content would be data loss.
+function resolveBoundaryMerge(
+  region: EditableRegion,
+  neighbor: EditableRegion,
+  direction: DeleteDirection,
+): BoundaryMerge | null {
   const victim = direction === "backward" ? region : neighbor;
   const absorber = direction === "backward" ? neighbor : region;
 
-  if (!isTextMergeableRegion(absorber)) {
-    return null;
-  }
-
-  return resolveMergeCollapse(documentIndex, victim, absorber);
+  return isTextMergeableRegion(absorber) && isTextMergeableRegion(victim)
+    ? { absorber, victim }
+    : null;
 }
 
 // Inert neighbor collapse: remove the inert leaf block as a unit, leave
@@ -150,10 +177,8 @@ function resolveInertNeighborCollapse(
   };
 }
 
-// True when this region's block can have inline content appended /
-// prepended without changing block kind. Code regions and table cells
-// are excluded because merging arbitrary paragraph content into them
-// isn't meaningful.
+// True when this region's block exposes inline children that can be
+// appended/prepended without changing block kind.
 function isTextMergeableRegion(region: EditableRegion): boolean {
   return region.block.type === "paragraph" || region.block.type === "heading";
 }
@@ -175,13 +200,14 @@ function resolveEmptyCollapse(
   const cursorOffset = direction === "backward" ? absorber.text.length : 0;
   const sameRoot = victim.rootIndex === absorber.rootIndex;
 
-  // Same-root: walk the rebuilt block tree to find the absorber's
-  // (block-id-stable) post-edit position.
-  // Cross-root: the absorber's root is untouched, so its child indices
-  // within that root are unchanged; only its rootIndex shifts iff the
-  // splice changed the doc length.
+  // Same-root: the absorber block survives the rebuild by reference
+  // (`mapBlockTree` only re-creates containers along changed paths), so
+  // target it directly in the payload.
+  // Cross-root: the absorber's root is untouched (and outside the payload),
+  // so its child indices within that root are unchanged; only its rootIndex
+  // shifts iff the splice changed the doc length.
   const cursorTarget = sameRoot
-    ? rebuiltAbsorberTarget(rebuilt, absorber.rootIndex, absorber.block.id, cursorOffset)
+    ? rebuiltAbsorberTarget(rebuilt, absorber.block, cursorOffset)
     : crossRootAbsorberTarget(absorber, victim.rootIndex, rebuilt.length, cursorOffset);
 
   if (!cursorTarget) return null;
@@ -199,17 +225,11 @@ function resolveEmptyCollapse(
 // paragraph/heading with merged inline content and remove the victim's
 // containing block.
 //
-// Cursor targeting is path-based off the absorber's *pre-edit* path.
-// That path is post-edit-stable for the merge case because the
-// absorber always precedes the victim in document flow (backward:
-// previous-in-flow precedes current; forward: current precedes
-// next-in-flow), so removing the victim never shifts indices the
-// absorber's path traverses. This works uniformly across same-root
-// and cross-root merges, and across every block type the merge
-// supports — paragraph, heading, list-item leading paragraph,
-// blockquote child — because none of it depends on the rebuilt
-// block's id (which is a freshly-built `""` until reducer
-// normalization reassigns one).
+// Cursor targeting references the merged absorber block itself — the
+// action puts `updatedAbsorberBlock` in its payload (same-root: substituted
+// into the rebuilt root; cross-root: inside the rebuilt absorber root), so
+// dispatch can locate it positionally regardless of how the victim's
+// removal reshaped the surrounding tree.
 function resolveMergeCollapse(
   documentIndex: DocumentIndex,
   victim: EditableRegion,
@@ -224,7 +244,7 @@ function resolveMergeCollapse(
 
   const cursorOffset = absorber.text.length;
   const updatedAbsorberBlock = mergedAbsorberBlock(absorberBlock, victimBlock);
-  const cursorTarget = regionPathTarget(absorber, absorber.rootIndex, cursorOffset);
+  const cursorTarget = target.block(updatedAbsorberBlock, cursorOffset);
 
   if (victim.rootIndex === absorber.rootIndex) {
     const rootBlock = resolveRootBlock(documentIndex, victim.rootIndex);
@@ -290,9 +310,9 @@ export function regionPathTarget(
 ): SelectionTarget {
   const childIndices = resolveBlockChildIndices(region);
   if (childIndices.length === 0) {
-    return createRootPrimaryRegionTarget(rootIndex, offset);
+    return target.root(rootIndex, offset);
   }
-  return createDescendantPrimaryRegionTarget(rootIndex, childIndices, offset);
+  return target.descendant(rootIndex, childIndices, offset);
 }
 
 // Build the absorber's post-merge block. We concatenate inline children
@@ -314,28 +334,20 @@ function mergedAbsorberBlock(
   );
 }
 
-// Locate the absorber's containing paragraph/heading by id within the
-// rebuilt block(s) at `rootIndex` and produce a path-stable cursor
-// target. We walk our pre-normalization rebuild because the reducer's
-// document-normalize pass reassigns block ids by path — making id-based
-// targeting unreliable post-dispatch.
+// Target the absorber block within the rebuilt payload. The absorber
+// usually survives the victim's structural collapse with reference identity
+// intact, so a block target works directly. When the collapse consumed it
+// (e.g. it was a non-list trailing child of the victim's list item),
+// return null so the caller no-ops instead of dispatching a target that
+// would throw.
 function rebuiltAbsorberTarget(
   rebuilt: Block[],
-  rootIndex: number,
-  absorberBlockId: string,
+  absorberBlock: Block,
   offset: number,
 ): SelectionTarget | null {
-  for (let index = 0; index < rebuilt.length; index += 1) {
-    const root = rebuilt[index]!;
-    const childIndices = findBlockChildIndicesById(root, absorberBlockId);
-    if (childIndices) {
-      if (childIndices.length === 0) {
-        return createRootPrimaryRegionTarget(rootIndex + index, offset);
-      }
-      return createDescendantPrimaryRegionTarget(rootIndex + index, childIndices, offset);
-    }
-  }
-  return null;
+  return findBlockChildIndicesByReference(rebuilt, absorberBlock)
+    ? target.block(absorberBlock, offset)
+    : null;
 }
 
 // The absorber's root is untouched in cross-root empty deletes, so its
@@ -355,9 +367,9 @@ function crossRootAbsorberTarget(
       : absorber.rootIndex + lengthDelta;
 
   if (childIndices.length === 0) {
-    return createRootPrimaryRegionTarget(newRootIndex, offset);
+    return target.root(newRootIndex, offset);
   }
-  return createDescendantPrimaryRegionTarget(newRootIndex, childIndices, offset);
+  return target.descendant(newRootIndex, childIndices, offset);
 }
 
 // --- Tree walk: structural removal + optional absorber substitution -----

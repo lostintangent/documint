@@ -16,13 +16,12 @@
 import {
   compareEditorPositions,
   countRootBlocks,
-  createRootPrimaryRegionTarget,
   isRootIndexedBlock,
   resolveIndexedBlockForRegion,
   resolveRegion,
   resolveRegionByPath,
+  resolveRootPrimaryRegion,
   resolveRootRegions,
-  resolveSelectionTarget,
   setSelection,
   spliceDocumentIndex,
   type EditableRegion,
@@ -34,8 +33,7 @@ import {
   captureContextWindows,
   clamp,
   createParagraphTextBlock,
-  findContextRanges,
-  findOccurrences,
+  enumerateTextAnchorRanges,
   spliceDocument,
 } from "@/document";
 
@@ -246,15 +244,27 @@ function resolveEquivalentOffset(
 ) {
   const previousOffset = clamp(offset, 0, previousText.length);
   const { prefix, suffix } = captureContextWindows(previousText, previousOffset, previousOffset);
+  const anchor = {
+    prefix: prefix || undefined,
+    suffix: suffix || undefined,
+  };
 
-  const contextOffset = resolveOffsetBetweenContext(nextText, prefix, suffix);
+  const contextOffset = resolveUniquePointOffset(
+    enumerateTextAnchorRanges(nextText, anchor).filter(
+      (range) => range.startOffset === range.endOffset,
+    ),
+  );
 
   if (contextOffset !== null) {
     return contextOffset;
   }
 
-  const prefixOffset = resolveOffsetAfterUniquePrefix(nextText, prefix);
-  const suffixOffset = resolveOffsetBeforeUniqueSuffix(nextText, suffix);
+  const prefixOffset = resolveUniquePointOffset(
+    enumerateTextAnchorRanges(nextText, { prefix: anchor.prefix }),
+  );
+  const suffixOffset = resolveUniquePointOffset(
+    enumerateTextAnchorRanges(nextText, { suffix: anchor.suffix }),
+  );
 
   if (affinity === "before-suffix") {
     return suffixOffset ?? prefixOffset ?? clamp(offset, 0, nextText.length);
@@ -263,28 +273,8 @@ function resolveEquivalentOffset(
   return prefixOffset ?? suffixOffset ?? clamp(offset, 0, nextText.length);
 }
 
-function resolveOffsetBetweenContext(text: string, prefix: string, suffix: string) {
-  // Selection rebase wants prefix and suffix to bracket a single point — i.e.,
-  // the suffix starts exactly where the prefix ends. The shared primitive
-  // returns every (startOffset, endOffset) pair; we filter to point matches
-  // and require uniqueness.
-  const points = findContextRanges(text, prefix, suffix).filter(
-    (range) => range.startOffset === range.endOffset,
-  );
-
-  return points.length === 1 ? points[0].startOffset : null;
-}
-
-function resolveOffsetAfterUniquePrefix(text: string, prefix: string) {
-  const occurrences = findOccurrences(text, prefix);
-
-  return occurrences.length === 1 ? occurrences[0] + prefix.length : null;
-}
-
-function resolveOffsetBeforeUniqueSuffix(text: string, suffix: string) {
-  const occurrences = findOccurrences(text, suffix);
-
-  return occurrences.length === 1 ? occurrences[0] : null;
+function resolveUniquePointOffset(ranges: Array<{ startOffset: number; endOffset: number }>) {
+  return ranges.length === 1 ? ranges[0]!.startOffset : null;
 }
 
 function resolveSelectionPointAffinity(state: EditorState): {
@@ -415,10 +405,13 @@ function recreateEmptyRootParagraphSelection(nextState: EditorState, rootIndex: 
     ...nextState,
     documentIndex: spliceDocumentIndex(nextState.documentIndex, nextDocument, rootIndex, 0),
   };
-  const selection = resolveSelectionTarget(
-    restoredState.documentIndex,
-    createRootPrimaryRegionTarget(rootIndex),
-  );
+  const region = resolveRootPrimaryRegion(restoredState.documentIndex, rootIndex);
+  const selection = region
+    ? {
+        anchor: { regionId: region.id, offset: 0 },
+        focus: { regionId: region.id, offset: 0 },
+      }
+    : null;
 
   return selection ? setSelection(restoredState, selection, false) : null;
 }

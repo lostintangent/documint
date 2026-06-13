@@ -36,6 +36,16 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n- be\n- ta\n");
   });
 
+  test("preserves nested children when splitting a list item mid-text", () => {
+    let state = setup("- alpha\n  - child\n- beta\n");
+    const alpha = getRegion(state, "alpha");
+
+    state = placeAt(state, alpha, 2);
+    state = insertLineBreak(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("- al\n  - child\n- pha\n- beta\n");
+  });
+
   test("reports a list item inserted effect when Enter splits a regular list item", () => {
     let state = setup("- alpha\n");
     const target = state.documentIndex.regions[0];
@@ -574,10 +584,10 @@ describe("List structure", () => {
     // Regression: the merge-cursor target used to walk the rebuilt block
     // tree by id; freshly-rebuilt blocks all carry an empty id (until
     // reducer normalization), so the walk's first match was the outer
-    // container, and `createRootPrimaryRegionTarget` cascaded to the
-    // first leaf — the *first* item, not the merge seam in items[1].
-    // Now the target is path-based off the absorber, so the cursor
-    // lands at the seam regardless of how deep into the list we are.
+    // container, and root-primary-region targeting cascaded to the first
+    // leaf — the *first* item, not the merge seam in items[1]. Now the
+    // target is based on the absorber, so the cursor lands at the seam
+    // regardless of how deep into the list we are.
     let state = setup("- one\n- two\n- three\n");
     const three = getRegion(state, "three");
 

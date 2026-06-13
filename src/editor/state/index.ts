@@ -15,6 +15,7 @@ export type {
 // Inline selectors
 export {
   findInlinesInRange,
+  inlineMarks,
   indexedInlineText,
   projectInlineText,
   regionInlines,
@@ -62,15 +63,12 @@ export type { EditorIndexPosition } from "./index/query";
 
 // Selection
 export {
-  createRegionTarget,
-  createRootPrimaryRegionTarget,
   getCaretTextContext,
   getSelectionContext,
   getSelectionFormatting,
   getSelectionRange,
   normalizeSelection,
   resolveImageAtSelection,
-  resolveSelectionTarget,
 } from "./selection";
 
 export type {

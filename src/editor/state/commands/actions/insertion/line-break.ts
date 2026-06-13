@@ -1,17 +1,20 @@
-import { createCodeBlock, createParagraphTextBlock } from "@/document";
 import type { EditorStateAction } from "../../../types";
-import { createRootPrimaryRegionTarget } from "../../../selection";
-import type { BlockContext, CodeBlockContext } from "../../context";
+import type { BlockContext } from "../../context";
 import {
   resolveBlockquoteTextBlockSplit,
   resolveRootTextBlockSplit,
   resolveStructuralBlockquoteSplit,
 } from "../blocks";
-import { resolveListItemSplit, resolveStructuralListBlockSplit } from "../blocks/list";
+import { resolveCodeBlockLineBreak } from "../blocks/code";
+import { resolveListItemLineBreak } from "../blocks/list";
 import { resolveTableCellLineBreak } from "../blocks/table";
 
-// Line-break policy. Commands should only resolve context and dispatch the
-// resulting action.
+// Enter-key action policy.
+//
+// Context resolution happens in the command layer; this file only chooses the
+// block-specific line-break behavior:
+//   - tables, lists, code blocks, blockquotes, and root text blocks delegate
+//     to their block action files, where the structural rebuild policy lives.
 export function resolveLineBreakAction(ctx: BlockContext): EditorStateAction | null {
   switch (ctx.kind) {
     case "code":
@@ -21,9 +24,7 @@ export function resolveLineBreakAction(ctx: BlockContext): EditorStateAction | n
       return resolveTableCellLineBreak(ctx);
 
     case "listItem":
-      return (
-        resolveStructuralListBlockSplit(ctx, ctx.offset) ?? resolveListItemSplit(ctx, ctx.offset)
-      );
+      return resolveListItemLineBreak(ctx, ctx.offset);
 
     case "blockquoteTextBlock":
       return (
@@ -34,28 +35,4 @@ export function resolveLineBreakAction(ctx: BlockContext): EditorStateAction | n
     case "rootTextBlock":
       return resolveRootTextBlockSplit(ctx, ctx.offset);
   }
-}
-
-function resolveCodeBlockLineBreak(ctx: CodeBlockContext): EditorStateAction {
-  const block = ctx.region.block;
-
-  // Blank lines are source content, so code blocks require two trailing
-  // blank lines before Enter exits and trims the exit marker.
-  if (block.type !== "code" || !ctx.atEnd || !ctx.region.text.endsWith("\n\n")) {
-    return { kind: "splice-text", text: "\n" };
-  }
-
-  return {
-    kind: "splice-blocks",
-    blocks: [
-      createCodeBlock({
-        language: block.language,
-        meta: block.meta,
-        source: ctx.region.text.replace(/\n+$/, ""),
-      }),
-      createParagraphTextBlock(""),
-    ],
-    rootIndex: ctx.rootIndex,
-    selection: createRootPrimaryRegionTarget(ctx.rootIndex + 1),
-  };
 }

@@ -193,34 +193,36 @@ test("refines virtualized layout estimates after measuring slices", () => {
   expect(measuredLayout.totalHeight).not.toBe(initialTotalHeight);
 });
 
-test("aligns the initial virtualized slice with full-layout document coordinates", () => {
-  const snapshot = parseDocument(createVirtualizationFixture(40));
+test("keeps the initial mixed-block virtualized slice aligned with full layout", () => {
+  const snapshot = parseDocument(createMixedVirtualizationFixture(24));
   const state = createEditorState(snapshot);
   const fullLayout = measureLayoutSlice(state.documentIndex, {
+    paddingX: 12,
     paddingY: 12,
     width: 420,
   });
   const viewportLayout = createEditorLayoutState(state, {
-    height: 720,
+    height: 900,
+    paddingX: 12,
     paddingY: 12,
     top: 0,
     width: 420,
   });
-  const firstViewportLine = viewportLayout.layout.lines[0];
-
-  if (!firstViewportLine) {
-    throw new Error("Expected a visible line in the virtualized viewport");
-  }
-
-  const matchingFullLine = fullLayout.lines.find(
-    (line) =>
-      line.regionId === firstViewportLine.regionId &&
-      line.start === firstViewportLine.start &&
-      line.end === firstViewportLine.end,
-  );
 
   expect(state.documentIndex.regions.length).toBeGreaterThan(96);
-  expect(matchingFullLine?.top).toBe(firstViewportLine.top);
+  expect(viewportLayout.layout.lines.length).toBeLessThan(fullLayout.lines.length);
+
+  for (const viewportLine of viewportLayout.layout.lines) {
+    const matchingFullLine = fullLayout.lines.find(
+      (line) =>
+        line.regionId === viewportLine.regionId &&
+        line.start === viewportLine.start &&
+        line.end === viewportLine.end,
+    );
+
+    expect(matchingFullLine?.top).toBe(viewportLine.top);
+    expect(matchingFullLine?.left).toBe(viewportLine.left);
+  }
 });
 
 test("keeps post-table content in the initial viewport after text edits warm table caches", () => {
@@ -305,8 +307,7 @@ test("keeps visual block gaps consistent after code block backgrounds", () => {
 
   const paragraphGap = secondParagraph.top - (firstParagraph.top + firstParagraph.height);
   const codeGap =
-    paragraphAfterCode.top -
-    (codeLine.top + codeLine.height + CODE_BLOCK_BACKGROUND_PADDING_Y);
+    paragraphAfterCode.top - (codeLine.top + codeLine.height + CODE_BLOCK_BACKGROUND_PADDING_Y);
 
   expect(codeGap).toBe(paragraphGap);
 });
@@ -325,5 +326,31 @@ function createVirtualizationFixture(repeatedSections: number) {
   return (
     Array.from({ length: repeatedSections }, () => repeatedSampleMarkdown.trimEnd()).join("\n\n") +
     "\n"
+  );
+}
+
+function createMixedVirtualizationFixture(repeatedSections: number) {
+  return (
+    Array.from(
+      { length: repeatedSections },
+      (_, index) => `## Section ${index + 1}
+
+Paragraph ${index + 1} wraps enough text to exercise regular block measurement and estimation.
+
+- task ${index + 1}
+- another item
+- final item
+
+\`\`\`ts
+const value${index + 1} = ${index + 1};
+\`\`\`
+
+| Name | Value |
+| ---- | ----- |
+| A${index + 1} | B${index + 1} |
+
+---
+`,
+    ).join("\n") + "\n"
   );
 }

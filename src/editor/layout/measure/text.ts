@@ -11,17 +11,22 @@ import {
   type RichInlineFragmentRange,
   type RichInlineItem,
 } from "@chenglou/pretext/rich-inline";
-import { isReferenceInlineNode, type Block, type Mark } from "@/document";
+import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import {
   findInlinesInRange,
+  inlineMarks,
   isSourceRegion,
   regionInlines,
   type IndexedInline,
   type EditableRegion,
 } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
-import { resolveCodeFont, inlineTextHasCustomMetrics, resolveInlineTextStyle } from "../../text/fonts";
+import {
+  resolveCodeFont,
+  inlineTextHasCustomMetrics,
+  resolveInlineTextStyle,
+} from "../../text/fonts";
 import {
   resolveInlineReferenceMeasurement,
   resolveInlineReferenceSignature,
@@ -35,11 +40,6 @@ import {
   type LayoutCache,
 } from "../state/cache";
 
-// Narrow helper reading text-style data from an `IndexedInline`.
-function inlineMarks(run: IndexedInline): readonly Mark[] {
-  return run.node.type === "text" ? run.node.marks : [];
-}
-
 function inlineIsCode(run: IndexedInline): boolean {
   return inlineMarks(run).includes("code");
 }
@@ -51,7 +51,7 @@ export type TextLineBoundary = {
 
 export type TextInlineReference = InlineReferenceLayoutMetric;
 
-type MeasuredTextLine = {
+export type MeasuredTextLine = {
   end: number;
   height: number;
   inlineReferences: TextInlineReference[] | null;
@@ -355,16 +355,7 @@ function createMeasuredTextLines(
   const inlineProfile = resolveInlineMeasurementProfile(container);
 
   if (text.length === 0) {
-    return [
-      {
-        end: 0,
-        height: typography.lineHeight,
-        inlineReferences: null,
-        start: 0,
-        text: "",
-        width: 0,
-      },
-    ];
+    return [emptyMeasuredLine(0, typography.lineHeight)];
   }
 
   if (requiresLocalInlineLayout(inlineProfile)) {
@@ -399,14 +390,7 @@ function createMeasuredTextLines(
   });
 
   if (inlineProfile.hasHardBreak && text.endsWith("\n")) {
-    lines.push({
-      end: text.length,
-      height: typography.lineHeight,
-      inlineReferences: null,
-      start: text.length,
-      text: "",
-      width: 0,
-    });
+    lines.push(emptyMeasuredLine(text.length, typography.lineHeight));
   }
 
   // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
@@ -426,17 +410,7 @@ function materializeTrailingSourceTextLine(
     return lines;
   }
 
-  return [
-    ...lines,
-    {
-      end: offset,
-      height: lineHeight,
-      inlineReferences: null,
-      start: offset,
-      text: "",
-      width: 0,
-    },
-  ];
+  return [...lines, emptyMeasuredLine(offset, lineHeight)];
 }
 
 function resolveMeasuredLineEnd(text: string, start: number, end: number) {
@@ -465,16 +439,7 @@ function createInlineMeasuredTextLines(
   );
 
   if (segments.length === 0) {
-    return [
-      {
-        end: 0,
-        height: typography.lineHeight,
-        inlineReferences: null,
-        start: 0,
-        text: "",
-        width: 0,
-      },
-    ];
+    return [emptyMeasuredLine(0, typography.lineHeight)];
   }
 
   return layoutSegmentsIntoLines(segments, container.text, availableWidth, typography.lineHeight);
@@ -494,16 +459,7 @@ function createRichInlineMeasuredTextLines(
   );
 
   if (items.length === 0) {
-    return [
-      {
-        end: 0,
-        height: typography.lineHeight,
-        inlineReferences: null,
-        start: 0,
-        text: "",
-        width: 0,
-      },
-    ];
+    return [emptyMeasuredLine(0, typography.lineHeight)];
   }
 
   const prepared = prepareRichInline(items);
@@ -528,18 +484,7 @@ function createRichInlineMeasuredTextLines(
     });
   });
 
-  return lines.length > 0
-    ? lines
-    : [
-        {
-          end: 0,
-          height: typography.lineHeight,
-          inlineReferences: null,
-          start: 0,
-          text: "",
-          width: 0,
-        },
-      ];
+  return lines.length > 0 ? lines : [emptyMeasuredLine(0, typography.lineHeight)];
 }
 
 function resolveInlineReferencesFromMeasurementItems(
@@ -727,14 +672,7 @@ function layoutSegmentsIntoLines(
     const lineStart = segments[index]!.start;
 
     if (segments[index]!.text === "\n") {
-      lines.push({
-        end: lineStart,
-        height: lineHeight,
-        inlineReferences: null,
-        start: lineStart,
-        text: "",
-        width: 0,
-      });
+      lines.push(emptyMeasuredLine(lineStart, lineHeight));
       index += 1;
       continue;
     }
@@ -804,7 +742,11 @@ function layoutSegmentsIntoLines(
     lines.push({
       end: lineEnd,
       height: maxHeight,
-      inlineReferences: resolveSegmentInlineReferences(segments, index, Math.max(index + 1, cursor)),
+      inlineReferences: resolveSegmentInlineReferences(
+        segments,
+        index,
+        Math.max(index + 1, cursor),
+      ),
       start: lineStart,
       text: text.slice(lineStart, lineEnd),
       width,
@@ -819,17 +761,21 @@ function layoutSegmentsIntoLines(
   // which materializes one empty line for a region with no content at all.
   const lastSegment = segments.at(-1);
   if (lastSegment?.text === "\n") {
-    lines.push({
-      end: lastSegment.end,
-      height: lineHeight,
-      inlineReferences: null,
-      start: lastSegment.end,
-      text: "",
-      width: 0,
-    });
+    lines.push(emptyMeasuredLine(lastSegment.end, lineHeight));
   }
 
   return lines;
+}
+
+function emptyMeasuredLine(offset: number, lineHeight: number): MeasuredTextLine {
+  return {
+    end: offset,
+    height: lineHeight,
+    inlineReferences: null,
+    start: offset,
+    text: "",
+    width: 0,
+  };
 }
 
 function resolveSegmentInlineReferences(

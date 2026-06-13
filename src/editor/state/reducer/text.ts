@@ -37,9 +37,8 @@ import {
 import { replaceDocumentMetadata, replaceEditorBlock, spliceDocumentIndex } from "../index/splice";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 import {
-  createDescendantPrimaryRegionTarget,
-  createRegionTarget,
   normalizeSelection,
+  target,
   type EditorSelection,
   type NormalizedEditorSelection,
   type SelectionTarget,
@@ -132,7 +131,7 @@ export function replaceWithBlocks(
 
   return {
     documentIndex: finalizedDocumentIndex,
-    selection: createDescendantPrimaryRegionTarget(
+    selection: target.descendant(
       rootIndex + merged.caretLocalIndex,
       merged.caretChildIndices,
       merged.caretOffset,
@@ -178,7 +177,7 @@ function replaceInSingleRegion(
 
   return {
     documentIndex: finalizedDocumentIndex,
-    selection: createRegionTarget(nextRegion.id, normalized.start.offset + text.length),
+    selection: target.path(nextRegion.path, normalized.start.offset + text.length),
   };
 }
 

@@ -7,6 +7,11 @@ import {
   type NormalizedEditorSelection,
 } from "../selection";
 
+// Fragment source context. Copy/extract needs a normalized, non-collapsed
+// selection plus the resolved endpoint regions and roots so extraction can
+// decide whether the result is inline, one narrowed root, or a cross-root
+// structural slice.
+
 export type FragmentSourceContext =
   | {
       kind: "single-region";

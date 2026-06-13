@@ -5,18 +5,21 @@
 import type { DocumentResources } from "@/types";
 import { resolveResourceProtocol, type Block } from "@/document";
 import { createResourceIconSignature } from "@/editor/resources";
-import { isContainerBlock, isInertBlock } from "../../state/index/query";
-import type { DocumentIndex, EditableRegion } from "../../state";
+import type { DocumentIndex } from "../../state";
 import {
   getVirtualLayout,
   setVirtualLayout,
   type LayoutCache,
   type VirtualLayout,
 } from "../state/cache";
-import { resolveListMarkerInset } from "../lib/marker-metrics";
+import { walkLayoutBlocks } from "../lib/block-walk";
+import { resolveBlockContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
-import { resolveBlockGap } from "../lib/block-spacing";
-import { TABLE_CELL_PADDING_X, TABLE_CELL_PADDING_Y, TABLE_MIN_WIDTH } from "../measure/table";
+import {
+  groupTableRegionsByRow,
+  resolveTableColumnMetrics,
+  resolveTableRowHeight,
+} from "../measure/table";
 import { resolveTextBlockLineHeight } from "../measure/text";
 import { estimateContainerHeight, estimateTableCellHeight } from "./height-estimate";
 
@@ -46,23 +49,14 @@ export function getOrCreateVirtualLayout(
   const entries: VirtualLayout["entries"] = [];
   const containerIndices = new Map<string, number>();
   let regionCursor = 0;
-  let previousLaidOutBlockId: string | null = null;
 
-  for (const indexedBlock of documentIndex.blocks) {
+  for (const { blockRegionsInScope, gapBefore, indexedBlock, isInert } of walkLayoutBlocks(
+    documentIndex,
+    { blockGap: options.blockGap },
+  )) {
     const block = indexedBlock.block;
-    if (isContainerBlock(indexedBlock)) continue;
 
-    const isInert = isInertBlock(indexedBlock);
-    if (!isInert && indexedBlock.regionIds.length === 0) continue;
-
-    if (previousLaidOutBlockId !== null) {
-      totalHeight += resolveBlockGap(
-        documentIndex.blockIndex,
-        previousLaidOutBlockId,
-        indexedBlock.block.id,
-        options.blockGap,
-      );
-    }
+    totalHeight += gapBefore;
 
     if (isInert) {
       totalHeight += options.lineHeight;
@@ -82,8 +76,8 @@ export function getOrCreateVirtualLayout(
         totalHeight = result.totalHeight;
       }
     } else {
-      const listInset = resolveListMarkerInset(documentIndex, indexedBlock.block.id);
-      for (const _regionId of indexedBlock.regionIds) {
+      const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
+      for (const _regionId of blockRegionsInScope) {
         const container = documentIndex.regions[regionCursor];
         if (!container) {
           regionCursor += 1;
@@ -93,8 +87,7 @@ export function getOrCreateVirtualLayout(
           cache,
           container,
           block,
-          indexedBlock.depth,
-          listInset,
+          contentMetrics,
           options,
           resources,
         );
@@ -106,8 +99,6 @@ export function getOrCreateVirtualLayout(
         regionCursor += 1;
       }
     }
-
-    previousLaidOutBlockId = indexedBlock.block.id;
   }
 
   return setVirtualLayout(cache, documentIndex, cacheKey, {
@@ -155,22 +146,17 @@ function appendTableEstimateEntries({
 
   const depth = indexedBlock.depth;
   const left = options.paddingX + depth * options.indentWidth;
-  const tableWidth = Math.max(TABLE_MIN_WIDTH, options.width - left - options.paddingX);
-  const columnCount = Math.max(1, ...block.rows.map((row) => row.cells.length));
-  const columnWidth = tableWidth / columnCount;
-  const cellWidth = Math.max(40, columnWidth - TABLE_CELL_PADDING_X * 2);
+  const { cellWidth } = resolveTableColumnMetrics(block, left, options);
   const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight, options.fontSize);
   const rowCells = collectTableRowRegions(tableRegions, index);
   let nextTop = totalHeight;
 
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
     const cells = rowCells.get(rowIndex) ?? [];
-    const rowHeight = Math.max(
-      lineHeight + TABLE_CELL_PADDING_Y * 2,
-      ...cells.map(
-        ({ region }) =>
-          estimateTableCellHeight(region, cellWidth, lineHeight, options.charWidth) +
-          TABLE_CELL_PADDING_Y * 2,
+    const rowHeight = resolveTableRowHeight(
+      lineHeight,
+      cells.map(({ region }) =>
+        estimateTableCellHeight(region, cellWidth, lineHeight, options.charWidth),
       ),
     );
     const bottom = nextTop + rowHeight;
@@ -207,24 +193,10 @@ function appendTableEstimateEntries({
 }
 
 function collectTableRowRegions(regions: DocumentIndex["regions"], startIndex: number) {
-  const rows = new Map<number, Array<{ index: number; region: EditableRegion }>>();
-
-  for (const [index, region] of regions.entries()) {
-    const rowIndex = region.tableCellPosition?.rowIndex;
-
-    if (rowIndex === undefined) {
-      continue;
-    }
-
-    const current = rows.get(rowIndex) ?? [];
-    current.push({
-      index: startIndex + index,
-      region,
-    });
-    rows.set(rowIndex, current);
-  }
-
-  return rows;
+  return groupTableRegionsByRow(regions, (region, index) => ({
+    index: startIndex + index,
+    region,
+  }));
 }
 
 function createVirtualLayoutCacheKey(

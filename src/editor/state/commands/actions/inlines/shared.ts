@@ -2,11 +2,9 @@
 // machinery that turns a `(container, range, nextChildren)` triple into an
 // `InlineContainerReplacement` the reducer can apply.
 import {
-  childContainerPath,
   createTableCell as createDocumentTableCell,
   createText,
   defragmentTextInlines,
-  isReferenceInlineNode,
   iterateInlineNodeRanges,
   measureInlineNodeText,
   rebuildTableBlock,
@@ -14,17 +12,32 @@ import {
   type Block,
   type Inline,
 } from "@/document";
-import type { RegionRangePathSelectionTarget } from "../../../selection";
-import { INLINE_OBJECT_REPLACEMENT_TEXT } from "../../../index/inlines";
-import { type InlineContainer } from "../../inlines";
+import { target, type RegionPathSelectionTarget } from "../../../selection";
+import type { EditorStateAction } from "../../../types";
+import type { InlineContainer } from "../../context";
 
-export type { InlineContainer } from "../../inlines";
+export type { InlineContainer } from "../../context";
 
 export type InlineContainerReplacement = {
   block: Block;
   blockId: string;
-  selection: RegionRangePathSelectionTarget;
+  selection: RegionPathSelectionTarget;
 };
+
+// Wraps an inline-container rebuild in the reducer action that commits the
+// owning block. Most inline edits want the replacement's own selection; callers
+// that intentionally preserve the current selection can build the action
+// directly and omit `selection`.
+export function createInlineReplacementAction(
+  replacement: InlineContainerReplacement,
+): EditorStateAction {
+  return {
+    kind: "replace-block",
+    block: replacement.block,
+    blockId: replacement.blockId,
+    selection: replacement.selection,
+  };
+}
 
 // Splices `inlines` into the container's children over `[startOffset, endOffset]`,
 // then rebuilds the owning block (paragraph/heading in place, table cell
@@ -54,11 +67,7 @@ export function createInlineContainerReplacement(
       return {
         block: rebuildTextBlock(inlineContainer.block, nextChildren),
         blockId: inlineContainer.block.id,
-        selection: createRangeSelectionTarget(
-          childContainerPath(inlineContainer.path),
-          startOffset,
-          endOffset,
-        ),
+        selection: target.path(inlineContainer.regionPath, startOffset, endOffset),
       };
     case "tableCell": {
       const nextCell = createDocumentTableCell(nextChildren);
@@ -70,25 +79,15 @@ export function createInlineContainerReplacement(
       return {
         block: rebuildTableBlock(inlineContainer.block, nextRows),
         blockId: inlineContainer.block.id,
-        selection: createRangeSelectionTarget(inlineContainer.path, startOffset, endOffset),
+        selection: target.path(inlineContainer.regionPath, startOffset, endOffset),
       };
     }
   }
 }
 
-function createRangeSelectionTarget(
-  path: string,
-  startOffset: number,
-  endOffset: number,
-): RegionRangePathSelectionTarget {
-  return {
-    endOffset,
-    kind: "region-range-path",
-    path,
-    startOffset,
-  };
-}
-
+// This document-inline splice path handles structured `Inline[]` replacement
+// for object/link/mark commands. Text editing uses reducer/inlines.ts instead,
+// where `IndexedInline[]` has already flattened link wrappers into metadata.
 // Splices a sequence of inline nodes into `nodes` over the offset range
 // `[startOffset, endOffset]`. The range is dropped from the source, the
 // `replacement` nodes are inserted at the start of that range, and the
@@ -146,28 +145,6 @@ function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): 
   return [];
 }
 
-export function extractInlineSelectionText(
-  nodes: Inline[],
-  startOffset: number,
-  endOffset: number,
-): string {
-  let text = "";
-
-  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
-    if (endOffset <= start || startOffset >= end) {
-      continue;
-    }
-
-    text += extractInlineNodeSlice(
-      node,
-      Math.max(0, startOffset - start),
-      Math.min(end - start, endOffset - start),
-    );
-  }
-
-  return text;
-}
-
 export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOffset: number) {
   const sliced: Inline[] = [];
 
@@ -186,25 +163,4 @@ export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOff
   }
 
   return sliced;
-}
-
-function extractInlineNodeSlice(node: Inline, startOffset: number, endOffset: number): string {
-  if (startOffset >= endOffset) {
-    return "";
-  }
-
-  if (isReferenceInlineNode(node)) {
-    return INLINE_OBJECT_REPLACEMENT_TEXT.slice(startOffset, endOffset);
-  }
-
-  switch (node.type) {
-    case "lineBreak":
-      return "\n".slice(startOffset, endOffset);
-    case "link":
-      return extractInlineSelectionText(node.children, startOffset, endOffset);
-    case "text":
-      return node.text.slice(startOffset, endOffset);
-    case "raw":
-      return node.source.slice(startOffset, endOffset);
-  }
 }
