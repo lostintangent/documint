@@ -1,6 +1,6 @@
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import { resolveIndexedBlock, type EditorState } from "@/editor/state";
-import type { ActiveBlockFlash } from "../../effects";
+import type { BlockFlashFrame } from "../../effects";
 import { resolveDividerRules } from "./divider-rules";
 import {
   resolveBlockquoteRuleFrames,
@@ -11,7 +11,7 @@ import { resolveListMarkerPlans, type ListMarkerPlan } from "./list-markers";
 import { resolveActiveTableCellHighlightFrame, type ActiveTableCellHighlightFrame } from "./table";
 
 type ActiveTableCellHighlightTarget = {
-  activeFlash: ActiveBlockFlash | null;
+  activeFlash: BlockFlashFrame | null;
   activeRegionId: string;
 };
 
@@ -39,7 +39,7 @@ export function resolveDocumentFrameChrome({
   startLineIndex,
   width,
 }: {
-  blockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockId: string | null;
   activeRegionId: string | null;
   endBlockIndex: number;
@@ -99,7 +99,7 @@ function resolveActiveTableCellHighlightTarget(
   editorState: EditorState,
   activeBlockId: string | null,
   activeRegionId: string | null,
-  blockFlashes: Map<string, ActiveBlockFlash>,
+  blockFlashes: Map<string, BlockFlashFrame>,
 ): ActiveTableCellHighlightTarget | null {
   if (!activeBlockId || !activeRegionId) {
     return null;

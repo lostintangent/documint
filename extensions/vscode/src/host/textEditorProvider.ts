@@ -167,6 +167,7 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
       `font-src ${webview.cspSource}`,
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}'`,
+      `worker-src ${webview.cspSource} blob:`,
       `connect-src ${webview.cspSource} https: http:`,
     ].join("; ");
 

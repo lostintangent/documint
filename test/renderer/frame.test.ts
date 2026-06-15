@@ -138,6 +138,7 @@ describe("DocumentFrame effect policy", () => {
     const effect: ActiveEditorEffect = {
       kind: "text-inserted",
       text: "🔥",
+      regionKind: "inlines",
       regionPath: region.path,
       startOffset: region.text.indexOf("🔥"),
       endOffset: region.text.length,
@@ -176,6 +177,7 @@ describe("DocumentFrame effect policy", () => {
     const effect: ActiveEditorEffect = {
       kind: "text-inserted",
       text: "🔥",
+      regionKind: "inlines",
       regionPath: region.path,
       startOffset: region.text.indexOf("🔥"),
       endOffset: region.text.length,

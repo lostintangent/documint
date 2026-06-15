@@ -14,7 +14,7 @@ Documint is a WYSIWYG editor for Markdown. This extension integrates the [documi
 ## Features
 
 - Read, navigate (`CMD+F`), and edit markdown files
-- WYSIWYG support for headings, list, quotes, tables, and more
+- WYSIWYG support for headings, lists, quotes, tables, and more
 - Paste-to-upload images into the current workspace
 - Emoji completion by simply typing `:`
 - Lots more!

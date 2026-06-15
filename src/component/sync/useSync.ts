@@ -3,7 +3,8 @@ import { createEditorState, type TextRangeTarget } from "@/editor";
 import type { Document } from "@/document";
 import { serializeDocument, type MarkdownOptions } from "@/markdown";
 import { emitDiagnostic } from "../lib/diagnostics";
-import { reconcileExternalContentChange, resolveMentionLineChange } from "../sync";
+import { reconcileExternalContentChange } from "./external-reconciliation";
+import { resolveMentionLineChange } from "./mention-event";
 import type { DocumintStore, EditorStateTransition } from "../store";
 
 export type UserMentionEvent = {

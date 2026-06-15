@@ -8,11 +8,11 @@ import {
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
 import type {
-  ActiveBlockFlash,
-  ActiveBlockPulse,
-  ActiveTextFade,
-  ActiveTextHighlight,
-  ActiveTextPulse,
+  BlockFlashFrame,
+  BlockPulseFrame,
+  TextFadeFrame,
+  TextHighlightFrame,
+  TextPulseFrame,
 } from "../../effects";
 import type { ActiveBlockBackgroundFrame, ContainerBackgroundFrame } from "./backgrounds";
 import { resolveDocumentFrameLineBackgrounds } from "./backgrounds";
@@ -26,7 +26,7 @@ import type { SelectionRegionOrderRange } from "../selection-frame";
 
 export type DocumentFrameLine = DocumentFrameLineText & {
   readonly activeBlockBackground: ActiveBlockBackgroundFrame | null;
-  readonly blockPulse: ActiveBlockPulse | null;
+  readonly blockPulse: BlockPulseFrame | null;
   readonly containerBackground: ContainerBackgroundFrame | null;
   readonly commentHighlights: readonly CommentHighlightFrame[];
   readonly layoutLine: EditorLayoutState["layout"]["lines"][number];
@@ -35,12 +35,12 @@ export type DocumentFrameLine = DocumentFrameLineText & {
 };
 
 type ResolveDocumentFrameLineOptions = {
-  blockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockId: string | null;
-  blockPulses: Map<string, ActiveBlockPulse>;
-  textFades: Map<string, ActiveTextFade[]>;
-  textHighlights: Map<string, ActiveTextHighlight[]>;
-  textPulses: Map<string, ActiveTextPulse[]>;
+  blockPulses: Map<string, BlockPulseFrame>;
+  textFades: Map<string, TextFadeFrame[]>;
+  textHighlights: Map<string, TextHighlightFrame[]>;
+  textPulses: Map<string, TextPulseFrame[]>;
   activeThreadIndex: number | null;
   commentPresence: ReadonlyMap<number, EditorPresence>;
   commentRangesByRegion: ReadonlyMap<string, EditorCommentRange[]>;

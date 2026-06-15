@@ -1,5 +1,5 @@
 import type { DocumentLayout, LayoutRect } from "@/editor/layout";
-import type { ActiveBlockFlash } from "../../effects";
+import type { BlockFlashFrame } from "../../effects";
 
 const tableCellMinimumPaintWidth = 80;
 const activeTableCellBandVerticalBleed = 2;
@@ -12,7 +12,7 @@ export type TableCellChromeFrame = {
 };
 
 export type ActiveTableCellHighlightFrame = {
-  activeFlash: ActiveBlockFlash | null;
+  activeFlash: BlockFlashFrame | null;
   bands: readonly LayoutRect[];
   borderRect: LayoutRect;
 };
@@ -41,7 +41,7 @@ export function resolveActiveTableCellHighlightFrame({
   regionBounds,
   startLineIndex,
 }: {
-  activeFlash: ActiveBlockFlash | null;
+  activeFlash: BlockFlashFrame | null;
   activeRegionId: string;
   endLineIndex: number;
   layout: DocumentLayout;

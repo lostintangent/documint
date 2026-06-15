@@ -9,8 +9,8 @@ import {
   createTableRow,
   createText,
 } from "@/document";
-import { resolveBlockDecorationRanges } from "@/component/decorations/ranges";
-import { resolveDecorationRulesKey, serializeDecorationRules } from "@/component/decorations/rules";
+import { resolveDecorationsKey, serializeDecorations } from "@/component/decorations/client/config";
+import { resolveBlockDecorationRanges } from "@/component/decorations/worker/prose";
 
 describe("resolveBlockDecorationRanges", () => {
   test("returns no ranges when there are no rules", () => {
@@ -37,6 +37,14 @@ describe("resolveBlockDecorationRanges", () => {
     ).toEqual([
       { color: "gray", endOffset: 9, path: "root.0.children", startOffset: 6 },
       { color: "gray", endOffset: 19, path: "root.0.children", startOffset: 16 },
+    ]);
+  });
+
+  test("uses the real captured group offset when captured text repeats in the full match", () => {
+    const block = createParagraphTextBlock("aa");
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /a(a)/ }])).toEqual([
+      { color: "gray", endOffset: 2, path: "root.0.children", startOffset: 1 },
     ]);
   });
 
@@ -181,12 +189,12 @@ describe("resolveBlockDecorationRanges", () => {
   });
 });
 
-describe("decoration rules", () => {
+describe("decoration serialization", () => {
   test("ignore rules without styles at scheduling and worker boundaries", () => {
     const rules = [{ pattern: /TODO/ }, { backgroundColor: "yellow", pattern: /TODO/ }];
 
-    expect(resolveDecorationRulesKey(rules)).toBe("TODO:::yellow:0");
-    expect(serializeDecorationRules(rules)).toEqual([
+    expect(resolveDecorationsKey(rules)).toBe("TODO:::yellow:0");
+    expect(serializeDecorations(rules)).toEqual([
       { backgroundColor: "yellow", flags: "", source: "TODO" },
     ]);
   });
@@ -194,8 +202,8 @@ describe("decoration rules", () => {
   test("preserves animated background decoration styles across the worker boundary", () => {
     const rules = [{ backgroundColor: "gold", pulse: true, pattern: /sparkle/ }];
 
-    expect(resolveDecorationRulesKey(rules)).toBe("sparkle:::gold:1");
-    expect(serializeDecorationRules(rules)).toEqual([
+    expect(resolveDecorationsKey(rules)).toBe("sparkle:::gold:1");
+    expect(serializeDecorations(rules)).toEqual([
       { backgroundColor: "gold", pulse: true, flags: "", source: "sparkle" },
     ]);
   });

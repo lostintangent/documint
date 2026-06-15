@@ -119,6 +119,7 @@
     "component": {
       "component_decorations_medium": 0.25,
       "component_decorations_long": 15,
+      "component_grammar_tokenize_code_heavy": 12,
       "component_reconcile_selection_long": 0.25,
       "component_reconcile_transient_empty_paragraph_long": 1.5
     },

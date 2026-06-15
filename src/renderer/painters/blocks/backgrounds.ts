@@ -59,13 +59,13 @@ export function paintActiveBlockChangedEffect(
 
   const { context, paintEffect } = environment;
   paintEffect(
-    "activeBlockChanged",
+    effect.activeFlash,
     {
       progress: effect.activeFlash.progress,
       rect: effect.rect,
     },
     ({ progress, theme }) => {
-      paintActiveBlockFlash(context, effect.bands, progress, theme);
+      paintBlockFlashFrame(context, effect.bands, progress, theme);
 
       if (effect.borderRect) {
         context.strokeStyle = theme.tableBorder;
@@ -80,7 +80,7 @@ export function paintActiveBlockChangedEffect(
   );
 }
 
-function paintActiveBlockFlash(
+function paintBlockFlashFrame(
   context: CanvasRenderingContext2D,
   bands: readonly LayoutRect[],
   progress: number,

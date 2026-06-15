@@ -5,7 +5,7 @@ import {
   type EditorLayoutState,
   type LayoutRect,
 } from "@/editor/layout";
-import type { ActiveBlockFlash } from "../../effects";
+import type { BlockFlashFrame } from "../../effects";
 import { resolveTableCellChromeFrame, type TableCellChromeFrame } from "../chrome/table";
 
 const activeLineVerticalBleed = 2;
@@ -13,7 +13,7 @@ const activeLineVerticalBleed = 2;
 type RegionBounds = { bottom: number; left: number; right: number; top: number };
 
 export type ActiveBlockBackgroundFrame = {
-  activeFlash: ActiveBlockFlash | null;
+  activeFlash: BlockFlashFrame | null;
   rect: LayoutRect;
 };
 
@@ -32,7 +32,7 @@ export function resolveDocumentFrameLineBackgrounds({
   tableCellPosition,
   width,
 }: {
-  blockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockId: string | null;
   block: Block | null;
   containerBounds: RegionBounds | null;
@@ -139,7 +139,7 @@ function resolveActiveBlockBackgroundFrame({
   runtimeBlockPath,
   width,
 }: {
-  blockFlashes: Map<string, ActiveBlockFlash>;
+  blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockId: string | null;
   block: Block | null;
   codeBlockBackgroundRect: LayoutRect | null;

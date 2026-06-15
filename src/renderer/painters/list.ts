@@ -43,7 +43,7 @@ export function paintListMarker(
     const effectMarker = resolveListMarkerEffectFrame(marker, context);
 
     paintEffect(
-      "listItemInserted",
+      pop,
       { marker: effectMarker, progress: pop.progress },
       ({ progress, theme }) => {
         paintListMarkerDefault(context, marker, theme, { progress });

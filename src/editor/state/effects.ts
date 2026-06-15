@@ -4,7 +4,6 @@
 
 import type { Block } from "@/document";
 import { regionInlines } from "./index/inlines";
-import { isInlineRegion } from "./index/query";
 import type { DocumentIndex, EditableRegion } from "./index/types";
 import {
   normalizeSelection,
@@ -17,6 +16,7 @@ import type { EditorState } from "./types";
 export type TextInsertedEffect = {
   kind: "text-inserted";
   text: string;
+  regionKind: EditableRegion["content"]["kind"];
   regionPath: string;
   startOffset: number;
   endOffset: number;
@@ -25,6 +25,7 @@ export type TextInsertedEffect = {
 export type TextDeletedEffect = {
   kind: "text-deleted";
   text: string;
+  regionKind: EditableRegion["content"]["kind"];
   regionPath: string;
   startOffset: number;
   direction: "backward" | "forward";
@@ -158,13 +159,14 @@ function resolveTextInsertedEffectForRegion(
   startOffset: number,
   insertedText: string,
 ): TextInsertedEffect | undefined {
-  if (!isInlineRegion(region) || insertedText.length === 0) {
+  if (insertedText.length === 0) {
     return undefined;
   }
 
   return {
     kind: "text-inserted",
     text: insertedText,
+    regionKind: region.content.kind,
     regionPath: region.path,
     startOffset,
     endOffset: startOffset + insertedText.length,
@@ -180,22 +182,25 @@ function resolveTextDeletedEffect(
 ): TextDeletedEffect | undefined {
   const text = region.text.slice(startOffset, endOffset);
 
-  if (text.length === 0 || !isInlineRegion(region)) {
+  if (text.length === 0) {
     return undefined;
   }
 
-  const isPlainText = regionInlines(region).some(
-    (entry) =>
-      entry.start <= startOffset &&
-      entry.end >= endOffset &&
-      entry.node.type === "text" &&
-      entry.link === null &&
-      entry.node.marks.length === 0,
-  );
+  const isPlainText =
+    region.content.kind === "source" ||
+    regionInlines(region).some(
+      (entry) =>
+        entry.start <= startOffset &&
+        entry.end >= endOffset &&
+        entry.node.type === "text" &&
+        entry.link === null &&
+        entry.node.marks.length === 0,
+    );
 
   return {
     kind: "text-deleted",
     text,
+    regionKind: region.content.kind,
     regionPath: region.path,
     startOffset,
     direction,

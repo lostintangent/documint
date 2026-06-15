@@ -3,6 +3,7 @@ import type {
   DocumintEffects,
   EffectEnvironment,
 } from "@/types";
+import type { EffectFrame } from "./types";
 
 type EffectArgs<TKind extends keyof DocumintEffects> = Omit<
   EffectContextFor<TKind>,
@@ -10,7 +11,7 @@ type EffectArgs<TKind extends keyof DocumintEffects> = Omit<
 >;
 
 export type PaintEffect = <TKind extends keyof DocumintEffects>(
-  kind: TKind,
+  frame: EffectFrame<TKind>,
   args: EffectArgs<TKind>,
   paintDefault: (context: EffectContextFor<TKind>) => void,
 ) => void;
@@ -19,14 +20,20 @@ export function createPaintEffect(
   environment: EffectEnvironment,
   effects?: DocumintEffects,
 ): PaintEffect {
-  return (kind, args, paintDefault) => {
-    const handler = effects?.[kind] as
-      | DocumintEffectHandler<EffectContextFor<typeof kind>>
+  return (frame, args, paintDefault) => {
+    const handler = effects?.[frame.customEffectName] as
+      | DocumintEffectHandler<EffectContextFor<typeof frame.customEffectName>>
       | undefined;
-    const effectContext = { ...environment, ...args } as EffectContextFor<typeof kind>;
+    const effectContext = { ...environment, ...args } as EffectContextFor<typeof frame.customEffectName>;
+
+    const paintDefaultVisual = () => {
+      if (frame.defaultEnabled) {
+        paintWithSavedState(environment.context, () => paintDefault(effectContext));
+      }
+    };
 
     if (!handler) {
-      paintWithSavedState(environment.context, () => paintDefault(effectContext));
+      paintDefaultVisual();
       return;
     }
 
@@ -34,12 +41,12 @@ export function createPaintEffect(
 
     if (compose === "before") {
       paintWithSavedState(environment.context, () => paint(effectContext));
-      paintWithSavedState(environment.context, () => paintDefault(effectContext));
+      paintDefaultVisual();
       return;
     }
 
     if (compose === "after") {
-      paintWithSavedState(environment.context, () => paintDefault(effectContext));
+      paintDefaultVisual();
       paintWithSavedState(environment.context, () => paint(effectContext));
       return;
     }

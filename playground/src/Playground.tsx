@@ -28,6 +28,7 @@ import {
 import {
   fixtureOptions,
   getThemeOption,
+  grammars,
   slowSampleImagePath,
   slowSampleImageSource,
   themeOptions,
@@ -256,6 +257,7 @@ export function Playground() {
               storage={storage}
               actions={actions}
               decorations={decorations}
+              grammars={grammars}
               onCommentChanged={handleCommentChanged}
               onContentChanged={setContent}
               onResourceOpened={(resource) => {

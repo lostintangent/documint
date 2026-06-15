@@ -23,6 +23,43 @@ export type EditorInputCommand =
   | "toggleUnderline"
   | "undo";
 
+export type CodeTokenKind =
+  // Source-language tokens.
+  | "keyword"
+  | "string"
+  | "comment"
+  | "number"
+  | "function"
+  | "type"
+  // Named primitive/singleton literal values like `true`, `null`, and
+  // `undefined`; strings and numbers keep their own syntax-specific tokens.
+  | "atom"
+  | "punctuation"
+  // Markup/document tokens for languages like Markdown and HTML-like sources.
+  | "heading"
+  | "emphasis"
+  | "strong"
+  | "link"
+  // Built-in tokens cover shared syntax categories. Hosts can use custom token
+  // names for domain-specific code fences; unresolved custom tokens fall back
+  // to `codeText` unless the theme provides `codeTokens[token]`.
+  | (string & {});
+
+// A regex paired with the token kind it classifies a match as. A language's
+// grammar is just an ordered list of these — first match wins per character;
+// not a contextual/TextMate grammar (no nesting or state).
+export type CodeGrammarRule = {
+  pattern: RegExp;
+  token: CodeTokenKind;
+};
+
+export type DocumintDecoration = {
+  backgroundColor?: string;
+  pulse?: boolean;
+  color?: string;
+  pattern: RegExp;
+};
+
 export type EditorTheme = {
   // Tier-1 required tokens that
   // everything else is derived from
@@ -44,6 +81,7 @@ export type EditorTheme = {
   checkboxUncheckedFill?: string;
   checkboxUncheckedStroke?: string;
   codeBackground?: string;
+  codeTokens?: Partial<Record<CodeTokenKind, string>>;
   codeText?: string;
   commentHighlight?: string;
   commentHighlightActive?: string;
@@ -131,6 +169,7 @@ export type ListItemInsertedEffectContext = EffectContext<{
 
 export type TextDeletedEffectContext = EffectContext<{
   color: string;
+  contentKind: "code" | "text";
   font: string;
   left: number;
   progress: number;
@@ -143,6 +182,7 @@ export type TextInsertedEffectContext = EffectContext<{
     x: number;
     y: number;
   };
+  contentKind: "code" | "text";
   progress: number;
   text: string;
 }>;

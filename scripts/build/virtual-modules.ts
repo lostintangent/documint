@@ -53,7 +53,7 @@ const virtualModuleSpecs: readonly VirtualModuleSpec[] = [
   {
     // Bundled decoration worker source, inlined as a JS default-export
     // string so the host can `new Worker(URL.createObjectURL(new Blob([s])))`.
-    filter: /src\/component\/worker\/source\.ts$/,
+    filter: /src\/component\/decorations\/worker\/source\.ts$/,
     loader: "js",
     wrap: (source) => `export default ${JSON.stringify(source)};`,
     compile: buildDecorationWorker,
@@ -74,7 +74,7 @@ function buildDecorationWorker(): string {
     const build = Bun.spawnSync([
       "bun",
       "build",
-      "src/component/worker/index.ts",
+      "src/component/decorations/worker/index.ts",
       "--target=browser",
       "--format=esm",
       "--outfile",

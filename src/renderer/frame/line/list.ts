@@ -1,5 +1,5 @@
 import type { EditorLayoutState } from "@/editor/layout";
-import type { ActiveBlockPulse } from "../../effects";
+import type { BlockPulseFrame } from "../../effects";
 import {
   resolveListMarkerFrame,
   type ListMarkerFrame,
@@ -13,13 +13,13 @@ export function resolveDocumentFrameLineList({
   textLeft,
   listMarkerPlans,
 }: {
-  blockPulses: Map<string, ActiveBlockPulse>;
+  blockPulses: Map<string, BlockPulseFrame>;
   line: EditorLayoutState["layout"]["lines"][number];
   textBaseline: number;
   textLeft: number;
   listMarkerPlans: Map<string, ListMarkerPlan>;
 }): {
-  blockPulse: ActiveBlockPulse | null;
+  blockPulse: BlockPulseFrame | null;
   listMarker: ListMarkerFrame | null;
 } {
   const listMarkerPlan = listMarkerPlans.get(line.blockId) ?? null;

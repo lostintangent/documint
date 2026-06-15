@@ -2,19 +2,19 @@ import type { EditorEffect, TextDeletedEffect, TextInsertedEffect } from "@/edit
 import { containsColorEmoji } from "@/editor/text/emoji";
 import type { DocumintEffects } from "@/types";
 import type {
-  ActiveBlockFlash,
-  ActiveBlockPulse,
-  ActiveTextFade,
-  ActiveTextHighlight,
-  ActiveTextPulse,
+  BlockFlashFrame,
+  BlockPulseFrame,
+  TextFadeFrame,
+  TextHighlightFrame,
+  TextPulseFrame,
 } from "./types";
 
 export type ActiveEffectGroups = {
-  blockFlashes: Map<string, ActiveBlockFlash>;
-  blockPulses: Map<string, ActiveBlockPulse>;
-  textFades: Map<string, ActiveTextFade[]>;
-  textHighlights: Map<string, ActiveTextHighlight[]>;
-  textPulses: Map<string, ActiveTextPulse[]>;
+  blockFlashes: Map<string, BlockFlashFrame>;
+  blockPulses: Map<string, BlockPulseFrame>;
+  textFades: Map<string, TextFadeFrame[]>;
+  textHighlights: Map<string, TextHighlightFrame[]>;
+  textPulses: Map<string, TextPulseFrame[]>;
 };
 
 type EffectOfKind<TKind extends EditorEffect["kind"]> = Extract<EditorEffect, { kind: TKind }>;
@@ -25,6 +25,7 @@ type EffectKindDescriptor<TKind extends EditorEffect["kind"]> = {
     groups: ActiveEffectGroups,
     effect: EffectOfKind<TKind>,
     progress: number,
+    defaultEnabled: boolean,
   ) => void;
   customHandlerKey: keyof DocumintEffects;
   duration: (effect: EffectOfKind<TKind>) => number;
@@ -41,9 +42,11 @@ export const effectKinds: {
 } = {
   "active-block-changed": {
     animatesByDefault: () => true,
-    collect: (groups, effect, progress) => {
+    collect: (groups, effect, progress, defaultEnabled) => {
       groups.blockFlashes.set(effect.blockPath, {
         blockPath: effect.blockPath,
+        customEffectName: "activeBlockChanged",
+        defaultEnabled,
         progress,
       });
     },
@@ -52,9 +55,11 @@ export const effectKinds: {
   },
   "list-item-inserted": {
     animatesByDefault: () => true,
-    collect: (groups, effect, progress) => {
+    collect: (groups, effect, progress, defaultEnabled) => {
       groups.blockPulses.set(effect.blockPath, {
         blockPath: effect.blockPath,
+        customEffectName: "listItemInserted",
+        defaultEnabled,
         progress,
       });
     },
@@ -63,8 +68,11 @@ export const effectKinds: {
   },
   "text-deleted": {
     animatesByDefault: shouldAnimateTextDeletedEffect,
-    collect: (groups, effect, progress) => {
+    collect: (groups, effect, progress, defaultEnabled) => {
       collectMany(groups.textFades, effect.regionPath, {
+        contentKind: resolveTextEffectContentKind(effect),
+        customEffectName: "textDeleted",
+        defaultEnabled,
         progress,
         regionPath: effect.regionPath,
         startOffset: effect.startOffset,
@@ -76,9 +84,12 @@ export const effectKinds: {
   },
   "text-inserted": {
     animatesByDefault: shouldAnimateTextInsertedEffect,
-    collect: (groups, effect, progress) => {
+    collect: (groups, effect, progress, defaultEnabled) => {
       if (isPunctuationInsertion(effect)) {
         collectMany(groups.textPulses, effect.regionPath, {
+          contentKind: resolveTextEffectContentKind(effect),
+          customEffectName: "textInserted",
+          defaultEnabled,
           endOffset: effect.endOffset,
           progress,
           regionPath: effect.regionPath,
@@ -89,6 +100,9 @@ export const effectKinds: {
       }
 
       collectMany(groups.textHighlights, effect.regionPath, {
+        contentKind: resolveTextEffectContentKind(effect),
+        customEffectName: "textInserted",
+        defaultEnabled,
         endOffset: effect.endOffset,
         progress,
         regionPath: effect.regionPath,
@@ -122,6 +136,7 @@ function collectMany<TEffect>(
 
 function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
   return (
+    effect.regionKind === "inlines" &&
     effect.direction === "backward" &&
     effect.textKind === "plain" &&
     effect.placement !== "line-middle" &&
@@ -130,9 +145,13 @@ function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
 }
 
 function shouldAnimateTextInsertedEffect(effect: TextInsertedEffect) {
-  return !containsColorEmoji(effect.text);
+  return effect.regionKind === "inlines" && !containsColorEmoji(effect.text);
 }
 
 function isPunctuationInsertion(effect: TextInsertedEffect) {
   return effect.text === ".";
+}
+
+function resolveTextEffectContentKind(effect: TextDeletedEffect | TextInsertedEffect): "code" | "text" {
+  return effect.regionKind === "source" ? "code" : "text";
 }

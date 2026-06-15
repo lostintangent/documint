@@ -22,6 +22,7 @@ describe("Text inserted effects", () => {
         expect.objectContaining({
           endOffset: region.text.length + 1,
           kind: "text-inserted",
+          regionKind: "inlines",
           regionPath: region.path,
           startOffset: region.text.length,
           text: "!",
@@ -46,13 +47,24 @@ describe("Text inserted effects", () => {
     );
   });
 
-  test("does not emit text-inserted effects inside code blocks", () => {
+  test("emits source-region text-inserted effects inside code blocks", () => {
     const state = setup("```ts\nconst value = 1;\n```\n");
     const region = getRegionByType(state, "code");
     const result = insertText(placeAt(state, region, "end"), "!");
 
     expect(result).not.toBeNull();
-    expect(readEditorEffects(result!).some((effect) => effect.kind === "text-inserted")).toBe(false);
+    expect(readEditorEffects(result!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          endOffset: region.text.length + 1,
+          kind: "text-inserted",
+          regionKind: "source",
+          regionPath: region.path,
+          startOffset: region.text.length,
+          text: "!",
+        }),
+      ]),
+    );
   });
 
   test("records paired delimiter inserted range", () => {
@@ -66,6 +78,7 @@ describe("Text inserted effects", () => {
         expect.objectContaining({
           endOffset: 4,
           kind: "text-inserted",
+          regionKind: "inlines",
           regionPath: region.path,
           startOffset: 2,
           text: "()",
@@ -106,6 +119,7 @@ describe("Text deleted effects", () => {
           direction: "backward",
           kind: "text-deleted",
           placement: "line-end",
+          regionKind: "inlines",
           regionPath: region.path,
           startOffset: region.text.length - 1,
           text: "a",
@@ -192,6 +206,27 @@ describe("Text deleted effects", () => {
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).some((effect) => effect.kind === "text-deleted")).toBe(false);
+  });
+
+  test("emits source-region text-deleted effects inside code blocks", () => {
+    const state = setup("```ts\nconst value = 1;\n```\n");
+    const region = getRegionByType(state, "code");
+    const result = deleteBackward(placeAt(state, region, "end"));
+
+    expect(result).not.toBeNull();
+    expect(readEditorEffects(result!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          direction: "backward",
+          kind: "text-deleted",
+          regionKind: "source",
+          regionPath: region.path,
+          startOffset: region.text.length - 1,
+          text: ";",
+          textKind: "plain",
+        }),
+      ]),
+    );
   });
 });
 

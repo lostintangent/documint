@@ -1,4 +1,4 @@
-import { darkTheme, lightTheme, type EditorTheme } from "documint";
+import { darkTheme, lightTheme, type CodeGrammarRule, type EditorTheme } from "documint";
 
 export const slowSampleImagePath = "playground-slow-editor-shell.png";
 export const slowSampleImageSource =
@@ -105,9 +105,9 @@ The word lesson uses a pulsing decoration so the playground can exercise paint-o
 
 ## 🌳 Code Blocks
 
-Use fenced code blocks for source snippets, configuration, and markdown examples that should stay literal.
+Use fenced code blocks for source snippets and configuration. JavaScript, TypeScript, and Markdown are highlighted out of the box, and the tree below uses a custom \`tree\` grammar the playground passes in — ampersands render as strings, pipes and underscores as keywords.
 
-\`\`\`text
+\`\`\`tree
         &&& &&&&& &&&
      &&&&&&&&&&&&&&&&&&&
    &&&&&&&&&&&&&&&&&&&&&&&
@@ -164,6 +164,94 @@ Markdown can be shown literally inside a code fence:
 :::
 `;
 
+const sampleSpecMarkdown = `# Spec: Syntax Highlighting as Code-Targeted Decorations
+
+A working specification for fenced code block syntax highlighting in Documint, modeled as a code-specific form of the existing decoration system.
+
+## Core Principle
+
+A syntax highlight is a decoration whose target is a code block's \`source\` region and whose color comes from a grammar token kind resolved against the theme. It differs from a host decoration in exactly two places — the **target region** and the **range generation** — and is identical everywhere else. By the time a highlight crosses the worker boundary, it is a plain colored decoration range, indistinguishable from a host decoration.
+
+## What Does Not Change
+
+These carry the feature with zero modification, which is what keeps the bundle delta small:
+
+- **Renderer and painter.** Color-only overlays reuse the existing decoration painters and self-skip the contrast and pulse logic.
+- **Segments.** Code lines stay a single text run; color layers on as an asynchronous overlay, so the base layer stays synchronous and correct with no reflow when a token's color changes.
+- **Index and reconciliation.** The decoration index and its reconciliation are reused with no new fields; a token kind never appears downstream of the hook.
+- **Names.** The decoration hook, worker, and client keep their decoration-based names.
+
+## Shared Range Primitive
+
+The per-character merge is shared by prose decorations and code grammars. The prose pass keeps its plain-text traversal; the code pass adds a source traversal that emits ranges at the code block's source path. Neither pass imports the other.
+
+## Data Model
+
+Grammars are authored with token kinds, which are theme-independent:
+
+\`\`\`ts
+export type CodeTokenKind =
+  | "keyword" | "string" | "comment" | "number" | "function"
+  | "type" | "atom" | "punctuation" | "heading" | "emphasis"
+  | "strong" | "link" | (string & {});
+
+// A grammar is just an ordered list of these — no wrapper type.
+export type CodeGrammarRule = { pattern: RegExp; token: CodeTokenKind };
+\`\`\`
+
+This is an ordered regex lexer — first match wins per character — not a contextual or TextMate-style grammar. It has no nesting, no state, and no semantic accuracy, which keeps the built-in grammars compact.
+
+## Flow
+
+1. The component merges the host \`grammars\` prop over the built-in grammars.
+2. The decoration hook resolves each token kind to a color via the theme, producing two config buckets: prose rules and code grammars. Both are plain pattern-and-color rules.
+3. The worker is configured atomically — a single message carries both buckets under one key, so no request can observe a mixed configuration.
+4. The worker runs two passes per root, prose and code, and concatenates the colored ranges.
+5. Ranges reconcile into the existing decoration index and paint through the existing overlay. A theme switch re-tokenizes code off-thread, consistent with how decorations already converge.
+
+## Built-In Grammars
+
+Markdown and JavaScript/TypeScript ship enabled by default. The \`grammars\` prop always merges over the built-ins, so a host adds a language without losing the defaults:
+
+\`\`\`ts
+<Documint grammars={{ rust: rustGrammar }} />
+\`\`\`
+
+Passing no \`grammars\` uses the built-ins; an object merges over them; \`null\` disables code highlighting entirely.
+
+## Theme Extension
+
+The theme gains an optional \`codeTokens\` map of token kind to color. The resolver derives the code background first, selects a light or dark token palette from it, then merges any host overrides on top. Every built-in and playground theme inherits token colors automatically; a host sets \`codeTokens\` only to override.
+
+## Rendering
+
+Highlights flow as colored decoration ranges through the existing overlay painter. The base code text paints synchronously in the default code color, and token colors layer on top as worker results arrive. Because color does not affect geometry, a token changing color never triggers layout.
+
+## Files
+
+- **New.** The shared range primitive, the grammar types and built-in grammars, and the code range pass.
+- **Changed.** The decoration ranges module, the worker protocol and entry, the decoration hook, the theme types and resolver, and the editor component.
+
+## Phasing
+
+1. **Vertical slice.** Shared primitive, theme tokens, the JavaScript grammar, hook resolution, and the worker code pass — a code block highlighting in the playground.
+2. **Breadth.** The markdown grammar, language aliases, and built-in wiring.
+3. **Polish.** A code-heavy paint benchmark, a per-rule step guard on the worker, and more languages.
+
+## Testing
+
+- Code ranges over source, including nested code blocks and unknown languages.
+- Shared range parity, so the prose path is unchanged after extraction.
+- Theme resolution of token defaults and overrides.
+- Worker config staleness and atomicity.
+- Markdown round-trip stability and a code-heavy paint benchmark.
+
+## Open Questions
+
+- Whether to keep the term *grammar* or rename to *lexer* for mechanism accuracy.
+- The canonical token vocabulary and how unknown tokens fall back.
+`;
+
 const scrollingTestMarkdown = createRealisticLongMarkdown(80, "Scrolling Test");
 
 export const fixtureOptions = [
@@ -171,6 +259,11 @@ export const fixtureOptions = [
     id: "sample",
     label: "Tutorial document",
     markdown: sampleMarkdown,
+  },
+  {
+    id: "spec",
+    label: "Sample spec",
+    markdown: sampleSpecMarkdown,
   },
   {
     id: "blank",
@@ -183,6 +276,17 @@ export const fixtureOptions = [
     markdown: scrollingTestMarkdown,
   },
 ] as const;
+
+// A host-provided grammar for the tutorial's ```tree block, demonstrating that
+// custom languages merge over the built-ins (markdown, JS/TS). Ampersands use
+// the string token; pipes and underscores use the keyword token. Module-level so
+// it keeps a stable identity across renders.
+export const grammars: Record<string, readonly CodeGrammarRule[]> = {
+  tree: [
+    { pattern: /&+/, token: "string" },
+    { pattern: /[|_]+/, token: "keyword" },
+  ],
+};
 
 function createRealisticLongMarkdown(sectionCount: number, title: string) {
   const sections = Array.from({ length: sectionCount }, (_, index) => {
@@ -349,4 +453,3 @@ export const themeOptions = [
 export function getThemeOption(themeId: string) {
   return themeOptions.find((option) => option.id === themeId) ?? themeOptions[0];
 }
-

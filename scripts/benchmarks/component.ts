@@ -1,5 +1,18 @@
 import { reconcileExternalContentChange } from "@/component/sync";
-import { resolveBlockDecorationRanges } from "@/component/decorations/ranges";
+import {
+  compileDecorations,
+} from "@/component/decorations/worker/matching";
+import {
+  resolveCompiledBlockDecorationRanges,
+} from "@/component/decorations/worker/prose";
+import {
+  builtinGrammars,
+  resolveCodeGrammars,
+} from "@/component/decorations/grammars";
+import {
+  compileCodeGrammars,
+  resolveCodeDecorationRanges,
+} from "@/component/decorations/worker/code";
 import { createParagraphTextBlock, spliceDocument, type Document } from "@/document";
 import {
   createEditorState,
@@ -14,6 +27,11 @@ const decorationRules = [
   { color: "#d00", pattern: /\b(?:document|list|table|text|item)\b/gi },
   { color: "#06c", pattern: /\b(?:heading|code|link)\b/gi },
 ] as const;
+const compiledDecorationRules = compileDecorations(decorationRules);
+
+// Code grammars compiled the way the worker compiles them (scope colors are
+// irrelevant to tokenization cost, so any color resolves them).
+const compiledGrammars = compileCodeGrammars(resolveCodeGrammars(builtinGrammars, () => "#fff"));
 
 export function createComponentBenchmarks(
   budgets: BenchmarkBudgetTree["component"],
@@ -23,6 +41,7 @@ export function createComponentBenchmarks(
   },
 ): BenchmarkRecord[] {
   const fixture = createLongReconciliationFixture(1200);
+  const codeHeavySnapshot = parseDocument(createCodeHeavyMarkdown(200));
 
   return [
     runBudgetedBenchmark(
@@ -31,7 +50,7 @@ export function createComponentBenchmarks(
       100,
       () =>
         void fixtures.mediumSnapshot.blocks.forEach((block, rootIndex) =>
-          resolveBlockDecorationRanges(block, rootIndex, decorationRules),
+          resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
         ),
     ),
     runBudgetedBenchmark(
@@ -40,7 +59,16 @@ export function createComponentBenchmarks(
       50,
       () =>
         void fixtures.longSnapshot.blocks.forEach((block, rootIndex) =>
-          resolveBlockDecorationRanges(block, rootIndex, decorationRules),
+          resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
+        ),
+    ),
+    runBudgetedBenchmark(
+      budgets,
+      "component_grammar_tokenize_code_heavy",
+      50,
+      () =>
+        void codeHeavySnapshot.blocks.forEach((block, rootIndex) =>
+          resolveCodeDecorationRanges(block, rootIndex, compiledGrammars),
         ),
     ),
     runBudgetedBenchmark(budgets, "component_reconcile_selection_long", 200, () => {
@@ -73,6 +101,21 @@ function createNumberedParagraphMarkdown(count: number) {
     (_, index) =>
       `Paragraph ${String(index + 1).padStart(4, "0")} carries unique reconciliation text.`,
   ).join("\n\n");
+}
+
+function createCodeHeavyMarkdown(blockCount: number) {
+  const snippet = [
+    "```ts",
+    "export async function handler(request: Request): Promise<Response> {",
+    "  const url = new URL(request.url); // route the request",
+    '  if (url.pathname === "/health") return new Response("ok", { status: 200 });',
+    '  const data = JSON.parse((await request.text()) || "{}");',
+    "  return new Response(JSON.stringify({ data, count: 42, ok: true }));",
+    "}",
+    "```",
+  ].join("\n");
+
+  return Array.from({ length: blockCount }, () => snippet).join("\n\n");
 }
 
 function selectRegion(state: ReturnType<typeof createEditorState>, regionIndex: number) {

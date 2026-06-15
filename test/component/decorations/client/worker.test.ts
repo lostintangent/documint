@@ -3,70 +3,97 @@ import { createDocument, createParagraphTextBlock } from "@/document";
 import {
   createDecorationWorkerClient,
   isDecorationWorkerDisposedError,
-  type DecorationWorkerLike,
-  type DecorationJobRequest,
-} from "@/component/worker/client";
+  type DecorationRequest,
+} from "@/component/decorations/client/worker";
 import type {
   DecorationWorkerRequest,
   DecorationWorkerResponse,
-} from "@/component/worker/protocol";
+} from "@/component/decorations/shared";
 
 describe("DecorationWorkerClient", () => {
-  test("returns null when a worker cannot be created", () => {
-    expect(createDecorationWorkerClient({ createWorker: () => null })).toBeNull();
-  });
-
   test("resolves matching worker responses", async () => {
     const worker = new FakeDecorationWorker();
     const client = createDecorationWorkerClient({ createWorker: () => worker });
-    expect(client).not.toBeNull();
-    if (!client) throw new Error("Expected decoration worker client.");
     const promise = client.run(createDecorationRequest());
 
     expect(worker.messages).toEqual([
       {
         kind: "configure-decorations",
-        rules: [{ color: "red", flags: "", source: "\\blist\\b" }],
-        rulesKey: "rules",
+        configKey: "decorations",
+        codeGrammars: {},
+        decorations: [{ color: "red", flags: "", source: "\\blist\\b" }],
       },
       {
         kind: "apply-decorations",
+        configKey: "decorations",
         requestId: 1,
         roots: [expect.objectContaining({ rootIndex: 0 })],
-        rulesKey: "rules",
       },
     ]);
     worker.emitMessage({
       kind: "decoration-result",
+      configKey: "decorations",
       requestId: 1,
       roots: [],
-      rulesKey: "rules",
     });
 
-    expect(await promise).toEqual({ roots: [], rulesKey: "rules" });
+    expect(await promise).toEqual({ configKey: "decorations", roots: [] });
   });
 
-  test("sends decoration rules only when the rule key changes", async () => {
+  test("serializes code grammars with the decoration config", async () => {
     const worker = new FakeDecorationWorker();
     const client = createDecorationWorkerClient({ createWorker: () => worker });
-    expect(client).not.toBeNull();
-    if (!client) throw new Error("Expected decoration worker client.");
+
+    const promise = client.run({
+      ...createDecorationRequest(),
+      codeGrammars: {
+        tree: [
+          { color: "green", pattern: /&+/ },
+          { backgroundColor: "gold", pulse: true, pattern: /_+/ },
+        ],
+      },
+    });
+
+    expect(worker.messages[0]).toEqual({
+      kind: "configure-decorations",
+      configKey: "decorations",
+      codeGrammars: {
+        tree: [
+          { color: "green", flags: "", source: "&+" },
+          { backgroundColor: "gold", pulse: true, flags: "", source: "_+" },
+        ],
+      },
+      decorations: [{ color: "red", flags: "", source: "\\blist\\b" }],
+    });
+
+    worker.emitMessage({
+      kind: "decoration-result",
+      configKey: "decorations",
+      requestId: 1,
+      roots: [],
+    });
+    await promise;
+  });
+
+  test("sends decoration config only when the config key changes", async () => {
+    const worker = new FakeDecorationWorker();
+    const client = createDecorationWorkerClient({ createWorker: () => worker });
 
     const first = client.run(createDecorationRequest());
     worker.emitMessage({
       kind: "decoration-result",
+      configKey: "decorations",
       requestId: 1,
       roots: [],
-      rulesKey: "rules",
     });
     await first;
 
     const second = client.run(createDecorationRequest());
     worker.emitMessage({
       kind: "decoration-result",
+      configKey: "decorations",
       requestId: 2,
       roots: [],
-      rulesKey: "rules",
     });
     await second;
 
@@ -77,11 +104,28 @@ describe("DecorationWorkerClient", () => {
     ]);
   });
 
+  test("sends decoration config for the first request even when the config key is empty", async () => {
+    const worker = new FakeDecorationWorker();
+    const client = createDecorationWorkerClient({ createWorker: () => worker });
+    const promise = client.run({ ...createDecorationRequest(), configKey: "" });
+
+    worker.emitMessage({
+      kind: "decoration-result",
+      configKey: "",
+      requestId: 1,
+      roots: [],
+    });
+    await promise;
+
+    expect(worker.messages.map((message) => message.kind)).toEqual([
+      "configure-decorations",
+      "apply-decorations",
+    ]);
+  });
+
   test("terminates the worker when a job times out", async () => {
     const worker = new FakeDecorationWorker();
     const client = createDecorationWorkerClient({ createWorker: () => worker, timeoutMs: 1 });
-    expect(client).not.toBeNull();
-    if (!client) throw new Error("Expected decoration worker client.");
 
     const error = await expectRejected(client.run(createDecorationRequest()));
 
@@ -95,8 +139,6 @@ describe("DecorationWorkerClient", () => {
   test("settles pending jobs with a disposal error when disposed", async () => {
     const worker = new FakeDecorationWorker();
     const client = createDecorationWorkerClient({ createWorker: () => worker });
-    expect(client).not.toBeNull();
-    if (!client) throw new Error("Expected decoration worker client.");
     const promise = client.run(createDecorationRequest());
 
     client.dispose();
@@ -107,7 +149,7 @@ describe("DecorationWorkerClient", () => {
   });
 });
 
-class FakeDecorationWorker implements DecorationWorkerLike {
+class FakeDecorationWorker {
   readonly messages: DecorationWorkerRequest[] = [];
   private readonly messageListeners: Array<
     (event: MessageEvent<DecorationWorkerResponse>) => void
@@ -150,13 +192,14 @@ class FakeDecorationWorker implements DecorationWorkerLike {
   }
 }
 
-function createDecorationRequest(): DecorationJobRequest {
+function createDecorationRequest(): DecorationRequest {
   const document = createDocument([createParagraphTextBlock("A list item")]);
 
   return {
+    codeGrammars: {},
+    configKey: "decorations",
+    decorations: [{ color: "red", pattern: /\blist\b/ }],
     roots: [{ block: document.blocks[0]!, rootIndex: 0, sourceKey: "source" }],
-    rules: [{ color: "red", pattern: /\blist\b/ }],
-    rulesKey: "rules",
   };
 }
 

@@ -1,16 +1,17 @@
-import { serializeDecorationRules, type DocumintDecoration } from "../decorations/rules";
-import workerSource from "./source";
+import { serializeDecorations } from "./config";
+import type { DocumintDecoration } from "@/types";
+import workerSource from "../worker/source";
 import type {
   DecorationRootResult,
   DecorationRootSnapshot,
   DecorationWorkerRequest,
   DecorationWorkerResponse,
-} from "./protocol";
-import { emitDiagnostic } from "../lib/diagnostics";
+  SerializedDecoration,
+} from "../shared";
 
 const decorationJobTimeoutMs = 2000;
 
-export type DecorationWorkerLike = {
+type DecorationWorkerHandle = {
   addEventListener(
     type: "message",
     listener: (event: MessageEvent<DecorationWorkerResponse>) => void,
@@ -20,9 +21,15 @@ export type DecorationWorkerLike = {
   terminate(): void;
 };
 
-export type DecorationWorkerClientOptions = {
-  createWorker?: () => DecorationWorkerLike | null;
+type DecorationWorkerClientOptions = {
+  createWorker?: () => DecorationWorkerHandle;
   timeoutMs?: number;
+};
+
+type PendingDecorationRequest = {
+  reject: (error: Error) => void;
+  resolve: (result: DecorationResult) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
 };
 
 export class DecorationWorkerDisposedError extends Error {
@@ -38,44 +45,32 @@ export function isDecorationWorkerDisposedError(
   return error instanceof Error && error.name === "DecorationWorkerDisposedError";
 }
 
-export type DecorationJobRequest = {
+export type DecorationRequest = {
+  codeGrammars: Record<string, readonly DocumintDecoration[]>;
+  configKey: string;
+  decorations: readonly DocumintDecoration[];
   roots: DecorationRootSnapshot[];
-  rules: readonly DocumintDecoration[];
-  rulesKey: string;
 };
 
-export type DecorationJobResult = {
+export type DecorationResult = {
+  configKey: string;
   roots: DecorationRootResult[];
-  rulesKey: string;
 };
 
 export type DecorationWorkerClient = {
   dispose: () => void;
-  run: (request: DecorationJobRequest) => Promise<DecorationJobResult>;
+  run: (request: DecorationRequest) => Promise<DecorationResult>;
 };
 
 export function createDecorationWorkerClient(
   options: DecorationWorkerClientOptions = {},
-): DecorationWorkerClient | null {
-  const maybeWorker = (options.createWorker ?? createDecorationWorker)();
-
-  if (!maybeWorker) {
-    return null;
-  }
-
-  const worker = maybeWorker;
+): DecorationWorkerClient {
+  const worker = (options.createWorker ?? createDecorationWorker)();
   const timeoutMs = options.timeoutMs ?? decorationJobTimeoutMs;
   let terminated = false;
-  let configuredRulesKey = "";
+  let configuredKey: string | null = null;
   let nextRequestId = 1;
-  const pending = new Map<
-    number,
-    {
-      reject: (error: Error) => void;
-      resolve: (result: DecorationJobResult) => void;
-      timeoutId: ReturnType<typeof setTimeout>;
-    }
-  >();
+  const pending = new Map<number, PendingDecorationRequest>();
 
   function terminateWithError(error: Error) {
     if (terminated) return;
@@ -103,8 +98,8 @@ export function createDecorationWorkerClient(
     }
 
     entry.resolve({
+      configKey: response.configKey,
       roots: response.roots,
-      rulesKey: response.rulesKey,
     });
   });
 
@@ -123,23 +118,24 @@ export function createDecorationWorkerClient(
       }
 
       const requestId = nextRequestId++;
-      if (configuredRulesKey !== request.rulesKey) {
+      if (configuredKey !== request.configKey) {
         worker.postMessage({
           kind: "configure-decorations",
-          rules: serializeDecorationRules(request.rules),
-          rulesKey: request.rulesKey,
+          configKey: request.configKey,
+          codeGrammars: serializeCodeGrammars(request.codeGrammars),
+          decorations: serializeDecorations(request.decorations),
         });
-        configuredRulesKey = request.rulesKey;
+        configuredKey = request.configKey;
       }
 
       const message: DecorationWorkerRequest = {
         kind: "apply-decorations",
+        configKey: request.configKey,
         requestId,
         roots: request.roots,
-        rulesKey: request.rulesKey,
       };
 
-      return new Promise<DecorationJobResult>((resolve, reject) => {
+      return new Promise<DecorationResult>((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           // Terminate the worker — a pathological regex can spin forever.
           terminateWithError(new Error("Decoration worker job timed out."));
@@ -152,34 +148,20 @@ export function createDecorationWorkerClient(
   };
 }
 
-function createDecorationWorker(): DecorationWorkerLike | null {
-  if (
-    typeof Worker === "undefined" ||
-    typeof Blob === "undefined" ||
-    typeof URL === "undefined" ||
-    workerSource.trim().length === 0
-  ) {
-    if (process.env.NODE_ENV !== "production") {
-      emitDiagnostic("decorationWorkerFallback", {
-        reason: workerSource.trim().length === 0 ? "missing-worker-source" : "unsupported-runtime",
-      });
-    }
-    return null;
+function serializeCodeGrammars(
+  grammars: Record<string, readonly DocumintDecoration[]>,
+): Record<string, SerializedDecoration[]> {
+  const serialized: Record<string, SerializedDecoration[]> = {};
+  for (const [language, rules] of Object.entries(grammars)) {
+    serialized[language] = serializeDecorations(rules);
   }
+  return serialized;
+}
 
-  try {
-    const blob = new Blob([workerSource], { type: "application/javascript" });
-    const url = URL.createObjectURL(blob);
-    const worker = new Worker(url, { type: "module" });
-    URL.revokeObjectURL(url);
-    return worker;
-  } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      emitDiagnostic("decorationWorkerFallback", {
-        message: error instanceof Error ? error.message : String(error),
-        reason: "construction-failed",
-      });
-    }
-    return null;
-  }
+function createDecorationWorker(): DecorationWorkerHandle {
+  const blob = new Blob([workerSource], { type: "application/javascript" });
+  const url = URL.createObjectURL(blob);
+  const worker = new Worker(url, { type: "module" });
+  URL.revokeObjectURL(url);
+  return worker;
 }

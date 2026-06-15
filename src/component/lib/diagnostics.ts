@@ -47,6 +47,13 @@ import type { DocumentFrame } from "@/renderer";
  *
  * # Wiring
  *
+ * Diagnostics use a `CustomEvent` channel rather than `PerformanceObserver`:
+ * the playground consumes these as app-local UI events, not browser timeline
+ * entries, and some payloads (notably render-frame inspection) intentionally
+ * carry rich runtime objects. Performance marks/measures are still a good fit
+ * for focused timing spans, but they are not used as the general diagnostics
+ * bus.
+ *
  *   - The dev server (`bun run dev`) doesn't need extra setup; Bun's
  *     HTML bundler substitutes `process.env.NODE_ENV` with
  *     `"development"` automatically, so the gates evaluate to `true`.

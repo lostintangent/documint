@@ -631,13 +631,14 @@ describe("Selections, comments, and text overlays", () => {
 
     const receivedContexts: Array<{
       anchor: { x: number; y: number };
+      contentKind: "code" | "text";
       text: string;
       viewport: { height: number; left: number; top: number; width: number };
     }> = [];
 
     const customEffects = {
-      textInserted: ({ anchor, text, viewport }) => {
-        receivedContexts.push({ anchor, text, viewport });
+      textInserted: ({ anchor, contentKind, text, viewport }) => {
+        receivedContexts.push({ anchor, contentKind, text, viewport });
       },
     } satisfies DocumintEffects;
 
@@ -666,6 +667,7 @@ describe("Selections, comments, and text overlays", () => {
             x: expect.any(Number),
             y: expect.any(Number),
           },
+          contentKind: "text",
           text: "!",
           viewport: {
             height: 180,
@@ -679,6 +681,7 @@ describe("Selections, comments, and text overlays", () => {
             x: expect.any(Number),
             y: expect.any(Number),
           },
+          contentKind: "text",
           text: ".",
           viewport: {
             height: 180,
@@ -737,6 +740,49 @@ describe("Selections, comments, and text overlays", () => {
     expect(customStrokeIndex).toBeGreaterThan(highlightOverlayIndex);
   });
 
+  test("runs custom source-region text-inserted effects without default insert highlight", () => {
+    let state = setup("```ts\nconst value = 1;\n```\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected code region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = insertText(state, "!") ?? state;
+
+    const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        textInserted: {
+          compose: "after",
+          paint: ({ contentKind, context, text }) => {
+            customContexts.push({ contentKind, text });
+            context.strokeStyle = "#ff00ff";
+            context.strokeRect(0, 0, 10, 10);
+          },
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 180,
+      width: 240,
+    });
+
+    expect(customContexts).toEqual([{ contentKind: "code", text: "!" }]);
+    expect(
+      context.operations.some(
+        (operation) =>
+          operation.kind === "fillText" &&
+          operation.fillStyle === resolvedLightTheme.insertHighlightText,
+      ),
+    ).toBe(false);
+    expect(
+      context.operations.some(
+        (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#ff00ff",
+      ),
+    ).toBe(true);
+  });
+
   test("uses custom text-deleted effects in place of the default fade", () => {
     let state = setup("alpha\n");
     const container = state.documentIndex.regions[0];
@@ -748,11 +794,11 @@ describe("Selections, comments, and text overlays", () => {
     state = setSelection(state, { regionId: container.id, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
-    const customTexts: string[] = [];
+    const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
     const { context } = renderPaintOperations(state, {
       customEffects: {
-        textDeleted: ({ context, left, text, textBaseline }) => {
-          customTexts.push(text);
+        textDeleted: ({ contentKind, context, left, text, textBaseline }) => {
+          customContexts.push({ contentKind, text });
           context.fillText("custom-delete", left, textBaseline);
         },
       },
@@ -761,9 +807,38 @@ describe("Selections, comments, and text overlays", () => {
       width: 240,
     });
 
-    expect(customTexts).toEqual(["a"]);
+    expect(customContexts).toEqual([{ contentKind: "text", text: "a" }]);
     expect(findFillTextOperation(context.operations, "custom-delete")).toBeDefined();
     expect(findFillTextOperation(context.operations, "a")).toBeNull();
+  });
+
+  test("passes code content kind to custom source-region text-deleted effects", () => {
+    let state = setup("```ts\nconst value = 1;\n```\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected code region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = deleteBackward(state) ?? state;
+
+    const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
+    const { context } = renderPaintOperations(state, {
+      customEffects: {
+        textDeleted: ({ contentKind, context, left, text, textBaseline }) => {
+          customContexts.push({ contentKind, text });
+          context.fillText("custom-delete", left, textBaseline);
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 180,
+      width: 240,
+    });
+
+    expect(customContexts).toEqual([{ contentKind: "code", text: ";" }]);
+    expect(findFillTextOperation(context.operations, "custom-delete")).toBeDefined();
+    expect(findFillTextOperation(context.operations, ";")).toBeNull();
   });
 
   test("supports explicit replace composition for custom effects", () => {

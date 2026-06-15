@@ -31,6 +31,7 @@ export const effects: DocumintEffects = {
 
 function paintDeletedTextFlyAway({
   color,
+  contentKind,
   context,
   font,
   left,
@@ -38,6 +39,10 @@ function paintDeletedTextFlyAway({
   text,
   textBaseline,
 }: TextDeletedEffectContext) {
+  if (contentKind === "code") {
+    return;
+  }
+
   const easedProgress = easeOutCubic(progress);
   const scale = 1 - deletedTextFlyAwayScale * easedProgress;
 
@@ -99,10 +104,17 @@ function paintListItemInsertedFlash({
   context.fill();
 }
 
-function paintInsertedTextGlow({ context, progress, theme, viewport }: TextInsertedEffectContext) {
+function paintInsertedTextGlow({
+  contentKind,
+  context,
+  progress,
+  theme,
+  viewport,
+}: TextInsertedEffectContext) {
   const flash = 1 - easeOutCubic(progress);
   const inset = insertedTextGlowLineWidth / 2;
-  const color = theme.insertHighlightText;
+  const color =
+    contentKind === "code" ? theme.commentHighlightResolved : theme.insertHighlightText;
 
   context.save();
   context.globalAlpha *= Math.min(1, flash * 1.35);

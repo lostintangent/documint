@@ -54,6 +54,8 @@ import type {
   DocumentPresence,
   DocumentResourceReference,
   DocumentUser,
+  CodeGrammarRule,
+  DocumintDecoration,
   DocumintEffects,
   DocumintStorage,
   EditorTheme,
@@ -96,8 +98,9 @@ import { emitDiagnostic, emitRenderFrame } from "./lib/diagnostics";
 import { type EditorInputKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
 import { DocumentStorage } from "./lib/storage";
-import { useDecorations, type DocumintDecoration } from "./hooks/useDecorations";
-import { useSync, type UserMentionEvent } from "./hooks/useSync";
+import { useDecorations } from "./decorations/useDecorations";
+import { builtinGrammars } from "./decorations/grammars";
+import { useSync, type UserMentionEvent } from "./sync";
 import {
   activeCommentIndexSprig,
   commentRangesSprig,
@@ -114,9 +117,9 @@ import {
 } from "./store";
 import editorCss from "./styles.css" with { type: "text" };
 
-export type { DocumintDecoration } from "./hooks/useDecorations";
+export type { DocumintDecoration } from "@/types";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
-export type { UserMentionEvent } from "./hooks/useSync";
+export type { UserMentionEvent } from "./sync";
 
 export type ResizeHandle = {
   end: {
@@ -139,6 +142,11 @@ export type DocumintProps = {
   theme?: DocumintTheme;
   keybindings?: EditorInputKeybinding[];
   decorations?: readonly DocumintDecoration[];
+  // Extra/override code grammars, merged over the built-ins (markdown, JS/TS);
+  // `null` disables code highlighting. Re-tokenization keys on grammar content
+  // and theme colors (not object identity), but pass a memoized reference to
+  // avoid recomputing that key every render.
+  grammars?: Record<string, readonly CodeGrammarRule[]> | null;
   effects?: DocumintEffects;
   presence?: DocumentPresence[];
   protocols?: ResourceProtocolRecord;
@@ -229,6 +237,7 @@ function DocumintHost({
   content,
   keybindings,
   decorations,
+  grammars,
   effects,
   onCommentChanged,
   onContentChanged,
@@ -339,10 +348,15 @@ function DocumintHost({
   const { commentPresence, resolvedPresence } = usePresence({ presence, users });
   const activeCommentIndex = useSprig(activeCommentIndexSprig);
   const readCurrentState = () => store.editor.getState();
-  const { scheduleDecorationsForTransition, textDecorations } = useDecorations({
-    contentDocument,
+  const resolvedGrammars = useMemo(
+    () => (grammars === null ? null : { ...builtinGrammars, ...grammars }),
+    [grammars],
+  );
+  const { textDecorations } = useDecorations({
     decorations,
+    grammars: resolvedGrammars,
     store,
+    theme: preferredTheme,
   });
   const search = useSearch();
   const selectionActions = normalizeDocumintActions(actions?.selection);
@@ -375,8 +389,6 @@ function DocumintHost({
       if (!transition.documentChanged) {
         return;
       }
-
-      scheduleDecorationsForTransition(transition);
 
       emitContentChanged(transition);
     },

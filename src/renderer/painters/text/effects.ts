@@ -15,9 +15,9 @@ import type { TextDeletedEffectContext } from "@/types";
 import {
   resolveTextFadeColor,
   resolveTextPulseColor,
-  type ActiveTextFade,
-  type ActiveTextHighlight,
-  type ActiveTextPulse,
+  type TextFadeFrame,
+  type TextHighlightFrame,
+  type TextPulseFrame,
   type EffectEnvironment,
   type PaintEffect,
 } from "../../effects";
@@ -30,7 +30,7 @@ const textHighlightMinimumVisibleAlpha = 0.02;
 
 export function paintTextHighlights(
   lineFrame: DocumentFrameLine,
-  textHighlights: readonly ActiveTextHighlight[],
+  textHighlights: readonly TextHighlightFrame[],
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { context, paintEffect, theme } = environment;
@@ -90,12 +90,13 @@ export function paintTextHighlights(
       const width = Math.max(0, highlightRight - highlightLeft);
 
       paintEffect(
-        "textInserted",
+        activeHighlight,
         {
           anchor: {
             x: highlightLeft,
             y: textSegment.baseline,
           },
+          contentKind: activeHighlight.contentKind,
           progress: activeHighlight.progress,
           text: activeHighlight.text,
         },
@@ -156,7 +157,7 @@ function paintDefaultTextInsertedHighlight(
 
 export function paintTextFades(
   lineFrame: DocumentFrameLine,
-  textFades: readonly ActiveTextFade[],
+  textFades: readonly TextFadeFrame[],
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { paintEffect } = environment;
@@ -180,9 +181,10 @@ export function paintTextFades(
     const color = resolveTextFadeColor(lineFrame.defaultTextColor, fade);
 
     paintEffect(
-      "textDeleted",
+      fade,
       {
         color,
+        contentKind: fade.contentKind,
         font: lineFrame.layoutLine.font,
         left: ghostLeft,
         progress: fade.progress,
@@ -207,7 +209,7 @@ function paintDefaultTextDeleted({
 
 export function paintTextPulses(
   lineFrame: DocumentFrameLine,
-  textPulses: readonly ActiveTextPulse[],
+  textPulses: readonly TextPulseFrame[],
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { paintEffect, theme } = environment;
@@ -237,12 +239,13 @@ export function paintTextPulses(
     const color = resolveTextPulseColor(pulse, theme);
 
     paintEffect(
-      "textInserted",
+      pulse,
       {
         anchor: {
           x: left,
           y: lineFrame.textBaseline,
         },
+        contentKind: pulse.contentKind,
         progress: pulse.progress,
         text: pulse.text,
       },

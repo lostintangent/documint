@@ -8,7 +8,7 @@ import type { DocumentResources, DocumintEffects, ResolvedEditorTheme } from "@/
 import {
   resolveActiveEffects,
   type EffectPolicy,
-  type ActiveBlockFlash,
+  type BlockFlashFrame,
   type ActiveEditorEffect,
 } from "../effects";
 import { resolveDocumentFrameChrome, type DocumentFrameChrome } from "./chrome";
@@ -171,7 +171,7 @@ export type PaintLayerFrame = {
 };
 
 export type ActiveBlockChangedEffectFrame = {
-  readonly activeFlash: ActiveBlockFlash;
+  readonly activeFlash: BlockFlashFrame;
   readonly bands: readonly LayoutRect[];
   readonly borderRect?: LayoutRect;
   readonly rect: LayoutRect;
@@ -191,7 +191,7 @@ function resolveActiveBlockChangedEffectFrame(
   }
 
   const bands: LayoutRect[] = [];
-  let activeFlash: ActiveBlockFlash | null = null;
+  let activeFlash: BlockFlashFrame | null = null;
 
   for (const line of lines) {
     const background = line.activeBlockBackground;

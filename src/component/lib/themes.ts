@@ -35,6 +35,42 @@ const SEMANTIC_INLINE_CODE_DEFAULTS = {
   dark: { background: "rgba(251, 191, 36, 0.16)", text: "#fdba74" },
 } as const;
 
+// Code token colors, split by the brightness of the resolved code surface (not
+// the editor background — built-in code blocks are dark in both modes). A
+// grammar emits token kinds; the resolver maps them to these defaults so hosts
+// get highlighting without authoring a palette. Unknown kinds fall back to
+// `codeText` at read time.
+const CODE_TOKEN_DEFAULTS = {
+  dark: {
+    keyword: "#c792ea",
+    string: "#c3e88d",
+    comment: "#7a8499",
+    number: "#f78c6c",
+    atom: "#ffcb6b",
+    function: "#82aaff",
+    type: "#ffcb6b",
+    punctuation: "#89ddff",
+    heading: "#82aaff",
+    strong: "#f78c6c",
+    emphasis: "#c792ea",
+    link: "#82aaff",
+  },
+  light: {
+    keyword: "#9c27b0",
+    string: "#388e3c",
+    comment: "#9aa3b0",
+    number: "#e65100",
+    atom: "#9a6700",
+    function: "#1565c0",
+    type: "#9a6700",
+    punctuation: "#0097a7",
+    heading: "#1565c0",
+    strong: "#e65100",
+    emphasis: "#9c27b0",
+    link: "#1565c0",
+  },
+} as const;
+
 export const lightTheme: EditorTheme = {
   accent: "#3b82f6",
   activeBlockBackground: "#fff1c7",
@@ -95,6 +131,16 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
   const inlineCodeText =
     theme.inlineCodeText ??
     (isLight ? SEMANTIC_INLINE_CODE_DEFAULTS.light.text : SEMANTIC_INLINE_CODE_DEFAULTS.dark.text);
+  // Resolve the code surface first so the scope palette keys off the code
+  // background's brightness, not the editor background's.
+  const codeBackground =
+    theme.codeBackground ??
+    (isLight
+      ? `color-mix(in srgb, ${text} 60%, #000)`
+      : `color-mix(in srgb, ${text} 8%, ${background})`);
+  const codeTokenDefaults = isLightThemeBackground(codeBackground)
+    ? CODE_TOKEN_DEFAULTS.light
+    : CODE_TOKEN_DEFAULTS.dark;
 
   return {
     ...theme,
@@ -126,11 +172,8 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     // green-950 for green themes, etc.). Dark themes lift slightly from
     // background (`text 8% + background`) to create a subtle code-block
     // surface that stays in the editor's tonal family.
-    codeBackground:
-      theme.codeBackground ??
-      (isLight
-        ? `color-mix(in srgb, ${text} 60%, #000)`
-        : `color-mix(in srgb, ${text} 8%, ${background})`),
+    codeBackground,
+    codeTokens: { ...codeTokenDefaults, ...theme.codeTokens },
     codeText: theme.codeText ?? text,
     commentHighlight: theme.commentHighlight ?? `color-mix(in srgb, ${accent} 38%, transparent)`,
     commentHighlightActive: theme.commentHighlightActive ?? commentDefaults.active,

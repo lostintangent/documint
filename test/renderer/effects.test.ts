@@ -36,6 +36,15 @@ describe("Renderer effect policy", () => {
       expect(activeEffects.textHighlights.size).toBe(0);
       expect(activeEffects.activeEditorEffects).toEqual([]);
     });
+
+    test("does not animate source-region insertion by default", () => {
+      const effects = [insertedText("x", { regionKind: "source" })];
+      const activeEffects = resolveActiveEffects(effects, now);
+
+      expect(activeEffects.textHighlights.size).toBe(0);
+      expect(activeEffects.textPulses.size).toBe(0);
+      expect(activeEffects.activeEditorEffects).toEqual([]);
+    });
   });
 
   describe("text deletion", () => {
@@ -55,6 +64,14 @@ describe("Renderer effect policy", () => {
         deletedText({ text: "🔥" }),
       ];
 
+      const activeEffects = resolveActiveEffects(effects, now);
+
+      expect(activeEffects.textFades.size).toBe(0);
+      expect(activeEffects.activeEditorEffects).toEqual([]);
+    });
+
+    test("does not animate source-region deletion by default", () => {
+      const effects = [deletedText({ regionKind: "source" })];
       const activeEffects = resolveActiveEffects(effects, now);
 
       expect(activeEffects.textFades.size).toBe(0);
@@ -144,14 +161,19 @@ function withDurationOverride(duration: EffectPolicy["duration"]): EffectPolicy 
   return { duration };
 }
 
-function insertedText(text: string): ActiveEditorEffect {
+function insertedText(
+  text: string,
+  overrides: Partial<Extract<ActiveEditorEffect, { kind: "text-inserted" }>> = {},
+): ActiveEditorEffect {
   return {
     kind: "text-inserted",
     text,
+    regionKind: "inlines",
     regionPath: "root.0",
     startOffset: 4,
     endOffset: 4 + text.length,
     startedAt,
+    ...overrides,
   };
 }
 
@@ -161,6 +183,7 @@ function deletedText(
   return {
     kind: "text-deleted",
     text: "a",
+    regionKind: "inlines",
     regionPath: "root.0",
     startOffset: 3,
     direction: "backward",

@@ -1,3 +1,7 @@
+## 🗓️ v0.0.29 (06-15-26)
+
+- Introduce basic syntax highlighting, with support for embedder apps to add custom languages via the new `grammars` property on the component
+
 ## 🗓️ v0.0.28 (06-08-26)
 
 - Introduced the ability to customize editor effects (e.g. text inserted animation)

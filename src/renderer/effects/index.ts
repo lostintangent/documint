@@ -8,21 +8,20 @@ import { blendCanvasColors, transparentCanvasColor } from "./colors";
 import { descriptorFor, type ActiveEffectGroups } from "./kinds";
 import type {
   ActiveEditorEffect,
-  ActiveTextFade,
-  ActiveTextPulse,
+  TextFadeFrame,
+  TextPulseFrame,
 } from "./types";
 
 export type { EffectEnvironment } from "@/types";
 export type { PaintEffect } from "./custom-effects";
 export { createPaintEffect } from "./custom-effects";
 export type {
-  ActiveBlockFlash,
-  ActiveBlockPulse,
+  BlockFlashFrame,
+  BlockPulseFrame,
   ActiveEditorEffect,
-  ActiveTextFade,
-  ActiveTextHighlight,
-  ActiveTextInsertion,
-  ActiveTextPulse,
+  TextFadeFrame,
+  TextHighlightFrame,
+  TextPulseFrame,
 } from "./types";
 
 export type EffectPolicy = {
@@ -62,20 +61,26 @@ export function resolveActiveEffects(
   const activeEditorEffects: ActiveEditorEffect[] = [];
 
   for (const effect of effects) {
-    const progress = resolveEffectProgress(effect, now, policy, customEffects);
+    const defaultDurationMs = policy.duration(effect);
+    const durationMs = defaultDurationMs ?? getCustomEffectDuration(effect, customEffects);
 
+    if (durationMs === null) {
+      continue;
+    }
+
+    const progress = resolveEffectProgress(effect, now, durationMs);
     if (progress === null) {
       continue;
     }
 
     activeEditorEffects.push(effect);
-    descriptorFor(effect).collect(result, effect, progress);
+    descriptorFor(effect).collect(result, effect, progress, defaultDurationMs !== null);
   }
 
   return { ...result, activeEditorEffects };
 }
 
-export function resolveTextFadeColor(baseColor: string, textFade: ActiveTextFade) {
+export function resolveTextFadeColor(baseColor: string, textFade: TextFadeFrame) {
   return blendCanvasColors(baseColor, transparentCanvasColor, textFade.progress);
 }
 
@@ -90,7 +95,7 @@ export function resolveActiveBlockFlashColor(
   );
 }
 
-export function resolveTextPulseColor(textPulse: ActiveTextPulse, theme: ResolvedEditorTheme) {
+export function resolveTextPulseColor(textPulse: TextPulseFrame, theme: ResolvedEditorTheme) {
   return blendCanvasColors(theme.insertHighlightText, transparentCanvasColor, textPulse.progress);
 }
 
@@ -121,15 +126,8 @@ function createEmptyActiveEffects(): ActiveEffectGroups {
 function resolveEffectProgress(
   effect: ActiveEditorEffect,
   now: number,
-  policy: EffectPolicy,
-  customEffects?: DocumintEffects,
+  durationMs: number,
 ): number | null {
-  const durationMs = policy.duration(effect) ?? getCustomEffectDuration(effect, customEffects);
-
-  if (durationMs === null) {
-    return null;
-  }
-
   const elapsed = now - effect.startedAt;
 
   if (elapsed >= durationMs) {

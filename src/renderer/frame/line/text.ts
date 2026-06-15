@@ -4,13 +4,13 @@ import type { EditableRegion } from "@/editor/state";
 import type { TextDecoration, TextDecorationIndex } from "@/editor/text/decorations";
 import { resolveCenteredTextBaseline } from "@/editor/text/measure";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
-import type { ActiveTextFade, ActiveTextHighlight, ActiveTextPulse } from "../../effects";
+import type { TextFadeFrame, TextHighlightFrame, TextPulseFrame } from "../../effects";
 import { resolveLineTextSegments, type TextSegment } from "./text-segments";
 
 export type DocumentFrameLineText = {
-  readonly textFades: readonly ActiveTextFade[];
-  readonly textHighlights: readonly ActiveTextHighlight[];
-  readonly textPulses: readonly ActiveTextPulse[];
+  readonly textFades: readonly TextFadeFrame[];
+  readonly textHighlights: readonly TextHighlightFrame[];
+  readonly textPulses: readonly TextPulseFrame[];
   readonly defaultTextColor: string;
   readonly segments: readonly TextSegment[];
   readonly textBaseline: number;
@@ -30,9 +30,9 @@ export function resolveDocumentFrameLineText({
   textDecorations,
   theme,
 }: {
-  textFades: Map<string, ActiveTextFade[]>;
-  textHighlights: Map<string, ActiveTextHighlight[]>;
-  textPulses: Map<string, ActiveTextPulse[]>;
+  textFades: Map<string, TextFadeFrame[]>;
+  textHighlights: Map<string, TextHighlightFrame[]>;
+  textPulses: Map<string, TextPulseFrame[]>;
   block: Block | null;
   container: EditableRegion | null;
   layout: EditorLayoutState["layout"];
