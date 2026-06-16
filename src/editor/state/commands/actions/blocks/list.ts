@@ -23,12 +23,17 @@ import { insertAt, moveItem, removeAt, replaceAt } from "./shared";
 // top-level list demotion override in `actions/deletion/`.
 //
 // Public resolvers in this file should read as: guard in list language,
-// rebuild in list language, declare caret/effects by semantic intent.
+// rebuild in list language, declare selection/effects by semantic intent.
 // Array surgery and editor action envelopes stay in local helpers.
 
 type ListActionIntent = {
-  caret: ListItemBlock;
-  inserted?: ListItemBlock;
+  // The list item to place selection in
+  // after performing the list action
+  selectedItem: ListItemBlock;
+
+  // Whether the selected item was inserted
+  // as part of the list action
+  wasItemInserted?: boolean;
 };
 
 export function resolveListItemLineBreak(
@@ -41,25 +46,23 @@ export function resolveListItemLineBreak(
 
   if (context.parent) {
     const insertedItem = createSiblingListItem(context.parent.item, "");
-    return liftItemToParentList(context, insertedItem, { inserted: insertedItem });
+    return liftItemToParentList(context, insertedItem, { wasItemInserted: true });
   }
 
   return exitList(context);
 }
 
 export function resolveListItemIndent(context: ListItemContext): EditorStateAction | null {
-  if (context.itemIndex === 0) {
-    return null;
-  }
+  // You can't indent the first item in a list
+  if (context.itemIndex === 0) return null;
 
+  // Grab the previous sibling and produce a new list
+  // where the target item starts a new list beneath it
   const previousItem = context.list.items[context.itemIndex - 1];
+  const newList = indentItemUnderPreviousSibling(context, previousItem);
 
-  if (!previousItem) {
-    return null;
-  }
-
-  return replaceListItems(context.list, indentItemUnderPreviousSibling(context, previousItem), {
-    caret: context.item,
+  return replaceListItems(context.list, newList, {
+    selectedItem: context.item,
   });
 }
 
@@ -73,7 +76,7 @@ export function resolveListItemMove(
 ): EditorStateAction | null {
   const items = moveItem(context.list.items, context.itemIndex, context.itemIndex + direction);
 
-  return items ? replaceListItems(context.list, items, { caret: context.item }) : null;
+  return items ? replaceListItems(context.list, items, { selectedItem: context.item }) : null;
 }
 
 function splitListItem(context: ListItemContext, offset: number): EditorStateAction | null {
@@ -92,8 +95,8 @@ function insertEmptyListItem(context: ListItemContext, insertIndex: number): Edi
   const insertedItem = createSiblingListItem(context.item, "");
 
   return replaceListItems(context.list, insertAt(context.list.items, insertIndex, insertedItem), {
-    caret: insertedItem,
-    inserted: insertedItem,
+    wasItemInserted: true,
+    selectedItem: insertedItem,
   });
 }
 
@@ -116,8 +119,8 @@ function splitListItemTextAtOffset(
   );
 
   return replaceListItems(context.list, items, {
-    caret: insertedItem,
-    inserted: insertedItem,
+    wasItemInserted: true,
+    selectedItem: insertedItem,
   });
 }
 
@@ -142,7 +145,7 @@ function indentItemUnderPreviousSibling(
 function liftItemToParentList(
   context: ListItemContext,
   liftedItem: ListItemBlock,
-  intent: { inserted?: ListItemBlock } = {},
+  intent: Omit<ListActionIntent, "selectedItem"> = {},
 ): EditorStateAction | null {
   if (!context.parent) {
     return null;
@@ -168,8 +171,8 @@ function liftItemToParentList(
   );
 
   return replaceListItems(context.parent.list, parentItems, {
-    caret: liftedItem,
-    inserted: intent.inserted,
+    wasItemInserted: intent.wasItemInserted,
+    selectedItem: liftedItem,
   });
 }
 
@@ -191,15 +194,11 @@ function replaceListItems(
 ): EditorStateAction {
   return {
     kind: "replace-block",
-    block: rebuildListBlock(list, items),
     blockId: list.id,
-    effect: intent.inserted ? insertedListItemEffect(intent.inserted) : undefined,
-    selection: target.block(intent.caret),
+    block: rebuildListBlock(list, items),
+    selection: target.block(intent.selectedItem),
+    effect: intent.wasItemInserted ? effect.listItemInserted(intent.selectedItem) : undefined,
   };
-}
-
-function insertedListItemEffect(item: ListItemBlock) {
-  return isTaskItem(item) ? undefined : effect.listItemInserted(item);
 }
 
 function createSiblingListItem(item: ListItemBlock, text: string) {

@@ -5,6 +5,8 @@
 
 import type { DocumentResources } from "@/types";
 import {
+  findAncestorIndexedBlock,
+  resolvePrimaryRegion,
   resolveRegion,
   type IndexedInline,
   type IndexedListItem,
@@ -12,7 +14,7 @@ import {
 } from "../../state";
 import {
   ORDERED_LIST_MARKER_GAP,
-  TASK_CHECKBOX_SIZE,
+  resolveTaskCheckboxSizeFromFont,
   UNORDERED_LIST_MARKER_GUTTER_INSET,
   UNORDERED_LIST_MARKER_SIZE,
 } from "../lib/marker-metrics";
@@ -29,6 +31,12 @@ export type InlineBounds = {
   width: number;
 };
 
+export type ListMarkerTarget = {
+  blockPath: string;
+  listItemId: string;
+  marker: IndexedListItem;
+};
+
 export function resolveLineVisualLeft(
   line: DocumentLayout["lines"][number],
   offset: number,
@@ -41,10 +49,13 @@ export function resolveOrderedListMarkerAnchor(textLeft: number) {
 }
 
 export function resolveTaskCheckboxBounds(line: LayoutLine) {
+  const size = resolveTaskCheckboxSizeFromFont(line.font);
+  const centerY = resolveTextOpticalCenter(line);
+
   return {
     left: line.left,
-    size: TASK_CHECKBOX_SIZE,
-    top: line.top + 3,
+    size,
+    top: centerY - size / 2,
   };
 }
 
@@ -65,6 +76,37 @@ export function resolveIndexedListItem(
   listItemId: string,
 ): IndexedListItem | null {
   return state.documentIndex.listItems.get(listItemId) ?? null;
+}
+
+export function resolveListMarkerTarget(
+  state: EditorState,
+  line: DocumentLayout["lines"][number],
+): ListMarkerTarget | null {
+  if (line.start !== 0) {
+    return null;
+  }
+
+  const listItemEntry = findAncestorIndexedBlock(state.documentIndex, line.blockId, "listItem");
+
+  if (!listItemEntry) {
+    return null;
+  }
+
+  const primaryRegion = resolvePrimaryRegion(state.documentIndex, listItemEntry.block.id);
+
+  if (primaryRegion?.id !== line.regionId) {
+    return null;
+  }
+
+  const marker = resolveIndexedListItem(state, listItemEntry.block.id);
+
+  return marker
+    ? {
+        blockPath: listItemEntry.path,
+        listItemId: listItemEntry.block.id,
+        marker,
+      }
+    : null;
 }
 
 function resolveTextOpticalCenter(line: LayoutLine) {

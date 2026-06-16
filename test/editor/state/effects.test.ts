@@ -294,13 +294,13 @@ describe("List item inserted effects", () => {
     );
   });
 
-  test("does not emit list-item-inserted when splitting a task list item", () => {
+  test("emits list-item-inserted when splitting a task list item", () => {
     const state = setup("- [ ] task\n");
     const result = insertLineBreak(placeAt(state, getRegion(state, "task"), "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
-      false,
+      true,
     );
   });
 });

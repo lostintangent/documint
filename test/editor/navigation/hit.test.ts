@@ -69,6 +69,39 @@ test("hit-tests the second line of a multi-line wrapped paragraph", () => {
   expect(hit?.offset).toBeLessThanOrEqual(secondLine.end);
 });
 
+test("keeps clicks left of a soft-wrapped line start on that visual line", () => {
+  const text =
+    "Dialect changes update recognition and emission together. Block readers, inline token readers, inline mark specs, block-start escape predicates, serializer output, preservation policy, and SUPPORT.md status move together so parser and serializer behavior does not drift.";
+  const state = setup(`- ${text}\n`);
+  const region = getRegion(state, text);
+  const layout = measureLayoutSlice(state.documentIndex, { width: 740 });
+  const regionLines = layout.lines.filter((line) => line.regionId === region.id);
+  const wrappedStarts = regionLines.slice(1, 3);
+
+  expect(wrappedStarts).toHaveLength(2);
+  expect(regionLines[0]!.end).toBe(wrappedStarts[0]!.start);
+  expect(wrappedStarts[0]!.end).toBe(wrappedStarts[1]!.start);
+
+  for (const line of wrappedStarts) {
+    const hit = resolveEditorHitAtPoint(layout, state, {
+      x: line.left + line.contentInset - 3,
+      y: line.top + line.height / 2,
+    });
+
+    expect(hit?.regionId).toBe(region.id);
+    expect(hit?.offset).toBe(line.start);
+
+    const caret = hit
+      ? measureCaretTarget(layout, state.documentIndex, {
+          offset: hit.offset,
+          regionId: hit.regionId,
+        })
+      : null;
+
+    expect(caret?.top).toBe(line.top);
+  }
+});
+
 test("resolves link hits from document-space coordinates over linked text", () => {
   const state = setup("[alpha](https://example.com) tail\n");
   const layout = measureLayoutSlice(state.documentIndex, {

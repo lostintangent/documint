@@ -7,12 +7,11 @@ import {
   resolveBoundaryOffset,
 } from "../layout/query/line-lookup";
 import {
-  resolveIndexedListItem,
+  resolveListMarkerTarget,
   resolveTaskCheckboxBounds,
 } from "../layout/query/line-visuals";
 import type { DocumentLayout, LayoutLine } from "../layout/measure";
 import {
-  findAncestorIndexedBlock,
   isInertBlock,
   nextBlockInFlow,
   regionInlines,
@@ -216,19 +215,13 @@ export function resolveTaskCheckboxHitAtPoint(
 ): CanvasCheckboxHit | null {
   const line = resolveInteractiveLineAtPoint(layout, point);
 
-  if (!line || line.start !== 0) {
+  if (!line) {
     return null;
   }
 
-  const listItemEntry = findAncestorIndexedBlock(state.documentIndex, line.blockId, "listItem");
+  const target = resolveListMarkerTarget(state, line);
 
-  if (!listItemEntry) {
-    return null;
-  }
-
-  const marker = resolveIndexedListItem(state, listItemEntry.block.id);
-
-  if (marker?.kind !== "task") {
+  if (target?.marker.kind !== "task") {
     return null;
   }
 
@@ -240,7 +233,7 @@ export function resolveTaskCheckboxHitAtPoint(
 
   return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
     ? {
-        listItemId: listItemEntry.block.id,
+        listItemId: target.listItemId,
       }
     : null;
 }

@@ -206,6 +206,29 @@ describe("DocumentFrame effect policy", () => {
 });
 
 describe("DocumentFrame chrome and block rows", () => {
+  test("renders list markers only on the primary line for mixed list-item children", () => {
+    const state = createState(`1. Review and iterate until the guide satisfies the standard:
+
+   - For source-grounded changes
+   - Make one bloat-removal pass
+
+   Take only feedback that fixes a real contradiction.
+`);
+    const frame = createTestDocumentFrame(state, { width: 720 });
+    const parentLine = lineFrameContaining(frame, "Review and iterate");
+    const nestedFirstLine = lineFrameContaining(frame, "For source-grounded changes");
+    const nestedSecondLine = lineFrameContaining(frame, "Make one bloat-removal pass");
+    const continuationLine = lineFrameContaining(frame, "Take only feedback");
+
+    expect(parentLine.listMarker).toMatchObject({
+      kind: "ordered",
+      label: "1.",
+    });
+    expect(nestedFirstLine.listMarker).toMatchObject({ kind: "unordered" });
+    expect(nestedSecondLine.listMarker).toMatchObject({ kind: "unordered" });
+    expect(continuationLine.listMarker).toBeNull();
+  });
+
   test("resolves table active highlight as chrome and suppresses per-line table active backgrounds", () => {
     let state = setup(`| Left | Active | Right |
 | --- | --- | --- |

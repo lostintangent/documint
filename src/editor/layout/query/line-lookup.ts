@@ -132,6 +132,11 @@ export function findDocumentLayoutLineEntryForRegionOffset(
       continue;
     }
 
+    if (offset === line.end && nextRegionLineStartsAt(layout, lineIndices, middle, offset)) {
+      low = middle + 1;
+      continue;
+    }
+
     return {
       index: lineIndex,
       line,
@@ -158,6 +163,16 @@ export function findDocumentLayoutLineEntryForRegionOffset(
   }
 
   return null;
+}
+
+function nextRegionLineStartsAt(
+  layout: DocumentLayout,
+  lineIndices: number[],
+  lineIndexOffset: number,
+  offset: number,
+) {
+  const nextLineIndex = lineIndices[lineIndexOffset + 1];
+  return nextLineIndex !== undefined && layout.lines[nextLineIndex]!.start === offset;
 }
 
 export function measureCanvasLineOffsetLeft(

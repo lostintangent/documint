@@ -419,6 +419,20 @@ describe("Tables", () => {
     expect(toMarkdown(next!)).toBe("alx\ny\n\nomega\n");
   });
 
+  test("paste: full table selection applies structural blocks", () => {
+    const state = setup("intro\n\n| A | B |\n| --- | --- |\n| one | two |\n\nomega\n");
+    const firstCell = getRegion(state, "A");
+    const lastCell = getRegion(state, "two");
+    const selected = setSelection(state, {
+      anchor: { regionId: firstCell.id, offset: 0 },
+      focus: { regionId: lastCell.id, offset: lastCell.text.length },
+    });
+    const next = pasteFragment(selected, parseFragment("# New\n\npara\n"), "# New\n\npara\n");
+
+    expect(next).not.toBeNull();
+    expect(toMarkdown(next!)).toBe("intro\n\n# New\n\npara\n\nomega\n");
+  });
+
   test("paste: text into a non-first row inserts inline", () => {
     expect(
       pasteInto(
@@ -441,6 +455,16 @@ describe("Code blocks", () => {
     expect(copySubstring("```ts\nconst value = 1;\n```\n", "const value = 1;", "value")).toBe(
       "value",
     );
+  });
+
+  test("paste: full source selection applies structural blocks", () => {
+    const state = setup("intro\n\n```\nold code\n```\n\nomega\n");
+    const code = getRegion(state, "old code");
+    const selected = selectIn(state, code, 0, code.text.length);
+    const next = pasteFragment(selected, parseFragment("# New\n\npara\n"), "# New\n\npara\n");
+
+    expect(next).not.toBeNull();
+    expect(toMarkdown(next!)).toBe("intro\n\n# New\n\npara\n\nomega\n");
   });
 
   test("paste: into an empty paragraph replaces it", () => {

@@ -11,7 +11,12 @@ import {
 import { resolveInlineContext, type InlineContext } from "../commands/context";
 import { effect } from "../effects";
 import type { DocumentIndex, EditableRegion } from "../index/types";
-import { normalizeSelection, resolveRegion, type EditorSelection } from "../selection";
+import {
+  normalizeSelection,
+  resolveRegion,
+  type EditorSelection,
+  type NormalizedEditorSelection,
+} from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
 import { insertInlines } from "../commands/actions/inlines";
 
@@ -196,7 +201,9 @@ function resolveFragmentDestinationContext(
     return null;
   }
 
-  const structuralBlocked = isOpaqueRegion(startRegion) || isOpaqueRegion(endRegion);
+  const structuralBlocked =
+    cutsThroughOpaqueRoot(documentIndex, startRegion, normalized.start.offset, "start", normalized) ||
+    cutsThroughOpaqueRoot(documentIndex, endRegion, normalized.end.offset, "end", normalized);
 
   return {
     prefersVerbatimFallback: startRegion.block.type === "code" || endRegion.block.type === "code",
@@ -207,4 +214,35 @@ function resolveFragmentDestinationContext(
 
 function isOpaqueRegion(region: EditableRegion): boolean {
   return region.block.type === "table" || region.block.type === "code";
+}
+
+function cutsThroughOpaqueRoot(
+  documentIndex: DocumentIndex,
+  region: EditableRegion,
+  offset: number,
+  boundary: "end" | "start",
+  selection: NormalizedEditorSelection,
+): boolean {
+  if (!isOpaqueRegion(region)) {
+    return false;
+  }
+
+  if (selection.collapsed) {
+    return true;
+  }
+
+  return !isRootBoundary(documentIndex, region, offset, boundary);
+}
+
+function isRootBoundary(
+  documentIndex: DocumentIndex,
+  region: EditableRegion,
+  offset: number,
+  boundary: "end" | "start",
+): boolean {
+  const root = documentIndex.roots[region.rootIndex];
+  const endpointRegion = boundary === "start" ? root?.regions[0] : root?.regions.at(-1);
+  const endpointOffset = boundary === "start" ? 0 : endpointRegion?.text.length;
+
+  return endpointRegion?.id === region.id && offset === endpointOffset;
 }

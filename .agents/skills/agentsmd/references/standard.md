@@ -1,9 +1,6 @@
 # Standard
 
-Subsystem `AGENTS.md` files are orientation guides for strong engineers who are
-new to a part of the codebase. They should make the reader smarter faster by
-naming the right concepts in the right order. They are not exhaustive file
-trees, implementation tours, or test plans.
+Subsystem `AGENTS.md` files are orientation guides for strong engineers who are new to a part of the codebase. They should make the reader smarter faster by naming the right concepts in the right order and telling a concrete, memorable narrative about the subsystem's what, why, how, and where. They are not exhaustive file trees, implementation tours, or test plans.
 
 ## Core Shape
 
@@ -13,27 +10,23 @@ Every guide has three core sections:
 - **Design Notes:** the important conceptual "how" behind the intro.
 - **Subsystem Map:** where the logic lives and where to start reading.
 
-Optional `Known Limitations` sections are allowed only when current gaps or
-obvious omissions would otherwise look accidental. Explain what the subsystem
-intentionally does not do, why that is acceptable today, and what signal should
-trigger a different design. Do not turn this into a backlog.
+Optional `Known Limitations` sections are allowed only when current gaps or obvious omissions would otherwise look accidental. Explain what the subsystem intentionally does not do, why that is acceptable today, and what signal should trigger a different design. Do not turn this into a backlog.
+
+Use natural punctuation throughout. Do not use semicolons or em dashes. Split the thought into shorter sentences, or use a comma, colon, or parentheses when that reads naturally.
 
 ## Intro
 
-Use one or two paragraphs. Lead with user or host-application value, not the
-implementation.
+Use one concise paragraph with natural, easy-to-parse sentences. Lead with what a user, host app, or neighboring subsystem gets from this code, then name the central noun, model, or vocabulary that makes the subsystem legible. Give enough shape to create curiosity, but stop before explaining the mechanism in detail. If the subsystem mostly serves embedders or internal contributors, still describe that value in plain product terms before introducing abstractions.
 
-Answer:
+Make the central idea land as fast as possible. A reader should know the subsystem's main job and vocabulary from the first sentence, not after a tour of examples or implementation details.
 
-- What capability and value does this subsystem provide?
-- What domain model, key concept, or vocabulary does it own?
-- What does it consume, produce, preserve, expose, and deliberately leave
-  elsewhere?
+Use `src/markdown/AGENTS.md` as the reference example: it leads with markdown-native user and host value, then names the Documint dialect and bespoke parser/serializer boundary without explaining parser mechanics.
 
-If the subsystem has a central concept, name and define it using concrete
-subsystem language. Do not hide it behind generic phrases such as "reactivity
-needs," "integration layer," or "coordination logic." Give the reader the noun
-they should use while reading the code.
+Use representative examples instead of exhaustive lists unless completeness is the point. A short list plus "etc." is better than burying the central concept under everything the subsystem can render, parse, emit, or observe.
+
+When orientation explains how the subsystem works, leave it for Design Notes. The intro establishes the concrete what and why. Design Notes drill into the load-bearing architectural properties that make that value true.
+
+Use concrete subsystem language. Do not hide the central concept behind generic phrases such as "reactivity needs," "integration layer," or "coordination logic." Give the reader the noun they should use while reading the code.
 
 ## Design Notes
 
@@ -45,42 +38,25 @@ Each note should be a present-tense truth with this shape:
 - **<Value plus mechanism>.** Explain how the mechanism works and why it matters.
 ```
 
-The bold lead-ins should stand alone as the scannable design story. A reader who
-skims only those labels should understand the subsystem's main shape.
+Lead with the value or reason a contributor should care, then name the mechanism. Make the idea land quickly. Avoid abstraction-first labels like "decoupling" unless the value is already obvious.
 
-Favor insights over facts. Include only meaningful properties such as modeling
-decisions, async boundaries, ownership rules, integration contracts,
-responsibilities the subsystem intentionally does not own, performance
-tradeoffs, or work moved off hot paths.
+For example, prefer `Frames keep painters focused on 2D drawing` over `Frames decouple editor meaning from renderer output`.
 
-Order notes by progressive disclosure: start with the central semantic idea,
-then explain outward along the reader's likely causal model: supporting
-concepts, architectural decisions or tradeoffs, and subsystem boundaries. A
-useful sequence is often:
+The bold lead-ins should stand alone as the scannable design story, ordered from the central model or contract through the mechanisms, hot paths, correctness concerns, and boundaries a contributor needs next.
 
-1. The core model or contract.
-2. Expensive or risky work and where it happens.
-3. Incremental/update behavior.
-4. Caching or hot-path behavior.
-5. Async/staleness/correctness behavior.
-6. Extensibility or boundary constraints.
+Include facts only when they explain ownership, invariants, tradeoffs, risks, integration contracts, boundaries, or work moved off hot paths. Make the ownership value explicit: what burden, risk, or misplaced work does the note prevent?
 
-Use real subsystem nouns and verbs instead of generic labels. Do not bury the
-lede behind implementation terms or tradeoff language.
+Each note should be a load-bearing concept in the reader's mental model of how the subsystem works and what role it plays in the application. If removing a note would not make the guide less useful, remove it. If two notes tell the same ownership story, merge them or delete the weaker one.
 
-Keep the list concise. Five bullets is a good default; six is usually the upper
-bound before the section starts to feel like a concept inventory. Add more only
-when each note is distinct, important, and worth preserving.
+Order notes by progressive disclosure. Start with the first important question a reader should ask after the intro, do not spend a note restating the intro, and put dependency choices, implementation materials, and other FYI-style context later unless they are the subsystem's central design contract. Use real subsystem nouns and verbs instead of generic labels. Do not bury the lede behind implementation terms or tradeoff language.
+
+Keep the list concise, but do not merge distinct load-bearing concepts just to keep the count down. Compact subsystems often land around three to five notes. Larger cohesive leaves or aggregate guides may need six or seven when the learning path genuinely demands it and every note is distinct, important, and worth preserving. Never add notes to hit a quota.
 
 ## Subsystem Map
 
 The map answers "where does the logic live?"
 
-Keep it top-level. Map folders and top-level files only, unless a specific
-entry file is the subsystem's primary surface. Order entries semantically for
-progressive disclosure, not alphabetically: start where a contributor should
-start reading, then move outward through supporting modules, configuration,
-shared contracts, and secondary folders.
+Keep it top-level. Map folders and top-level files only, unless a non-top-level file is the public contract, architectural choke point, or safest first read. Order entries semantically for progressive disclosure, not alphabetically: start where a contributor should start reading, then move outward through supporting modules, configuration, shared contracts, and secondary folders.
 
 For each entry, state ownership in one concise sentence:
 
@@ -89,11 +65,9 @@ For each entry, state ownership in one concise sentence:
 - `bar.ts` owns ...
 ```
 
-Do not hide design principles in the map. If an ownership rule matters for
-design quality, mention it in Design Notes and use the map only to point to the
-code that implements it.
+Do not hide design meaning in the map. If an ownership rule matters for design quality, mention it in Design Notes and use the map only to point to the code that implements it.
 
-## Review Bar
+## Authoring Bar
 
 A strong guide lets a new contributor quickly explain:
 
@@ -103,9 +77,10 @@ A strong guide lets a new contributor quickly explain:
 - what responsibilities belong somewhere else
 - where to start reading or editing
 
-A strong guide should make misplaced work easier to spot. Before calling it
-done, ask: what tempting change would someone incorrectly put in this subsystem,
-and does the guide make clear why that responsibility is outside this subsystem?
+A strong guide should make misplaced work easier to spot. Before calling it done, ask: what tempting change would someone incorrectly put in this subsystem, and does the guide make clear why that responsibility is outside this subsystem?
 
-Remove anything that merely catalogs files, repeats obvious facts, or makes the
-reader ask "who cares?"
+For runtime-heavy subsystems, also ask whether the guide names the cadence owner, invalidation or commit boundary, async stale-result policy, failure or timeout behavior, and the hot path that protects user-visible responsiveness when those ideas are central to the design.
+
+Remove anything that merely catalogs files, repeats obvious facts, or makes the reader ask "who cares?"
+
+Do not include exhaustive file inventories, README restatements, implementation walkthroughs, TODO backlogs, or test-command sections unless the local subsystem has an exceptional reason for one.

@@ -7,6 +7,7 @@ import {
   type EffectEnvironment,
   type PaintEffect,
 } from "../effects";
+import { TASK_CHECKBOX_SIZE } from "@/editor/layout/lib/marker-metrics";
 import type { DocumentFrameLine } from "../frame";
 import type { ListMarkerFrame } from "../frame/chrome/list-markers";
 import type { DocumintListMarkerPaintFrame, ResolvedEditorTheme } from "@/types";
@@ -121,13 +122,13 @@ function paintTaskCheckboxFrame(
   context.fillStyle = pop ? resolveBlockPulseColor(fillColor, pop, theme) : fillColor;
   context.strokeStyle = pop ? resolveBlockPulseColor(strokeColor, pop, theme) : strokeColor;
   context.beginPath();
-  context.lineWidth = taskCheckboxStrokeWidth;
+  context.lineWidth = scaleTaskCheckboxValue(checkboxBounds, taskCheckboxStrokeWidth);
   context.roundRect(
     checkboxBounds.left,
     checkboxBounds.top,
     checkboxBounds.width,
     checkboxBounds.height,
-    taskCheckboxCornerRadius,
+    scaleTaskCheckboxValue(checkboxBounds, taskCheckboxCornerRadius),
   );
   context.fill();
   context.stroke();
@@ -142,21 +143,28 @@ function paintTaskCheckboxCheckmark(
   context.strokeStyle = pop
     ? resolveBlockPulseColor(theme.checkboxCheckmark, pop, theme)
     : theme.checkboxCheckmark;
-  context.lineWidth = taskCheckmarkStrokeWidth;
+  context.lineWidth = scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkStrokeWidth);
   context.beginPath();
   context.moveTo(
-    checkboxBounds.left + taskCheckmarkPath.start.x,
-    checkboxBounds.top + taskCheckmarkPath.start.y,
+    checkboxBounds.left + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.start.x),
+    checkboxBounds.top + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.start.y),
   );
   context.lineTo(
-    checkboxBounds.left + taskCheckmarkPath.elbow.x,
-    checkboxBounds.top + taskCheckmarkPath.elbow.y,
+    checkboxBounds.left + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.elbow.x),
+    checkboxBounds.top + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.elbow.y),
   );
   context.lineTo(
-    checkboxBounds.left + taskCheckmarkPath.end.x,
-    checkboxBounds.top + taskCheckmarkPath.end.y,
+    checkboxBounds.left + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.end.x),
+    checkboxBounds.top + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.end.y),
   );
   context.stroke();
+}
+
+function scaleTaskCheckboxValue(
+  checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
+  value: number,
+) {
+  return value * (checkboxBounds.width / TASK_CHECKBOX_SIZE);
 }
 
 function paintOrderedListMarker(

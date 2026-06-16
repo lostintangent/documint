@@ -1,7 +1,7 @@
 {
   "name": "documint-vscode",
   "displayName": "Documint",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A canvas-based WYSIWYG Markdown editor for VS Code.",
   "categories": [
     "Other"

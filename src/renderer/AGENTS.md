@@ -1,31 +1,19 @@
 # Renderer
 
-The renderer subsystem owns immediate-mode Canvas 2D painting from prepared frame values. It turns `DocumentFrame` and `OverlayFrame` snapshots into pixels on caller-provided canvas contexts.
+The renderer subsystem is Documint's Canvas 2D paint backend. It turns prepared editor/layout inputs, resources, theme, and caller-provided time into the pixels users see while typing, selecting, scrolling, and editing. Its central model is the paint-ready `DocumentFrame`: a viewport-scoped snapshot that makes drawing deterministic without owning measurement, loading, scheduling, or browser effects.
 
-This is a paint backend, not the editor presentation model. Frame creation translates editor state, layout state, resources, clocks, selection, comments, and component-owned semantic effects into paint-ready rows. Frame painting consumes those rows without reading editor state or re-deriving editor/layout meaning.
+## Design Notes
 
-## Design Principles
-
-- **Frames are the paint contracts.** `frame/` owns pre-paint derivation and drawable rows: visible ranges, line metadata, text segments, chrome aggregates, selection/comment rects, caret geometry, and active effect maps.
-- **Frame construction may translate editor/layout state.** `frame/` is allowed to read editor state, document indexes, and layout snapshots while building paint rows. That translation boundary stops at the frame value; painters must not cross it.
-- **Frame geometry is paint-only.** Layout owns durable geometry shared by paint, navigation, hit testing, anchors, and virtualization. Frame owns visible-slice drawable rows derived from that geometry. If a value is per-line, document-stable, and useful outside paint, promote it into layout instead of recomputing it in frame.
-- **Layout lines are an explicit dependency.** `DocumentFrameLine.layoutLine` is the durable line geometry carried into paint rows. Prefer adding paint-only fields beside it over copying layout fields into a second line model.
-- **Painters draw only.** `painters/` should consume frame data and canvas contexts. Do not add editor-state queries, visible-range scans, selection resolution, inline walking, or block aggregate derivation to painters.
-- **The orchestrator owns z-order.** `paintDocumentFrame` runs the content pass table, and the line foreground table owns per-line layering. Individual painters should not reorder neighboring concerns.
-- **Canvas effects stay explicit.** Canvas drawing is side-effectful, but pixels should be a deterministic function of the frame, theme/resources carried by the frame, clocks, and the canvas context.
-- **Document geometry stays shared.** Frame data and painters use document-space layout coordinates. The only global paint-space bridge is the layer translation applied before painting.
-- **Layering is an invalidation contract.** Content and overlay paint separately so caret/presence blinking can avoid repainting document content.
-- **Two clocks serve different paint classes.** Finite semantic effects resolve from `now`; ambient loops such as decoration pulses, comment presence pulses, and resource shimmer resolve from `ambientTime`.
-- **Frame APIs are the boundary.** Callers should create frames explicitly and pass them to `paintDocumentFrame` or `paintOverlayFrame`; renderer paint entry points should not accept editor state directly.
+- **Frames turn editor meaning into paint contracts so painters only draw.** `createDocumentFrame` and `createOverlayFrame` resolve editor/layout state into inspectable frame atoms and reusable geometry such as layout lines, text segments, selections, effects, and list marker rects. Painters consume those atoms without editor lookups or semantic scans, keeping only local Canvas details such as stroke widths, radii, and control points.
+- **Central paint order keeps painters free of z-index policy.** `paintDocumentFrame` owns the content pass table and per-line foreground table, so painters draw one concern at a time while backgrounds, selection, comments, list markers, text, decoration overlays, and transient effects keep a deterministic z-order.
+- **Overscanned viewport frames keep large documents and native scroll smooth.** Layout prepares an overscanned paint window around the browser viewport, and `createDocumentFrame` builds frame rows only for that window. The overscan gives native browser scroll a buffer to move through while the component catches up with the next render, and viewport-limited rows keep large-document paint work bounded.
+- **Layered frames keep hot repaints narrow.** Document content and overlay carets paint through separate `DocumentFrame` and `OverlayFrame` paths, letting caret and presence blinking repaint the overlay without repainting settled document content.
+- **Caller-provided time makes animated paint deterministic.** Renderer groups semantic editor effects into paint-ready flashes, pulses, highlights, and fades for the current `now`, lets host `DocumintEffects` compose with or replace defaults, and keeps ambient loops such as resource shimmer and comment or decoration pulses on `ambientTime` so hosts can pause animation by pausing time.
+- **Canvas state changes stay local to the paint boundary.** Layer setup handles device-pixel-ratio scaling, clearing, background fill, and document-space translation. Custom effects and painters save/restore context state around local composition so neighboring paint concerns do not leak state.
 
 ## Subsystem Map
 
-- `index.ts` is the renderer facade and paint-order orchestrator for `DocumentFrame` and `OverlayFrame`.
-- `frame/` owns paint-ready frame construction. `frame/line/` owns per-visible-line drawable rows, and `frame/chrome/` owns document-level chrome aggregates such as rules, table highlights, and list-marker planning.
-- `canvas/` owns Canvas 2D layer setup: device-pixel-ratio scaling, clearing, optional background fill, document-space translation, and save/restore.
-- `painters/` owns immediate-mode drawing modules for block chrome, table surfaces, line ranges, list markers, inline/replacement text content, text effects, and carets.
-- `effects/` owns paint-time effect policy, progress resolution, pulse envelopes, and canvas color blending. Effect lifetime is stored by the component host.
-
-## Testing
-
-Renderer tests live in `test/renderer/`. Prefer frame-level integration tests that build a `DocumentFrame` or `OverlayFrame`, paint it with a recording canvas context, and assert operation order or geometry. Add focused renderer tests when changing z-order, frame derivation, paint geometry, or effect rendering. Broader browser behavior belongs in the playground/component layer.
+- `index.ts` owns the renderer facade, content/overlay paint entry points, layer setup, and document z-order orchestration.
+- `frame/` owns paint-ready frame construction from editor/layout snapshots, including overscanned viewport rows, chrome aggregates, selection/comment ranges, text segments, list marker plans, and overlay carets.
+- `painters/` owns immediate-mode Canvas 2D drawing for blocks, text, decorations, selections, comments, lists, tables, resources, images, mentions, and carets.
+- `effects/` owns paint-time effect policy, active-effect grouping, color blending, ambient pulse helpers, and custom effect composition.

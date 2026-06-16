@@ -3,6 +3,12 @@
 // stub one out that records every fill/stroke/text call as a typed operation
 // and then assert against the recorded sequence.
 
+type RecordedPathCommand = {
+  kind: "lineTo" | "moveTo";
+  x: number;
+  y: number;
+};
+
 export type RecordingOperation =
   | {
       kind: "fillRect";
@@ -48,6 +54,7 @@ export type RecordingOperation =
   | {
       kind: "strokePath";
       lineWidth: number;
+      path: readonly RecordedPathCommand[];
       strokeStyle: string | CanvasGradient | CanvasPattern;
     };
 
@@ -58,6 +65,7 @@ export class RecordingCanvasContext {
   globalCompositeOperation: GlobalCompositeOperation = "source-over";
   lineWidth = 1;
   operations: RecordingOperation[] = [];
+  private pendingPath: RecordedPathCommand[] = [];
   private pendingRoundedRect: { height: number; width: number; x: number; y: number } | null = null;
   private stateStack: Array<{
     fillStyle: string | CanvasGradient | CanvasPattern;
@@ -89,6 +97,7 @@ export class RecordingCanvasContext {
   }
 
   beginPath() {
+    this.pendingPath = [];
     this.pendingRoundedRect = null;
   }
 
@@ -147,7 +156,9 @@ export class RecordingCanvasContext {
     });
   }
 
-  lineTo() {}
+  lineTo(x: number, y: number) {
+    this.pendingPath.push({ kind: "lineTo", x, y });
+  }
 
   measureText(text: string) {
     return {
@@ -157,7 +168,9 @@ export class RecordingCanvasContext {
     } as TextMetrics;
   }
 
-  moveTo() {}
+  moveTo(x: number, y: number) {
+    this.pendingPath.push({ kind: "moveTo", x, y });
+  }
 
   rect() {}
 
@@ -205,8 +218,10 @@ export class RecordingCanvasContext {
     this.operations.push({
       kind: "strokePath",
       lineWidth: this.lineWidth,
+      path: this.pendingPath,
       strokeStyle: this.strokeStyle,
     });
+    this.pendingPath = [];
   }
 
   strokeRect(x: number, y: number, width: number, height: number) {

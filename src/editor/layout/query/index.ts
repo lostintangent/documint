@@ -13,10 +13,12 @@ export {
   measureInlineImageBounds,
   resolveLineVisualLeft,
   resolveIndexedListItem,
+  resolveListMarkerTarget,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
   resolveUnorderedListMarkerBounds,
   type InlineBounds,
+  type ListMarkerTarget,
 } from "./line-visuals";
 
 export { hitTestDocumentLayout, type DocumentHitTestResult } from "./hit-test";

@@ -20,7 +20,11 @@ export function resolveBlockContentMetrics(
   options: DocumentLayoutOptions,
 ): LayoutContentMetrics {
   const left = options.paddingX + indexedBlock.depth * options.indentWidth;
-  const listInset = resolveListMarkerInset(documentIndex, indexedBlock.block.id);
+  const listInset = resolveListMarkerInset(
+    documentIndex,
+    indexedBlock.block.id,
+    options.fontSize,
+  );
   const codeContentInset = indexedBlock.block.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
 
   return {

@@ -1,12 +1,12 @@
 import {
   resolveOrderedListMarkerAnchor,
-  resolveIndexedListItem,
+  resolveListMarkerTarget,
   resolveTaskCheckboxBounds,
   resolveUnorderedListMarkerBounds,
   type DocumentLayout,
   type LayoutRect,
 } from "@/editor/layout";
-import { findAncestorIndexedBlock, type EditorState, type IndexedListItem } from "@/editor/state";
+import type { EditorState, IndexedListItem } from "@/editor/state";
 
 export type ListMarkerPlan = {
   blockPath: string;
@@ -31,7 +31,7 @@ export type ListMarkerFrame =
       rect: LayoutRect;
     };
 
-// Builds the per-frame map of list markers keyed by the first-line block id.
+// Builds the per-frame map of list markers keyed by the first-line region id.
 // Only `line.start === 0` lines carry a marker, so wrapped lines never need a
 // lookup.
 export function resolveListMarkerPlans(
@@ -45,27 +45,17 @@ export function resolveListMarkerPlans(
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
 
-    if (line.start !== 0 || listMarkerPlans.has(line.blockId)) {
+    if (line.start !== 0 || listMarkerPlans.has(line.regionId)) {
       continue;
     }
 
-    const listItemEntry = findAncestorIndexedBlock(
-      editorState.documentIndex,
-      line.blockId,
-      "listItem",
-    );
+    const target = resolveListMarkerTarget(editorState, line);
 
-    if (!listItemEntry) {
+    if (!target) {
       continue;
     }
 
-    const marker = resolveIndexedListItem(editorState, listItemEntry.block.id);
-
-    if (!marker) {
-      continue;
-    }
-
-    listMarkerPlans.set(line.blockId, { blockPath: listItemEntry.path, marker });
+    listMarkerPlans.set(line.regionId, { blockPath: target.blockPath, marker: target.marker });
   }
 
   return listMarkerPlans;

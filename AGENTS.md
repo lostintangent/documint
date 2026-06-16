@@ -59,4 +59,4 @@ Selection moves, animation ticks, and caret blinks reuse cached layout. Editor a
 1. Markdown import/export stability is preserved.
 1. Undo/redo, selection, and comments are not corrupted.
 1. Benchmark p99 does not regress for hot paths.
-1. Relevant subsystem `AGENTS.md` files are updated when design intent, ownership, or file/folder roles change, using `AGENTS.md.template` as the writing standard.
+1. Relevant subsystem `AGENTS.md` files are updated when design intent, ownership, or file/folder roles change, using the `agentsmd` skill and `.agents/skills/agentsmd/references/standard.md` as the writing standard.

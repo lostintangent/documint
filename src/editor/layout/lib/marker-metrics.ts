@@ -2,15 +2,16 @@
 // visual queries.
 
 import { findAncestorIndexedBlock, type DocumentIndex } from "../../state";
+import { resolveFontSize } from "../../text/measure";
 
 export const LIST_MARKER_TEXT_INSET = 18;
 export const ORDERED_LIST_MARKER_GAP = 8;
 export const TASK_CHECKBOX_SIZE = 14;
-// Gap between the task checkbox and the start of its text. Keeping this
-// explicit makes the relationship between the box size and the text inset
-// obvious — bumping the box automatically bumps the inset.
+const TASK_CHECKBOX_BASE_FONT_SIZE = 16;
+// Gap between the task checkbox and the start of its text.
 export const TASK_CHECKBOX_TEXT_GAP = 8;
-export const TASK_MARKER_TEXT_INSET = TASK_CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
+export const TASK_MARKER_TEXT_INSET =
+  TASK_CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
 export const UNORDERED_LIST_MARKER_GUTTER_INSET = 2;
 export const UNORDERED_LIST_MARKER_SIZE = 6;
 
@@ -39,7 +40,11 @@ export function mergeLayoutBlockExtent(
 // visible text area; otherwise wrapped lines overflow the right padding by
 // the inset amount. Shared between measure (exact wrap) and large-document
 // estimation so both agree on what a list-item line can hold.
-export function resolveListMarkerInset(documentIndex: DocumentIndex, blockId: string): number {
+export function resolveListMarkerInset(
+  documentIndex: DocumentIndex,
+  blockId: string,
+  fontSize: number,
+): number {
   const listItem = findAncestorIndexedBlock(documentIndex, blockId, "listItem");
 
   if (!listItem) {
@@ -48,5 +53,22 @@ export function resolveListMarkerInset(documentIndex: DocumentIndex, blockId: st
 
   const marker = documentIndex.listItems.get(listItem.block.id);
 
-  return marker?.kind === "task" ? TASK_MARKER_TEXT_INSET : LIST_MARKER_TEXT_INSET;
+  return marker?.kind === "task"
+    ? resolveTaskMarkerTextInsetFromFontSize(fontSize)
+    : LIST_MARKER_TEXT_INSET;
+}
+
+export function resolveTaskCheckboxSizeFromFont(font: string) {
+  return resolveTaskCheckboxSizeFromFontSize(resolveFontSize(font));
+}
+
+function resolveTaskCheckboxSizeFromFontSize(fontSize: number) {
+  return Math.max(
+    1,
+    Math.round(fontSize * (TASK_CHECKBOX_SIZE / TASK_CHECKBOX_BASE_FONT_SIZE)),
+  );
+}
+
+function resolveTaskMarkerTextInsetFromFontSize(fontSize: number) {
+  return resolveTaskCheckboxSizeFromFontSize(fontSize) + TASK_CHECKBOX_TEXT_GAP;
 }

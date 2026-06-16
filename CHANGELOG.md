@@ -1,3 +1,7 @@
+## 🗓️ v0.0.30 (06-16-26)
+
+- Misc. bug fixes with lists, tasklist items, and paste
+
 ## 🗓️ v0.0.29 (06-15-26)
 
 - Introduce basic syntax highlighting, with support for embedder apps to add custom languages via the new `grammars` property on the component

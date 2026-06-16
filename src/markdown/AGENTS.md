@@ -1,34 +1,21 @@
 # Markdown
 
-The markdown subsystem owns Documint's persistence and clipboard format boundary. It parses authored markdown into semantic `Document` values and serializes `Document` snapshots back to canonical markdown. It also bridges markdown clipboard payloads to and from `Fragment` values.
+The markdown subsystem owns the Documint dialect that lets the editor behave like a markdown-native surface: users can load and save markdown files, paste markdown from other tools, copy editor content as markdown, and hosts can receive predictable markdown snapshots after user edits. It is a bespoke parser and serializer over the `Document` model, not a wrapper around a generic markdown AST.
 
-This layer is intentionally document-oriented. It recognizes the Documint markdown dialect directly instead of routing through mdast or a plugin pipeline, and it preserves unsupported syntax as raw semantic nodes where possible so round-tripping does not silently discard content.
+## Design Notes
 
-## Design Principles
-
-- **Markdown is a boundary, not the model.** Add semantic shape in `src/document` first, then teach markdown how to read/write it.
-- **Document and fragment altitudes differ.** Document parsing handles front matter and comment directives; fragment parsing deliberately does not.
-- **Canonical output protects stability.** Serialization should be predictable even when input markdown had equivalent alternate spellings, and dialect changes should update `SUPPORT.md` alongside parser, serializer, and tests.
-- **Round-trip preservation beats clever interpretation.** Unsupported or product-unknown syntax should survive as raw nodes when possible instead of being silently discarded or rewritten.
-- **Parser and serializer policy should share tables.** Block readers, inline token readers, and inline mark specs use registries so fast paths, paragraph interruption, escaping, and emission stay aligned.
-- **Policy should be semantic.** Prefer small declarative policies such as mark delimiters, literal content, and block-start predicates over one-off branches in parser or serializer code.
+- **Markdown syntax adapts to document semantics, not the other way around.** New product capabilities start in `src/document`. This layer teaches the Documint dialect how to read and write that semantic shape without making markdown source the editor model.
+- **Full-document parsing preserves file-only state.** Full-document parsing keeps concerns such as front matter and the trailing comment appendix, while serialization emits stable saved markdown with canonical spellings such as `-` bullets, backtick fences, and `<br>` hard breaks, compact tables by default, and a trailing newline for non-empty documents.
+- **Fragment parsing is optimized for copy and paste.** Clipboard markdown bypasses file-only concerns such as front matter and comment directives, then classifies paste input as plain text, formatted inlines, or blocks so editor commands can use the lowest-loss insertion path.
+- **Root-level caching makes per-edit snapshots viable.** Local document edits serialize the live runtime document before component sync hands hosts the full next markdown string. Unchanged immutable root blocks reuse cached output by block identity and the serializer option key, so the sync path pays mainly for edited roots.
+- **Unsupported syntax survives when it can still be represented.** Raw HTML, text directives, and generic container directives stay as raw or directive nodes where possible, while `SUPPORT.md` declares which markdown features are semantic, preserved, canonicalized, gaps, or intentional non-goals.
+- **Dialect changes update recognition and emission together.** Block readers, inline token readers, inline mark specs, block-start escape predicates, serializer output, preservation policy, and `SUPPORT.md` status move together so parser and serializer behavior does not drift.
+- **Host options tune markdown translation, not document schema.** Parser options can promote links into resource nodes, recognize bare `@Name` text, or preserve ordered-list starts, while serializer options such as table padding change output formatting without creating host-specific document schema.
 
 ## Subsystem Map
 
-- `index.ts` exposes `parseDocument(...)` and `serializeDocument(...)`.
-- `fragment.ts` owns clipboard-altitude markdown parsing/serialization.
-- `parser/` owns direct markdown-to-document parsing for documents, blocks, inlines, tables, and comments.
-- `serializer/` owns canonical document-to-markdown emission.
-- `shared.ts` owns syntax primitives and `MarkdownOptions` shared by parser and serializer.
-- `SUPPORT.md` is the user-facing dialect matrix.
-
-## Extending the Dialect
-
-- For a new block kind, add the semantic node/builders in `src/document`, register a block reader, add serializer support, update `SUPPORT.md`, and add golden coverage.
-- For a new inline mark, extend the document `Mark` union and the shared mark spec so parser dispatch and serializer emission derive from one row.
-- For a new inline token kind, add the semantic shape/builder if needed, register a token reader, mirror it in `serializeInline`, and update escaping if the syntax introduces new punctuation.
-- For a new option, add it to `MarkdownOptions` with a parser/serializer-side note and focused tests for both states.
-
-## Testing
-
-Markdown tests live in `test/markdown/`. Prefer focused parser/serializer tests plus golden round-trip fixtures for dialect behavior. Group tests by syntax family, use table cases for alternate spellings, and keep shared setup/assertion helpers semantic. Clipboard behavior belongs in fragment tests.
+- `index.ts` owns the public boundary for document and fragment parse/serialize operations.
+- `parser/` owns direct markdown-to-document parsing for front matter, blocks, inlines, tables, raw syntax, and trailing comment directives.
+- `serializer/` owns canonical document-to-markdown emission for documents, fragments, blocks, inlines, tables, cached root blocks, and the comment appendix.
+- `shared.ts` owns markdown options, syntax constants, comment directive naming, resource-protocol normalization, and inline mark specs shared by parser and serializer.
+- `SUPPORT.md` owns the detailed dialect matrix, including supported semantics, canonicalization policy, gaps, and intentional non-goals.

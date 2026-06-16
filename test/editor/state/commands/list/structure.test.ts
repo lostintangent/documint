@@ -64,7 +64,7 @@ describe("List structure", () => {
     );
   });
 
-  test("does not emit list item inserted effect when Enter splits a task list item", () => {
+  test("reports a list item inserted effect when Enter splits a task list item", () => {
     let state = setup("- [ ] alpha\n");
     const target = state.documentIndex.regions[0];
 
@@ -78,7 +78,7 @@ describe("List structure", () => {
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
-      false,
+      true,
     );
   });
 

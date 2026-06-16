@@ -8,7 +8,7 @@ import {
   toggleMark,
 } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
-import { measureCaretTarget } from "@/editor/layout";
+import { measureCaretTarget, resolveTaskCheckboxBounds } from "@/editor/layout";
 import { resolveDocumentLayoutOptions } from "@/editor/layout/lib/options";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
@@ -73,6 +73,35 @@ test("scales heading and paragraph line heights proportionally with fontSize", (
   // Paragraph derives lineHeight at the default 1.5× ratio: 24, 21.
   expect(baseParagraph.height).toBe(24);
   expect(scaledParagraph.height).toBe(21);
+});
+
+test("scales task checkbox bounds with paragraph font size", () => {
+  const runtime = createDocumentIndex(parseDocument("- [ ] task\n"));
+
+  for (const expectation of [
+    { fontSize: 12, lineHeight: 18, size: 11, topOffset: 2.5 },
+    { fontSize: 14, lineHeight: 21, size: 12, topOffset: 3 },
+    { fontSize: 16, lineHeight: 24, size: 14, topOffset: 4 },
+    { fontSize: 20, lineHeight: 30, size: 18, topOffset: 5 },
+  ]) {
+    const layout = measureLayoutSlice(runtime, {
+      fontSize: expectation.fontSize,
+      width: 4000,
+    });
+    const line = layout.lines[0];
+
+    if (!line) {
+      throw new Error("Expected task list line");
+    }
+
+    const bounds = resolveTaskCheckboxBounds(line);
+
+    expect(line.height).toBe(expectation.lineHeight);
+    expect(line.contentInset).toBe(expectation.size + 8);
+    expect(bounds.size).toBe(expectation.size);
+    expect(line.contentInset - bounds.size).toBe(8);
+    expect(bounds.top - line.top).toBe(expectation.topOffset);
+  }
 });
 
 test("wraps runtime text into deterministic canvas layout lines", () => {
@@ -156,6 +185,24 @@ test("uses regular block gaps between loose list items", () => {
   const gap = betaLine.top - (alphaLine.top + alphaLine.height);
 
   expect(gap).toBe(layout.options.blockGap);
+});
+
+test("uses compact gaps between nested list items inside a loose parent item", () => {
+  const runtime = createDocumentIndex(parseDocument("- alpha\n\n  - child one\n  - child two\n"));
+  const layout = measureLayoutSlice(runtime, { width: 4000 });
+  const alphaLine = layout.lines.find((line) => line.text === "alpha");
+  const childOneLine = layout.lines.find((line) => line.text === "child one");
+  const childTwoLine = layout.lines.find((line) => line.text === "child two");
+
+  if (!alphaLine || !childOneLine || !childTwoLine) {
+    throw new Error("Expected parent and nested list lines");
+  }
+
+  const parentGap = childOneLine.top - (alphaLine.top + alphaLine.height);
+  const nestedGap = childTwoLine.top - (childOneLine.top + childOneLine.height);
+
+  expect(parentGap).toBe(layout.options.blockGap);
+  expect(nestedGap).toBe(6);
 });
 
 test("lays out table cells side by side within the same row", () => {

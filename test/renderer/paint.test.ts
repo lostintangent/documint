@@ -1407,6 +1407,46 @@ describe("List marker painting", () => {
     );
   });
 
+  test("scales task checkbox checkmark with marker bounds", () => {
+    const state = setup("- [x] task\n");
+
+    for (const expectation of [
+      { fontSize: 12, size: 11 },
+      { fontSize: 20, size: 18 },
+    ]) {
+      const theme: ResolvedEditorTheme = {
+        ...resolvedLightTheme,
+        fontSize: expectation.fontSize,
+      };
+      const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
+      const checkboxFill = context.operations.find(
+        (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
+          operation.kind === "fillRect" &&
+          operation.fillStyle === resolvedLightTheme.checkboxCheckedFill,
+      );
+      const checkmarkStroke = context.operations.find(
+        (operation): operation is Extract<RecordingOperation, { kind: "strokePath" }> =>
+          operation.kind === "strokePath" &&
+          operation.strokeStyle === resolvedLightTheme.checkboxCheckmark &&
+          operation.path.length === 3,
+      );
+
+      if (!checkboxFill || !checkmarkStroke) {
+        throw new Error("Expected checked task checkbox paint operations");
+      }
+
+      const scale = expectation.size / 14;
+
+      expect(checkboxFill.width).toBe(expectation.size);
+      expect(checkboxFill.height).toBe(expectation.size);
+      expect(approximately(checkmarkStroke.lineWidth, 2 * scale)).toBeTrue();
+      expect(approximately(checkmarkStroke.path[0]!.x - checkboxFill.x, 3.5 * scale)).toBeTrue();
+      expect(approximately(checkmarkStroke.path[0]!.y - checkboxFill.y, 7.5 * scale)).toBeTrue();
+      expect(approximately(checkmarkStroke.path[2]!.x - checkboxFill.x, 11.5 * scale)).toBeTrue();
+      expect(approximately(checkmarkStroke.path[2]!.y - checkboxFill.y, 3.5 * scale)).toBeTrue();
+    }
+  });
+
   test("uses explicit list marker text color when provided", () => {
     const state = setup("- bullet\n");
     const theme: ResolvedEditorTheme = {
@@ -1499,6 +1539,32 @@ describe("List marker painting", () => {
     expect(defaultMarkerIndex).toBeGreaterThan(customFlashIndex);
   });
 
+  test("passes task markers to custom list-item-inserted effects", () => {
+    let state = setup("- [ ] alpha\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected task list item region");
+    }
+
+    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = insertLineBreak(state) ?? state;
+
+    const receivedMarkers: string[] = [];
+    renderPaintOperations(state, {
+      customEffects: {
+        listItemInserted: ({ marker }) => {
+          receivedMarkers.push(marker.kind === "task" ? `${marker.kind}:${marker.checked}` : marker.kind);
+        },
+      },
+      effects: readEditorEffects(state),
+      height: 220,
+      width: 320,
+    });
+
+    expect(receivedMarkers).toEqual(["task:false"]);
+  });
+
   test("isolates canvas state between composed custom and default effects", () => {
     let state = setup("- alpha\n");
     const container = state.documentIndex.regions[0];
@@ -1564,6 +1630,7 @@ function renderPaintOperations(
     state,
     {
       height: options.height,
+      fontSize: (options.theme ?? resolvedLightTheme).fontSize,
       top: 0,
       width: options.width,
     },
