@@ -1,44 +1,49 @@
-import type { EditorEffect, TextDeletedEffect, TextInsertedEffect } from "@/editor/state";
+import type { TextDeletedEffect, TextInsertedEffect } from "@/editor/state";
 import { containsColorEmoji } from "@/editor/text/emoji";
 import type { DocumintEffects } from "@/types";
+import { documentChangeFrameTargetKey } from "./types";
 import type {
   BlockFlashFrame,
   BlockPulseFrame,
+  RendererEffect,
   TextFadeFrame,
   TextHighlightFrame,
   TextPulseFrame,
+  DocumentChangeFadeFrame,
 } from "./types";
 
-export type ActiveEffectGroups = {
+export type EffectGroups = {
   blockFlashes: Map<string, BlockFlashFrame>;
   blockPulses: Map<string, BlockPulseFrame>;
+  documentChangeFades: Map<string, DocumentChangeFadeFrame>;
   textFades: Map<string, TextFadeFrame[]>;
   textHighlights: Map<string, TextHighlightFrame[]>;
   textPulses: Map<string, TextPulseFrame[]>;
 };
 
-type EffectOfKind<TKind extends EditorEffect["kind"]> = Extract<EditorEffect, { kind: TKind }>;
+type EffectOfKind<TKind extends RendererEffect["kind"]> = Extract<RendererEffect, { kind: TKind }>;
 
-type EffectKindDescriptor<TKind extends EditorEffect["kind"]> = {
+type EffectKindDescriptor<TKind extends RendererEffect["kind"]> = {
   animatesByDefault: (effect: EffectOfKind<TKind>) => boolean;
   collect: (
-    groups: ActiveEffectGroups,
+    groups: EffectGroups,
     effect: EffectOfKind<TKind>,
     progress: number,
     defaultEnabled: boolean,
   ) => void;
-  customHandlerKey: keyof DocumintEffects;
+  customHandlerKey: keyof DocumintEffects | null;
   duration: (effect: EffectOfKind<TKind>) => number;
 };
 
 const activeBlockChangedDurationMs = 300;
+const documentChangeFadeDurationMs = 420;
 const textDeletedDurationMs = 180;
 const textInsertedDurationMs = 1000;
 const listItemInsertedDurationMs = 500;
 const punctuationInsertedDurationMs = 140;
 
 export const effectKinds: {
-  [TKind in EditorEffect["kind"]]: EffectKindDescriptor<TKind>;
+  [TKind in RendererEffect["kind"]]: EffectKindDescriptor<TKind>;
 } = {
   "active-block-changed": {
     animatesByDefault: () => true,
@@ -52,6 +57,16 @@ export const effectKinds: {
     },
     customHandlerKey: "activeBlockChanged",
     duration: () => activeBlockChangedDurationMs,
+  },
+  "document-change": {
+    animatesByDefault: () => true,
+    collect: (groups, effect, progress) => {
+      groups.documentChangeFades.set(documentChangeFrameTargetKey(effect.target), {
+        progress,
+      });
+    },
+    customHandlerKey: null,
+    duration: () => documentChangeFadeDurationMs,
   },
   "list-item-inserted": {
     animatesByDefault: () => true,
@@ -116,7 +131,7 @@ export const effectKinds: {
   },
 };
 
-export function descriptorFor<TEffect extends EditorEffect>(effect: TEffect) {
+export function descriptorFor<TEffect extends RendererEffect>(effect: TEffect) {
   return effectKinds[effect.kind] as EffectKindDescriptor<TEffect["kind"]>;
 }
 

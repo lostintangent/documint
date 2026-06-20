@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { createDocument, createParagraphTextBlock } from "@/document";
-import { createDocumentIndex, createEditorState, insertText } from "@/editor/state";
+import {
+  createDocumentIndex,
+  createEditorState,
+  insertLineBreak,
+  insertText,
+  setSelection,
+} from "@/editor/state";
 import { measureCaretTarget, resolveCaretVisualLeft } from "@/editor/layout";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
@@ -60,6 +66,60 @@ test("advances the active caret across collapsed trailing spaces", () => {
   expect(resolveCaretVisualLeft(state, layout, afterSpace)).toBeGreaterThan(
     resolveCaretVisualLeft(state, layout, beforeSpace),
   );
+});
+
+test("measures caret geometry inside a space-only paragraph", () => {
+  const state = createEditorState(createDocument([createParagraphTextBlock(" ")]));
+  const layout = measureLayoutSlice(state.documentIndex, {
+    width: 320,
+  });
+  const paragraphContainer = state.documentIndex.regions[0];
+
+  if (!paragraphContainer) {
+    throw new Error("Expected paragraph container");
+  }
+
+  const beforeSpace = measureCaretTarget(layout, state.documentIndex, {
+    regionId: paragraphContainer.id,
+    offset: 0,
+  });
+  const afterSpace = measureCaretTarget(layout, state.documentIndex, {
+    regionId: paragraphContainer.id,
+    offset: 1,
+  });
+
+  if (!beforeSpace || !afterSpace) {
+    throw new Error("Expected paragraph carets");
+  }
+
+  expect(layout.lines.map((line) => line.text)).toEqual([""]);
+  expect(resolveCaretVisualLeft(state, layout, afterSpace)).toBeGreaterThan(
+    resolveCaretVisualLeft(state, layout, beforeSpace),
+  );
+});
+
+test("measures the empty-looking paragraph produced by Enter before a trailing space", () => {
+  let state = createEditorState(createDocument([createParagraphTextBlock("alpha ")]));
+  const paragraphContainer = state.documentIndex.regions[0];
+
+  if (!paragraphContainer) {
+    throw new Error("Expected paragraph container");
+  }
+
+  state = setSelection(state, { regionId: paragraphContainer.id, offset: "alpha".length });
+  state = insertLineBreak(state) ?? state;
+
+  const layout = measureLayoutSlice(state.documentIndex, {
+    width: 320,
+  });
+  const active = state.documentIndex.regions.find(
+    (region) => region.id === state.selection.focus.regionId,
+  );
+  const caret = measureCaretTarget(layout, state.documentIndex, state.selection.focus);
+
+  expect(active?.text).toBe(" ");
+  expect(caret?.regionId).toBe(active?.id);
+  expect(caret?.offset).toBe(0);
 });
 
 test("advances caret geometry after typing inside a code block", () => {

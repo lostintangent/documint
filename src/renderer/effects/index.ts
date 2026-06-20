@@ -1,24 +1,23 @@
-// Owns paint-time effect policy. The editor emits semantic effects; this
-// module decides which effects are active, how long they run, and which
+// Owns paint-time effect policy. Editor and host code emit semantic effects;
+// this module decides which effects are active, how long they run, and which
 // paint-ready effect groups they contribute to for the current frame.
 
 import type { DocumintEffects, ResolvedEditorTheme } from "@/types";
-import type { EditorEffect } from "@/editor/state";
 import { blendCanvasColors, transparentCanvasColor } from "./colors";
-import { descriptorFor, type ActiveEffectGroups } from "./kinds";
-import type {
-  ActiveEditorEffect,
-  TextFadeFrame,
-  TextPulseFrame,
-} from "./types";
+import { descriptorFor, type EffectGroups } from "./kinds";
+import type { RendererEffect, TextFadeFrame, TextPulseFrame } from "./types";
 
 export type { EffectEnvironment } from "@/types";
 export type { PaintEffect } from "./custom-effects";
 export { createPaintEffect } from "./custom-effects";
+export { documentChangeFrameTargetKey } from "./types";
 export type {
   BlockFlashFrame,
   BlockPulseFrame,
-  ActiveEditorEffect,
+  DocumentChangeEffect,
+  DocumentChangeFadeFrame,
+  RendererEffect,
+  RendererEffectInput,
   TextFadeFrame,
   TextHighlightFrame,
   TextPulseFrame,
@@ -28,7 +27,7 @@ export type EffectPolicy = {
   // Return `null` to opt an effect out of default renderer handling.
   // The same policy must be used for frame resolution, pruning, and
   // continuation checks so effect lifetime and painted output stay aligned.
-  duration: (effect: EditorEffect) => number | null;
+  duration: (effect: RendererEffect) => number | null;
 };
 
 // Default renderer policy. Hosts can wrap this value to override specific
@@ -40,8 +39,8 @@ export const defaultEffectPolicy: EffectPolicy = {
   },
 };
 
-export type ActiveEffects = ActiveEffectGroups & {
-  activeEditorEffects: readonly ActiveEditorEffect[];
+export type ResolvedEffects = EffectGroups & {
+  rendererEffects: readonly RendererEffect[];
 };
 
 // List marker pop reaches full scale in the first half of its duration,
@@ -51,14 +50,14 @@ const LIST_MARKER_POP_SCALE_RANGE = 0.9;
 const LIST_MARKER_POP_SCALE_SPEED = 2;
 const LIST_MARKER_POP_COLOR_SPEED = 2;
 
-export function resolveActiveEffects(
-  effects: readonly ActiveEditorEffect[],
+export function resolveRendererEffects(
+  effects: readonly RendererEffect[],
   now: number,
   policy = defaultEffectPolicy,
   customEffects?: DocumintEffects,
-): ActiveEffects {
-  const result = createEmptyActiveEffects();
-  const activeEditorEffects: ActiveEditorEffect[] = [];
+): ResolvedEffects {
+  const result = createEmptyResolvedEffects();
+  const rendererEffects: RendererEffect[] = [];
 
   for (const effect of effects) {
     const defaultDurationMs = policy.duration(effect);
@@ -73,11 +72,11 @@ export function resolveActiveEffects(
       continue;
     }
 
-    activeEditorEffects.push(effect);
+    rendererEffects.push(effect);
     descriptorFor(effect).collect(result, effect, progress, defaultDurationMs !== null);
   }
 
-  return { ...result, activeEditorEffects };
+  return { ...result, rendererEffects };
 }
 
 export function resolveTextFadeColor(baseColor: string, textFade: TextFadeFrame) {
@@ -113,10 +112,11 @@ export function resolveBlockPulseColor(
   return blendCanvasColors(theme.insertHighlightText, baseColor, colorProgress);
 }
 
-function createEmptyActiveEffects(): ActiveEffectGroups {
+function createEmptyResolvedEffects(): EffectGroups {
   return {
     blockFlashes: new Map(),
     blockPulses: new Map(),
+    documentChangeFades: new Map(),
     textFades: new Map(),
     textHighlights: new Map(),
     textPulses: new Map(),
@@ -124,7 +124,7 @@ function createEmptyActiveEffects(): ActiveEffectGroups {
 }
 
 function resolveEffectProgress(
-  effect: ActiveEditorEffect,
+  effect: RendererEffect,
   now: number,
   durationMs: number,
 ): number | null {
@@ -137,12 +137,11 @@ function resolveEffectProgress(
   return Math.max(0, Math.min(1, elapsed / durationMs));
 }
 
-function getCustomEffectDuration(
-  effect: EditorEffect,
-  customEffects: DocumintEffects | undefined,
-): number | null {
+function getCustomEffectDuration(effect: RendererEffect, customEffects: DocumintEffects | undefined) {
   const descriptor = descriptorFor(effect);
-  return customEffects?.[descriptor.customHandlerKey] ? descriptor.duration(effect) : null;
+  return descriptor.customHandlerKey && customEffects?.[descriptor.customHandlerKey]
+    ? descriptor.duration(effect)
+    : null;
 }
 
 function easeOutCubic(t: number) {

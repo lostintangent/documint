@@ -29,7 +29,6 @@ function App() {
   }, []);
 
   const handleContentChanged = (nextContent: string) => {
-    setContent(nextContent);
     vscode.postMessage({ type: "edit-content", content: nextContent });
   };
 

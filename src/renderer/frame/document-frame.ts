@@ -1,22 +1,26 @@
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import { findVisibleBlockRange, findVisibleLineRange } from "@/editor/layout";
-import { emptyDocumentResources } from "@/editor/resources";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
+import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources, DocumintEffects, ResolvedEditorTheme } from "@/types";
 import {
-  resolveActiveEffects,
+  resolveRendererEffects,
   type EffectPolicy,
   type BlockFlashFrame,
-  type ActiveEditorEffect,
+  type RendererEffect,
 } from "../effects";
 import { resolveDocumentFrameChrome, type DocumentFrameChrome } from "./chrome";
+import {
+  createDocumentChangeResolver,
+  type DocumentChangeFrameInput,
+  resolveTableCellDocumentChanges,
+  type TableCellDocumentChangeFrame,
+} from "./document-changes";
+import type { BandedGeometryFrame } from "./banded-geometry";
 import { resolveDocumentFrameLine, type DocumentFrameLine } from "./line";
 import { resolveSelectionRegionOrderRange } from "./selection-frame";
-
-const emptyTextDecorationIndex: TextDecorationIndex = new Map();
-const emptyCommentPresence: ReadonlyMap<number, EditorPresence> = new Map();
 
 export function createDocumentFrame(
   editorState: EditorState,
@@ -27,7 +31,7 @@ export function createDocumentFrame(
   const ambientTime = options.ambientTime ?? options.now;
   const visibleLines = findVisibleLineRange(layout, paintTop, options.height);
   const visibleBlocks = findVisibleBlockRange(layout, paintTop, options.height);
-  const activeEffects = resolveActiveEffects(
+  const resolvedEffects = resolveRendererEffects(
     options.effects ?? [],
     options.now,
     options.effectPolicy,
@@ -38,13 +42,18 @@ export function createDocumentFrame(
     ambientTime,
   };
   const commentRangesByRegion = groupCommentRangesByRegion(options.commentRanges);
-  const textDecorations = options.textDecorations ?? emptyTextDecorationIndex;
+  const textDecorations = options.textDecorations ?? null;
+  const documentChanges = options.documentChanges ?? [];
+  const resolveDocumentChange = createDocumentChangeResolver(
+    documentChanges,
+    resolvedEffects.documentChangeFades,
+  );
   const selectionRegionOrderRange = resolveSelectionRegionOrderRange(
     editorState,
     options.normalizedSelection,
   );
   const { chrome, listMarkerPlans } = resolveDocumentFrameChrome({
-    blockFlashes: activeEffects.blockFlashes,
+    blockFlashes: resolvedEffects.blockFlashes,
     activeBlockId: options.activeBlockId,
     activeRegionId: options.activeRegionId,
     endBlockIndex: visibleBlocks.endIndex,
@@ -56,42 +65,58 @@ export function createDocumentFrame(
     width: options.width,
   });
   const lines: DocumentFrameLine[] = [];
+  const tableCellDocumentChanges =
+    documentChanges.length === 0
+      ? []
+      : resolveTableCellDocumentChanges({
+          editorState,
+          endLineIndex: visibleLines.endIndex,
+          layoutState,
+          resolveDocumentChange,
+          startLineIndex: visibleLines.startIndex,
+          theme: options.theme,
+        });
+  let hasDocumentChangeHighlights = tableCellDocumentChanges.length > 0;
 
   for (let index = visibleLines.startIndex; index < visibleLines.endIndex; index += 1) {
-    lines.push(
-      resolveDocumentFrameLine({
-        blockFlashes: activeEffects.blockFlashes,
-        activeBlockId: options.activeBlockId,
-        blockPulses: activeEffects.blockPulses,
-        textFades: activeEffects.textFades,
-        textHighlights: activeEffects.textHighlights,
-        textPulses: activeEffects.textPulses,
-        activeThreadIndex: options.activeThreadIndex,
-        commentPresence: options.commentPresence ?? emptyCommentPresence,
-        commentRangesByRegion,
-        editorState,
-        layoutState,
-        line: layout.lines[index]!,
-        normalizedSelection: options.normalizedSelection,
-        selectionRegionOrderRange,
-        textDecorations,
-        resources,
-        theme: options.theme,
-        listMarkerPlans,
-        width: options.width,
-      }),
-    );
+    const line = resolveDocumentFrameLine({
+      blockFlashes: resolvedEffects.blockFlashes,
+      activeBlockId: options.activeBlockId,
+      blockPulses: resolvedEffects.blockPulses,
+      textFades: resolvedEffects.textFades,
+      textHighlights: resolvedEffects.textHighlights,
+      textPulses: resolvedEffects.textPulses,
+      activeThreadIndex: options.activeThreadIndex,
+      commentPresence: options.commentPresence ?? null,
+      commentRangesByRegion,
+      editorState,
+      layoutState,
+      line: layout.lines[index]!,
+      normalizedSelection: options.normalizedSelection,
+      resolveDocumentChange,
+      selectionRegionOrderRange,
+      textDecorations,
+      resources,
+      theme: options.theme,
+      listMarkerPlans,
+      width: options.width,
+    });
+
+    lines.push(line);
+    hasDocumentChangeHighlights ||= line.documentChangeBackground !== null;
   }
 
   return {
     activeBlockChangedEffect: resolveActiveBlockChangedEffectFrame(
       lines,
-      chrome.activeTableCellHighlight,
+      chrome.activeTableCellGeometry,
     ),
-    activeEffects: activeEffects.activeEditorEffects,
+    effects: resolvedEffects.rendererEffects,
+    hasDocumentChangeHighlights,
     chrome,
     clocks,
     customEffects: options.customEffects,
+    tableCellDocumentChanges,
     layer: {
       devicePixelRatio: options.devicePixelRatio,
       height: options.height,
@@ -120,7 +145,8 @@ type CreateDocumentFrameOptions = {
   customEffects?: DocumintEffects;
   devicePixelRatio: number;
   effectPolicy?: EffectPolicy;
-  effects?: readonly ActiveEditorEffect[];
+  effects?: readonly RendererEffect[];
+  documentChanges?: readonly DocumentChangeFrameInput[];
   height: number;
   normalizedSelection: NormalizedEditorSelection;
   now: number;
@@ -148,10 +174,12 @@ function groupCommentRangesByRegion(commentRanges: EditorCommentRange[]) {
 
 export type DocumentFrame = {
   readonly activeBlockChangedEffect: ActiveBlockChangedEffectFrame | null;
-  readonly activeEffects: readonly ActiveEditorEffect[];
+  readonly effects: readonly RendererEffect[];
+  readonly hasDocumentChangeHighlights: boolean;
   readonly chrome: DocumentFrameChrome;
   readonly clocks: DocumentFrameClocks;
   readonly customEffects?: DocumintEffects;
+  readonly tableCellDocumentChanges: readonly TableCellDocumentChangeFrame[];
   readonly layer: PaintLayerFrame;
   readonly lines: readonly DocumentFrameLine[];
   readonly resources: DocumentResources;
@@ -172,21 +200,17 @@ export type PaintLayerFrame = {
 
 export type ActiveBlockChangedEffectFrame = {
   readonly activeFlash: BlockFlashFrame;
-  readonly bands: readonly LayoutRect[];
-  readonly borderRect?: LayoutRect;
-  readonly rect: LayoutRect;
+  readonly geometry: BandedGeometryFrame;
 };
 
 function resolveActiveBlockChangedEffectFrame(
   lines: readonly DocumentFrameLine[],
-  activeTableCellHighlight: DocumentFrameChrome["activeTableCellHighlight"],
+  activeTableCellGeometry: DocumentFrameChrome["activeTableCellGeometry"],
 ): ActiveBlockChangedEffectFrame | null {
-  if (activeTableCellHighlight?.activeFlash) {
+  if (activeTableCellGeometry?.activeFlash) {
     return {
-      activeFlash: activeTableCellHighlight.activeFlash,
-      bands: activeTableCellHighlight.bands,
-      borderRect: activeTableCellHighlight.borderRect,
-      rect: activeTableCellHighlight.borderRect,
+      activeFlash: activeTableCellGeometry.activeFlash,
+      geometry: activeTableCellGeometry,
     };
   }
 
@@ -210,8 +234,10 @@ function resolveActiveBlockChangedEffectFrame(
 
   return {
     activeFlash,
-    bands,
-    rect: unionRects(bands),
+    geometry: {
+      bands,
+      rect: unionRects(bands),
+    },
   };
 }
 

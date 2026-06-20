@@ -47,7 +47,7 @@ import {
   createOverlayFrame,
   paintDocumentFrame,
   paintOverlayFrame,
-  type ActiveEditorEffect,
+  type RendererEffect,
 } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
 import type {
@@ -151,6 +151,7 @@ export type DocumintProps = {
   presence?: DocumentPresence[];
   protocols?: ResourceProtocolRecord;
   resources?: ActiveResourceSet;
+  showDiffs?: boolean;
   storage?: DocumintStorage;
   users?: DocumentUser[];
 
@@ -246,6 +247,7 @@ function DocumintHost({
   onUserMentioned,
   presence,
   resources,
+  showDiffs = true,
   storage,
   theme,
   users,
@@ -331,13 +333,19 @@ function DocumintHost({
   const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
     return isEditable ? completionSources : undefined;
   }, [completionSources, isEditable]);
-  const { emitContentChanged, emitUserMentioned } = useSync({
+  const {
+    emitContentChanged,
+    emitUserMentioned,
+    documentChanges,
+    effects: syncEffects,
+  } = useSync({
     content,
     contentDocument,
     markdownOptions,
     onContentChanged,
     onUserMentioned,
     resourceProtocolKey: resourceProtocols.key,
+    showDiffs,
     store,
   });
   const documentCompletions = useDocumentCompletions({
@@ -379,11 +387,9 @@ function DocumintHost({
       reconcileEditorState(transition.previous, transition.next);
 
       if (transition.hasNewEffects) {
-        const startedAt = performance.now();
-        const startedEffects = transition.effects.map((effect) => ({ ...effect, startedAt }));
         // All default editor effects are content-layer effects. None affect
         // layout or overlay, so a content paint is sufficient.
-        scheduleContentPaint({ effects: startedEffects });
+        scheduleContentPaint({ effects: transition.effects });
       }
 
       if (!transition.documentChanged) {
@@ -475,9 +481,9 @@ function DocumintHost({
   //     here, not on the lighter paint paths.
 
   const renderContent = useEffectEvent(
-    (activeEffects: readonly ActiveEditorEffect[], layoutState = layout.peekLatest()) => {
+    (rendererEffects: readonly RendererEffect[], layoutState = layout.peekLatest()) => {
       if (!layoutState) {
-        return { activeEffects };
+        return { rendererEffects };
       }
 
       const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, {
@@ -487,7 +493,7 @@ function DocumintHost({
       });
 
       if (!preparedLayer) {
-        return { activeEffects };
+        return { rendererEffects };
       }
 
       const { context, devicePixelRatio, height, width } = preparedLayer;
@@ -500,7 +506,8 @@ function DocumintHost({
         activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
         ambientTime: idle.resolveAnimationTime(now),
         devicePixelRatio,
-        effects: activeEffects,
+        effects: rendererEffects,
+        documentChanges,
         height,
         commentRanges,
         normalizedSelection: normalizedSel,
@@ -521,7 +528,9 @@ function DocumintHost({
         });
       }
 
-      return { activeEffects: frame.activeEffects };
+      return {
+        rendererEffects: frame.effects,
+      };
     },
   );
 
@@ -557,9 +566,9 @@ function DocumintHost({
     paintOverlayFrame(context, frame);
   });
 
-  const renderViewport = useEffectEvent((activeEffects: readonly ActiveEditorEffect[]) => {
+  const renderViewport = useEffectEvent((rendererEffects: readonly RendererEffect[]) => {
     const layoutState = commitLayout();
-    const contentPaint = renderContent(activeEffects, layoutState);
+    const contentPaint = renderContent(rendererEffects, layoutState);
 
     renderOverlay(layoutState);
     return contentPaint;
@@ -769,6 +778,12 @@ function DocumintHost({
     commentPresence,
     textDecorations,
   ]);
+
+  useEffect(() => {
+    scheduleContentPaint({
+      effects: syncEffects,
+    });
+  }, [documentChanges, syncEffects]);
 
   // Resolved presence affects the overlay canvas and DOM overlay. Comment-thread
   // presence is also handled by the content-layer effect above because it paints

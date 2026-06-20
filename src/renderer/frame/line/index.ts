@@ -14,7 +14,11 @@ import type {
   TextHighlightFrame,
   TextPulseFrame,
 } from "../../effects";
-import type { ActiveBlockBackgroundFrame, ContainerBackgroundFrame } from "./backgrounds";
+import type {
+  ActiveBlockBackgroundFrame,
+  ContainerBackgroundFrame,
+  DocumentChangeBackgroundFrame,
+} from "./backgrounds";
 import { resolveDocumentFrameLineBackgrounds } from "./backgrounds";
 import { resolveDocumentFrameLineList } from "./list";
 import type { CommentHighlightFrame } from "./ranges";
@@ -22,12 +26,14 @@ import { resolveDocumentFrameLineRanges } from "./ranges";
 import type { DocumentFrameLineText } from "./text";
 import { resolveDocumentFrameLineText } from "./text";
 import type { ListMarkerFrame, ListMarkerPlan } from "../chrome/list-markers";
+import type { DocumentChangeResolver } from "../document-changes";
 import type { SelectionRegionOrderRange } from "../selection-frame";
 
 export type DocumentFrameLine = DocumentFrameLineText & {
   readonly activeBlockBackground: ActiveBlockBackgroundFrame | null;
   readonly blockPulse: BlockPulseFrame | null;
   readonly containerBackground: ContainerBackgroundFrame | null;
+  readonly documentChangeBackground: DocumentChangeBackgroundFrame | null;
   readonly commentHighlights: readonly CommentHighlightFrame[];
   readonly layoutLine: EditorLayoutState["layout"]["lines"][number];
   readonly listMarker: ListMarkerFrame | null;
@@ -42,15 +48,16 @@ type ResolveDocumentFrameLineOptions = {
   textHighlights: Map<string, TextHighlightFrame[]>;
   textPulses: Map<string, TextPulseFrame[]>;
   activeThreadIndex: number | null;
-  commentPresence: ReadonlyMap<number, EditorPresence>;
+  commentPresence: ReadonlyMap<number, EditorPresence> | null;
   commentRangesByRegion: ReadonlyMap<string, EditorCommentRange[]>;
   editorState: EditorState;
   layoutState: EditorLayoutState;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
   resources: DocumentResources;
+  resolveDocumentChange: DocumentChangeResolver;
   selectionRegionOrderRange: SelectionRegionOrderRange | null;
-  textDecorations: TextDecorationIndex;
+  textDecorations: TextDecorationIndex | null;
   theme: ResolvedEditorTheme;
   listMarkerPlans: Map<string, ListMarkerPlan>;
   width: number;
@@ -71,6 +78,7 @@ export function resolveDocumentFrameLine({
   line,
   normalizedSelection,
   resources,
+  resolveDocumentChange,
   selectionRegionOrderRange,
   textDecorations,
   theme,
@@ -81,6 +89,10 @@ export function resolveDocumentFrameLine({
   const block = indexedBlock?.block ?? null;
   const runtimeBlockPath = indexedBlock?.path ?? null;
   const container = editorState.documentIndex.regionIndex.get(line.regionId) ?? null;
+  const documentChange =
+    block?.type === "table"
+      ? null
+      : resolveDocumentChange(editorState, indexedBlock, line.regionId);
   const containerBounds = layoutState.layout.regionBounds.get(line.regionId) ?? null;
   const text = resolveDocumentFrameLineText({
     textFades,
@@ -102,10 +114,12 @@ export function resolveDocumentFrameLine({
       activeBlockId,
       block,
       containerBounds,
+      documentChange,
       layout: layoutState.layout,
       line,
       runtimeBlockPath,
       tableCellPosition: container?.tableCellPosition ?? null,
+      theme,
       width,
     }),
     ...resolveDocumentFrameLineRanges({

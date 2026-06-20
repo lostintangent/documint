@@ -44,6 +44,36 @@ test("resolves mode-aware semantic comment defaults based on background luminanc
   expect(darkResolved.commentHighlightResolvedActive).toBe("#4ade80");
 });
 
+test("derives external change colors from semantic diff tokens", () => {
+  const lightResolved = resolveEditorTheme({
+    ...lightTheme,
+    background: "#ffffff",
+    commentHighlightActive: "#111111",
+    commentHighlightResolvedActive: "#222222",
+    text: "#000000",
+  });
+  expect(lightResolved.externalChangeAdditionBackground).toBe(
+    "color-mix(in srgb, #4ade80 30%, transparent)",
+  );
+  expect(lightResolved.externalChangeModificationBackground).toBe(
+    "color-mix(in srgb, #ea580c 36%, transparent)",
+  );
+
+  const darkResolved = resolveEditorTheme({
+    ...darkTheme,
+    background: "#000000",
+    commentHighlightActive: "#111111",
+    commentHighlightResolvedActive: "#222222",
+    text: "#ffffff",
+  });
+  expect(darkResolved.externalChangeAdditionBackground).toBe(
+    "color-mix(in srgb, #4ade80 22%, transparent)",
+  );
+  expect(darkResolved.externalChangeModificationBackground).toBe(
+    "color-mix(in srgb, #f4d35e 34%, transparent)",
+  );
+});
+
 test("resolves mode-aware codeBackground default based on background luminance", () => {
   // Light themes get a theme-tinted very-dark inverted code block; dark themes
   // get a subtle lift from background.

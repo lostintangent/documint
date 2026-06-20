@@ -4,10 +4,21 @@
 
 import type { Mark } from "@/document";
 import { regionInlines } from "../index/inlines";
-import { resolveIndexedBlock, resolveRegion } from "../index/query";
-import type { IndexedInline } from "../index/types";
+import {
+  compareEditorPositions,
+  resolveIndexedBlock,
+  resolveIndexedBlockForRegion,
+  resolveParentIndexedBlock,
+  resolveRegion,
+} from "../index/query";
+import type { IndexedBlock, IndexedInline } from "../index/types";
 import type { EditorState } from "../types";
-import { isSelectionCollapsed, normalizeSelection, type EditorSelectionRange } from "./index";
+import {
+  isSelectionCollapsed,
+  normalizeSelection,
+  type EditorSelectionRange,
+  type NormalizedEditorSelection,
+} from "./index";
 
 export type SelectionBlockContext = {
   blockId: string;
@@ -92,6 +103,84 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
   };
 }
 
+export function selectionIntersectsRegion(
+  state: EditorState,
+  regionId: string,
+  selection: NormalizedEditorSelection = normalizeSelection(state),
+) {
+  const region = resolveRegion(state.documentIndex, regionId);
+  if (!region) {
+    return false;
+  }
+
+  if (selection.collapsed) {
+    return selection.start.regionId === regionId;
+  }
+
+  return (
+    compareEditorPositions(state.documentIndex, selection.start, {
+      offset: region.text.length,
+      regionId,
+    }) <= 0 &&
+    compareEditorPositions(state.documentIndex, selection.end, {
+      offset: 0,
+      regionId,
+    }) >= 0
+  );
+}
+
+export function selectionIntersectsBlock(
+  state: EditorState,
+  blockId: string,
+  selection: NormalizedEditorSelection = normalizeSelection(state),
+) {
+  const target = resolveIndexedBlock(state.documentIndex, blockId);
+  if (!target) {
+    return false;
+  }
+
+  for (const point of [selection.start, selection.end]) {
+    const focusedBlock = resolveIndexedBlockForRegion(state.documentIndex, point.regionId);
+    if (focusedBlock && isIndexedBlockWithinTarget(state, focusedBlock.block.id, blockId)) {
+      return true;
+    }
+  }
+
+  if (selection.collapsed) {
+    return false;
+  }
+
+  for (const regionId of blockAndDescendantRegionIds(state, target)) {
+    if (selectionIntersectsRegion(state, regionId, selection)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function* blockAndDescendantRegionIds(state: EditorState, target: IndexedBlock) {
+  for (const regionId of target.regionIds) {
+    yield regionId;
+  }
+
+  for (
+    let index = target.blockArrayIndex + 1;
+    index < state.documentIndex.blocks.length;
+    index += 1
+  ) {
+    const descendant = state.documentIndex.blocks[index]!;
+
+    if (descendant.rootIndex !== target.rootIndex || descendant.depth <= target.depth) {
+      break;
+    }
+
+    for (const regionId of descendant.regionIds) {
+      yield regionId;
+    }
+  }
+}
+
 function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
   const container = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
 
@@ -108,4 +197,22 @@ function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
     inlines.find((entry) => entry.start === offset) ??
     null
   );
+}
+
+function isIndexedBlockWithinTarget(
+  state: EditorState,
+  blockId: string,
+  targetBlockId: string,
+) {
+  let current = resolveIndexedBlock(state.documentIndex, blockId);
+
+  while (current) {
+    if (current.block.id === targetBlockId) {
+      return true;
+    }
+
+    current = resolveParentIndexedBlock(state.documentIndex, current);
+  }
+
+  return false;
 }

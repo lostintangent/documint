@@ -60,6 +60,16 @@ export type DocumintDecoration = {
   pattern: RegExp;
 };
 
+export type ResolvedDocumentChangeTarget =
+  | {
+      blockId: string;
+      kind: "block";
+    }
+  | {
+      kind: "table-cell";
+      regionId: string;
+    };
+
 export type EditorTheme = {
   // Tier-1 required tokens that
   // everything else is derived from
@@ -88,6 +98,8 @@ export type EditorTheme = {
   commentHighlightResolved?: string;
   commentHighlightResolvedActive?: string;
   dividerRule?: string;
+  externalChangeAdditionBackground?: string;
+  externalChangeModificationBackground?: string;
   fontSize?: number;
   headingRule?: string;
   headingText?: string;

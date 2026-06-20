@@ -1,8 +1,14 @@
-import { useEffectEvent, useLayoutEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createEditorState, type TextRangeTarget } from "@/editor";
-import type { Document } from "@/document";
+import { findDocumentChanges, type Document } from "@/document";
 import { serializeDocument, type MarkdownOptions } from "@/markdown";
+import type { DocumentChangeEffect } from "@/renderer";
 import { emitDiagnostic } from "../lib/diagnostics";
+import {
+  acknowledgeUnacknowledgedDocumentChanges,
+  mergeUnacknowledgedDocumentChanges,
+} from "./external-changes";
+import type { UnacknowledgedDocumentChange } from "./external-changes";
 import { reconcileExternalContentChange } from "./external-reconciliation";
 import { resolveMentionLineChange } from "./mention-event";
 import type { DocumintStore, EditorStateTransition } from "../store";
@@ -13,6 +19,16 @@ export type UserMentionEvent = {
   userId: string;
 };
 
+type DocumentChangeState = {
+  newChanges: readonly UnacknowledgedDocumentChange[];
+  changes: readonly UnacknowledgedDocumentChange[];
+};
+
+const emptyDocumentChangeState: DocumentChangeState = {
+  newChanges: [],
+  changes: [],
+};
+
 export function useSync({
   content,
   contentDocument,
@@ -20,6 +36,7 @@ export function useSync({
   onContentChanged,
   onUserMentioned,
   resourceProtocolKey,
+  showDiffs,
   store,
 }: {
   content: string;
@@ -28,25 +45,23 @@ export function useSync({
   onContentChanged?: (content: string) => void;
   onUserMentioned?: (event: UserMentionEvent) => void;
   resourceProtocolKey: string;
+  showDiffs: boolean;
   store: DocumintStore;
 }) {
   /* Reconciliation bookkeeping */
 
-  const lastEmittedContentRef = useRef(content);
+  const lastReconciledContentRef = useRef(content);
   const lastReconciledMarkdownOptionsRef = useRef(markdownOptions);
   const lastReconciledResourceProtocolKeyRef = useRef(resourceProtocolKey);
+  const [documentChangeState, setDocumentChangeState] = useState(emptyDocumentChangeState);
 
   /* Local event emission */
 
   const emitContentChanged = useEffectEvent((transition: EditorStateTransition) => {
     // Emit the live runtime document, not the save-canonical commit document:
-    // trimming or empty-document collapse during the host echo can destabilize
-    // selection reconciliation, and comment anchors repair on their own path.
+    // trimming or empty-document collapse belongs at persistence boundaries,
+    // while this callback describes the editor's current runtime shape.
     const nextContent = serializeDocument(transition.next.documentIndex.document, markdownOptions);
-
-    lastEmittedContentRef.current = nextContent;
-    lastReconciledMarkdownOptionsRef.current = markdownOptions;
-    lastReconciledResourceProtocolKeyRef.current = resourceProtocolKey;
     onContentChanged?.(nextContent);
   });
 
@@ -80,15 +95,80 @@ export function useSync({
     },
   );
 
+  /* Document change lifecycle */
+
+  const applyExternalDocumentChanges = useEffectEvent(
+    (previousState: EditorStateTransition["previous"], nextState: EditorStateTransition["next"]) => {
+      const changes = findDocumentChanges(
+        previousState.documentIndex.document,
+        nextState.documentIndex.document,
+      );
+      setDocumentChangeState((current) => {
+        const merge = mergeUnacknowledgedDocumentChanges(current.changes, changes, nextState);
+        return {
+          newChanges: merge.newChanges,
+          changes: merge.changes,
+        };
+      });
+    },
+  );
+
+  const reconcileDocumentChanges = useEffectEvent(
+    (transition: EditorStateTransition) => {
+      setDocumentChangeState((current) => {
+        if (current.changes.length === 0) {
+          return current;
+        }
+
+        const changes = acknowledgeUnacknowledgedDocumentChanges(
+          current.changes,
+          transition.next,
+          { retarget: transition.documentChanged },
+        );
+
+        return changes === current.changes
+          ? current
+          : {
+              newChanges: [],
+              changes,
+            };
+      });
+    },
+  );
+
+  /* External content diffing */
+
+  useEffect(() => {
+    return store.editor.subscribe((transition) => {
+      if (showDiffs && transition.source === "local") {
+        // Local transitions can dismiss touched diff markers and retarget
+        // surviving markers, but only while diff display is active.
+        reconcileDocumentChanges(transition);
+      }
+    });
+  }, [showDiffs, store]);
+
+  useEffect(() => {
+    if (showDiffs) return;
+
+    // Turning diffs off is a host display policy, so drop any already-visible
+    // diff lifecycle state instead of letting old markers linger.
+    setDocumentChangeState((current) =>
+      current.newChanges.length === 0 && current.changes.length === 0
+        ? current
+        : emptyDocumentChangeState,
+    );
+  }, [showDiffs]);
+
   /* External content reconciliation */
 
   useLayoutEffect(() => {
+    const contentChanged = content !== lastReconciledContentRef.current;
+    const markdownOptionsChanged = markdownOptions !== lastReconciledMarkdownOptionsRef.current;
     const resourceProtocolsChanged =
       resourceProtocolKey !== lastReconciledResourceProtocolKeyRef.current;
-    const markdownOptionsChanged = markdownOptions !== lastReconciledMarkdownOptionsRef.current;
-    const isEmittedContent = content === lastEmittedContentRef.current;
 
-    if (isEmittedContent && !resourceProtocolsChanged && !markdownOptionsChanged) {
+    if (!contentChanged && !markdownOptionsChanged && !resourceProtocolsChanged) {
       return;
     }
 
@@ -96,15 +176,46 @@ export function useSync({
     const nextState = createEditorState(contentDocument);
     const reconciliation = reconcileExternalContentChange(previousState, nextState);
     store.editor.replace(reconciliation.state);
-    lastEmittedContentRef.current = content;
+    if (showDiffs && contentChanged) {
+      applyExternalDocumentChanges(previousState, reconciliation.state);
+    }
+    lastReconciledContentRef.current = content;
     lastReconciledMarkdownOptionsRef.current = markdownOptions;
     lastReconciledResourceProtocolKeyRef.current = resourceProtocolKey;
-  }, [content, contentDocument, markdownOptions, resourceProtocolKey, store]);
+  }, [content, contentDocument, markdownOptions, resourceProtocolKey, showDiffs, store]);
+
+  const effects = useMemo(
+    () => (showDiffs ? documentChangeState.newChanges.map(createDocumentChangeEffect) : []),
+    [documentChangeState.newChanges, showDiffs],
+  );
+  const documentChanges = useMemo(
+    () => (showDiffs ? documentChangeState.changes.map(createDocumentChangeFrameInput) : []),
+    [documentChangeState.changes, showDiffs],
+  );
 
   /* Public API */
 
   return {
     emitContentChanged,
     emitUserMentioned,
+    documentChanges,
+    effects,
+  };
+}
+
+function createDocumentChangeFrameInput(change: UnacknowledgedDocumentChange) {
+  return {
+    changeKind: change.change.changeKind,
+    ...change.editorTarget,
+  };
+}
+
+function createDocumentChangeEffect(
+  change: UnacknowledgedDocumentChange,
+): DocumentChangeEffect {
+  return {
+    changeKind: change.change.changeKind,
+    kind: "document-change",
+    target: change.editorTarget,
   };
 }

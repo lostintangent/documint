@@ -11,6 +11,7 @@
 export {
   paintActiveBlockBackground,
   paintActiveBlockChangedEffect,
+  paintDocumentChangeBackground,
   paintLineContainerBackground,
 } from "./backgrounds";
 export { paintBlockquoteRules, paintHeadingRules, paintInertBlock } from "./rules";

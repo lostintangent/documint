@@ -38,7 +38,7 @@ export function resolveDocumentFrameLineText({
   layout: EditorLayoutState["layout"];
   line: EditorLayoutState["layout"]["lines"][number];
   resources: DocumentResources;
-  textDecorations: TextDecorationIndex;
+  textDecorations: TextDecorationIndex | null;
   theme: ResolvedEditorTheme;
 }): DocumentFrameLineText {
   const containerPath = container?.path ?? "";
@@ -47,7 +47,7 @@ export function resolveDocumentFrameLineText({
     ? (textHighlights.get(containerPath) ?? [])
     : [];
   const textPulsesForLine = container ? (textPulses.get(containerPath) ?? []) : [];
-  const textDecorationsForLine = container ? (textDecorations.get(containerPath) ?? null) : null;
+  const textDecorationsForLine = container ? (textDecorations?.get(containerPath) ?? null) : null;
   const textLeft = line.left + line.contentInset;
   const textBaseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
   const defaultTextColor = block?.type === "code" ? theme.codeText : resolveTextColor(block, theme);

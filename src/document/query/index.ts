@@ -2,7 +2,9 @@
 // anchor algebra. Everything here reads from an existing Document tree —
 // no construction, no canonicalization.
 
-export * from "./anchors";
+export * from "./anchors/text";
+export * from "./anchors/node";
 export * from "./inlines";
+export * from "./paths";
 export * from "./text";
 export * from "./visit";

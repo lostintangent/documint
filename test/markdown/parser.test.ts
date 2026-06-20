@@ -46,6 +46,17 @@ describe("Inline parsing", () => {
     expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
   });
 
+  test.each([
+    ["hex", "&#x20;leading\n", " leading"],
+    ["uppercase hex", "&#X20;leading\n", " leading"],
+    ["decimal", "&#32;leading\n", " leading"],
+    ["repeated", "&#x20;&#32;leading\n", "  leading"],
+  ])("decodes %s ordinary-space entities as inline spaces", (_label, source, expected) => {
+    const paragraph = parseParagraph(source);
+
+    expectTextAt(paragraph.children, 0, expected);
+  });
+
   // --- Mentions ---
   test("parses user mentions as semantic inline nodes", () => {
     const paragraph = parseParagraph("Hello @[Jane Doe](user-123)!\n");

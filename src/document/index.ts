@@ -7,6 +7,8 @@
 //                   `normalize.ts` is internal and not re-exported.
 //   query/        — reading from existing Documents. Traversal, projection,
 //                   anchor algebra.
+//   diff/         — bounded semantic change detection and correspondence
+//                   evidence across immutable Document snapshots.
 //   comments/     — anchored-annotation domain.
 //
 // Each subfolder has its own `index.ts` that is the single source of truth
@@ -16,5 +18,6 @@
 
 export * from "./build";
 export * from "./comments";
+export * from "./diff";
 export * from "./model";
 export * from "./query";

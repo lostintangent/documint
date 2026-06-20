@@ -50,6 +50,7 @@ const textDirectiveNameCharacter = /[-A-Za-z0-9_]/;
 // single-threaded, so the shared `lastIndex` is safe — `readImageWidth`
 // resets it at the top of every call.
 const imageWidthAttribute = /\{width=([1-9]\d*)\}/y;
+const numericSpaceEntity = /^&#(?:x20|32);/i;
 // The set of characters that survive a backslash escape in inline text.
 // Both the post-flush unescape regex (`markdownTextEscape`) and the
 // dispatcher-time existence check (`readGenericEscapeToken`) derive from
@@ -181,6 +182,7 @@ const inlineTokenReaders: ReadonlyArray<{
   read: InlineTokenReader;
 }> = [
   { leadChars: [directiveMarker], read: readInlineDirectiveToken },
+  { leadChars: ["&"], read: readNumericSpaceEntityToken },
   { leadChars: ["<"], read: readLineBreakHtmlToken },
   { leadChars: ["<"], read: readHtmlMarkToken },
   { leadChars: ["<"], read: readRawHtmlToken },
@@ -295,6 +297,23 @@ function readInlineDirectiveToken(source: string, index: number, end: number) {
   return {
     end: rawEnd,
     nodes: [createRawInline("textDirective", source.slice(index, rawEnd))],
+  };
+}
+
+function readNumericSpaceEntityToken(source: string, index: number, end: number, marks: Mark[]) {
+  if (source[index] !== "&") {
+    return null;
+  }
+
+  const match = numericSpaceEntity.exec(source.slice(index, end));
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    end: index + match[0].length,
+    nodes: [createText(spaceCharacter, marks)],
   };
 }
 

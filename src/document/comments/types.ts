@@ -1,4 +1,4 @@
-import type { AnchorResolution, TextAnchor } from "../query/anchors";
+import type { AnchorResolution, TextAnchor } from "../query/anchors/text";
 
 export type CommentThread = {
   id: string;
@@ -18,7 +18,7 @@ export type Comment = {
 // `CommentThreadAnchor` is a comments-domain reference (a thread id) used by
 // presence to attach a remote cursor to a comment thread instead of a text
 // position. The `Anchor` union assembles it with the substrate's `TextAnchor`
-// at the comments layer so the anchor algebra in `query/anchors.ts` can stay
+// at the comments layer so the anchor algebra in `query/anchors/text.ts` can stay
 // free of comments-domain identifiers — `TextAnchor` is content-addressable;
 // `CommentThreadAnchor` is identity-addressable, and only consumers that know
 // about threads should see the latter shape.

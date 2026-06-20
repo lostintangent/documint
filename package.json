@@ -1,6 +1,6 @@
 {
   "name": "documint",
-  "version": "0.0.30",
+  "version": "0.0.32",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
@@ -44,7 +44,7 @@
     "@types/react-dom": "^19.2.3",
     "bun-plugin-tailwind": "^0.1.2",
     "dts-bundle-generator": "^9.5.1",
-    "lucide-react": "^1.18.0",
+    "lucide-react": "^1.21.0",
     "oxfmt": "^0.55.0",
     "oxlint": "^1.70.0",
     "react": "^19.2.7",

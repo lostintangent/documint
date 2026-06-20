@@ -2,117 +2,79 @@
   "fixtures": [
     {
       "id": "sample",
-      "path": "test/goldens/sample.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/sample.md"
     },
     {
       "id": "article",
-      "path": "test/goldens/article.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/article.md"
     },
     {
       "id": "headings",
-      "path": "test/goldens/headings.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/headings.md"
     },
     {
       "id": "lists",
-      "path": "test/goldens/lists.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/lists.md"
     },
     {
       "id": "task-lists",
-      "path": "test/goldens/task-lists.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/task-lists.md"
     },
     {
       "id": "images-links",
-      "path": "test/goldens/images-links.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/images-links.md"
     },
     {
       "id": "tables",
-      "path": "test/goldens/tables.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/tables.md"
     },
     {
       "id": "blockquotes",
-      "path": "test/goldens/blockquotes.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/blockquotes.md"
     },
     {
       "id": "code-directives",
-      "path": "test/goldens/code-directives.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/code-directives.md"
     },
     {
       "id": "full-spectrum",
-      "path": "test/goldens/full-spectrum.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/full-spectrum.md"
     },
     {
       "id": "nested-structural",
-      "path": "test/goldens/nested-structural.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/nested-structural.md"
     },
     {
       "id": "blockquote-transitions",
-      "path": "test/goldens/blockquote-transitions.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/blockquote-transitions.md"
     },
     {
       "id": "comments-review",
-      "path": "test/goldens/comments-review.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/comments-review.md"
     },
     {
       "id": "long-structural",
-      "path": "test/goldens/long-structural.md",
-      "kind": "markdown",
-      "size": "long"
+      "path": "test/goldens/long-structural.md"
     },
     {
       "id": "rich-code",
-      "path": "test/goldens/rich-code.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/rich-code.md"
     },
     {
       "id": "rich-images",
-      "path": "test/goldens/rich-images.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/rich-images.md"
     },
     {
       "id": "rich-tables",
-      "path": "test/goldens/rich-tables.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/rich-tables.md"
     },
     {
       "id": "rich-mixed",
-      "path": "test/goldens/rich-mixed.md",
-      "kind": "markdown",
-      "size": "medium"
+      "path": "test/goldens/rich-mixed.md"
     },
     {
       "id": "unsupported-html",
-      "path": "test/goldens/unsupported-html.md",
-      "kind": "markdown",
-      "size": "short"
+      "path": "test/goldens/unsupported-html.md"
     }
   ],
   "benchmarks": {
@@ -121,7 +83,13 @@
       "component_decorations_long": 15,
       "component_grammar_tokenize_code_heavy": 12,
       "component_reconcile_selection_long": 0.25,
-      "component_reconcile_transient_empty_paragraph_long": 1.5
+      "component_reconcile_transient_empty_paragraph_long": 1.5,
+      "component_diff_external_blocks": 1,
+      "component_diff_external_table": 2,
+      "component_merge_external_changes": 0.2,
+      "component_acknowledge_external_changes_local_edit": 0.2,
+      "component_retarget_many_external_changes_reparsed_shift": 2,
+      "component_resolve_duplicate_node_anchors": 2
     },
     "markdown": {
       "markdown_to_document_comments": 0.1,
@@ -136,18 +104,15 @@
       "document_to_markdown_rich": 0.03
     },
     "layout": {
-      "layout_canvas": 3,
-      "layout_canvas_xlarge": 5,
-      "layout_canvas_huge": 8,
-      "layout_scroll": 12,
-      "layout_scroll_xlarge": 35,
-      "layout_scroll_huge": 40,
-      "layout_scroll_step": 3,
-      "layout_scroll_step_xlarge": 5,
-      "layout_scroll_step_huge": 9,
-      "layout_full_document_long": 25,
-      "layout_full_document_xlarge": 60,
-      "layout_full_document_huge": 120
+      "layout_canvas": 1,
+      "layout_canvas_xlarge": 1,
+      "layout_canvas_huge": 1.5,
+      "layout_scroll": 6,
+      "layout_scroll_xlarge": 6,
+      "layout_scroll_huge": 6,
+      "layout_scroll_step": 1,
+      "layout_scroll_step_xlarge": 1,
+      "layout_scroll_step_huge": 1.5
     },
     "editor": {
       "editor_import_comments": 0.15,

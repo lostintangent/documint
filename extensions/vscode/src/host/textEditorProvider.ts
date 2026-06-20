@@ -35,7 +35,6 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
     };
 
     let editQueue = Promise.resolve();
-    let hasPendingEdit = false;
 
     let syncedContent = document.getText();
     const syncContent = (content = document.getText()) => {
@@ -46,27 +45,14 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
       });
     };
 
-    const handleExternalContent = (content = document.getText()) => {
-      if (content === syncedContent) {
-        return;
-      }
-
-      syncContent(content);
-    };
-
     const disposables: vscode.Disposable[] = [];
     disposables.push(
       vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document.uri.toString() === document.uri.toString()) {
-          // If we have a pending client edit
-          // then we assume this change is a
-          // "local echo" of that being applied.
-          if (hasPendingEdit) {
-            hasPendingEdit = false;
-            return;
+          const content = event.document.getText();
+          if (content !== syncedContent) {
+            syncContent(content);
           }
-
-          handleExternalContent();
         }
       }),
     );
@@ -88,19 +74,17 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
             editQueue = editQueue.then(async () => {
               const edit = this.createWorkspaceEdit(document, message.content);
 
-              // The workspace is already set to the 
+              // The workspace is already set to the
               // sent edit, so there's nothing to do.
               if (!edit) return;
 
               syncedContent = message.content;
-              hasPendingEdit = true;
 
               const applied = await vscode.workspace.applyEdit(edit);
 
               // Something prevent the edit from being applied so
               // reject the edit by resyncing the last seen content.
               if (!applied) {
-                hasPendingEdit = false;
                 syncContent();
 
                 vscode.window.showErrorMessage(`Unable to update ${document.uri.toString()}.`);

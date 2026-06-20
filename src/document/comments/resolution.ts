@@ -12,13 +12,13 @@
  *
  * Comments owns the policy: scoring weights, similarity heuristics, and how
  * `matched` vs `repaired` is decided. The substrate (search, capture,
- * verification) lives in `src/document/query/anchors.ts`.
+ * verification) lives in `src/document/query/anchors/text.ts`.
  */
 
 import {
+  collectTextAnchorCandidates,
   createAnchorFromContainer,
   DEFAULT_ANCHOR_KIND,
-  enumerateTextAnchorRanges,
   extractQuoteFromContainer,
   findOccurrences,
   listAnchorContainers,
@@ -27,7 +27,7 @@ import {
   type AnchorContainer,
   type AnchorMatch,
   type AnchorResolutionStatus,
-} from "../query/anchors";
+} from "../query/anchors/text";
 import type { Document } from "../model/types";
 import type { CommentResolution, CommentThread } from "./types";
 
@@ -141,7 +141,7 @@ function collectContainerContextCandidates(thread: CommentThread, container: Anc
   const candidates: AnchorMatchCandidate[] = [];
   const originalLength = thread.quote.length;
 
-  for (const range of enumerateTextAnchorRanges(container, thread.anchor, {
+  for (const range of collectTextAnchorCandidates([container], thread.anchor, {
     estimatedLength: originalLength,
   })) {
     candidates.push({

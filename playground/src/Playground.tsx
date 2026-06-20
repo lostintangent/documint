@@ -127,10 +127,12 @@ const fixtureSurfaceClassName =
 
 export function Playground() {
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
+  const [sourceContent, setSourceContent] = useState<string>(fixtureOptions[0].markdown);
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
   const [themePopoverOpen, setThemePopoverOpen] = useState(false);
   const [customEffectsEnabled, setCustomEffectsEnabled] = useState(false);
+  const [showDiffs, setShowDiffs] = useState(true);
   const [fontSize, setFontSize] = useState<number>(16);
 
   const [users, setUsers] = useState<DocumentUser[]>([]);
@@ -166,9 +168,15 @@ export function Playground() {
 
     setFixtureId(nextFixture.id);
     setContent(nextFixture.markdown);
+    setSourceContent(nextFixture.markdown);
 
     setLastHostEvent(null);
     setHostEventVisible(false);
+  };
+
+  const handleMarkdownSourceChanged = (nextContent: string) => {
+    setContent(nextContent);
+    setSourceContent(nextContent);
   };
 
   const showHostEvent = (event: PlaygroundHostEvent) => {
@@ -213,16 +221,18 @@ export function Playground() {
             onCustomEffectsEnabledChange={setCustomEffectsEnabled}
             onFontSizeChange={setFontSize}
             onOpenChange={setThemePopoverOpen}
+            onShowDiffsChange={setShowDiffs}
             onThemeIdChange={setThemeId}
             open={themePopoverOpen}
+            showDiffs={showDiffs}
             themeId={themeId}
           />
 
           <UsersPopover
             key={`${fixtureId}-users`}
-            content={content}
-            onUsersChange={setUsers}
+            content={sourceContent}
             onPresenceChange={setPresence}
+            onUsersChange={setUsers}
           />
 
           {/* Live input-event log; gated so it ships with `bun run dev`
@@ -254,12 +264,13 @@ export function Playground() {
               presence={presence}
               protocols={protocols}
               resources={activeResources}
+              showDiffs={showDiffs}
               storage={storage}
               actions={actions}
               decorations={decorations}
               grammars={grammars}
               onCommentChanged={handleCommentChanged}
-              onContentChanged={setContent}
+              onContentChanged={setSourceContent}
               onResourceOpened={(resource) => {
                 if (resource.protocol === "playground:" && resource.url === "playground:/theme") {
                   setThemePopoverOpen(true);
@@ -279,9 +290,9 @@ export function Playground() {
             <textarea
               aria-label="Markdown source"
               className="font-code h-full min-h-full w-full resize-y rounded-none border-0 bg-background/90 p-4 text-base leading-normal"
-              onChange={(event) => setContent(event.target.value)}
+              onChange={(event) => handleMarkdownSourceChanged(event.target.value)}
               spellCheck={false}
-              value={content}
+              value={sourceContent}
             />
           </div>
         </div>

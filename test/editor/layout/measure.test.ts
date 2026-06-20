@@ -277,8 +277,19 @@ test("reuses cached sibling table measurements when one cell changes", () => {
   expect(cache.measuredLines.size).toBe(initialMeasuredLineCount + 1);
 });
 
-test("keeps an empty layout line and caret target for inserted empty blocks", () => {
-  let state = setup("# Heading\n");
+test.each([
+  ["paragraph", "Paragraph\n"],
+  ["heading", "# Heading\n"],
+  ["paragraph ending on a soft break", "Paragraph<br>\n"],
+])("keeps an empty layout line and caret target after Enter at end of a %s", (_label, source) => {
+  let state = setup(source);
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected editable region");
+  }
+
+  state = setSelection(state, { regionId: region.id, offset: region.text.length });
   state = insertLineBreak(state) ?? state;
 
   const layout = measureLayoutSlice(state.documentIndex, {

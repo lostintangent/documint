@@ -17,9 +17,11 @@ import {
   compareEditorPositions,
   countRootBlocks,
   isRootIndexedBlock,
+  resolveDocumentNodeRegion,
   resolveIndexedBlockForRegion,
   resolveRegion,
   resolveRegionByPath,
+  resolveRegionDocumentNode,
   resolveRootPrimaryRegion,
   resolveRootRegions,
   setSelection,
@@ -32,9 +34,12 @@ import {
 import {
   captureContextWindows,
   clamp,
+  createDocumentNodeAnchor,
   createParagraphTextBlock,
   enumerateTextAnchorRanges,
+  resolveDocumentNodeAnchor,
   spliceDocument,
+  type DocumentNodeAnchorResolution,
 } from "@/document";
 
 type OffsetAffinity = "after-prefix" | "before-suffix" | "neutral";
@@ -127,7 +132,7 @@ function resolveEquivalentSelectionPoint(
     return null;
   }
 
-  const nextRegion = resolveEquivalentRegion(previousRegion, nextState);
+  const nextRegion = resolveEquivalentRegion(previousState, previousRegion, nextState);
 
   if (!nextRegion) {
     return null;
@@ -143,11 +148,17 @@ function resolveEquivalentSelectionPoint(
 // `previousRegion`. Strategies in priority order:
 //   1. Same id survived → use it.
 //   2. Empty text isn't a stable anchor (markdown rebuilds drop empties) → null.
-//   3. Region with matching block kind and identical text appears exactly
-//      once in `nextState` → use it.
-//   4. Same path → use it (after unique-text because paths shift when
-//      content is inserted above the selection).
-function resolveEquivalentRegion(previousRegion: EditableRegion, nextState: EditorState) {
+//   3. A region with matching block kind and identical visible text appears
+//      exactly once → use it. This preserves formatting-only changes without
+//      paying node-anchor scan cost for the common shifted-root case.
+//   4. The region's document node anchor resolves unambiguously → use it.
+//   5. Same path only when the root topology did not shift, except for the
+//      explicit inserted-empty-root shape the editor can recognize safely.
+function resolveEquivalentRegion(
+  previousState: EditorState,
+  previousRegion: EditableRegion,
+  nextState: EditorState,
+) {
   const sameIdRegion = resolveRegion(nextState.documentIndex, previousRegion.id);
 
   if (sameIdRegion) {
@@ -164,6 +175,16 @@ function resolveEquivalentRegion(previousRegion: EditableRegion, nextState: Edit
     return uniqueTextRegion;
   }
 
+  const anchorRegion = resolveNodeAnchorRegion(previousState, previousRegion, nextState);
+
+  if (anchorRegion === "ambiguous") {
+    return null;
+  }
+
+  if (anchorRegion) {
+    return anchorRegion;
+  }
+
   const pathRegion = resolveRegionByPath(nextState.documentIndex, previousRegion.path);
 
   if (!pathRegion) {
@@ -171,7 +192,10 @@ function resolveEquivalentRegion(previousRegion: EditableRegion, nextState: Edit
   }
 
   return (
-    resolveRegionShiftedByInsertedEmptyRoot(previousRegion, nextState, pathRegion) ?? pathRegion
+    resolveRegionAfterInsertedEmptyRoot(previousRegion, nextState, pathRegion) ??
+    (countRootBlocks(previousState.documentIndex) === countRootBlocks(nextState.documentIndex)
+      ? pathRegion
+      : null)
   );
 }
 
@@ -198,7 +222,44 @@ function resolveUniqueTextRegion(previousRegion: EditableRegion, nextState: Edit
   return match;
 }
 
-function resolveRegionShiftedByInsertedEmptyRoot(
+function resolveNodeAnchorRegion(
+  previousState: EditorState,
+  previousRegion: EditableRegion,
+  nextState: EditorState,
+): EditableRegion | "ambiguous" | null {
+  const anchorMatch = resolveRegionNodeAnchor(previousState, previousRegion, nextState);
+  if (anchorMatch.status === "ambiguous") {
+    return "ambiguous";
+  }
+
+  if (anchorMatch.status !== "matched") {
+    return null;
+  }
+
+  return resolveDocumentNodeRegion(
+    nextState.documentIndex,
+    anchorMatch.node,
+    anchorMatch.path,
+  );
+}
+
+function resolveRegionNodeAnchor(
+  previousState: EditorState,
+  previousRegion: EditableRegion,
+  nextState: EditorState,
+): DocumentNodeAnchorResolution {
+  const anchor = createRegionNodeAnchor(previousState, previousRegion);
+  return anchor
+    ? resolveDocumentNodeAnchor(nextState.documentIndex.document, anchor)
+    : { status: "absent" };
+}
+
+function createRegionNodeAnchor(state: EditorState, region: EditableRegion) {
+  const node = resolveRegionDocumentNode(state.documentIndex, region);
+  return node ? createDocumentNodeAnchor(state.documentIndex.document, region.containerPath) : null;
+}
+
+function resolveRegionAfterInsertedEmptyRoot(
   previousRegion: EditableRegion,
   nextState: EditorState,
   pathRegion: EditableRegion,
@@ -232,7 +293,7 @@ function resolveRegionShiftedByInsertedEmptyRoot(
 }
 
 // Translate `offset` from `previousText` to `nextText` using the surrounding
-// `CONTEXT_WINDOW` characters as a content-addressable fingerprint. Tries
+// `CONTEXT_WINDOW` characters as content-addressable anchor context. Tries
 // (in order): unique prefix-suffix sandwich, unique prefix, unique suffix,
 // then clamps to the new text length as a last resort. `affinity` decides
 // whether prefix or suffix wins when both produce a candidate.
@@ -376,10 +437,10 @@ function resolveRecreatedEmptyParagraphRootIndex(
     "after",
   );
   const precedingMatch = precedingRegion
-    ? resolveEquivalentRegion(precedingRegion, nextState)
+    ? resolveEmptyParagraphNeighborRegion(previousState, precedingRegion, nextState)
     : null;
   const followingMatch = followingRegion
-    ? resolveEquivalentRegion(followingRegion, nextState)
+    ? resolveEmptyParagraphNeighborRegion(previousState, followingRegion, nextState)
     : null;
 
   if (precedingMatch && followingMatch) {
@@ -395,6 +456,26 @@ function resolveRecreatedEmptyParagraphRootIndex(
   }
 
   return null;
+}
+
+function resolveEmptyParagraphNeighborRegion(
+  previousState: EditorState,
+  previousRegion: EditableRegion,
+  nextState: EditorState,
+) {
+  const equivalentRegion = resolveEquivalentRegion(previousState, previousRegion, nextState);
+
+  if (equivalentRegion) {
+    return equivalentRegion;
+  }
+
+  const uniqueTextRegion = resolveUniqueTextRegion(previousRegion, nextState);
+
+  if (uniqueTextRegion) {
+    return uniqueTextRegion;
+  }
+
+  return resolveRegionByPath(nextState.documentIndex, previousRegion.path);
 }
 
 function recreateEmptyRootParagraphSelection(nextState: EditorState, rootIndex: number) {

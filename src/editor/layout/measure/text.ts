@@ -389,6 +389,10 @@ function createMeasuredTextLines(
     });
   });
 
+  if (lines.length === 0) {
+    return [emptyMeasuredLine(0, typography.lineHeight)];
+  }
+
   if (inlineProfile.hasHardBreak && text.endsWith("\n")) {
     lines.push(emptyMeasuredLine(text.length, typography.lineHeight));
   }

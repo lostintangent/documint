@@ -6,6 +6,8 @@ import {
   type PaintEffect,
 } from "../../effects";
 import type { ActiveBlockChangedEffectFrame, DocumentFrameLine } from "../../frame";
+import { createRectBandedGeometryFrame } from "../../frame/banded-geometry";
+import { paintHighlight } from "../highlights";
 import { paintTableCellChrome } from "../table";
 
 export function paintLineContainerBackground(
@@ -32,21 +34,35 @@ export function paintActiveBlockBackground(
   lineFrame: DocumentFrameLine,
   environment: EffectEnvironment,
 ) {
-  const { context, theme } = environment;
+  const { context } = environment;
   const background = lineFrame.activeBlockBackground;
 
   if (!background) {
     return;
   }
 
-  context.fillStyle = theme.activeBlockBackground;
-  context.fillRect(
-    background.rect.left,
-    background.rect.top,
-    background.rect.width,
-    background.rect.height,
-  );
+  paintHighlight(context, createRectBandedGeometryFrame(background.rect), { fill: background.color });
+}
 
+export function paintDocumentChangeBackground(
+  lineFrame: DocumentFrameLine,
+  environment: EffectEnvironment,
+) {
+  const { context } = environment;
+  const background = lineFrame.documentChangeBackground;
+
+  if (!background) {
+    return;
+  }
+
+  paintHighlight(
+    context,
+    createRectBandedGeometryFrame(background.rect),
+    {
+      fill: background.color,
+      opacity: background.opacity,
+    },
+  );
 }
 
 export function paintActiveBlockChangedEffect(
@@ -62,35 +78,19 @@ export function paintActiveBlockChangedEffect(
     effect.activeFlash,
     {
       progress: effect.activeFlash.progress,
-      rect: effect.rect,
+      rect: effect.geometry.rect,
     },
     ({ progress, theme }) => {
-      paintBlockFlashFrame(context, effect.bands, progress, theme);
-
-      if (effect.borderRect) {
-        context.strokeStyle = theme.tableBorder;
-        context.strokeRect(
-          effect.borderRect.left,
-          effect.borderRect.top,
-          effect.borderRect.width,
-          effect.borderRect.height,
-        );
-      }
+      paintHighlight(
+        context,
+        effect.geometry,
+        {
+          borderColor: effect.geometry.borderRect ? theme.tableBorder : undefined,
+          fill: resolveActiveBlockFlashColor(theme.activeBlockFlash, { progress }),
+        },
+      );
     },
   );
-}
-
-function paintBlockFlashFrame(
-  context: CanvasRenderingContext2D,
-  bands: readonly LayoutRect[],
-  progress: number,
-  theme: ResolvedEditorTheme,
-) {
-  context.fillStyle = resolveActiveBlockFlashColor(theme.activeBlockFlash, { progress });
-
-  for (const band of bands) {
-    context.fillRect(band.left, band.top, band.width, band.height);
-  }
 }
 
 function paintRect(context: CanvasRenderingContext2D, rect: LayoutRect) {

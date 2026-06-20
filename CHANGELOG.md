@@ -1,3 +1,12 @@
+## 🗓️ v0.0.32 (06-25-26)
+
+- Added a `showDiffs` prop to the `Documint` component to allow hosts to disable diff highlights
+
+## 🗓️ v0.0.31 (06-25-26)
+
+- Initial support for inline diffs from external changes
+- Misc. bug fixes for round-tripping empty lines/spaces
+
 ## 🗓️ v0.0.30 (06-16-26)
 
 - Misc. bug fixes with lists, tasklist items, and paste

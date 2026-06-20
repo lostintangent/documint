@@ -5,6 +5,7 @@ import {
   indexedInlineText,
   normalizeSelection,
   regionInlines,
+  resolveRegionDocumentNode,
 } from "@/editor/state";
 import { spliceText } from "@/editor/state/reducer/text";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -88,6 +89,26 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     );
 
     expect(underlineRun?.node.type === "text" && underlineRun.node.marks).toEqual(["underline"]);
+  });
+
+  test("resolves the document node represented by a region", () => {
+    const runtime = createDocumentIndex(
+      parseDocument(`Paragraph
+
+| A | B |
+| - | - |
+| one | two |
+`),
+    );
+    const paragraph = runtime.regions[0];
+    const tableCell = runtime.regions.find((region) => region.text === "two");
+
+    if (!paragraph || !tableCell) {
+      throw new Error("Expected paragraph and table-cell regions");
+    }
+
+    expect(resolveRegionDocumentNode(runtime, paragraph)).toBe(paragraph.block);
+    expect(resolveRegionDocumentNode(runtime, tableCell)?.plainText).toBe("two");
   });
 
   test("round-trips through editor model materialization without changing markdown", () => {

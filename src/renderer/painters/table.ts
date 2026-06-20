@@ -1,6 +1,6 @@
 import type { LayoutRect } from "@/editor/layout";
 import type { ResolvedEditorTheme } from "@/types";
-import type { ActiveTableCellHighlightFrame, TableCellChromeFrame } from "../frame/chrome/table";
+import type { TableCellChromeFrame } from "../frame/chrome/table";
 
 export function paintTableCellChrome(
   context: CanvasRenderingContext2D,
@@ -12,28 +12,7 @@ export function paintTableCellChrome(
   paintTableCellBorder(context, frame.rect, theme);
 }
 
-export function paintActiveTableCellHighlight(
-  context: CanvasRenderingContext2D,
-  highlight: ActiveTableCellHighlightFrame,
-  theme: ResolvedEditorTheme,
-) {
-  paintTableCellBands(context, highlight.bands, theme.activeBlockBackground);
-  paintTableCellBorder(context, highlight.borderRect, theme);
-}
-
-function paintTableCellBands(
-  context: CanvasRenderingContext2D,
-  bands: readonly LayoutRect[],
-  fillStyle: string | CanvasGradient | CanvasPattern,
-) {
-  context.fillStyle = fillStyle;
-
-  for (const band of bands) {
-    paintRect(context, band);
-  }
-}
-
-function paintTableCellBorder(
+export function paintTableCellBorder(
   context: CanvasRenderingContext2D,
   cellRect: LayoutRect,
   theme: ResolvedEditorTheme,

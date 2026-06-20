@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   defaultEffectPolicy,
   type EffectPolicy,
-  resolveActiveEffects,
-  type ActiveEditorEffect,
+  resolveRendererEffects,
+  type RendererEffect,
 } from "@/renderer/effects";
 
 const startedAt = 100;
@@ -12,46 +12,46 @@ const now = 110;
 describe("Renderer effect policy", () => {
   describe("text insertion", () => {
     test("maps ordinary inserted text to a highlight", () => {
-      const activeEffects = resolveActiveEffects([insertedText("x")], now);
+      const resolvedEffects = resolveRendererEffects([insertedText("x")], now);
 
-      expect(activeEffects.textHighlights.get("root.0")).toEqual([
+      expect(resolvedEffects.textHighlights.get("root.0")).toEqual([
         expect.objectContaining({ endOffset: 5, startOffset: 4 }),
       ]);
-      expect(activeEffects.textPulses.get("root.0")).toBeUndefined();
+      expect(resolvedEffects.textPulses.get("root.0")).toBeUndefined();
     });
 
     test("maps period insertion to a text pulse", () => {
-      const activeEffects = resolveActiveEffects([insertedText(".")], now);
+      const resolvedEffects = resolveRendererEffects([insertedText(".")], now);
 
-      expect(activeEffects.textPulses.get("root.0")).toEqual([
+      expect(resolvedEffects.textPulses.get("root.0")).toEqual([
         expect.objectContaining({ startOffset: 4 }),
       ]);
-      expect(activeEffects.textHighlights.get("root.0")).toBeUndefined();
+      expect(resolvedEffects.textHighlights.get("root.0")).toBeUndefined();
     });
 
     test("does not keep color emoji insertion active by default", () => {
       const effects = [insertedText("🔥")];
-      const activeEffects = resolveActiveEffects(effects, now);
+      const resolvedEffects = resolveRendererEffects(effects, now);
 
-      expect(activeEffects.textHighlights.size).toBe(0);
-      expect(activeEffects.activeEditorEffects).toEqual([]);
+      expect(resolvedEffects.textHighlights.size).toBe(0);
+      expect(resolvedEffects.rendererEffects).toEqual([]);
     });
 
     test("does not animate source-region insertion by default", () => {
       const effects = [insertedText("x", { regionKind: "source" })];
-      const activeEffects = resolveActiveEffects(effects, now);
+      const resolvedEffects = resolveRendererEffects(effects, now);
 
-      expect(activeEffects.textHighlights.size).toBe(0);
-      expect(activeEffects.textPulses.size).toBe(0);
-      expect(activeEffects.activeEditorEffects).toEqual([]);
+      expect(resolvedEffects.textHighlights.size).toBe(0);
+      expect(resolvedEffects.textPulses.size).toBe(0);
+      expect(resolvedEffects.rendererEffects).toEqual([]);
     });
   });
 
   describe("text deletion", () => {
     test("maps plain backward line-end deletion to a fade", () => {
-      const activeEffects = resolveActiveEffects([deletedText()], now);
+      const resolvedEffects = resolveRendererEffects([deletedText()], now);
 
-      expect(activeEffects.textFades.get("root.0")).toEqual([
+      expect(resolvedEffects.textFades.get("root.0")).toEqual([
         expect.objectContaining({ startOffset: 3, text: "a" }),
       ]);
     });
@@ -64,18 +64,18 @@ describe("Renderer effect policy", () => {
         deletedText({ text: "🔥" }),
       ];
 
-      const activeEffects = resolveActiveEffects(effects, now);
+      const resolvedEffects = resolveRendererEffects(effects, now);
 
-      expect(activeEffects.textFades.size).toBe(0);
-      expect(activeEffects.activeEditorEffects).toEqual([]);
+      expect(resolvedEffects.textFades.size).toBe(0);
+      expect(resolvedEffects.rendererEffects).toEqual([]);
     });
 
     test("does not animate source-region deletion by default", () => {
       const effects = [deletedText({ regionKind: "source" })];
-      const activeEffects = resolveActiveEffects(effects, now);
+      const resolvedEffects = resolveRendererEffects(effects, now);
 
-      expect(activeEffects.textFades.size).toBe(0);
-      expect(activeEffects.activeEditorEffects).toEqual([]);
+      expect(resolvedEffects.textFades.size).toBe(0);
+      expect(resolvedEffects.rendererEffects).toEqual([]);
     });
   });
 
@@ -83,7 +83,18 @@ describe("Renderer effect policy", () => {
     const running = insertedText("x");
     const skipped = insertedText("🔥");
 
-    expect(resolveActiveEffects([running, skipped], now).activeEditorEffects).toEqual([running]);
+    expect(resolveRendererEffects([running, skipped], now).rendererEffects).toEqual([running]);
+  });
+
+  test("maps document-change effects to fade frames", () => {
+    const effect = documentChangeEffect();
+    const resolvedEffects = resolveRendererEffects([effect], now);
+
+    expect(resolvedEffects.documentChangeFades.get("block:block-1")).toEqual({
+      progress: 10 / 420,
+    });
+    expect(resolvedEffects.rendererEffects).toEqual([effect]);
+    expect(resolveRendererEffects([effect], startedAt + 500).rendererEffects).toEqual([]);
   });
 
   describe("custom duration policy", () => {
@@ -95,10 +106,10 @@ describe("Renderer effect policy", () => {
           : defaultEffectPolicy.duration(currentEffect),
       );
 
-      const activeEffects = resolveActiveEffects([effect], now, policy);
+      const resolvedEffects = resolveRendererEffects([effect], now, policy);
 
-      expect(activeEffects.textHighlights.size).toBe(0);
-      expect(activeEffects.activeEditorEffects).toEqual([]);
+      expect(resolvedEffects.textHighlights.size).toBe(0);
+      expect(resolvedEffects.rendererEffects).toEqual([]);
     });
 
     test("can extend the running lifetime for an effect", () => {
@@ -110,14 +121,14 @@ describe("Renderer effect policy", () => {
           : defaultEffectPolicy.duration(currentEffect),
       );
 
-      expect(resolveActiveEffects([effect], afterDefaultExpiration).activeEditorEffects).toEqual(
+      expect(resolveRendererEffects([effect], afterDefaultExpiration).rendererEffects).toEqual(
         [],
       );
       expect(
-        resolveActiveEffects([effect], afterDefaultExpiration, policy).activeEditorEffects,
+        resolveRendererEffects([effect], afterDefaultExpiration, policy).rendererEffects,
       ).toEqual([effect]);
       expect(
-        resolveActiveEffects([effect], afterDefaultExpiration, policy).textHighlights.size,
+        resolveRendererEffects([effect], afterDefaultExpiration, policy).textHighlights.size,
       ).toBe(1);
     });
 
@@ -129,8 +140,8 @@ describe("Renderer effect policy", () => {
           : defaultEffectPolicy.duration(currentEffect),
       );
 
-      expect(resolveActiveEffects([effect], now).textHighlights.size).toBe(0);
-      expect(resolveActiveEffects([effect], now, policy).textHighlights.size).toBe(1);
+      expect(resolveRendererEffects([effect], now).textHighlights.size).toBe(0);
+      expect(resolveRendererEffects([effect], now, policy).textHighlights.size).toBe(1);
     });
   });
 
@@ -139,11 +150,11 @@ describe("Renderer effect policy", () => {
       const insertedEmoji = insertedText("🔥");
       const forwardDelete = deletedText({ direction: "forward", placement: "line-middle" });
 
-      expect(resolveActiveEffects([insertedEmoji, forwardDelete], now).activeEditorEffects).toEqual(
+      expect(resolveRendererEffects([insertedEmoji, forwardDelete], now).rendererEffects).toEqual(
         [],
       );
       expect(
-        resolveActiveEffects(
+        resolveRendererEffects(
           [insertedEmoji, forwardDelete],
           now,
           defaultEffectPolicy,
@@ -151,7 +162,7 @@ describe("Renderer effect policy", () => {
             textDeleted: () => {},
             textInserted: () => {},
           },
-        ).activeEditorEffects,
+        ).rendererEffects,
       ).toEqual([insertedEmoji, forwardDelete]);
     });
   });
@@ -163,8 +174,8 @@ function withDurationOverride(duration: EffectPolicy["duration"]): EffectPolicy 
 
 function insertedText(
   text: string,
-  overrides: Partial<Extract<ActiveEditorEffect, { kind: "text-inserted" }>> = {},
-): ActiveEditorEffect {
+  overrides: Partial<Extract<RendererEffect, { kind: "text-inserted" }>> = {},
+): RendererEffect {
   return {
     kind: "text-inserted",
     text,
@@ -178,8 +189,8 @@ function insertedText(
 }
 
 function deletedText(
-  overrides: Partial<Extract<ActiveEditorEffect, { kind: "text-deleted" }>> = {},
-): ActiveEditorEffect {
+  overrides: Partial<Extract<RendererEffect, { kind: "text-deleted" }>> = {},
+): RendererEffect {
   return {
     kind: "text-deleted",
     text: "a",
@@ -191,5 +202,14 @@ function deletedText(
     textKind: "plain",
     startedAt,
     ...overrides,
+  };
+}
+
+function documentChangeEffect(): RendererEffect {
+  return {
+    changeKind: "modified",
+    kind: "document-change",
+    startedAt,
+    target: { blockId: "block-1", kind: "block" },
   };
 }

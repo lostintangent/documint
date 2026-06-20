@@ -35,6 +35,15 @@ const SEMANTIC_INLINE_CODE_DEFAULTS = {
   dark: { background: "rgba(251, 191, 36, 0.16)", text: "#fdba74" },
 } as const;
 
+// External document changes follow git-diff semantics rather than adapting to
+// each theme's comment palette: added is always green, modified is always in
+// the warm yellow/tan family. Themes can still override the final tokens.
+const SEMANTIC_EXTERNAL_CHANGE_DEFAULTS = {
+  addition: "#4ade80",
+  modificationDark: "#f4d35e",
+  modificationLight: "#ea580c",
+} as const;
+
 // Code token colors, split by the brightness of the resolved code surface (not
 // the editor background — built-in code blocks are dark in both modes). A
 // grammar emits token kinds; the resolver maps them to these defaults so hosts
@@ -141,6 +150,12 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
   const codeTokenDefaults = isLightThemeBackground(codeBackground)
     ? CODE_TOKEN_DEFAULTS.light
     : CODE_TOKEN_DEFAULTS.dark;
+  const commentHighlight =
+    theme.commentHighlight ?? `color-mix(in srgb, ${accent} 38%, transparent)`;
+  const commentHighlightActive = theme.commentHighlightActive ?? commentDefaults.active;
+  const commentHighlightResolved = theme.commentHighlightResolved ?? commentDefaults.resolved;
+  const commentHighlightResolvedActive =
+    theme.commentHighlightResolvedActive ?? commentDefaults.resolvedActive;
 
   return {
     ...theme,
@@ -175,12 +190,22 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     codeBackground,
     codeTokens: { ...codeTokenDefaults, ...theme.codeTokens },
     codeText: theme.codeText ?? text,
-    commentHighlight: theme.commentHighlight ?? `color-mix(in srgb, ${accent} 38%, transparent)`,
-    commentHighlightActive: theme.commentHighlightActive ?? commentDefaults.active,
-    commentHighlightResolved: theme.commentHighlightResolved ?? commentDefaults.resolved,
-    commentHighlightResolvedActive:
-      theme.commentHighlightResolvedActive ?? commentDefaults.resolvedActive,
+    commentHighlight,
+    commentHighlightActive,
+    commentHighlightResolved,
+    commentHighlightResolvedActive,
     dividerRule: theme.dividerRule ?? headingRule,
+    externalChangeAdditionBackground:
+      theme.externalChangeAdditionBackground ??
+      backgroundTint(SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.addition, isLight ? 30 : 22),
+    externalChangeModificationBackground:
+      theme.externalChangeModificationBackground ??
+      backgroundTint(
+        isLight
+          ? SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.modificationLight
+          : SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.modificationDark,
+        isLight ? 36 : 34,
+      ),
     fontSize: resolvedFontSize,
     headingRule,
     headingText: theme.headingText ?? text,
@@ -276,4 +301,8 @@ function isLightThemeBackground(background: string): boolean {
 
   // Rec. 601 luma weights; threshold at the midpoint of [0, 255].
   return r * 0.299 + g * 0.587 + b * 0.114 > 128;
+}
+
+function backgroundTint(color: string, alphaPercent: number): string {
+  return `color-mix(in srgb, ${color} ${alphaPercent}%, transparent)`;
 }

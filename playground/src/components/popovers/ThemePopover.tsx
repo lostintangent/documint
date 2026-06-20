@@ -20,8 +20,10 @@ type ThemePopoverProps = {
   onCustomEffectsEnabledChange: (enabled: boolean) => void;
   onFontSizeChange: (fontSize: number) => void;
   onOpenChange?: (open: boolean) => void;
+  onShowDiffsChange: (showDiffs: boolean) => void;
   onThemeIdChange: (themeId: string) => void;
   open?: boolean;
+  showDiffs: boolean;
   themeId: string;
 };
 
@@ -31,8 +33,10 @@ export function ThemePopover({
   onCustomEffectsEnabledChange,
   onFontSizeChange,
   onOpenChange,
+  onShowDiffsChange,
   onThemeIdChange,
   open,
+  showDiffs,
   themeId,
 }: ThemePopoverProps) {
   const activeThemeOption = getThemeOption(themeId);
@@ -59,14 +63,24 @@ export function ThemePopover({
         <div className="grid gap-3">
           <div className={popoverHeaderClassName}>
             <strong className={popoverTitleClassName}>Theme</strong>
-            <label className="flex items-center gap-2.5">
-              <input
-                checked={customEffectsEnabled}
-                onChange={(event) => onCustomEffectsEnabledChange(event.target.checked)}
-                type="checkbox"
-              />
-              <span>Effects</span>
-            </label>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2">
+                <input
+                  checked={customEffectsEnabled}
+                  onChange={(event) => onCustomEffectsEnabledChange(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Effects</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  checked={showDiffs}
+                  onChange={(event) => onShowDiffsChange(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Diffs</span>
+              </label>
+            </div>
           </div>
 
           <div className="grid gap-1.5">

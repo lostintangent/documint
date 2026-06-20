@@ -45,6 +45,23 @@ describe("Markdown creation triggers", () => {
       ),
     ).toBe(true);
   });
+
+  test("does not complete creation triggers from pre-existing suffix whitespace", () => {
+    for (const marker of [">", "#", "-", "*", "+", "1.", "---"]) {
+      let state = setup("&#x20;\n");
+      const region = getRegion(state, " ");
+
+      state = placeAt(state, region, 0);
+      state = insertText(state, marker) ?? state;
+
+      const active = state.documentIndex.regions.find(
+        (container) => container.id === state.selection.focus.regionId,
+      );
+
+      expect(active?.block.type).toBe("paragraph");
+      expect(active?.text).toBe(`${marker} `);
+    }
+  });
 });
 
 describe("Markdown transform triggers", () => {

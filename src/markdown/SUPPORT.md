@@ -89,7 +89,7 @@ These are the semantic node families currently representable in `Document` and t
 | Autolinks in angle brackets | `<https://example.com>` | `Gap` | Common modern markdown input; likely worth supporting. |
 | GFM bare autolinks | `www.example.com` | `Gap` | Common modern markdown input; likely worth supporting. |
 | Reference-style links | `[a][b]` + `[b]: ...` | `Gap` | Not currently supported. |
-| Entity/numeric references | `&amp;`, `&#x20;` | `Gap` | Serializer emits `&#x20;` in some canonical cases, but full parse/normalize support is not explicit. |
+| Entity/numeric references | `&amp;`, `&#x20;` | `Partial` | Ordinary-space numeric references (`&#x20;`, `&#32;`) decode to spaces so the serializer's leading-space escape round-trips; broader entity decoding remains a gap. |
 | Full CommonMark emphasis rules | nested delimiter edge cases | `Gap` | Current parser supports the product surface, not the full delimiter algorithm. |
 
 ## Serialization Policy

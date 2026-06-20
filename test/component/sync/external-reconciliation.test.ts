@@ -58,6 +58,18 @@ describe("selection reconciliation", () => {
     });
   });
 
+  test("preserves a selection in a long document shifted by an inserted root", () => {
+    const previousMarkdown = createNumberedParagraphMarkdown(1200);
+    const nextMarkdown = `External intro paragraph.\n\n${previousMarkdown}`;
+    const previousState = selectRegionText(previousMarkdown, 600, 12, 12);
+    const nextState = createState(nextMarkdown);
+
+    expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
+      anchor: [601, 12],
+      focus: [601, 12],
+    });
+  });
+
   test("preserves a range selection when an external empty paragraph is inserted above it", () => {
     const previousState = selectRegionText("Target paragraph\n", 0, 0, 6);
     const previousDocument = previousState.documentIndex.document;
@@ -98,6 +110,43 @@ describe("selection reconciliation", () => {
       4,
     );
     const nextState = createState("Target paragraph\n\nTarget paragraph\n");
+
+    expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
+  });
+
+  test("uses document node anchors to disambiguate matching region text", () => {
+    const previousState = selectRegionText("**Target paragraph**\n", 0, 2, 8);
+    const nextState = createState("Intro paragraph\n\nTarget paragraph\n\n**Target paragraph**\n");
+
+    expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
+      anchor: [2, 2],
+      focus: [2, 8],
+    });
+  });
+
+  test("uses unique visible text when formatting changes make the node anchor absent", () => {
+    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const nextState = createState("Intro paragraph\n\n**Target paragraph**\n");
+
+    expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
+      anchor: [1, 6],
+      focus: [1, 6],
+    });
+  });
+
+  test("uses same-topology path fallback for in-place external edits when content anchors are absent", () => {
+    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const nextState = createState("Target paragraph extended\n");
+
+    expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
+      anchor: [0, 6],
+      focus: [0, 6],
+    });
+  });
+
+  test("does not repair non-empty selections by stale path across structural shifts", () => {
+    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const nextState = createState("Intro paragraph\n\nTarget paragraph extended\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
@@ -238,6 +287,14 @@ describe("external content reconciliation", () => {
 
 function createState(markdown: string) {
   return createEditorState(parseDocument(markdown));
+}
+
+function createNumberedParagraphMarkdown(count: number) {
+  return Array.from(
+    { length: count },
+    (_, index) =>
+      `Paragraph ${String(index + 1).padStart(4, "0")} carries unique reconciliation text.`,
+  ).join("\n\n");
 }
 
 function insertTransientEmptyRootParagraph(markdown: string, rootIndex: number) {

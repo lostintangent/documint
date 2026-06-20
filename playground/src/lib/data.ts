@@ -375,6 +375,7 @@ const mintTheme: EditorTheme = {
   commentHighlightActive: "#10b981",
   commentHighlightResolved: "rgba(187, 247, 208, 0.96)",
   commentHighlightResolvedActive: "#059669",
+  externalChangeAdditionBackground: "rgba(14, 165, 233, 0.18)",
   headingRule: "rgba(20, 83, 45, 0.18)",
   inlineCodeText: "#166534",
   insertHighlightText: "#10b981",

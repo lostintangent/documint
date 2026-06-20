@@ -9,8 +9,7 @@
  */
 
 import {
-  DEFAULT_ANCHOR_KIND,
-  enumerateTextAnchorRanges,
+  collectTextAnchorCandidates,
   isCommentThreadAnchor,
   isResolvedCommentThread,
   type Anchor,
@@ -38,11 +37,6 @@ export type EditorPresence = DocumentUserPresence & {
   cursorPoint: EditorSelectionPoint | null;
   isOnUnresolvedCommentThread: boolean;
   viewport: EditorPresenceViewport | null;
-};
-
-type PresenceMatch = {
-  container: AnchorContainer;
-  offset: number;
 };
 
 // --- Public API ---
@@ -121,8 +115,7 @@ function resolvePresenceCursorPoint(
   semanticContainers: AnchorContainer[],
   containerProjection: ReturnType<typeof projectAnchorContainersToEditor>,
 ) {
-  const candidateContainers = filterAnchorContainers(semanticContainers, anchor);
-  const matches = collectAnchorMatches(candidateContainers, anchor);
+  const matches = collectTextAnchorCandidates(semanticContainers, anchor);
 
   if (matches.length !== 1) {
     return null;
@@ -136,31 +129,7 @@ function resolvePresenceCursorPoint(
   }
 
   return {
-    offset: Math.max(0, Math.min(match.offset, runtimeContainer.text.length)),
+    offset: Math.max(0, Math.min(match.startOffset, runtimeContainer.text.length)),
     regionId: runtimeContainer.id,
   };
-}
-
-function filterAnchorContainers(containers: AnchorContainer[], anchor: TextAnchor) {
-  const anchorKind = anchor.kind ?? DEFAULT_ANCHOR_KIND;
-
-  return containers.filter((container) => container.containerKind === anchorKind);
-}
-
-// Dispatch on which side of the anchor descriptor is present. Presence does
-// not score; it requires an unambiguous match, so each branch returns raw
-// candidates and the caller filters by `length === 1`.
-function collectAnchorMatches(containers: AnchorContainer[], anchor: TextAnchor) {
-  const matches: PresenceMatch[] = [];
-
-  for (const container of containers) {
-    for (const range of enumerateTextAnchorRanges(container, anchor)) {
-      matches.push({
-        container,
-        offset: range.startOffset,
-      });
-    }
-  }
-
-  return matches;
 }

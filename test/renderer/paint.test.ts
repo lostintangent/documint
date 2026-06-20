@@ -8,7 +8,7 @@ import { describe, expect, test } from "bun:test";
 import {
   createDocumentFrame,
   paintDocumentFrame,
-  type ActiveEditorEffect,
+  type RendererEffect,
 } from "@/renderer";
 import type { DocumintEffects } from "@/types";
 import { createEditorLayoutState } from "@/editor/layout";
@@ -22,7 +22,6 @@ import {
   normalizeSelection,
   readEditorEffects,
   setSelection,
-  type EditorEffect,
   type EditorState,
 } from "@/editor/state";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
@@ -40,6 +39,15 @@ import {
 } from "./helpers";
 
 const resolvedLightTheme = resolveEditorTheme(lightTheme);
+
+type ScheduledTestEffect =
+  | RendererEffect
+  | {
+      [TKind in RendererEffect["kind"]]: Omit<
+        Extract<RendererEffect, { kind: TKind }>,
+        "startedAt"
+      >;
+    }[RendererEffect["kind"]];
 
 describe("Block and chrome paint order", () => {
   test("paints active table highlights only within the active cell before text", () => {
@@ -142,6 +150,111 @@ describe("Block and chrome paint order", () => {
     if (!activeHighlight || activeHighlight.kind !== "fillRect") {
       throw new Error("Expected paragraph highlight fill");
     }
+  });
+
+  test("fades document-change block backgrounds in before text", () => {
+    const state = setup("alpha beta\n");
+    const container = state.documentIndex.regions[0];
+
+    if (!container) {
+      throw new Error("Expected paragraph container");
+    }
+
+    const { context } = renderPaintOperations(state, {
+      documentChanges: [
+        {
+          blockId: container.block.id,
+          changeKind: "modified",
+          kind: "block",
+        },
+      ],
+      effects: [
+        {
+          changeKind: "modified",
+          kind: "document-change",
+          startedAt: 100,
+          target: { blockId: container.block.id, kind: "block" },
+        },
+      ],
+      height: 160,
+      now: 110,
+      width: 320,
+    });
+    const backgroundIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillRect" &&
+        operation.fillStyle === resolvedLightTheme.externalChangeModificationBackground,
+    );
+    const textIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "fillText" && operation.text === "alpha beta",
+    );
+    const backgroundPaint = context.operations[backgroundIndex];
+
+    expect(backgroundIndex).toBeGreaterThanOrEqual(0);
+    expect(textIndex).toBeGreaterThan(backgroundIndex);
+
+    if (!backgroundPaint || backgroundPaint.kind !== "fillRect") {
+      throw new Error("Expected document-change background paint");
+    }
+
+    expect(backgroundPaint.globalAlpha).toBeGreaterThan(0);
+    expect(backgroundPaint.globalAlpha).toBeLessThan(1);
+  });
+
+  test("repaints table borders after document-change table cells", () => {
+    const state = setup(`| A | B |
+| - | - |
+| one | two |
+`);
+    const cell = state.documentIndex.regions.find((region) => region.text === "two");
+
+    if (!cell) {
+      throw new Error("Expected table cell");
+    }
+
+    const { context, layout } = renderPaintOperations(state, {
+      documentChanges: [
+        {
+          changeKind: "added",
+          kind: "table-cell",
+          regionId: cell.id,
+        },
+      ],
+      height: 240,
+      now: 110,
+      width: 480,
+    });
+    const cellBounds = layout.regionBounds.get(cell.id);
+
+    if (!cellBounds) {
+      throw new Error("Expected table cell bounds");
+    }
+
+    const externalFillIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillRect" &&
+        operation.fillStyle === resolvedLightTheme.externalChangeAdditionBackground &&
+        approximately(operation.x, cellBounds.left),
+    );
+    const borderAfterExternalIndex = findLastOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "strokeRect" &&
+        operation.strokeStyle === resolvedLightTheme.tableBorder &&
+        approximately(operation.x, cellBounds.left) &&
+        approximately(operation.y, cellBounds.top),
+    );
+    const textIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "fillText" && operation.text === "two",
+    );
+
+    expect(externalFillIndex).toBeGreaterThanOrEqual(0);
+    expect(borderAfterExternalIndex).toBeGreaterThan(externalFillIndex);
+    expect(textIndex).toBeGreaterThan(borderAfterExternalIndex);
   });
 
   test("can compose custom active-block-changed effects once around a wrapped block", () => {
@@ -1617,7 +1730,8 @@ function renderPaintOperations(
     height: number;
     commentRanges?: EditorCommentRange[];
     customEffects?: DocumintEffects;
-    effects?: readonly EditorEffect[];
+    effects?: readonly ScheduledTestEffect[];
+    documentChanges?: Parameters<typeof createDocumentFrame>[2]["documentChanges"];
     now?: number;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     resources?: DocumentResources;
@@ -1640,8 +1754,8 @@ function renderPaintOperations(
   const context = new RecordingCanvasContext();
 
   const now = options.now ?? 0;
-  const effects = options.effects?.map(
-    (effect): ActiveEditorEffect => ({ ...effect, startedAt: now }),
+  const effects = options.effects?.map((effect): RendererEffect =>
+    "startedAt" in effect ? effect : ({ ...effect, startedAt: now } as RendererEffect),
   );
 
   const frame = createDocumentFrame(state, layoutState, {
@@ -1653,6 +1767,7 @@ function renderPaintOperations(
     customEffects: options.customEffects,
     devicePixelRatio: 1,
     effects,
+    documentChanges: options.documentChanges,
     height: options.height,
     commentRanges: options.commentRanges ?? [],
     normalizedSelection: normalizeSelection(state),

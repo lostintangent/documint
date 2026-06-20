@@ -26,7 +26,9 @@ Use representative examples instead of exhaustive lists unless completeness is t
 
 When orientation explains how the subsystem works, leave it for Design Notes. The intro establishes the concrete what and why. Design Notes drill into the load-bearing architectural properties that make that value true.
 
-Use concrete subsystem language. Do not hide the central concept behind generic phrases such as "reactivity needs," "integration layer," or "coordination logic." Give the reader the noun they should use while reading the code.
+Use concrete subsystem language. Do not hide the central concept behind generic phrases such as "reactivity needs," "integration layer," or "coordination logic." Avoid insider shorthand unless it is the subsystem's actual vocabulary and the intro defines it in plain language.
+
+When a guide uses vocabulary owned by another guide, gloss it in a clause on first use. Add a link to the owning guide when helpful, but do not make readers leave the page just to decode a load-bearing noun.
 
 ## Design Notes
 
@@ -38,19 +40,19 @@ Each note should be a present-tense truth with this shape:
 - **<Value plus mechanism>.** Explain how the mechanism works and why it matters.
 ```
 
-Lead with the value or reason a contributor should care, then name the mechanism. Make the idea land quickly. Avoid abstraction-first labels like "decoupling" unless the value is already obvious.
+Lead with the architectural truth, then name the mechanism that makes it true. Make the idea land quickly. Avoid abstraction-first labels like "decoupling" unless the value is already obvious.
 
 For example, prefer `Frames keep painters focused on 2D drawing` over `Frames decouple editor meaning from renderer output`.
 
 The bold lead-ins should stand alone as the scannable design story, ordered from the central model or contract through the mechanisms, hot paths, correctness concerns, and boundaries a contributor needs next.
 
-Include facts only when they explain ownership, invariants, tradeoffs, risks, integration contracts, boundaries, or work moved off hot paths. Make the ownership value explicit: what burden, risk, or misplaced work does the note prevent?
+Include facts only when they explain ownership, invariants, tradeoffs, risks, integration contracts, boundaries, or work moved off hot paths. Design notes state how the subsystem works and why that shape matters. They are not contributor instructions, review checklists, or local operating procedures.
 
 Each note should be a load-bearing concept in the reader's mental model of how the subsystem works and what role it plays in the application. If removing a note would not make the guide less useful, remove it. If two notes tell the same ownership story, merge them or delete the weaker one.
 
 Order notes by progressive disclosure. Start with the first important question a reader should ask after the intro, do not spend a note restating the intro, and put dependency choices, implementation materials, and other FYI-style context later unless they are the subsystem's central design contract. Use real subsystem nouns and verbs instead of generic labels. Do not bury the lede behind implementation terms or tradeoff language.
 
-Keep the list concise, but do not merge distinct load-bearing concepts just to keep the count down. Compact subsystems often land around three to five notes. Larger cohesive leaves or aggregate guides may need six or seven when the learning path genuinely demands it and every note is distinct, important, and worth preserving. Never add notes to hit a quota.
+Keep the list concise, but do not merge distinct load-bearing concepts just to keep the count down. Each note should carry one sharp idea, usually in one or two sentences. Aim for three tight, load-bearing notes for a focused subsystem. Add more only when the subsystem has genuinely distinct architecture elements worth preserving. Never add notes to hit a quota.
 
 ## Subsystem Map
 
@@ -81,6 +83,6 @@ A strong guide should make misplaced work easier to spot. Before calling it done
 
 For runtime-heavy subsystems, also ask whether the guide names the cadence owner, invalidation or commit boundary, async stale-result policy, failure or timeout behavior, and the hot path that protects user-visible responsiveness when those ideas are central to the design.
 
-Remove anything that merely catalogs files, repeats obvious facts, or makes the reader ask "who cares?"
+Remove anything that merely catalogs files, repeats obvious facts, gives procedural advice, uses unexplained insider language, or makes the reader ask "who cares?"
 
 Do not include exhaustive file inventories, README restatements, implementation walkthroughs, TODO backlogs, or test-command sections unless the local subsystem has an exceptional reason for one.

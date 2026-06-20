@@ -6,7 +6,16 @@ import {
   type LayoutRect,
 } from "@/editor/layout";
 import type { BlockFlashFrame } from "../../effects";
-import { resolveTableCellChromeFrame, type TableCellChromeFrame } from "../chrome/table";
+import type { ResolvedEditorTheme } from "@/types";
+import {
+  resolveTableCellChromeFrame,
+  type TableCellChromeFrame,
+} from "../chrome/table";
+import {
+  resolveDocumentChangeBackgroundColor,
+  resolveDocumentChangeOpacity,
+  type DocumentChangeFrameEntry,
+} from "../document-changes";
 
 const activeLineVerticalBleed = 2;
 
@@ -14,6 +23,13 @@ type RegionBounds = { bottom: number; left: number; right: number; top: number }
 
 export type ActiveBlockBackgroundFrame = {
   activeFlash: BlockFlashFrame | null;
+  color: string;
+  rect: LayoutRect;
+};
+
+export type DocumentChangeBackgroundFrame = {
+  color: string;
+  opacity: ReturnType<typeof resolveDocumentChangeOpacity>;
   rect: LayoutRect;
 };
 
@@ -26,24 +42,29 @@ export function resolveDocumentFrameLineBackgrounds({
   activeBlockId,
   block,
   containerBounds,
+  documentChange,
   layout,
   line,
   runtimeBlockPath,
   tableCellPosition,
+  theme,
   width,
 }: {
   blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockId: string | null;
   block: Block | null;
   containerBounds: RegionBounds | null;
+  documentChange: DocumentChangeFrameEntry | null;
   layout: EditorLayoutState["layout"];
   line: EditorLayoutState["layout"]["lines"][number];
   runtimeBlockPath: string | null;
   tableCellPosition: { cellIndex: number; rowIndex: number } | null;
+  theme: ResolvedEditorTheme;
   width: number;
 }): {
   activeBlockBackground: ActiveBlockBackgroundFrame | null;
   containerBackground: ContainerBackgroundFrame | null;
+  documentChangeBackground: DocumentChangeBackgroundFrame | null;
 } {
   const codeBlockBackgroundRect =
     block?.type === "code" && line.start === 0 && containerBounds
@@ -59,6 +80,7 @@ export function resolveDocumentFrameLineBackgrounds({
       containerBounds,
       line,
       runtimeBlockPath,
+      theme,
       width,
     }),
     containerBackground: resolveContainerBackgroundFrame({
@@ -67,6 +89,15 @@ export function resolveDocumentFrameLineBackgrounds({
       containerBounds,
       line,
       tableCellPosition,
+    }),
+    documentChangeBackground: resolveDocumentChangeBackgroundFrame({
+      block,
+      codeBlockBackgroundRect,
+      containerBounds,
+      documentChange,
+      line,
+      theme,
+      width,
     }),
   };
 }
@@ -137,6 +168,7 @@ function resolveActiveBlockBackgroundFrame({
   containerBounds,
   line,
   runtimeBlockPath,
+  theme,
   width,
 }: {
   blockFlashes: Map<string, BlockFlashFrame>;
@@ -146,13 +178,16 @@ function resolveActiveBlockBackgroundFrame({
   containerBounds: RegionBounds | null;
   line: EditorLayoutState["layout"]["lines"][number];
   runtimeBlockPath: string | null;
+  theme: ResolvedEditorTheme;
   width: number;
 }): ActiveBlockBackgroundFrame | null {
-  if (line.blockId !== activeBlockId) {
+  const isActiveBlock = line.blockId === activeBlockId;
+
+  if (!isActiveBlock) {
     return null;
   }
 
-  const rect = resolveActiveBlockBackgroundRect(
+  const rect = resolveBlockBackgroundRect(
     block,
     line,
     containerBounds,
@@ -166,11 +201,12 @@ function resolveActiveBlockBackgroundFrame({
 
   return {
     activeFlash: runtimeBlockPath ? (blockFlashes.get(runtimeBlockPath) ?? null) : null,
+    color: theme.activeBlockBackground,
     rect,
   };
 }
 
-function resolveActiveBlockBackgroundRect(
+function resolveBlockBackgroundRect(
   block: Block | null,
   line: EditorLayoutState["layout"]["lines"][number],
   containerBounds: RegionBounds | null,
@@ -199,5 +235,45 @@ function resolveActiveBlockBackgroundRect(
     left: 0,
     top: line.top - activeLineVerticalBleed,
     width,
+  };
+}
+
+function resolveDocumentChangeBackgroundFrame({
+  block,
+  codeBlockBackgroundRect,
+  containerBounds,
+  documentChange,
+  line,
+  theme,
+  width,
+}: {
+  block: Block | null;
+  codeBlockBackgroundRect: LayoutRect | null;
+  containerBounds: RegionBounds | null;
+  documentChange: DocumentChangeFrameEntry | null;
+  line: EditorLayoutState["layout"]["lines"][number];
+  theme: ResolvedEditorTheme;
+  width: number;
+}): DocumentChangeBackgroundFrame | null {
+  if (!documentChange) {
+    return null;
+  }
+
+  const rect = resolveBlockBackgroundRect(
+    block,
+    line,
+    containerBounds,
+    codeBlockBackgroundRect,
+    width,
+  );
+
+  if (!rect) {
+    return null;
+  }
+
+  return {
+    color: resolveDocumentChangeBackgroundColor(documentChange, theme),
+    opacity: resolveDocumentChangeOpacity(documentChange),
+    rect,
   };
 }

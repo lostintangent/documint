@@ -1,21 +1,21 @@
 import { useEffect, useEffectEvent, useRef } from "react";
-import type { ActiveEditorEffect } from "@/renderer";
+import type { RendererEffect, RendererEffectInput } from "@/renderer";
 import { recordFpsFrame } from "../lib/diagnostics";
 
 type UseRenderOptions = {
   hasAmbientAnimationsInViewport?: () => boolean;
   isActive?: () => boolean;
-  renderContent: (activeEffects: readonly ActiveEditorEffect[]) => ContentPaintResult;
+  renderContent: (rendererEffects: readonly RendererEffect[]) => ContentPaintResult;
   renderOverlay: () => void;
-  renderViewport: (activeEffects: readonly ActiveEditorEffect[]) => ContentPaintResult;
+  renderViewport: (rendererEffects: readonly RendererEffect[]) => ContentPaintResult;
 };
 
 type ContentPaintResult = {
-  activeEffects: readonly ActiveEditorEffect[];
+  rendererEffects: readonly RendererEffect[];
 };
 
 const noActiveContentEffects: ContentPaintResult = {
-  activeEffects: [],
+  rendererEffects: [],
 };
 
 type RenderController = {
@@ -26,7 +26,7 @@ type RenderController = {
 };
 
 type ScheduleContentPaintOptions = {
-  effects?: readonly ActiveEditorEffect[];
+  effects?: readonly RendererEffectInput[];
 };
 
 type PendingRenderIntents = {
@@ -55,7 +55,7 @@ export function useRender({
   /* Render state */
 
   const frameIdRef = useRef<number | null>(null);
-  const activeEffectsRef = useRef<readonly ActiveEditorEffect[]>([]);
+  const rendererEffectsRef = useRef<readonly RendererEffect[]>([]);
   const pendingIntentsRef = useRef(createPendingRenderIntents());
 
   /* Frame request */
@@ -71,8 +71,8 @@ export function useRender({
   });
 
   const paintContent = useEffectEvent(() => {
-    const contentPaint = renderContent(activeEffectsRef.current);
-    activeEffectsRef.current = contentPaint.activeEffects;
+    const contentPaint = renderContent(rendererEffectsRef.current);
+    rendererEffectsRef.current = contentPaint.rendererEffects;
     return contentPaint;
   });
 
@@ -92,8 +92,8 @@ export function useRender({
       process.env.NODE_ENV !== "production" ? performance.now() : frameTimestamp;
 
     if (shouldFullRender) {
-      const contentPaint = renderViewport(activeEffectsRef.current);
-      activeEffectsRef.current = contentPaint.activeEffects;
+      const contentPaint = renderViewport(rendererEffectsRef.current);
+      rendererEffectsRef.current = contentPaint.rendererEffects;
       if (process.env.NODE_ENV !== "production") {
         recordFpsFrame(performance.now() - renderStartedAt);
       }
@@ -132,7 +132,7 @@ export function useRender({
 
   const schedulePaintContinuation = useEffectEvent(
     (contentPaint: ContentPaintResult = noActiveContentEffects) => {
-      if (contentPaint.activeEffects.length > 0) {
+      if (contentPaint.rendererEffects.length > 0) {
         pendingIntentsRef.current.contentPaint = true;
         requestFrame();
         return;
@@ -174,7 +174,9 @@ export function useRender({
 
   const scheduleContentPaint = useEffectEvent((options?: ScheduleContentPaintOptions) => {
     if (options?.effects && options.effects.length > 0) {
-      activeEffectsRef.current = [...activeEffectsRef.current, ...options.effects];
+      const startedAt = performance.now();
+      const effects = options.effects.map((effect) => ({ ...effect, startedAt }));
+      rendererEffectsRef.current = [...rendererEffectsRef.current, ...effects];
     }
 
     pendingIntentsRef.current.contentPaint = true;

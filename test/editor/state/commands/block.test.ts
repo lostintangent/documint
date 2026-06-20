@@ -157,6 +157,59 @@ describe("Block commands", () => {
     expect(toMarkdown(headingState)).toBe("# Heading\n\n");
   });
 
+  test.each([
+    ["plain text", "alpha\n", "alpha"],
+    ["trailing space", "alpha \n", "alpha "],
+    ["trailing backslash", "alpha\\\\\n", "alpha\\"],
+    ["trailing backtick", "alpha`\n", "alpha`"],
+    ["trailing block marker", "alpha>\n", "alpha>"],
+    ["inline code", "`code`\n", "code"],
+    ["bold text", "**bold**\n", "bold"],
+    ["link text", "[link](https://example.com)\n", "link"],
+    ["soft-break text", "alpha<br>\n", "alpha\n"],
+    ["numeric space entity", "&#x20;alpha\n", " alpha"],
+  ])("inserts a selected empty paragraph at paragraph end after %s", (_label, source, text) => {
+    let state = setup(source);
+    const paragraph = state.documentIndex.regions[0];
+
+    if (!paragraph) {
+      throw new Error("Expected paragraph region");
+    }
+
+    expect(paragraph.text).toBe(text);
+
+    state = placeAt(state, paragraph, "end");
+    state = insertLineBreak(state) ?? state;
+
+    const selected = state.documentIndex.regions.find(
+      (region) => region.id === state.selection.focus.regionId,
+    );
+
+    expect(state.documentIndex.regions.map((region) => region.text)).toEqual([text, ""]);
+    expect(selected?.text).toBe("");
+    expect(state.selection.focus.offset).toBe(0);
+  });
+
+  test("reopens a paragraph split before leading whitespace without exposing the space entity", () => {
+    let state = setup("Paragraph body.\n");
+    const paragraph = getRegion(state, "Paragraph body.");
+
+    state = placeAt(state, paragraph, "Paragraph".length);
+    state = insertLineBreak(state) ?? state;
+
+    const markdown = toMarkdown(state);
+    const reopened = setup(markdown);
+
+    expect(markdown).toBe("Paragraph\n\n&#x20;body.\n");
+    expect(reopened.documentIndex.regions.map((region) => region.text)).toEqual([
+      "Paragraph",
+      " body.",
+    ]);
+    expect(reopened.documentIndex.regions.some((region) => region.text.includes("&#x20;"))).toBe(
+      false,
+    );
+  });
+
   test("forward delete at end of a non-empty paragraph merges the next paragraph into it", () => {
     // Symmetric to backspace at the start of a non-empty block: the
     // universal in-flow rule folds the next region into the current

@@ -17,7 +17,7 @@ import {
   createDocumentFrame,
   createOverlayFrame,
   type DocumentFrame,
-  type ActiveEditorEffect,
+  type RendererEffect,
 } from "@/renderer";
 import type { EffectPolicy } from "@/renderer/effects";
 import type { DocumentFrameLine } from "@/renderer/frame";
@@ -135,7 +135,7 @@ describe("DocumentFrame effect policy", () => {
       throw new Error("Expected paragraph region");
     }
 
-    const effect: ActiveEditorEffect = {
+    const effect: RendererEffect = {
       kind: "text-inserted",
       text: "🔥",
       regionKind: "inlines",
@@ -158,8 +158,8 @@ describe("DocumentFrame effect policy", () => {
       now: 110,
     });
 
-    expect(defaultFrame.activeEffects).toEqual([]);
-    expect(customFrame.activeEffects).toEqual([effect]);
+    expect(defaultFrame.effects).toEqual([]);
+    expect(customFrame.effects).toEqual([effect]);
     expect(lineFrameForRegion(defaultFrame, region.id).textHighlights).toEqual([]);
     expect(lineFrameForRegion(customFrame, region.id).textHighlights).toEqual([
       expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
@@ -174,7 +174,7 @@ describe("DocumentFrame effect policy", () => {
       throw new Error("Expected paragraph region");
     }
 
-    const effect: ActiveEditorEffect = {
+    const effect: RendererEffect = {
       kind: "text-inserted",
       text: "🔥",
       regionKind: "inlines",
@@ -196,8 +196,8 @@ describe("DocumentFrame effect policy", () => {
       now: 110,
     });
 
-    expect(defaultFrame.activeEffects).toEqual([]);
-    expect(customFrame.activeEffects).toEqual([effect]);
+    expect(defaultFrame.effects).toEqual([]);
+    expect(customFrame.effects).toEqual([effect]);
     expect(lineFrameForRegion(defaultFrame, region.id).textHighlights).toEqual([]);
     expect(lineFrameForRegion(customFrame, region.id).textHighlights).toEqual([
       expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
@@ -206,6 +206,122 @@ describe("DocumentFrame effect policy", () => {
 });
 
 describe("DocumentFrame chrome and block rows", () => {
+  test("document-change backgrounds stay separate from active block backgrounds", () => {
+    let state = setup("alpha\n\nbeta\n");
+    const first = state.documentIndex.regions[0];
+
+    if (!first) {
+      throw new Error("Expected first region");
+    }
+
+    state = setSelection(state, { regionId: first.id, offset: 0 });
+    const frame = createTestDocumentFrame(state, {
+      documentChanges: [
+        {
+          blockId: first.block.id,
+          changeKind: "modified",
+          kind: "block",
+        },
+      ],
+      effects: [
+        {
+          changeKind: "modified",
+          kind: "document-change",
+          startedAt: 100,
+          target: { blockId: first.block.id, kind: "block" },
+        },
+      ],
+      now: 110,
+    });
+    const line = lineFrameForRegion(frame, first.id);
+
+    expect(line.activeBlockBackground).toMatchObject({
+      activeFlash: null,
+      color: resolvedLightTheme.activeBlockBackground,
+    });
+    expect(line.documentChangeBackground).toMatchObject({
+      color: resolvedLightTheme.externalChangeModificationBackground,
+      opacity: 10 / 420,
+    });
+    expect(frame.effects).toEqual([
+      expect.objectContaining({ kind: "document-change" }),
+    ]);
+  });
+
+  test("document-change backgrounds keep steady color after the fade effect expires", () => {
+    const state = setup("alpha\n\nbeta\n");
+    const first = state.documentIndex.regions[0];
+
+    if (!first) {
+      throw new Error("Expected first region");
+    }
+
+    const frame = createTestDocumentFrame(state, {
+      documentChanges: [
+        {
+          blockId: first.block.id,
+          changeKind: "modified",
+          kind: "block",
+        },
+      ],
+      effects: [
+        {
+          changeKind: "modified",
+          kind: "document-change",
+          startedAt: 100,
+          target: { blockId: first.block.id, kind: "block" },
+        },
+      ],
+      now: 600,
+    });
+    const line = lineFrameForRegion(frame, first.id);
+
+    expect(line.documentChangeBackground).toMatchObject({
+      color: resolvedLightTheme.externalChangeModificationBackground,
+      opacity: undefined,
+    });
+    expect(frame.effects).toEqual([]);
+  });
+
+  test("document-change backgrounds can target table cells", () => {
+    const state = setup(`| A | B |
+| - | - |
+| one | two |
+`);
+    const cell = state.documentIndex.regions.find((region) => region.text === "two");
+
+    if (!cell) {
+      throw new Error("Expected table cell region");
+    }
+
+    const frame = createTestDocumentFrame(state, {
+      documentChanges: [
+        {
+          changeKind: "added",
+          kind: "table-cell",
+          regionId: cell.id,
+        },
+      ],
+      effects: [
+        {
+          changeKind: "added",
+          kind: "document-change",
+          startedAt: 100,
+          target: { kind: "table-cell", regionId: cell.id },
+        },
+      ],
+      now: 110,
+      width: 360,
+    });
+    const tableCellChange = frame.tableCellDocumentChanges[0];
+
+    expect(tableCellChange).toMatchObject({
+      color: resolvedLightTheme.externalChangeAdditionBackground,
+      opacity: 10 / 420,
+    });
+    expect(tableCellChange?.borderRect.width).toBeGreaterThanOrEqual(80);
+  });
+
   test("renders list markers only on the primary line for mixed list-item children", () => {
     const state = createState(`1. Review and iterate until the guide satisfies the standard:
 
@@ -248,8 +364,8 @@ describe("DocumentFrame chrome and block rows", () => {
       width: 480,
     });
 
-    expect(frame.chrome.activeTableCellHighlight).not.toBeNull();
-    expect(frame.chrome.activeTableCellHighlight?.bands.length).toBeGreaterThan(0);
+    expect(frame.chrome.activeTableCellGeometry).not.toBeNull();
+    expect(frame.chrome.activeTableCellGeometry?.bands.length).toBeGreaterThan(0);
 
     const tableLines = frame.lines.filter(
       (line) => line.layoutLine.blockId === activeRegion.block.id,
@@ -336,6 +452,7 @@ function createTestDocumentFrame(
     customEffects,
     effectPolicy,
     effects,
+    documentChanges,
     height = 420,
     now = 0,
     resources = emptyDocumentResources,
@@ -349,7 +466,8 @@ function createTestDocumentFrame(
     commentRanges?: EditorCommentRange[];
     customEffects?: DocumintEffects;
     effectPolicy?: EffectPolicy;
-    effects?: readonly ActiveEditorEffect[];
+    effects?: readonly RendererEffect[];
+    documentChanges?: Parameters<typeof createDocumentFrame>[2]["documentChanges"];
     height?: number;
     now?: number;
     resources?: DocumentResources;
@@ -381,6 +499,7 @@ function createTestDocumentFrame(
     customEffects,
     effectPolicy,
     effects,
+    documentChanges,
     height,
     normalizedSelection: normalizeSelection(state),
     now,

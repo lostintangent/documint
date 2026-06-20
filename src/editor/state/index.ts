@@ -40,6 +40,7 @@ export {
   resolveActiveBlockKey,
   resolveBlock,
   resolveBlockChildIndices,
+  resolveDocumentNodeRegion,
   resolveIndexedBlock,
   resolveIndexedBlockForRegion,
   resolveBlockPathForRegion,
@@ -50,6 +51,7 @@ export {
   resolvePrimaryRegion,
   resolveRegion,
   resolveRegionByPath,
+  resolveRegionDocumentNode,
   resolveRegionOutsideRoot,
   resolveRootBlock,
   resolveRootPrimaryRegion,
@@ -69,6 +71,8 @@ export {
   getSelectionRange,
   normalizeSelection,
   resolveImageAtSelection,
+  selectionIntersectsBlock,
+  selectionIntersectsRegion,
 } from "./selection";
 
 export type {

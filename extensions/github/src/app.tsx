@@ -154,7 +154,6 @@ function useDocumentState(instanceId: string | null) {
 
   const handleContentChanged = useCallback(
     (nextContent: string) => {
-      setContent(nextContent);
       void saveEdit(nextContent).catch((error) => {
         setLoadError(getErrorMessage(error));
       });

@@ -8,6 +8,7 @@ import {
   tableCellPath,
   tableRowPath,
   type Block,
+  type TableCell,
 } from "@/document";
 import type { IndexedBlock, DocumentIndex, EditableRegion } from "./types";
 
@@ -56,6 +57,32 @@ export function resolveIndexedBlockForRegion(documentIndex: DocumentIndex, regio
   const region = resolveRegion(documentIndex, regionId);
 
   return region ? resolveIndexedBlock(documentIndex, region.block.id) : null;
+}
+
+export function resolveRegionDocumentNode(
+  documentIndex: DocumentIndex,
+  region: EditableRegion,
+): Block | TableCell | null {
+  if (!region.tableCellPosition) {
+    return region.block;
+  }
+
+  if (region.block.type !== "table") {
+    return null;
+  }
+
+  const { cellIndex, rowIndex } = region.tableCellPosition;
+  return region.block.rows[rowIndex]?.cells[cellIndex] ?? null;
+}
+
+export function resolveDocumentNodeRegion(
+  documentIndex: DocumentIndex,
+  node: Block | TableCell,
+  path: string,
+): EditableRegion | null {
+  return "type" in node
+    ? resolvePrimaryRegion(documentIndex, node.id)
+    : resolveRegionByPath(documentIndex, path);
 }
 
 export function resolveParentIndexedBlock(

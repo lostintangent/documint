@@ -1,234 +1,125 @@
 import "../../test/setup-canvas";
-import { parseDocument } from "@/markdown";
-import { createComponentBenchmarks } from "./component";
-import { createEditorBenchmarks } from "./editor";
-import { createLayoutBenchmarks } from "./layout";
-import { createMarkdownBenchmarks } from "./markdown";
-import type { BenchmarkBudgetTree, BenchmarkRecord } from "./shared";
+import { createBenchmarkFixtures, type BenchmarkManifest } from "./fixtures";
+import {
+  collectDuplicateBenchmarkIds,
+  collectMissingBenchmarkBudgets,
+  collectRepeatedBudgetFailures,
+  collectUnusedBenchmarkBudgets,
+  type RepeatedBudgetFailure,
+} from "./gate";
+import {
+  formatBenchmarkJson,
+  formatBenchmarkTableScenarioRuns,
+} from "./output";
+import { createComponentScenarios } from "./scenarios/component";
+import { createEditorScenarios } from "./scenarios/editor";
+import { createLayoutScenarios } from "./scenarios/layout";
+import { createMarkdownScenarios } from "./scenarios/markdown";
+import {
+  runBenchmarkScenarios,
+  type BenchmarkGroupId,
+  type BenchmarkScenarioRun,
+  type BenchmarkScenario,
+} from "./harness";
 
-type RepeatedBudgetFailure = {
-  budgetMs: number;
-  failureCount: number;
-  name: string;
-  records: BenchmarkRecord[];
-};
-
-type BenchmarkFixtureId =
-  | "article"
-  | "blockquotes"
-  | "blockquote-transitions"
-  | "comments-review"
-  | "code-directives"
-  | "full-spectrum"
-  | "headings"
-  | "images-links"
-  | "long-structural"
-  | "lists"
-  | "nested-structural"
-  | "rich-code"
-  | "rich-images"
-  | "rich-mixed"
-  | "rich-tables"
-  | "sample"
-  | "tables"
-  | "task-lists"
-  | "unsupported-html";
+type OutputMode = "json" | "table";
 
 const manifestPath = new URL("./manifest.json", import.meta.url);
-const manifest = (await Bun.file(manifestPath).json()) as {
-  benchmarks: BenchmarkBudgetTree;
-  fixtures: Array<{ id: string; path: string }>;
-};
-const benchmarkRunCount = 3;
+const manifest = (await Bun.file(manifestPath).json()) as BenchmarkManifest;
+const benchmarkSuiteRunCount = 3;
 const allowedBudgetFailureCount = 1;
+const benchmarkGroupOrder = ["markdown", "layout", "component", "editor"] as const;
+const outputMode = resolveOutputMode(process.argv);
+const fixtures = await createBenchmarkFixtures(manifest);
 
-const sampleMarkdown = await readBenchmarkFixtureMarkdown("sample");
-const mediumMarkdown = await readBenchmarkFixtureMarkdown("full-spectrum");
-const nestedStructuralMarkdown = await readBenchmarkFixtureMarkdown("nested-structural");
-const blockquoteTransitionMarkdown = await readBenchmarkFixtureMarkdown("blockquote-transitions");
-const richCodeMarkdown = await readBenchmarkFixtureMarkdown("rich-code");
-const richMixedMarkdown = await readBenchmarkFixtureMarkdown("rich-mixed");
-const richTablesMarkdown = await readBenchmarkFixtureMarkdown("rich-tables");
-const commentsMarkdown = await readBenchmarkFixtureMarkdown("comments-review");
-const longMarkdown = buildSyntheticLongFixture(mediumMarkdown, 90);
-const xlargeMarkdown = buildSyntheticLongFixture(mediumMarkdown, 180);
-const hugeMarkdown = buildSyntheticLongFixture(mediumMarkdown, 360);
+const benchmarkScenarios = createBenchmarkScenarios();
+const duplicateBenchmarkIds = collectDuplicateBenchmarkIds(benchmarkScenarios);
+const unusedBudgetNames = collectUnusedBenchmarkBudgets(manifest.benchmarks, benchmarkScenarios);
+const missingBudgetNames = collectMissingBenchmarkBudgets(manifest.benchmarks, benchmarkScenarios);
 
-const sampleSnapshot = parseDocument(sampleMarkdown);
-const mediumSnapshot = parseDocument(mediumMarkdown);
-const nestedStructuralSnapshot = parseDocument(nestedStructuralMarkdown);
-const blockquoteTransitionSnapshot = parseDocument(blockquoteTransitionMarkdown);
-const richCodeSnapshot = parseDocument(richCodeMarkdown);
-const richMixedSnapshot = parseDocument(richMixedMarkdown);
-const richTablesSnapshot = parseDocument(richTablesMarkdown);
-const commentsSnapshot = parseDocument(commentsMarkdown);
-const longSnapshot = parseDocument(longMarkdown);
-const xlargeSnapshot = parseDocument(xlargeMarkdown);
-const hugeSnapshot = parseDocument(hugeMarkdown);
+if (duplicateBenchmarkIds.length > 0) {
+  throw new Error(`Duplicate benchmark scenario ids: ${duplicateBenchmarkIds.join(", ")}`);
+}
 
-const benchmarkRuns = runBenchmarkSuite();
-const duplicateBenchmarkNames = collectDuplicateBenchmarkNames(benchmarkRuns[0] ?? []);
-const unusedBudgetNames = collectUnusedBenchmarkBudgets(
-  manifest.benchmarks,
-  benchmarkRuns[0] ?? [],
-);
-
-if (duplicateBenchmarkNames.length > 0) {
-  throw new Error(`Duplicate benchmark names: ${duplicateBenchmarkNames.join(", ")}`);
+if (missingBudgetNames.length > 0) {
+  throw new Error(`Missing benchmark budgets for scenario ids: ${missingBudgetNames.join(", ")}`);
 }
 
 if (unusedBudgetNames.length > 0) {
-  throw new Error(`Unused benchmark budgets: ${unusedBudgetNames.join(", ")}`);
+  throw new Error(`Unused benchmark budget ids: ${unusedBudgetNames.join(", ")}`);
 }
 
-const failures = collectRepeatedBudgetFailures(benchmarkRuns);
+const suiteRuns = runBenchmarkSuite(benchmarkScenarios);
+const failures = collectRepeatedBudgetFailures(suiteRuns, allowedBudgetFailureCount);
+
+if (outputMode === "json") {
+  console.log(
+    formatBenchmarkJson({
+      failures,
+      suiteRuns,
+    }),
+  );
+}
 
 if (failures.length > 0) {
-  throw new Error(formatBudgetFailureMessage(failures));
+  const message = formatBudgetFailureMessage(failures);
+
+  if (outputMode === "json") {
+    console.error(message);
+    process.exitCode = 1;
+  } else {
+    throw new Error(message);
+  }
 }
 
-function runBenchmarkSuite() {
-  return Array.from({ length: benchmarkRunCount }, (_, index) => {
-    const records = createBenchmarks();
+function runBenchmarkSuite(firstRunScenarios: BenchmarkScenario[]) {
+  return Array.from({ length: benchmarkSuiteRunCount }, (_, index) => {
+    const scenarioRuns = runScenarios(index === 0 ? firstRunScenarios : createBenchmarkScenarios());
 
-    console.log(`Benchmark run ${index + 1}/${benchmarkRunCount}`);
-    console.table(records);
+    if (outputMode === "table") {
+      console.log(`Benchmark suite run ${index + 1}/${benchmarkSuiteRunCount}`);
+      console.table(formatBenchmarkTableScenarioRuns(scenarioRuns));
+    }
 
-    return records;
+    return scenarioRuns;
   });
 }
 
-function createBenchmarks() {
+function createBenchmarkScenarios(): BenchmarkScenario[] {
   return [
-    ...createMarkdownBenchmarks(manifest.benchmarks.markdown, {
-      longMarkdown,
-      longSnapshot,
-      mediumMarkdown,
-      mediumSnapshot,
-      commentsMarkdown,
-      commentsSnapshot,
-      richMixedMarkdown,
-      richMixedSnapshot,
-      sampleMarkdown,
-      sampleSnapshot,
-    }),
-    ...createLayoutBenchmarks(manifest.benchmarks.layout, {
-      hugeMarkdown,
-      longMarkdown,
-      mediumMarkdown,
-      xlargeMarkdown,
-    }),
-    ...createComponentBenchmarks(manifest.benchmarks.component, {
-      longSnapshot,
-      mediumSnapshot,
-    }),
-    ...createEditorBenchmarks(manifest.benchmarks.editor, {
-      blockquoteTransitionSnapshot,
-      hugeSnapshot,
-      longSnapshot,
-      mediumMarkdown,
-      mediumSnapshot,
-      nestedStructuralSnapshot,
-      commentsSnapshot,
-      richCodeSnapshot,
-      richTablesSnapshot,
-      sampleSnapshot,
-      xlargeSnapshot,
-    }),
+    ...createMarkdownScenarios(fixtures),
+    ...createLayoutScenarios(fixtures),
+    ...createComponentScenarios(fixtures),
+    ...createEditorScenarios(fixtures),
   ];
 }
 
-function collectRepeatedBudgetFailures(runs: BenchmarkRecord[][]): RepeatedBudgetFailure[] {
-  const recordsByName = groupBenchmarkRecordsByName(runs);
-
-  return [...recordsByName.entries()].flatMap(([name, records]) => {
-    const budgetMs = resolveBenchmarkBudget(records);
-
-    if (budgetMs === undefined) {
-      return [];
-    }
-
-    const failureCount = records.filter((record) => record.p99Ms > budgetMs).length;
-
-    return failureCount > allowedBudgetFailureCount
-      ? [
-          {
-            budgetMs,
-            failureCount,
-            name,
-            records,
-          },
-        ]
-      : [];
-  });
+function runScenarios(scenarios: readonly BenchmarkScenario[]): BenchmarkScenarioRun[] {
+  return benchmarkGroupOrder.flatMap((groupId) =>
+    runBenchmarkScenarios(
+      groupId,
+      manifest.benchmarks[groupId],
+      selectGroupScenarios(scenarios, groupId),
+    ),
+  );
 }
 
-function groupBenchmarkRecordsByName(runs: BenchmarkRecord[][]) {
-  const recordsByName = new Map<string, BenchmarkRecord[]>();
-
-  for (const run of runs) {
-    for (const record of run) {
-      const records = recordsByName.get(record.name) ?? [];
-
-      records.push(record);
-      recordsByName.set(record.name, records);
-    }
-  }
-
-  return recordsByName;
-}
-
-function resolveBenchmarkBudget(records: BenchmarkRecord[]) {
-  return records.find((record) => record.budgetMs !== undefined)?.budgetMs;
-}
-
-function collectDuplicateBenchmarkNames(records: BenchmarkRecord[]) {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-
-  for (const record of records) {
-    if (seen.has(record.name)) {
-      duplicates.add(record.name);
-    } else {
-      seen.add(record.name);
-    }
-  }
-
-  return [...duplicates].sort();
-}
-
-function collectUnusedBenchmarkBudgets(budgets: BenchmarkBudgetTree, records: BenchmarkRecord[]) {
-  const benchmarkNames = new Set(records.map((record) => record.name));
-
-  return collectBenchmarkBudgetNames(budgets)
-    .filter((name) => !benchmarkNames.has(name))
-    .sort();
-}
-
-function collectBenchmarkBudgetNames(budgets: BenchmarkBudgetTree) {
-  return Object.values(budgets).flatMap((group) => Object.keys(group));
-}
-
-async function readBenchmarkFixtureMarkdown(id: BenchmarkFixtureId) {
-  const fixture = manifest.fixtures.find((candidate) => candidate.id === id);
-
-  if (!fixture) {
-    throw new Error(`Unknown fixture: ${id}`);
-  }
-
-  return Bun.file(fixture.path).text();
-}
-
-function buildSyntheticLongFixture(seed: string, repetitions = 120) {
-  return Array.from({ length: repetitions }, () => seed.trimEnd()).join("\n\n") + "\n";
+function selectGroupScenarios(scenarios: readonly BenchmarkScenario[], groupId: BenchmarkGroupId) {
+  return scenarios.filter((scenario) => scenario.groupId === groupId);
 }
 
 function formatBudgetFailureMessage(failures: RepeatedBudgetFailure[]) {
   return failures
     .map((failure) => {
-      const p99Values = failure.records.map((record) => record.p99Ms.toFixed(3)).join(", ");
+      const p99Values = failure.scenarioRuns
+        .map((scenarioRun) => scenarioRun.p99Ms.toFixed(3))
+        .join(", ");
 
-      return `${failure.name} exceeded budget in ${failure.failureCount}/${benchmarkRunCount} runs: p99=[${p99Values}] budget=${failure.budgetMs.toFixed(3)}ms`;
+      return `${failure.id} exceeded budget in ${failure.failureCount}/${benchmarkSuiteRunCount} suite runs: p99=[${p99Values}] budget=${failure.budgetMs.toFixed(3)}ms`;
     })
     .join("\n");
+}
+
+function resolveOutputMode(argv: string[]): OutputMode {
+  return argv.includes("--json") ? "json" : "table";
 }

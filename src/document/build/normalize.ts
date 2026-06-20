@@ -21,6 +21,13 @@
 // touching normalize.
 
 import { blockContainerSpec } from "../model/containers";
+import {
+  FNV_OFFSET_BASIS,
+  HASH_SEPARATOR_CHAR_CODE,
+  finishHash,
+  mixByteIntoHash,
+  mixStringIntoHash,
+} from "../model/fnv";
 import { childBlockPath, rootBlockPath, tableCellPath, tableRowPath } from "../model/paths";
 import { extractPlainTextFromInlineNodes } from "../query/text";
 import type { Block, Inline, TableRow } from "../model/types";
@@ -138,10 +145,6 @@ function normalizeInlineNode(node: Inline, path: string): Inline {
 // own; block callers pass `recursed.plainText` (the builder's canonical
 // value, preserved through recursion).
 
-const FNV_OFFSET_BASIS = 2166136261;
-const FNV_PRIME = 16777619;
-const SEED_SEPARATOR_CHAR_CODE = 0x3a; // ':'
-
 // FNV-1a, but consumes `type`, `path`, and `semanticSeed` directly without
 // concatenating them into an intermediate payload string. Bit-identical to
 // hashing `${type}:${path}:${semanticSeed}` — the same bytes get XOR-mixed
@@ -150,25 +153,12 @@ const SEED_SEPARATOR_CHAR_CODE = 0x3a; // ':'
 function hashedId(type: string, path: string, semanticSeed: string): string {
   let hash = FNV_OFFSET_BASIS;
   hash = mixStringIntoHash(hash, type);
-  hash = mixByteIntoHash(hash, SEED_SEPARATOR_CHAR_CODE);
+  hash = mixByteIntoHash(hash, HASH_SEPARATOR_CHAR_CODE);
   hash = mixStringIntoHash(hash, path);
-  hash = mixByteIntoHash(hash, SEED_SEPARATOR_CHAR_CODE);
+  hash = mixByteIntoHash(hash, HASH_SEPARATOR_CHAR_CODE);
   hash = mixStringIntoHash(hash, semanticSeed);
 
-  return `${type}-${(hash >>> 0).toString(36)}`;
-}
-
-function mixStringIntoHash(hash: number, segment: string): number {
-  for (let index = 0; index < segment.length; index += 1) {
-    hash ^= segment.charCodeAt(index);
-    hash = Math.imul(hash, FNV_PRIME);
-  }
-  return hash;
-}
-
-function mixByteIntoHash(hash: number, byte: number): number {
-  hash ^= byte;
-  return Math.imul(hash, FNV_PRIME);
+  return `${type}-${finishHash(hash).toString(36)}`;
 }
 
 function nodeId(node: Block | Inline, path: string, plainText?: string): string {

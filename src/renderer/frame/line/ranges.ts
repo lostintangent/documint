@@ -29,7 +29,7 @@ export function resolveDocumentFrameLineRanges({
   theme,
 }: {
   activeThreadIndex: number | null;
-  commentPresence: ReadonlyMap<number, EditorPresence>;
+  commentPresence: ReadonlyMap<number, EditorPresence> | null;
   commentRanges: EditorCommentRange[] | null;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
@@ -107,7 +107,7 @@ function resolveCommentHighlightFrames({
   theme,
 }: {
   activeThreadIndex: number | null;
-  commentPresence: ReadonlyMap<number, EditorPresence>;
+  commentPresence: ReadonlyMap<number, EditorPresence> | null;
   commentRanges: EditorCommentRange[] | null;
   line: EditorLayoutState["layout"]["lines"][number];
   theme: ResolvedEditorTheme;
@@ -128,7 +128,7 @@ function resolveCommentHighlightFrames({
 
     highlights.push({
       color: resolveCommentHighlightColor(range, activeThreadIndex, commentPresence, theme),
-      pulse: !range.resolved && commentPresence.has(range.threadIndex),
+      pulse: !range.resolved && commentPresence?.has(range.threadIndex) === true,
       rect: resolveLineRangeRectFrame(line, overlapStart, overlapEnd, {
         height: commentHighlightThickness,
         minimumWidth: commentHighlightMinimumWidth,
@@ -143,7 +143,7 @@ function resolveCommentHighlightFrames({
 function resolveCommentHighlightColor(
   range: EditorCommentRange,
   activeThreadIndex: number | null,
-  commentPresence: ReadonlyMap<number, EditorPresence>,
+  commentPresence: ReadonlyMap<number, EditorPresence> | null,
   theme: ResolvedEditorTheme,
 ) {
   if (range.resolved) {
@@ -154,7 +154,7 @@ function resolveCommentHighlightColor(
 
   return range.threadIndex === activeThreadIndex
     ? theme.commentHighlightActive
-    : commentPresence.has(range.threadIndex)
+    : commentPresence?.has(range.threadIndex) === true
       ? (commentPresence.get(range.threadIndex)?.color ?? theme.leafAccent)
       : theme.commentHighlight;
 }

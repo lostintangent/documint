@@ -139,12 +139,10 @@ function matchTriggerForContext(
   end: number,
   context: TriggerContext,
 ): EditorStateAction | null {
-  // Root-paragraph create patterns are anchored `^…\s$`: the entire
-  // prospective text must end in whitespace. Check that without
-  // building the prospective string, so the dominant typing case
-  // (non-whitespace character anywhere in a paragraph) skips both the
-  // string allocation and the regex walk entirely.
-  if (context.kind === "root-paragraph" && !prospectiveEndsWithWhitespace(region, text, end)) {
+  // Markdown shortcuts fire when the inserted text supplies the completing
+  // whitespace. A pre-existing suffix space must not turn a typed marker into
+  // a structural trigger after Enter splits before hidden whitespace.
+  if (text.length === 0 || !/\s/.test(text[text.length - 1]!)) {
     return null;
   }
 
@@ -158,15 +156,6 @@ function matchTriggerForContext(
     case "list-item":
       return matchAndApply(LIST_ITEM_TRIGGERS, prospectiveText, context.item);
   }
-}
-
-// The last character of `region.text.slice(0, start) + text + region.text.slice(end)`
-// is determined by whichever side of the splice is non-empty at the tail:
-//   - cursor not at end of region → suffix is non-empty → region's last char wins
-//   - cursor at end of region     → suffix is empty     → text's last char wins
-function prospectiveEndsWithWhitespace(region: EditableRegion, text: string, end: number): boolean {
-  const tail = end < region.text.length ? region.text : text;
-  return tail.length > 0 && /\s/.test(tail[tail.length - 1]!);
 }
 
 type Trigger<C> = {

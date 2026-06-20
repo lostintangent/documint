@@ -1,4 +1,4 @@
-export { resolveCommentThread, resolveCommentThreadInContainers } from "./anchors";
+export { resolveCommentThread, resolveCommentThreadInContainers } from "./resolution";
 
 export { parseCommentThread } from "./serialization";
 

@@ -1,5 +1,6 @@
 import type { DocumentLayout, LayoutRect } from "@/editor/layout";
 import type { BlockFlashFrame } from "../../effects";
+import type { BandedGeometryFrame } from "../banded-geometry";
 
 const tableCellMinimumPaintWidth = 80;
 const activeTableCellBandVerticalBleed = 2;
@@ -11,10 +12,10 @@ export type TableCellChromeFrame = {
   rect: LayoutRect;
 };
 
-export type ActiveTableCellHighlightFrame = {
+export type TableCellGeometryFrame = BandedGeometryFrame & { borderRect: LayoutRect };
+
+export type ActiveTableCellGeometryFrame = TableCellGeometryFrame & {
   activeFlash: BlockFlashFrame | null;
-  bands: readonly LayoutRect[];
-  borderRect: LayoutRect;
 };
 
 export function resolveTableCellChromeFrame(
@@ -33,7 +34,7 @@ export function resolveTableCellChromeFrame(
   };
 }
 
-export function resolveActiveTableCellHighlightFrame({
+export function resolveActiveTableCellGeometryFrame({
   activeFlash,
   activeRegionId,
   endLineIndex,
@@ -47,9 +48,33 @@ export function resolveActiveTableCellHighlightFrame({
   layout: DocumentLayout;
   regionBounds: Map<string, RegionBounds>;
   startLineIndex: number;
-}): ActiveTableCellHighlightFrame | null {
-  const cellBounds = regionBounds.get(activeRegionId) ?? null;
-  const cellLineIndices = layout.regionLineIndices.get(activeRegionId) ?? null;
+}): ActiveTableCellGeometryFrame | null {
+  const geometry = resolveTableCellGeometryFrame({
+    endLineIndex,
+    layout,
+    regionBounds,
+    regionId: activeRegionId,
+    startLineIndex,
+  });
+
+  return geometry ? { ...geometry, activeFlash } : null;
+}
+
+export function resolveTableCellGeometryFrame({
+  endLineIndex,
+  layout,
+  regionBounds,
+  regionId,
+  startLineIndex,
+}: {
+  endLineIndex: number;
+  layout: DocumentLayout;
+  regionBounds: Map<string, RegionBounds>;
+  regionId: string;
+  startLineIndex: number;
+}): TableCellGeometryFrame | null {
+  const cellBounds = regionBounds.get(regionId) ?? null;
+  const cellLineIndices = layout.regionLineIndices.get(regionId) ?? null;
 
   if (!cellBounds || !cellLineIndices || cellLineIndices.length === 0) {
     return null;
@@ -87,10 +112,10 @@ export function resolveActiveTableCellHighlightFrame({
     });
   }
 
-  return bands.length === 0 ? null : { activeFlash, bands, borderRect };
+  return bands.length === 0 ? null : { bands, borderRect, rect: borderRect };
 }
 
-function resolveTableCellPaintRect(
+export function resolveTableCellPaintRect(
   containerBounds: RegionBounds,
   lineHeight: number,
 ): LayoutRect {

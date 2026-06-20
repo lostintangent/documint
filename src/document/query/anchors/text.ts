@@ -14,14 +14,14 @@
  *   - Discovery: enumerate the text containers an anchor can attach to.
  *   - Construction: capture a content-addressable fingerprint around a range.
  *   - Search: enumerate substring matches, prefix/suffix ranges, and verify
- *     that fingerprints align at known positions.
+ *     that captured context aligns at known positions.
  *
  * Consumers layer their own scoring, uniqueness, or affinity policy on top of
  * these primitives. This module never picks a winner — it returns candidates.
  */
 
-import type { Block, Document } from "../model/types";
-import { visitDocument } from "./visit";
+import type { Block, Document } from "../../model/types";
+import { visitDocument } from "../visit";
 
 // --- Anchor kinds ---
 
@@ -98,6 +98,15 @@ export type AnchorMatch = {
   containerOrdinal: number;
   startOffset: number;
   endOffset: number;
+};
+
+// A raw location where a `TextAnchor` could attach inside a specific
+// container. Consumers decide whether candidates are unique enough, need
+// scoring, or should be rejected as ambiguous.
+export type TextAnchorCandidate = {
+  container: AnchorContainer;
+  endOffset: number;
+  startOffset: number;
 };
 
 // --- Resolution result ---
@@ -311,6 +320,34 @@ export function enumerateTextAnchorRanges(
   }
 
   return [];
+}
+
+// Collect raw anchor candidates across a set of containers. This is the
+// shared substrate for consumers like presence (unique candidate required)
+// and comments (score/repair candidates with comment-specific policy).
+export function collectTextAnchorCandidates(
+  containers: readonly AnchorContainer[],
+  anchor: TextAnchor,
+  options: { estimatedLength?: number } = {},
+): TextAnchorCandidate[] {
+  const anchorKind = anchor.kind ?? DEFAULT_ANCHOR_KIND;
+  const candidates: TextAnchorCandidate[] = [];
+
+  for (const container of containers) {
+    if (container.containerKind !== anchorKind) {
+      continue;
+    }
+
+    for (const range of enumerateTextAnchorRanges(container, anchor, options)) {
+      candidates.push({
+        container,
+        endOffset: range.endOffset,
+        startOffset: range.startOffset,
+      });
+    }
+  }
+
+  return candidates;
 }
 
 // Verify that `prefix` ends exactly at `position` in `text`. Returns `false`

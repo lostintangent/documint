@@ -390,6 +390,18 @@ describe("Paragraph block-start escapes", () => {
     // following space, so the parser would never read it as a list.
     expectRoundTrip("**bold** at line start.\n");
   });
+
+  test.each([
+    ["ordinary text", "&#x20;leading\n"],
+    ["blockquote marker", "&#x20;> not a quote\n"],
+    ["heading marker", "&#x20;# not a heading\n"],
+    ["list marker", "&#x20;- not a list\n"],
+    ["ordered list marker", "&#x20;1. not a list\n"],
+    ["directive marker", "&#x20;:::callout\n"],
+    ["table marker", "&#x20;| not | a table |\n"],
+  ])("round-trips a paragraph line with leading space before %s", (_label, canonical) => {
+    expectRoundTrip(canonical);
+  });
 });
 
 function createTableDocument(rows: string[][]) {

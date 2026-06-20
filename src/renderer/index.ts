@@ -5,6 +5,7 @@ import {
   paintActiveBlockBackground,
   paintActiveBlockChangedEffect,
   paintBlockquoteRules,
+  paintDocumentChangeBackground,
   paintLineContainerBackground,
   paintHeadingRules,
   paintInertBlock,
@@ -13,7 +14,7 @@ import { paintCaretOverlay } from "./painters/caret";
 import { paintCommentHighlights } from "./painters/comments";
 import { paintListMarker } from "./painters/list";
 import { paintSelectionHighlight } from "./painters/selection";
-import { paintActiveTableCellHighlight } from "./painters/table";
+import { paintHighlight } from "./painters/highlights";
 import {
   paintTextFades,
   paintTextHighlights,
@@ -29,14 +30,10 @@ import {
   type DocumentFrameLine,
   type OverlayFrame,
 } from "./frame";
-import {
-  createPaintEffect,
-  type EffectEnvironment,
-  type PaintEffect,
-} from "./effects";
+import { createPaintEffect, type EffectEnvironment, type PaintEffect } from "./effects";
 
 export { createDocumentFrame, createOverlayFrame };
-export type { ActiveEditorEffect } from "./effects";
+export type { DocumentChangeEffect, RendererEffect, RendererEffectInput } from "./effects";
 export type { DocumentFrame, OverlayFrame };
 
 export function paintDocumentFrame(context: CanvasRenderingContext2D, frame: DocumentFrame): void {
@@ -57,7 +54,7 @@ type DocumentPaintPass = (context: CanvasRenderingContext2D, frame: DocumentFram
 const documentPaintPasses: DocumentPaintPass[] = [
   paintContainerBackgroundPass,
   paintInertBlockChromePass,
-  paintActiveBlockHighlightPass,
+  paintDocumentHighlightPass,
   paintLineForegroundPass,
   paintRulePass,
 ];
@@ -72,9 +69,32 @@ function paintInertBlockChromePass(context: CanvasRenderingContext2D, frame: Doc
   paintInertBlock(context, frame.chrome.dividerRules, frame.theme);
 }
 
-function paintActiveBlockHighlightPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
-  if (frame.chrome.activeTableCellHighlight) {
-    paintActiveTableCellHighlight(context, frame.chrome.activeTableCellHighlight, frame.theme);
+function paintDocumentHighlightPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+  if (frame.hasDocumentChangeHighlights) {
+    const baseEnvironment: EffectEnvironment = {
+      context,
+      theme: frame.theme,
+      viewport: frame.viewport,
+    };
+
+    for (const lineFrame of frame.lines) {
+      paintDocumentChangeBackground(lineFrame, baseEnvironment);
+    }
+
+    for (const tableCellChange of frame.tableCellDocumentChanges) {
+      paintHighlight(context, tableCellChange, {
+        borderColor: frame.theme.tableBorder,
+        fill: tableCellChange.color,
+        opacity: tableCellChange.opacity,
+      });
+    }
+  }
+
+  if (frame.chrome.activeTableCellGeometry) {
+    paintHighlight(context, frame.chrome.activeTableCellGeometry, {
+      borderColor: frame.theme.tableBorder,
+      fill: frame.theme.activeBlockBackground,
+    });
   }
 }
 

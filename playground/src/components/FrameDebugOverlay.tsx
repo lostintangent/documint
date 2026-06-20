@@ -198,13 +198,13 @@ function* listMarkers(line: DocumentFrameLine): Iterable<DebugRectRow> {
 }
 
 function* chrome(frame: DocumentFrame): Iterable<DebugRectRow> {
-  const activeTableCellHighlight = frame.chrome.activeTableCellHighlight;
+  const activeTableCellGeometry = frame.chrome.activeTableCellGeometry;
 
-  if (activeTableCellHighlight) {
-    for (const band of activeTableCellHighlight.bands) {
+  if (activeTableCellGeometry) {
+    for (const band of activeTableCellGeometry.bands) {
       yield debugFill(debugColors.activeTableBand, band);
     }
-    yield debugStroke(debugColors.activeTableBorder, activeTableCellHighlight.borderRect);
+    yield debugStroke(debugColors.activeTableBorder, activeTableCellGeometry.borderRect);
   }
 
   for (const rule of frame.chrome.dividerRules) {

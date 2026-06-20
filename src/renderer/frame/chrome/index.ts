@@ -8,15 +8,18 @@ import {
   type BlockquoteRuleFrame,
 } from "./rules";
 import { resolveListMarkerPlans, type ListMarkerPlan } from "./list-markers";
-import { resolveActiveTableCellHighlightFrame, type ActiveTableCellHighlightFrame } from "./table";
+import {
+  resolveActiveTableCellGeometryFrame,
+  type ActiveTableCellGeometryFrame,
+} from "./table";
 
-type ActiveTableCellHighlightTarget = {
+type ActiveTableCellGeometryTarget = {
   activeFlash: BlockFlashFrame | null;
   activeRegionId: string;
 };
 
 export type DocumentFrameChrome = {
-  readonly activeTableCellHighlight: ActiveTableCellHighlightFrame | null;
+  readonly activeTableCellGeometry: ActiveTableCellGeometryFrame | null;
   readonly blockquoteRules: ReadonlyMap<string, BlockquoteRuleFrame>;
   readonly dividerRules: readonly LayoutRect[];
   readonly headingRules: ReadonlyMap<string, LayoutRect>;
@@ -51,7 +54,7 @@ export function resolveDocumentFrameChrome({
   width: number;
 }): ResolvedDocumentFrameChrome {
   const { layout } = layoutState;
-  const activeTableCellHighlight = resolveActiveTableCellHighlightTarget(
+  const activeTableCellGeometry = resolveActiveTableCellGeometryTarget(
     editorState,
     activeBlockId,
     activeRegionId,
@@ -60,10 +63,10 @@ export function resolveDocumentFrameChrome({
 
   return {
     chrome: {
-      activeTableCellHighlight: activeTableCellHighlight
-        ? resolveActiveTableCellHighlightFrame({
-            activeFlash: activeTableCellHighlight.activeFlash,
-            activeRegionId: activeTableCellHighlight.activeRegionId,
+      activeTableCellGeometry: activeTableCellGeometry
+        ? resolveActiveTableCellGeometryFrame({
+            activeFlash: activeTableCellGeometry.activeFlash,
+            activeRegionId: activeTableCellGeometry.activeRegionId,
             endLineIndex,
             layout,
             regionBounds: layout.regionBounds,
@@ -95,12 +98,12 @@ export function resolveDocumentFrameChrome({
   };
 }
 
-function resolveActiveTableCellHighlightTarget(
+function resolveActiveTableCellGeometryTarget(
   editorState: EditorState,
   activeBlockId: string | null,
   activeRegionId: string | null,
   blockFlashes: Map<string, BlockFlashFrame>,
-): ActiveTableCellHighlightTarget | null {
+): ActiveTableCellGeometryTarget | null {
   if (!activeBlockId || !activeRegionId) {
     return null;
   }

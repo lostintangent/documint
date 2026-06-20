@@ -3,7 +3,7 @@
  */
 
 import { structuralId } from "../build/normalize";
-import type { TextAnchor } from "../query/anchors";
+import type { TextAnchor } from "../query/anchors/text";
 import type { Comment, CommentThread } from "./types";
 
 export function createCommentThread(options: {
