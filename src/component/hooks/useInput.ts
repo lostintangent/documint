@@ -34,6 +34,7 @@ import {
   toggleMark,
   undo,
   type EditorLayoutState,
+  type EditorNavigationMode,
   type EditorSelectionPoint,
   type EditorState,
 } from "@/editor";
@@ -56,6 +57,7 @@ type UseInputOptions = {
 
   keybindings?: EditorInputKeybinding[];
   markdownOptions?: MarkdownOptions;
+  readOnly: boolean;
 
   // Host callbacks the hook invokes.
   onActivity: () => void;
@@ -83,8 +85,8 @@ export type FocusInput = (point?: EditorSelectionPoint) => void;
 
 type ClipboardHandlers = {
   onCopy: (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
-  onCut: (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
-  onPaste: (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
+  onCut?: (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
+  onPaste?: (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
 };
 
 // `onKeyDown` is optional because we deliberately omit it on touch-primary
@@ -104,7 +106,7 @@ type SharedInputHandlers = ClipboardHandlers & {
 
 type InputHandlers = SharedInputHandlers & {
   onFocus: (event: FocusEvent<HTMLTextAreaElement>) => void;
-  onInput: (event: FormEvent<HTMLTextAreaElement>) => void;
+  onInput?: (event: FormEvent<HTMLTextAreaElement>) => void;
 };
 
 type CanvasHandlers = SharedInputHandlers & {
@@ -119,6 +121,7 @@ type InputController = {
 
 type KeyboardCommandHandlerInput = {
   event: KeyboardEvent;
+  navigationMode: EditorNavigationMode;
   state: EditorState;
   viewport: EditorLayoutState;
 };
@@ -137,10 +140,16 @@ const keyboardCommandHandlers = {
     moveCaretToDocumentBoundary(state, "end", event.shiftKey),
   moveToDocumentStart: ({ event, state }) =>
     moveCaretToDocumentBoundary(state, "start", event.shiftKey),
-  moveToLineEnd: ({ event, state, viewport }) =>
-    moveCaretToLineBoundary(state, viewport, "End", event.shiftKey),
-  moveToLineStart: ({ event, state, viewport }) =>
-    moveCaretToLineBoundary(state, viewport, "Home", event.shiftKey),
+  moveToLineEnd: ({ event, navigationMode, state, viewport }) =>
+    moveCaretToLineBoundary(state, viewport, "End", {
+      extendSelection: event.shiftKey,
+      mode: navigationMode,
+    }),
+  moveToLineStart: ({ event, navigationMode, state, viewport }) =>
+    moveCaretToLineBoundary(state, viewport, "Home", {
+      extendSelection: event.shiftKey,
+      mode: navigationMode,
+    }),
   redo: ({ state }) => redo(state),
   selectAll: ({ state }) => selectAll(state),
   toggleBold: ({ state }) => toggleMark(state, "bold"),
@@ -151,6 +160,18 @@ const keyboardCommandHandlers = {
   toggleUnderline: ({ state }) => toggleMark(state, "underline"),
   undo: ({ state }) => undo(state),
 } satisfies Record<EditorInputCommand, KeyboardCommandHandler>;
+
+const readOnlyInputCommands = new Set<EditorInputCommand>([
+  "moveToDocumentEnd",
+  "moveToDocumentStart",
+  "moveToLineEnd",
+  "moveToLineStart",
+  "selectAll",
+]);
+
+export function isReadOnlySafeInputCommand(command: EditorInputCommand) {
+  return readOnlyInputCommands.has(command);
+}
 
 // Maximum characters kept in the hidden textarea before the caret, providing
 // context for IME composition, browser autocorrect, and — critically — voice
@@ -183,6 +204,7 @@ export function useInput({
   onBeforeInput,
   onKeyDown,
   onImagePaste,
+  readOnly,
 }: UseInputOptions): InputController {
   /* Store, device state, and editor commands */
 
@@ -320,10 +342,12 @@ export function useInput({
     // On touch, allow it — iOS uses focus-time scroll to shift content
     // above the virtual keyboard.
     input.focus({ preventScroll: !isTouchPrimary });
-    syncInputContext(input, readCurrentState());
 
-    // First focus is also where we seed iOS's undo manager.
-    primeUndoStack();
+    if (!readOnly) {
+      syncInputContext(input, readCurrentState());
+      // First editable focus is also where we seed iOS's undo manager.
+      primeUndoStack();
+    }
   });
 
   /* Native text and keyboard input */
@@ -560,6 +584,7 @@ export function useInput({
         store.layout.get(),
         event.nativeEvent,
         keybindings,
+        readOnly,
       );
 
       if (!transition) {
@@ -643,7 +668,7 @@ export function useInput({
     onActivity();
     const input = inputRef.current;
 
-    if (input) {
+    if (input && !readOnly) {
       syncInputContext(input, readCurrentState());
     }
   });
@@ -665,9 +690,9 @@ export function useInput({
 
   /* Textarea synchronization effects */
 
-  // Mirror the editor state into the hidden textarea after every editor
-  // state change so the OS sees up-to-date context (preceding chars,
-  // caret position) for autocorrect, IME, and dictation. TODO: scope
+  // Mirror editable state into the hidden textarea after every editor state
+  // change so the OS sees up-to-date context (preceding chars, caret
+  // position) for autocorrect, IME, and dictation. TODO: scope
   // this to region transitions only (or otherwise let the OS keep the
   // textarea as its own scratch space for the duration of an input
   // session) — see thread on dictation flush behavior.
@@ -682,9 +707,9 @@ export function useInput({
       });
     }
 
-    if (!input) return;
+    if (!input || readOnly) return;
     syncInputContext(input, editorState);
-  }, [editorState, inputRef]);
+  }, [editorState, inputRef, readOnly]);
 
   // Keep the hidden textarea positioned at the visible caret's pixel
   // coordinates so that mobile browsers' "scroll focused input into view
@@ -695,19 +720,20 @@ export function useInput({
     positionInputAtPoint(editorState.selection.focus);
   }, [editorState]);
 
-  // React's synthetic `onBeforeInput` prop wires to the legacy WebKit
-  // `textInput` event, which does NOT fire for delete operations on iOS
-  // Safari (and is unreliable across browsers in general). Attach a native
-  // listener for the modern `beforeinput` event directly on the textarea so
-  // that deletions, line breaks, and insertions are all routed through the
-  // bridge consistently.
+  // In editable mode, React's synthetic `onBeforeInput` prop wires to the
+  // legacy WebKit `textInput` event, which does NOT fire for delete
+  // operations on iOS Safari (and is unreliable across browsers in general).
+  // Attach a native listener for the modern `beforeinput` event directly on
+  // the textarea so that deletions, line breaks, and insertions are all routed
+  // through the bridge consistently.
   useEffect(() => {
+    if (readOnly) return;
     const input = inputRef.current;
     if (!input) return;
     const listener = (event: Event) => handleBeforeInput(event as InputEvent);
     input.addEventListener("beforeinput", listener);
     return () => input.removeEventListener("beforeinput", listener);
-  }, [inputRef]);
+  }, [inputRef, readOnly]);
 
   /* Diagnostics */
 
@@ -727,8 +753,7 @@ export function useInput({
 
   const sharedHandlers: SharedInputHandlers = {
     onCopy: handleCopy,
-    onCut: handleCut,
-    onPaste: handlePaste,
+    ...(!readOnly ? { onCut: handleCut, onPaste: handlePaste } : {}),
     ...(!isTouchPrimary || enableTouchKeyDown ? { onKeyDown: handleKeyDown } : {}),
   };
 
@@ -741,7 +766,7 @@ export function useInput({
     inputHandlers: {
       ...sharedHandlers,
       onFocus: handleInputFocus,
-      onInput: handleInput,
+      ...(!readOnly ? { onInput: handleInput } : {}),
     },
   };
 }
@@ -963,23 +988,34 @@ function applyKeyboardInputCommand(
   viewport: EditorLayoutState,
   event: KeyboardEvent,
   keybindings?: EditorInputKeybinding[],
+  readOnly = false,
 ): EditorState | null {
+  const navigationMode: EditorNavigationMode = readOnly ? "block" : "text";
+
   if (event.key === "Delete") {
+    if (readOnly) return null;
     return deleteForward(state);
   }
 
   const command = resolveEditorInputCommand(event, keybindings);
 
   if (command) {
-    return keyboardCommandHandlers[command]({ event, state, viewport });
+    if (readOnly && !isReadOnlySafeInputCommand(command)) return null;
+    return keyboardCommandHandlers[command]({ event, navigationMode, state, viewport });
   }
 
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-    return moveCaretHorizontally(state, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
+    return moveCaretHorizontally(state, event.key === "ArrowLeft" ? -1 : 1, {
+      extendSelection: event.shiftKey,
+      mode: navigationMode,
+    });
   }
 
   if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-    return moveCaretVertically(state, viewport, event.key === "ArrowUp" ? -1 : 1, event.shiftKey);
+    return moveCaretVertically(state, viewport, event.key === "ArrowUp" ? -1 : 1, {
+      extendSelection: event.shiftKey,
+      mode: navigationMode,
+    });
   }
 
   if (event.key === "PageUp" || event.key === "PageDown") {
@@ -987,6 +1023,7 @@ function applyKeyboardInputCommand(
   }
 
   if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    if (readOnly) return null;
     return insertText(state, event.key);
   }
 

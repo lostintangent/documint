@@ -69,6 +69,7 @@ export {
   getSelectionContext,
   getSelectionFormatting,
   getSelectionRange,
+  isSelectionCollapsed,
   normalizeSelection,
   resolveImageAtSelection,
   selectionIntersectsBlock,

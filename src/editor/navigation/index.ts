@@ -10,9 +10,14 @@
  */
 import { measureCaretTarget, type EditorLayoutState, type EditorPoint } from "../layout";
 import {
+  nextRegionInFlow,
+  previousRegionInFlow,
+  isSelectionCollapsed,
   setSelection,
   setSelectionPoint,
   resolveDocumentBoundaryRegion,
+  resolveRegion,
+  type EditableRegion,
   type EditorSelectionPoint,
   type EditorState,
 } from "../state";
@@ -22,7 +27,7 @@ import {
   moveCaretToCurrentLineBoundary,
   moveCaretVerticallyInFlow,
 } from "./line";
-import { moveCaretVerticallyInTable } from "./table";
+import { moveCaretVerticallyInTable, resolveVerticalTableRegionTarget } from "./table";
 export {
   resolveDragFocus,
   resolveDragFocusPoint,
@@ -43,16 +48,37 @@ import { resolveDragFocus, resolveSelectionHit } from "./hit";
 
 export { resolveEditorSearchMatches, type EditorSearchMatch } from "./search";
 
-export function moveCaretHorizontally(state: EditorState, delta: -1 | 1, extendSelection = false) {
-  return moveCaretHorizontallyInFlow(state, delta, extendSelection);
+export type EditorNavigationMode = "block" | "text";
+
+export type EditorNavigationOptions = {
+  extendSelection?: boolean;
+  mode?: EditorNavigationMode;
+};
+
+export function moveCaretHorizontally(
+  state: EditorState,
+  delta: -1 | 1,
+  options: EditorNavigationOptions = {},
+) {
+  const extendSelection = options.extendSelection ?? false;
+
+  return options.mode === "block"
+    ? moveCaretToAdjacentRegion(state, delta, extendSelection)
+    : moveCaretHorizontallyInFlow(state, delta, extendSelection);
 }
 
 export function moveCaretVertically(
   state: EditorState,
   viewport: EditorLayoutState,
   direction: -1 | 1,
-  extendSelection = false,
+  options: EditorNavigationOptions = {},
 ) {
+  const extendSelection = options.extendSelection ?? false;
+
+  if (options.mode === "block") {
+    return moveCaretVerticallyByRegion(state, direction, extendSelection);
+  }
+
   const caret = measureSelectionCaret(state, viewport);
 
   if (!caret) {
@@ -91,8 +117,14 @@ export function moveCaretToLineBoundary(
   state: EditorState,
   viewport: EditorLayoutState,
   boundary: "Home" | "End",
-  extendSelection = false,
+  options: EditorNavigationOptions = {},
 ) {
+  const extendSelection = options.extendSelection ?? false;
+
+  if (options.mode === "block") {
+    return moveCaretToCurrentRegionBoundary(state, boundary, extendSelection);
+  }
+
   return moveCaretToCurrentLineBoundary(state, viewport.layout, boundary, extendSelection);
 }
 
@@ -155,5 +187,103 @@ function measureSelectionCaret(state: EditorState, viewport: EditorLayoutState) 
   return measureCaretTarget(viewport.layout, state.documentIndex, {
     regionId: state.selection.focus.regionId,
     offset: state.selection.focus.offset,
+  });
+}
+
+function moveCaretVerticallyByRegion(
+  state: EditorState,
+  direction: -1 | 1,
+  extendSelection: boolean,
+) {
+  return (
+    moveCaretVerticallyByTableRegion(state, direction, extendSelection) ??
+    moveCaretToAdjacentRegion(state, direction, extendSelection)
+  );
+}
+
+function moveCaretVerticallyByTableRegion(
+  state: EditorState,
+  direction: -1 | 1,
+  extendSelection: boolean,
+) {
+  const target = resolveVerticalTableRegionTarget(state, direction);
+
+  if (!target) {
+    return null;
+  }
+
+  return target.targetRegion
+    ? setRegionNavigationSelection(
+        state,
+        target.currentRegion,
+        target.targetRegion,
+        direction,
+        extendSelection,
+      )
+    : state;
+}
+
+function moveCaretToAdjacentRegion(
+  state: EditorState,
+  direction: -1 | 1,
+  extendSelection: boolean,
+) {
+  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+
+  if (!currentRegion) {
+    return state;
+  }
+
+  const targetRegion =
+    direction < 0
+      ? previousRegionInFlow(state.documentIndex, currentRegion.id)
+      : nextRegionInFlow(state.documentIndex, currentRegion.id);
+
+  return targetRegion
+    ? setRegionNavigationSelection(state, currentRegion, targetRegion, direction, extendSelection)
+    : state;
+}
+
+function moveCaretToCurrentRegionBoundary(
+  state: EditorState,
+  boundary: "Home" | "End",
+  extendSelection: boolean,
+) {
+  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+
+  return currentRegion
+    ? setSelectionPoint(
+        state,
+        currentRegion.id,
+        boundary === "Home" ? 0 : currentRegion.text.length,
+        extendSelection,
+      )
+    : state;
+}
+
+function setRegionNavigationSelection(
+  state: EditorState,
+  currentRegion: EditableRegion,
+  targetRegion: EditableRegion,
+  direction: -1 | 1,
+  extendSelection: boolean,
+) {
+  const focus = {
+    regionId: targetRegion.id,
+    offset: extendSelection && direction > 0 ? targetRegion.text.length : 0,
+  };
+
+  if (!extendSelection) {
+    return setSelection(state, focus);
+  }
+
+  return setSelection(state, {
+    anchor: isSelectionCollapsed(state.selection)
+      ? {
+          regionId: currentRegion.id,
+          offset: direction > 0 ? 0 : currentRegion.text.length,
+        }
+      : state.selection.anchor,
+    focus,
   });
 }

@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import {
   INPUT_SEED,
+  isReadOnlySafeInputCommand,
   isLineBreakInputType,
   resolveDeleteDirection,
   stripInputSeed,
 } from "@/component/hooks/useInput";
+import type { EditorInputCommand } from "@/types";
 
 test("treats both paragraph and line-break input types as structural Enter", () => {
   // iOS Safari emits `insertLineBreak` for the virtual keyboard's Return
@@ -39,4 +41,40 @@ test("ignores unrelated input types", () => {
 test("strips the hidden input seed from native text", () => {
   expect(stripInputSeed(`${INPUT_SEED}a${INPUT_SEED}b`)).toBe("ab");
   expect(stripInputSeed(INPUT_SEED)).toBe("");
+});
+
+test("classifies read-only-safe input commands declaratively", () => {
+  const safeCommands = [
+    "moveToDocumentEnd",
+    "moveToDocumentStart",
+    "moveToLineEnd",
+    "moveToLineStart",
+    "selectAll",
+  ] satisfies EditorInputCommand[];
+
+  const mutatingCommands = [
+    "dedent",
+    "deleteBackward",
+    "indent",
+    "insertLineBreak",
+    "insertSoftLineBreak",
+    "moveListItemDown",
+    "moveListItemUp",
+    "redo",
+    "toggleBold",
+    "toggleCode",
+    "toggleItalic",
+    "toggleStrikethrough",
+    "toggleSuperscript",
+    "toggleUnderline",
+    "undo",
+  ] satisfies EditorInputCommand[];
+
+  for (const command of safeCommands) {
+    expect(isReadOnlySafeInputCommand(command)).toBe(true);
+  }
+
+  for (const command of mutatingCommands) {
+    expect(isReadOnlySafeInputCommand(command)).toBe(false);
+  }
 });

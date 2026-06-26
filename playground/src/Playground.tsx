@@ -35,9 +35,6 @@ import {
 } from "./lib/data";
 import { effects } from "./lib/effects";
 
-// In-memory storage for reading/writing pasted images. Hosts in the wild would write to
-// disk, S3, etc.; the playground keeps blobs in a Map so paste-to-render
-// works without leaving the browser tab.
 function createInMemoryStorage(): DocumintStorage {
   const files = new Map<string, Blob>();
 
@@ -129,11 +126,14 @@ export function Playground() {
   const [content, setContent] = useState<string>(fixtureOptions[0].markdown);
   const [sourceContent, setSourceContent] = useState<string>(fixtureOptions[0].markdown);
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
+
   const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
   const [themePopoverOpen, setThemePopoverOpen] = useState(false);
-  const [customEffectsEnabled, setCustomEffectsEnabled] = useState(false);
-  const [showDiffs, setShowDiffs] = useState(true);
   const [fontSize, setFontSize] = useState<number>(16);
+  const [customEffectsEnabled, setCustomEffectsEnabled] = useState(false);
+
+  const [showDiffs, setShowDiffs] = useState(true);
+  const [readOnly, setReadOnly] = useState(false);
 
   const [users, setUsers] = useState<DocumentUser[]>([]);
   const [presence, setPresence] = useState<DocumentPresence[]>([]);
@@ -157,6 +157,7 @@ export function Playground() {
         light: { ...lightTheme, fontSize },
       };
     }
+
     return { ...activeTheme, fontSize };
   }, [activeTheme, fontSize]);
 
@@ -186,13 +187,11 @@ export function Playground() {
 
   const clearHostEvent = () => setHostEventVisible(false);
 
-  const handleUserMentioned = (event: UserMentionEvent) => {
+  const handleUserMentioned = (event: UserMentionEvent) =>
     showHostEvent(createUserMentionHostEvent(event));
-  };
 
-  const handleCommentChanged = (change: CommentChange) => {
+  const handleCommentChanged = (change: CommentChange) =>
     showHostEvent(createCommentHostEvent(change));
-  };
 
   return (
     <main className="grid h-screen grid-rows-[auto_max-content_minmax(0,1fr)] page-padding">
@@ -221,9 +220,11 @@ export function Playground() {
             onCustomEffectsEnabledChange={setCustomEffectsEnabled}
             onFontSizeChange={setFontSize}
             onOpenChange={setThemePopoverOpen}
+            onReadOnlyChange={setReadOnly}
             onShowDiffsChange={setShowDiffs}
             onThemeIdChange={setThemeId}
             open={themePopoverOpen}
+            readOnly={readOnly}
             showDiffs={showDiffs}
             themeId={themeId}
           />
@@ -264,6 +265,7 @@ export function Playground() {
               presence={presence}
               protocols={protocols}
               resources={activeResources}
+              readOnly={readOnly}
               showDiffs={showDiffs}
               storage={storage}
               actions={actions}

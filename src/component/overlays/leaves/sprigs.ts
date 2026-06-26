@@ -166,7 +166,7 @@ export const cursorLeafSprig = createParameterizedSprig(
   ],
   (
     _store,
-    [isEditable]: readonly [boolean],
+    [readOnly]: readonly [boolean],
     state,
     normalizedSelection,
     layout,
@@ -178,9 +178,9 @@ export const cursorLeafSprig = createParameterizedSprig(
     }
 
     return resolveCursorLeaf({
-      isEditable,
       ranges,
       normalizedSelection,
+      readOnly,
       state,
       threads,
       layout,
@@ -279,16 +279,16 @@ function resolveSelectionLeaf({
 }
 
 function resolveCursorLeaf({
-  isEditable,
   ranges,
   normalizedSelection,
+  readOnly,
   state,
   threads,
   layout,
 }: {
-  isEditable: boolean;
   ranges: CommentRanges;
   normalizedSelection: NormalizedEditorSelection;
+  readOnly: boolean;
   state: EditorState;
   threads: CommentThreads;
   layout: EditorLayoutState;
@@ -299,7 +299,7 @@ function resolveCursorLeaf({
     return null;
   }
 
-  const insertionLeaf = isEditable ? resolveInsertionLeaf(state) : null;
+  const insertionLeaf = readOnly ? null : resolveInsertionLeaf(state);
 
   if (insertionLeaf) {
     return insertionLeaf;
@@ -315,7 +315,7 @@ function resolveCursorLeaf({
     return contextualLeaf;
   }
 
-  const tableLeaf = isEditable ? resolveTableLeaf(state, layout) : null;
+  const tableLeaf = readOnly ? null : resolveTableLeaf(state, layout);
 
   if (tableLeaf) {
     return tableLeaf;

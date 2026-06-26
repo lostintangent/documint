@@ -21,7 +21,7 @@ import { equalShallowObject } from "../store/core/equality";
 
 type UseCursorOptions = {
   activeAt: number | null;
-  isEditable: boolean;
+  readOnly: boolean;
   viewportWidth: number;
   viewportHeight: number;
 
@@ -66,9 +66,9 @@ const CURSOR_REVEAL_PADDING = 24;
 export function useCursor({
   activeAt,
   getScrollTop,
-  isEditable,
   viewportWidth,
   onVisibilityChange,
+  readOnly,
   scrollTo,
   viewportHeight,
 }: UseCursorOptions): CursorController {
@@ -80,7 +80,7 @@ export function useCursor({
 
   /* Cursor leaf */
 
-  const leaf = useSprig(cursorLeafSprig, isEditable);
+  const leaf = useSprig(cursorLeafSprig, readOnly);
 
   /* Cursor reveal */
 
@@ -91,7 +91,7 @@ export function useCursor({
   /* Caret blink */
 
   const caretInViewport = useSprig(caretInViewportSprig);
-  const shouldBlinkCaret = normalizedSelection.collapsed;
+  const shouldBlinkCaret = !readOnly && normalizedSelection.collapsed;
   const caretVisibleRef = useRef(true);
   const requestCaretPaint = useEffectEvent(() => {
     onVisibilityChange();
@@ -156,7 +156,7 @@ export function useCursor({
 
   // During activity the caret stays solid; idle collapsed selections blink.
   useEffect(() => {
-    caretVisibleRef.current = true;
+    caretVisibleRef.current = !readOnly;
     requestCaretPaint();
 
     if (!shouldBlinkCaret || !caretInViewport || activeAt !== null) {
@@ -171,14 +171,16 @@ export function useCursor({
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [shouldBlinkCaret, caretInViewport, activeAt]);
+  }, [readOnly, shouldBlinkCaret, caretInViewport, activeAt]);
 
   /* Public API */
 
   return {
     caretInViewport,
     leaf,
-    isVisible: () => caretVisibleRef.current,
+    // `isVisible` is read during render, before effects can clear the ref
+    // after a read-only flip. Keep the read-only gate on the synchronous read.
+    isVisible: () => !readOnly && caretVisibleRef.current,
   };
 }
 

@@ -31,8 +31,8 @@ type SelectionHandleProps = {
 };
 
 type UseSelectionOptions = {
-  isEditable: boolean;
   resolvePoint: (event: PointerEvent<HTMLElement>) => EditorPoint | null;
+  showLeaf: boolean;
 
   // Host callbacks the hook invokes.
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
@@ -48,10 +48,10 @@ type SelectionController = {
 
 export function useSelection({
   autoScrollDuringDrag,
-  isEditable,
   focusInput,
   onActivity,
   resolvePoint,
+  showLeaf,
 }: UseSelectionOptions): SelectionController {
   /* Derived selection state */
 
@@ -185,7 +185,7 @@ export function useSelection({
 
   return {
     handle,
-    leaf: isEditable ? selectionLeaf : null,
+    leaf: showLeaf ? selectionLeaf : null,
     promoteLeafToThread,
   };
 }

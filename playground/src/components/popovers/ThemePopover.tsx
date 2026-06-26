@@ -20,9 +20,11 @@ type ThemePopoverProps = {
   onCustomEffectsEnabledChange: (enabled: boolean) => void;
   onFontSizeChange: (fontSize: number) => void;
   onOpenChange?: (open: boolean) => void;
+  onReadOnlyChange: (readOnly: boolean) => void;
   onShowDiffsChange: (showDiffs: boolean) => void;
   onThemeIdChange: (themeId: string) => void;
   open?: boolean;
+  readOnly: boolean;
   showDiffs: boolean;
   themeId: string;
 };
@@ -33,9 +35,11 @@ export function ThemePopover({
   onCustomEffectsEnabledChange,
   onFontSizeChange,
   onOpenChange,
+  onReadOnlyChange,
   onShowDiffsChange,
   onThemeIdChange,
   open,
+  readOnly,
   showDiffs,
   themeId,
 }: ThemePopoverProps) {
@@ -71,14 +75,6 @@ export function ThemePopover({
                   type="checkbox"
                 />
                 <span>Effects</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  checked={showDiffs}
-                  onChange={(event) => onShowDiffsChange(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Diffs</span>
               </label>
             </div>
           </div>
@@ -134,6 +130,24 @@ export function ThemePopover({
               <Plus size={14} strokeWidth={2.4} />
             </button>
           </div>
+
+          <label className="flex items-center justify-between gap-3 border-t border-border/10 pt-3">
+            <span>Read-only?</span>
+            <input
+              checked={readOnly}
+              onChange={(event) => onReadOnlyChange(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3">
+            <span>Show diffs?</span>
+            <input
+              checked={showDiffs}
+              onChange={(event) => onShowDiffsChange(event.target.checked)}
+              type="checkbox"
+            />
+          </label>
         </div>
       )}
     </PlaygroundPopover>

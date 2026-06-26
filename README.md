@@ -46,6 +46,14 @@ export function App() {
 
 `onContentChanged` emits the full next markdown snapshot. Hosts that need minimal text edits can diff their previous content against the snapshot inside their own text model.
 
+## Read-Only Review Mode
+
+Pass `readOnly` to let users select text, copy, and use review chrome without changing document content. Content-editing affordances such as typing, paste, cut, formatting, link editing, table controls, insertions, and image resize are disabled or not shown. Comments still persist through `onContentChanged`, so keep that callback wired when read-only users should be able to create, reply to, resolve, edit, or delete comments.
+
+```tsx
+<Documint content={content} onContentChanged={setContent} readOnly />
+```
+
 ## Custom Actions
 
 Use the `actions` prop to add custom buttons to contextual leaf menus. The first supported target is `selection`, which appears in the annotation toolbar when text is selected. Each action provides a Lucide icon name and receives the selected text when clicked.

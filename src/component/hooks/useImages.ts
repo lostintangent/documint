@@ -39,6 +39,7 @@ export type ImagesApi = {
 };
 
 export function useImages(
+  readOnly: boolean,
   storage: DocumentStorage,
   resourceRegistry: DocumentResourceRegistry,
 ): ImagesApi {
@@ -235,7 +236,7 @@ export function useImages(
   );
 
   const imageHandle = useMemo((): ResizeHandle | null => {
-    if (!imageAtCursor) return null;
+    if (readOnly || !imageAtCursor) return null;
     const { bounds } = imageAtCursor;
     return {
       start: { left: bounds.left, top: bounds.top, props: startHandleProps },
@@ -245,7 +246,7 @@ export function useImages(
         top: bounds.top + bounds.height,
       },
     };
-  }, [imageAtCursor]);
+  }, [readOnly, imageAtCursor]);
 
   /* Public API */
 

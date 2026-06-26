@@ -4,15 +4,49 @@
  * then fall back to the surrounding document when the caret exits the table.
  */
 import { type CaretTarget, type DocumentLayout } from "../layout";
-import type { EditorState } from "../state";
 import {
+  type EditableRegion,
+  type EditorState,
   resolveIndexedBlock,
   resolveRegion,
   resolveRegionOutsideRoot,
   resolveTableCellPosition,
   resolveTableCellRegion,
-} from "../state/index/query";
+} from "../state";
 import { placeCaretAtLineY } from "./line";
+
+export type VerticalTableRegionTarget = {
+  currentRegion: EditableRegion;
+  targetRegion: EditableRegion | null;
+};
+
+export function resolveVerticalTableRegionTarget(
+  state: EditorState,
+  direction: -1 | 1,
+): VerticalTableRegionTarget | null {
+  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+
+  if (!currentRegion) {
+    return null;
+  }
+
+  const currentCell = resolveTableCellPosition(currentRegion);
+  const tableBlock = resolveIndexedBlock(state.documentIndex, currentRegion.block.id);
+
+  if (!currentCell || tableBlock?.block.type !== "table") {
+    return null;
+  }
+
+  const targetRegion =
+    resolveTableCellRegion(
+      state.documentIndex,
+      tableBlock.block.id,
+      currentCell.rowIndex + direction,
+      currentCell.cellIndex,
+    ) ?? resolveRegionOutsideRoot(state.documentIndex, tableBlock.rootIndex, direction);
+
+  return { currentRegion, targetRegion };
+}
 
 export function moveCaretVerticallyInTable(
   state: EditorState,
@@ -21,33 +55,20 @@ export function moveCaretVerticallyInTable(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentContainer = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const target = resolveVerticalTableRegionTarget(state, direction);
 
-  if (!currentContainer) {
+  if (!target) {
     return null;
   }
 
-  const currentCell = resolveTableCellPosition(currentContainer);
-  const tableBlock = resolveIndexedBlock(state.documentIndex, currentContainer.block.id);
+  const { currentRegion, targetRegion } = target;
 
-  if (!currentCell || tableBlock?.block.type !== "table") {
-    return null;
-  }
-
-  const targetContainer =
-    resolveTableCellRegion(
-      state.documentIndex,
-      tableBlock.block.id,
-      currentCell.rowIndex + direction,
-      currentCell.cellIndex,
-    ) ?? findTableExitContainer(state, tableBlock.block.id, direction);
-
-  if (!targetContainer) {
+  if (!targetRegion) {
     return state;
   }
 
-  const currentExtent = layout.regionBounds.get(currentContainer.id);
-  const targetExtent = layout.regionBounds.get(targetContainer.id);
+  const currentExtent = layout.regionBounds.get(currentRegion.id);
+  const targetExtent = layout.regionBounds.get(targetRegion.id);
 
   if (!currentExtent || !targetExtent) {
     return state;
@@ -63,14 +84,6 @@ export function moveCaretVerticallyInTable(
     );
 
   return placeCaretAtLineY(state, layout, caret, targetY, extendSelection);
-}
-
-function findTableExitContainer(state: EditorState, tableBlockId: string, direction: -1 | 1) {
-  const indexedTable = resolveIndexedBlock(state.documentIndex, tableBlockId);
-
-  return indexedTable
-    ? resolveRegionOutsideRoot(state.documentIndex, indexedTable.rootIndex, direction)
-    : null;
 }
 
 function clamp(value: number, min: number, max: number) {

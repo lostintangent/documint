@@ -13,6 +13,28 @@ import { parseDocument } from "@/markdown";
 const noop = () => {};
 
 describe("AnnotationLeaf", () => {
+  test("keeps read-only review chrome commentable while disabling formatting", () => {
+    const store = createStore(parseDocument("alpha\n"));
+    const html = renderToStaticMarkup(
+      <DocumintStoreProvider store={store}>
+        <AnnotationLeaf
+          canMutateComments={true}
+          formatting={{ marks: [], supported: true }}
+          link={null}
+          mode="create"
+          onCreateThread={noop}
+          readOnly={true}
+        />
+      </DocumintStoreProvider>,
+    );
+
+    expect(isButtonDisabled(html, "Add comment")).toBe(false);
+    expect(isButtonDisabled(html, "Clipboard")).toBe(false);
+    expect(isButtonDisabled(html, "Bold")).toBe(true);
+    expect(isButtonDisabled(html, "Italic")).toBe(true);
+    expect(isButtonDisabled(html, "More formatting")).toBe(true);
+  });
+
   test("pulses comment presence for unresolved threads", () => {
     const html = renderCommentPresence(false);
 
@@ -36,7 +58,7 @@ function renderCommentPresence(resolved: boolean) {
   return renderToStaticMarkup(
     <DocumintStoreProvider store={store}>
       <AnnotationLeaf
-        canEdit={false}
+        canMutateComments={false}
         link={null}
         mode="thread"
         onDeleteComment={noop}
@@ -45,10 +67,21 @@ function renderCommentPresence(resolved: boolean) {
         onReply={noop}
         onToggleResolved={noop}
         presence={createPresence(thread)}
+        readOnly={true}
         thread={thread}
       />
     </DocumintStoreProvider>,
   );
+}
+
+function isButtonDisabled(html: string, label: string) {
+  const button = html.match(new RegExp(`<button(?=[^>]*aria-label="${label}")[^>]*>`))?.[0];
+
+  if (!button) {
+    throw new Error(`Expected button labelled "${label}"`);
+  }
+
+  return button.includes("disabled=");
 }
 
 function createThread(resolved: boolean): CommentThread {

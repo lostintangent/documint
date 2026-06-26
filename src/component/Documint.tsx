@@ -151,6 +151,7 @@ export type DocumintProps = {
   presence?: DocumentPresence[];
   protocols?: ResourceProtocolRecord;
   resources?: ActiveResourceSet;
+  readOnly?: boolean;
   showDiffs?: boolean;
   storage?: DocumintStorage;
   users?: DocumentUser[];
@@ -246,6 +247,7 @@ function DocumintHost({
   onResourcesRequested,
   onUserMentioned,
   presence,
+  readOnly: readOnlyProp = false,
   resources,
   showDiffs = true,
   storage,
@@ -266,6 +268,10 @@ function DocumintHost({
   const editorState = useSprig(editorStateSprig);
 
   const { theme: preferredTheme, themeStyles } = useTheme(theme);
+  const hasContentChangeHandler = Boolean(onContentChanged);
+  const readOnly = readOnlyProp || !hasContentChangeHandler;
+  const canMutateComments = hasContentChangeHandler;
+  const showReviewChrome = hasContentChangeHandler || readOnlyProp;
 
   const documentStorage = useMemo(() => new DocumentStorage(storage, window), [storage]);
   const resourceRegistry = useResources({
@@ -274,6 +280,7 @@ function DocumintHost({
     resources,
   });
   const { hasLoadingImages, imageHandle, images, persistImage } = useImages(
+    readOnly,
     documentStorage,
     resourceRegistry,
   );
@@ -321,7 +328,6 @@ function DocumintHost({
   const commentRanges = useSprig(commentRangesSprig);
   const normalizedSel = useSprig(normalizedSelectionSprig);
 
-  const isEditable = Boolean(onContentChanged);
   // Completion sources are pure derivations of the host-provided `users`
   // prop — no reactive editor input — so they live as a hook-local memo
   // rather than a sprig. Reference stability relies on `users` itself
@@ -331,8 +337,8 @@ function DocumintHost({
     return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
   }, [users]);
   const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
-    return isEditable ? completionSources : undefined;
-  }, [completionSources, isEditable]);
+    return readOnly ? undefined : completionSources;
+  }, [completionSources, readOnly]);
   const {
     emitContentChanged,
     emitUserMentioned,
@@ -350,7 +356,7 @@ function DocumintHost({
   });
   const documentCompletions = useDocumentCompletions({
     completionSources: documentCompletionSources,
-    enabled: isEditable,
+    enabled: !readOnly,
     onMentionAccepted: emitUserMentioned,
   });
   const { commentPresence, resolvedPresence } = usePresence({ presence, users });
@@ -616,8 +622,8 @@ function DocumintHost({
   const cursor = useCursor({
     activeAt: idle.activeAt,
     getScrollTop,
-    isEditable,
     onVisibilityChange: scheduleOverlayPaint,
+    readOnly,
     scrollTo,
     viewportWidth,
     viewportHeight,
@@ -632,6 +638,7 @@ function DocumintHost({
     onBeforeInput: documentCompletions.handleBeforeInput,
     onKeyDown: (event) => search.handleKeyDown(event) || documentCompletions.handleKeyDown(event),
     onImagePaste: persistImage,
+    readOnly,
   });
 
   // Return focus to the editor's input bridge when search closes, so the
@@ -654,9 +661,9 @@ function DocumintHost({
     autoScrollDuringDrag,
     canvasRef: contentCanvasRef,
     focusInput: input.focus,
-    isEditable,
     onActivity: idle.markActive,
     onResourceOpened,
+    readOnly,
     resolvePoint,
     storage: documentStorage,
   });
@@ -701,9 +708,9 @@ function DocumintHost({
   const selection = useSelection({
     autoScrollDuringDrag,
     focusInput: input.focus,
-    isEditable,
     onActivity: idle.markActive,
     resolvePoint,
+    showLeaf: showReviewChrome || selectionActions.length > 0,
   });
 
   /* Render loop */
@@ -890,7 +897,7 @@ function DocumintHost({
       case "link":
         return (
           <LinkLeaf
-            canEdit={isEditable}
+            canEdit={!readOnly}
             onDelete={() => {
               removeLinkCommand(activeDocumentLeaf);
             }}
@@ -915,12 +922,13 @@ function DocumintHost({
 
         return (
           <AnnotationLeaf
-            canEdit={isEditable}
+            canMutateComments={canMutateComments}
             formatting={activeDocumentLeaf.formatting}
             link={null}
             markdownOptions={markdownOptions}
             mode="create"
             completionSources={completionSources}
+            readOnly={readOnly}
             onCreateThread={(body) => {
               const currentState = readCurrentState();
               const threadIndex = getDocument(currentState).comments.length;
@@ -941,10 +949,11 @@ function DocumintHost({
         return (
           <AnnotationLeaf
             animateInitialComment={activeDocumentLeaf.animateInitialComment}
-            canEdit={isEditable}
+            canMutateComments={canMutateComments}
             link={activeDocumentLeaf.link}
             mode="thread"
             completionSources={completionSources}
+            readOnly={readOnly}
             onDeleteComment={(commentIndex) => {
               const { threadIndex } = activeDocumentLeaf;
               const previousState = readCurrentState();
@@ -1028,6 +1037,7 @@ function DocumintHost({
             ref={inputRef}
             autoCapitalize="sentences"
             className="documint-input"
+            readOnly={readOnly}
             spellCheck={false}
             tabIndex={-1}
             // Disable visual wrapping so the prefix context (up to ~1KB of

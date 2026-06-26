@@ -1,3 +1,7 @@
+## 🗓️ v0.0.33 (06-26-26)
+
+- Added a `readOnly` prop to the `Documint` component to allow hosts to put the editor in a comment-only mode
+
 ## 🗓️ v0.0.32 (06-25-26)
 
 - Added a `showDiffs` prop to the `Documint` component to allow hosts to disable diff highlights

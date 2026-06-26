@@ -14,6 +14,8 @@ export {
   setSelectionAtPoint,
   updateSelectionFromDrag,
   type EditorHoverTarget,
+  type EditorNavigationMode,
+  type EditorNavigationOptions,
   type EditorSearchMatch,
 } from "./navigation";
 

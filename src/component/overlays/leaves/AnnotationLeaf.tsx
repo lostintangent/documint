@@ -51,9 +51,10 @@ type AnnotationLink = {
 };
 
 type AnnotationLeafBaseProps = {
-  canEdit: boolean;
+  canMutateComments: boolean;
   completionSources?: CompletionSource[];
   link: AnnotationLink | null;
+  readOnly: boolean;
 };
 
 type AnnotationCreateLeafProps = AnnotationLeafBaseProps & {
@@ -101,8 +102,9 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const createMode = props.mode === "create";
   const createProps: AnnotationCreateLeafProps | null = props.mode === "create" ? props : null;
   const threadProps: AnnotationThreadLeafProps | null = props.mode === "thread" ? props : null;
-  const canEdit = props.canEdit;
+  const canMutateComments = props.canMutateComments;
   const link = props.link;
+  const readOnly = props.readOnly;
   const thread = threadProps?.thread ?? null;
   const threadId = thread?.id ?? null;
   const comments = thread?.comments ?? [];
@@ -126,10 +128,9 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const completionSources = props.completionSources;
   const threadUpdatedAt = thread ? getCommentThreadUpdatedAt(thread) : null;
   const threadAge = threadUpdatedAt ? formatRelativeTime(threadUpdatedAt) : "";
-  const canMutateThread = canEdit;
-  const canSaveEditedComment = canMutateThread && editDraft.trim().length > 0;
-  const canReply = canMutateThread && replyDraft.trim().length > 0;
-  const canCreate = canEdit && createDraft.trim().length > 0;
+  const canSaveEditedComment = canMutateComments && editDraft.trim().length > 0;
+  const canReply = canMutateComments && replyDraft.trim().length > 0;
+  const canCreate = canMutateComments && createDraft.trim().length > 0;
   const showCreateChrome = createMode || isTransitioningFromCreate;
   const showComposer = !createMode || isExpanded;
   const showThreadChrome = !createMode && Boolean(thread);
@@ -153,7 +154,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
     <LeafToolbar.Button
       active={activeFormattingMarks.includes(button.mark)}
-      disabled={!formattingSupported}
+      disabled={readOnly || !formattingSupported}
       icon={button.icon}
       key={button.mark}
       label={button.label}
@@ -195,7 +196,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
         break;
     }
   };
-  const composerPlaceholder = canEdit
+  const composerPlaceholder = canMutateComments
     ? createMode
       ? "Add a comment"
       : "Reply to this comment"
@@ -253,7 +254,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   }, [animateInitialComment, threadProps]);
 
   useEffect(() => {
-    if (!createMode || !isExpanded || !canEdit) {
+    if (!createMode || !isExpanded || !canMutateComments) {
       return;
     }
 
@@ -264,7 +265,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [canEdit, createMode, isExpanded]);
+  }, [canMutateComments, createMode, isExpanded]);
 
   useLayoutEffect(() => {
     if (!threadId || comments.length === 0) {
@@ -296,7 +297,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   };
 
   const beginEditingComment = (commentIndex: number, body: string) => {
-    if (!showThreadChrome || !canMutateThread) {
+    if (!showThreadChrome || !canMutateComments) {
       return;
     }
 
@@ -343,8 +344,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const content = shouldRenderBody ? (
     <AnnotationLeafBody
       canCreate={canCreate}
-      canEdit={canEdit}
-      canMutateThread={canMutateThread}
+      canMutateComments={canMutateComments}
       canReply={canReply}
       canSaveEditedComment={canSaveEditedComment}
       comments={comments}
@@ -385,25 +385,38 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
         {showCreateChrome ? (
           <div className="comment-leaf-create-toolbar">
             <LeafToolbar>
-              <LeafToolbar.Button
-                icon={MessageSquarePlus}
-                label="Add comment"
-                onClick={() => setIsExpanded(true)}
-              />
+              {canMutateComments ? (
+                <LeafToolbar.Button
+                  icon={MessageSquarePlus}
+                  label="Add comment"
+                  onClick={() => setIsExpanded(true)}
+                />
+              ) : null}
               <LeafToolbar.Menu
                 icon={isClipboardCopied ? Check : Clipboard}
                 label="Clipboard"
                 onSelect={selectClipboardAction}
               >
                 <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
-                <LeafToolbar.MenuItem icon={Scissors} text="Cut" value="cut" />
+                <LeafToolbar.MenuItem
+                  disabled={readOnly}
+                  icon={Scissors}
+                  text="Cut"
+                  value="cut"
+                />
                 <LeafToolbar.MenuDivider />
-                <LeafToolbar.MenuItem icon={ClipboardPaste} text="Paste" value="paste" />
+                <LeafToolbar.MenuItem
+                  disabled={readOnly}
+                  icon={ClipboardPaste}
+                  text="Paste"
+                  value="paste"
+                />
               </LeafToolbar.Menu>
               <LeafToolbar.Divider />
               {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
               <LeafToolbar.Menu
                 active={hasActiveOverflowFormattingMark}
+                disabled={readOnly || !formattingSupported}
                 icon={Type}
                 label="More formatting"
                 onSelect={selectOverflowFormattingMark}
@@ -411,7 +424,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
                 {overflowFormattingMarkButtons.map((button) => (
                   <LeafToolbar.MenuItem
                     active={activeFormattingMarks.includes(button.mark)}
-                    disabled={!formattingSupported}
+                    disabled={readOnly || !formattingSupported}
                     icon={button.icon}
                     key={button.mark}
                     text={button.label}
@@ -447,8 +460,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
 
 function AnnotationLeafBody({
   canCreate,
-  canEdit,
-  canMutateThread,
+  canMutateComments,
   canReply,
   canSaveEditedComment,
   comments,
@@ -482,8 +494,7 @@ function AnnotationLeafBody({
   composerValue,
 }: {
   canCreate: boolean;
-  canEdit: boolean;
-  canMutateThread: boolean;
+  canMutateComments: boolean;
   canReply: boolean;
   canSaveEditedComment: boolean;
   comments: CommentThread["comments"];
@@ -528,14 +539,14 @@ function AnnotationLeafBody({
           <span className="comment-leaf-age">{threadAge}</span>
           <div className="comment-leaf-actions">
             <LeafButton
-              disabled={!canEdit}
+              disabled={!canMutateComments}
               icon={isResolved ? RotateCcw : Check}
               onClick={onToggleResolved}
               title={isResolved ? "Reopen comment" : "Resolve comment"}
             />
             <LeafButton
               danger
-              disabled={!canEdit}
+              disabled={!canMutateComments}
               icon={Trash2}
               onClick={onDeleteThread}
               title="Delete comment thread"
@@ -585,10 +596,10 @@ function AnnotationLeafBody({
               {!isEditing ? (
                 <div className="comment-message-meta">
                   <span>{formatRelativeTime(comment.updatedAt)}</span>
-                  {canMutateThread ? (
+                  {canMutateComments ? (
                     <div className="comment-leaf-actions">
                       <LeafButton
-                        disabled={!canMutateThread}
+                        disabled={!canMutateComments}
                         icon={Pencil}
                         onClick={() => {
                           onBeginEditingComment(actualIndex, comment.body);
@@ -597,7 +608,7 @@ function AnnotationLeafBody({
                       />
                       <LeafButton
                         danger
-                        disabled={!canMutateThread}
+                        disabled={!canMutateComments}
                         icon={Trash2}
                         onClick={() => onDeleteComment(actualIndex)}
                         title="Delete comment"
@@ -616,7 +627,7 @@ function AnnotationLeafBody({
                   }}
                   completionSources={completionSources}
                   onChange={onChangeEditDraft}
-                  readOnly={!canEdit}
+                  readOnly={!canMutateComments}
                   rows={3}
                   value={editDraft}
                 />
@@ -654,7 +665,7 @@ function AnnotationLeafBody({
           completionSources={completionSources}
           onChange={mode === "create" ? onChangeCreateDraft : onChangeReplyDraft}
           placeholder={composerPlaceholder}
-          readOnly={!canEdit}
+          readOnly={!canMutateComments}
           ref={composerRef}
           rows={3}
           value={composerValue}

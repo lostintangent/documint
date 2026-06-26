@@ -50,8 +50,10 @@ test("moves right to the next container when the caret is at the end", () => {
 test("extends the selection to the left when shift-arrow-left is used repeatedly", () => {
   const state = setup("alpha");
   const region = getRegion(state, "alpha");
-  const once = moveCaretHorizontally(placeAt(state, region, 4), -1, true);
-  const twice = moveCaretHorizontally(once, -1, true);
+  const once = moveCaretHorizontally(placeAt(state, region, 4), -1, {
+    extendSelection: true,
+  });
+  const twice = moveCaretHorizontally(once, -1, { extendSelection: true });
 
   expect(once.selection.anchor.offset).toBe(4);
   expect(once.selection.focus.offset).toBe(3);
@@ -63,7 +65,9 @@ test("extends the selection across regions when shift-arrow-right crosses a boun
   const state = setup("alpha\n\nbeta");
   const first = getRegion(state, "alpha");
   const second = getRegion(state, "beta");
-  const nextState = moveCaretHorizontally(placeAt(state, first, "end"), 1, true);
+  const nextState = moveCaretHorizontally(placeAt(state, first, "end"), 1, {
+    extendSelection: true,
+  });
 
   expect(nextState.selection.anchor.regionId).toBe(first.id);
   expect(nextState.selection.anchor.offset).toBe(first.text.length);
@@ -109,7 +113,9 @@ test("extends horizontal selections by grapheme clusters", () => {
   const region = getRegion(state, "a ✈️ b");
   const emojiStart = region.text.indexOf("✈️");
   const emojiEnd = emojiStart + "✈️".length;
-  const next = moveCaretHorizontally(placeAt(state, region, emojiEnd), -1, true);
+  const next = moveCaretHorizontally(placeAt(state, region, emojiEnd), -1, {
+    extendSelection: true,
+  });
 
   expect(next.selection.anchor.offset).toBe(emojiEnd);
   expect(next.selection.focus.offset).toBe(emojiStart);
@@ -119,7 +125,9 @@ test("extends the selection to the start of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getRegion(state, "alpha beta gamma");
   const layout = layoutAt(state, 90);
-  const nextState = moveCaretToLineBoundary(placeAt(state, container, "end"), layout, "Home", true);
+  const nextState = moveCaretToLineBoundary(placeAt(state, container, "end"), layout, "Home", {
+    extendSelection: true,
+  });
 
   expect(nextState.selection.anchor.regionId).toBe(container.id);
   expect(nextState.selection.anchor.offset).toBe(container.text.length);
@@ -136,7 +144,7 @@ test("extends the selection to the end of the current line", () => {
     placeAt(state, container, "start"),
     layout,
     "End",
-    true,
+    { extendSelection: true },
   );
 
   expect(nextState.selection.anchor.regionId).toBe(container.id);
@@ -161,6 +169,47 @@ test("moves vertically between table cells in the same column", () => {
   expect(downState.selection.focus.regionId).toBe(delta.id);
 });
 
+test("moves horizontally by region in block navigation mode", () => {
+  const state = setup("alpha\n\nbeta\n\ngamma");
+  const alpha = getRegion(state, "alpha");
+  const beta = getRegion(state, "beta");
+  const gamma = getRegion(state, "gamma");
+
+  const rightState = moveCaretHorizontally(placeAt(state, alpha, 2), 1, { mode: "block" });
+  const leftState = moveCaretHorizontally(placeAt(state, gamma, 3), -1, { mode: "block" });
+
+  expect(rightState.selection.focus).toEqual({ offset: 0, regionId: beta.id });
+  expect(leftState.selection.focus).toEqual({ offset: 0, regionId: beta.id });
+});
+
+test("moves vertically by table cell in block navigation mode", () => {
+  const state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |");
+  const beta = getRegion(state, "beta");
+  const headerB = getRegion(state, "B");
+  const delta = getRegion(state, "delta");
+  const layout = layoutAt(state, 420);
+
+  const upState = moveCaretVertically(placeAt(state, beta, 2), layout, -1, { mode: "block" });
+  const downState = moveCaretVertically(placeAt(state, beta, 2), layout, 1, { mode: "block" });
+
+  expect(upState.selection.focus).toEqual({ offset: 0, regionId: headerB.id });
+  expect(downState.selection.focus).toEqual({ offset: 0, regionId: delta.id });
+});
+
+test("extends block navigation selections by whole regions", () => {
+  const state = setup("alpha\n\nbeta\n\ngamma");
+  const alpha = getRegion(state, "alpha");
+  const beta = getRegion(state, "beta");
+  const layout = layoutAt(state, 320);
+  const nextState = moveCaretVertically(placeAt(state, alpha, 2), layout, 1, {
+    extendSelection: true,
+    mode: "block",
+  });
+
+  expect(nextState.selection.anchor).toEqual({ offset: 0, regionId: alpha.id });
+  expect(nextState.selection.focus).toEqual({ offset: beta.text.length, regionId: beta.id });
+});
+
 test("moves out of a table when there is no row above or below", () => {
   const state = setup("before\n\n| A | B |\n| --- | --- |\n| alpha | beta |\n\nafter");
   const headerB = getRegion(state, "B");
@@ -180,7 +229,9 @@ test("extends the selection vertically across a region boundary while keeping th
   const first = getRegion(state, "alpha");
   const second = getRegion(state, "beta");
   const layout = layoutAt(state, 320);
-  const nextState = moveCaretVertically(placeAt(state, first, 2), layout, 1, true);
+  const nextState = moveCaretVertically(placeAt(state, first, 2), layout, 1, {
+    extendSelection: true,
+  });
 
   expect(nextState.selection.anchor.regionId).toBe(first.id);
   expect(nextState.selection.anchor.offset).toBe(2);

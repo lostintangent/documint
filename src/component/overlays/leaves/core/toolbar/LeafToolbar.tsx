@@ -55,6 +55,7 @@ type LeafToolbarMenuProps = {
   active?: boolean;
   children: ReactNode;
   className?: string;
+  disabled?: boolean;
   icon: LucideIcon;
   label: string;
   onSelect: (value: string) => void;
@@ -152,6 +153,7 @@ function LeafToolbarMenuView({
   active = false,
   children,
   className,
+  disabled = false,
   icon,
   label,
   onSelect,
@@ -199,6 +201,12 @@ function LeafToolbarMenuView({
   // boundaries so portaled overlays don't fool the "is this in the menu?"
   // check; `capture: true` runs before any descendant handler.
   useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
     if (!isOpen) return;
 
     const handlePointerDown = (event: globalThis.PointerEvent) => {
@@ -219,6 +227,7 @@ function LeafToolbarMenuView({
     <div className="relative inline-flex items-center" ref={menuShellRef}>
       <LeafToolbarMenuButton
         className={className}
+        disabled={disabled}
         icon={icon}
         isActive={active}
         isOpen={isOpen}
@@ -246,6 +255,7 @@ function LeafToolbarMenuView({
 
 function LeafToolbarMenuButton({
   className,
+  disabled,
   icon: Icon,
   isActive,
   isOpen,
@@ -253,6 +263,7 @@ function LeafToolbarMenuButton({
   onClick,
 }: {
   className?: string;
+  disabled: boolean;
   icon: LucideIcon;
   isActive: boolean;
   isOpen: boolean;
@@ -268,13 +279,14 @@ function LeafToolbarMenuButton({
       // represents is currently active (e.g. a formatting mark applied).
       active={isOpen || isActive}
       className={clx("gap-1", className)}
+      disabled={disabled}
       icon={Icon}
       iconSize={15}
       onClick={suppressToolbarEvent}
       onPointerDown={(event) => {
         suppressToolbarEvent(event);
 
-        if (isPrimaryPointer(event)) {
+        if (!disabled && isPrimaryPointer(event)) {
           onClick();
         }
       }}

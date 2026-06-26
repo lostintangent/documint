@@ -44,9 +44,9 @@ type UsePointerOptions = {
   // Host callbacks the hook invokes.
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
   focusInput: FocusInput;
-  isEditable: boolean;
   onActivity: () => void;
   onResourceOpened?: (resource: DocumentResourceReference) => void;
+  readOnly: boolean;
   storage: DocumentStorage;
 };
 
@@ -131,9 +131,9 @@ export function usePointer({
   autoScrollDuringDrag,
   canvasRef,
   focusInput,
-  isEditable,
   onActivity,
   onResourceOpened,
+  readOnly,
   resolvePoint,
   storage,
 }: UsePointerOptions): PointerController {
@@ -226,6 +226,11 @@ export function usePointer({
     }
 
     if (target.kind === "task-toggle") {
+      if (readOnly) {
+        clearLeafIfPointerIsOutsideLeaf();
+        return;
+      }
+
       cancelHide();
       setHoverTarget((previous) =>
         previous?.kind === "task-toggle" && previous.listItemId === target.listItemId
@@ -339,7 +344,7 @@ export function usePointer({
       activeTouchPointerIdsRef.current.add(event.pointerId);
       if (activeTouchPointerIdsRef.current.size > 1) {
         clearTouchSwipe();
-      } else if (isEditable && event.isPrimary) {
+      } else if (!readOnly && event.isPrimary) {
         touchSwipeRef.current = {
           pointerId: event.pointerId,
           startX: event.clientX,
@@ -453,7 +458,7 @@ export function usePointer({
             )
           : null;
 
-      if (direction) {
+      if (direction && !readOnly) {
         event.preventDefault();
         suppressTouchClick(event);
         if (direction === "right") {
@@ -498,6 +503,10 @@ export function usePointer({
     const target = resolveHoverTarget(event);
 
     if (target?.kind === "task-toggle") {
+      if (readOnly) {
+        return;
+      }
+
       const transition = toggleTaskItem(target.listItemId);
       if (transition) {
         event.preventDefault();
