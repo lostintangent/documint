@@ -1,7 +1,7 @@
-// Document change detection is bounded evidence, not a complete edit script.
+// Document change detection is bounded anchor matching, not a complete edit script.
 // Algorithm:
 // - Trim unchanged edges with semantic content hashes.
-// - Skip empty, oversized, or low-evidence broad root windows instead of guessing.
+// - Skip empty, oversized, or low-context broad root windows instead of guessing.
 // - Walk remaining block and table arrays left-to-right with small lookahead.
 // - Recurse into nested blocks and table cells, emitting anchored block/cell targets.
 // - Track work and target budgets; if either is exhausted, return no changes.
@@ -22,7 +22,7 @@ import {
   resolveTableCellContentHash,
   resolveTableRowContentHash,
 } from "../query/content-hash";
-import { createDocumentChangeTarget, documentChangeTargetEvidenceKey } from "./targets";
+import { createDocumentChangeTarget, documentChangeTargetAnchorKey } from "./targets";
 import type { DocumentChange } from "./types";
 
 type DiffContext = {
@@ -912,7 +912,7 @@ function pushTarget(target: DocumentChange, context: DiffContext) {
     return;
   }
 
-  const key = `${target.changeKind}:${documentChangeTargetEvidenceKey(target.target)}`;
+  const key = `${target.changeKind}:${documentChangeTargetAnchorKey(target.target)}`;
   if (!context.targetKeys.has(key)) {
     context.targetKeys.add(key);
     context.targets.push(target);

@@ -27,7 +27,7 @@ describe("resolveDocumentCompletionContext", () => {
     const active = resolveDocumentCompletionContext(placeAt(state, region, "end"), [mentionSource]);
 
     expect(active).toEqual({
-      regionId: region.id,
+      regionPath: region.path,
       trigger: "@",
       query: "Ja",
       triggerStart: 6,
@@ -54,7 +54,7 @@ describe("resolveDocumentCompletionContext", () => {
     ]);
 
     expect(active).toEqual({
-      regionId: region.id,
+      regionPath: region.path,
       trigger: ":",
       query: "sp",
       triggerStart: 7,
@@ -76,7 +76,7 @@ describe("resolveDocumentCompletionContext", () => {
 describe("equalDocumentCompletions", () => {
   test("compares completion item insertion metadata", () => {
     const base = {
-      regionId: "region",
+      regionPath: "region",
       trigger: ":",
       query: "sm",
       triggerStart: 0,
@@ -99,7 +99,7 @@ describe("resolveDocumentCompletionApplication", () => {
       resolveDocumentCompletionApplication(
         { kind: "mention", label: "Jane", id: "u-jane" },
         {
-          regionId: "region",
+          regionPath: "region",
           trigger: "@",
           query: "Ja",
           triggerStart: 6,
@@ -112,7 +112,7 @@ describe("resolveDocumentCompletionApplication", () => {
       name: "Jane",
       target: {
         endOffset: 9,
-        regionId: "region",
+        regionPath: "region",
         startOffset: 6,
       },
       trailingText: " ",
@@ -125,7 +125,7 @@ describe("resolveDocumentCompletionApplication", () => {
       resolveDocumentCompletionApplication(
         { label: "Jane", id: "u-jane" },
         {
-          regionId: "region",
+          regionPath: "region",
           trigger: "@",
           query: "Ja",
           triggerStart: 6,
@@ -141,7 +141,7 @@ describe("resolveDocumentCompletionApplication", () => {
       resolveDocumentCompletionApplication(
         { label: "fire", icon: "🔥", insertText: "🔥" },
         {
-          regionId: "region",
+          regionPath: "region",
           trigger: ":",
           query: "fi",
           triggerStart: 6,

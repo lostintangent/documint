@@ -9,7 +9,7 @@ describe("Link commands", () => {
     const linkStart = region.text.indexOf("docs");
     const next = updateLink(
       state,
-      { regionId: region.id, startOffset: linkStart, endOffset: linkStart + 4 },
+      { regionPath: region.path, startOffset: linkStart, endOffset: linkStart + 4 },
       "https://new.example.com",
     );
 
@@ -22,7 +22,7 @@ describe("Link commands", () => {
     const region = getRegion(state, "See docs here.");
     const linkStart = region.text.indexOf("docs");
     const next = removeLink(state, {
-      regionId: region.id,
+      regionPath: region.path,
       startOffset: linkStart,
       endOffset: linkStart + 4,
     });
@@ -40,7 +40,7 @@ describe("Link commands", () => {
 
     const next = updateLink(
       selectedElsewhere,
-      { regionId: linkRegion.id, startOffset: linkStart, endOffset: linkStart + 4 },
+      { regionPath: linkRegion.path, startOffset: linkStart, endOffset: linkStart + 4 },
       "https://new.example.com",
     );
 

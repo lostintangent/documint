@@ -77,7 +77,7 @@ function placeCaret(store: DocumintStore, regionIndex: number, offset: number | 
 
   const resolvedOffset = offset === "end" ? region.text.length : offset;
   const nextState = setSelection(state, {
-    regionId: region.id,
+    regionPath: region.path,
     offset: resolvedOffset,
   });
 
@@ -93,7 +93,7 @@ function regionTexts(state: EditorState) {
 }
 
 function selectionOffset(state: EditorState) {
-  if (!state.selection || state.selection.anchor.regionId !== state.selection.focus.regionId) {
+  if (!state.selection || state.selection.anchor.regionPath !== state.selection.focus.regionPath) {
     throw new Error("Expected a collapsed single-region selection.");
   }
 

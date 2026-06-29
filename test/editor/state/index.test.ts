@@ -2,11 +2,18 @@ import { describe, expect, test } from "bun:test";
 import {
   commitDocument,
   createDocumentIndex,
+  findUniqueEditableRegion,
+  hasSameEditableRegionShape,
+  hasSameTableCellPosition,
   indexedInlineText,
   normalizeSelection,
   regionInlines,
-  resolveRegionDocumentNode,
 } from "@/editor/state";
+import {
+  plainTextOffsetToRegionOffset,
+  regionOffsetToPlainTextOffset,
+} from "@/editor/state/index/inlines";
+import { createDocument, createMention, createParagraphBlock, createText } from "@/document";
 import { spliceText } from "@/editor/state/reducer/text";
 import { parseDocument, serializeDocument } from "@/markdown";
 
@@ -91,24 +98,68 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     expect(underlineRun?.node.type === "text" && underlineRun.node.marks).toEqual(["underline"]);
   });
 
-  test("resolves the document node represented by a region", () => {
+  test("converts offsets between runtime region text and semantic plain text", () => {
     const runtime = createDocumentIndex(
-      parseDocument(`Paragraph
+      createDocument([
+        createParagraphBlock([
+          createText("Hello "),
+          createMention({ name: "Jane Doe", userId: "user-123" }),
+          createText(" world"),
+        ]),
+      ]),
+    );
+    const region = runtime.regions[0];
+    if (!region) {
+      throw new Error("Expected mention region");
+    }
+
+    expect(region.text).not.toContain("@Jane Doe");
+    expect(regionOffsetToPlainTextOffset(region, "Hello ".length)).toBe("Hello ".length);
+    expect(regionOffsetToPlainTextOffset(region, "Hello ".length + 1)).toBe(
+      "Hello @Jane Doe".length,
+    );
+    expect(
+      plainTextOffsetToRegionOffset(region, "Hello ".length, "before"),
+    ).toBe("Hello ".length);
+    expect(
+      plainTextOffsetToRegionOffset(region, "Hello @Jane Doe".length, "after"),
+    ).toBe("Hello ".length + 1);
+    expect(
+      plainTextOffsetToRegionOffset(region, "Hello @Jane".length, "before"),
+    ).toBe("Hello ".length);
+    expect(
+      plainTextOffsetToRegionOffset(region, "Hello @Jane".length, "after"),
+    ).toBe("Hello ".length + 1);
+  });
+
+  test("exposes neutral editable region projection queries", () => {
+    const runtime = createDocumentIndex(
+      parseDocument(`alpha
+
+beta
 
 | A | B |
 | - | - |
 | one | two |
 `),
     );
-    const paragraph = runtime.regions[0];
-    const tableCell = runtime.regions.find((region) => region.text === "two");
+    const alpha = runtime.regions[0];
+    const beta = runtime.regions[1];
+    const one = runtime.regions.find((region) => region.text === "one");
+    const two = runtime.regions.find((region) => region.text === "two");
 
-    if (!paragraph || !tableCell) {
+    if (!alpha || !beta || !one || !two) {
       throw new Error("Expected paragraph and table-cell regions");
     }
 
-    expect(resolveRegionDocumentNode(runtime, paragraph)).toBe(paragraph.block);
-    expect(resolveRegionDocumentNode(runtime, tableCell)?.plainText).toBe("two");
+    expect(alpha.path).not.toBe(beta.path);
+    expect(hasSameEditableRegionShape(alpha, beta)).toBe(true);
+    expect(hasSameTableCellPosition(one, two)).toBe(false);
+    expect(hasSameEditableRegionShape(one, two)).toBe(false);
+    expect(findUniqueEditableRegion(runtime, (region) => region.text === "beta")).toBe(beta);
+    expect(
+      findUniqueEditableRegion(runtime, (region) => region.block.type === "paragraph"),
+    ).toBeNull();
   });
 
   test("round-trips through editor model materialization without changing markdown", () => {
@@ -135,7 +186,7 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     expect(serializeDocument(commitDocument(runtime))).toBe("");
   });
 
-  test("stores positioned root ranges directly on the unified editor model", () => {
+  test("stores positioned block and region order on the unified editor model", () => {
     const runtime = createDocumentIndex(
       parseDocument(`# Heading
 
@@ -146,12 +197,9 @@ beta
     );
 
     expect(runtime.roots).toHaveLength(3);
-    expect(runtime.roots[0]?.start).toBe(0);
-    expect(runtime.roots[0]?.regions[0]?.start).toBe(0);
-    expect(runtime.roots[1]?.regions[0]?.start).toBe(runtime.roots[1]?.start);
-    expect(runtime.roots[1]?.start).toBe(runtime.regions[1]?.start);
-    expect(runtime.roots[2]?.start).toBe(runtime.regions[1]!.end + 1);
-    expect(runtime.roots[2]?.regions[0]?.start).toBe(runtime.roots[2]?.start);
+    expect(runtime.roots.map((root) => root.blocks[0]?.blockArrayIndex)).toEqual([0, 1, 2]);
+    expect(runtime.roots.map((root) => root.blocks[0]?.regionRangeStart)).toEqual([0, 1, 2]);
+    expect(runtime.regions.map((region) => region.regionArrayIndex)).toEqual([0, 1, 2]);
   });
 
   test("normalizes canvas selections and replaces plain text within one container", () => {
@@ -169,11 +217,11 @@ Paragraph body.
 
     const normalized = normalizeSelection(runtime, {
       anchor: {
-        regionId: paragraphContainer.id,
+        regionPath: paragraphContainer.path,
         offset: 12,
       },
       focus: {
-        regionId: paragraphContainer.id,
+        regionPath: paragraphContainer.path,
         offset: 10,
       },
     });
@@ -181,11 +229,11 @@ Paragraph body.
       runtime,
       {
         anchor: {
-          regionId: paragraphContainer.id,
+          regionPath: paragraphContainer.path,
           offset: 10,
         },
         focus: {
-          regionId: paragraphContainer.id,
+          regionPath: paragraphContainer.path,
           offset: 14,
         },
       },
@@ -214,11 +262,11 @@ Paragraph body.
       runtime,
       {
         anchor: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: "Paragraph with ".length,
         },
         focus: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: "Paragraph with link".length,
         },
       },
@@ -228,11 +276,11 @@ Paragraph body.
       replacedLink.documentIndex,
       {
         anchor: {
-          regionId: replacedLink.documentIndex.regions[0]!.id,
+          regionPath: replacedLink.documentIndex.regions[0]!.path,
           offset: "Paragraph with ref, ".length,
         },
         focus: {
-          regionId: replacedLink.documentIndex.regions[0]!.id,
+          regionPath: replacedLink.documentIndex.regions[0]!.path,
           offset: "Paragraph with ref, code".length,
         },
       },
@@ -263,11 +311,11 @@ beta
       runtime,
       {
         anchor: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: 0,
         },
         focus: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: paragraph.text.length,
         },
       },
@@ -282,7 +330,7 @@ beta
     expect(replaced.documentIndex.roots[2]).toBe(runtime.roots[2]);
   });
 
-  test("preserves sibling root content when a preceding root shifts in document space", () => {
+  test("preserves sibling root content when a preceding root changes text length", () => {
     const runtime = createDocumentIndex(
       parseDocument(`# Heading
 
@@ -301,20 +349,20 @@ beta
       runtime,
       {
         anchor: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: 0,
         },
         focus: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: paragraph.text.length,
         },
       },
       "alphabet",
     );
 
-    expect(replaced.documentIndex.roots[2]).not.toBe(runtime.roots[2]);
-    expect(replaced.documentIndex.roots[2]?.regions[0]?.id).toBe(runtime.roots[2]?.regions[0]?.id);
-    expect(replaced.documentIndex.regions[2]?.start).toBe(runtime.regions[2]!.start + 3);
+    expect(replaced.documentIndex.roots[2]).toBe(runtime.roots[2]);
+    expect(replaced.documentIndex.roots[2]?.regions[0]?.path).toBe(runtime.roots[2]?.regions[0]?.path);
+    expect(replaced.documentIndex.regions[2]).toBe(runtime.regions[2]);
   });
 
   test("replaces a selected image atomically instead of editing its alt text", () => {
@@ -337,11 +385,11 @@ beta
       runtime,
       {
         anchor: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: imageRun.start,
         },
         focus: {
-          regionId: paragraph.id,
+          regionPath: paragraph.path,
           offset: imageRun.end,
         },
       },

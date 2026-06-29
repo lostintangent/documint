@@ -13,13 +13,12 @@ import {
   type TableCell,
 } from "@/document";
 import {
-  findAncestorIndexedBlock,
+  findAncestorIndexedBlockByPath,
   resolveIndexedBlock,
   resolveParentIndexedBlock,
   resolveRegion,
   resolveRootBlock,
   resolveSiblingRootBlock,
-  resolveTableCellPosition,
 } from "../index/query";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 import {
@@ -53,7 +52,7 @@ export type TextRangeContext = {
 
 export type TextRangeTarget = {
   endOffset: number;
-  regionId: string;
+  regionPath: string;
   startOffset: number;
 };
 
@@ -64,12 +63,14 @@ export type InlineContext = TextRangeContext & {
 export type InlineContainer =
   | {
       block: HeadingBlock | ParagraphBlock;
+      blockPath: string;
       children: Inline[];
       kind: "inlineBlock";
       regionPath: string;
     }
   | {
       block: TableBlock;
+      blockPath: string;
       cell: TableCell;
       children: Inline[];
       kind: "tableCell";
@@ -152,7 +153,7 @@ export function resolveTextRangeContext(
 ): TextRangeContext | null {
   return resolveTargetRangeContext(state, {
     endOffset,
-    regionId: state.selection.focus.regionId,
+    regionPath: state.selection.focus.regionPath,
     startOffset,
   });
 }
@@ -163,7 +164,7 @@ export function resolveTargetRangeContext(
 ): TextRangeContext | null {
   return resolveRegionRange(
     state.documentIndex,
-    target.regionId,
+    target.regionPath,
     target.startOffset,
     target.endOffset,
     { allowCollapsed: true },
@@ -181,7 +182,7 @@ export function resolveInlineTargetContext(
 export function resolveInlineContext(state: EditorState): InlineContext | null {
   const selection = normalizeSelection(state);
 
-  if (selection.start.regionId !== selection.end.regionId) {
+  if (selection.start.regionPath !== selection.end.regionPath) {
     return null;
   }
 
@@ -194,16 +195,16 @@ function resolveInlineContextFromTextRange(
   state: EditorState,
   range: TextRangeContext,
 ): InlineContext | null {
-  const inlineContainer = resolveInlineContainer(state.documentIndex, range.region.id);
+  const inlineContainer = resolveInlineContainer(state.documentIndex, range.region.path);
 
   return inlineContainer ? { ...range, inlineContainer } : null;
 }
 
 function resolveInlineContainer(
   documentIndex: DocumentIndex,
-  regionId: string,
+  regionPath: string,
 ): InlineContainer | null {
-  const region = resolveRegion(documentIndex, regionId);
+  const region = resolveRegion(documentIndex, regionPath);
 
   return region ? resolveInlineContainerFromRegion(region.block, region) : null;
 }
@@ -218,13 +219,14 @@ function resolveInlineContainerFromRegion(
   if (block.type === "heading" || block.type === "paragraph") {
     return {
       block,
+      blockPath: region.blockPath,
       children: block.children,
       kind: "inlineBlock",
       regionPath: region.path,
     };
   }
 
-  const tableCellPosition = resolveTableCellPosition(region);
+  const tableCellPosition = region.tableCellPosition;
 
   if (block.type !== "table" || !tableCellPosition) {
     return null;
@@ -236,6 +238,7 @@ function resolveInlineContainerFromRegion(
   return cell
     ? {
         block,
+        blockPath: region.blockPath,
         cell,
         children: cell.children,
         kind: "tableCell",
@@ -252,14 +255,14 @@ function resolveBlockContextFromSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
 ): BlockContext | null {
-  const region = resolveRegion(documentIndex, selection.anchor.regionId);
+  const region = resolveRegion(documentIndex, selection.anchor.regionPath);
 
   if (!region) {
     return null;
   }
 
   if (region.block.type === "code") {
-    const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
+    const indexedBlock = resolveIndexedBlock(documentIndex, region.blockPath);
     const codeRegion = region as EditableRegion & { block: CodeBlock };
     return indexedBlock
       ? {
@@ -272,7 +275,7 @@ function resolveBlockContextFromSelection(
       : null;
   }
 
-  const tableCellContext = resolveTableCellContextFromRegion(documentIndex, region.id, selection);
+  const tableCellContext = resolveTableCellContextFromRegion(documentIndex, region.path, selection);
 
   if (tableCellContext) {
     return {
@@ -370,13 +373,13 @@ export function resolveRootTextBlockContextFromSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
 ): RootTextBlockContext | null {
-  const region = resolveRegion(documentIndex, selection.anchor.regionId);
+  const region = resolveRegion(documentIndex, selection.anchor.regionPath);
 
   if (!region) {
     return null;
   }
 
-  const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
+  const indexedBlock = resolveIndexedBlock(documentIndex, region.blockPath);
 
   if (!indexedBlock) {
     return null;
@@ -426,16 +429,16 @@ function resolveBlockquoteTextBlockContextFromSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
 ): BlockquoteTextBlockContext | null {
-  const region = resolveRegion(documentIndex, selection.anchor.regionId);
+  const region = resolveRegion(documentIndex, selection.anchor.regionPath);
 
   if (!region) {
     return null;
   }
 
-  const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
-  const indexedQuote = findAncestorIndexedBlock(
+  const indexedBlock = resolveIndexedBlock(documentIndex, region.blockPath);
+  const indexedQuote = findAncestorIndexedBlockByPath(
     documentIndex,
-    indexedBlock?.block.id ?? null,
+    indexedBlock?.path ?? null,
     "blockquote",
   );
 
@@ -443,7 +446,7 @@ function resolveBlockquoteTextBlockContextFromSelection(
     ? resolveParentIndexedBlock(documentIndex, indexedBlock)
     : null;
 
-  if (!indexedBlock || !indexedQuote || indexedParent?.block.id !== indexedQuote.block.id) {
+  if (!indexedBlock || !indexedQuote || indexedParent?.path !== indexedQuote.path) {
     return null;
   }
 
@@ -454,7 +457,7 @@ function resolveBlockquoteTextBlockContextFromSelection(
     return null;
   }
 
-  const childIndex = rootBlock.children.findIndex((child) => child.id === indexedBlock.block.id);
+  const childIndex = rootBlock.children.findIndex((child) => child === indexedBlock.block);
   const block = rootBlock.children[childIndex];
 
   if (!block || (block.type !== "heading" && block.type !== "paragraph")) {
@@ -475,6 +478,7 @@ export type ListParentContext = {
   item: ListItemBlock;
   itemIndex: number;
   list: ListBlock;
+  listPath: string;
 };
 
 export type ListItemContext = TextContextFacts & {
@@ -482,6 +486,7 @@ export type ListItemContext = TextContextFacts & {
   item: ListItemBlock;
   itemIndex: number;
   list: ListBlock;
+  listPath: string;
   parent: ListParentContext | null;
   rootIndex: number;
 };
@@ -494,21 +499,21 @@ export function resolveListItemContextFromSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
 ): ListItemContext | null {
-  const region = resolveRegion(documentIndex, selection.anchor.regionId);
+  const region = resolveRegion(documentIndex, selection.anchor.regionPath);
 
   if (!region) {
     return null;
   }
 
-  const indexedParagraph = resolveIndexedBlock(documentIndex, region.block.id);
-  const indexedItem = findAncestorIndexedBlock(
+  const indexedParagraph = resolveIndexedBlock(documentIndex, region.blockPath);
+  const indexedItem = findAncestorIndexedBlockByPath(
     documentIndex,
-    indexedParagraph?.block.id ?? null,
+    indexedParagraph?.path ?? null,
     "listItem",
   );
-  const indexedList = findAncestorIndexedBlock(
+  const indexedList = findAncestorIndexedBlockByPath(
     documentIndex,
-    indexedParagraph?.block.id ?? null,
+    indexedParagraph?.path ?? null,
     "list",
   );
 
@@ -522,7 +527,7 @@ export function resolveListItemContextFromSelection(
     return null;
   }
 
-  const itemIndex = list.items.findIndex((child) => child.id === indexedItem.block.id);
+  const itemIndex = list.items.findIndex((child) => child === indexedItem.block);
   const item = list.items[itemIndex];
 
   if (!item) {
@@ -537,11 +542,16 @@ export function resolveListItemContextFromSelection(
   const parentList = indexedParentList?.block.type === "list" ? indexedParentList.block : null;
   const parentItemIndex =
     parentList && parentItem
-      ? parentList.items.findIndex((child) => child.id === parentItem.id)
+      ? parentList.items.findIndex((child) => child === parentItem)
       : -1;
   const parent =
-    parentItem && parentList && parentItemIndex >= 0
-      ? { item: parentItem, itemIndex: parentItemIndex, list: parentList }
+    parentItem && parentList && indexedParentList && parentItemIndex >= 0
+      ? {
+          item: parentItem,
+          itemIndex: parentItemIndex,
+          list: parentList,
+          listPath: indexedParentList.path,
+        }
       : null;
 
   return {
@@ -550,6 +560,7 @@ export function resolveListItemContextFromSelection(
     item,
     itemIndex,
     list,
+    listPath: indexedList.path,
     parent,
     rootIndex: indexedList.rootIndex,
   };
@@ -564,34 +575,35 @@ export type TableCellContext = {
   rowIndex: number;
   selection: EditorSelection;
   table: TableBlock;
+  tablePath: string;
 };
 
 export function resolveTableCellContext(state: EditorState): TableCellContext | null {
   return resolveTableCellContextFromRegion(
     state.documentIndex,
-    state.selection.focus.regionId,
+    state.selection.focus.regionPath,
     state.selection,
   );
 }
 
 function resolveTableCellContextFromRegion(
   documentIndex: DocumentIndex,
-  regionId: string,
+  regionPath: string,
   selection: EditorSelection,
 ): TableCellContext | null {
-  const region = resolveRegion(documentIndex, regionId);
+  const region = resolveRegion(documentIndex, regionPath);
 
   if (!region) {
     return null;
   }
 
-  const tableCellPosition = resolveTableCellPosition(region);
-  const indexedTable = resolveIndexedBlock(documentIndex, region.block.id);
+  const tableCellPosition = region.tableCellPosition;
+  const indexedTable = resolveIndexedBlock(documentIndex, region.blockPath);
   const table =
     indexedTable?.block.type === "table"
       ? resolveRootBlock(documentIndex, indexedTable.rootIndex)
       : null;
-  const inlineContainer = resolveInlineContainer(documentIndex, region.id);
+  const inlineContainer = resolveInlineContainer(documentIndex, region.path);
 
   if (
     !tableCellPosition ||
@@ -613,6 +625,7 @@ function resolveTableCellContextFromRegion(
     rowIndex: tableCellPosition.rowIndex,
     selection,
     table,
+    tablePath: indexedTable.path,
   };
 }
 
@@ -623,7 +636,7 @@ function resolveTextContextFacts(
 ) {
   const normalized = normalizeSelection(documentIndex, selection);
   const offset =
-    normalized.start.regionId === region.id ? normalized.start.offset : selection.anchor.offset;
+    normalized.start.regionPath === region.path ? normalized.start.offset : selection.anchor.offset;
 
   return {
     atEnd: offset === region.text.length,

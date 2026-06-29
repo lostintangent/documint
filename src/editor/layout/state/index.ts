@@ -24,7 +24,7 @@ export type EditorViewport = {
 };
 
 export type EditorLayoutState = {
-  estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
+  estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
   layout: DocumentLayout;
   paintHeight: number;
   paintTop: number;
@@ -51,13 +51,13 @@ export function createEditorLayoutState(
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   let layout: DocumentLayout;
   let totalHeight: number;
-  let estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
+  let estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
 
   if (documentIndex.regions.length <= FULL_LAYOUT_REGION_THRESHOLD) {
     layout = measureLayoutSlice(documentIndex, resolvedOptions, cache, resolvedResources);
     totalHeight = layout.height;
-    estimateRegionBounds = (regionId) => {
-      const bounds = layout.regionBounds.get(regionId);
+    estimateRegionBounds = (regionPath) => {
+      const bounds = layout.regionBounds.get(regionPath);
 
       return bounds ? { bottom: bounds.bottom, top: bounds.top } : null;
     };

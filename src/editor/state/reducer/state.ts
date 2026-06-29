@@ -10,10 +10,10 @@
 // dispatch, document index swap, selection clamping, and history.
 
 import {
-  childBlockPath,
+  blockPathCoordinates,
+  blockPathFromCoordinates,
   createDocument,
   findBlockChildIndicesByReference,
-  rootBlockPath,
   spliceCommentThreads,
   spliceDocument,
   trimTrailingWhitespace,
@@ -24,8 +24,6 @@ import { getCommentState } from "../../anchors";
 import { recordEditorEffects, takeEditorEffects, type EditorEffect } from "../effects";
 import {
   resolveActiveBlockKey,
-  resolveBlockChildIndices,
-  resolveBlockPathForRegion,
   resolveDocumentBoundaryRegion,
   resolveIndexedBlock,
 } from "../index/query";
@@ -84,9 +82,8 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
   }
 
   // Block references in the action (selection targets, effects) are only
-  // meaningful against the raw payload, before normalization rebuilds every
-  // block object — so they're translated into positional form first, against
-  // the pre-edit index.
+  // meaningful against the action payload. Translate them into positional form
+  // first, against the pre-edit index, before the document is committed.
   const materialized = materializeBlockReferences(state.documentIndex, action);
 
   const nextState = reduceEditorStateAction(state, materialized);
@@ -113,11 +110,10 @@ function reduceEditorStateAction(
       return setSelection(state, action.selection);
 
     case "replace-block": {
-      const nextDocumentIndex = replaceEditorBlock(
-        state.documentIndex,
-        action.blockId,
-        () => action.block,
-      );
+      const indexedBlock = resolveIndexedBlock(state.documentIndex, action.blockPath);
+      const nextDocumentIndex = indexedBlock
+        ? replaceEditorBlock(state.documentIndex, indexedBlock.path, () => action.block)
+        : null;
       return nextDocumentIndex
         ? applyDocumentMutation(state, nextDocumentIndex, action.selection ?? null)
         : null;
@@ -172,11 +168,9 @@ function reduceEditorStateAction(
 
 // Actions may address "the block I just built" by reference into their own
 // payload (`target.block(block)` selection targets, block-referenced effects).
-// Those references are translated here, before the edit applies: normalization
-// rebuilds every block object, so identity does not survive into the committed
-// document. The translation produces positional coordinates, which stay valid
-// post-normalize because id assignment is strictly positional — it never
-// reorders, inserts, or drops children.
+// Those references are translated here before the edit applies. The translation
+// produces positional coordinates that stay valid after commit because document
+// construction preserves the payload's structural order.
 type MaterializedEditorStateAction = EditorStateAction & { effect?: EditorEffect };
 
 function materializeBlockReferences(
@@ -203,9 +197,8 @@ function materializeBlockReferences(
 
   if (blockSelection) {
     const located = locateBlockInPayload(payload, blockSelection.block);
-    materialized.selection = target.descendant(
-      located.rootIndex,
-      located.childIndices,
+    materialized.selection = target.blockPath(
+      blockPathForLocatedBlock(located),
       blockSelection.offset,
     );
   }
@@ -213,7 +206,7 @@ function materializeBlockReferences(
   if (blockEffect) {
     const located = locateBlockInPayload(payload, blockEffect.block);
     materialized.effect = {
-      blockPath: located.childIndices.reduce(childBlockPath, rootBlockPath(located.rootIndex)),
+      blockPath: blockPathForLocatedBlock(located),
       kind: "list-item-inserted",
     };
   }
@@ -246,14 +239,14 @@ function resolveBlockPayloadBase(
     return { baseChildIndices: [], baseRootIndex: action.rootIndex, roots: action.blocks };
   }
 
-  const indexedBlock = resolveIndexedBlock(documentIndex, action.blockId);
+  const indexedBlock = resolveIndexedBlock(documentIndex, action.blockPath);
 
   if (!indexedBlock) {
-    throw new Error(`Unknown block for block-reference target: ${action.blockId}`);
+    throw new Error(`Unknown block for block-reference target: ${action.blockPath}`);
   }
 
   return {
-    baseChildIndices: resolveBlockChildIndices(indexedBlock),
+    baseChildIndices: blockPathCoordinates(indexedBlock.path)?.childIndices ?? [],
     baseRootIndex: indexedBlock.rootIndex,
     roots: [action.block],
   };
@@ -273,6 +266,15 @@ function locateBlockInPayload(
     childIndices: [...payload.baseChildIndices, ...found.childIndices],
     rootIndex: payload.baseRootIndex + found.rootOffset,
   };
+}
+
+function blockPathForLocatedBlock(location: { childIndices: readonly number[]; rootIndex: number }) {
+  const blockPath = blockPathFromCoordinates(location.rootIndex, location.childIndices);
+  if (!blockPath) {
+    throw new Error("Block-reference target resolved to an invalid block path.");
+  }
+
+  return blockPath;
 }
 
 function applyDocumentMutation(
@@ -304,7 +306,7 @@ export function setSelection(
   activeBlockChanged?: boolean,
 ): EditorState {
   const nextSelection: EditorSelection =
-    "regionId" in selection
+    "regionPath" in selection
       ? {
           anchor: clampSelectionPoint(state.documentIndex, selection),
           focus: clampSelectionPoint(state.documentIndex, selection),
@@ -325,8 +327,8 @@ export function setSelection(
     return nextState;
   }
 
-  const blockPath =
-    resolveBlockPathForRegion(nextState.documentIndex, nextState.selection.focus.regionId) ?? "";
+  const focusedRegion = resolveRegion(nextState.documentIndex, nextState.selection.focus.regionPath);
+  const blockPath = focusedRegion?.blockPath ?? "";
 
   return recordEditorEffects(
     nextState,
@@ -336,11 +338,11 @@ export function setSelection(
 
 export function setSelectionPoint(
   state: EditorState,
-  regionId: string,
+  regionPath: string,
   offset: number,
   extendSelection: boolean,
 ): EditorState {
-  const point: EditorSelectionPoint = { regionId, offset };
+  const point: EditorSelectionPoint = { regionPath, offset };
 
   return setSelection(
     state,
@@ -414,21 +416,21 @@ function restoreHistoryEntry(
 function resolveDefaultSelectionPoint(documentIndex: DocumentIndex): EditorSelectionPoint {
   const region = resolveDocumentBoundaryRegion(documentIndex, "start");
 
-  return region ? { regionId: region.id, offset: 0 } : { regionId: "empty", offset: 0 };
+  return region ? { regionPath: region.path, offset: 0 } : { regionPath: "empty", offset: 0 };
 }
 
 function clampSelectionPoint(
   documentIndex: DocumentIndex,
   point: EditorSelectionPoint,
 ): EditorSelectionPoint {
-  const region = resolveRegion(documentIndex, point.regionId);
+  const region = resolveRegion(documentIndex, point.regionPath);
 
   if (!region) {
     return point;
   }
 
   return {
-    regionId: region.id,
+    regionPath: region.path,
     offset: Math.max(0, Math.min(point.offset, region.text.length)),
   };
 }
@@ -444,7 +446,7 @@ function canPreserveSelectionPoint(
   documentIndex: DocumentIndex,
   point: EditorSelectionPoint,
 ): boolean {
-  const region = resolveRegion(documentIndex, point.regionId);
+  const region = resolveRegion(documentIndex, point.regionPath);
 
   return Boolean(region && point.offset >= 0 && point.offset <= region.text.length);
 }

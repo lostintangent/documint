@@ -1,20 +1,20 @@
 // Declarative selection targets and target resolution. Actions declare where
 // the selection should land after a mutation. Two families, two lifetimes:
-// coordinate targets (`target.root`/`target.descendant`/`target.path`/
+// coordinate targets (`target.root`/`target.blockPath`/`target.path`/
 // `target.tableCell`) are positional intent, resolved against the rebuilt
 // document after the commit; `target.block` references a block inside the
-// action's own payload and is materialized into coordinates by dispatch
-// *before* the edit applies, because object identity does not survive
-// normalization. Actions should reference blocks they placed in their own
+// action's own payload and is materialized into a path by dispatch *before*
+// the edit applies, because object identity does not survive document
+// construction. Actions should reference blocks they placed in their own
 // payload and fall back to coordinates only for destinations outside it.
 
-import type { Block } from "@/document";
+import { isBlockPath, rootBlockPath, type Block } from "@/document";
 import {
-  resolveDescendantPrimaryRegion,
-  resolveRegionByPath,
+  resolvePrimaryRegionForBlockPath,
+  resolveRegion,
   resolveRootBlock,
   resolveRootPrimaryRegion,
-  resolveTableCellRegion,
+  resolveTableCellRegionByTablePath,
 } from "../index/query";
 import type { DocumentIndex } from "../index/types";
 import type { EditorSelection } from "./index";
@@ -48,10 +48,9 @@ export type SelectionTarget =
       rootIndex: number;
     }
   | {
-      kind: "descendant-primary-region";
-      childIndices: number[];
+      blockPath: string;
+      kind: "block-path-primary-region";
       offset: SelectionOffset;
-      rootIndex: number;
     };
 
 // SelectionTarget is editor-action vocabulary: commands use it to declare
@@ -112,19 +111,16 @@ export const target = {
     };
   },
 
-  // Select the primary editable region of a descendant at a known structural
-  // position. Used by reducers/materializers that already computed child
-  // indices; command actions should prefer `target.block` when possible.
-  descendant(
-    rootIndex: number,
-    childIndices: readonly number[],
-    offset: SelectionOffset = 0,
-  ): SelectionTarget {
+  // Select the primary editable region for a block path after the commit.
+  blockPath(blockPath: string, offset: SelectionOffset = 0): SelectionTarget {
+    if (!isBlockPath(blockPath)) {
+      throw new Error(`Invalid block path selection target: ${blockPath}`);
+    }
+
     return {
-      childIndices: [...childIndices],
-      kind: "descendant-primary-region",
+      blockPath,
+      kind: "block-path-primary-region",
       offset,
-      rootIndex,
     };
   },
 };
@@ -149,19 +145,15 @@ export function resolveSelectionTarget(
     const region = resolveRootPrimaryRegion(documentIndex, selection.rootIndex);
 
     return region
-      ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
+      ? createCollapsedSelection(region.path, resolveRegionOffset(region.text, selection.offset))
       : null;
   }
 
-  if (selection.kind === "descendant-primary-region") {
-    const region = resolveDescendantPrimaryRegion(
-      documentIndex,
-      selection.rootIndex,
-      selection.childIndices,
-    );
+  if (selection.kind === "block-path-primary-region") {
+    const region = resolvePrimaryRegionForBlockPath(documentIndex, selection.blockPath);
 
     return region
-      ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
+      ? createCollapsedSelection(region.path, resolveRegionOffset(region.text, selection.offset))
       : null;
   }
 
@@ -172,19 +164,19 @@ export function resolveSelectionTarget(
       return null;
     }
 
-    const region = resolveTableCellRegion(
+    const region = resolveTableCellRegionByTablePath(
       documentIndex,
-      rootBlock.id,
+      rootBlockPath(selection.rootIndex),
       selection.rowIndex,
       selection.cellIndex,
     );
 
     return region
-      ? createCollapsedSelection(region.id, resolveRegionOffset(region.text, selection.offset))
+      ? createCollapsedSelection(region.path, resolveRegionOffset(region.text, selection.offset))
       : null;
   }
 
-  const region = resolveRegionByPath(documentIndex, selection.path);
+  const region = resolveRegion(documentIndex, selection.path);
 
   if (!region) {
     return null;
@@ -194,18 +186,18 @@ export function resolveSelectionTarget(
   const focusOffset = resolveRegionOffset(region.text, selection.focusOffset ?? selection.offset);
   return {
     anchor: {
-      regionId: region.id,
+      regionPath: region.path,
       offset: anchorOffset,
     },
     focus: {
-      regionId: region.id,
+      regionPath: region.path,
       offset: focusOffset,
     },
   };
 }
 
-function createCollapsedSelection(regionId: string, offset: number): EditorSelection {
-  const point = { offset, regionId };
+function createCollapsedSelection(regionPath: string, offset: number): EditorSelection {
+  const point = { offset, regionPath };
 
   return {
     anchor: point,

@@ -22,7 +22,7 @@ export function resolveDocumentFrameLineList({
   blockPulse: BlockPulseFrame | null;
   listMarker: ListMarkerFrame | null;
 } {
-  const listMarkerPlan = listMarkerPlans.get(line.regionId) ?? null;
+  const listMarkerPlan = listMarkerPlans.get(line.regionPath) ?? null;
 
   return {
     blockPulse: listMarkerPlan ? (blockPulses.get(listMarkerPlan.blockPath) ?? null) : null,

@@ -1,36 +1,35 @@
-// Core query algebra over `DocumentIndex`. Consumers above the index should
-// compose these primitives instead of reaching into lookup maps, structural
-// paths, or flow-order fields directly.
+// Core read algebra over `DocumentIndex`: path lookups, block/region extents,
+// document-flow navigation, shape predicates, and small projections used by
+// anchors, selection, layout, renderer frames, and commands.
 
 import {
-  findBlockByChildIndices,
-  parseBlockChildIndices,
+  rootBlockPath,
   tableCellPath,
   tableRowPath,
   type Block,
-  type TableCell,
 } from "@/document";
 import type { IndexedBlock, DocumentIndex, EditableRegion } from "./types";
 
 export type EditorIndexPosition = {
   offset: number;
-  regionId: string;
+  regionPath: string;
 };
 
-export function resolveRegion(documentIndex: DocumentIndex, regionId: string) {
-  return documentIndex.regionIndex.get(regionId) ?? null;
+const EMPTY_THREAD_INDICES: readonly number[] = [];
+const EMPTY_REGIONS: readonly EditableRegion[] = [];
+
+// Lookups -------------------------------------------------------------------
+
+export function resolveRegion(documentIndex: DocumentIndex, regionPath: string) {
+  return documentIndex.regionIndex.get(regionPath) ?? null;
 }
 
-export function resolveRegionByPath(documentIndex: DocumentIndex, path: string) {
-  return documentIndex.regionPathIndex.get(path) ?? null;
+export function resolveIndexedBlock(documentIndex: DocumentIndex, blockPath: string) {
+  return documentIndex.blockIndex.get(blockPath) ?? null;
 }
 
-export function resolveIndexedBlock(documentIndex: DocumentIndex, blockId: string) {
-  return documentIndex.blockIndex.get(blockId) ?? null;
-}
-
-export function resolveBlock(documentIndex: DocumentIndex, blockId: string) {
-  return resolveIndexedBlock(documentIndex, blockId)?.block ?? null;
+export function resolveBlockByPath(documentIndex: DocumentIndex, blockPath: string) {
+  return resolveIndexedBlock(documentIndex, blockPath)?.block ?? null;
 }
 
 export function resolveRootBlock(documentIndex: DocumentIndex, rootIndex: number) {
@@ -53,145 +52,109 @@ export function resolveSiblingRootBlock(
   return resolveRootBlock(documentIndex, rootIndex + direction);
 }
 
-export function resolveIndexedBlockForRegion(documentIndex: DocumentIndex, regionId: string) {
-  const region = resolveRegion(documentIndex, regionId);
+export function resolveIndexedBlockForRegion(documentIndex: DocumentIndex, regionPath: string) {
+  const region = resolveRegion(documentIndex, regionPath);
 
-  return region ? resolveIndexedBlock(documentIndex, region.block.id) : null;
+  return region ? resolveIndexedBlock(documentIndex, region.blockPath) : null;
 }
 
-export function resolveRegionDocumentNode(
+// Comment projection --------------------------------------------------------
+
+export function resolveCommentThreadIndicesForRegion(
   documentIndex: DocumentIndex,
   region: EditableRegion,
-): Block | TableCell | null {
-  if (!region.tableCellPosition) {
-    return region.block;
-  }
-
-  if (region.block.type !== "table") {
-    return null;
-  }
-
-  const { cellIndex, rowIndex } = region.tableCellPosition;
-  return region.block.rows[rowIndex]?.cells[cellIndex] ?? null;
+): readonly number[] {
+  return documentIndex.commentContainerIndex.get(region.containerPath) ?? EMPTY_THREAD_INDICES;
 }
 
-export function resolveDocumentNodeRegion(
+// Block and region extents --------------------------------------------------
+
+export function firstRegionInBlock(
   documentIndex: DocumentIndex,
-  node: Block | TableCell,
-  path: string,
+  indexedBlock: IndexedBlock,
 ): EditableRegion | null {
-  return "type" in node
-    ? resolvePrimaryRegion(documentIndex, node.id)
-    : resolveRegionByPath(documentIndex, path);
+  return indexedBlock.regionRangeStart < indexedBlock.regionRangeEnd
+    ? (documentIndex.regions[indexedBlock.regionRangeStart] ?? null)
+    : null;
+}
+
+export function lastRegionInBlock(
+  documentIndex: DocumentIndex,
+  indexedBlock: IndexedBlock,
+): EditableRegion | null {
+  return indexedBlock.regionRangeStart < indexedBlock.regionRangeEnd
+    ? (documentIndex.regions[indexedBlock.regionRangeEnd - 1] ?? null)
+    : null;
+}
+
+export function resolvePrimaryRegionForBlockPath(
+  documentIndex: DocumentIndex,
+  blockPath: string,
+): EditableRegion | null {
+  const indexedBlock = resolveIndexedBlock(documentIndex, blockPath);
+
+  return indexedBlock ? firstRegionInBlock(documentIndex, indexedBlock) : null;
+}
+
+export function resolveRootPrimaryRegion(documentIndex: DocumentIndex, rootIndex: number) {
+  const block = resolveRootBlock(documentIndex, rootIndex);
+
+  return block ? resolvePrimaryRegionForBlockPath(documentIndex, rootBlockPath(rootIndex)) : null;
+}
+
+export function blockContainsBlock(parent: IndexedBlock, child: IndexedBlock) {
+  return (
+    parent.blockArrayIndex <= child.blockArrayIndex &&
+    child.blockRangeEnd <= parent.blockRangeEnd
+  );
 }
 
 export function resolveParentIndexedBlock(
   documentIndex: DocumentIndex,
   indexedBlock: IndexedBlock,
 ) {
-  return indexedBlock.parentBlockId
-    ? resolveIndexedBlock(documentIndex, indexedBlock.parentBlockId)
+  return indexedBlock.parentBlockPath
+    ? resolveIndexedBlock(documentIndex, indexedBlock.parentBlockPath)
     : null;
 }
 
-export function isRootIndexedBlock(indexedBlock: IndexedBlock) {
-  return indexedBlock.parentBlockId === null;
-}
-
-export function resolveBlockPathForRegion(documentIndex: DocumentIndex, regionId: string) {
-  return resolveIndexedBlockForRegion(documentIndex, regionId)?.path ?? null;
-}
-
-export function resolveRootPrimaryRegion(documentIndex: DocumentIndex, rootIndex: number) {
-  const block = resolveRootBlock(documentIndex, rootIndex);
-
-  return block ? resolvePrimaryRegion(documentIndex, block.id) : null;
-}
-
-export function resolveDescendantPrimaryRegion(
+export function findAncestorIndexedBlockByPath(
   documentIndex: DocumentIndex,
-  rootIndex: number,
-  childIndices: readonly number[],
-) {
-  const block = findBlockByChildIndices(resolveRootBlock(documentIndex, rootIndex), childIndices);
-
-  return block ? resolvePrimaryRegion(documentIndex, block.id) : null;
-}
-
-export function resolvePrimaryRegion(
-  documentIndex: DocumentIndex,
-  blockId: string,
-): EditableRegion | null {
-  const indexedBlock = resolveIndexedBlock(documentIndex, blockId);
-
-  if (!indexedBlock) {
-    return null;
-  }
-
-  const regionId = indexedBlock.regionIds[0];
-
-  if (regionId) {
-    return resolveRegion(documentIndex, regionId);
-  }
-
-  for (
-    let index = indexedBlock.blockArrayIndex + 1;
-    index < documentIndex.blocks.length;
-    index += 1
-  ) {
-    const descendant = documentIndex.blocks[index]!;
-
-    if (descendant.rootIndex !== indexedBlock.rootIndex || descendant.depth <= indexedBlock.depth) {
-      break;
-    }
-
-    const descendantRegionId = descendant.regionIds[0];
-
-    if (descendantRegionId) {
-      return resolveRegion(documentIndex, descendantRegionId);
-    }
-  }
-
-  return null;
-}
-
-export function resolveTableCellRegion(
-  documentIndex: DocumentIndex,
-  tableBlockId: string,
-  rowIndex: number,
-  cellIndex: number,
-) {
-  const indexedTable = resolveIndexedBlock(documentIndex, tableBlockId);
-
-  if (!indexedTable || indexedTable.block.type !== "table") {
-    return null;
-  }
-
-  return resolveRegionByPath(
-    documentIndex,
-    tableCellPath(tableRowPath(indexedTable.path, rowIndex), cellIndex),
-  );
-}
-
-export function findAncestorIndexedBlock(
-  documentIndex: DocumentIndex,
-  blockId: string | null,
+  blockPath: string | null,
   type: Block["type"],
 ) {
-  let current = blockId ? resolveIndexedBlock(documentIndex, blockId) : null;
+  let current = blockPath ? resolveIndexedBlock(documentIndex, blockPath) : null;
 
   while (current) {
     if (current.block.type === type) {
       return current;
     }
 
-    current = current.parentBlockId
-      ? resolveIndexedBlock(documentIndex, current.parentBlockId)
-      : null;
+    current = resolveParentIndexedBlock(documentIndex, current);
   }
 
   return null;
 }
+
+export function resolveTableCellRegionByTablePath(
+  documentIndex: DocumentIndex,
+  tableBlockPath: string,
+  rowIndex: number,
+  cellIndex: number,
+) {
+  const indexedTable = resolveIndexedBlock(documentIndex, tableBlockPath);
+
+  if (!indexedTable || indexedTable.block.type !== "table") {
+    return null;
+  }
+
+  return resolveRegion(
+    documentIndex,
+    tableCellPath(tableRowPath(indexedTable.path, rowIndex), cellIndex),
+  );
+}
+
+// Document flow -------------------------------------------------------------
 
 export function compareEditorPositions(
   documentIndex: DocumentIndex,
@@ -206,32 +169,32 @@ export function compareEditorPositions(
   return aOrder !== bOrder ? aOrder - bOrder : a.offset - b.offset;
 }
 
-export function previousRegionInFlow(documentIndex: DocumentIndex, regionId: string) {
-  const region = resolveRegion(documentIndex, regionId);
+export function previousRegionInFlow(documentIndex: DocumentIndex, regionPath: string) {
+  const region = resolveRegion(documentIndex, regionPath);
 
-  if (!region || region.documentOrder === 0) {
+  if (!region || region.regionArrayIndex === 0) {
     return null;
   }
 
-  return documentIndex.regions[region.documentOrder - 1] ?? null;
+  return documentIndex.regions[region.regionArrayIndex - 1] ?? null;
 }
 
-export function nextRegionInFlow(documentIndex: DocumentIndex, regionId: string) {
-  const region = resolveRegion(documentIndex, regionId);
+export function nextRegionInFlow(documentIndex: DocumentIndex, regionPath: string) {
+  const region = resolveRegion(documentIndex, regionPath);
 
   if (!region) {
     return null;
   }
 
-  return documentIndex.regions[region.documentOrder + 1] ?? null;
+  return documentIndex.regions[region.regionArrayIndex + 1] ?? null;
 }
 
-export function previousBlockInFlow(documentIndex: DocumentIndex, blockId: string) {
-  return findAdjacentBlockInFlow(documentIndex, blockId, -1);
+export function previousBlockInFlow(documentIndex: DocumentIndex, blockPath: string) {
+  return findAdjacentBlockInFlow(documentIndex, blockPath, -1);
 }
 
-export function nextBlockInFlow(documentIndex: DocumentIndex, blockId: string) {
-  return findAdjacentBlockInFlow(documentIndex, blockId, 1);
+export function nextBlockInFlow(documentIndex: DocumentIndex, blockPath: string) {
+  return findAdjacentBlockInFlow(documentIndex, blockPath, 1);
 }
 
 export function firstInFlowRegionOfRoot(documentIndex: DocumentIndex, rootIndex: number) {
@@ -252,15 +215,65 @@ export function resolveRegionOutsideRoot(
   rootIndex: number,
   direction: -1 | 1,
 ) {
-  const range = documentIndex.roots[rootIndex]?.regionRange;
+  const root = documentIndex.roots[rootIndex];
+  const rootBlock = root?.blocks[0] ?? null;
 
-  if (!range) {
+  if (!root || !rootBlock || root.regions.length === 0) {
     return null;
   }
 
   return direction < 0
-    ? (documentIndex.regions[range.start - 1] ?? null)
-    : (documentIndex.regions[range.end] ?? null);
+    ? (documentIndex.regions[rootBlock.regionRangeStart - 1] ?? null)
+    : (documentIndex.regions[rootBlock.regionRangeEnd] ?? null);
+}
+
+// Shape and classification --------------------------------------------------
+
+export function hasSameEditableRegionShape(
+  left: EditableRegion,
+  right: EditableRegion,
+) {
+  return (
+    left.block.type === right.block.type &&
+    left.content.kind === right.content.kind &&
+    hasSameTableCellPosition(left, right)
+  );
+}
+
+export function hasSameTableCellPosition(left: EditableRegion, right: EditableRegion) {
+  if (!left.tableCellPosition || !right.tableCellPosition) {
+    return left.tableCellPosition === right.tableCellPosition;
+  }
+
+  return (
+    left.tableCellPosition.rowIndex === right.tableCellPosition.rowIndex &&
+    left.tableCellPosition.cellIndex === right.tableCellPosition.cellIndex
+  );
+}
+
+export function findUniqueEditableRegion(
+  documentIndex: DocumentIndex,
+  predicate: (region: EditableRegion) => boolean,
+) {
+  let match: EditableRegion | null = null;
+
+  for (const region of documentIndex.regions) {
+    if (!predicate(region)) {
+      continue;
+    }
+
+    if (match) {
+      return null;
+    }
+
+    match = region;
+  }
+
+  return match;
+}
+
+export function isRootIndexedBlock(indexedBlock: IndexedBlock) {
+  return indexedBlock.parentBlockPath === null;
 }
 
 export function isInertBlock(indexedBlock: IndexedBlock): boolean {
@@ -279,16 +292,18 @@ export function isSourceRegion(region: EditableRegion): boolean {
   return region.content.kind === "source";
 }
 
+// Active handles ------------------------------------------------------------
+
 export function resolveActiveBlockKey(
   documentIndex: DocumentIndex,
   point: EditorIndexPosition,
 ): string | null {
-  const focusedRegion = resolveRegion(documentIndex, point.regionId);
+  const focusedRegion = resolveRegion(documentIndex, point.regionPath);
   const focusedBlock = focusedRegion
-    ? resolveIndexedBlock(documentIndex, focusedRegion.block.id)
+    ? resolveIndexedBlock(documentIndex, focusedRegion.blockPath)
     : null;
 
-  if (!focusedRegion || !focusedBlock?.path) {
+  if (!focusedRegion || !focusedBlock) {
     return null;
   }
 
@@ -297,52 +312,30 @@ export function resolveActiveBlockKey(
     : `block:${focusedBlock.path}`;
 }
 
-export function resolveBlockChildIndices(indexedBlock: { path: string }) {
-  return parseBlockChildIndices(indexedBlock.path);
-}
-
-export function resolveTableCellPosition(region: EditableRegion) {
-  return region.tableCellPosition;
-}
-
-const EMPTY_THREAD_INDICES: readonly number[] = [];
-const EMPTY_REGIONS: readonly EditableRegion[] = [];
-
-export function resolveCommentThreadIndicesForRegion(
-  documentIndex: DocumentIndex,
-  region: EditableRegion,
-): readonly number[] {
-  return documentIndex.commentContainerIndex.get(region.semanticRegionId) ?? EMPTY_THREAD_INDICES;
-}
-
-export function createSemanticRegionIndex(documentIndex: DocumentIndex) {
-  return new Map(documentIndex.regions.map((region) => [region.semanticRegionId, region]));
-}
-
 function resolvePositionOrder(
   documentIndex: DocumentIndex,
   point: EditorIndexPosition,
   unknown: "before" | "throw",
 ) {
-  const region = resolveRegion(documentIndex, point.regionId);
+  const region = resolveRegion(documentIndex, point.regionPath);
 
   if (region) {
-    return region.documentOrder;
+    return region.regionArrayIndex;
   }
 
   if (unknown === "before") {
     return -1;
   }
 
-  throw new Error(`Unknown canvas region: ${point.regionId}`);
+  throw new Error(`Unknown canvas region: ${point.regionPath}`);
 }
 
 function findAdjacentBlockInFlow(
   documentIndex: DocumentIndex,
-  fromBlockId: string,
+  fromBlockPath: string,
   direction: -1 | 1,
 ) {
-  const startBlock = resolveIndexedBlock(documentIndex, fromBlockId);
+  const startBlock = resolveIndexedBlock(documentIndex, fromBlockPath);
 
   if (!startBlock) {
     return null;

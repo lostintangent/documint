@@ -1,8 +1,6 @@
-// Root construction and positioning: turns a document `Block` tree into a
-// `IndexedRoot` (the per-root scaffolding the index uses internally), then
-// places multiple roots in global char-offset / block-array / region-array
-// coordinate space. Reference identity for unchanged roots is preserved
-// through `canReuseIndexedRoot`.
+// Root construction and positioning: turns one top-level document `Block` into
+// an `IndexedRoot` slice, then places those slices in block-array and
+// region-array coordinate space.
 
 import {
   childBlockPath,
@@ -26,7 +24,7 @@ import type {
   IndexedRoot,
 } from "./types";
 
-// How a block contributes to the document's region/coordinate stream. Five
+// How a block contributes to the editor's region/coordinate stream. Five
 // kinds cover every existing block type and any future one:
 //
 //   - `container`: recurse into the block's children (blockquote, list, listItem)
@@ -35,10 +33,10 @@ import type {
 //   - `cells`: emit one inline-bearing region per table cell (table)
 //   - `inert`: no region (divider, directive)
 //
-// Adding a new block type is one indexedBlock in `BLOCK_CONTRIBUTIONS` below. The
-// visitor dispatches on contribution kind, so no per-type branching elsewhere
-// in this layer. The discriminator literals are constrained by `BlockKind`
-// (see types.ts) so contribution → IndexedBlock.kind stays in lockstep.
+// A new block type is one entry in `BLOCK_CONTRIBUTIONS` below. The visitor
+// dispatches on contribution kind, so no per-type branching escapes the table.
+// The discriminator literals are constrained by `BlockKind` (see types.ts) so
+// contribution kind and `IndexedBlock.kind` stay in lockstep.
 type BlockContribution =
   | { kind: "container"; children: readonly Block[] }
   | { kind: "inline-text"; inlines: readonly Inline[] }
@@ -100,19 +98,93 @@ function resolveBlockContribution(block: Block): BlockContribution {
 export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedRoot {
   const blocks: IndexedBlock[] = [];
   const regions: EditableRegion[] = [];
-  // Collected during the inline walk below, alongside the work that's
-  // already happening — no extra traversal.
+  // Collected during the inline walk below, alongside the work already
+  // happening in region construction.
   const imageUrls = new Set<string>();
   let resourceUrls: Set<string> | null = null;
   const listItems = new Map<string, IndexedListItem>();
-  let position = 0;
+
+  function visitBlock(
+    block: Block,
+    path: string,
+    depth: number,
+    parentBlockPath: string | null,
+    listContext: ListContext | null = null,
+  ) {
+    const contribution = resolveBlockContribution(block);
+    const blockArrayIndex = blocks.length;
+    const regionRangeStart = regions.length;
+    const indexedBlock: IndexedBlock = {
+      block,
+      // Local per-root index here; re-stamped to the global position when
+      // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
+      blockArrayIndex,
+      blockRangeEnd: blockArrayIndex + 1,
+      depth,
+      kind: contribution.kind,
+      parentBlockPath,
+      path,
+      regionRangeEnd: regionRangeStart,
+      regionRangeStart,
+      rootIndex,
+    };
+
+    blocks.push(indexedBlock);
+
+    appendIndexedListItem(block, path, listContext);
+
+    switch (contribution.kind) {
+      case "container":
+        for (const [index, child] of contribution.children.entries()) {
+          visitBlock(
+            child,
+            childBlockPath(path, index),
+            depth + 1,
+            path,
+            resolveChildListContext(block, index, listContext),
+          );
+        }
+        break;
+      case "inline-text":
+        appendInlineRegion(
+          block,
+          childContainerPath(path),
+          path,
+          path,
+          flattenInlineNodes(contribution.inlines),
+        );
+        break;
+      case "source-text":
+        appendSourceRegion(block, sourcePath(path), path, contribution.source);
+        break;
+      case "cells":
+        for (const { cell, cellIndex, rowIndex } of contribution.cells) {
+          const rowPath = tableRowPath(path, rowIndex);
+          const cellPath = tableCellPath(rowPath, cellIndex);
+          appendInlineRegion(
+            block,
+            cellPath,
+            path,
+            cellPath,
+            flattenInlineNodes(cell.children),
+            { cellIndex, rowIndex },
+          );
+        }
+        break;
+      case "inert":
+        break;
+    }
+
+    indexedBlock.blockRangeEnd = blocks.length;
+    indexedBlock.regionRangeEnd = regions.length;
+  }
 
   function appendInlineRegion(
     block: Block,
     path: string,
+    blockPath: string,
     containerPath: string,
     inlines: IndexedInline[],
-    semanticRegionId: string,
     tableCellPosition: { cellIndex: number; rowIndex: number } | null = null,
   ) {
     const text = inlines.map(indexedInlineText).join("");
@@ -126,133 +198,49 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
     pushRegion(
       block,
       path,
+      blockPath,
       containerPath,
       { kind: "inlines", inlines },
-      semanticRegionId,
       text,
       tableCellPosition,
     );
   }
 
   function appendSourceRegion(block: Block, path: string, blockPath: string, source: string) {
-    pushRegion(block, path, blockPath, { kind: "source" }, block.id, source, null);
+    pushRegion(block, path, blockPath, blockPath, { kind: "source" }, source, null);
   }
 
   function pushRegion(
     block: Block,
     path: string,
+    blockPath: string,
     containerPath: string,
     content: EditableRegionContent,
-    semanticRegionId: string,
     text: string,
     tableCellPosition: { cellIndex: number; rowIndex: number } | null,
   ) {
-    if (regions.length > 0) {
-      position += 1;
-    }
-    const start = position;
-    const end = start + text.length;
-    position = end;
     regions.push({
       block,
+      blockPath,
       containerPath,
       content,
-      // Local per-root order here; re-stamped to the global position when
+      // Local per-root region index here; re-stamped to the global position when
       // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
-      documentOrder: regions.length,
-      end,
-      id: `${block.id}:${path}`,
+      regionArrayIndex: regions.length,
       path,
       rootIndex,
-      semanticRegionId,
-      start,
       tableCellPosition,
       text,
     });
   }
 
-  function visitBlock(
-    block: Block,
-    path: string,
-    depth: number,
-    parentBlockId: string | null,
-    listContext: ListContext | null = null,
-  ) {
-    const contribution = resolveBlockContribution(block);
-    const indexedBlock: IndexedBlock = {
-      block,
-      // Local per-root index here; re-stamped to the global position when
-      // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
-      blockArrayIndex: blocks.length,
-      depth,
-      end: position,
-      kind: contribution.kind,
-      parentBlockId,
-      path,
-      regionIds: [],
-      rootIndex,
-      start: position,
-    };
-
-    blocks.push(indexedBlock);
-
-    appendIndexedListItem(block, listContext);
-
-    switch (contribution.kind) {
-      case "container":
-        for (const [index, child] of contribution.children.entries()) {
-          visitBlock(
-            child,
-            childBlockPath(path, index),
-            depth + 1,
-            block.id,
-            resolveChildListContext(block, index, listContext),
-          );
-        }
-        break;
-      case "inline-text":
-        appendInlineRegion(
-          block,
-          childContainerPath(path),
-          path,
-          flattenInlineNodes(contribution.inlines),
-          block.id,
-        );
-        indexedBlock.regionIds.push(regions.at(-1)!.id);
-        break;
-      case "source-text":
-        appendSourceRegion(block, sourcePath(path), path, contribution.source);
-        indexedBlock.regionIds.push(regions.at(-1)!.id);
-        break;
-      case "cells":
-        for (const { cell, cellIndex, rowIndex } of contribution.cells) {
-          const rowPath = tableRowPath(path, rowIndex);
-          const cellPath = tableCellPath(rowPath, cellIndex);
-          appendInlineRegion(
-            block,
-            cellPath,
-            cellPath,
-            flattenInlineNodes(cell.children),
-            cell.id,
-            { cellIndex, rowIndex },
-          );
-          indexedBlock.regionIds.push(regions.at(-1)!.id);
-        }
-        break;
-      case "inert":
-        break;
-    }
-
-    indexedBlock.end = position;
-  }
-
-  function appendIndexedListItem(block: Block, context: ListContext | null) {
+  function appendIndexedListItem(block: Block, path: string, context: ListContext | null) {
     if (block.type !== "listItem") {
       return;
     }
 
     if (typeof block.checked === "boolean") {
-      listItems.set(block.id, {
+      listItems.set(path, {
         checked: block.checked,
         depth: context?.depth ?? 0,
         kind: "task",
@@ -261,7 +249,7 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
     }
 
     if (context?.ordered) {
-      listItems.set(block.id, {
+      listItems.set(path, {
         depth: context.depth,
         kind: "ordered",
         ordinal: (context.start ?? 1) + context.index,
@@ -269,7 +257,7 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
       return;
     }
 
-    listItems.set(block.id, {
+    listItems.set(path, {
       depth: context?.depth ?? 0,
       kind: "unordered",
     });
@@ -295,42 +283,19 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
   visitBlock(rootBlock, rootBlockPath(rootIndex), 0, null);
 
   return {
-    blockRange: {
-      end: blocks.length,
-      start: 0,
-    },
     blocks,
-    end: position,
     imageUrls,
     resourceUrls: resourceUrls ?? EMPTY_URLS,
     listItems,
-    regionRange:
-      regions.length > 0
-        ? {
-            end: regions.length,
-            start: 0,
-          }
-        : undefined,
     regions,
     rootIndex,
-    start: 0,
   };
 }
 
-export function rebuildIndexedRoot(root: IndexedRoot, rootBlock: Block): IndexedRoot {
-  return createIndexedRoot(rootBlock, root.rootIndex);
-}
-
-// Positions a list of unpositioned roots in global char-offset, block-array,
-// and region-array coordinate space. Reuses the previous root reference when
-// nothing changed (so `documentIndex.roots[i]` keeps `===` identity); shifts
-// to new objects when char or array offsets moved.
-//
-// Note: identity reuse is per-root. When a root's `start` or `blockRange`
-// shifts (e.g., insert-at-front), every indexed block and region inside it
-// is re-stamped with new global indices and therefore loses reference
-// identity. Layout caches keyed by index-record references should expect to
-// refill on edits that shift root positions.
+// Positions a list of roots in block-array and region-array coordinate space.
+// Root identity is reused when those coordinates are unchanged. Shifted roots
+// receive new root records, while their nested block and region records are
+// reused or shifted according to the coordinate spaces they actually carry.
 export function positionIndexedRoots(
   roots: IndexedRoot[],
   previousRoots: IndexedRoot[] | null = null,
@@ -338,99 +303,108 @@ export function positionIndexedRoots(
   const positionedRoots: IndexedRoot[] = [];
   let blockIndex = 0;
   let regionIndex = 0;
-  let position = 0;
-  let hasVisibleRootBefore = false;
 
   for (const [rootIndex, root] of roots.entries()) {
-    if (root.regions.length > 0 && hasVisibleRootBefore) {
-      position += 1;
-    }
-
-    const nextRoot = {
-      ...root,
-      blockRange: {
-        end: blockIndex + root.blocks.length,
-        start: blockIndex,
-      },
-      end: position + (root.end - root.start),
-      regionRange:
-        root.regions.length > 0
-          ? {
-              end: regionIndex + root.regions.length,
-              start: regionIndex,
-            }
-          : undefined,
-      start: position,
-    } satisfies IndexedRoot;
+    const nextBlockStart = blockIndex;
+    const nextBlockEnd = nextBlockStart + root.blocks.length;
+    const nextRegionStart = regionIndex;
+    const nextRegionEnd = nextRegionStart + root.regions.length;
     const previousRoot = previousRoots?.[rootIndex];
 
     positionedRoots.push(
-      canReuseIndexedRoot(previousRoot, root, nextRoot)
+      canReuseIndexedRoot(
+        previousRoot,
+        root,
+        nextBlockStart,
+        nextBlockEnd,
+        nextRegionStart,
+        nextRegionEnd,
+      )
         ? previousRoot
-        : positionIndexedRoot(root, nextRoot),
+        : positionIndexedRoot(root, nextBlockStart, nextRegionStart),
     );
 
-    blockIndex = nextRoot.blockRange.end;
-    regionIndex = nextRoot.regionRange?.end ?? regionIndex;
-
-    if (root.regions.length > 0) {
-      position = nextRoot.end;
-      hasVisibleRootBefore = true;
-    }
+    blockIndex = nextBlockEnd;
+    regionIndex = nextRegionEnd;
   }
 
   return positionedRoots;
 }
 
-function positionIndexedRoot(root: IndexedRoot, nextRoot: IndexedRoot): IndexedRoot {
-  const delta = nextRoot.start - root.start;
-  const blockArrayStart = nextRoot.blockRange.start;
-  const regionArrayStart = nextRoot.regionRange?.start ?? 0;
+function positionIndexedRoot(
+  root: IndexedRoot,
+  nextBlockStart: number,
+  nextRegionStart: number,
+): IndexedRoot {
+  const rootBlock = root.blocks[0]!;
+  const blockIndexDelta = nextBlockStart - rootBlock.blockArrayIndex;
+  const regionIndexDelta = nextRegionStart - rootBlock.regionRangeStart;
+  const blocks = shiftEditorBlocks(root.blocks, blockIndexDelta, regionIndexDelta);
+  const regions = shiftEditorRegions(root.regions, regionIndexDelta);
+
+  if (blocks === root.blocks && regions === root.regions) {
+    return root;
+  }
 
   return {
-    ...nextRoot,
-    // Always re-stamp blocks/regions so `blockArrayIndex` and
-    // `documentOrder` reflect the global position. We can't skip the clone
-    // on `delta === 0` — a freshly-built root might happen to start at the
-    // same char offset but still need its block/region indices stamped
-    // from local to global, and a sibling root losing a region can shift
-    // this root's `regionRange.start` while leaving char position unchanged.
-    blocks: shiftEditorBlocks(root.blocks, delta, blockArrayStart),
-    regions: shiftEditorRegions(root.regions, delta, regionArrayStart),
+    ...root,
+    // A freshly built root starts with local coordinates, so non-zero deltas
+    // stamp it into global space. Reused suffix roots only shift the record
+    // families whose coordinate spaces moved.
+    blocks,
+    regions,
   };
 }
 
 function canReuseIndexedRoot(
   previousRoot: IndexedRoot | undefined,
   root: IndexedRoot,
-  nextRoot: IndexedRoot,
+  nextBlockStart: number,
+  nextBlockEnd: number,
+  nextRegionStart: number,
+  nextRegionEnd: number,
 ): previousRoot is IndexedRoot {
+  const previousRootBlock = previousRoot?.blocks[0];
+
   return Boolean(
     previousRoot &&
+    previousRootBlock &&
     root === previousRoot &&
-    previousRoot.start === nextRoot.start &&
-    previousRoot.end === nextRoot.end &&
-    previousRoot.blockRange.start === nextRoot.blockRange.start &&
-    previousRoot.blockRange.end === nextRoot.blockRange.end &&
-    previousRoot.regionRange?.start === nextRoot.regionRange?.start &&
-    previousRoot.regionRange?.end === nextRoot.regionRange?.end,
+    previousRootBlock.blockArrayIndex === nextBlockStart &&
+    previousRootBlock.blockRangeEnd === nextBlockEnd &&
+    previousRootBlock.regionRangeStart === nextRegionStart &&
+    previousRootBlock.regionRangeEnd === nextRegionEnd,
   );
 }
 
-function shiftEditorBlocks(blocks: IndexedBlock[], delta: number, blockArrayStart: number) {
-  return blocks.map<IndexedBlock>((block, index) => ({
+function shiftEditorBlocks(
+  blocks: IndexedBlock[],
+  blockIndexDelta: number,
+  regionIndexDelta: number,
+) {
+  if (blockIndexDelta === 0 && regionIndexDelta === 0) {
+    return blocks;
+  }
+
+  return blocks.map<IndexedBlock>((block) => ({
     ...block,
-    blockArrayIndex: blockArrayStart + index,
-    end: block.end + delta,
-    start: block.start + delta,
+    blockArrayIndex: block.blockArrayIndex + blockIndexDelta,
+    blockRangeEnd: block.blockRangeEnd + blockIndexDelta,
+    regionRangeEnd: block.regionRangeEnd + regionIndexDelta,
+    regionRangeStart: block.regionRangeStart + regionIndexDelta,
   }));
 }
 
-function shiftEditorRegions(regions: EditableRegion[], delta: number, regionArrayStart: number) {
-  return regions.map<EditableRegion>((region, index) => ({
+function shiftEditorRegions(
+  regions: EditableRegion[],
+  regionIndexDelta: number,
+) {
+  if (regionIndexDelta === 0) {
+    return regions;
+  }
+
+  return regions.map<EditableRegion>((region) => ({
     ...region,
-    documentOrder: regionArrayStart + index,
-    end: region.end + delta,
-    start: region.start + delta,
+    regionArrayIndex: region.regionArrayIndex + regionIndexDelta,
   }));
 }

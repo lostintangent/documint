@@ -3,15 +3,18 @@
 // `InlineContainerReplacement` the reducer can apply.
 import {
   createTableCell as createDocumentTableCell,
+  createRaw,
   createText,
   defragmentTextInlines,
-  iterateInlineNodeRanges,
-  measureInlineNodeText,
   rebuildTableBlock,
   rebuildTextBlock,
   type Block,
   type Inline,
 } from "@/document";
+import {
+  editorInlineTextLength,
+  inlineNodesWithEditorRanges,
+} from "@/editor/text/inline-offsets";
 import { target, type RegionPathSelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import type { InlineContainer } from "../../context";
@@ -20,7 +23,7 @@ export type { InlineContainer } from "../../context";
 
 export type InlineContainerReplacement = {
   block: Block;
-  blockId: string;
+  blockPath: string;
   selection: RegionPathSelectionTarget;
 };
 
@@ -34,7 +37,7 @@ export function createInlineReplacementAction(
   return {
     kind: "replace-block",
     block: replacement.block,
-    blockId: replacement.blockId,
+    blockPath: replacement.blockPath,
     selection: replacement.selection,
   };
 }
@@ -50,7 +53,7 @@ export function spliceInlineContainer(
   inlines: Inline[],
 ): InlineContainerReplacement {
   const nextChildren = spliceInlineNodes(inlineContainer.children, startOffset, endOffset, inlines);
-  const insertedLength = inlines.reduce((total, node) => total + measureInlineNodeText(node), 0);
+  const insertedLength = inlines.reduce((total, node) => total + editorInlineTextLength(node), 0);
   const caretOffset = startOffset + insertedLength;
 
   return createInlineContainerReplacement(inlineContainer, nextChildren, caretOffset, caretOffset);
@@ -66,19 +69,19 @@ export function createInlineContainerReplacement(
     case "inlineBlock":
       return {
         block: rebuildTextBlock(inlineContainer.block, nextChildren),
-        blockId: inlineContainer.block.id,
+        blockPath: inlineContainer.blockPath,
         selection: target.path(inlineContainer.regionPath, startOffset, endOffset),
       };
     case "tableCell": {
       const nextCell = createDocumentTableCell(nextChildren);
       const nextRows = inlineContainer.block.rows.map((row) => ({
         ...row,
-        cells: row.cells.map((cell) => (cell.id === inlineContainer.cell.id ? nextCell : cell)),
+        cells: row.cells.map((cell) => (cell === inlineContainer.cell ? nextCell : cell)),
       }));
 
       return {
         block: rebuildTableBlock(inlineContainer.block, nextRows),
-        blockId: inlineContainer.block.id,
+        blockPath: inlineContainer.blockPath,
         selection: target.path(inlineContainer.regionPath, startOffset, endOffset),
       };
     }
@@ -102,7 +105,12 @@ export function spliceInlineNodes(
   const nextNodes: Inline[] = [];
   let inserted = false;
 
-  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+  for (const { node, start, end } of inlineNodesWithEditorRanges(nodes)) {
+    if (!inserted && startOffset <= start) {
+      nextNodes.push(...replacement);
+      inserted = true;
+    }
+
     if (endOffset <= start || startOffset >= end) {
       nextNodes.push(node);
       continue;
@@ -140,6 +148,12 @@ function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): 
       );
       return children.length > 0 ? [{ ...node, children }] : [];
     }
+    case "raw": {
+      const slicedSource = node.source.slice(startOffset, endOffset);
+      return slicedSource.length > 0
+        ? [createRaw({ originalType: node.originalType, source: slicedSource })]
+        : [];
+    }
   }
 
   return [];
@@ -148,7 +162,7 @@ function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): 
 export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOffset: number) {
   const sliced: Inline[] = [];
 
-  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+  for (const { node, start, end } of inlineNodesWithEditorRanges(nodes)) {
     if (endOffset <= start || startOffset >= end) {
       continue;
     }

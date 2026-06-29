@@ -1,6 +1,6 @@
 // Owns caret target measurement and the visual-left adjustment that paint
 // and keyboard navigation use to render the caret. Given a prepared
-// `DocumentLayout` plus a (regionId, offset), resolves where the caret
+// `DocumentLayout` plus a (regionPath, offset), resolves where the caret
 // should land — including any visual offset from list-marker indent or
 // trailing whitespace that the line wrapping collapsed.
 
@@ -10,8 +10,8 @@ import type { DocumentLayout, LayoutLine } from "../measure";
 import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
 export type DocumentCaretTarget = {
-  blockId: string;
-  regionId: string;
+  blockPath: string;
+  regionPath: string;
   height: number;
   left: number;
   offset: number;
@@ -21,20 +21,20 @@ export type DocumentCaretTarget = {
 export function measureDocumentCaretTarget(
   layout: DocumentLayout,
   _documentIndex: DocumentIndex,
-  target: { regionId: string; offset: number },
+  target: { regionPath: string; offset: number },
 ): DocumentCaretTarget | null {
   // No separate presence check — `findDocumentLayoutLineForRegionOffset`
-  // returns null for any regionId that isn't in this layout's region/line
+  // returns null for any regionPath that isn't in this layout's region/line
   // index, which is the same condition the old `regionMetrics.get` covered.
-  const line = findDocumentLayoutLineForRegionOffset(layout, target.regionId, target.offset);
+  const line = findDocumentLayoutLineForRegionOffset(layout, target.regionPath, target.offset);
 
   if (!line) {
     return null;
   }
 
   return {
-    blockId: line.blockId,
-    regionId: line.regionId,
+    blockPath: line.blockPath,
+    regionPath: line.regionPath,
     height: line.height,
     left: measureCanvasLineOffsetLeft(line, target.offset - line.start),
     offset: target.offset,
@@ -47,7 +47,7 @@ export function resolveCaretVisualLeft(
   layout: DocumentLayout,
   caret: NonNullable<ReturnType<typeof measureDocumentCaretTarget>>,
 ) {
-  const resolvedLine = findDocumentLayoutLineForRegionOffset(layout, caret.regionId, caret.offset);
+  const resolvedLine = findDocumentLayoutLineForRegionOffset(layout, caret.regionPath, caret.offset);
 
   if (!resolvedLine) {
     return caret.left;
@@ -77,7 +77,7 @@ function resolveCollapsedTrailingSpaceWidth(state: EditorState, line: LayoutLine
     return 0;
   }
 
-  const container = resolveRegion(state.documentIndex, line.regionId);
+  const container = resolveRegion(state.documentIndex, line.regionPath);
 
   if (!container) {
     return 0;

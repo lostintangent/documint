@@ -7,6 +7,7 @@ import { createEditorLayoutState } from "@/editor/layout";
 import {
   createEditorState,
   normalizeSelection,
+  resolveRegion,
   setSelection,
   type EditorState,
 } from "@/editor/state";
@@ -90,14 +91,14 @@ describe("DocumentFrame line range rows", () => {
     }
 
     state = setSelection(state, {
-      anchor: { regionId: first.id, offset: 2 },
-      focus: { regionId: third.id, offset: 3 },
+      anchor: { regionPath: first.path, offset: 2 },
+      focus: { regionPath: third.path, offset: 3 },
     });
 
     const commentRanges: EditorCommentRange[] = [
       {
         endOffset: 3,
-        regionId: second.id,
+        regionPath: second.path,
         resolution: { match: null, repair: null, status: "stale" },
         resolved: false,
         startOffset: 1,
@@ -108,9 +109,9 @@ describe("DocumentFrame line range rows", () => {
       commentPresence: new Map([[7, createPresence(7, "#f97316")]]),
       commentRanges,
     });
-    const firstLine = lineFrameForRegion(frame, first.id);
-    const secondLine = lineFrameForRegion(frame, second.id);
-    const thirdLine = lineFrameForRegion(frame, third.id);
+    const firstLine = lineFrameForRegion(frame, first.path);
+    const secondLine = lineFrameForRegion(frame, second.path);
+    const thirdLine = lineFrameForRegion(frame, third.path);
 
     expect(frame.lines.filter((line) => line.selectionHighlight).length).toBe(3);
     expect(firstLine.selectionHighlight?.left).toBeGreaterThan(secondLine.selectionHighlight!.left);
@@ -160,8 +161,8 @@ describe("DocumentFrame effect policy", () => {
 
     expect(defaultFrame.effects).toEqual([]);
     expect(customFrame.effects).toEqual([effect]);
-    expect(lineFrameForRegion(defaultFrame, region.id).textHighlights).toEqual([]);
-    expect(lineFrameForRegion(customFrame, region.id).textHighlights).toEqual([
+    expect(lineFrameForRegion(defaultFrame, region.path).textHighlights).toEqual([]);
+    expect(lineFrameForRegion(customFrame, region.path).textHighlights).toEqual([
       expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
     ]);
   });
@@ -198,8 +199,8 @@ describe("DocumentFrame effect policy", () => {
 
     expect(defaultFrame.effects).toEqual([]);
     expect(customFrame.effects).toEqual([effect]);
-    expect(lineFrameForRegion(defaultFrame, region.id).textHighlights).toEqual([]);
-    expect(lineFrameForRegion(customFrame, region.id).textHighlights).toEqual([
+    expect(lineFrameForRegion(defaultFrame, region.path).textHighlights).toEqual([]);
+    expect(lineFrameForRegion(customFrame, region.path).textHighlights).toEqual([
       expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
     ]);
   });
@@ -214,26 +215,27 @@ describe("DocumentFrame chrome and block rows", () => {
       throw new Error("Expected first region");
     }
 
-    state = setSelection(state, { regionId: first.id, offset: 0 });
+    state = setSelection(state, { regionPath: first.path, offset: 0 });
     const frame = createTestDocumentFrame(state, {
       documentChanges: [
         {
-          blockId: first.block.id,
+          changeKey: "change-alpha",
           changeKind: "modified",
-          kind: "block",
+          target: { blockPath: first.blockPath, kind: "block" },
         },
       ],
       effects: [
         {
+          changeKey: "change-alpha",
           changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { blockId: first.block.id, kind: "block" },
+          target: { blockPath: "root.old", kind: "block" },
         },
       ],
       now: 110,
     });
-    const line = lineFrameForRegion(frame, first.id);
+    const line = lineFrameForRegion(frame, first.path);
 
     expect(line.activeBlockBackground).toMatchObject({
       activeFlash: null,
@@ -259,22 +261,23 @@ describe("DocumentFrame chrome and block rows", () => {
     const frame = createTestDocumentFrame(state, {
       documentChanges: [
         {
-          blockId: first.block.id,
+          changeKey: "change-alpha",
           changeKind: "modified",
-          kind: "block",
+          target: { blockPath: first.blockPath, kind: "block" },
         },
       ],
       effects: [
         {
+          changeKey: "change-alpha",
           changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { blockId: first.block.id, kind: "block" },
+          target: { blockPath: "root.old", kind: "block" },
         },
       ],
       now: 600,
     });
-    const line = lineFrameForRegion(frame, first.id);
+    const line = lineFrameForRegion(frame, first.path);
 
     expect(line.documentChangeBackground).toMatchObject({
       color: resolvedLightTheme.externalChangeModificationBackground,
@@ -297,17 +300,24 @@ describe("DocumentFrame chrome and block rows", () => {
     const frame = createTestDocumentFrame(state, {
       documentChanges: [
         {
+          changeKey: "change-cell",
           changeKind: "added",
-          kind: "table-cell",
-          regionId: cell.id,
+          target: {
+            kind: "table-cell",
+            regionPath: cell.path,
+          },
         },
       ],
       effects: [
         {
+          changeKey: "change-cell",
           changeKind: "added",
           kind: "document-change",
           startedAt: 100,
-          target: { kind: "table-cell", regionId: cell.id },
+          target: {
+            kind: "table-cell",
+            regionPath: "root.0.rows.9.cells.9",
+          },
         },
       ],
       now: 110,
@@ -356,11 +366,11 @@ describe("DocumentFrame chrome and block rows", () => {
       throw new Error("Expected active table cell region");
     }
 
-    state = setSelection(state, { regionId: activeRegion.id, offset: 1 });
+    state = setSelection(state, { regionPath: activeRegion.path, offset: 1 });
 
     const frame = createTestDocumentFrame(state, {
-      activeBlockId: activeRegion.block.id,
-      activeRegionId: activeRegion.id,
+      activeBlockPath: activeRegion.blockPath,
+      activeRegionPath: activeRegion.path,
       width: 480,
     });
 
@@ -368,7 +378,7 @@ describe("DocumentFrame chrome and block rows", () => {
     expect(frame.chrome.activeTableCellGeometry?.bands.length).toBeGreaterThan(0);
 
     const tableLines = frame.lines.filter(
-      (line) => line.layoutLine.blockId === activeRegion.block.id,
+      (line) => line.layoutLine.blockPath === activeRegion.blockPath,
     );
     expect(tableLines.length).toBeGreaterThan(0);
     expect(tableLines.every((line) => line.activeBlockBackground === null)).toBe(true);
@@ -383,13 +393,13 @@ describe("DocumentFrame chrome and block rows", () => {
       throw new Error("Expected code region");
     }
 
-    state = setSelection(state, { regionId: region.id, offset: 2 });
+    state = setSelection(state, { regionPath: region.path, offset: 2 });
 
     const frame = createTestDocumentFrame(state, {
-      activeBlockId: region.block.id,
+      activeBlockPath: region.blockPath,
       width: 320,
     });
-    const codeLines = frame.lines.filter((line) => line.layoutLine.regionId === region.id);
+    const codeLines = frame.lines.filter((line) => line.layoutLine.regionPath === region.path);
 
     expect(codeLines).toHaveLength(2);
     expect(codeLines.filter((line) => line.containerBackground?.kind === "code")).toHaveLength(1);
@@ -415,15 +425,15 @@ describe("OverlayFrame caret rows", () => {
     }
 
     state = setSelection(state, {
-      anchor: { regionId: region.id, offset: 1 },
-      focus: { regionId: region.id, offset: 5 },
+      anchor: { regionPath: region.path, offset: 1 },
+      focus: { regionPath: region.path, offset: 5 },
     });
 
     const frame = createTestOverlayFrame(state, {
       presence: [
         createPresence(1, "#0ea5e9", {
           offset: 7,
-          regionId: region.id,
+          regionPath: region.path,
         }),
         createPresence(2, "#f97316", null),
       ],
@@ -444,8 +454,8 @@ function createState(markdown: string, options: MarkdownOptions = {}) {
 function createTestDocumentFrame(
   state: EditorState,
   {
-    activeBlockId,
-    activeRegionId = state.selection.focus.regionId,
+    activeBlockPath,
+    activeRegionPath = state.selection.focus.regionPath,
     activeThreadIndex = null,
     commentPresence,
     commentRanges = [],
@@ -459,8 +469,8 @@ function createTestDocumentFrame(
     theme = resolvedLightTheme,
     width = 420,
   }: {
-    activeBlockId?: string | null;
-    activeRegionId?: string | null;
+    activeBlockPath?: string | null;
+    activeRegionPath?: string | null;
     activeThreadIndex?: number | null;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     commentRanges?: EditorCommentRange[];
@@ -475,9 +485,9 @@ function createTestDocumentFrame(
     width?: number;
   } = {},
 ) {
-  const resolvedActiveBlockId =
-    activeBlockId ??
-    state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.block.id ??
+  const resolvedActiveBlockPath =
+    activeBlockPath ??
+    resolveRegion(state.documentIndex, state.selection.focus.regionPath)?.blockPath ??
     null;
   const layoutState = createEditorLayoutState(
     state,
@@ -490,8 +500,8 @@ function createTestDocumentFrame(
     resources,
   );
   return createDocumentFrame(state, layoutState, {
-    activeBlockId: resolvedActiveBlockId,
-    activeRegionId,
+    activeBlockPath: resolvedActiveBlockPath,
+    activeRegionPath,
     activeThreadIndex,
     commentPresence,
     commentRanges,
@@ -548,11 +558,11 @@ function lineFrameContaining(frame: DocumentFrame, text: string): DocumentFrameL
   return line;
 }
 
-function lineFrameForRegion(frame: DocumentFrame, regionId: string): DocumentFrameLine {
-  const line = frame.lines.find((candidate) => candidate.layoutLine.regionId === regionId);
+function lineFrameForRegion(frame: DocumentFrame, regionPath: string): DocumentFrameLine {
+  const line = frame.lines.find((candidate) => candidate.layoutLine.regionPath === regionPath);
 
   if (!line) {
-    throw new Error(`Expected frame line for region "${regionId}"`);
+    throw new Error(`Expected frame line for region "${regionPath}"`);
   }
 
   return line;

@@ -25,6 +25,7 @@ import {
   createDividerBlock,
   createRawBlock,
   createRaw,
+  trimTrailingWhitespace,
   extractPlainTextFromBlockNodes,
   extractPlainTextFromInlineNodes,
   isReferenceInlineNode,
@@ -35,11 +36,11 @@ import {
 import { createSampleBlocks, createTestDocument, expectAnchorContainerAt } from "./helpers";
 
 describe("Document construction", () => {
-  test("builds stable semantic document identities from the same semantic content", () => {
+  test("builds stable semantic documents from the same semantic content", () => {
     const first = createTestDocument(createSampleBlocks());
     const second = createTestDocument(createSampleBlocks());
 
-    expect(first.blocks.map((block) => block.id)).toEqual(second.blocks.map((block) => block.id));
+    expect(first.blocks).toEqual(second.blocks);
   });
 
   test("defaults document comment metadata", () => {
@@ -75,9 +76,33 @@ describe("Document construction", () => {
 
     expect(resolved?.id).toBe(thread.id);
     expect(resolved?.id).toMatch(/^commentThread-/);
-    expect(createDocument([block], [{ ...thread, id: "" }]).comments[0]?.id).toMatch(
-      /^commentThread-/,
-    );
+    expect(createDocument([block], [{ ...thread, id: "" }]).comments[0]?.id).toBe(thread.id);
+  });
+
+  test("deduplicates generated comment thread ids within a document", () => {
+    const block = createParagraphTextBlock("Review this paragraph");
+    const container = expectAnchorContainerAt(createDocument([block]), 0);
+    const thread = createCommentThread({
+      anchor: createAnchorFromContainer(container, 0, "Review".length),
+      body: "Looks good.",
+      createdAt: "2026-04-05T12:00:00.000Z",
+      quote: "Review",
+    });
+    const threads = [
+      { ...thread, id: "" },
+      { ...thread, id: "" },
+      { ...thread, id: "" },
+    ];
+
+    const document = createDocument([block], threads);
+    const reloaded = createDocument([block], threads);
+    const ids = document.comments.map((comment) => comment.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids[0]).toBe(thread.id);
+    expect(ids[1]).not.toBe(thread.id);
+    expect(ids[2]).not.toBe(thread.id);
+    expect(reloaded.comments.map((comment) => comment.id)).toEqual(ids);
   });
 
   test("preserves semantic document blocks without cached source metadata", () => {
@@ -92,7 +117,7 @@ describe("Document construction", () => {
     expect(document.blocks.map((block) => block.type)).toEqual(["heading", "paragraph"]);
   });
 
-  test("derives resource identity from its semantic reference fields", () => {
+  test("keeps resource inlines as semantic values after document construction", () => {
     const createResourceDocument = (label: string, url = "demo-resource://recording/live") =>
       createDocument([
         createParagraphBlock([
@@ -103,21 +128,26 @@ describe("Document construction", () => {
         ]),
       ]);
     const first = createResourceDocument("Recording session");
-    const second = createResourceDocument("Recording session");
     const renamed = createResourceDocument("Planning note");
     const retargeted = createResourceDocument("Recording session", "demo-resource://note/complete");
 
-    const resourceId = (document: ReturnType<typeof createResourceDocument>) => {
+    const resourceInline = (document: ReturnType<typeof createResourceDocument>) => {
       const block = document.blocks[0];
       if (block?.type !== "paragraph" || block.children[0]?.type !== "resource") {
         throw new Error("Expected resource paragraph");
       }
-      return block.children[0].id;
+      return block.children[0];
     };
 
-    expect(resourceId(first)).toBe(resourceId(second));
-    expect(resourceId(first)).not.toBe(resourceId(renamed));
-    expect(resourceId(first)).not.toBe(resourceId(retargeted));
+    expect(resourceInline(first)).toEqual({
+      label: "Recording session",
+      protocol: "demo-resource:",
+      type: "resource",
+      url: "demo-resource://recording/live",
+    });
+    expect(resourceInline(first)).not.toHaveProperty("id");
+    expect(resourceInline(renamed).label).toBe("Planning note");
+    expect(resourceInline(retargeted).url).toBe("demo-resource://note/complete");
   });
 
   test("canonicalizes resource protocols from urls and explicit protocol fallbacks", () => {
@@ -145,6 +175,45 @@ describe("Document construction", () => {
   });
 });
 
+describe("Document canonicalization", () => {
+  test("preserves block references when trailing whitespace is already canonical", () => {
+    const paragraph = createParagraphTextBlock("alpha");
+    const cell = createTableCell([createText("cell")]);
+    const row = createTableRow([cell]);
+    const table = createTableBlock({ rows: [row] });
+    const blocks = [paragraph, table];
+
+    const next = trimTrailingWhitespace(blocks);
+
+    expect(next).toBe(blocks);
+    expect(next[0]).toBe(paragraph);
+    expect(next[1]).toBe(table);
+  });
+
+  test("trims table-cell trailing whitespace without rebuilding clean cells", () => {
+    const cleanCell = createTableCell([createText("clean")]);
+    const dirtyCell = createTableCell([createText("dirty   ")]);
+    const table = createTableBlock({
+      rows: [createTableRow([cleanCell, dirtyCell])],
+    });
+    const blocks = [table];
+
+    const next = trimTrailingWhitespace(blocks);
+    const nextTable = next[0];
+
+    if (nextTable?.type !== "table") {
+      throw new Error("Expected table block");
+    }
+
+    expect(next).not.toBe(blocks);
+    expect(nextTable).not.toBe(table);
+    expect(nextTable.rows[0]?.cells[0]).toBe(cleanCell);
+    expect(nextTable.rows[0]?.cells[1]).not.toBe(dirtyCell);
+    expect(nextTable.rows[0]?.cells[1]?.plainText).toBe("dirty");
+    expect(nextTable.plainText).toBe("clean | dirty");
+  });
+});
+
 describe("Document splicing", () => {
   test("splices one root without renormalizing unaffected siblings", () => {
     const document = createTestDocument(createSampleBlocks());
@@ -157,7 +226,7 @@ describe("Document splicing", () => {
     expect(nextDocument.blocks[1]).not.toBe(trailingBlock);
   });
 
-  test("renormalizes shifted suffix roots when inserting new top-level blocks", () => {
+  test("preserves shifted suffix roots when inserting new top-level blocks", () => {
     const document = createTestDocument(createSampleBlocks());
     const shiftedBlock = document.blocks[1];
     const nextDocument = spliceDocument(document, 1, 0, [createParagraphTextBlock("inserted")]);
@@ -165,11 +234,10 @@ describe("Document splicing", () => {
     expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
     expect(nextDocument.blocks[1]?.plainText).toBe("inserted");
     expect(nextDocument.blocks[2]?.plainText).toBe("alpha");
-    expect(nextDocument.blocks[2]).not.toBe(shiftedBlock);
-    expect(nextDocument.blocks[2]?.id).not.toBe(shiftedBlock?.id);
+    expect(nextDocument.blocks[2]).toBe(shiftedBlock);
   });
 
-  test("renormalizes shifted suffix roots when removing top-level blocks", () => {
+  test("preserves shifted suffix roots when removing top-level blocks", () => {
     const document = createTestDocument([
       createHeadingTextBlock({
         depth: 1,
@@ -184,8 +252,7 @@ describe("Document splicing", () => {
     expect(nextDocument.blocks).toHaveLength(2);
     expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
     expect(nextDocument.blocks[1]?.plainText).toBe("beta");
-    expect(nextDocument.blocks[1]).not.toBe(shiftedBlock);
-    expect(nextDocument.blocks[1]?.id).not.toBe(shiftedBlock?.id);
+    expect(nextDocument.blocks[1]).toBe(shiftedBlock);
   });
 
   test("splices comment threads without rebuilding semantic blocks", () => {
@@ -220,6 +287,36 @@ describe("Document splicing", () => {
 
     expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
     expect(nextDocument.comments).toEqual([secondThread]);
+  });
+
+  test("deduplicates comment thread ids across spliced comment threads", () => {
+    const document = createTestDocument(createSampleBlocks());
+    const container = listAnchorContainers(document)[0];
+
+    if (!container) {
+      throw new Error("Expected comment container");
+    }
+
+    const thread = createCommentThread({
+      anchor: createAnchorFromContainer(container, 0, 5),
+      body: "Duplicate",
+      createdAt: "2026-04-11T12:00:00.000Z",
+      quote: extractQuoteFromContainer(container, 0, 5),
+    });
+    const nextDocument = spliceCommentThreads(
+      {
+        ...document,
+        comments: [thread],
+      },
+      1,
+      0,
+      [{ ...thread, id: "" }],
+    );
+    const ids = nextDocument.comments.map((comment) => comment.id);
+
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids[0]).toBe(thread.id);
+    expect(ids[1]).not.toBe(thread.id);
   });
 });
 

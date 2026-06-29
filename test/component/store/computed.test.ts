@@ -43,7 +43,7 @@ describe("computed sprigs", () => {
       notifications += 1;
     });
 
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(notifications).toBe(1);
     expect(normalizedSelectionSprig.read(store).start.offset).toBe(2);
@@ -83,7 +83,7 @@ describe("computed sprigs", () => {
 
     computed.subscribe(store, () => {});
     computed.subscribe(store, () => {});
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(computeCount).toBe(2);
   });
@@ -98,7 +98,7 @@ describe("computed sprigs", () => {
     });
 
     unsubscribe();
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(notifications).toBe(0);
   });
@@ -122,7 +122,7 @@ describe("computed sprigs", () => {
     });
     const previous = computed.read(store);
 
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(computed.read(store)).toBe(previous);
     expect(computeCount).toBe(1);
@@ -174,7 +174,7 @@ describe("computed sprigs", () => {
 
     expect(presence?.cursorPoint).toEqual({
       offset: 5,
-      regionId: getRegion(state, "alpha beta").id,
+      regionPath: getRegion(state, "alpha beta").path,
     });
     expect(presence?.viewport).toBeNull();
     expect(presence?.status).toBe("Reviewing introduction");
@@ -185,13 +185,13 @@ describe("computed sprigs", () => {
     let state = setup("alpha beta\n");
     const region = getRegion(state, "alpha beta");
     state = setSelection(state, {
-      anchor: { regionId: region.id, offset: 0 },
-      focus: { regionId: region.id, offset: "alpha".length },
+      anchor: { regionPath: region.path, offset: 0 },
+      focus: { regionPath: region.path, offset: "alpha".length },
     });
     state =
       addComment(
         state,
-        { endOffset: "alpha".length, regionId: region.id, startOffset: 0 },
+        { endOffset: "alpha".length, regionPath: region.path, startOffset: 0 },
         "Working here",
       ) ?? state;
     const store = createStore(getDocument(state));
@@ -272,7 +272,7 @@ describe("computed sprigs", () => {
     const state = setup("Hello @Ja\n");
     const store = createStore(getDocument(state));
     const region = getRegion(store.editor.getState(), "Hello @Ja");
-    store.editor.command(setSelection, { regionId: region.id, offset: region.text.length });
+    store.editor.command(setSelection, { regionPath: region.path, offset: region.text.length });
 
     expect(
       documentCompletionSprig.read(store, [
@@ -285,7 +285,7 @@ describe("computed sprigs", () => {
         },
       ]),
     ).toEqual({
-      regionId: region.id,
+      regionPath: region.path,
       trigger: "@",
       query: "Ja",
       triggerStart: 6,
@@ -381,14 +381,14 @@ describe("computed sprigs", () => {
     let state = setup("alpha beta\n");
     const region = getRegion(state, "alpha beta");
     state = setSelection(state, {
-      anchor: { regionId: region.id, offset: 0 },
-      focus: { regionId: region.id, offset: 5 },
+      anchor: { regionPath: region.path, offset: 0 },
+      focus: { regionPath: region.path, offset: 5 },
     });
     const commented = addComment(
       state,
       {
         endOffset: 5,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: 0,
       },
       "note",
@@ -421,7 +421,7 @@ function setupPresenceCommentState() {
       state,
       {
         endOffset: "alpha".length,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: 0,
       },
       "Unresolved thread",
@@ -432,7 +432,7 @@ function setupPresenceCommentState() {
       state,
       {
         endOffset: "alpha beta".length,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: "alpha ".length,
       },
       "Resolved thread",

@@ -111,7 +111,7 @@ export function equalByKind<T extends { kind: string }>(perKind: {
 }
 
 export const equalSelectionPoints = equalBy<EditorSelectionPoint>((point) => [
-  point.regionId,
+  point.regionPath,
   point.offset,
 ]);
 
@@ -135,7 +135,7 @@ export function equalCommentStates(a: EditorCommentState, b: EditorCommentState)
 }
 
 const equalSelectionBlockContexts = equalNullableBy<NonNullable<SelectionContext["block"]>>(
-  (block) => [block.blockId, block.depth, block.nodeType, block.text],
+  (block) => [block.blockPath, block.depth, block.nodeType, block.text],
 );
 
 function equalSelectionSpans(a: SelectionContext["span"], b: SelectionContext["span"]) {
@@ -156,7 +156,7 @@ function equalSelectionSpans(a: SelectionContext["span"], b: SelectionContext["s
 
 const equalCommentRange = equalBy<EditorCommentRange>((range) => [
   range.endOffset,
-  range.regionId,
+  range.regionPath,
   range.resolved,
   range.startOffset,
   range.threadIndex,

@@ -32,7 +32,7 @@ export function hitTestDocumentLayout(
   // is here to read the region's full text length for the offset clamp
   // (clicking past the end of the last line should land at the region's
   // end, not the line's).
-  const region = resolveRegion(documentIndex, line.regionId);
+  const region = resolveRegion(documentIndex, line.regionPath);
 
   if (!region) {
     return null;
@@ -42,8 +42,8 @@ export function hitTestDocumentLayout(
   const offset = resolveBoundaryOffset(line.boundaries, localX);
 
   return {
-    blockId: line.blockId,
-    regionId: line.regionId,
+    blockPath: line.blockPath,
+    regionPath: line.regionPath,
     height: line.height,
     left: measureCanvasLineOffsetLeft(line, offset),
     lineIndex,

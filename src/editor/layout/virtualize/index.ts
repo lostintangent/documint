@@ -22,7 +22,7 @@ type VirtualizedViewport = {
 };
 
 export type VirtualizedLayoutSlice = {
-  estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
+  estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
   layout: DocumentLayout;
   totalHeight: number;
 };
@@ -66,11 +66,11 @@ export function createVirtualizedLayoutSlice({
 
   const pinTop = Math.max(0, expandedTop - viewport.overscan);
   const pinBottom = expandedBottom + viewport.overscan;
-  const pinned = new Set([state.selection.anchor.regionId, state.selection.focus.regionId]);
+  const pinned = new Set([state.selection.anchor.regionPath, state.selection.focus.regionPath]);
 
-  for (const regionId of pinned) {
-    const index = virtualLayout.containerIndices.get(regionId);
-    const bounds = virtualLayout.estimateRegionBounds(regionId);
+  for (const regionPath of pinned) {
+    const index = virtualLayout.containerIndices.get(regionPath);
+    const bounds = virtualLayout.estimateRegionBounds(regionPath);
 
     if (index === undefined || !bounds) {
       continue;
@@ -87,19 +87,10 @@ export function createVirtualizedLayoutSlice({
   let layout: DocumentLayout;
 
   if (!Number.isFinite(sliceStartIndex) || !Number.isFinite(sliceEndIndex)) {
-    layout = measureLayoutSlice(
-      {
-        ...documentIndex,
-        regions: [],
-      },
-      options,
-      cache,
-      resources,
-    );
+    layout = measureLayoutSlice(documentIndex, options, cache, resources, undefined, 0, 0);
   } else {
     const expandedSlice = expandViewportSliceToBlockBoundaries(
       documentIndex,
-      virtualLayout.containerIndices,
       sliceStartIndex,
       sliceEndIndex,
     );
@@ -110,14 +101,13 @@ export function createVirtualizedLayoutSlice({
     // read `layout.height` (scrollbars, paint extents) see the doc height,
     // not the slice height.
     const sliceLayout = measureLayoutSlice(
-      {
-        ...documentIndex,
-        regions: documentIndex.regions.slice(expandedSlice.startIndex, expandedSlice.endIndex),
-      },
+      documentIndex,
       options,
       cache,
       resources,
       sliceTop,
+      expandedSlice.startIndex,
+      expandedSlice.endIndex,
     );
 
     layout = { ...sliceLayout, height: virtualLayout.totalHeight };

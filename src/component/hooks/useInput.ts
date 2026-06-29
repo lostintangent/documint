@@ -25,6 +25,7 @@ import {
   moveCaretToLineBoundary,
   moveCaretVertically,
   replaceTextRange,
+  resolveRegion,
   dedent,
   indent,
   moveListItemDown,
@@ -701,7 +702,7 @@ export function useInput({
 
     if (process.env.NODE_ENV !== "production") {
       emitDiagnostic("editorStateEffect", {
-        regionId: editorState.selection.focus.regionId,
+        regionPath: editorState.selection.focus.regionPath,
         caretOffset: editorState.selection.focus.offset,
         hasInput: !!input,
       });
@@ -886,11 +887,11 @@ export function stripInputSeed(value: string) {
 export function resolveInputPrefix(state: EditorState, maxLength = INPUT_CONTEXT_WINDOW) {
   const { anchor, focus } = state.selection;
 
-  if (anchor.regionId !== focus.regionId || anchor.offset !== focus.offset) {
+  if (anchor.regionPath !== focus.regionPath || anchor.offset !== focus.offset) {
     return "";
   }
 
-  const region = state.documentIndex.regionIndex.get(focus.regionId);
+  const region = resolveRegion(state.documentIndex, focus.regionPath);
 
   if (!region) {
     return "";
@@ -938,7 +939,7 @@ export function syncInputContext(input: HTMLTextAreaElement, state: EditorState)
       prefix,
       prefixLength: prefix.length,
       taValueLength: nextValue.length,
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       caretOffset: state.selection.focus.offset,
     });
   }

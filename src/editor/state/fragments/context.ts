@@ -40,8 +40,8 @@ export function resolveFragmentSourceContext(
     return null;
   }
 
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
+  const startRegion = resolveRegion(documentIndex, normalized.start.regionPath);
+  const endRegion = resolveRegion(documentIndex, normalized.end.regionPath);
 
   if (!startRegion || !endRegion) {
     return null;

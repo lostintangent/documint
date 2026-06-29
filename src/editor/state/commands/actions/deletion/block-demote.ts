@@ -68,7 +68,7 @@ export function resolveBlockDemotion(
 function isFirstInFlowRootRegion(documentIndex: DocumentIndex, region: EditableRegion): boolean {
   const firstInFlow = firstInFlowRegionOfRoot(documentIndex, region.rootIndex);
 
-  return Boolean(firstInFlow && firstInFlow.id === region.id);
+  return Boolean(firstInFlow && firstInFlow.path === region.path);
 }
 
 // Returns the root-level demoted form of a block, or null when the

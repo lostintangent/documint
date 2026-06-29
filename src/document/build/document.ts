@@ -1,14 +1,12 @@
-// Canonical document construction and incremental edits. Everything in this
-// file produces a fully-normalized `Document`: each block and inline node
-// carries a deterministic `id` and a fresh `plainText` projection, both
-// derived from the node's path and semantic content by `./normalize`. The
-// public surface is intentionally tiny — three operations covers every
+// Canonical document construction and incremental edits. Builders own semantic
+// node canonicalization (`plainText`, mark order, and default values), so this
+// layer preserves block object identity and only seals comment-thread IDs.
+// The public surface is intentionally tiny: three operations cover every
 // document-altering edit the editor, markdown layer, and host can express.
 
 import type { CommentThread } from "../comments";
 import { createCommentThreadId } from "../comments/threads";
 import type { Block, Document } from "../model/types";
-import { normalizeRootBlock } from "./normalize";
 
 export function createDocument(
   blocks: Block[],
@@ -16,38 +14,27 @@ export function createDocument(
   frontMatter?: string,
 ): Document {
   return {
-    blocks: blocks.map((block, index) => normalizeRootBlock(block, index)),
-    comments: normalizeCommentThreads(comments),
+    blocks: [...blocks],
+    comments: sealCommentThreadIds(comments),
     frontMatter,
   };
 }
 
 // Replace `count` root-level blocks at `rootIndex` with `replacements`,
-// returning a new document. Roots before the splice point keep their
-// identity (`===`); roots after it are re-normalized only when their index
-// shifts, which is the layout-cache contract the parent AGENTS.md describes.
+// returning a new document. Roots outside the replacement range keep their
+// object identity (`===`) even when their structural path shifts; paths are
+// index-time runtime addresses, not fields stamped onto semantic nodes.
 export function spliceDocument(
   document: Document,
   rootIndex: number,
   count: number,
   replacements: Block[],
 ): Document {
-  const normalizedReplacements = replacements.map((block, index) =>
-    normalizeRootBlock(block, rootIndex + index),
-  );
-  const suffix = document.blocks.slice(rootIndex + count);
-  const normalizedSuffix =
-    replacements.length === count
-      ? suffix
-      : suffix.map((block, index) =>
-          normalizeRootBlock(block, rootIndex + normalizedReplacements.length + index),
-        );
-
   return {
     blocks: [
       ...document.blocks.slice(0, rootIndex),
-      ...normalizedReplacements,
-      ...normalizedSuffix,
+      ...replacements,
+      ...document.blocks.slice(rootIndex + count),
     ],
     comments: document.comments,
     frontMatter: document.frontMatter,
@@ -60,40 +47,63 @@ export function spliceCommentThreads(
   count: number,
   threads: CommentThread[],
 ): Document {
+  const comments = [
+    ...document.comments.slice(0, index),
+    ...threads,
+    ...document.comments.slice(index + count),
+  ];
+
   return {
     blocks: document.blocks,
-    comments: [
-      ...document.comments.slice(0, index),
-      ...normalizeCommentThreads(threads, index),
-      ...document.comments.slice(index + count),
-    ],
+    comments: sealCommentThreadIds(comments),
     frontMatter: document.frontMatter,
   };
 }
 
-// Comment threads arriving without an `id` (the persistence layer parsed
-// them, or a host constructed one ad-hoc) get sealed with the same identity
-// recipe `createCommentThread` uses for in-process construction. Routing
-// both call paths through `createCommentThreadId` is what keeps a thread's
-// id stable across save → reload — without it, the parsed-then-normalized
-// path would assign a different id than the freshly-constructed path.
-function normalizeCommentThreads(threads: CommentThread[], startIndex = 0): CommentThread[] {
-  return threads.map((thread, index) => {
-    if (thread.id) {
-      return thread;
-    }
+// Comment threads arriving without an `id` (the markdown layer parsed them, or
+// a host constructed one ad-hoc) get sealed with the same comment-owned recipe
+// `createCommentThread` uses for in-process construction. If persisted content
+// contains identical ID-less threads, there is no durable identity signal left;
+// duplicates are made unique deterministically by list order within the snapshot.
+function sealCommentThreadIds(threads: CommentThread[]): CommentThread[] {
+  const seenIds = new Set<string>();
+  const collisionCounts = new Map<string, number>();
 
+  return threads.map((thread) => {
     const firstComment = thread.comments[0];
-
-    return {
-      ...thread,
-      id: createCommentThreadId(
+    const baseId =
+      thread.id ||
+      createCommentThreadId(
         thread.anchor,
         thread.quote,
         firstComment?.body ?? "",
         firstComment?.updatedAt ?? "",
-        `comments.${startIndex + index}`,
-      ),
-    };
+      );
+    const id = nextUniqueCommentThreadId(baseId, seenIds, collisionCounts);
+
+    return id === thread.id ? thread : { ...thread, id };
   });
+}
+
+function nextUniqueCommentThreadId(
+  baseId: string,
+  seenIds: Set<string>,
+  collisionCounts: Map<string, number>,
+) {
+  if (!seenIds.has(baseId)) {
+    seenIds.add(baseId);
+    return baseId;
+  }
+
+  let collisionCount = collisionCounts.get(baseId) ?? 1;
+  let id = `${baseId}.${collisionCount}`;
+
+  while (seenIds.has(id)) {
+    collisionCount += 1;
+    id = `${baseId}.${collisionCount}`;
+  }
+
+  collisionCounts.set(baseId, collisionCount + 1);
+  seenIds.add(id);
+  return id;
 }

@@ -2,17 +2,16 @@
 // snapshot-local coordinates, not durable identity.
 
 import {
+  blockPathCoordinates,
   getBlockChildren,
+  parentBlockPath,
+  tableCellPositionFromPath,
   type Block,
   type Document,
   type TableBlock,
   type TableCell,
   type TableRow,
 } from "../model";
-import { visitDocument } from "./visit";
-
-const blockPathPattern = /^root\.\d+(?:\.children\.\d+)*$/;
-const tableCellPathPattern = /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)\.cells\.(\d+)$/;
 
 export type TableCellPathMatch = {
   cell: TableCell;
@@ -26,34 +25,21 @@ export type TableCellPathMatch = {
   table: TableBlock;
 };
 
-export type BlockPathMatch = {
-  block: Block;
-  path: string;
-};
-
 export function resolveBlockByPath(document: Document, path: string): Block | null {
-  if (!blockPathPattern.test(path)) {
+  const coordinates = blockPathCoordinates(path);
+  if (!coordinates) {
     return null;
   }
 
-  const segments = path.split(".");
-  const rootIndex = Number(segments[1]);
-  let block: Block | null = isValidPathIndex(rootIndex)
-    ? (document.blocks[rootIndex] ?? null)
-    : null;
+  let block: Block | null = document.blocks[coordinates.rootIndex] ?? null;
 
   if (!block) {
     return null;
   }
 
-  for (let index = 2; index < segments.length; index += 2) {
-    if (segments[index] !== "children") {
-      return null;
-    }
-
-    const childIndex = Number(segments[index + 1]);
+  for (const childIndex of coordinates.childIndices) {
     const children = getBlockChildren(block);
-    block = isValidPathIndex(childIndex) ? (children?.[childIndex] ?? null) : null;
+    block = children?.[childIndex] ?? null;
 
     if (!block) {
       return null;
@@ -71,41 +57,30 @@ export function resolveTableCellPathMatch(
   document: Document,
   path: string,
 ): TableCellPathMatch | null {
-  const parsed = parseTableCellPath(path);
-  if (!parsed) {
+  const tablePath = parentBlockPath(path);
+  const position = tableCellPositionFromPath(path);
+  if (!tablePath || !position) {
     return null;
   }
 
-  const table = resolveBlockByPath(document, parsed.tablePath) as TableBlock | null;
+  const table = resolveBlockByPath(document, tablePath) as TableBlock | null;
   if (table?.type !== "table") {
     return null;
   }
 
-  const row = table.rows[parsed.rowIndex];
-  const cell = row?.cells[parsed.cellIndex];
+  const row = table.rows[position.rowIndex];
+  const cell = row?.cells[position.cellIndex];
   if (!row || !cell) {
     return null;
   }
 
-  return createTableCellPathMatch(table, row, cell, parsed.rowIndex, parsed.cellIndex);
-}
-
-export function findBlockWithPathById(
-  document: Document,
-  blockId: string,
-): BlockPathMatch | null {
-  let match: BlockPathMatch | null = null;
-
-  visitDocument(document, {
-    enterBlock(block, context) {
-      if (block.id === blockId) {
-        match = { block, path: context.path };
-        return "stop";
-      }
-    },
-  });
-
-  return match;
+  return createTableCellPathMatch(
+    table,
+    row,
+    cell,
+    position.rowIndex,
+    position.cellIndex,
+  );
 }
 
 export function createTableCellPathMatch(
@@ -126,27 +101,4 @@ export function createTableCellPathMatch(
     rowIndex,
     table,
   };
-}
-
-function parseTableCellPath(path: string) {
-  const match = tableCellPathPattern.exec(path);
-  if (!match) {
-    return null;
-  }
-
-  const rowIndex = Number(match[2]);
-  const cellIndex = Number(match[3]);
-  if (!isValidPathIndex(rowIndex) || !isValidPathIndex(cellIndex)) {
-    return null;
-  }
-
-  return {
-    cellIndex,
-    rowIndex,
-    tablePath: match[1]!,
-  };
-}
-
-function isValidPathIndex(value: number) {
-  return Number.isInteger(value) && value >= 0;
 }

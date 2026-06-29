@@ -294,9 +294,9 @@ function createScrollOffsets(totalHeight: number, viewportHeight: number, frameC
 
 function createPaintOptions(state: EditorState) {
   return {
-    activeBlockId:
-      state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.block.id ?? null,
-    activeRegionId: state.selection.focus.regionId,
+    activeBlockPath:
+      state.documentIndex.regionIndex.get(state.selection.focus.regionPath)?.blockPath ?? null,
+    activeRegionPath: state.selection.focus.regionPath,
     activeThreadIndex: null,
     commentRanges: [],
     devicePixelRatio: 1,
@@ -317,7 +317,7 @@ function createTypingEditFixture(baseState: EditorState) {
 
   return {
     offset: Math.floor(region.text.length / 2),
-    regionId: region.id,
+    regionPath: region.path,
   };
 }
 
@@ -377,7 +377,7 @@ function runTypingBenchmarkSamples(
   return runBenchmarkSamples(name, iterations, () => {
     const previous = setSelection(state, {
       offset: fixture.offset,
-      regionId: fixture.regionId,
+      regionPath: fixture.regionPath,
     });
     const next = insertText(previous, " updated");
 

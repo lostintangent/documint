@@ -13,7 +13,7 @@ import {
 } from "./completions";
 
 export type DocumentCompletion = ActiveCompletion & {
-  regionId: string;
+  regionPath: string;
 };
 
 export function resolveDocumentCompletionContext(
@@ -31,7 +31,7 @@ export function resolveDocumentCompletionContext(
     completionSources ?? [],
   );
 
-  return activeCompletion ? { ...activeCompletion, regionId: textContext.regionId } : null;
+  return activeCompletion ? { ...activeCompletion, regionPath: textContext.regionPath } : null;
 }
 
 export function equalDocumentCompletions(
@@ -42,7 +42,7 @@ export function equalDocumentCompletions(
   if (!previous || !next) return false;
 
   return (
-    previous.regionId === next.regionId &&
+    previous.regionPath === next.regionPath &&
     previous.trigger === next.trigger &&
     previous.query === next.query &&
     previous.triggerStart === next.triggerStart &&
@@ -72,7 +72,7 @@ export function resolveDocumentCompletionApplication(
 ): DocumentCompletionApplication {
   const target = {
     endOffset: completion.caret,
-    regionId: completion.regionId,
+    regionPath: completion.regionPath,
     startOffset: completion.triggerStart,
   };
 

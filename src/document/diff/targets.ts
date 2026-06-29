@@ -1,12 +1,7 @@
 import type { Block, Document, TableCell } from "../model";
-import {
-  createDocumentNodeAnchor,
-  documentNodeAnchorKey,
-  resolveDocumentNodeAnchors,
-  type DocumentNodeAnchorResolution,
-} from "../query/anchors/node";
+import { createDocumentNodeAnchor, documentNodeAnchorKey } from "../query/anchors/node";
 import { resolveBlockByPath, resolveTableCellByPath } from "../query/paths";
-import type { DocumentChange, DocumentChangeTarget } from "./types";
+import type { DocumentChangeTarget } from "./types";
 
 type LocatedDocumentChangeTarget =
   | {
@@ -39,11 +34,8 @@ export function createDocumentChangeTarget(
 
     return {
       anchor,
-      node: {
-        blockId: target.block.id,
-        path: target.path,
-      },
       kind: "block",
+      path: target.path,
     };
   }
 
@@ -54,104 +46,25 @@ export function createDocumentChangeTarget(
 
   return {
     anchor,
-    node: {
-      cellId: target.cell.id,
-      path: target.path,
-    },
     kind: "table-cell",
+    path: target.path,
   };
 }
 
-export function retargetDocumentChanges(
-  document: Document,
-  changes: readonly DocumentChange[],
-): readonly (DocumentChange | null)[] {
-  const matches = resolveDocumentNodeAnchors(
-    document,
-    changes.map((change) => change.target.anchor),
-  );
-
-  return changes.map((change) => {
-    const target = retargetDocumentChangeTarget(
-      change.target,
-      matches,
-    );
-    if (!target) {
-      return null;
-    }
-
-    if (change.changeKind === "added") {
-      return { changeKind: "added", target };
-    }
-
-    // `previousTarget` is historical adjacent-snapshot evidence. Retargeting
-    // creates a lifecycle projection for rendering; it must not rewrite history.
-    return {
-      changeKind: "modified",
-      previousTarget: change.previousTarget,
-      target,
-    };
-  });
-}
-
 export function documentChangeLocationKey(target: DocumentChangeTarget) {
-  return `${target.kind}:${target.node.path}`;
+  return `${target.kind}:${target.path}`;
 }
 
-export function hasSameDocumentChangeTargetEvidence(
+export function hasSameDocumentChangeTargetAnchor(
   activeTarget: DocumentChangeTarget,
   previousTarget: DocumentChangeTarget,
 ) {
   return (
-    documentChangeTargetEvidenceKey(activeTarget) ===
-    documentChangeTargetEvidenceKey(previousTarget)
+    documentChangeTargetAnchorKey(activeTarget) ===
+    documentChangeTargetAnchorKey(previousTarget)
   );
 }
 
-export function documentChangeTargetEvidenceKey(target: DocumentChangeTarget) {
+export function documentChangeTargetAnchorKey(target: DocumentChangeTarget) {
   return documentNodeAnchorKey(target.anchor);
-}
-
-function retargetDocumentChangeTarget(
-  target: DocumentChangeTarget,
-  matches: ReadonlyMap<string, DocumentNodeAnchorResolution>,
-): DocumentChangeTarget | null {
-  const match = matches.get(documentNodeAnchorKey(target.anchor));
-  if (match?.status !== "matched") {
-    return null;
-  }
-
-  return createResolvedDocumentChangeTarget(match);
-}
-
-function createResolvedDocumentChangeTarget(
-  match: Extract<DocumentNodeAnchorResolution, { status: "matched" }>,
-): DocumentChangeTarget {
-  if (match.anchor.kind === "block") {
-    if (!("type" in match.node)) {
-      throw new Error(`Expected block node for ${match.path}`);
-    }
-
-    return {
-      anchor: match.anchor,
-      node: {
-        blockId: match.node.id,
-        path: match.path,
-      },
-      kind: "block",
-    };
-  }
-
-  if ("type" in match.node) {
-    throw new Error(`Expected table-cell node for ${match.path}`);
-  }
-
-  return {
-    anchor: match.anchor,
-    node: {
-      cellId: match.node.id,
-      path: match.path,
-    },
-    kind: "table-cell",
-  };
 }

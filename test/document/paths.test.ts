@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
-  findBlockWithPathById,
+  blockPathContainsPath,
+  blockPathSiblingIndex,
+  parentBlockPath,
   resolveBlockByPath,
   resolveTableCellByPath,
   resolveTableCellPathMatch,
+  rootIndexForPath,
+  tableCellPositionFromPath,
 } from "@/document";
 import { parseDocument } from "@/markdown";
 
@@ -36,6 +40,33 @@ outside
     expect(resolveBlockByPath(document, "root.0.rows.0.cells.0")).toBeNull();
   });
 
+  test("derives block parents and sibling indexes from paths", () => {
+    expect(parentBlockPath("root.2")).toBeNull();
+    expect(parentBlockPath("root.2.children.3")).toBe("root.2");
+    expect(parentBlockPath("root.2.children.3.children.1")).toBe(
+      "root.2.children.3",
+    );
+    expect(parentBlockPath("root.2.children.1.rows.3.cells.4")).toBe(
+      "root.2.children.1",
+    );
+
+    expect(blockPathSiblingIndex("root.2")).toBe(2);
+    expect(blockPathSiblingIndex("root.2.children.3")).toBe(3);
+    expect(blockPathSiblingIndex("root.2.children.3.children.1")).toBe(1);
+    expect(blockPathSiblingIndex("root.0.rows.0.cells.0")).toBeNull();
+  });
+
+  test("derives root indexes from document paths", () => {
+    expect(rootIndexForPath("root.2")).toBe(2);
+    expect(rootIndexForPath("root.2.children")).toBe(2);
+    expect(rootIndexForPath("root.2.children.1.rows.3.cells.4")).toBe(2);
+
+    expect(rootIndexForPath("root")).toBeNull();
+    expect(rootIndexForPath("root.-1")).toBeNull();
+    expect(rootIndexForPath("root.nope.children")).toBeNull();
+    expect(rootIndexForPath("other.2")).toBeNull();
+  });
+
   test("resolves table-cell paths with row and cell context", () => {
     const document = parseDocument(`| A | B | C |
 | - | - | - |
@@ -51,11 +82,7 @@ outside
       cellIndex: 1,
       nextCell: { plainText: "three" },
       nextRow: {
-        cells: [
-          { plainText: "four" },
-          { plainText: "five" },
-          { plainText: "six" },
-        ],
+        cells: [{ plainText: "four" }, { plainText: "five" }, { plainText: "six" }],
       },
       previousCell: { plainText: "one" },
       rowIndex: 1,
@@ -76,25 +103,52 @@ outside
     expect(resolveTableCellByPath(document, "root.0.rows.1")).toBeNull();
   });
 
-  test("finds blocks with their current canonical path", () => {
-    const document = parseDocument(`> parent
->
-> child
-`);
-    const root = document.blocks[0];
-
-    if (root?.type !== "blockquote") {
-      throw new Error("Expected blockquote root");
-    }
-
-    expect(findBlockWithPathById(document, root.id)).toEqual({
-      block: root,
-      path: "root.0",
+  test("derives table-cell positions from paths", () => {
+    expect(tableCellPositionFromPath("root.2.children.1.rows.3.cells.4")).toEqual({
+      cellIndex: 4,
+      rowIndex: 3,
     });
-    expect(findBlockWithPathById(document, root.children[0]!.id)).toEqual({
-      block: root.children[0],
-      path: "root.0.children.0",
-    });
-    expect(findBlockWithPathById(document, "missing")).toBeNull();
+    expect(tableCellPositionFromPath("root.2.children.1.rows.3.cells.nope")).toBeNull();
+  });
+
+  test("checks strict block-path containment", () => {
+    expect(blockPathContainsPath("root.2", "root.2")).toBeTrue();
+    expect(blockPathContainsPath("root.2", "root.2.children.3")).toBeTrue();
+    expect(
+      blockPathContainsPath(
+        "root.2.children.3",
+        "root.2.children.3.children.1",
+      ),
+    ).toBeTrue();
+    expect(blockPathContainsPath("root.2", "root.2.children.1.children")).toBeTrue();
+    expect(blockPathContainsPath("root.2", "root.2.children.1.source")).toBeTrue();
+    expect(blockPathContainsPath("root.2", "root.2.children.1.rows.3")).toBeTrue();
+    expect(blockPathContainsPath("root.2", "root.2.children.1.rows.3.cells.4")).toBeTrue();
+    expect(
+      blockPathContainsPath(
+        "root.2.children.1",
+        "root.2.children.1.rows.3.cells.4",
+      ),
+    ).toBeTrue();
+
+    expect(blockPathContainsPath("root.1", "root.2")).toBeFalse();
+    expect(blockPathContainsPath("root.1", "root.10")).toBeFalse();
+    expect(blockPathContainsPath("root.2.children.3", "root.2")).toBeFalse();
+    expect(blockPathContainsPath("root.2.children.4", "root.2.children.3")).toBeFalse();
+    expect(blockPathContainsPath("root.1", "root.2.rows.3.cells.4")).toBeFalse();
+    expect(
+      blockPathContainsPath(
+        "root.2.children.4",
+        "root.2.children.1.rows.3.cells.4",
+      ),
+    ).toBeFalse();
+  });
+
+  test("rejects unsupported path shapes for containment", () => {
+    expect(blockPathContainsPath("root.0.source", "root.0")).toBeFalse();
+    expect(blockPathContainsPath("root.0.children", "root.0.children.1")).toBeFalse();
+    expect(blockPathContainsPath("root", "root.0")).toBeFalse();
+    expect(blockPathContainsPath("root.0", "root.0.children.nope")).toBeFalse();
+    expect(blockPathContainsPath("root.0", "root.0.rows.nope.cells.0")).toBeFalse();
   });
 });

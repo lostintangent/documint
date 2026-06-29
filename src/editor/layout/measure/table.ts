@@ -62,7 +62,9 @@ export function resolveTableRowHeight(lineHeight: number, cellContentHeights: nu
 }
 
 export function groupTableRegionsByRow<Entry>(
-  regions: DocumentIndex["regions"],
+  regions: readonly DocumentIndex["regions"][number][],
+  startIndex: number,
+  endIndex: number,
   createEntry: (
     container: DocumentIndex["regions"][number],
     index: number,
@@ -71,7 +73,10 @@ export function groupTableRegionsByRow<Entry>(
 ) {
   const rows = new Map<number, Entry[]>();
 
-  for (const [index, container] of regions.entries()) {
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const container = regions[index];
+    if (!container) continue;
+
     const position = container.tableCellPosition;
 
     if (!position) {
@@ -90,16 +95,19 @@ export function layoutTable(
   lines: LayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
   regionBounds: DocumentLayout["regionBounds"],
-  regions: DocumentIndex["regions"],
+  regions: readonly DocumentIndex["regions"][number][],
+  regionStartIndex: number,
+  regionEndIndex: number,
   cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
+  blockPath: string,
   left: number,
   top: number,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
   const { cellWidth, columnWidth } = resolveTableColumnMetrics(block, left, options);
-  const rowCells = collectTableRowCells(regions);
+  const rowCells = collectTableRowCells(regions, regionStartIndex, regionEndIndex);
 
   let y = top;
 
@@ -126,8 +134,8 @@ export function layoutTable(
 
       for (const line of cell.measuredLines) {
         const layoutLine = {
-          blockId: cell.container.block.id,
-          regionId: cell.container.id,
+          blockPath,
+          regionPath: cell.container.path,
           start: line.start,
           end: line.end,
           top: lineTop,
@@ -155,7 +163,7 @@ export function layoutTable(
         lineTop += line.height;
       }
 
-      regionBounds.set(cell.container.id, {
+      regionBounds.set(cell.container.path, {
         bottom: y + rowHeight,
         left: cellLeft,
         right: cellLeft + columnWidth,
@@ -163,22 +171,31 @@ export function layoutTable(
       });
     }
 
-    mergeLayoutBlockExtent(blockExtents, block.id, y, y + rowHeight);
+    mergeLayoutBlockExtent(blockExtents, blockPath, y, y + rowHeight);
     y += rowHeight;
   }
 
   return y;
 }
 
-function collectTableRowCells(regions: DocumentIndex["regions"]) {
-  return groupTableRegionsByRow<TableRowCell>(regions, (container, _index, position) => ({
-    cellIndex: position.cellIndex,
-    container,
-  }));
+function collectTableRowCells(
+  regions: readonly DocumentIndex["regions"][number][],
+  regionStartIndex: number,
+  regionEndIndex: number,
+) {
+  return groupTableRegionsByRow<TableRowCell>(
+    regions,
+    regionStartIndex,
+    regionEndIndex,
+    (container, _index, position) => ({
+      cellIndex: position.cellIndex,
+      container,
+    }),
+  );
 }
 
 function measureTableRowCells(
-  cells: TableRowCell[],
+  cells: readonly TableRowCell[],
   cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
   cellWidth: number,

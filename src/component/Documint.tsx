@@ -507,8 +507,8 @@ function DocumintHost({
       const now = performance.now();
 
       const frame = createDocumentFrame(editorState, layoutState, {
-        activeBlockId: selectionContext.block?.blockId ?? null,
-        activeRegionId: editorState.selection.focus.regionId,
+        activeBlockPath: selectionContext.block?.blockPath ?? null,
+        activeRegionPath: editorState.selection.focus.regionPath,
         activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
         ambientTime: idle.resolveAnimationTime(now),
         devicePixelRatio,
@@ -563,7 +563,7 @@ function DocumintHost({
       normalizedSelection: normalizedSel,
       presence: resolvedPresence,
       showCaret:
-        normalizedSel.start.regionId !== normalizedSel.end.regionId ||
+        normalizedSel.start.regionPath !== normalizedSel.end.regionPath ||
         normalizedSel.start.offset !== normalizedSel.end.offset ||
         cursor.isVisible(),
       theme: preferredTheme,
@@ -686,7 +686,7 @@ function DocumintHost({
 
       if (range) {
         input.focus();
-        setSelectionCommand({ regionId: range.regionId, offset: range.startOffset });
+        setSelectionCommand({ regionPath: range.regionPath, offset: range.startOffset });
       }
       return;
     }
@@ -768,10 +768,10 @@ function DocumintHost({
     scheduleFullPaint();
   }, [
     normalizedSel.end.offset,
-    normalizedSel.end.regionId,
+    normalizedSel.end.regionPath,
     normalizedSel.start.offset,
-    normalizedSel.start.regionId,
-    selectionContext.block?.blockId,
+    normalizedSel.start.regionPath,
+    selectionContext.block?.blockPath,
   ]);
 
   // Decorations and comment-highlight changes — content layer only, no overlay impact.

@@ -40,7 +40,7 @@ import {
 import { editorInlinesToDocumentInlines, replaceEditorInlines } from "../reducer/inlines";
 import { blockContainsRegion, trimBlockToPrefix, trimBlockToSuffix } from "./blocks";
 import { regionInlines } from "../index/inlines";
-import { isSourceRegion } from "../index/query";
+import { isSourceRegion, resolveRootRegions } from "../index/query";
 import type { DocumentIndex, EditableRegion } from "../index/types";
 import { type EditorSelection } from "../selection";
 import { resolveFragmentSourceContext } from "./context";
@@ -132,7 +132,7 @@ function classifyBlocks(blocks: Block[]): Fragment {
 // list-item selection produces a single-item list, a whole quoted-paragraph
 // selection produces a one-child blockquote, and so on.
 function narrowToRegionPath(block: Block, targetRegion: EditableRegion): Block | null {
-  if (block.id === targetRegion.block.id) {
+  if (block === targetRegion.block) {
     return block;
   }
 
@@ -200,9 +200,9 @@ function coversWholeTable(
   endRegion: EditableRegion,
   endOffset: number,
 ): boolean {
-  const rootEntry = documentIndex.roots[startRegion.rootIndex];
-  const firstRegion = rootEntry?.regions[0];
-  const lastRegion = rootEntry?.regions.at(-1);
+  const rootRegions = resolveRootRegions(documentIndex, startRegion.rootIndex);
+  const firstRegion = rootRegions[0];
+  const lastRegion = rootRegions.at(-1);
 
   return (
     startRegion === firstRegion &&

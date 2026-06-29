@@ -12,7 +12,7 @@ describe("Pair completion", () => {
 
     expect(getRegion(state, "al()pha").text).toBe("al()pha");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: 3,
     });
 
@@ -20,7 +20,7 @@ describe("Pair completion", () => {
 
     expect(getRegion(state, "al([])pha").text).toBe("al([])pha");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: 4,
     });
 
@@ -28,7 +28,7 @@ describe("Pair completion", () => {
 
     expect(getRegion(state, "al([{}])pha").text).toBe("al([{}])pha");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: 5,
     });
   });
@@ -42,7 +42,7 @@ describe("Pair completion", () => {
 
     expect(toMarkdown(state)).toBe("- parent\n  - {}child\n");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: 1,
     });
   });
@@ -56,7 +56,7 @@ describe("Pair completion", () => {
 
     expect(toMarkdown(state)).toBe("```ts\nalpha[]\n```\n");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: "alpha".length + 1,
     });
   });
@@ -70,7 +70,7 @@ describe("Pair completion", () => {
 
     expect(toMarkdown(state)).toBe("alpha()\n");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: "alpha()".length,
     });
 
@@ -80,7 +80,7 @@ describe("Pair completion", () => {
 
     expect(toMarkdown(state)).toBe("(\n");
     expect(state.selection.anchor).toEqual({
-      regionId: state.selection.focus.regionId,
+      regionPath: state.selection.focus.regionPath,
       offset: 1,
     });
   });
@@ -98,7 +98,7 @@ describe("Pair completion", () => {
     state = insertText(state, " ") ?? state;
 
     expect(toMarkdown(state)).toBe("- [ ] \n");
-    expect(state.documentIndex.regions.some((r) => r.id === state.selection.focus.regionId)).toBe(
+    expect(state.documentIndex.regions.some((r) => r.path === state.selection.focus.regionPath)).toBe(
       true,
     );
   });

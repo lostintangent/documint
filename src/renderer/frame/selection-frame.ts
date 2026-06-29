@@ -1,4 +1,4 @@
-import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
+import { resolveRegion, type EditorState, type NormalizedEditorSelection } from "@/editor/state";
 
 export type SelectionRegionOrderRange = {
   end: number;
@@ -9,9 +9,14 @@ export function resolveSelectionRegionOrderRange(
   editorState: EditorState,
   normalizedSelection: NormalizedEditorSelection,
 ): SelectionRegionOrderRange | null {
-  const regionIndex = editorState.documentIndex.regionIndex;
-  const start = regionIndex.get(normalizedSelection.start.regionId)?.documentOrder;
-  const end = regionIndex.get(normalizedSelection.end.regionId)?.documentOrder;
+  const start = resolveRegion(
+    editorState.documentIndex,
+    normalizedSelection.start.regionPath,
+  )?.regionArrayIndex;
+  const end = resolveRegion(
+    editorState.documentIndex,
+    normalizedSelection.end.regionPath,
+  )?.regionArrayIndex;
 
   return start === undefined || end === undefined ? null : { end, start };
 }

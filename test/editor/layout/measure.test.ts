@@ -133,7 +133,7 @@ test("forces a wrap on inline line break runs even at large widths", () => {
   const state = setup("foo<br>\nbar\n");
   const region = getRegion(state, "foo\nbar");
   const layout = measureLayoutSlice(state.documentIndex, { width: 4000 });
-  const containerLines = layout.lines.filter((line) => line.regionId === region.id);
+  const containerLines = layout.lines.filter((line) => line.regionPath === region.path);
 
   expect(containerLines.length).toBe(2);
   expect(containerLines[0]?.text).toBe("foo");
@@ -149,7 +149,7 @@ test("materializes a trailing empty line when the region ends on a soft break", 
   const state = setup("foo<br>\n");
   const region = getRegion(state, "foo\n");
   const layout = measureLayoutSlice(state.documentIndex, { width: 4000 });
-  const containerLines = layout.lines.filter((line) => line.regionId === region.id);
+  const containerLines = layout.lines.filter((line) => line.regionPath === region.path);
 
   expect(containerLines.length).toBe(2);
   expect(containerLines[0]?.text).toBe("foo");
@@ -185,6 +185,46 @@ test("uses regular block gaps between loose list items", () => {
   const gap = betaLine.top - (alphaLine.top + alphaLine.height);
 
   expect(gap).toBe(layout.options.blockGap);
+});
+
+test("measures explicit region bounds against the full document index", () => {
+  const runtime = createDocumentIndex(parseDocument("alpha\n\n---\n\nbeta\n\ngamma\n"));
+  const throughDivider = measureLayoutSlice(
+    runtime,
+    { width: 4000 },
+    undefined,
+    null,
+    undefined,
+    0,
+    2,
+  );
+  const beforeDivider = measureLayoutSlice(
+    runtime,
+    { width: 4000 },
+    undefined,
+    null,
+    undefined,
+    0,
+    1,
+  );
+  const afterDivider = measureLayoutSlice(
+    runtime,
+    { width: 4000 },
+    undefined,
+    null,
+    undefined,
+    1,
+    2,
+  );
+
+  expect(throughDivider.blocks.map((block) => block.type)).toEqual([
+    "paragraph",
+    "divider",
+    "paragraph",
+  ]);
+  expect(beforeDivider.blocks.map((block) => block.type)).toEqual(["paragraph"]);
+  expect(afterDivider.blocks.map((block) => block.type)).toEqual(["paragraph"]);
+  expect(throughDivider.lines.map((line) => line.text)).toEqual(["alpha", "beta"]);
 });
 
 test("uses compact gaps between nested list items inside a loose parent item", () => {
@@ -224,7 +264,7 @@ test("lays out table cells side by side within the same row", () => {
 
   expect(headerValue.left).toBeGreaterThan(headerName.left);
   expect(headerValue.top).toBe(headerName.top);
-  expect(layout.regionBounds.get(headerName.regionId)?.bottom).toBeGreaterThan(
+  expect(layout.regionBounds.get(headerName.regionPath)?.bottom).toBeGreaterThan(
     headerName.top + headerName.height,
   );
 });
@@ -255,11 +295,11 @@ test("reuses cached sibling table measurements when one cell changes", () => {
     runtime,
     {
       anchor: {
-        regionId: editedCell.id,
+        regionPath: editedCell.path,
         offset: 0,
       },
       focus: {
-        regionId: editedCell.id,
+        regionPath: editedCell.path,
         offset: editedCell.text.length,
       },
     },
@@ -289,19 +329,19 @@ test.each([
     throw new Error("Expected editable region");
   }
 
-  state = setSelection(state, { regionId: region.id, offset: region.text.length });
+  state = setSelection(state, { regionPath: region.path, offset: region.text.length });
   state = insertLineBreak(state) ?? state;
 
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 420,
   });
-  const activeRegionId = state.selection.focus.regionId;
-  const emptyLine = layout.lines.find((line) => line.regionId === activeRegionId);
+  const activeRegionPath = state.selection.focus.regionPath;
+  const emptyLine = layout.lines.find((line) => line.regionPath === activeRegionPath);
   const caret = measureCaretTarget(layout, state.documentIndex, state.selection.focus);
 
   expect(emptyLine).toBeDefined();
   expect(emptyLine?.text).toBe("");
-  expect(caret?.regionId).toBe(activeRegionId);
+  expect(caret?.regionPath).toBe(activeRegionPath);
   expect(caret?.offset).toBe(0);
 });
 
@@ -416,11 +456,11 @@ test("recomputes cached line boundaries when inline mark state changes", () => {
 
   state = setSelection(state, {
     anchor: {
-      regionId: container.id,
+      regionPath: container.path,
       offset: 0,
     },
     focus: {
-      regionId: container.id,
+      regionPath: container.path,
       offset: 5,
     },
   });
@@ -443,7 +483,7 @@ test("treats emoji variation sequences as single caret boundary units", () => {
   const state = setup("a ✈️b\n");
   const region = getRegion(state, "a ✈️b");
   const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
-  const line = layout.lines.find((line) => line.regionId === region.id);
+  const line = layout.lines.find((line) => line.regionPath === region.path);
 
   if (!line) {
     throw new Error("Expected paragraph line");
@@ -457,7 +497,7 @@ test("wraps repeated color emoji without losing text past the line edge", () => 
   const state = setup(`${emojiText}\n`);
   const region = getRegion(state, emojiText);
   const layout = measureLayoutSlice(state.documentIndex, { width: 220 });
-  const lines = layout.lines.filter((line) => line.regionId === region.id);
+  const lines = layout.lines.filter((line) => line.regionPath === region.path);
   const availableWidth = layout.width - layout.options.paddingX * 2;
 
   expect(lines.length).toBeGreaterThan(1);
@@ -480,7 +520,7 @@ test("treats user mentions as single caret boundary units", () => {
   const state = setup("Hi @[Jane Doe](user-123)!\n");
   const region = getRegion(state, "Hi ￼!");
   const layout = measureLayoutSlice(state.documentIndex, { width: 420 });
-  const line = layout.lines.find((line) => line.regionId === region.id);
+  const line = layout.lines.find((line) => line.regionPath === region.path);
 
   if (!line) {
     throw new Error("Expected paragraph line");
@@ -527,7 +567,7 @@ test("measures registered resources as single pill units", () => {
     },
   };
   const layout = measureLayoutSlice(state.documentIndex, { width: 420 }, undefined, resources);
-  const line = layout.lines.find((line) => line.regionId === region.id);
+  const line = layout.lines.find((line) => line.regionPath === region.path);
 
   if (!line) {
     throw new Error("Expected paragraph line");
@@ -584,7 +624,7 @@ test("recomputes cached resource measurements when protocol icons change", () =>
     createResources("Recording"),
   );
   const readResourceWidth = (layout: typeof shortLayout) => {
-    const line = layout.lines.find((line) => line.regionId === region.id);
+    const line = layout.lines.find((line) => line.regionPath === region.path);
 
     if (!line) {
       throw new Error("Expected paragraph line");
@@ -625,7 +665,7 @@ test("lays out playground tutorial demo resources as single reference pill spans
     },
   };
   const layout = measureLayoutSlice(state.documentIndex, { width: 900 }, undefined, resources);
-  const line = layout.lines.find((line) => line.regionId === region.id);
+  const line = layout.lines.find((line) => line.regionPath === region.path);
 
   if (!line) {
     throw new Error("Expected playground resource paragraph line");

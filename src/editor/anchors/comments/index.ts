@@ -1,12 +1,12 @@
 /**
- * Editor-side projection of comment threads.
+ * Editor-side resolution of comment threads.
  *
  * Comments themselves live on the semantic `Document` (anchored against text);
  * this module is the bridge between that semantic state and the runtime
  * `EditorState`. It owns four operations:
  *
  *   - Capture: build a thread from an editor selection.
- *   - Projection: resolve every persisted thread against the current snapshot
+ *   - Runtime resolution: resolve every persisted thread against the current snapshot
  *     and emit runtime ranges plus repaired thread copies.
  *   - Viewport geometry: resolve a comment range to document-space bounds.
  *   - Edit-time repair: optimistically remap thread anchors during inline
@@ -14,7 +14,6 @@
  */
 
 import {
-  anchorKindForBlockType,
   createAnchorFromContainer,
   createCommentThread,
   extractQuoteFromContainer,
@@ -22,12 +21,12 @@ import {
   type AnchorContainer,
   type CommentResolution,
   type CommentThread,
+  type TextAnchor,
 } from "@/document";
 import {
   compareEditorPositions,
   resolveCommentThreadIndicesForRegion,
   resolveRegion,
-  resolveRegionByPath,
   type DocumentIndex,
   type EditableRegion,
 } from "../../state";
@@ -37,7 +36,7 @@ import {
   type EditorLayoutState,
 } from "../../layout";
 import type { EditorState } from "../../state/types";
-import { projectAnchorContainersToEditor } from "../index";
+import { createEditorTextAnchorResolver, resolveDocumentRangeForRegion } from "../text";
 import type { EditorPresence } from "../presence";
 import { remapEditedRange } from "./remap";
 
@@ -46,7 +45,7 @@ import { remapEditedRange } from "./remap";
 export type EditorCommentRange = {
   endOffset: number;
   resolution: CommentResolution;
-  regionId: string;
+  regionPath: string;
   resolved: boolean;
   startOffset: number;
   threadIndex: number;
@@ -66,7 +65,7 @@ export function createCommentThreadForSelection(
   documentIndex: DocumentIndex,
   selection: {
     endOffset: number;
-    regionId: string;
+    regionPath: string;
     startOffset: number;
   },
   body: string,
@@ -77,21 +76,38 @@ export function createCommentThreadForSelection(
     return null;
   }
 
-  const region = resolveRegion(documentIndex, selection.regionId);
-  const container = region ? toAnchorContainer(documentIndex, region) : null;
+  const region = resolveRegion(documentIndex, selection.regionPath);
+  const anchorRange = region
+    ? resolveDocumentRangeForRegion(region, {
+        endOffset: selection.endOffset,
+        startOffset: selection.startOffset,
+      })
+    : null;
 
-  if (!container) {
+  if (!anchorRange) {
+    return null;
+  }
+
+  if (anchorRange.startOffset === anchorRange.endOffset) {
     return null;
   }
 
   return createCommentThread({
-    anchor: createAnchorFromContainer(container, selection.startOffset, selection.endOffset),
+    anchor: createAnchorFromContainer(
+      anchorRange.anchorContainer,
+      anchorRange.startOffset,
+      anchorRange.endOffset,
+    ),
     body: normalizedBody,
-    quote: extractQuoteFromContainer(container, selection.startOffset, selection.endOffset),
+    quote: extractQuoteFromContainer(
+      anchorRange.anchorContainer,
+      anchorRange.startOffset,
+      anchorRange.endOffset,
+    ),
   });
 }
 
-// --- Projection ---
+// --- Runtime Resolution ---
 
 // Resolve every persisted thread against the current document snapshot and
 // emit runtime ranges plus repaired thread copies. Threads whose anchors
@@ -112,10 +128,10 @@ function resolveCommentStateForThreadIndices(
   documentIndex: DocumentIndex,
   threadIndices: readonly number[],
 ): EditorCommentState {
-  const containerProjection = projectAnchorContainersToEditor(documentIndex);
-  const semanticContainers = containerProjection.list();
+  const textAnchorResolver = createEditorTextAnchorResolver(documentIndex);
+  const anchorContainers = textAnchorResolver.listContainers();
   const threads = documentIndex.document.comments;
-  const resolvedThreads = [...threads];
+  let resolvedThreads: CommentThread[] | null = null;
   const ranges: EditorCommentRange[] = [];
 
   for (const threadIndex of threadIndices) {
@@ -125,23 +141,24 @@ function resolveCommentStateForThreadIndices(
       continue;
     }
 
-    const resolution = resolveCommentThreadInContainers(thread, semanticContainers);
+    const resolution = resolveCommentThreadInContainers(thread, anchorContainers);
 
     if (!resolution.match) {
       continue;
     }
 
-    const projection = containerProjection.findBySemanticMatch(
-      resolution.match.containerId,
-      resolution.match.containerOrdinal,
-    );
-    const runtimeContainer = projection?.runtimeContainer ?? null;
+    const editorRange = textAnchorResolver.resolveEditorRange(resolution.match);
 
-    if (!runtimeContainer) {
+    if (!editorRange) {
       continue;
     }
 
-    if (resolution.repair) {
+    if (
+      resolution.repair &&
+      (!sameTextAnchor(resolution.repair.anchor, thread.anchor) ||
+        resolution.repair.quote !== thread.quote)
+    ) {
+      resolvedThreads ??= [...threads];
       resolvedThreads[threadIndex] = {
         ...thread,
         anchor: resolution.repair.anchor,
@@ -150,18 +167,18 @@ function resolveCommentStateForThreadIndices(
     }
 
     ranges.push({
-      endOffset: resolution.match.endOffset,
+      endOffset: editorRange.endOffset,
       resolution,
-      regionId: runtimeContainer.id,
+      regionPath: editorRange.runtimeContainer.path,
       resolved: thread.resolvedAt != null,
-      startOffset: resolution.match.startOffset,
+      startOffset: editorRange.startOffset,
       threadIndex,
     });
   }
 
   return {
     ranges,
-    threads: resolvedThreads,
+    threads: resolvedThreads ?? threads,
   };
 }
 
@@ -179,7 +196,7 @@ export function hasActiveCommentHighlightsInViewport(
       (range) =>
         !range.resolved &&
         commentPresence.has(range.threadIndex) &&
-        range.regionId === line.regionId &&
+        range.regionPath === line.regionPath &&
         range.endOffset > line.start &&
         range.startOffset < line.end,
     ),
@@ -189,7 +206,7 @@ export function hasActiveCommentHighlightsInViewport(
 // Return the index (into `Document.comments`) of the comment whose range
 // either contains the collapsed caret or overlaps the active (non-collapsed)
 // selection. Selections can cross regions, so positions are compared in
-// document order via each region's `documentOrder` field.
+// document order via each region's `regionArrayIndex` field.
 export function resolveActiveCommentIndex(
   state: EditorState,
   ranges: readonly EditorCommentRange[],
@@ -200,8 +217,8 @@ export function resolveActiveCommentIndex(
 
   const { anchor, focus } = state.selection;
   const cmp = (
-    left: { offset: number; regionId: string },
-    right: { offset: number; regionId: string },
+    left: { offset: number; regionPath: string },
+    right: { offset: number; regionPath: string },
   ) => compareEditorPositions(state.documentIndex, left, right, { unknown: "before" });
 
   const orientation = cmp(anchor, focus);
@@ -209,8 +226,8 @@ export function resolveActiveCommentIndex(
   const [start, end] = orientation <= 0 ? [anchor, focus] : [focus, anchor];
 
   for (const range of ranges) {
-    const rangeStart = { regionId: range.regionId, offset: range.startOffset };
-    const rangeEnd = { regionId: range.regionId, offset: range.endOffset };
+    const rangeStart = { regionPath: range.regionPath, offset: range.startOffset };
+    const rangeEnd = { regionPath: range.regionPath, offset: range.endOffset };
 
     if (isCollapsed) {
       // Caret-in-range: rangeStart ≤ caret ≤ rangeEnd in document order.
@@ -247,12 +264,12 @@ export function resolveCommentThreadViewportPosition(
 
   const startLine = findLineEntryForRegionOffset(
     viewport.layout,
-    range.regionId,
+    range.regionPath,
     range.startOffset,
   )?.line;
   const endLine = findLineEntryForRegionOffset(
     viewport.layout,
-    range.regionId,
+    range.regionPath,
     Math.max(range.startOffset, range.endOffset - 1),
   )?.line;
 
@@ -263,7 +280,7 @@ export function resolveCommentThreadViewportPosition(
     };
   }
 
-  return viewport.estimateRegionBounds(range.regionId);
+  return viewport.estimateRegionBounds(range.regionPath);
 }
 
 // --- Edit-time repair ---
@@ -292,75 +309,78 @@ export function updateCommentThreadsForRegionEdit(
     return nextDocumentIndex.document.comments;
   }
 
-  const currentCommentState = resolveCommentStateForThreadIndices(documentIndex, threadIndices);
-  const rangesByThreadIndex = new Map(
-    currentCommentState.ranges.map((range) => [range.threadIndex, range]),
-  );
-  const currentContainer = toAnchorContainer(documentIndex, region);
-  const nextRegion = resolveRegionByPath(nextDocumentIndex, region.path);
-  const nextContainer = nextRegion ? toAnchorContainer(nextDocumentIndex, nextRegion) : null;
+  const currentEditRange = resolveDocumentRangeForRegion(region, {
+    endOffset: selectionEnd,
+    startOffset: selectionStart,
+  });
+  const currentContainer: AnchorContainer | null = currentEditRange
+    ? {
+        ...currentEditRange.anchorContainer,
+        containerOrdinal: -1,
+        path: region.containerPath,
+      }
+    : null;
+  const nextRegion = resolveRegion(nextDocumentIndex, region.path);
+  const nextContainer = nextRegion
+    ? resolveDocumentRangeForRegion(nextRegion, {
+        endOffset: 0,
+        startOffset: 0,
+      })?.anchorContainer ?? null
+    : null;
 
-  if (!currentContainer || !nextContainer) {
+  if (!currentEditRange || !currentContainer || !nextContainer) {
     return nextDocumentIndex.document.comments;
   }
 
-  return nextDocumentIndex.document.comments.map((thread, threadIndex) => {
-    if (!threadIndexSet.has(threadIndex)) {
-      return thread;
+  const baseComments = nextDocumentIndex.document.comments;
+  let nextComments: CommentThread[] | null = null;
+
+  for (const threadIndex of threadIndexSet) {
+    const currentThread = documentIndex.document.comments[threadIndex];
+    const nextThread = baseComments[threadIndex];
+
+    if (!currentThread || !nextThread) {
+      continue;
     }
 
-    const currentRange = rangesByThreadIndex.get(threadIndex);
-    const repairedMatch = currentRange?.resolution.match ?? null;
+    const repairedMatch = resolveCommentThreadInContainers(
+      currentThread,
+      [currentContainer],
+    ).match;
 
-    if (!currentRange || !repairedMatch || repairedMatch.containerId !== currentContainer.id) {
-      return thread;
+    if (!repairedMatch || repairedMatch.containerPath !== region.containerPath) {
+      continue;
     }
 
     const nextRange = remapEditedRange(
       repairedMatch.startOffset,
       repairedMatch.endOffset,
-      selectionStart,
-      selectionEnd,
+      currentEditRange.startOffset,
+      currentEditRange.endOffset,
       insertedText.length,
     );
+    const nextAnchor = createAnchorFromContainer(nextContainer, nextRange.start, nextRange.end);
+    const nextQuote = extractQuoteFromContainer(nextContainer, nextRange.start, nextRange.end);
 
-    return {
-      ...thread,
-      anchor: createAnchorFromContainer(nextContainer, nextRange.start, nextRange.end),
-      quote: extractQuoteFromContainer(nextContainer, nextRange.start, nextRange.end),
+    if (sameTextAnchor(nextAnchor, nextThread.anchor) && nextQuote === nextThread.quote) {
+      continue;
+    }
+
+    nextComments ??= [...baseComments];
+    nextComments[threadIndex] = {
+      ...nextThread,
+      anchor: nextAnchor,
+      quote: nextQuote,
     };
-  });
-}
-
-// --- Internal helpers ---
-
-// Adapt a runtime `EditableRegion` into the `AnchorContainer` shape used by the
-// document-layer anchor primitives. The `containerOrdinal: -1` is a sentinel:
-// edit-time use never disambiguates by ordinal (we already know exactly which
-// region we're touching), so we skip the ordinal computation. Returns `null`
-// when the region isn't an anchorable kind (list markers, etc.).
-function toAnchorContainer(
-  documentIndex: DocumentIndex,
-  region: EditableRegion,
-): AnchorContainer | null {
-  const containerKind = resolveAnchorContainerKind(region);
-
-  if (!containerKind) {
-    return null;
   }
 
-  return {
-    containerKind,
-    containerOrdinal: -1,
-    id: region.semanticRegionId,
-    text: region.text,
-  };
+  return nextComments ?? baseComments;
 }
 
-function resolveAnchorContainerKind(region: EditableRegion): AnchorContainer["containerKind"] | null {
-  if (region.tableCellPosition) {
-    return "tableCell";
-  }
-
-  return anchorKindForBlockType(region.block.type);
+function sameTextAnchor(left: TextAnchor, right: TextAnchor) {
+  return (
+    (left.kind ?? null) === (right.kind ?? null) &&
+    (left.prefix ?? null) === (right.prefix ?? null) &&
+    (left.suffix ?? null) === (right.suffix ?? null)
+  );
 }

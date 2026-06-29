@@ -20,7 +20,7 @@ export function createOverlayFrame(
 ): OverlayFrame {
   const carets: OverlayCaretFrame[] = [];
   const hasRangeSelection =
-    options.normalizedSelection.start.regionId !== options.normalizedSelection.end.regionId ||
+    options.normalizedSelection.start.regionPath !== options.normalizedSelection.end.regionPath ||
     options.normalizedSelection.start.offset !== options.normalizedSelection.end.offset;
   const shouldPaintUserCaret = options.showCaret && !hasRangeSelection;
 
@@ -28,7 +28,7 @@ export function createOverlayFrame(
     const caret = resolveOverlayCaretFrame(editorState, layoutState, {
       color: options.theme.caret,
       offset: editorState.selection.focus.offset,
-      regionId: editorState.selection.focus.regionId,
+      regionPath: editorState.selection.focus.regionPath,
     });
 
     if (caret) {
@@ -45,7 +45,7 @@ export function createOverlayFrame(
       const caret = resolveOverlayCaretFrame(editorState, layoutState, {
         color: presence.color ?? options.theme.leafAccent,
         offset: presence.cursorPoint.offset,
-        regionId: presence.cursorPoint.regionId,
+        regionPath: presence.cursorPoint.regionPath,
       });
 
       if (caret) {
@@ -93,7 +93,7 @@ function resolveOverlayCaretFrame(
   target: {
     color: string;
     offset: number;
-    regionId: string;
+    regionPath: string;
   },
 ): OverlayCaretFrame | null {
   const measured = measureCaretTarget(layoutState.layout, editorState.documentIndex, target);
@@ -117,7 +117,7 @@ function resolveCaretPaintMetrics(
   layoutState: EditorLayoutState,
   caret: NonNullable<ReturnType<typeof measureCaretTarget>>,
 ) {
-  const line = findLineForRegionOffset(layoutState.layout, caret.regionId, caret.offset);
+  const line = findLineForRegionOffset(layoutState.layout, caret.regionPath, caret.offset);
   const font =
     line?.font ??
     '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';

@@ -10,7 +10,6 @@ describe("Inline replacement", () => {
   test("inserting at the start of a link run stays outside the link", () => {
     const link: Link = {
       children: [],
-      id: "",
       title: null,
       type: "link",
       url: "https://example.com",
@@ -37,7 +36,6 @@ describe("Inline replacement", () => {
   test("inserting between runs in the same link stays inside the link", () => {
     const link: Link = {
       children: [],
-      id: "",
       title: null,
       type: "link",
       url: "https://example.com",
@@ -105,13 +103,12 @@ type InlineInput = {
 function createInlines(inputs: InlineInput[]): IndexedInline[] {
   let start = 0;
 
-  return inputs.map<IndexedInline>((input, index) => {
+  return inputs.map<IndexedInline>((input) => {
     const end = start + input.text.length;
     const node: IndexedInline["node"] =
       input.kind === "text"
-        ? { id: `run:${index}`, marks: [...(input.marks ?? [])], text: input.text, type: "text" }
+        ? { marks: [...(input.marks ?? [])], text: input.text, type: "text" }
         : {
-            id: `run:${index}`,
             originalType: input.originalType ?? "raw",
             source: input.text,
             type: "raw",

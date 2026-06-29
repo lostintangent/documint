@@ -20,7 +20,7 @@ export function moveCaretHorizontallyInFlow(
   delta: -1 | 1,
   extendSelection: boolean,
 ) {
-  const container = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const container = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
 
   if (!container) {
     return state;
@@ -28,11 +28,11 @@ export function moveCaretHorizontallyInFlow(
   const nextOffset = moveGraphemeOffset(container.text, state.selection.focus.offset, delta);
 
   if (nextOffset !== state.selection.focus.offset) {
-    return setSelectionPoint(state, container.id, nextOffset, extendSelection);
+    return setSelectionPoint(state, container.path, nextOffset, extendSelection);
   }
 
   if (delta < 0) {
-    const previousContainer = previousRegionInFlow(state.documentIndex, container.id);
+    const previousContainer = previousRegionInFlow(state.documentIndex, container.path);
 
     if (!previousContainer) {
       return state;
@@ -40,19 +40,19 @@ export function moveCaretHorizontallyInFlow(
 
     return setSelectionPoint(
       state,
-      previousContainer.id,
+      previousContainer.path,
       previousContainer.text.length,
       extendSelection,
     );
   }
 
-  const nextContainer = nextRegionInFlow(state.documentIndex, container.id);
+  const nextContainer = nextRegionInFlow(state.documentIndex, container.path);
 
   if (!nextContainer) {
     return state;
   }
 
-  return setSelectionPoint(state, nextContainer.id, 0, extendSelection);
+  return setSelectionPoint(state, nextContainer.path, 0, extendSelection);
 }
 
 export function moveCaretVerticallyInFlow(
@@ -62,7 +62,7 @@ export function moveCaretVerticallyInFlow(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentLine = findLineEntryForRegionOffset(layout, caret.regionId, caret.offset);
+  const currentLine = findLineEntryForRegionOffset(layout, caret.regionPath, caret.offset);
 
   if (!currentLine) {
     return state;
@@ -97,7 +97,7 @@ export function moveCaretToCurrentLineBoundary(
 
   return setSelectionPoint(
     state,
-    currentLine.regionId,
+    currentLine.regionPath,
     boundary === "Home" ? currentLine.start : currentLine.end,
     extendSelection,
   );
@@ -111,7 +111,7 @@ export function moveCaretByViewportInFlow(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentLineEntry = findLineEntryForRegionOffset(layout, caret.regionId, caret.offset);
+  const currentLineEntry = findLineEntryForRegionOffset(layout, caret.regionPath, caret.offset);
 
   if (!currentLineEntry) {
     return state;
@@ -155,13 +155,13 @@ export function placeCaretAtLineY(
     return state;
   }
 
-  return setSelectionPoint(state, hit.regionId, hit.offset, extendSelection);
+  return setSelectionPoint(state, hit.regionPath, hit.offset, extendSelection);
 }
 
 function findCurrentLine(state: EditorState, layout: DocumentLayout) {
   return findLineForRegionOffset(
     layout,
-    state.selection.focus.regionId,
+    state.selection.focus.regionPath,
     state.selection.focus.offset,
   );
 }

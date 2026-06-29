@@ -1,5 +1,5 @@
-// Editor model type definitions: the runtime representation of a document
-// as flattened roots, indexed blocks, regions, indexed inlines, and lookup indexes.
+// Runtime address-space types for a `Document`: root slices, flat block and
+// region streams, inline range maps, and path-keyed lookups.
 import type { Block, Document, Inline, Link } from "@/document";
 
 // Closed taxonomy of how a block contributes to editor coordinate space.
@@ -14,11 +14,10 @@ import type { Block, Document, Inline, Link } from "@/document";
 //   - `inert`         - leaf with no editable region (divider, directive)
 export type BlockKind = "container" | "inline-text" | "source-text" | "cells" | "inert";
 
-// A document inline projected into the editor index. References the source
-// document Inline node directly; the discriminator is `node.type`. Link
-// wrappers are flattened (their children appear as siblings) and propagated
-// via the orthogonal `link` field. The index adds only what the document
-// doesn't carry: `start`/`end` char offsets in the region's coordinate space.
+// A document inline projected into a region's editor coordinate space. The
+// source document inline stays referenced through `node`. Link wrappers are
+// flattened and preserved through the orthogonal `link` field. The index adds
+// only range coordinates.
 //
 // Indexed inlines only exist for inline-bearing editable regions
 // (`content.kind === "inlines"`). Source-bearing editable regions (code,
@@ -30,10 +29,9 @@ export type IndexedInline = {
   start: number;
 };
 
-// A list item projected into the editor index. The document owns the source
-// facts (`ListBlock.ordered/start`, `ListItemBlock.checked`, and nesting
-// shape); the index flattens those contextual facts onto the item so layout,
-// navigation, and paint can read them in O(1).
+// Runtime list-item context. The document owns ordered/task semantics and tree
+// shape; the index flattens the contextual facts layout, navigation, and paint
+// need in O(1).
 export type IndexedListItem =
   | { checked: boolean; depth: number; kind: "task" }
   | { depth: number; kind: "unordered" }
@@ -58,18 +56,16 @@ export type EditableRegion = {
   // Consumers building inline-container projections use this instead of
   // re-parsing `path` with regex.
   containerPath: string;
-  // Position of this region in `DocumentIndex.regions` (document-order rank).
-  // Stamped by the indexer; re-stamped during positioning whenever the
-  // region's root gets a new `regionRange.start`. Used by selection
-  // ordering, document-order comparisons, and flow walks for O(1) access
-  // without a map lookup.
-  documentOrder: number;
-  end: number;
-  id: string;
+  // Structural path of the owning block. For table cell regions, this is the
+  // table block path, while `containerPath` and `path` identify the cell.
+  blockPath: string;
+  // Position of this region in `DocumentIndex.regions`. Stamped by the
+  // indexer and re-stamped during positioning whenever the region's root
+  // moves in region-array space. Used by selection ordering, document-order
+  // comparisons, and flow walks for O(1) access without a map lookup.
+  regionArrayIndex: number;
   path: string;
   rootIndex: number;
-  semanticRegionId: string;
-  start: number;
   tableCellPosition: { cellIndex: number; rowIndex: number } | null;
   text: string;
 };
@@ -79,37 +75,37 @@ export type EditableRegionContent =
   | { kind: "source" };
 
 // A block projected into the editor index. Carries a direct reference to the
-// source document `Block` (so `block.type`, `block.id`, and the block's
-// children are reached through one pointer hop, not duplicated) plus the
-// index-only metadata: char-offset coordinates, document-order position,
-// depth, parent, taxonomy kind, and the regions this block contributes.
+// source document `Block` (so `block.type` and the block's children are
+// reached through one pointer hop, not duplicated) plus the index-only
+// metadata: block-array position, depth, path/parent topology, taxonomy kind,
+// and nested ranges over the flat block/region arrays.
 export type IndexedBlock = {
   block: Block;
   // Position of this block in `DocumentIndex.blocks`. Set by the indexer,
   // re-stamped on every root reposition. Used by navigation's block-flow
   // walks to look up adjacency in O(1) instead of a linear `findIndex`.
   blockArrayIndex: number;
+  // Half-open end of this block's pre-order subtree in `DocumentIndex.blocks`.
+  // `blockArrayIndex` is the matching range start.
+  blockRangeEnd: number;
   depth: number;
-  end: number;
   // Closed taxonomy classification — see `BlockKind`. Stamped by the visitor
   // from `BLOCK_CONTRIBUTIONS` so every consumer that needs "is this a
   // container?" / "is this inert?" reads one field instead of re-deriving
   // from `block.type` literals.
   kind: BlockKind;
-  parentBlockId: string | null;
+  parentBlockPath: string | null;
   path: string;
-  regionIds: string[];
+  regionRangeEnd: number;
+  regionRangeStart: number;
   rootIndex: number;
-  start: number;
 };
 
-// A top-level document block projected into the editor index. Groups every
-// indexed block and editable region reachable from that root, enabling
-// incremental model rebuilds that only reprocess the affected root.
+// Runtime slice for one top-level document block. Groups every indexed block
+// and editable region reachable from that root so incremental rebuilds can
+// replace one slice while preserving siblings.
 export type IndexedRoot = {
-  blockRange: { end: number; start: number };
   blocks: IndexedBlock[];
-  end: number;
   // URLs of image inlines reachable from this root. Collected during the
   // existing inline walk so the per-document image-resource hook can read
   // the set without re-walking the tree on every keystroke. Reused by
@@ -119,22 +115,19 @@ export type IndexedRoot = {
   // existing inline walk so the component can notify the host about discovered
   // resources and reconcile host-provided active resource state.
   resourceUrls: ReadonlySet<string>;
-  // Contextual list-item projections inside this root. Collected while the
-  // root is already being walked so unrelated root edits don't force a
-  // full-document list-item rebuild.
+  // Contextual list-item projections inside this root, keyed by the list
+  // item block path. Collected while the root is already being walked so
+  // unrelated root edits don't force a full-document list-item rebuild.
   listItems: ReadonlyMap<string, IndexedListItem>;
-  regionRange: { end: number; start: number } | undefined;
   regions: EditableRegion[];
   rootIndex: number;
-  start: number;
 };
 
-// A flat, indexed projection of a `Document` for the editing engine: pre-flattened
-// blocks/editable regions, character-offset coordinates, and lookup tables for O(1) hot-path
-// access. Holds a reference back to the source `document`; carries no semantic
-// content of its own — every field is either a coordinate, a topology aid, an
-// index, or a runtime presentation projection.
+// Flat runtime projection of a `Document`: pre-flattened block and region
+// streams, path lookups, and small presentation projections. The semantic
+// payload remains in `document` and the referenced document nodes.
 export type DocumentIndex = {
+  // Path-keyed block lookup. The map key is `IndexedBlock.path`.
   blockIndex: Map<string, IndexedBlock>;
   blocks: IndexedBlock[];
   commentContainerIndex: Map<string, number[]>;
@@ -147,9 +140,10 @@ export type DocumentIndex = {
   // Union of resource URLs across every root, with the same reference-stable
   // value-comparison policy as `imageUrls`.
   resourceUrls: ReadonlySet<string>;
+  // Contextual list-item projections keyed by list item block path.
   listItems: ReadonlyMap<string, IndexedListItem>;
+  // Path-keyed region lookup. The map key is `EditableRegion.path`.
   regionIndex: Map<string, EditableRegion>;
-  regionPathIndex: Map<string, EditableRegion>;
   regions: EditableRegion[];
   roots: IndexedRoot[];
 };

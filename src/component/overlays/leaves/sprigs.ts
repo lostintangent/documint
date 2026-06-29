@@ -9,6 +9,9 @@
 
 import { isResolvedCommentThread } from "@/document";
 import {
+  isRootIndexedBlock,
+  resolveIndexedBlock,
+  resolveRegion,
   resolveTargetAtSelection,
   type EditorHoverTarget,
   type EditorLayoutState,
@@ -82,7 +85,7 @@ const equalInsertionLeaf = (a: InsertionLeaf, b: InsertionLeaf): boolean =>
 const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
   areDocumentAnchorTargetsEqual(a, b) &&
   a.endOffset === b.endOffset &&
-  a.regionId === b.regionId &&
+  a.regionPath === b.regionPath &&
   a.startOffset === b.startOffset &&
   a.title === b.title &&
   a.url === b.url;
@@ -201,7 +204,7 @@ export const pointerViewSprig = createParameterizedSprig(
     const target =
       hoverTarget?.kind === "link"
         ? resolveTargetAtSelection(state, {
-            regionId: hoverTarget.regionId,
+            regionPath: hoverTarget.regionPath,
             offset: resolveLinkInteriorOffset(hoverTarget),
           })
         : hoverTarget;
@@ -234,7 +237,7 @@ function resolveAnnotationLeaf(
     formatting,
     // Anchor row comes from selection-end (the leaf renders below the
     // entire selected range).
-    anchor: { regionId: selection.regionId, offset: selection.endOffset },
+    anchor: { regionPath: selection.regionPath, offset: selection.endOffset },
     kind: "annotation",
     // Cross-corner: x from selection-start while top comes from
     // selection-end's row, so the leaf sits at the bottom-left of the
@@ -326,25 +329,21 @@ function resolveCursorLeaf({
 
 function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableLeaf | null {
   const focus = state.selection.focus;
-  const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
+  const focusedRegion = resolveRegion(state.documentIndex, focus.regionPath);
   const tableCellPosition = focusedRegion?.tableCellPosition ?? null;
 
   if (!focusedRegion || !tableCellPosition) {
     return null;
   }
 
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.block.id);
-  const table =
-    blockEntry?.block.type === "table"
-      ? state.documentIndex.document.blocks[blockEntry.rootIndex]
-      : null;
+  const blockEntry = resolveIndexedBlock(state.documentIndex, focusedRegion.blockPath);
 
-  if (!blockEntry || !table || table.type !== "table") {
+  if (!blockEntry || blockEntry.block.type !== "table") {
     return null;
   }
 
-  const textLeft = resolveRegionTextLeft(layout, focusedRegion.id);
-  const columnCount = Math.max(1, ...table.rows.map((row) => row.cells.length));
+  const textLeft = resolveRegionTextLeft(layout, focusedRegion.path);
+  const columnCount = Math.max(1, ...blockEntry.block.rows.map((row) => row.cells.length));
 
   return textLeft !== null
     ? {
@@ -355,21 +354,21 @@ function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableL
         // The cell's text-area edge isn't a caret position, so override the
         // host's default left (caret-x at the anchor).
         leftOverride: textLeft,
-        rowCount: table.rows.length,
+        rowCount: blockEntry.block.rows.length,
         rowIndex: tableCellPosition.rowIndex,
       }
     : null;
 }
 
-function resolveRegionTextLeft(layout: EditorLayoutState, regionId: string) {
-  const firstLine = layout.layout.lines.find((line) => line.regionId === regionId);
+function resolveRegionTextLeft(layout: EditorLayoutState, regionPath: string) {
+  const firstLine = layout.layout.lines.find((line) => line.regionPath === regionPath);
 
   return firstLine ? firstLine.left : null;
 }
 
 function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
   const focus = state.selection.focus;
-  const focusedRegion = state.documentIndex.regionIndex.get(focus.regionId);
+  const focusedRegion = resolveRegion(state.documentIndex, focus.regionPath);
 
   if (!focusedRegion || focusedRegion.block.type !== "paragraph" || focusedRegion.text.length > 0) {
     return null;
@@ -379,9 +378,9 @@ function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
     return null;
   }
 
-  const blockEntry = state.documentIndex.blockIndex.get(focusedRegion.block.id);
+  const blockEntry = resolveIndexedBlock(state.documentIndex, focusedRegion.blockPath);
 
-  if (!blockEntry || blockEntry.parentBlockId !== null) {
+  if (!blockEntry || !isRootIndexedBlock(blockEntry)) {
     return null;
   }
 

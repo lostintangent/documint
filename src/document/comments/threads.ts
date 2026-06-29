@@ -2,7 +2,13 @@
  * Immutable CRUD operations and queries for comment threads.
  */
 
-import { structuralId } from "../build/normalize";
+import {
+  FNV_OFFSET_BASIS,
+  HASH_SEPARATOR_CHAR_CODE,
+  finishHash,
+  mixByteIntoHash,
+  mixStringIntoHash,
+} from "../model/fnv";
 import type { TextAnchor } from "../query/anchors/text";
 import type { Comment, CommentThread } from "./types";
 
@@ -132,13 +138,21 @@ export function createCommentThreadId(
   quote: string,
   body: string,
   updatedAt: string,
-  path = "comments",
 ): string {
   // Seed recipe lives here so the build/ layer doesn't have to know about
-  // comment-domain field shapes. Order of segments is part of the persisted
-  // id contract — changing it invalidates every existing thread id.
+  // comment-domain field shapes. Markdown persistence omits thread IDs, so the
+  // generated handle is derived only from persisted comment content.
   const seed = `${anchor.kind ?? ""}:${anchor.prefix ?? ""}:${anchor.suffix ?? ""}:${quote}:${body}:${updatedAt}`;
-  return structuralId("commentThread", path, seed);
+  return createDeterministicCommentId("commentThread", seed);
+}
+
+function createDeterministicCommentId(type: string, semanticSeed: string): string {
+  let hash = FNV_OFFSET_BASIS;
+  hash = mixStringIntoHash(hash, type);
+  hash = mixByteIntoHash(hash, HASH_SEPARATOR_CHAR_CODE);
+  hash = mixStringIntoHash(hash, semanticSeed);
+
+  return `${type}-${finishHash(hash).toString(36)}`;
 }
 
 function createComment(options: { body: string; updatedAt?: string }): Comment {

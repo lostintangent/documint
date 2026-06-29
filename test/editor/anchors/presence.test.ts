@@ -4,12 +4,22 @@ import {
   createEditorState,
   createEditorLayoutState,
   resolvePresenceViewport,
+  resolveRegion,
 } from "@/editor";
 import {
   createAnchorFromContainer,
   createCommentThread,
+  createCodeBlock,
   createDocument,
+  createImage,
+  createMention,
+  createParagraphBlock,
   createParagraphTextBlock,
+  createResource,
+  createTableBlock,
+  createTableCell,
+  createTableRow,
+  createText,
   extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
@@ -55,10 +65,10 @@ Only the active region reveals source-like editing affordances.
   expect(beforeCursor?.cursorPoint).not.toBeNull();
 
   const afterRegion = afterCursor?.cursorPoint
-    ? state.documentIndex.regionIndex.get(afterCursor.cursorPoint.regionId)
+    ? resolveRegion(state.documentIndex, afterCursor.cursorPoint.regionPath)
     : null;
   const beforeRegion = beforeCursor?.cursorPoint
-    ? state.documentIndex.regionIndex.get(beforeCursor.cursorPoint.regionId)
+    ? resolveRegion(state.documentIndex, beforeCursor.cursorPoint.regionPath)
     : null;
 
   expect(afterRegion?.text.slice(0, afterCursor?.cursorPoint?.offset)).toBe(
@@ -88,7 +98,7 @@ alpha beta delta
   expect(cursor?.cursorPoint).not.toBeNull();
 
   const region = cursor?.cursorPoint
-    ? state.documentIndex.regionIndex.get(cursor.cursorPoint.regionId)
+    ? resolveRegion(state.documentIndex, cursor.cursorPoint.regionPath)
     : null;
 
   expect(region?.text).toBe("alpha beta delta");
@@ -115,7 +125,7 @@ anchor target
   expect(cursor?.cursorPoint).not.toBeNull();
 
   const region = cursor?.cursorPoint
-    ? state.documentIndex.regionIndex.get(cursor.cursorPoint.regionId)
+    ? resolveRegion(state.documentIndex, cursor.cursorPoint.regionPath)
     : null;
 
   expect(region?.block.type).toBe("paragraph");
@@ -145,7 +155,154 @@ test("preserves exact presence anchor text when matching", () => {
   expect(trimmedCursor?.cursorPoint).toBeNull();
 });
 
-test("resolves comment thread anchors as active threads without projecting a cursor", () => {
+test("resolves semantic presence anchors through reference-inline runtime offsets", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("Hello "),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createText(" world"),
+    ]),
+  ]);
+  const state = createEditorState(document);
+  const [presence] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: {
+        prefix: "Hello @Jane Doe",
+      },
+      id: "agent",
+      username: "Agent",
+    },
+  ]);
+  const region = presence?.cursorPoint
+    ? resolveRegion(state.documentIndex, presence.cursorPoint.regionPath)
+    : null;
+
+  expect(region?.text).not.toContain("@Jane Doe");
+  expect(region?.text.length).toBe("Hello ".length + 1 + " world".length);
+  expect(presence?.cursorPoint?.offset).toBe("Hello ".length + 1);
+});
+
+test("uses anchor direction for collapsed cursors inside reference labels", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("Hello "),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createText(" world"),
+    ]),
+  ]);
+  const state = createEditorState(document);
+  const [afterMention, beforeMention] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: {
+        prefix: "Hello @Jane",
+      },
+      id: "after",
+      username: "After",
+    },
+    {
+      cursor: {
+        suffix: "Jane Doe world",
+      },
+      id: "before",
+      username: "Before",
+    },
+  ]);
+
+  expect(afterMention?.cursorPoint?.offset).toBe("Hello \uFFFC".length);
+  expect(beforeMention?.cursorPoint?.offset).toBe("Hello ".length);
+});
+
+test("resolves image and resource presence anchors through runtime atom offsets", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("See "),
+      createImage({ alt: "Preview", url: "https://example.com/image.png" }),
+      createText(" and "),
+      createResource({
+        label: "Recording",
+        protocol: "demo-resource:",
+        url: "demo-resource://recording/live",
+      }),
+      createText(" now"),
+    ]),
+  ]);
+  const state = createEditorState(document);
+  const [afterImage, afterResource] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: { prefix: "See Preview" },
+      id: "image-agent",
+      username: "Image Agent",
+    },
+    {
+      cursor: { prefix: "See Preview and Recording" },
+      id: "resource-agent",
+      username: "Resource Agent",
+    },
+  ]);
+  const region = state.documentIndex.regions[0];
+
+  expect(region?.text).toBe("See \uFFFC and \uFFFC now");
+  expect(afterImage?.cursorPoint?.offset).toBe("See \uFFFC".length);
+  expect(afterResource?.cursorPoint?.offset).toBe("See \uFFFC and \uFFFC".length);
+});
+
+test("resolves table-cell reference presence anchors through runtime offsets", () => {
+  const document = createDocument([
+    createTableBlock({
+      rows: [
+        createTableRow([
+          createTableCell([
+            createText("Cell "),
+            createMention({ name: "Jane Doe", userId: "user-123" }),
+            createText(" done"),
+          ]),
+        ]),
+      ],
+    }),
+  ]);
+  const state = createEditorState(document);
+  const [presence] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: {
+        kind: "tableCell",
+        prefix: "Cell @Jane Doe",
+      },
+      id: "agent",
+      username: "Agent",
+    },
+  ]);
+  const region = presence?.cursorPoint
+    ? resolveRegion(state.documentIndex, presence.cursorPoint.regionPath)
+    : null;
+
+  expect(region?.text).toBe("Cell \uFFFC done");
+  expect(presence?.cursorPoint?.offset).toBe("Cell \uFFFC".length);
+});
+
+test("keeps code presence anchors in source-text coordinates", () => {
+  const state = createEditorState(
+    createDocument([
+      createCodeBlock({
+        language: "ts",
+        source: "alpha beta",
+      }),
+    ]),
+  );
+  const [presence] = resolvePresenceTargets(state.documentIndex, [
+    {
+      cursor: {
+        kind: "code",
+        prefix: "alpha",
+      },
+      id: "agent",
+      username: "Agent",
+    },
+  ]);
+
+  expect(presence?.cursorPoint?.offset).toBe("alpha".length);
+});
+
+test("resolves comment thread anchors as active threads without resolving a cursor", () => {
   const block = createParagraphTextBlock("alpha comment target");
   const baseDocument = createDocument([block]);
   const container = listAnchorContainers(baseDocument)[0];
@@ -417,7 +574,7 @@ function createResolvedCursor(username: string, region: EditableRegion): EditorP
     commentThreadIndex: null,
     cursorPoint: {
       offset: 0,
-      regionId: region.id,
+      regionPath: region.path,
     },
     id: username,
     isOnUnresolvedCommentThread: false,

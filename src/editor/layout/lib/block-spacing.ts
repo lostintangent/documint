@@ -26,18 +26,18 @@ const listSpacingAncestorTypes = new Set<Block["type"]>(["list", "listItem"]);
 // keyed by their shared ancestry.
 export function resolveBlockGap(
   indexedBlocks: Map<string, IndexedBlock>,
-  currentBlockId: string,
-  nextBlockId: string,
+  currentBlockPath: string,
+  nextBlockPath: string,
   blockGap: number,
 ) {
-  const sharedAncestorGap = resolveSharedAncestorGap(indexedBlocks, currentBlockId, nextBlockId);
+  const sharedAncestorGap = resolveSharedAncestorGap(indexedBlocks, currentBlockPath, nextBlockPath);
   if (sharedAncestorGap !== null) {
     return sharedAncestorGap;
   }
 
   const headingExtraGap =
-    resolveHeadingExtraGap(indexedBlocks.get(currentBlockId)?.block, "trailing", blockGap) +
-    resolveHeadingExtraGap(indexedBlocks.get(nextBlockId)?.block, "leading", blockGap);
+    resolveHeadingExtraGap(indexedBlocks.get(currentBlockPath)?.block, "trailing", blockGap) +
+    resolveHeadingExtraGap(indexedBlocks.get(nextBlockPath)?.block, "leading", blockGap);
 
   if (headingExtraGap > 0) {
     return blockGap + headingExtraGap;
@@ -48,14 +48,14 @@ export function resolveBlockGap(
 
 function resolveSharedAncestorGap(
   indexedBlocks: Map<string, IndexedBlock>,
-  currentBlockId: string,
-  nextBlockId: string,
+  currentBlockPath: string,
+  nextBlockPath: string,
 ) {
   if (
     findNearestSharedAncestor(
       indexedBlocks,
-      currentBlockId,
-      nextBlockId,
+      currentBlockPath,
+      nextBlockPath,
       blockquoteSpacingAncestorTypes,
     )
   ) {
@@ -64,8 +64,8 @@ function resolveSharedAncestorGap(
 
   const listAncestor = findNearestSharedAncestor<ListBlock | ListItemBlock>(
     indexedBlocks,
-    currentBlockId,
-    nextBlockId,
+    currentBlockPath,
+    nextBlockPath,
     listSpacingAncestorTypes,
   )?.block;
   if (listAncestor) {
@@ -89,38 +89,38 @@ function resolveHeadingExtraGap(
 
 function findNearestSharedAncestor<T extends Block>(
   indexedBlocks: Map<string, IndexedBlock>,
-  leftBlockId: string,
-  rightBlockId: string,
+  leftBlockPath: string,
+  rightBlockPath: string,
   types: ReadonlySet<Block["type"]>,
 ) {
-  const rightAncestors = collectAncestorIds(indexedBlocks, rightBlockId, types);
-  let current = indexedBlocks.get(leftBlockId) ?? null;
+  const rightAncestors = collectAncestorPaths(indexedBlocks, rightBlockPath, types);
+  let current = indexedBlocks.get(leftBlockPath) ?? null;
 
   while (current) {
-    if (types.has(current.block.type) && rightAncestors.has(current.block.id)) {
+    if (types.has(current.block.type) && rightAncestors.has(current.path)) {
       return current as IndexedBlock & { block: T };
     }
 
-    current = current.parentBlockId ? (indexedBlocks.get(current.parentBlockId) ?? null) : null;
+    current = current.parentBlockPath ? (indexedBlocks.get(current.parentBlockPath) ?? null) : null;
   }
 
   return null;
 }
 
-function collectAncestorIds(
+function collectAncestorPaths(
   indexedBlocks: Map<string, IndexedBlock>,
-  blockId: string,
+  blockPath: string,
   types: ReadonlySet<Block["type"]>,
 ) {
   const ancestors = new Set<string>();
-  let current = indexedBlocks.get(blockId) ?? null;
+  let current = indexedBlocks.get(blockPath) ?? null;
 
   while (current) {
     if (types.has(current.block.type)) {
-      ancestors.add(current.block.id);
+      ancestors.add(current.path);
     }
 
-    current = current.parentBlockId ? (indexedBlocks.get(current.parentBlockId) ?? null) : null;
+    current = current.parentBlockPath ? (indexedBlocks.get(current.parentBlockPath) ?? null) : null;
   }
 
   return ancestors;

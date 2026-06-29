@@ -29,17 +29,17 @@ export function createLayoutScenarios(fixtures: {
   const canvasScenarios = [
     { id: "layout_canvas", iterations: 100, size: "long" },
     { id: "layout_canvas_xlarge", iterations: 50, size: "xlarge" },
-    { id: "layout_canvas_huge", iterations: 30, size: "huge" },
+    { id: "layout_canvas_huge", iterations: 100, size: "huge" },
   ] as const satisfies Array<{ id: string; iterations: number; size: LayoutFixtureSize }>;
   const scrollScenarios = [
     { id: "layout_scroll", iterations: 100, size: "long" },
-    { id: "layout_scroll_xlarge", iterations: 50, size: "xlarge" },
-    { id: "layout_scroll_huge", iterations: 30, size: "huge" },
+    { id: "layout_scroll_xlarge", iterations: 100, size: "xlarge" },
+    { id: "layout_scroll_huge", iterations: 100, size: "huge" },
   ] as const satisfies Array<{ id: string; iterations: number; size: LayoutFixtureSize }>;
   const scrollStepScenarios = [
     { id: "layout_scroll_step", iterations: 200, size: "long" },
     { id: "layout_scroll_step_xlarge", iterations: 100, size: "xlarge" },
-    { id: "layout_scroll_step_huge", iterations: 50, size: "huge" },
+    { id: "layout_scroll_step_huge", iterations: 100, size: "huge" },
   ] as const satisfies Array<{ id: string; iterations: number; size: LayoutFixtureSize }>;
 
   return [

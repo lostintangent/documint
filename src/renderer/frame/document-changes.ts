@@ -1,16 +1,14 @@
 import {
   resolveParentIndexedBlock,
   resolveIndexedBlock,
+  resolveRegion,
   type IndexedBlock,
   type EditorState,
 } from "@/editor/state";
 import type { EditorLayoutState } from "@/editor/layout";
 import type { DocumentChangeKind } from "@/document";
 import { type ResolvedDocumentChangeTarget, type ResolvedEditorTheme } from "@/types";
-import {
-  documentChangeFrameTargetKey,
-  type DocumentChangeFadeFrame,
-} from "../effects";
+import { type DocumentChangeFadeFrame } from "../effects";
 import {
   resolveTableCellGeometryFrame,
   type TableCellGeometryFrame,
@@ -21,10 +19,13 @@ export type DocumentChangeFrameEntry = {
   fade: DocumentChangeFadeFrame | null;
 };
 
-export type DocumentChangeFrameInput =
-  ResolvedDocumentChangeTarget & {
-    changeKind: DocumentChangeKind;
-  };
+export type DocumentChangeFrameInput = {
+  // Stable lifecycle identity for the change fade. The target below is the
+  // current location projection and may move when sync retargets the change.
+  changeKey: string;
+  changeKind: DocumentChangeKind;
+  target: ResolvedDocumentChangeTarget;
+};
 
 export type TableCellDocumentChangeFrame = TableCellGeometryFrame & {
   readonly color: string;
@@ -39,7 +40,7 @@ type DocumentChangeFrameIndex = {
 export type DocumentChangeResolver = (
   editorState: EditorState,
   indexedBlock: IndexedBlock | null,
-  regionId: string,
+  regionPath: string,
 ) => DocumentChangeFrameEntry | null;
 
 export function createDocumentChangeResolver(
@@ -51,24 +52,23 @@ export function createDocumentChangeResolver(
   }
 
   const index = createDocumentChangeFrameIndex(changes, fades);
-  const blockChangesByBlockId = new Map<string, DocumentChangeFrameEntry | null>();
+  const blockChangesByPath = new Map<string, DocumentChangeFrameEntry | null>();
 
-  return (editorState, indexedBlock, regionId) => {
-    const tableCellChange = index.tableCellChanges.size > 0
-      ? (index.tableCellChanges.get(regionId) ?? null)
-      : null;
+  return (editorState, indexedBlock, regionPath) => {
+    const region =
+      index.tableCellChanges.size > 0 ? resolveRegion(editorState.documentIndex, regionPath) : null;
+    const tableCellChange = region ? (index.tableCellChanges.get(region.path) ?? null) : null;
 
     if (tableCellChange || index.blockChanges.size === 0 || !indexedBlock) {
       return tableCellChange;
     }
 
-    const blockId = indexedBlock.block.id;
-    if (blockChangesByBlockId.has(blockId)) {
-      return blockChangesByBlockId.get(blockId) ?? null;
+    if (blockChangesByPath.has(indexedBlock.path)) {
+      return blockChangesByPath.get(indexedBlock.path) ?? null;
     }
 
     const blockChange = resolveDocumentChangeForIndexedBlock(editorState, indexedBlock, index);
-    blockChangesByBlockId.set(blockId, blockChange);
+    blockChangesByPath.set(indexedBlock.path, blockChange);
     return blockChange;
   };
 }
@@ -82,16 +82,17 @@ function createDocumentChangeFrameIndex(
   const blockChanges = new Map<string, DocumentChangeFrameEntry>();
   const tableCellChanges = new Map<string, DocumentChangeFrameEntry>();
 
-  for (const target of changes) {
+  for (const change of changes) {
+    const target = change.target;
     const entry = {
-      changeKind: target.changeKind,
-      fade: fades.get(documentChangeFrameTargetKey(target)) ?? null,
+      changeKind: change.changeKind,
+      fade: fades.get(change.changeKey) ?? null,
     } satisfies DocumentChangeFrameEntry;
 
     if (target.kind === "block") {
-      blockChanges.set(target.blockId, entry);
+      blockChanges.set(target.blockPath, entry);
     } else {
-      tableCellChanges.set(target.regionId, entry);
+      tableCellChanges.set(target.regionPath, entry);
     }
   }
 
@@ -109,7 +110,7 @@ function resolveDocumentChangeForIndexedBlock(
   let current: IndexedBlock | null = indexedBlock;
 
   while (current) {
-    const change = index.blockChanges.get(current.block.id);
+    const change = index.blockChanges.get(current.path);
 
     if (change) {
       return change;
@@ -153,17 +154,17 @@ export function resolveTableCellDocumentChanges({
 }): TableCellDocumentChangeFrame[] {
   const { layout } = layoutState;
   const frames: TableCellDocumentChangeFrame[] = [];
-  const visitedRegionIds = new Set<string>();
+  const visitedRegionPaths = new Set<string>();
 
   for (let index = startLineIndex; index < endLineIndex; index += 1) {
     const line = layout.lines[index]!;
-    const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockId);
+    const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockPath);
 
-    if (indexedBlock?.block.type !== "table" || visitedRegionIds.has(line.regionId)) {
+    if (indexedBlock?.block.type !== "table" || visitedRegionPaths.has(line.regionPath)) {
       continue;
     }
 
-    const change = resolveDocumentChange(editorState, indexedBlock, line.regionId);
+    const change = resolveDocumentChange(editorState, indexedBlock, line.regionPath);
     if (!change) {
       continue;
     }
@@ -172,7 +173,7 @@ export function resolveTableCellDocumentChanges({
       endLineIndex,
       layout,
       regionBounds: layout.regionBounds,
-      regionId: line.regionId,
+      regionPath: line.regionPath,
       startLineIndex,
     });
 
@@ -180,7 +181,7 @@ export function resolveTableCellDocumentChanges({
       continue;
     }
 
-    visitedRegionIds.add(line.regionId);
+    visitedRegionPaths.add(line.regionPath);
     frames.push({
       ...geometry,
       color: resolveDocumentChangeBackgroundColor(change, theme),

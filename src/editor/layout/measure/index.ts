@@ -4,8 +4,7 @@
 import type { Block } from "@/document";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources } from "@/types";
-import { isContainerBlock, resolveRegion } from "../../state/index/query";
-import { resolveIndexedBlock, type DocumentIndex, type EditableRegion } from "../../state";
+import { isContainerBlock, resolveIndexedBlock, type DocumentIndex } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
 import { walkLayoutBlocks } from "../lib/block-walk";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
@@ -33,8 +32,8 @@ export type LayoutInlineReference = TextInlineReference;
 
 export type LayoutLine = {
   // Identity: connects this visual row back to indexed editor content.
-  blockId: string;
-  regionId: string;
+  blockPath: string;
+  regionPath: string;
   // Model span: offsets and text slice from the owning editable region.
   start: number;
   end: number;
@@ -60,8 +59,8 @@ export type LayoutRect = {
 
 export type LayoutBlock = {
   bottom: number;
+  blockPath: string;
   depth: number;
-  id: string;
   top: number;
   type: DocumentIndex["blocks"][number]["block"]["type"];
 };
@@ -86,6 +85,8 @@ export function measureLayoutSlice(
   // the slice so geometry emerges directly in document space and no
   // post-measurement shift is needed.
   startY?: number,
+  regionStartIndex = 0,
+  regionEndIndex = documentIndex.regions.length,
 ): DocumentLayout {
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
@@ -95,7 +96,13 @@ export function measureLayoutSlice(
     { bottom: number; left: number; right: number; top: number }
   >();
   const blockExtents = new Map<string, LayoutBlockExtent>();
-  const layoutBlocks = resolveLayoutBlockScope(documentIndex);
+  const boundedRegionStartIndex = clampRegionIndex(documentIndex, regionStartIndex);
+  const boundedRegionEndIndex = clampRegionIndex(documentIndex, regionEndIndex);
+  const layoutBlocks = resolveLayoutBlockScope(
+    documentIndex,
+    boundedRegionStartIndex,
+    boundedRegionEndIndex,
+  );
 
   // Layout walks blocks (not regions) so inert leaves — those without
   // any region — get a positioned geometry slot in document order. Text
@@ -104,20 +111,21 @@ export function measureLayoutSlice(
   // without emitting any line. Container blocks (blockquote, list,
   // listItem) contribute no layout themselves — their leaf descendants
   // do — so we skip them here.
-  const visibleRegionIds = new Set(documentIndex.regions.map((r) => r.id));
   const seedY = startY ?? resolvedOptions.paddingY;
   let y = seedY;
   for (const {
-    blockRegionsInScope,
     gapBefore,
     indexedBlock,
     isInert,
     previousLaidOutBlock,
     previousLaidOutBlockIsInert,
+    regionEndIndex: blockRegionEndIndex,
+    regionStartIndex: blockRegionStartIndex,
   } of walkLayoutBlocks(documentIndex, {
     blockGap: resolvedOptions.blockGap,
     layoutBlocks,
-    visibleRegionIds,
+    visibleRegionEndIndex: boundedRegionEndIndex,
+    visibleRegionStartIndex: boundedRegionStartIndex,
   })) {
     const block = indexedBlock.block;
 
@@ -131,7 +139,7 @@ export function measureLayoutSlice(
       // rule) symmetrically. Clicks in the gap below an inert leaf fall
       // through to the next block rather than snapping back.
       if (!previousLaidOutBlockIsInert) {
-        const previousExtent = blockExtents.get(previousLaidOutBlock.block.id);
+        const previousExtent = blockExtents.get(previousLaidOutBlock.path);
         if (previousExtent) {
           previousExtent.bottom = Math.max(previousExtent.bottom, y);
         }
@@ -144,28 +152,29 @@ export function measureLayoutSlice(
       // Inert leaves (dividers, etc.) reserve a fixed-height slot without
       // emitting lines; chrome is painted off `layout.blocks`.
       const bottom = y + resolvedOptions.lineHeight;
-      blockExtents.set(indexedBlock.block.id, { top: y, bottom });
+      blockExtents.set(indexedBlock.path, { top: y, bottom });
       y = bottom;
     } else if (block.type === "table") {
-      const tableContainers = blockRegionsInScope
-        .map((id) => resolveRegion(documentIndex, id))
-        .filter((r): r is EditableRegion => r !== null);
       y = layoutTable(
         lines,
         blockExtents,
         regionBounds,
-        tableContainers,
+        documentIndex.regions,
+        blockRegionStartIndex,
+        blockRegionEndIndex,
         cache,
         block,
+        indexedBlock.path,
         contentMetrics.left,
         y,
         resolvedOptions,
         resolvedResources,
       );
     } else {
-      for (const regionId of blockRegionsInScope) {
-        const container = resolveRegion(documentIndex, regionId);
+      for (let regionIndex = blockRegionStartIndex; regionIndex < blockRegionEndIndex; regionIndex += 1) {
+        const container = documentIndex.regions[regionIndex];
         if (!container) continue;
+
         y = layoutSingleContainer(
           lines,
           blockExtents,
@@ -173,6 +182,7 @@ export function measureLayoutSlice(
           container,
           cache,
           block,
+          indexedBlock.path,
           contentMetrics.contentLeft,
           y,
           contentMetrics.availableWidth,
@@ -192,12 +202,12 @@ export function measureLayoutSlice(
   const blocks: LayoutBlock[] = [];
   for (const entry of layoutBlocks) {
     if (isContainerBlock(entry)) continue;
-    const extent = blockExtents.get(entry.block.id);
+    const extent = blockExtents.get(entry.path);
     if (!extent) continue;
     blocks.push({
       bottom: extent.bottom,
+      blockPath: entry.path,
       depth: entry.depth,
-      id: entry.block.id,
       top: extent.top,
       type: entry.block.type,
     });
@@ -214,27 +224,42 @@ export function measureLayoutSlice(
   };
 }
 
-function resolveLayoutBlockScope(documentIndex: DocumentIndex) {
-  if (documentIndex.regions.length === documentIndex.regionIndex.size) {
+function resolveLayoutBlockScope(
+  documentIndex: DocumentIndex,
+  regionStartIndex: number,
+  regionEndIndex: number,
+) {
+  if (regionStartIndex === 0 && regionEndIndex === documentIndex.regions.length) {
     return documentIndex.blocks;
   }
 
-  if (documentIndex.regions.length === 0) {
+  if (regionStartIndex >= regionEndIndex) {
     return [];
   }
 
-  let startIndex = documentIndex.blocks.length;
-  let endIndex = 0;
+  const firstRegion = documentIndex.regions[regionStartIndex];
+  const lastRegion = documentIndex.regions[regionEndIndex - 1];
+  const firstBlock = firstRegion
+    ? resolveIndexedBlock(documentIndex, firstRegion.blockPath)
+    : null;
+  const lastBlock = lastRegion ? resolveIndexedBlock(documentIndex, lastRegion.blockPath) : null;
 
-  for (const region of documentIndex.regions) {
-    const indexedBlock = resolveIndexedBlock(documentIndex, region.block.id);
-    if (!indexedBlock) continue;
-
-    startIndex = Math.min(startIndex, indexedBlock.blockArrayIndex);
-    endIndex = Math.max(endIndex, indexedBlock.blockArrayIndex + 1);
+  if (!firstBlock || !lastBlock) {
+    return [];
   }
 
-  return startIndex < endIndex ? documentIndex.blocks.slice(startIndex, endIndex) : [];
+  const blockStartIndex = Math.min(firstBlock.blockArrayIndex, lastBlock.blockArrayIndex);
+  const blockEndIndex = Math.max(firstBlock.blockArrayIndex, lastBlock.blockArrayIndex) + 1;
+
+  return documentIndex.blocks.slice(blockStartIndex, blockEndIndex);
+}
+
+function clampRegionIndex(documentIndex: DocumentIndex, index: number) {
+  if (!Number.isFinite(index)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(documentIndex.regions.length, Math.trunc(index)));
 }
 
 function layoutSingleContainer(
@@ -244,6 +269,7 @@ function layoutSingleContainer(
   container: DocumentIndex["regions"][number],
   cache: LayoutCache,
   block: Block | null,
+  blockPath: string,
   left: number,
   top: number,
   availableWidth: number,
@@ -264,8 +290,8 @@ function layoutSingleContainer(
   let y = top + blockPaddingY;
   for (const line of measuredLines) {
     const layoutLine = {
-      blockId: container.block.id,
-      regionId: container.id,
+      blockPath,
+      regionPath: container.path,
       start: line.start,
       end: line.end,
       top: y,
@@ -295,9 +321,9 @@ function layoutSingleContainer(
   }
 
   if (block?.type === "code") {
-    const current = blockExtents.get(container.block.id);
+    const current = blockExtents.get(blockPath);
     if (current) {
-      blockExtents.set(container.block.id, {
+      blockExtents.set(blockPath, {
         bottom: current.bottom + blockPaddingY,
         top: current.top - blockPaddingY,
       });
@@ -316,12 +342,12 @@ function createContainerLineIndices(lines: LayoutLine[]) {
 
   const entries = new Map<string, number[]>();
   for (let index = 0; index < lines.length; index += 1) {
-    const regionId = lines[index]!.regionId;
-    const current = entries.get(regionId);
+    const regionPath = lines[index]!.regionPath;
+    const current = entries.get(regionPath);
     if (current) {
       current.push(index);
     } else {
-      entries.set(regionId, [index]);
+      entries.set(regionPath, [index]);
     }
   }
 
@@ -335,12 +361,12 @@ function updateRegionBoundsFromLine(
   regionBounds: DocumentLayout["regionBounds"],
   line: LayoutLine,
 ) {
-  const current = regionBounds.get(line.regionId);
+  const current = regionBounds.get(line.regionPath);
   const right = line.left + line.width;
   const bottom = line.top + line.height;
 
   regionBounds.set(
-    line.regionId,
+    line.regionPath,
     current
       ? {
           bottom: Math.max(current.bottom, bottom),
@@ -359,7 +385,7 @@ function updateRegionBoundsFromLine(
 
 export function updateBlockExtent(
   blockExtents: Map<string, LayoutBlockExtent>,
-  line: Pick<LayoutLine, "blockId" | "height" | "top">,
+  line: Pick<LayoutLine, "blockPath" | "height" | "top">,
 ) {
-  mergeLayoutBlockExtent(blockExtents, line.blockId, line.top, line.top + line.height);
+  mergeLayoutBlockExtent(blockExtents, line.blockPath, line.top, line.top + line.height);
 }

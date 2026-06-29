@@ -60,14 +60,16 @@ export type DocumintDecoration = {
   pattern: RegExp;
 };
 
+// Current runtime location for a document-change highlight. The lifecycle key
+// that keeps animations stable across retargeting travels beside this target.
 export type ResolvedDocumentChangeTarget =
   | {
-      blockId: string;
+      blockPath: string;
       kind: "block";
     }
   | {
       kind: "table-cell";
-      regionId: string;
+      regionPath: string;
     };
 
 export type EditorTheme = {

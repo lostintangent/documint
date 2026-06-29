@@ -38,7 +38,7 @@ test("detects active resources only when their line is visible", () => {
     throw new Error("Expected resource region");
   }
 
-  const resourceLine = viewport.layout.lines.find((line) => line.regionId === resourceRegion.id);
+  const resourceLine = viewport.layout.lines.find((line) => line.regionPath === resourceRegion.path);
 
   if (!resourceLine) {
     throw new Error("Expected resource line");

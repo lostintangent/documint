@@ -17,6 +17,7 @@ import {
   type EditorSelection,
   type NormalizedEditorSelection,
 } from "../selection";
+import { resolveRootRegions } from "../index/query";
 import type { EditorState, EditorStateAction } from "../types";
 import { insertInlines } from "../commands/actions/inlines";
 
@@ -194,8 +195,8 @@ function resolveFragmentDestinationContext(
   selection: EditorSelection,
 ): FragmentDestinationContext | null {
   const normalized = normalizeSelection(documentIndex, selection);
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
+  const startRegion = resolveRegion(documentIndex, normalized.start.regionPath);
+  const endRegion = resolveRegion(documentIndex, normalized.end.regionPath);
 
   if (!startRegion || !endRegion) {
     return null;
@@ -240,9 +241,9 @@ function isRootBoundary(
   offset: number,
   boundary: "end" | "start",
 ): boolean {
-  const root = documentIndex.roots[region.rootIndex];
-  const endpointRegion = boundary === "start" ? root?.regions[0] : root?.regions.at(-1);
+  const rootRegions = resolveRootRegions(documentIndex, region.rootIndex);
+  const endpointRegion = boundary === "start" ? rootRegions[0] : rootRegions.at(-1);
   const endpointOffset = boundary === "start" ? 0 : endpointRegion?.text.length;
 
-  return endpointRegion?.id === region.id && offset === endpointOffset;
+  return endpointRegion?.path === region.path && offset === endpointOffset;
 }

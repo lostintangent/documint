@@ -5,10 +5,12 @@
 import type { Mark } from "@/document";
 import { regionInlines } from "../index/inlines";
 import {
+  blockContainsBlock,
   compareEditorPositions,
-  resolveIndexedBlock,
+  firstRegionInBlock,
+  lastRegionInBlock,
   resolveIndexedBlockForRegion,
-  resolveParentIndexedBlock,
+  resolveIndexedBlock,
   resolveRegion,
 } from "../index/query";
 import type { IndexedBlock, IndexedInline } from "../index/types";
@@ -21,7 +23,7 @@ import {
 } from "./index";
 
 export type SelectionBlockContext = {
-  blockId: string;
+  blockPath: string;
   depth: number;
   nodeType: string;
   text: string;
@@ -39,7 +41,7 @@ export type SelectionContext = {
 
 export type CaretTextContext = {
   offset: number;
-  regionId: string;
+  regionPath: string;
   text: string;
 };
 
@@ -48,26 +50,28 @@ export function getCaretTextContext(state: EditorState): CaretTextContext | null
     return null;
   }
 
-  const region = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const region = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
 
   return region
     ? {
         offset: state.selection.focus.offset,
-        regionId: region.id,
+        regionPath: region.path,
         text: region.text,
       }
     : null;
 }
 
 export function getSelectionContext(state: EditorState): SelectionContext {
-  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
-  const block = container ? resolveIndexedBlock(state.documentIndex, container.block.id) : null;
+  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionPath);
+  const block = container
+    ? resolveIndexedBlock(state.documentIndex, container.blockPath)
+    : null;
   const inline = resolveInlineAtAnchor(state);
 
   return {
     block: block
       ? {
-          blockId: block.block.id,
+          blockPath: block.path,
           depth: block.depth,
           nodeType: block.block.type,
           text: container?.text ?? "",
@@ -90,7 +94,7 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
   const normalized = normalizeSelection(state.documentIndex, state.selection);
 
   if (
-    normalized.start.regionId !== normalized.end.regionId ||
+    normalized.start.regionPath !== normalized.end.regionPath ||
     normalized.start.offset === normalized.end.offset
   ) {
     return null;
@@ -98,50 +102,50 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
 
   return {
     endOffset: normalized.end.offset,
-    regionId: normalized.start.regionId,
+    regionPath: normalized.start.regionPath,
     startOffset: normalized.start.offset,
   };
 }
 
 export function selectionIntersectsRegion(
   state: EditorState,
-  regionId: string,
+  regionPath: string,
   selection: NormalizedEditorSelection = normalizeSelection(state),
 ) {
-  const region = resolveRegion(state.documentIndex, regionId);
+  const region = resolveRegion(state.documentIndex, regionPath);
   if (!region) {
     return false;
   }
 
   if (selection.collapsed) {
-    return selection.start.regionId === regionId;
+    return selection.start.regionPath === regionPath;
   }
 
   return (
     compareEditorPositions(state.documentIndex, selection.start, {
       offset: region.text.length,
-      regionId,
+      regionPath,
     }) <= 0 &&
     compareEditorPositions(state.documentIndex, selection.end, {
       offset: 0,
-      regionId,
+      regionPath,
     }) >= 0
   );
 }
 
-export function selectionIntersectsBlock(
+export function selectionIntersectsBlockPath(
   state: EditorState,
-  blockId: string,
+  blockPath: string,
   selection: NormalizedEditorSelection = normalizeSelection(state),
 ) {
-  const target = resolveIndexedBlock(state.documentIndex, blockId);
+  const target = resolveIndexedBlock(state.documentIndex, blockPath);
   if (!target) {
     return false;
   }
 
   for (const point of [selection.start, selection.end]) {
-    const focusedBlock = resolveIndexedBlockForRegion(state.documentIndex, point.regionId);
-    if (focusedBlock && isIndexedBlockWithinTarget(state, focusedBlock.block.id, blockId)) {
+    const focusedBlock = resolveIndexedBlockForRegion(state.documentIndex, point.regionPath);
+    if (focusedBlock && isIndexedBlockWithinTarget(focusedBlock, target)) {
       return true;
     }
   }
@@ -150,39 +154,27 @@ export function selectionIntersectsBlock(
     return false;
   }
 
-  for (const regionId of blockAndDescendantRegionIds(state, target)) {
-    if (selectionIntersectsRegion(state, regionId, selection)) {
-      return true;
-    }
+  const firstRegion = firstRegionInBlock(state.documentIndex, target);
+  const lastRegion = lastRegionInBlock(state.documentIndex, target);
+
+  if (!firstRegion || !lastRegion) {
+    return false;
   }
 
-  return false;
-}
-
-function* blockAndDescendantRegionIds(state: EditorState, target: IndexedBlock) {
-  for (const regionId of target.regionIds) {
-    yield regionId;
-  }
-
-  for (
-    let index = target.blockArrayIndex + 1;
-    index < state.documentIndex.blocks.length;
-    index += 1
-  ) {
-    const descendant = state.documentIndex.blocks[index]!;
-
-    if (descendant.rootIndex !== target.rootIndex || descendant.depth <= target.depth) {
-      break;
-    }
-
-    for (const regionId of descendant.regionIds) {
-      yield regionId;
-    }
-  }
+  return (
+    compareEditorPositions(state.documentIndex, selection.start, {
+      offset: lastRegion.text.length,
+      regionPath: lastRegion.path,
+    }) <= 0 &&
+    compareEditorPositions(state.documentIndex, selection.end, {
+      offset: 0,
+      regionPath: firstRegion.path,
+    }) >= 0
+  );
 }
 
 function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
-  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
+  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionPath);
 
   if (!container) {
     return null;
@@ -199,20 +191,6 @@ function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
   );
 }
 
-function isIndexedBlockWithinTarget(
-  state: EditorState,
-  blockId: string,
-  targetBlockId: string,
-) {
-  let current = resolveIndexedBlock(state.documentIndex, blockId);
-
-  while (current) {
-    if (current.block.id === targetBlockId) {
-      return true;
-    }
-
-    current = resolveParentIndexedBlock(state.documentIndex, current);
-  }
-
-  return false;
+function isIndexedBlockWithinTarget(block: IndexedBlock, target: IndexedBlock) {
+  return blockContainsBlock(target, block);
 }

@@ -1,10 +1,10 @@
 // Link mutations within an InlineContainer: wrap, update URL, remove.
 import {
   createLink as createDocumentLinkNode,
-  iterateInlineNodeRanges,
   type Inline,
   type Link,
 } from "@/document";
+import { inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
 import {
   sliceInlineChildren,
   spliceInlineContainer,
@@ -69,7 +69,7 @@ export function removeInlineLink(
 }
 
 function findExactInlineLink(nodes: Inline[], startOffset: number, endOffset: number): Link | null {
-  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+  for (const { node, start, end } of inlineNodesWithEditorRanges(nodes)) {
     if (node.type === "link" && start === startOffset && end === endOffset) {
       return node;
     }

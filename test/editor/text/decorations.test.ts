@@ -51,7 +51,7 @@ test("detects animated text decorations in the visible viewport", () => {
   const region = getRegion(state, "sparkle");
   const layoutCache = createLayoutCache();
   const viewport = createEditorLayoutState(state, { height: 400, top: 0, width: 320 }, layoutCache);
-  const targetLine = viewport.layout.lines.find((line) => line.regionId === region.id);
+  const targetLine = viewport.layout.lines.find((line) => line.regionPath === region.path);
 
   if (!targetLine) {
     throw new Error("Expected line for decorated region");

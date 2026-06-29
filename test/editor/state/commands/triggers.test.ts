@@ -21,7 +21,7 @@ describe("Markdown creation triggers", () => {
     expect(toMarkdown(headingState)).toBe("#\n");
     expect(
       headingState.documentIndex.regions.some(
-        (container) => container.id === headingState.selection.focus.regionId,
+        (container) => container.path === headingState.selection.focus.regionPath,
       ),
     ).toBe(true);
 
@@ -30,7 +30,7 @@ describe("Markdown creation triggers", () => {
     expect(toMarkdown(subheadingState)).toBe("####\n");
     expect(
       subheadingState.documentIndex.regions.some(
-        (container) => container.id === subheadingState.selection.focus.regionId,
+        (container) => container.path === subheadingState.selection.focus.regionPath,
       ),
     ).toBe(true);
   });
@@ -41,7 +41,7 @@ describe("Markdown creation triggers", () => {
     expect(toMarkdown(quoteState)).toBe(">\n");
     expect(
       quoteState.documentIndex.regions.some(
-        (container) => container.id === quoteState.selection.focus.regionId,
+        (container) => container.path === quoteState.selection.focus.regionPath,
       ),
     ).toBe(true);
   });
@@ -55,7 +55,7 @@ describe("Markdown creation triggers", () => {
       state = insertText(state, marker) ?? state;
 
       const active = state.documentIndex.regions.find(
-        (container) => container.id === state.selection.focus.regionId,
+        (container) => container.path === state.selection.focus.regionPath,
       );
 
       expect(active?.block.type).toBe("paragraph");
@@ -107,11 +107,11 @@ function applyTriggerToWholeRegion(markdown: string, marker: string) {
 
   state = setSelection(state, {
     anchor: {
-      regionId: region.id,
+      regionPath: region.path,
       offset: 0,
     },
     focus: {
-      regionId: region.id,
+      regionPath: region.path,
       offset: region.text.length,
     },
   });

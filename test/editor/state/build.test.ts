@@ -1,10 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { createDividerBlock, createParagraphTextBlock, spliceDocument } from "@/document";
+import {
+  blockPathContainsPath,
+  createAnchorFromContainer,
+  createCommentThread,
+  createDividerBlock,
+  createMention,
+  createParagraphBlock,
+  createParagraphTextBlock,
+  extractQuoteFromContainer,
+  listAnchorContainers,
+  spliceDocument,
+} from "@/document";
 import { createDocumentIndex, spliceDocumentIndex, type DocumentIndex } from "@/editor/state";
 import {
   createIndexedRoot,
   positionIndexedRoots,
-  rebuildIndexedRoot,
 } from "@/editor/state/index/roots";
 import {
   commitDocument,
@@ -27,21 +37,22 @@ beta
     const runtime = createDocumentIndex(snapshot);
 
     expect(roots).toHaveLength(3);
-    expect(roots[0]?.regions[0]?.start).toBe(0);
-    expect(roots[1]?.regions[0]?.start).toBe(roots[1]?.start);
-    expect(runtime.roots[1]?.start).toBe(runtime.roots[0]!.end + 1);
-    expect(runtime.roots[2]?.start).toBe(runtime.roots[1]!.end + 1);
-    expect(runtime.roots[2]?.regionRange?.start).toBe(runtime.roots[1]?.regionRange?.end);
+    expect(roots.map((root) => root.blocks[0]?.blockArrayIndex)).toEqual([0, 1, 2]);
+    expect(roots.map((root) => root.regions[0]?.regionArrayIndex)).toEqual([0, 1, 2]);
+    expect(runtime.roots[2]?.blocks[0]?.regionRangeStart).toBe(
+      runtime.roots[1]?.blocks[0]?.regionRangeEnd,
+    );
+    expectDocumentIndexMaps(runtime);
   });
 
-  test("rebuilds a root model against a normalized replacement root", () => {
+  test("rebuilds a root model against a canonical replacement root", () => {
     const snapshot = parseDocument(`# Heading
 
 alpha
 `);
     const original = createIndexedRoot(snapshot.blocks[1]!, 1);
     const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
-    const rebuilt = rebuildIndexedRoot(original, nextDocument.blocks[1]!);
+    const rebuilt = createIndexedRoot(nextDocument.blocks[1]!, original.rootIndex);
 
     expect(rebuilt.rootIndex).toBe(1);
     expect(rebuilt.regions[0]?.path).toBe("root.1.children");
@@ -64,18 +75,60 @@ beta
     expect(replacedModel.document).toBe(nextDocument);
     expect(replacedModel.roots[0]).toBe(model.roots[0]);
     expect(replacedModel.roots[1]).not.toBe(model.roots[1]);
-    expect(replacedModel.roots[2]).not.toBe(model.roots[2]);
-    expect(replacedModel.roots[2]?.regions[0]?.id).toBe(model.roots[2]?.regions[0]?.id);
+    expect(replacedModel.roots[2]).toBe(model.roots[2]);
+    expect(replacedModel.roots[2]?.regions[0]?.path).toBe(model.roots[2]?.regions[0]?.path);
     expect(replaced.roots[0]).toBe(runtime.roots[0]);
     expect(replaced.roots[1]).not.toBe(runtime.roots[1]);
-    expect(replaced.roots[2]).not.toBe(runtime.roots[2]);
-    expect(replaced.roots[2]?.regions[0]?.id).toBe(runtime.roots[2]?.regions[0]?.id);
-    expect(replaced.regions[2]?.start).toBe(runtime.regions[2]!.start + 3);
+    expect(replaced.roots[2]).toBe(runtime.roots[2]);
+    expect(replaced.roots[2]?.regions[0]?.path).toBe(runtime.roots[2]?.regions[0]?.path);
     expectDocumentIndexMaps(replacedModel);
     expectDocumentIndexMaps(replaced);
   });
 
-  test("keeps lookup maps exact when replacing a root with new ids", () => {
+  test("preserves suffix roots when only text length changes", () => {
+    const snapshot = parseDocument(`alpha
+
+beta
+
+gamma
+`);
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(snapshot, 0, 1, [createParagraphTextBlock("alphabet")]);
+    const next = spliceDocumentIndex(index, nextDocument, 0, 1);
+
+    expect(next.roots[1]).toBe(index.roots[1]);
+    expect(next.roots[1]?.blocks[0]).toBe(index.roots[1]?.blocks[0]);
+    expect(next.roots[1]?.regions[0]).toBe(index.roots[1]?.regions[0]);
+    expect(next.roots[2]).toBe(index.roots[2]);
+    expect(next.roots[2]?.blocks[0]).toBe(index.roots[2]?.blocks[0]);
+    expect(next.roots[2]?.regions[0]).toBe(index.roots[2]?.regions[0]);
+    expectDocumentIndexMaps(next);
+  });
+
+  test("re-stamps suffix block records when region order shifts", () => {
+    const snapshot = parseDocument(`alpha
+
+---
+
+beta
+`);
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("middle")]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+    expect(next.roots[2]).not.toBe(index.roots[2]);
+    expect(next.roots[2]?.blocks[0]).not.toBe(index.roots[2]?.blocks[0]);
+    expect(next.roots[2]?.blocks[0]?.regionRangeStart).toBe(
+      index.roots[2]!.blocks[0]!.regionRangeStart + 1,
+    );
+    expect(next.roots[2]?.regions[0]).not.toBe(index.roots[2]?.regions[0]);
+    expect(next.roots[2]?.regions[0]?.regionArrayIndex).toBe(
+      index.roots[2]!.regions[0]!.regionArrayIndex + 1,
+    );
+    expectDocumentIndexMaps(next);
+  });
+
+  test("keeps lookup maps exact when replacing a root with new paths", () => {
     const snapshot = parseDocument(`alpha
 
 beta
@@ -87,6 +140,24 @@ beta
     expect(next.blocks).toHaveLength(2);
     expect(next.regions).toHaveLength(2);
     expectDocumentIndexMaps(next);
+  });
+
+  test("keeps region paths stable for in-place content edits", () => {
+    const index = createDocumentIndex(parseDocument("alpha\n"));
+    const region = index.regions[0];
+
+    if (!region) {
+      throw new Error("Expected editable region");
+    }
+
+    const next = replaceEditorBlock(index, region.blockPath, () =>
+      createParagraphTextBlock("alphabet"),
+    );
+
+    expect(next?.regions[0]?.path).toBe(region.path);
+    expect(next?.regions[0]?.blockPath).toBe(region.blockPath);
+    expect(next?.regions[0]?.text).toBe("alphabet");
+    expectDocumentIndexMaps(next!);
   });
 
   test("keeps lookup maps exact when inserting a root", () => {
@@ -104,6 +175,67 @@ beta
       "beta",
     ]);
     expectDocumentIndexMaps(next);
+  });
+
+  test("keys block lookup by structural path and stamps parent block paths", () => {
+    const index = createDocumentIndex(parseDocument(`> - alpha\n`));
+    const list = index.blocks.find((entry) => entry.block.type === "list");
+    const item = index.blocks.find((entry) => entry.block.type === "listItem");
+
+    if (!list || !item) {
+      throw new Error("Expected nested list blocks");
+    }
+
+    expect(index.blockIndex.get(list.path)).toBe(list);
+    expect(index.blockIndex.get(item.path)).toBe(item);
+    expect(item.parentBlockPath).toBe(list.path);
+    expect(index.blockIndex.get(item.parentBlockPath!)).toBe(list);
+  });
+
+  test("tracks table region block paths separately from cell paths", () => {
+    const index = createDocumentIndex(parseDocument(`| A |\n| - |\n| B |\n`));
+    const table = index.blocks.find((entry) => entry.block.type === "table");
+    const cellRegion = index.regions.find((region) => region.tableCellPosition !== null);
+
+    if (!table || !cellRegion) {
+      throw new Error("Expected table cell region");
+    }
+
+    expect(cellRegion.blockPath).toBe(table.path);
+    expect(cellRegion.containerPath).toBe(cellRegion.path);
+    expect(index.blockIndex.get(cellRegion.blockPath)).toBe(table);
+  });
+
+  test("stamps nested block and region ranges", () => {
+    const index = createDocumentIndex(
+      parseDocument(`> alpha
+>
+> - beta
+
+---
+
+| A |
+| - |
+| B |
+`),
+    );
+    const blockquote = index.blockIndex.get("root.0");
+    const list = index.blockIndex.get("root.0.children.1");
+    const listItem = index.blockIndex.get("root.0.children.1.children.0");
+    const divider = index.blockIndex.get("root.1");
+    const table = index.blockIndex.get("root.2");
+
+    if (!blockquote || !list || !listItem || !divider || !table) {
+      throw new Error("Expected nested blocks");
+    }
+
+    expect(blockquote.blockRangeEnd).toBeGreaterThan(list.blockArrayIndex);
+    expect(blockquote.blockRangeEnd).toBeGreaterThan(listItem.blockArrayIndex);
+    expect(blockquote.regionRangeEnd - blockquote.regionRangeStart).toBe(2);
+    expect(list.regionRangeEnd - list.regionRangeStart).toBe(1);
+    expect(divider.regionRangeStart).toBe(divider.regionRangeEnd);
+    expect(table.regionRangeEnd - table.regionRangeStart).toBe(2);
+    expectDocumentIndexMaps(index);
   });
 
   test("preserves unchanged flat records on same-length root replacement", () => {
@@ -288,7 +420,7 @@ alpha
       throw new Error("Expected paragraph block");
     }
 
-    const reduction = replaceEditorBlock(documentIndex, paragraph.block.id, () =>
+    const reduction = replaceEditorBlock(documentIndex, paragraph.path, () =>
       createParagraphTextBlock("beta"),
     );
 
@@ -297,6 +429,21 @@ alpha
     }
 
     expect(serializeDocument(commitDocument(reduction))).toBe("- beta\n");
+  });
+
+  test("does not delete a block when the replacer rejects it", () => {
+    const documentIndex = createDocumentIndex(parseDocument("- alpha\n"));
+    const paragraph = documentIndex.blocks.find(
+      (indexedBlock) => indexedBlock.block.type === "paragraph",
+    );
+
+    if (!paragraph) {
+      throw new Error("Expected paragraph block");
+    }
+
+    expect(replaceEditorBlock(documentIndex, paragraph.path, () => null)).toBeNull();
+    expect(serializeDocument(commitDocument(documentIndex))).toBe("- alpha\n");
+    expectDocumentIndexMaps(documentIndex);
   });
 
   test("reuses index maps and flat arrays on metadata-only document changes", () => {
@@ -319,12 +466,120 @@ beta
     expect(next.regions).toBe(index.regions);
     expect(next.blockIndex).toBe(index.blockIndex);
     expect(next.regionIndex).toBe(index.regionIndex);
-    expect(next.regionPathIndex).toBe(index.regionPathIndex);
     expect(next.imageUrls).toBe(index.imageUrls);
     // listItems reuses when document.blocks identity holds.
     expect(next.listItems).toBe(index.listItems);
     // commentContainerIndex reuses when document.comments identity holds.
     expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
+  });
+
+  test("reuses comment container index when editing outside resolved comment roots", () => {
+    const snapshot = withCommentAt(
+      parseDocument(`commented target
+
+outside text
+`),
+    );
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(index.document, 1, 1, [
+      createParagraphTextBlock("outside text edited"),
+    ]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+    expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
+    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
+  });
+
+  test("reuses comment container index and suffix roots after unrelated text-length edits", () => {
+    const snapshot = withCommentAt(
+      parseDocument(`commented target
+
+outside text
+
+suffix mentions target without its prefix
+`),
+    );
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(index.document, 1, 1, [
+      createParagraphTextBlock("outside text edited"),
+    ]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+    expect(next.roots[2]).toBe(index.roots[2]);
+    expect(next.document.blocks[2]).toBe(index.document.blocks[2]);
+    expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
+    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
+  });
+
+  test("rebuilds comment container index when an unrelated edit introduces an ambiguous match", () => {
+    const snapshot = withCommentAt(
+      parseDocument(`commented target
+
+outside text
+`),
+    );
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(index.document, 1, 1, [
+      createParagraphTextBlock("commented target"),
+    ]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
+    expect([...next.commentContainerIndex.keys()]).toEqual([]);
+  });
+
+  test("checks changed roots against semantic comment-anchor text", () => {
+    const snapshot = withCommentAt(
+      parseDocument(`commented target
+
+outside text
+`),
+    );
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(index.document, 1, 1, [
+      createParagraphBlock([createMention({ name: "target", userId: "user-target" })]),
+    ]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+
+    expect(next.regions[1]?.text).not.toContain("target");
+    expect(next.document.blocks[1]?.plainText).toContain("target");
+    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
+    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
+  });
+
+  test("rebuilds comment container index when editing a resolved comment root", () => {
+    const snapshot = withCommentAt(
+      parseDocument(`commented target
+
+outside text
+`),
+    );
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(index.document, 0, 1, [
+      createParagraphTextBlock("commented target edited"),
+    ]);
+    const next = spliceDocumentIndex(index, nextDocument, 0, 1);
+
+    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
+    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
+  });
+
+  test("rebuilds comment container index when root insertion shifts a comment path", () => {
+    const snapshot = withCommentAt(
+      parseDocument(`intro text
+
+commented target
+`),
+      1,
+    );
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(index.document, 0, 0, [
+      createParagraphTextBlock("inserted text"),
+    ]);
+    const next = spliceDocumentIndex(index, nextDocument, 0, 0);
+
+    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
+    expect([...next.commentContainerIndex.keys()]).toEqual(["root.2"]);
   });
 
   test("replaces a root range through the reducer", () => {
@@ -339,15 +594,77 @@ beta
   function expectDocumentIndexMaps(index: DocumentIndex) {
     expect(index.blockIndex.size).toBe(index.blocks.length);
     expect(index.regionIndex.size).toBe(index.regions.length);
-    expect(index.regionPathIndex.size).toBe(index.regions.length);
 
     for (const block of index.blocks) {
-      expect(index.blockIndex.get(block.block.id)).toBe(block);
+      expect(index.blockIndex.get(block.path)).toBe(block);
     }
 
     for (const region of index.regions) {
-      expect(index.regionIndex.get(region.id)).toBe(region);
-      expect(index.regionPathIndex.get(region.path)).toBe(region);
+      expect(index.regionIndex.get(region.path)).toBe(region);
     }
+
+    expectDocumentIndexRanges(index);
+  }
+
+  function expectDocumentIndexRanges(index: DocumentIndex) {
+    for (const root of index.roots) {
+      const rootBlock = root.blocks[0];
+
+      if (!rootBlock) {
+        throw new Error("Expected each indexed root to include a root block");
+      }
+
+      expect(rootBlock.blockRangeEnd - rootBlock.blockArrayIndex).toBe(root.blocks.length);
+      expect(rootBlock.regionRangeEnd - rootBlock.regionRangeStart).toBe(root.regions.length);
+    }
+
+    for (const [arrayIndex, block] of index.blocks.entries()) {
+      expect(block.blockArrayIndex).toBe(arrayIndex);
+      expect(block.blockRangeEnd).toBeGreaterThan(block.blockArrayIndex);
+      expect(block.blockRangeEnd).toBeLessThanOrEqual(index.blocks.length);
+      expect(block.regionRangeStart).toBeGreaterThanOrEqual(0);
+      expect(block.regionRangeStart).toBeLessThanOrEqual(block.regionRangeEnd);
+      expect(block.regionRangeEnd).toBeLessThanOrEqual(index.regions.length);
+    }
+
+    for (const parent of index.blocks) {
+      for (const child of index.blocks) {
+        const rangeContains =
+          parent.blockArrayIndex <= child.blockArrayIndex &&
+          child.blockRangeEnd <= parent.blockRangeEnd;
+
+        expect(rangeContains).toBe(blockPathContainsPath(parent.path, child.path));
+      }
+
+      for (const region of index.regions) {
+        const rangeContains =
+          parent.regionRangeStart <= region.regionArrayIndex &&
+          region.regionArrayIndex < parent.regionRangeEnd;
+
+        expect(rangeContains).toBe(blockPathContainsPath(parent.path, region.path));
+      }
+    }
+  }
+
+  function withCommentAt(document: ReturnType<typeof parseDocument>, containerIndex = 0) {
+    const container = listAnchorContainers(document)[containerIndex];
+
+    if (!container) {
+      throw new Error(`Expected anchor container ${containerIndex}`);
+    }
+
+    const startOffset = container.text.indexOf("target");
+    const endOffset = startOffset + "target".length;
+    const thread = createCommentThread({
+      anchor: createAnchorFromContainer(container, startOffset, endOffset),
+      body: "Track this target",
+      createdAt: "2026-04-05T12:00:00.000Z",
+      quote: extractQuoteFromContainer(container, startOffset, endOffset),
+    });
+
+    return {
+      ...document,
+      comments: [thread],
+    };
   }
 });

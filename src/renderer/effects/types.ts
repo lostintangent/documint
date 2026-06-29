@@ -3,6 +3,7 @@ import type { DocumentChangeKind } from "@/document";
 import type { DocumintEffects, ResolvedDocumentChangeTarget } from "@/types";
 
 export type DocumentChangeEffect = {
+  changeKey: string;
   changeKind: DocumentChangeKind;
   kind: "document-change";
   target: ResolvedDocumentChangeTarget;
@@ -53,7 +54,3 @@ export type BlockPulseFrame = EffectFrame<"listItemInserted"> & {
 };
 
 export type TextPulseFrame = TextInsertionFrame;
-
-export function documentChangeFrameTargetKey(target: ResolvedDocumentChangeTarget) {
-  return target.kind === "block" ? `block:${target.blockId}` : `table-cell:${target.regionId}`;
-}

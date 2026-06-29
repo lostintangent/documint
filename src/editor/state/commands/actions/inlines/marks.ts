@@ -3,11 +3,11 @@ import {
   canonicalizeMarks,
   createText,
   defragmentTextInlines,
-  iterateInlineNodeRanges,
   type Inline,
   type Mark,
   type Text,
 } from "@/document";
+import { inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
 import {
   createInlineContainerReplacement,
   type InlineContainer,
@@ -51,7 +51,7 @@ function shouldRemoveInlineMark(
   let allMarked = true;
 
   const visit = (candidates: Inline[], parentOffset: number) => {
-    for (const { node, start, end } of iterateInlineNodeRanges(candidates)) {
+    for (const { node, start, end } of inlineNodesWithEditorRanges(candidates)) {
       const nodeStart = parentOffset + start;
       const nodeEnd = parentOffset + end;
 
@@ -98,7 +98,7 @@ function toggleInlineNodesMark(
 ): Inline[] {
   const nextNodes: Inline[] = [];
 
-  for (const { node, start, end } of iterateInlineNodeRanges(nodes)) {
+  for (const { node, start, end } of inlineNodesWithEditorRanges(nodes)) {
     if (endOffset <= start || startOffset >= end) {
       nextNodes.push(node);
       continue;

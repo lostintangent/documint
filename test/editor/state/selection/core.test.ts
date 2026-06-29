@@ -14,10 +14,10 @@ describe("Select all", () => {
 
     const nextState = selectAll(state);
 
-    expect(nextState.selection.anchor).toEqual({ offset: 0, regionId: first.id });
+    expect(nextState.selection.anchor).toEqual({ offset: 0, regionPath: first.path });
     expect(nextState.selection.focus).toEqual({
       offset: last.text.length,
-      regionId: last.id,
+      regionPath: last.path,
     });
   });
 

@@ -11,7 +11,7 @@ This is the capability layer. It owns editing semantics and geometry algorithms.
 - **Layout is explicit and cache-aware.** Layout receives state, options, resources, viewport, and a host-owned cache. The returned `EditorLayoutState` is the immutable geometry snapshot renderer and queries consume.
 - **Layout owns shared geometry.** Geometry needed by paint plus navigation, hit testing, anchors, or virtualization belongs in layout. Paint-only visible-slice drawables belong in renderer frames; per-line, document-stable values that multiple consumers need should be promoted into `LayoutLine`.
 - **Public APIs should raise altitude.** Prefer adding one semantic editor capability over making component code pass hidden dependency bundles through raw subsystem internals.
-- **Shared policy has one owner.** Text movement, anchor projection, geometry, and paint policy should live in the subsystem that can make all consumers agree.
+- **Shared policy has one owner.** Text movement, anchor resolution, geometry, and paint policy should live in the subsystem that can make all consumers agree.
 
 ## Subsystem Map
 
@@ -19,6 +19,6 @@ This is the capability layer. It owns editing semantics and geometry algorithms.
 - [`state/`](state/AGENTS.md) owns `Document → EditorState`, indexes, commands, selection, history, fragments, and semantic effect emission.
 - [`navigation/`](navigation/AGENTS.md) owns caret motion, range extension, document flow, point-to-selection hit testing, layout-aware movement, and plain-text document search.
 - [`layout/`](layout/AGENTS.md) owns `EditorState → EditorLayoutState`, measurement, virtualization, core geometry hit testing, and layout queries.
-- [`anchors/`](anchors/AGENTS.md) owns editor-side projection and repair of document anchors.
+- [`anchors/`](anchors/AGENTS.md) owns editor-side resolution and repair of document anchors.
 - [`text/`](text/AGENTS.md) owns shared text semantics needed by multiple editor subsystems.
 - `resources/` owns editor-facing resource registry resolution, discovered-resource references, resource viewport queries, and resource icon cache signatures.

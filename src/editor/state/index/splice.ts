@@ -1,8 +1,7 @@
-// Public splice API: the indexedBlock points the rest of the codebase uses to
-// build or update a `DocumentIndex`. Each routes through `applyRootDelta`
-// after constructing the positioned roots. `createRuntimeEditableDocument` /
-// `collapseRuntimeEditableDocument` are the empty-document shim so a fresh
-// editor always has at least one paragraph to host a caret.
+// Public splice API: the entry points the rest of the editor uses to build,
+// update, and commit a `DocumentIndex`. Each mutation constructs positioned
+// root slices and routes through `applyRootDelta`. The runtime empty-document
+// shim lives here because it belongs at the document/index boundary.
 
 import {
   createDocument,
@@ -26,10 +25,8 @@ export function createDocumentIndex(document: Document): DocumentIndex {
   return applyRootDelta(null, positionedRoots, runtimeDocument);
 }
 
-// Materialize a savable `Document` from a `DocumentIndex`, undoing the
-// empty-document shim and committing any anchor-repair `getCommentState`
-// produced from the most recent edits. Use this at persistence boundaries —
-// "save the editor's current state to markdown" — not during normal editing.
+// Materializes the savable `Document`: removes the empty-document shim and
+// commits any anchor repair produced by the most recent index state.
 export function commitDocument(documentIndex: DocumentIndex): Document {
   const commentState = getCommentState(documentIndex);
 
@@ -80,11 +77,9 @@ export function replaceDocumentMetadata(model: DocumentIndex, document: Document
   return applyRootDelta(model, model.roots, document);
 }
 
-// Replace a single block (by id) inside the document, rebuilding the
-// containing root via the shared `mapBlockTree` primitive and committing
-// the change with `spliceDocument` + `spliceDocumentIndex` (warm path).
-// Uses `blockIndex` to skip the cross-root scan — the block index already
-// knows which root holds the target.
+// Replace a single block by path. The block index locates the containing root;
+// `mapBlockTree` rebuilds only the changed spine inside that root; the result
+// commits through the same document/index splice path as structural edits.
 //
 // Returns the new `DocumentIndex` directly so callers don't have to choose
 // between the warm path (`spliceDocumentIndex`) and the cold path
@@ -92,10 +87,10 @@ export function replaceDocumentMetadata(model: DocumentIndex, document: Document
 // exist or the replacer rejects it.
 export function replaceEditorBlock(
   documentIndex: DocumentIndex,
-  targetBlockId: string,
+  targetBlockPath: string,
   replacer: (block: Block) => Block | null,
 ): DocumentIndex | null {
-  const indexedBlock = documentIndex.blockIndex.get(targetBlockId);
+  const indexedBlock = documentIndex.blockIndex.get(targetBlockPath);
 
   if (!indexedBlock) {
     return null;
@@ -108,15 +103,23 @@ export function replaceEditorBlock(
   }
 
   let found = false;
+  let rejected = false;
   const nextRoots = mapBlockTree([rootBlock], (block, { recurse }) => {
-    if (block.id === targetBlockId) {
+    if (block === indexedBlock.block) {
       found = true;
-      return replacer(block);
+      const nextBlock = replacer(block);
+
+      if (!nextBlock) {
+        rejected = true;
+        return block;
+      }
+
+      return nextBlock;
     }
     return recurse();
   });
 
-  if (!found) {
+  if (!found || rejected) {
     return null;
   }
 
@@ -124,17 +127,10 @@ export function replaceEditorBlock(
   return spliceDocumentIndex(documentIndex, nextDocument, indexedBlock.rootIndex, 1);
 }
 
-// An empty `Document` has no blocks, but the editor must always have at
-// least one block to host a caret. The runtime synthesizes a single empty
-// paragraph for that case; `collapseRuntimeEditableDocument` reverses it on
-// save so persistence still sees zero blocks. The fiction lives here, at
-// the public API boundary, so the rest of the index treats every document
-// as non-empty.
-//
-// Implication for callers: `documentIndex.document` is not always reference-
-// equal to the `document` passed into `createDocumentIndex`. Always go
-// through `commitDocument` to obtain a savable Document — never read
-// `documentIndex.document` directly at persistence boundaries.
+// An empty `Document` has no blocks, but the editor always has a caret host.
+// The runtime synthesizes one empty paragraph at index construction time, and
+// `commitDocument` collapses it again before persistence. `documentIndex.document`
+// is therefore the runtime document, not necessarily the savable document.
 function createRuntimeEditableDocument(document: Document): Document {
   if (document.blocks.length > 0) {
     return document;

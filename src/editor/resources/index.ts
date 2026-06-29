@@ -98,7 +98,7 @@ export function hasActiveResourcesInViewport(
   }
 
   return someVisibleDocumentLayoutLine(viewport, (line) => {
-    const region = resolveRegion(state.documentIndex, line.regionId);
+    const region = resolveRegion(state.documentIndex, line.regionPath);
     if (region?.content.kind !== "inlines") {
       return false;
     }

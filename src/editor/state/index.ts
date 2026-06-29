@@ -4,12 +4,10 @@ export { commitDocument, createDocumentIndex, spliceDocumentIndex } from "./inde
 // Types
 export type {
   IndexedBlock,
-  BlockKind,
   DocumentIndex,
   IndexedInline,
   IndexedListItem,
   EditableRegion,
-  IndexedRoot,
 } from "./index/types";
 
 // Inline selectors
@@ -17,54 +15,61 @@ export {
   findInlinesInRange,
   inlineMarks,
   indexedInlineText,
-  projectInlineText,
   regionInlines,
 } from "./index/inlines";
 
 // Index queries
 export {
-  compareEditorPositions,
+  // Lookups
   countRootBlocks,
-  createSemanticRegionIndex,
-  findAncestorIndexedBlock,
+  resolveBlockByPath,
+  resolveIndexedBlock,
+  resolveIndexedBlockForRegion,
+  resolveRegion,
+  resolveRootBlock,
+  resolveRootRegions,
+  resolveSiblingRootBlock,
+
+  // Comment projection
+  resolveCommentThreadIndicesForRegion,
+
+  // Block and region extents
+  blockContainsBlock,
+  findAncestorIndexedBlockByPath,
+  firstRegionInBlock,
+  lastRegionInBlock,
+  resolveParentIndexedBlock,
+  resolvePrimaryRegionForBlockPath,
+  resolveRootPrimaryRegion,
+  resolveTableCellRegionByTablePath,
+
+  // Document flow
+  compareEditorPositions,
   firstInFlowRegionOfRoot,
-  isContainerBlock,
-  isInertBlock,
-  isInlineRegion,
-  isSourceRegion,
-  isRootIndexedBlock,
   nextBlockInFlow,
   nextRegionInFlow,
   previousBlockInFlow,
   previousRegionInFlow,
-  resolveActiveBlockKey,
-  resolveBlock,
-  resolveBlockChildIndices,
-  resolveDocumentNodeRegion,
-  resolveIndexedBlock,
-  resolveIndexedBlockForRegion,
-  resolveBlockPathForRegion,
-  resolveCommentThreadIndicesForRegion,
-  resolveDescendantPrimaryRegion,
   resolveDocumentBoundaryRegion,
-  resolveParentIndexedBlock,
-  resolvePrimaryRegion,
-  resolveRegion,
-  resolveRegionByPath,
-  resolveRegionDocumentNode,
   resolveRegionOutsideRoot,
-  resolveRootBlock,
-  resolveRootPrimaryRegion,
-  resolveRootRegions,
-  resolveSiblingRootBlock,
-  resolveTableCellPosition,
-  resolveTableCellRegion,
-} from "./index/query";
 
-export type { EditorIndexPosition } from "./index/query";
+  // Shape and classification
+  findUniqueEditableRegion,
+  hasSameEditableRegionShape,
+  hasSameTableCellPosition,
+  isContainerBlock,
+  isInertBlock,
+  isInlineRegion,
+  isRootIndexedBlock,
+  isSourceRegion,
+
+  // Active handles
+  resolveActiveBlockKey,
+} from "./index/query";
 
 // Selection
 export {
+  areSelectionPointsEqual,
   getCaretTextContext,
   getSelectionContext,
   getSelectionFormatting,
@@ -72,7 +77,7 @@ export {
   isSelectionCollapsed,
   normalizeSelection,
   resolveImageAtSelection,
-  selectionIntersectsBlock,
+  selectionIntersectsBlockPath,
   selectionIntersectsRegion,
 } from "./selection";
 

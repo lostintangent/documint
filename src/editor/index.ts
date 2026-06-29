@@ -62,9 +62,12 @@ export {
   getSelectionContext,
   getSelectionFormatting,
   getSelectionRange,
+  isRootIndexedBlock,
   normalizeSelection,
   readEditorEffects,
+  resolveIndexedBlock,
   resolveImageAtSelection,
+  resolveRegion,
   setSelection,
   takeEditorEffects,
   type CaretTextContext,
@@ -100,12 +103,12 @@ export function resolveHoverTarget(
 
 // Offset-based sibling of `resolveHoverTarget`. The callers we have here
 // (selection-driven UI surfacing) don't have a layout point, just a known
-// (regionId, offset), so this skips hit-test and goes straight to the
+// (regionPath, offset), so this skips hit-test and goes straight to the
 // state/anchors lookup.
 export function resolveTargetAtSelection(state: EditorState, selectionPoint: EditorSelectionPoint) {
   return resolveTargetAtOffset(
     state,
-    selectionPoint.regionId,
+    selectionPoint.regionPath,
     selectionPoint.offset,
     getCommentState(state).ranges,
   );

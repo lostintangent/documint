@@ -16,7 +16,7 @@ Effects are explicit boundaries. DOM/canvas measurement, `requestAnimationFrame`
 
 Each subsystem has its own `AGENTS.md` for local rules and ownership. Use this map to choose the correct layer, then read that subsystem guide before editing.
 
-- [`src/document`](src/document/AGENTS.md) - Semantic document truth: immutable block/inline trees, canonical IDs, plain-text projections, paths, queries, and comment threads as anchored annotations.
+- [`src/document`](src/document/AGENTS.md) - Semantic document truth: immutable block/inline trees, plain-text projections, structural paths, anchors, queries, and comment threads as anchored annotations.
 - [`src/markdown`](src/markdown/AGENTS.md) - File and clipboard boundary: direct `markdown → Document → markdown` parsing, serialization, fragments, front matter, tables, and comment directives.
 - [`src/editor`](src/editor/AGENTS.md) - Framework-agnostic editor engine: document indexing, state, commands, selection, navigation, anchors, layout, hit testing, and text measurement.
 - [`src/renderer`](src/renderer/AGENTS.md) - Immediate-mode painting from prepared editor/layout inputs to canvas pixels.

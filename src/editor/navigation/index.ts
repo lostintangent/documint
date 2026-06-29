@@ -141,7 +141,7 @@ export function moveCaretToDocumentBoundary(
 
   return setSelectionPoint(
     state,
-    targetRegion.id,
+    targetRegion.path,
     boundary === "start" ? 0 : targetRegion.text.length,
     extendSelection,
   );
@@ -154,7 +154,7 @@ export function setSelectionAtPoint(
 ) {
   const hit = resolveSelectionHit(state, viewport, point);
 
-  return hit ? setSelection(state, { offset: hit.offset, regionId: hit.regionId }) : null;
+  return hit ? setSelection(state, { offset: hit.offset, regionPath: hit.regionPath }) : null;
 }
 
 export function extendSelectionToPoint(
@@ -164,7 +164,7 @@ export function extendSelectionToPoint(
 ) {
   const hit = resolveSelectionHit(state, viewport, point);
 
-  return hit ? setSelectionPoint(state, hit.regionId, hit.offset, true) : null;
+  return hit ? setSelectionPoint(state, hit.regionPath, hit.offset, true) : null;
 }
 
 export function updateSelectionFromDrag(
@@ -185,7 +185,7 @@ export function updateSelectionFromDrag(
 
 function measureSelectionCaret(state: EditorState, viewport: EditorLayoutState) {
   return measureCaretTarget(viewport.layout, state.documentIndex, {
-    regionId: state.selection.focus.regionId,
+    regionPath: state.selection.focus.regionPath,
     offset: state.selection.focus.offset,
   });
 }
@@ -228,7 +228,7 @@ function moveCaretToAdjacentRegion(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
 
   if (!currentRegion) {
     return state;
@@ -236,8 +236,8 @@ function moveCaretToAdjacentRegion(
 
   const targetRegion =
     direction < 0
-      ? previousRegionInFlow(state.documentIndex, currentRegion.id)
-      : nextRegionInFlow(state.documentIndex, currentRegion.id);
+      ? previousRegionInFlow(state.documentIndex, currentRegion.path)
+      : nextRegionInFlow(state.documentIndex, currentRegion.path);
 
   return targetRegion
     ? setRegionNavigationSelection(state, currentRegion, targetRegion, direction, extendSelection)
@@ -249,12 +249,12 @@ function moveCaretToCurrentRegionBoundary(
   boundary: "Home" | "End",
   extendSelection: boolean,
 ) {
-  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
 
   return currentRegion
     ? setSelectionPoint(
         state,
-        currentRegion.id,
+        currentRegion.path,
         boundary === "Home" ? 0 : currentRegion.text.length,
         extendSelection,
       )
@@ -269,7 +269,7 @@ function setRegionNavigationSelection(
   extendSelection: boolean,
 ) {
   const focus = {
-    regionId: targetRegion.id,
+    regionPath: targetRegion.path,
     offset: extendSelection && direction > 0 ? targetRegion.text.length : 0,
   };
 
@@ -280,7 +280,7 @@ function setRegionNavigationSelection(
   return setSelection(state, {
     anchor: isSelectionCollapsed(state.selection)
       ? {
-          regionId: currentRegion.id,
+          regionPath: currentRegion.path,
           offset: direction > 0 ? 0 : currentRegion.text.length,
         }
       : state.selection.anchor,

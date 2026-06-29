@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { tableCellPositionFromPath } from "@/document";
 import {
   dedent,
   deleteTable,
   deleteTableColumn,
   deleteTableRow,
   indent,
+  insertText,
   insertTable,
   insertTableColumn,
   insertTableRow,
+  resolveRegion,
 } from "@/editor/state";
 import { getRegion, placeAt, setup, toMarkdown } from "../../helpers";
 
@@ -21,11 +24,11 @@ describe("Table navigation", () => {
     const nextState = indent(state);
     const previousState = nextState ? dedent(nextState) : null;
 
-    expect(nextState?.selection.focus.regionId).toBe(
-      state.documentIndex.regions.find((container) => container.text === "beta")!.id,
+    expect(nextState?.selection.focus.regionPath).toBe(
+      state.documentIndex.regions.find((container) => container.text === "beta")!.path,
     );
     expect(nextState?.selection.focus.offset).toBe(2);
-    expect(previousState?.selection.focus.regionId).toBe(alpha.id);
+    expect(previousState?.selection.focus.regionPath).toBe(alpha.path);
     expect(previousState?.selection.focus.offset).toBe(2);
   });
 
@@ -41,9 +44,9 @@ describe("Table navigation", () => {
     const nextState = indent(placeAt(state, beta, 1));
     const previousState = dedent(placeAt(state, gamma, 1));
 
-    expect(nextState?.selection.focus.regionId).toBe(gamma.id);
+    expect(nextState?.selection.focus.regionPath).toBe(gamma.path);
     expect(nextState?.selection.focus.offset).toBe(1);
-    expect(previousState?.selection.focus.regionId).toBe(beta.id);
+    expect(previousState?.selection.focus.regionPath).toBe(beta.path);
     expect(previousState?.selection.focus.offset).toBe(1);
   });
 
@@ -58,11 +61,15 @@ describe("Table navigation", () => {
     expect(nextState).toBeDefined();
     expect(toMarkdown(nextState!)).toBe("| A | B |\n| --- | --- |\n| alpha | beta |\n|  |  |\n");
 
-    const focusedContainer = nextState!.documentIndex.regionIndex.get(
-      nextState!.selection.focus.regionId,
+    const focusedContainer = resolveRegion(
+      nextState!.documentIndex,
+      nextState!.selection.focus.regionPath,
     );
 
-    expect(focusedContainer?.path.endsWith(".rows.2.cells.0")).toBe(true);
+    expect(tableCellPositionFromPath(focusedContainer?.path ?? "")).toEqual({
+      cellIndex: 0,
+      rowIndex: 2,
+    });
     expect(nextState!.selection.focus.offset).toBe(0);
   });
 
@@ -99,6 +106,28 @@ describe("Table insertion", () => {
 });
 
 describe("Table structure", () => {
+  test("keeps cached table cell plain text canonical after a text edit", () => {
+    let state = setup("| A | B |\n| --- | --- |\n| one | two |\n");
+    const one = getRegion(state, "one");
+
+    state = placeAt(state, one, "end");
+
+    const nextState = insertText(state, " edited");
+
+    if (!nextState) {
+      throw new Error("Expected insertText to produce a new state");
+    }
+
+    const table = nextState.documentIndex.document.blocks[0];
+
+    if (table?.type !== "table") {
+      throw new Error("Expected edited root to remain a table");
+    }
+
+    expect(table.rows[1]?.cells[0]?.plainText).toBe("one edited");
+    expect(table.plainText).toBe("A | B\none edited | two");
+  });
+
   test("inserts a column to the right of the current cell", () => {
     const before = toMarkdown(stateWithTable()).split("|").length;
     const next = insertTableColumn(inFirstCell(stateWithTable()), "right");

@@ -2,7 +2,7 @@
 // canonical markdown line the host reports to the embedder.
 import type { Block, Document } from "@/document";
 import type { TextRangeTarget } from "@/editor";
-import { resolveRegion, resolveRegionByPath } from "@/editor/state";
+import { resolveRegion } from "@/editor/state";
 import { serializeBlocks } from "@/markdown";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 
@@ -15,13 +15,13 @@ export function resolveMentionLineChange(
   transition: EditorStateTransition,
   target: TextRangeTarget,
 ): MentionLineChange | null {
-  const previousRegion = resolveRegion(transition.previous.documentIndex, target.regionId);
+  const previousRegion = resolveRegion(transition.previous.documentIndex, target.regionPath);
 
   if (!previousRegion) {
     return null;
   }
 
-  const nextRegion = resolveRegionByPath(transition.next.documentIndex, previousRegion.path);
+  const nextRegion = resolveRegion(transition.next.documentIndex, previousRegion.path);
 
   if (!nextRegion) {
     return null;

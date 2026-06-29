@@ -32,7 +32,7 @@ export type EditorStateAction =
   | ({
       kind: "replace-block";
       block: Block;
-      blockId: string;
+      blockPath: string;
       selection?: SelectionTarget | null;
     } & ActionEffectFields)
   | ({

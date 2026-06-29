@@ -14,7 +14,7 @@
 
 import { mapBlockTree } from "../query/visit";
 import type { Block, Inline, Mark, TableRow } from "../model/types";
-import { createText, rebuildTableBlock, rebuildTextBlock } from "./builders";
+import { createTableCell, createText, rebuildTableBlock, rebuildTextBlock } from "./builders";
 
 // Restore the canonical form after a mutation that fragmented adjacent
 // text inlines — e.g. removing a link spreads its children into the parent
@@ -67,10 +67,10 @@ function hasAdjacentSameMarkTextPair(nodes: Inline[]): boolean {
   return false;
 }
 
-// Mark sets are canonicalized by document builders/normalization, so
-// order-sensitive equality is the canonical check. The reference check is a
-// free win when two adjacent text inlines were emitted by the same `flushText`
-// context and share the same `marks` array — the dominant parser pattern.
+// Mark sets are canonicalized by document builders, so order-sensitive
+// equality is the canonical check. The reference check is a free win when two
+// adjacent text inlines were emitted by the same `flushText` context and share
+// the same `marks` array — the dominant parser pattern.
 function marksEqual(left: readonly Mark[], right: readonly Mark[]): boolean {
   if (left === right) {
     return true;
@@ -103,22 +103,46 @@ export function trimTrailingWhitespace(blocks: Block[]): Block[] {
         return recurse();
       case "heading":
       case "paragraph":
-        return rebuildTextBlock(block, trimTrailingInlineWhitespace(block.children));
+        return trimTextBlockTrailingWhitespace(block);
       case "table":
-        return rebuildTableBlock(
-          block,
-          block.rows.map<TableRow>((row) => ({
-            ...row,
-            cells: row.cells.map((cell) => ({
-              ...cell,
-              children: trimTrailingInlineWhitespace(cell.children),
-            })),
-          })),
-        );
+        return trimTableTrailingWhitespace(block);
       default:
         return block;
     }
   });
+}
+
+function trimTextBlockTrailingWhitespace(block: Extract<Block, { type: "heading" | "paragraph" }>) {
+  const children = trimTrailingInlineWhitespace(block.children);
+
+  return children === block.children ? block : rebuildTextBlock(block, children);
+}
+
+function trimTableTrailingWhitespace(block: Extract<Block, { type: "table" }>) {
+  let nextRows: TableRow[] | null = null;
+  const ensureRows = () => (nextRows ??= [...block.rows]);
+
+  for (const [rowIndex, row] of block.rows.entries()) {
+    let nextCells: typeof row.cells | null = null;
+    const ensureCells = () => (nextCells ??= [...row.cells]);
+
+    for (const [cellIndex, cell] of row.cells.entries()) {
+      const children = trimTrailingInlineWhitespace(cell.children);
+
+      if (children !== cell.children) {
+        ensureCells()[cellIndex] = createTableCell(children);
+      }
+    }
+
+    if (nextCells) {
+      ensureRows()[rowIndex] = {
+        ...row,
+        cells: nextCells,
+      };
+    }
+  }
+
+  return nextRows ? rebuildTableBlock(block, nextRows) : block;
 }
 
 // Trim trailing whitespace from the last non-empty text run in an inline list,

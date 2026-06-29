@@ -2,16 +2,21 @@
 // document, comments, editor, and tests.
 //
 // The traversal engine here is observe-only (`visitDocument`,
-// `visitBlockTree`, `findBlockById`). For walk-and-rebuild use the `mapBlockTree`
-// primitive below. Both engines speak the canonical path vocabulary from
-// `../model/paths`, so a node's path here is the same string used by `nodeId` and
-// the editor's region index.
+// `visitBlockTree`). For walk-and-rebuild use the `mapBlockTree` primitive
+// below. Both engines speak the canonical path vocabulary from `../model/paths`,
+// so a node's path here is the same structural address used by anchors and the
+// editor index.
 
 import { blockContainerSpec } from "../model/containers";
 import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../model/paths";
-import type { Block, Document, Inline, LineBreak, TableBlock, TableCell, TableRow } from "../model/types";
-import type { Reference } from "./inlines";
-import { isReferenceInlineNode } from "./inlines";
+import type {
+  Block,
+  Document,
+  Inline,
+  TableBlock,
+  TableCell,
+  TableRow,
+} from "../model/types";
 
 export type VisitControl = "skip" | "stop" | void;
 
@@ -39,37 +44,12 @@ export type InlineContainerVisitContext = {
   path: string;
 };
 
-// `enterPlainText` offsets are in **inline text-coordinate space**: a flat
-// character stream over an `Inline` array where every node contributes a
-// fixed number of characters. This is the document's own coordinate convention,
-// and is distinct from the textual projection produced by
-// `extractPlainTextFromInlineNodes` (which uses per-kind text like `@name`
-// for mentions and `alt` for images). Per-kind contribution:
-//
-//   lineBreak | references -> 1 char each (atomic stops)
-//   code | text            -> their `length`
-//   raw                    -> `source.length`
-//   link                   -> recursive sum of children
-//
-// The editor's selection-offset space is the same space — the editor adopts
-// these offsets directly for caret math, hit testing, and region addressing
-// — but the document defines the space; the editor is one consumer.
-//
-// The callback fires only for unmarked text runs (`marks.length === 0`); marked
-// text is skipped because the decoration consumers that use this callback
-// don't apply syntax highlighting to formatted text.
-export type PlainTextVisitContext = InlineContainerVisitContext & {
-  endOffset: number;
-  startOffset: number;
-};
-
 export type DocumentVisitor = {
   enterBlock?: (block: Block, context: BlockVisitContext) => VisitControl;
   enterInlineContainer?: (
     nodes: readonly Inline[],
     context: InlineContainerVisitContext,
   ) => VisitControl;
-  enterPlainText?: (text: string, context: PlainTextVisitContext) => VisitControl;
   enterInline?: (node: Inline, context: InlineVisitContext) => VisitControl;
   enterTableCell?: (cell: TableCell, context: TableCellVisitContext) => VisitControl;
 };
@@ -106,51 +86,9 @@ export function visitBlockTree(
   });
 }
 
-export function findBlockById(blocks: Block[], blockId: string): Block | null {
-  let match: Block | null = null;
-
-  visitBlockTree(blocks, {
-    enterBlock(block) {
-      if (block.id === blockId) {
-        match = block;
-        return "stop";
-      }
-    },
-  });
-
-  return match;
-}
-
-export function findBlockChildIndicesById(rootBlock: Block, blockId: string): number[] | null {
-  if (rootBlock.id === blockId) {
-    return [];
-  }
-
-  const containerSpec = blockContainerSpec(rootBlock);
-  const children = containerSpec?.read(rootBlock);
-
-  if (!children) {
-    return null;
-  }
-
-  for (const [index, child] of children.entries()) {
-    const childIndices = findBlockChildIndicesById(child, blockId);
-
-    if (childIndices) {
-      return [index, ...childIndices];
-    }
-  }
-
-  return null;
-}
-
-// Reference-identity sibling of `findBlockChildIndicesById`: locate `target`
-// within `roots` by object identity and return its structural coordinates.
-// Exists for not-yet-normalized payload trees (editor action payloads), where
-// ids are still unassigned (`""`) and a reference is the only name a caller
-// has for "the block I just built". The returned coordinates remain valid
-// after normalization because id assignment is strictly positional — it never
-// reorders, inserts, or drops children.
+// Locate `target` within `roots` by object identity and return its structural
+// coordinates. This is for uncommitted payload trees where a reference is the
+// only name a caller has for "the block I just built".
 export function findBlockChildIndicesByReference(
   roots: readonly Block[],
   target: Block,
@@ -351,121 +289,12 @@ function visitInlineContainer(
     return;
   }
 
-  visitPlainText(nodes, visitor, state, context);
-
-  if (state.stopped) {
-    return;
-  }
-
   visitInlines(nodes, visitor, state, {
     block: context.block,
     // Table cells nest their inlines under a `.children` segment; block
     // inline containers (paragraph, heading) already are the children path.
     pathPrefix: context.kind === "tableCell" ? childContainerPath(context.path) : context.path,
   });
-}
-
-function visitPlainText(
-  nodes: Inline[],
-  visitor: DocumentVisitor,
-  state: TraversalState,
-  context: InlineContainerVisitContext,
-) {
-  if (!visitor.enterPlainText) {
-    return;
-  }
-
-  let offset = 0;
-
-  for (const node of nodes) {
-    if (state.stopped) {
-      return;
-    }
-
-    if (node.type === "text") {
-      const startOffset = offset;
-      const endOffset = startOffset + node.text.length;
-
-      if (
-        node.marks.length === 0 &&
-        stopTraversal(
-          visitor.enterPlainText(node.text, { ...context, endOffset, startOffset }),
-          state,
-        )
-      ) {
-        return;
-      }
-
-      offset = endOffset;
-      continue;
-    }
-
-    offset += measureInlineNodeText(node);
-  }
-}
-
-// The projected character length of an `Inline` node in *inline text-coordinate
-// space* — the document's flat-character-stream coordinate convention defined
-// at `PlainTextVisitContext` above. This is the canonical length oracle: any
-// consumer that walks the raw `Inline` tree and needs to know "how many
-// characters does this node contribute to the flat stream?" reads the answer
-// here instead of inventing a per-type length switch. The editor's index
-// reuses this oracle directly for selection-offset math.
-//
-// Per-kind projection:
-//   - `lineBreak`            → 1 (projects to `\n`)
-//   - references             → 1 (projects to a single object-replacement char)
-//   - `text` / `code` / `raw`→ length of the node's own text/source
-//   - `link`                 → recursive sum of children (links flatten)
-//
-// Cross-layer contract with the editor: the editor's index projects references
-// to `INLINE_OBJECT_REPLACEMENT_TEXT` (a single `￼`) and `lineBreak` to `\n`.
-// The two implementations must agree that those project to one character each.
-// If the editor's placeholder ever widens, the one-unit projection helper here
-// has to widen with it.
-export function measureInlineNodeText(node: Inline): number {
-  if (projectsToOneTextCoordinate(node)) {
-    return 1;
-  }
-
-  switch (node.type) {
-    case "raw":
-      return node.source.length;
-    case "text":
-      return node.text.length;
-    case "link":
-      return node.children.reduce((sum, child) => sum + measureInlineNodeText(child), 0);
-  }
-}
-
-function projectsToOneTextCoordinate(node: Inline): node is Reference | LineBreak {
-  return node.type === "lineBreak" || isReferenceInlineNode(node);
-}
-
-// Each `Inline` paired with its `[start, end)` extent in inline text-coordinate
-// space. Yielded by `iterateInlineNodeRanges`.
-export type InlineNodeRange = {
-  end: number;
-  node: Inline;
-  start: number;
-};
-
-// Walks `nodes` in inline text-coordinate space, yielding each node with its
-// `[start, end)` extent. The cursor + `measureInlineNodeText` arithmetic that
-// every range-scoped inline operation reimplements lives here once: consumers
-// only express what to do with the overlapping portion of `[node.start,
-// node.end)` against their own `[start, end)` query range.
-//
-// This is the substrate for splice, slice, mark toggle, code toggle, link
-// lookup, and any future range-scoped operation over an inline tree.
-export function* iterateInlineNodeRanges(nodes: readonly Inline[]): Iterable<InlineNodeRange> {
-  let cursor = 0;
-  for (const node of nodes) {
-    const start = cursor;
-    const end = start + measureInlineNodeText(node);
-    cursor = end;
-    yield { end, node, start };
-  }
 }
 
 // Maps an inline list in semantic order, recursing through link children and
@@ -546,8 +375,8 @@ export type BlockMapContext = {
   // (paragraph, heading, code, table, divider, raw, directive) returns the
   // block unchanged. Identity-preserving when nothing changed.
   recurse: () => Block;
-  // Path string to the current block. Matches the convention used by `nodeId`
-  // and the visit* family above.
+  // Path string to the current block. Matches the convention used by anchors,
+  // path lookup, and the visit* family above.
   path: string;
 };
 
@@ -598,15 +427,9 @@ export function mapBlockTree(
   return didChange ? result : blocks;
 }
 
-// Rebuild a container with mapped children using the registry's
-// `withChildren` (structural spread), which leaves the parent's `id` and
-// `plainText` untouched. Both fields are derived from children, so they go
-// stale when children change — but every consumer of `mapBlockTree` runs
-// before a downstream `createDocument` / `spliceDocument` that re-normalizes
-// the whole tree, so the staleness is invisible. Skipping the canonical
-// `rebuild` matters: it's the difference between O(N) and O(N log N) on the
-// parse and splice hot paths, where the redundant `plainText` recomputation
-// in the rebuilders showed up as a measurable benchmark regression.
+// Rebuild a changed container canonically. Only changed ancestors are rebuilt,
+// preserving unaffected child references while keeping cached `plainText`
+// correct without a later whole-document normalization pass.
 function recurseBlockChildren(block: Block, visit: BlockMapVisitor, childrenPath: string): Block {
   const spec = blockContainerSpec(block);
 
@@ -621,5 +444,5 @@ function recurseBlockChildren(block: Block, visit: BlockMapVisitor, childrenPath
     return block;
   }
 
-  return spec.withChildren(block, next);
+  return spec.rebuild(block, next);
 }

@@ -1,4 +1,5 @@
 import {
+  blockPathWithRootIndex,
   defragmentTextInlines,
   findBlockChildIndicesByReference,
   mapBlockTree,
@@ -15,7 +16,6 @@ import {
   nextRegionInFlow,
   previousBlockInFlow,
   previousRegionInFlow,
-  resolveBlockChildIndices,
   resolveRootBlock,
 } from "../../../index/query";
 import type { DocumentIndex, IndexedBlock, EditableRegion } from "../../../index/types";
@@ -112,8 +112,8 @@ function resolveAdjacentInertBlock(
 ): IndexedBlock | null {
   const adjacent =
     direction === "backward"
-      ? previousBlockInFlow(documentIndex, region.block.id)
-      : nextBlockInFlow(documentIndex, region.block.id);
+      ? previousBlockInFlow(documentIndex, region.blockPath)
+      : nextBlockInFlow(documentIndex, region.blockPath);
 
   return adjacent && isInertBlock(adjacent) ? adjacent : null;
 }
@@ -124,8 +124,8 @@ function resolveAdjacentRegion(
   direction: DeleteDirection,
 ): EditableRegion | null {
   return direction === "backward"
-    ? previousRegionInFlow(documentIndex, region.id)
-    : nextRegionInFlow(documentIndex, region.id);
+    ? previousRegionInFlow(documentIndex, region.path)
+    : nextRegionInFlow(documentIndex, region.path);
 }
 
 // Non-empty boundary collapse: backward folds the current region into
@@ -173,7 +173,7 @@ function resolveInertNeighborCollapse(
     rootIndex: inertBlock.rootIndex,
     count: 1,
     blocks: [],
-    selection: regionPathTarget(currentRegion, newRootIndex, cursorOffset),
+    selection: shiftedRegionBlockTarget(currentRegion, newRootIndex, cursorOffset),
   };
 }
 
@@ -195,7 +195,7 @@ function resolveEmptyCollapse(
   const victimRoot = resolveRootBlock(documentIndex, victim.rootIndex);
   if (!victimRoot) return null;
 
-  const rebuilt = applyEditsToBlock(victimRoot, victim, absorber.block.id, undefined);
+  const rebuilt = applyEditsToBlock(victimRoot, victim, absorber.block, undefined);
 
   const cursorOffset = direction === "backward" ? absorber.text.length : 0;
   const sameRoot = victim.rootIndex === absorber.rootIndex;
@@ -250,7 +250,7 @@ function resolveMergeCollapse(
     const rootBlock = resolveRootBlock(documentIndex, victim.rootIndex);
     if (!rootBlock) return null;
 
-    const rebuilt = applyEditsToBlock(rootBlock, victim, absorber.block.id, updatedAbsorberBlock);
+    const rebuilt = applyEditsToBlock(rootBlock, victim, absorber.block, updatedAbsorberBlock);
 
     return {
       kind: "splice-blocks",
@@ -271,13 +271,13 @@ function resolveMergeCollapse(
   const absorberRebuild = applyEditsToBlock(
     absorberRoot,
     victim,
-    absorber.block.id,
+    absorber.block,
     updatedAbsorberBlock,
   );
   if (absorberRebuild.length !== 1) return null;
   const updatedAbsorberRoot = absorberRebuild[0]!;
 
-  const victimRebuild = applyEditsToBlock(victimRoot, victim, absorber.block.id, undefined);
+  const victimRebuild = applyEditsToBlock(victimRoot, victim, absorber.block, undefined);
 
   // Absorber is always at the lower rootIndex (previous-in-flow for
   // backward; current R at i, victim N at i+1 for forward).
@@ -296,23 +296,20 @@ function resolveMergeCollapse(
   };
 }
 
-// Path-stable cursor target at a region's path within a specific
-// rootIndex. Used by the merge collapse and by the list-merge override
-// in `deletion/index.ts`. The shape — parse the region's path into
-// child indices, target the deepest descendant — is reusable
-// wherever a caller knows the region whose post-edit position is path-
-// stable (i.e. nothing the splice does shifts indices in the
-// region's ancestor chain).
-export function regionPathTarget(
+// Select a region's primary block after a splice that may shift its root index
+// but does not shift indices in the region's ancestor chain.
+export function shiftedRegionBlockTarget(
   region: EditableRegion,
   rootIndex: number,
   offset: number | "end" = 0,
 ): SelectionTarget {
-  const childIndices = resolveBlockChildIndices(region);
-  if (childIndices.length === 0) {
-    return target.root(rootIndex, offset);
+  const blockPath = blockPathWithRootIndex(region.blockPath, rootIndex);
+
+  if (!blockPath) {
+    throw new Error(`Invalid shifted region block path: ${region.blockPath}`);
   }
-  return target.descendant(rootIndex, childIndices, offset);
+
+  return target.blockPath(blockPath, offset);
 }
 
 // Build the absorber's post-merge block. We concatenate inline children
@@ -359,17 +356,13 @@ function crossRootAbsorberTarget(
   victimResidueLength: number,
   offset: number,
 ): SelectionTarget | null {
-  const childIndices = resolveBlockChildIndices(absorber);
   const lengthDelta = victimResidueLength - 1;
   const newRootIndex =
     absorber.rootIndex < victimRootIndex
       ? absorber.rootIndex // victim is after absorber; absorber's rootIndex unaffected
       : absorber.rootIndex + lengthDelta;
 
-  if (childIndices.length === 0) {
-    return target.root(newRootIndex, offset);
-  }
-  return target.descendant(newRootIndex, childIndices, offset);
+  return shiftedRegionBlockTarget(absorber, newRootIndex, offset);
 }
 
 // --- Tree walk: structural removal + optional absorber substitution -----
@@ -394,27 +387,27 @@ function crossRootAbsorberTarget(
 function applyEditsToBlock(
   rootBlock: Block,
   victim: EditableRegion,
-  absorberBlockId: string,
+  absorberBlock: Block,
   updatedAbsorberBlock: Block | undefined,
 ): Block[] {
   return mapBlockTree([rootBlock], (block, { parent, recurse }) => {
     // Rule 1: listItem owns its leading paragraph/heading.
     if (block.type === "listItem") {
       const leading = block.children[0];
-      if (leading && leading.id === victim.block.id) {
+      if (leading && leading === victim.block) {
         return liftedReplacementForVictim(block);
       }
     }
 
     // Rule 2: direct removal of the victim, unless our parent is a listItem
     // (in which case rule 1 above handled it on the way down).
-    if (block.id === victim.block.id && parent?.type !== "listItem") {
+    if (block === victim.block && parent?.type !== "listItem") {
       return [];
     }
 
     // Absorber substitution: the absorber's paragraph/heading becomes the
     // pre-merged form supplied by the caller.
-    if (block.id === absorberBlockId && updatedAbsorberBlock !== undefined) {
+    if (block === absorberBlock && updatedAbsorberBlock !== undefined) {
       return updatedAbsorberBlock;
     }
 

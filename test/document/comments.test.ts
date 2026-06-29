@@ -69,6 +69,24 @@ describe("Comment anchors", () => {
     },
   );
 
+  test("does not repair deleted quoted text from one-sided context without quote similarity", () => {
+    const { thread } = createAnchoredThread(
+      parseDocument("old occupant\n\ntarget phrase\n"),
+      0,
+      "target".length,
+      "Deleted text should not leak to replacement content.",
+      { containerIndex: 1 },
+    );
+    const resolution = resolveCommentThread(
+      thread,
+      parseDocument("old occupant\n\nreplacement phrase\n"),
+    );
+
+    expect(resolution.status).toBe("stale");
+    expect(resolution.match).toBeNull();
+    expect(resolution.repair).toBeNull();
+  });
+
   test("keeps comments sticky when the containing block moves in the document", () => {
     const { thread } = createAnchoredThread(
       parseDocument("Alpha intro.\n\nUnique quoted phrase lives here.\n\nOmega tail.\n"),
@@ -161,7 +179,7 @@ console.log("hi");
     expect(innerListParagraph?.containerKind).toBe("text");
     expect(codeContainer?.containerKind).toBe("code");
     expect(firstTableCell?.containerKind).toBe("tableCell");
-    expect(new Set(containers.slice(5).map((container) => container.id)).size).toBe(4);
+    expect(new Set(containers.slice(5).map((container) => container.path)).size).toBe(4);
   });
 });
 

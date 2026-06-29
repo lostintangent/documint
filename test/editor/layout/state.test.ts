@@ -47,14 +47,14 @@ test("keeps near pinned regions in the viewport slice", () => {
 
   const state = setSelection(initialState, {
     offset: 0,
-    regionId: pinnedContainer.id,
+    regionPath: pinnedContainer.path,
   });
   const initialViewportLayout = createEditorLayoutState(state, {
     height: 720,
     top: 0,
     width: 420,
   });
-  const pinnedBounds = initialViewportLayout.estimateRegionBounds(pinnedContainer.id);
+  const pinnedBounds = initialViewportLayout.estimateRegionBounds(pinnedContainer.path);
 
   if (!pinnedBounds) {
     throw new Error("Expected pinned region estimate");
@@ -66,8 +66,8 @@ test("keeps near pinned regions in the viewport slice", () => {
     width: 420,
   });
 
-  expect(viewportLayout.layout.regionLineIndices.has(pinnedContainer.id)).toBeTrue();
-  expect(viewportLayout.estimateRegionBounds(pinnedContainer.id)).not.toBeNull();
+  expect(viewportLayout.layout.regionLineIndices.has(pinnedContainer.path)).toBeTrue();
+  expect(viewportLayout.estimateRegionBounds(pinnedContainer.path)).not.toBeNull();
 });
 
 test("does not expand virtualized slices to far offscreen pinned regions", () => {
@@ -81,7 +81,7 @@ test("does not expand virtualized slices to far offscreen pinned regions", () =>
 
   const state = setSelection(initialState, {
     offset: 0,
-    regionId: pinnedContainer.id,
+    regionPath: pinnedContainer.path,
   });
   const viewportLayout = createEditorLayoutState(state, {
     height: 720,
@@ -89,8 +89,8 @@ test("does not expand virtualized slices to far offscreen pinned regions", () =>
     width: 420,
   });
 
-  expect(viewportLayout.layout.regionLineIndices.has(pinnedContainer.id)).toBeFalse();
-  expect(viewportLayout.estimateRegionBounds(pinnedContainer.id)).not.toBeNull();
+  expect(viewportLayout.layout.regionLineIndices.has(pinnedContainer.path)).toBeFalse();
+  expect(viewportLayout.estimateRegionBounds(pinnedContainer.path)).not.toBeNull();
 });
 
 test("uses exact full-document layout for small documents", () => {
@@ -151,7 +151,7 @@ test("refines virtualized layout estimates after measuring slices", () => {
     },
     cache,
   );
-  const initialEstimate = initialLayout.estimateRegionBounds(targetRegion.id);
+  const initialEstimate = initialLayout.estimateRegionBounds(targetRegion.path);
 
   if (!initialEstimate) {
     throw new Error("Expected initial target estimate");
@@ -162,7 +162,7 @@ test("refines virtualized layout estimates after measuring slices", () => {
 
   const targetState = setSelection(initialState, {
     offset: Math.floor(targetRegion.text.length / 2),
-    regionId: targetRegion.id,
+    regionPath: targetRegion.path,
   });
   const targetViewportTop = Math.max(0, initialEstimate.top - 120);
   const measuredLayout = createEditorLayoutState(
@@ -173,13 +173,13 @@ test("refines virtualized layout estimates after measuring slices", () => {
     },
     cache,
   );
-  const measuredBounds = measuredLayout.layout.regionBounds.get(targetRegion.id);
+  const measuredBounds = measuredLayout.layout.regionBounds.get(targetRegion.path);
 
   if (!measuredBounds) {
     throw new Error("Expected target region to be measured");
   }
 
-  const refinedEstimate = measuredLayout.estimateRegionBounds(targetRegion.id);
+  const refinedEstimate = measuredLayout.estimateRegionBounds(targetRegion.path);
 
   if (!refinedEstimate) {
     throw new Error("Expected refined target estimate");
@@ -215,7 +215,7 @@ test("keeps the initial mixed-block virtualized slice aligned with full layout",
   for (const viewportLine of viewportLayout.layout.lines) {
     const matchingFullLine = fullLayout.lines.find(
       (line) =>
-        line.regionId === viewportLine.regionId &&
+        line.regionPath === viewportLine.regionPath &&
         line.start === viewportLine.start &&
         line.end === viewportLine.end,
     );
@@ -257,7 +257,7 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inli
 
   state = setSelection(state, {
     offset: editedRegion.text.length,
-    regionId: editedRegion.id,
+    regionPath: editedRegion.path,
   });
 
   const viewportOptions = {

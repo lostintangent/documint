@@ -2,6 +2,16 @@ import { expect, test } from "bun:test";
 import {
   createAnchorFromContainer,
   createCommentThread,
+  createDocument,
+  createImage,
+  createMention,
+  createParagraphBlock,
+  createParagraphTextBlock,
+  createResource,
+  createTableBlock,
+  createTableCell,
+  createTableRow,
+  createText,
   extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
@@ -20,6 +30,7 @@ import {
   measureCaretTarget,
   createEditorLayoutState,
   resolveHoverTarget,
+  resolveRegion,
   setSelection,
   type EditorPresence,
 } from "@/editor";
@@ -52,6 +63,267 @@ test("maps durable comment anchors to runtime comment ranges", () => {
   expect(commentState.ranges[0]?.endOffset).toBeGreaterThan(
     commentState.ranges[0]?.startOffset ?? 0,
   );
+});
+
+test("keeps comment thread array identity when resolution does not repair anchors", () => {
+  const document = createDocument([createParagraphTextBlock("alpha beta")]);
+  const container = listAnchorContainers(document)[0];
+
+  if (!container) {
+    throw new Error("Expected comment container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 0, "alpha".length),
+    body: "Track alpha",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, 0, "alpha".length),
+  });
+  const state = createEditorState(createDocument(document.blocks, [thread]));
+  const commentState = getCommentState(state.documentIndex);
+
+  expect(commentState.threads).toBe(state.documentIndex.document.comments);
+  expect(commentState.ranges).toHaveLength(1);
+});
+
+test("resolves reference-inline comment anchors to runtime offsets", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("Hello "),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createText(" world"),
+    ]),
+  ]);
+  const container = listAnchorContainers(document)[0];
+
+  if (!container) {
+    throw new Error("Expected comment container");
+  }
+
+  const startOffset = "Hello ".length;
+  const endOffset = "Hello @Jane Doe".length;
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, startOffset, endOffset),
+    body: "Track mention",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, startOffset, endOffset),
+  });
+  const state = createEditorState({
+    ...document,
+    comments: [thread],
+  });
+  const range = getCommentState(state.documentIndex).ranges[0];
+  const region = state.documentIndex.regions[0];
+
+  expect(region?.text).not.toContain("@Jane Doe");
+  expect(region?.text.length).toBe("Hello ".length + 1 + " world".length);
+  expect(thread.quote).toBe("@Jane Doe");
+  expect(range?.startOffset).toBe("Hello ".length);
+  expect(range?.endOffset).toBe("Hello ".length + 1);
+});
+
+test("resolves image and resource comment anchors to runtime atoms", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("See "),
+      createImage({ alt: "Preview", url: "https://example.com/image.png" }),
+      createText(" and "),
+      createResource({
+        label: "Recording",
+        protocol: "demo-resource:",
+        url: "demo-resource://recording/live",
+      }),
+      createText(" now"),
+    ]),
+  ]);
+  const container = listAnchorContainers(document)[0];
+
+  if (!container) {
+    throw new Error("Expected comment container");
+  }
+
+  const imageStart = "See ".length;
+  const imageEnd = "See Preview".length;
+  const resourceStart = "See Preview and ".length;
+  const resourceEnd = "See Preview and Recording".length;
+  const imageThread = createCommentThread({
+    anchor: createAnchorFromContainer(container, imageStart, imageEnd),
+    body: "Track image",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, imageStart, imageEnd),
+  });
+  const resourceThread = createCommentThread({
+    anchor: createAnchorFromContainer(container, resourceStart, resourceEnd),
+    body: "Track resource",
+    createdAt: "2026-04-05T12:01:00.000Z",
+    quote: extractQuoteFromContainer(container, resourceStart, resourceEnd),
+  });
+  const state = createEditorState({
+    ...document,
+    comments: [imageThread, resourceThread],
+  });
+  const ranges = getCommentState(state.documentIndex).ranges;
+  const region = state.documentIndex.regions[0];
+
+  expect(region?.text).toBe("See \uFFFC and \uFFFC now");
+  expect(ranges.map((range) => [range.startOffset, range.endOffset])).toEqual([
+    ["See ".length, "See ".length + 1],
+    ["See \uFFFC and ".length, "See \uFFFC and ".length + 1],
+  ]);
+});
+
+test("resolves table-cell reference comment anchors to runtime offsets", () => {
+  const document = createDocument([
+    createTableBlock({
+      rows: [
+        createTableRow([
+          createTableCell([
+            createText("Cell "),
+            createMention({ name: "Jane Doe", userId: "user-123" }),
+            createText(" done"),
+          ]),
+        ]),
+      ],
+    }),
+  ]);
+  const container = listAnchorContainers(document).find(
+    (candidate) => candidate.text === "Cell @Jane Doe done",
+  );
+
+  if (!container) {
+    throw new Error("Expected table-cell comment container");
+  }
+
+  const startOffset = "Cell ".length;
+  const endOffset = "Cell @Jane Doe".length;
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, startOffset, endOffset),
+    body: "Track table mention",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, startOffset, endOffset),
+  });
+  const state = createEditorState({
+    ...document,
+    comments: [thread],
+  });
+  const range = getCommentState(state.documentIndex).ranges[0];
+  const region = state.documentIndex.regions.find(
+    (candidate) => candidate.text === "Cell \uFFFC done",
+  );
+
+  if (!region) {
+    throw new Error("Expected table-cell region");
+  }
+
+  expect(range?.regionPath).toBe(region.path);
+  expect(range?.startOffset).toBe("Cell ".length);
+  expect(range?.endOffset).toBe("Cell ".length + 1);
+});
+
+test("resolves moved paragraph comments by anchor match instead of old path occupant", () => {
+  const baseDocument = parseDocument(`old occupant
+
+target phrase
+`);
+  const container = listAnchorContainers(baseDocument)[1];
+
+  if (!container) {
+    throw new Error("Expected target container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 0, "target".length),
+    body: "Track moved paragraph",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, 0, "target".length),
+  });
+  const shiftedState = createEditorState({
+    ...parseDocument(`inserted paragraph
+
+old occupant
+
+target phrase
+`),
+    comments: [thread],
+  });
+  const commentState = getCommentState(shiftedState.documentIndex);
+  const range = commentState.ranges[0];
+  const region = range
+    ? resolveRegion(shiftedState.documentIndex, range.regionPath)
+    : null;
+
+  expect(region?.text).toBe("target phrase");
+  expect(range?.startOffset).toBe(0);
+  expect(range?.endOffset).toBe("target".length);
+});
+
+test("leaves comments on deleted paragraph content stale instead of using the old path occupant", () => {
+  const baseDocument = parseDocument(`old occupant
+
+target phrase
+`);
+  const container = listAnchorContainers(baseDocument)[1];
+
+  if (!container) {
+    throw new Error("Expected target container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 0, "target".length),
+    body: "Track deleted paragraph",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, 0, "target".length),
+  });
+  const replacedState = createEditorState({
+    ...parseDocument(`old occupant
+
+replacement phrase
+`),
+    comments: [thread],
+  });
+  const commentState = getCommentState(replacedState.documentIndex);
+
+  expect(commentState.ranges).toEqual([]);
+  expect(commentState.threads[0]).toBe(thread);
+});
+
+test("resolves moved table-cell comments by anchor match instead of old cell path occupant", () => {
+  const baseDocument = parseDocument(`| A | B |
+| - | - |
+| old | target |
+`);
+  const container = listAnchorContainers(baseDocument).find(
+    (candidate) => candidate.text === "target",
+  );
+
+  if (!container) {
+    throw new Error("Expected target table-cell container");
+  }
+
+  const thread = createCommentThread({
+    anchor: createAnchorFromContainer(container, 0, "target".length),
+    body: "Track moved cell",
+    createdAt: "2026-04-05T12:00:00.000Z",
+    quote: extractQuoteFromContainer(container, 0, "target".length),
+  });
+  const shiftedState = createEditorState({
+    ...parseDocument(`| A | B |
+| - | - |
+| inserted | filler |
+| old | target |
+`),
+    comments: [thread],
+  });
+  const commentState = getCommentState(shiftedState.documentIndex);
+  const range = commentState.ranges[0];
+  const region = range
+    ? resolveRegion(shiftedState.documentIndex, range.regionPath)
+    : null;
+
+  expect(region?.text).toBe("target");
+  expect(region?.containerPath).toBe("root.0.rows.2.cells.1");
+  expect(range?.startOffset).toBe(0);
+  expect(range?.endOffset).toBe("target".length);
 });
 
 test("detects only unresolved presence-active comment highlights as animated", () => {
@@ -158,7 +430,7 @@ test("resolves link hover targets with overlapping comment metadata", () => {
 
   const linkOffset = region.text.indexOf("link") + 1;
   const caret = measureCaretTarget(state, viewport, {
-    regionId: region.id,
+    regionPath: region.path,
     offset: linkOffset,
   });
   if (!caret) {
@@ -189,13 +461,13 @@ test("preserves selection when creating a comment thread", () => {
   }
 
   state = setSelection(state, {
-    regionId: region.id,
+    regionPath: region.path,
     offset: 4,
   });
 
   const nextState = addEditorComment(
     state,
-    { regionId: region.id, startOffset: 0, endOffset: 6 },
+    { regionPath: region.path, startOffset: 0, endOffset: 6 },
     "Review this heading",
   );
 
@@ -203,9 +475,9 @@ test("preserves selection when creating a comment thread", () => {
     throw new Error("Expected state change");
   }
 
-  expect(nextState.selection.anchor.regionId).toBe(state.selection.anchor.regionId);
+  expect(nextState.selection.anchor.regionPath).toBe(state.selection.anchor.regionPath);
   expect(nextState.selection.anchor.offset).toBe(4);
-  expect(nextState.selection.focus.regionId).toBe(state.selection.focus.regionId);
+  expect(nextState.selection.focus.regionPath).toBe(state.selection.focus.regionPath);
   expect(nextState.selection.focus.offset).toBe(4);
   expect(getDocument(nextState).comments).toHaveLength(1);
 });
@@ -221,11 +493,11 @@ test("creates a new comment thread from a single-region selection", () => {
   state = setSelection(state, {
     anchor: {
       offset: 0,
-      regionId: region.id,
+      regionPath: region.path,
     },
     focus: {
       offset: 6,
-      regionId: region.id,
+      regionPath: region.path,
     },
   });
 
@@ -233,7 +505,7 @@ test("creates a new comment thread from a single-region selection", () => {
     state,
     {
       endOffset: 6,
-      regionId: region.id,
+      regionPath: region.path,
       startOffset: 0,
     },
     "Review this",
@@ -246,6 +518,67 @@ test("creates a new comment thread from a single-region selection", () => {
       quote: "Review",
     }),
   ]);
+});
+
+test("creates comments over reference inlines from runtime offsets", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("Hello "),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createText(" world"),
+    ]),
+  ]);
+  const state = createEditorState(document);
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected editor region");
+  }
+
+  const result = addEditorComment(
+    state,
+    {
+      endOffset: "Hello ".length + 1,
+      regionPath: region.path,
+      startOffset: "Hello ".length,
+    },
+    "Review mention",
+  );
+  const comment = result ? getDocument(result).comments[0] : null;
+  const range = result ? getCommentState(result.documentIndex).ranges[0] : null;
+
+  expect(comment?.quote).toBe("@Jane Doe");
+  expect(range?.startOffset).toBe("Hello ".length);
+  expect(range?.endOffset).toBe("Hello ".length + 1);
+});
+
+test("does not create comments over reference atoms without semantic text", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("See "),
+      createImage({ alt: null, url: "https://example.com/image.png" }),
+      createText(" now"),
+    ]),
+  ]);
+  const state = createEditorState(document);
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected editor region");
+  }
+
+  const result = addEditorComment(
+    state,
+    {
+      endOffset: "See ".length + 1,
+      regionPath: region.path,
+      startOffset: "See ".length,
+    },
+    "Review image",
+  );
+
+  expect(region.text).toBe("See \uFFFC now");
+  expect(result).toBeNull();
 });
 
 test("preserves an anchored quote when a soft line break is inserted before it", () => {
@@ -280,7 +613,7 @@ test("preserves an anchored quote when a soft line break is inserted before it",
 
   // Caret at the very start of the paragraph, before the anchored "bc".
   state = setSelection(state, {
-    regionId: region.id,
+    regionPath: region.path,
     offset: 0,
   });
 
@@ -321,7 +654,7 @@ test("keeps same-region comments sticky while typing inside the anchored quote",
   }
 
   state = setSelection(state, {
-    regionId: region.id,
+    regionPath: region.path,
     offset: 2,
   });
 
@@ -339,6 +672,47 @@ test("keeps same-region comments sticky while typing inside the anchored quote",
   });
 });
 
+test("keeps reference-inline comments sticky when typing before them", () => {
+  const document = createDocument([
+    createParagraphBlock([
+      createText("Hello "),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createText(" world"),
+    ]),
+  ]);
+  let state = createEditorState(document);
+  const region = state.documentIndex.regions[0];
+
+  if (!region) {
+    throw new Error("Expected editor region");
+  }
+
+  state = addEditorComment(
+    state,
+    {
+      endOffset: "Hello ".length + 1,
+      regionPath: region.path,
+      startOffset: "Hello ".length,
+    },
+    "Review mention",
+  )!;
+  state = setSelection(state, {
+    regionPath: region.path,
+    offset: 0,
+  });
+
+  const result = insertText(state, "Say ");
+
+  expect(result).not.toBeNull();
+
+  const nextThread = getDocument(result!).comments[0];
+  const nextRange = getCommentState(result!.documentIndex).ranges[0];
+
+  expect(nextThread?.quote).toBe("@Jane Doe");
+  expect(nextRange?.startOffset).toBe("Say Hello ".length);
+  expect(nextRange?.endOffset).toBe("Say Hello ".length + 1);
+});
+
 test("resolveActiveCommentIndex returns null when no ranges exist", () => {
   const state = setup("alpha beta\n");
 
@@ -350,7 +724,7 @@ test("resolveActiveCommentIndex returns the thread covering a collapsed caret", 
   const region = getRegion(state, "alpha beta");
   const commented = addEditorComment(
     state,
-    { regionId: region.id, startOffset: 0, endOffset: 5 },
+    { regionPath: region.path, startOffset: 0, endOffset: 5 },
     "note",
   );
 
@@ -358,7 +732,7 @@ test("resolveActiveCommentIndex returns the thread covering a collapsed caret", 
     throw new Error("Expected comment to be added");
   }
 
-  state = setSelection(commented, { regionId: region.id, offset: 3 });
+  state = setSelection(commented, { regionPath: region.path, offset: 3 });
   const { ranges } = getCommentState(state);
 
   expect(resolveActiveCommentIndex(state, ranges)).toBe(0);
@@ -369,7 +743,7 @@ test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed
   const region = getRegion(state, "alpha beta");
   const commented = addEditorComment(
     state,
-    { regionId: region.id, startOffset: 1, endOffset: 4 },
+    { regionPath: region.path, startOffset: 1, endOffset: 4 },
     "note",
   );
 
@@ -378,10 +752,10 @@ test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed
   }
 
   const { ranges } = getCommentState(commented);
-  const atStart = setSelection(commented, { regionId: region.id, offset: 1 });
-  const atEnd = setSelection(commented, { regionId: region.id, offset: 4 });
-  const justBefore = setSelection(commented, { regionId: region.id, offset: 0 });
-  const justAfter = setSelection(commented, { regionId: region.id, offset: 5 });
+  const atStart = setSelection(commented, { regionPath: region.path, offset: 1 });
+  const atEnd = setSelection(commented, { regionPath: region.path, offset: 4 });
+  const justBefore = setSelection(commented, { regionPath: region.path, offset: 0 });
+  const justAfter = setSelection(commented, { regionPath: region.path, offset: 5 });
 
   expect(resolveActiveCommentIndex(atStart, ranges)).toBe(0);
   expect(resolveActiveCommentIndex(atEnd, ranges)).toBe(0);
@@ -394,7 +768,7 @@ test("resolveActiveCommentIndex uses an open-interval overlap for ranged selecti
   const region = getRegion(state, "alpha beta");
   const commented = addEditorComment(
     state,
-    { regionId: region.id, startOffset: 2, endOffset: 5 },
+    { regionPath: region.path, startOffset: 2, endOffset: 5 },
     "note",
   );
 
@@ -407,13 +781,13 @@ test("resolveActiveCommentIndex uses an open-interval overlap for ranged selecti
   // Touching the comment range at its end-boundary with a positive-length
   // selection: no shared interior, so no thread is reported.
   const touching = setSelection(commented, {
-    anchor: { regionId: region.id, offset: 5 },
-    focus: { regionId: region.id, offset: 8 },
+    anchor: { regionPath: region.path, offset: 5 },
+    focus: { regionPath: region.path, offset: 8 },
   });
   // Overlap by one character: shared interior, thread is reported.
   const overlapping = setSelection(commented, {
-    anchor: { regionId: region.id, offset: 4 },
-    focus: { regionId: region.id, offset: 8 },
+    anchor: { regionPath: region.path, offset: 4 },
+    focus: { regionPath: region.path, offset: 8 },
   });
 
   expect(resolveActiveCommentIndex(touching, ranges)).toBeNull();
@@ -426,7 +800,7 @@ test("resolveActiveCommentIndex resolves selections that span regions", () => {
   const beta = getRegion(state, "beta");
   const commented = addEditorComment(
     state,
-    { regionId: beta.id, startOffset: 0, endOffset: 2 },
+    { regionPath: beta.path, startOffset: 0, endOffset: 2 },
     "note",
   );
 
@@ -436,8 +810,8 @@ test("resolveActiveCommentIndex resolves selections that span regions", () => {
 
   const { ranges } = getCommentState(commented);
   state = setSelection(commented, {
-    anchor: { regionId: alpha.id, offset: 0 },
-    focus: { regionId: beta.id, offset: 1 },
+    anchor: { regionPath: alpha.path, offset: 0 },
+    focus: { regionPath: beta.path, offset: 1 },
   });
 
   expect(resolveActiveCommentIndex(state, ranges)).toBe(0);

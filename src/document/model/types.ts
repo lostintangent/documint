@@ -47,12 +47,11 @@ export type Block =
 
 export type Inline = Text | Link | Image | Mention | Resource | LineBreak | Raw;
 
-// Every document node carries an `id` and a literal `type` discriminator. Block
-// nodes additionally carry a `plainText` projection for search/serialization.
-// The `K` parameter pins the discriminator as a string literal so discriminated
-// union narrowing continues to work across the whole `Block` / `Inline` union.
-type DocumentNode<K extends string, P = {}> = { id: string; type: K } & P;
-type BlockNode<K extends string, P = {}> = DocumentNode<K, { plainText: string } & P>;
+// Document nodes are semantic values. Runtime handles live in editor indexes,
+// while document queries use structural paths and anchors when they need to
+// name where a node sits in a snapshot.
+type BlockNode<K extends string, P = {}> = { plainText: string; type: K } & P;
+type InlineNode<K extends string, P = {}> = { type: K } & P;
 
 export type ParagraphBlock = BlockNode<"paragraph", { children: Inline[] }>;
 
@@ -98,12 +97,10 @@ export type TableBlock = BlockNode<
 
 export type TableRow = {
   cells: TableCell[];
-  id: string;
 };
 
 export type TableCell = {
   children: Inline[];
-  id: string;
   plainText: string;
 };
 
@@ -137,7 +134,7 @@ export type RawBlock = BlockNode<
 
 export type Mark = "code" | "bold" | "italic" | "strikethrough" | "underline" | "superscript";
 
-export type Text = DocumentNode<
+export type Text = InlineNode<
   "text",
   {
     marks: Mark[];
@@ -145,7 +142,7 @@ export type Text = DocumentNode<
   }
 >;
 
-export type Link = DocumentNode<
+export type Link = InlineNode<
   "link",
   {
     children: Inline[];
@@ -154,7 +151,7 @@ export type Link = DocumentNode<
   }
 >;
 
-export type Image = DocumentNode<
+export type Image = InlineNode<
   "image",
   {
     alt: string | null;
@@ -164,7 +161,7 @@ export type Image = DocumentNode<
   }
 >;
 
-export type Mention = DocumentNode<
+export type Mention = InlineNode<
   "mention",
   {
     name: string;
@@ -174,7 +171,7 @@ export type Mention = DocumentNode<
 
 export type MentionTarget = Pick<Mention, "name" | "userId">;
 
-export type Resource = DocumentNode<
+export type Resource = InlineNode<
   "resource",
   {
     label: string;
@@ -183,9 +180,9 @@ export type Resource = DocumentNode<
   }
 >;
 
-export type LineBreak = DocumentNode<"lineBreak">;
+export type LineBreak = InlineNode<"lineBreak">;
 
-export type Raw = DocumentNode<
+export type Raw = InlineNode<
   "raw",
   {
     originalType: string;

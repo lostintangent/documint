@@ -61,7 +61,7 @@ export function resolveListItemIndent(context: ListItemContext): EditorStateActi
   const previousItem = context.list.items[context.itemIndex - 1];
   const newList = indentItemUnderPreviousSibling(context, previousItem);
 
-  return replaceListItems(context.list, newList, {
+  return replaceListItems(context.list, context.listPath, newList, {
     selectedItem: context.item,
   });
 }
@@ -76,7 +76,9 @@ export function resolveListItemMove(
 ): EditorStateAction | null {
   const items = moveItem(context.list.items, context.itemIndex, context.itemIndex + direction);
 
-  return items ? replaceListItems(context.list, items, { selectedItem: context.item }) : null;
+  return items
+    ? replaceListItems(context.list, context.listPath, items, { selectedItem: context.item })
+    : null;
 }
 
 function splitListItem(context: ListItemContext, offset: number): EditorStateAction | null {
@@ -94,10 +96,15 @@ function splitListItem(context: ListItemContext, offset: number): EditorStateAct
 function insertEmptyListItem(context: ListItemContext, insertIndex: number): EditorStateAction {
   const insertedItem = createSiblingListItem(context.item, "");
 
-  return replaceListItems(context.list, insertAt(context.list.items, insertIndex, insertedItem), {
-    wasItemInserted: true,
-    selectedItem: insertedItem,
-  });
+  return replaceListItems(
+    context.list,
+    context.listPath,
+    insertAt(context.list.items, insertIndex, insertedItem),
+    {
+      wasItemInserted: true,
+      selectedItem: insertedItem,
+    },
+  );
 }
 
 function splitListItemTextAtOffset(
@@ -118,7 +125,7 @@ function splitListItemTextAtOffset(
     insertedItem,
   );
 
-  return replaceListItems(context.list, items, {
+  return replaceListItems(context.list, context.listPath, items, {
     wasItemInserted: true,
     selectedItem: insertedItem,
   });
@@ -155,7 +162,7 @@ function liftItemToParentList(
   const updatedParentItem = rebuildListItemBlock(
     context.parent.item,
     context.parent.item.children.flatMap((child) => {
-      if (child.type !== "list" || child.id !== context.list.id) {
+      if (child !== context.list) {
         return [child];
       }
 
@@ -170,7 +177,7 @@ function liftItemToParentList(
     liftedItem,
   );
 
-  return replaceListItems(context.parent.list, parentItems, {
+  return replaceListItems(context.parent.list, context.parent.listPath, parentItems, {
     wasItemInserted: intent.wasItemInserted,
     selectedItem: liftedItem,
   });
@@ -189,12 +196,13 @@ function exitList(context: ListItemContext): EditorStateAction {
 
 function replaceListItems(
   list: ListBlock,
+  listPath: string,
   items: ListItemBlock[],
   intent: ListActionIntent,
 ): EditorStateAction {
   return {
     kind: "replace-block",
-    blockId: list.id,
+    blockPath: listPath,
     block: rebuildListBlock(list, items),
     selection: target.block(intent.selectedItem),
     effect: intent.wasItemInserted ? effect.listItemInserted(intent.selectedItem) : undefined,

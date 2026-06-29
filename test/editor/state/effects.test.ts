@@ -199,8 +199,8 @@ describe("Text deleted effects", () => {
     const region = getRegion(state, "alpha");
 
     state = setSelection(state, {
-      anchor: { regionId: region.id, offset: 1 },
-      focus: { regionId: region.id, offset: 4 },
+      anchor: { regionPath: region.path, offset: 1 },
+      focus: { regionPath: region.path, offset: 4 },
     });
     const result = deleteSelection(state);
 
@@ -237,8 +237,8 @@ describe("Active block changed effects", () => {
 
     if (!first || !second) throw new Error("Expected two paragraph regions");
 
-    const stateAtFirst = setSelection(state, { regionId: first.id, offset: 0 });
-    const stateAtSecond = setSelection(stateAtFirst, { regionId: second.id, offset: 0 });
+    const stateAtFirst = setSelection(state, { regionPath: first.path, offset: 0 });
+    const stateAtSecond = setSelection(stateAtFirst, { regionPath: second.path, offset: 0 });
 
     expect(readEditorEffects(stateAtSecond)).toEqual([
       expect.objectContaining({ blockPath: "root.1", kind: "active-block-changed" }),
@@ -251,8 +251,8 @@ describe("Active block changed effects", () => {
 
     if (!first || !second) throw new Error("Expected table cell regions");
 
-    const stateAtFirst = setSelection(state, { regionId: first.id, offset: 0 });
-    const stateAtSecond = setSelection(stateAtFirst, { regionId: second.id, offset: 0 });
+    const stateAtFirst = setSelection(state, { regionPath: first.path, offset: 0 });
+    const stateAtSecond = setSelection(stateAtFirst, { regionPath: second.path, offset: 0 });
 
     expect(readEditorEffects(stateAtSecond)).toEqual([
       expect.objectContaining({ blockPath: "root.0", kind: "active-block-changed" }),

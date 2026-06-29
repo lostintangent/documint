@@ -10,7 +10,7 @@ import type { EditorState } from "../types";
 export { resolveRegion } from "../index/query";
 
 export type EditorSelectionPoint = {
-  regionId: string;
+  regionPath: string;
   offset: number;
 };
 
@@ -27,7 +27,7 @@ export type NormalizedEditorSelection = {
 
 export type EditorSelectionRange = {
   endOffset: number;
-  regionId: string;
+  regionPath: string;
   startOffset: number;
 };
 
@@ -40,12 +40,12 @@ export type ResolvedRegionRange = {
 
 export function resolveRegionRange(
   documentIndex: DocumentIndex,
-  regionId: string,
+  regionPath: string,
   startOffset: number,
   endOffset: number,
   options: { allowCollapsed?: boolean } = {},
 ): ResolvedRegionRange | null {
-  const region = resolveRegion(documentIndex, regionId);
+  const region = resolveRegion(documentIndex, regionPath);
 
   if (!region || startOffset > endOffset) {
     return null;
@@ -62,18 +62,22 @@ export function resolveRegionRange(
     endOffset: end,
     region,
     selection: {
-      anchor: { regionId, offset: start },
-      focus: { regionId, offset: end },
+      anchor: { regionPath, offset: start },
+      focus: { regionPath, offset: end },
     },
     startOffset: start,
   };
 }
 
 export function isSelectionCollapsed(selection: EditorSelection): boolean {
-  return (
-    selection.anchor.regionId === selection.focus.regionId &&
-    selection.anchor.offset === selection.focus.offset
-  );
+  return areSelectionPointsEqual(selection.anchor, selection.focus);
+}
+
+export function areSelectionPointsEqual(
+  left: EditorSelectionPoint,
+  right: EditorSelectionPoint,
+) {
+  return left.regionPath === right.regionPath && left.offset === right.offset;
 }
 
 export function normalizeSelection(state: EditorState): NormalizedEditorSelection;

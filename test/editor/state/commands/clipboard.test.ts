@@ -22,6 +22,7 @@ import {
   deleteSelection,
   pasteFragment,
   redo,
+  resolveRegion,
   setSelection,
   undo,
   type EditableRegion,
@@ -410,8 +411,8 @@ describe("Tables", () => {
     const cell = getRegion(state, "one");
     const fragment = parseFragment("- x\n- y\n");
     const selected = setSelection(state, {
-      anchor: { regionId: cell.id, offset: 1 },
-      focus: { regionId: paragraph.id, offset: 2 },
+      anchor: { regionPath: cell.path, offset: 1 },
+      focus: { regionPath: paragraph.path, offset: 2 },
     });
     const next = pasteFragment(selected, fragment, "- x\n- y\n");
 
@@ -424,8 +425,8 @@ describe("Tables", () => {
     const firstCell = getRegion(state, "A");
     const lastCell = getRegion(state, "two");
     const selected = setSelection(state, {
-      anchor: { regionId: firstCell.id, offset: 0 },
-      focus: { regionId: lastCell.id, offset: lastCell.text.length },
+      anchor: { regionPath: firstCell.path, offset: 0 },
+      focus: { regionPath: lastCell.path, offset: lastCell.text.length },
     });
     const next = pasteFragment(selected, parseFragment("# New\n\npara\n"), "# New\n\npara\n");
 
@@ -499,8 +500,8 @@ describe("Code blocks", () => {
     const code = getRegion(state, "code");
     const fragment = parseFragment("# H\n\npara\n");
     const selected = setSelection(state, {
-      anchor: { regionId: code.id, offset: 2 },
-      focus: { regionId: paragraph.id, offset: 2 },
+      anchor: { regionPath: code.path, offset: 2 },
+      focus: { regionPath: paragraph.path, offset: 2 },
     });
     const next = pasteFragment(selected, fragment, "# H\n\npara\n");
 
@@ -636,8 +637,8 @@ describe("Undo / redo", () => {
   test("cross-region cut+paste round-trips through history", () => {
     const initial = setup("alpha\n\nbeta\n");
     const selected = setSelection(initial, {
-      anchor: { regionId: getRegion(initial, "alpha").id, offset: 0 },
-      focus: { regionId: getRegion(initial, "beta").id, offset: 4 },
+      anchor: { regionPath: getRegion(initial, "alpha").path, offset: 0 },
+      focus: { regionPath: getRegion(initial, "beta").path, offset: 4 },
     });
     const cut = deleteSelection(selected)!;
 
@@ -674,8 +675,8 @@ describe("Comments — clipboard repair", () => {
   test("cross-region delete preserves a thread anchored before the cut range", () => {
     const seeded = withCommentOn(setup("alpha beta\n\ngamma delta\n"), "alpha beta", "alpha");
     const selected = setSelection(seeded, {
-      anchor: { regionId: getRegion(seeded, "alpha beta").id, offset: "alpha ".length },
-      focus: { regionId: getRegion(seeded, "gamma delta").id, offset: "gamma ".length },
+      anchor: { regionPath: getRegion(seeded, "alpha beta").path, offset: "alpha ".length },
+      focus: { regionPath: getRegion(seeded, "gamma delta").path, offset: "gamma ".length },
     });
     const cut = deleteSelection(selected)!;
 
@@ -721,8 +722,8 @@ function copyAcross(setupMd: string, from: RangeAnchor, to: RangeAnchor): string
   const fromRegion = getRegion(state, from.region);
   const toRegion = getRegion(state, to.region);
   const selected = setSelection(state, {
-    anchor: { regionId: fromRegion.id, offset: resolveOffset(fromRegion, from.offset) },
-    focus: { regionId: toRegion.id, offset: resolveOffset(toRegion, to.offset) },
+    anchor: { regionPath: fromRegion.path, offset: resolveOffset(fromRegion, from.offset) },
+    focus: { regionPath: toRegion.path, offset: resolveOffset(toRegion, to.offset) },
   });
   return copyMarkdown(selected);
 }
@@ -762,7 +763,7 @@ function copyMarkdown(state: EditorState): string | null {
 // Read the focus selection back as `(regionText, offset)` for caret-placement
 // assertions.
 function caret(state: EditorState): { regionText: string | undefined; offset: number } {
-  const region = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+  const region = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
   return { regionText: region?.text, offset: state.selection.focus.offset };
 }
 
@@ -793,7 +794,7 @@ function withCommentOn(state: EditorState, regionText: string, quote: string): E
 
   const next = addComment(
     state,
-    { regionId: region.id, startOffset, endOffset: startOffset + quote.length },
+    { regionPath: region.path, startOffset, endOffset: startOffset + quote.length },
     `comment-on-${quote}`,
   );
 

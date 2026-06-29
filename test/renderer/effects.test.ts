@@ -90,7 +90,7 @@ describe("Renderer effect policy", () => {
     const effect = documentChangeEffect();
     const resolvedEffects = resolveRendererEffects([effect], now);
 
-    expect(resolvedEffects.documentChangeFades.get("block:block-1")).toEqual({
+    expect(resolvedEffects.documentChangeFades.get("change-1")).toEqual({
       progress: 10 / 420,
     });
     expect(resolvedEffects.rendererEffects).toEqual([effect]);
@@ -207,9 +207,10 @@ function deletedText(
 
 function documentChangeEffect(): RendererEffect {
   return {
+    changeKey: "change-1",
     changeKind: "modified",
     kind: "document-change",
     startedAt,
-    target: { blockId: "block-1", kind: "block" },
+    target: { blockPath: "root.0", kind: "block" },
   };
 }

@@ -33,10 +33,10 @@ export function findDocumentLayoutLineAtPoint(
   layout: DocumentLayout,
   point: { x: number; y: number },
 ) {
-  const containingRegionId = findContainingRegionId(layout, point);
+  const containingRegionPath = findContainingRegionPath(layout, point);
 
-  if (containingRegionId) {
-    return findNearestDocumentLayoutLineForRegion(layout, containingRegionId, point.y);
+  if (containingRegionPath) {
+    return findNearestDocumentLayoutLineForRegion(layout, containingRegionPath, point.y);
   }
 
   const lineEntry = findDocumentLayoutLineAtY(layout, point.y);
@@ -53,7 +53,7 @@ export function findDocumentLayoutLineAtPoint(
 
   return (
     candidates.find((candidate) => {
-      const extent = layout.regionBounds.get(candidate.line.regionId);
+      const extent = layout.regionBounds.get(candidate.line.regionPath);
 
       return extent ? point.x >= extent.left && point.x <= extent.right : false;
     }) ?? findNearestHorizontalCandidate(layout, candidates, point.x)
@@ -62,18 +62,18 @@ export function findDocumentLayoutLineAtPoint(
 
 export function findDocumentLayoutLineForRegionOffset(
   layout: DocumentLayout,
-  regionId: string,
+  regionPath: string,
   offset: number,
 ) {
-  return findDocumentLayoutLineEntryForRegionOffset(layout, regionId, offset)?.line ?? null;
+  return findDocumentLayoutLineEntryForRegionOffset(layout, regionPath, offset)?.line ?? null;
 }
 
 export function findNearestDocumentLayoutLineForRegion(
   layout: DocumentLayout,
-  regionId: string,
+  regionPath: string,
   y: number,
 ) {
-  const lineIndices = layout.regionLineIndices.get(regionId);
+  const lineIndices = layout.regionLineIndices.get(regionPath);
 
   if (!lineIndices || lineIndices.length === 0) {
     return null;
@@ -105,10 +105,10 @@ export function findNearestDocumentLayoutLineForRegion(
 
 export function findDocumentLayoutLineEntryForRegionOffset(
   layout: DocumentLayout,
-  regionId: string,
+  regionPath: string,
   offset: number,
 ) {
-  const lineIndices = layout.regionLineIndices.get(regionId);
+  const lineIndices = layout.regionLineIndices.get(regionPath);
 
   if (!lineIndices || lineIndices.length === 0) {
     return null;
@@ -204,15 +204,15 @@ export function resolveBoundaryOffset(boundaries: LineBoundary[], x: number) {
   return boundaries.at(-1)?.offset ?? 0;
 }
 
-function findContainingRegionId(layout: DocumentLayout, point: { x: number; y: number }) {
-  for (const [regionId, extent] of layout.regionBounds) {
+function findContainingRegionPath(layout: DocumentLayout, point: { x: number; y: number }) {
+  for (const [regionPath, extent] of layout.regionBounds) {
     if (
       point.x >= extent.left &&
       point.x <= extent.right &&
       point.y >= extent.top &&
       point.y <= extent.bottom
     ) {
-      return regionId;
+      return regionPath;
     }
   }
 
@@ -260,7 +260,7 @@ function findNearestHorizontalCandidate(
   let nearestDistance = Number.POSITIVE_INFINITY;
 
   for (const candidate of candidates) {
-    const extent = layout.regionBounds.get(candidate.line.regionId);
+    const extent = layout.regionBounds.get(candidate.line.regionPath);
     const distance = resolveHorizontalDistance(x, extent);
 
     if (distance < nearestDistance) {

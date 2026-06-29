@@ -81,7 +81,7 @@ export function useDocumentCompletions({
       ? {
           kind: "completion",
           anchor: {
-            regionId: activeCompletion.regionId,
+            regionPath: activeCompletion.regionPath,
             offset: activeCompletion.triggerStart,
           },
           ...completion.leafProps,
@@ -96,12 +96,12 @@ export function useDocumentCompletions({
 }
 
 function documentCompletionKey(completion: ActiveCompletion) {
-  if (!("regionId" in completion) || typeof completion.regionId !== "string") {
+  if (!("regionPath" in completion) || typeof completion.regionPath !== "string") {
     return null;
   }
 
   return [
-    completion.regionId,
+    completion.regionPath,
     completion.trigger,
     completion.triggerStart,
     completion.caret,

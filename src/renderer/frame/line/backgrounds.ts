@@ -39,7 +39,7 @@ export type ContainerBackgroundFrame =
 
 export function resolveDocumentFrameLineBackgrounds({
   blockFlashes,
-  activeBlockId,
+  activeBlockPath,
   block,
   containerBounds,
   documentChange,
@@ -51,7 +51,7 @@ export function resolveDocumentFrameLineBackgrounds({
   width,
 }: {
   blockFlashes: Map<string, BlockFlashFrame>;
-  activeBlockId: string | null;
+  activeBlockPath: string | null;
   block: Block | null;
   containerBounds: RegionBounds | null;
   documentChange: DocumentChangeFrameEntry | null;
@@ -74,7 +74,7 @@ export function resolveDocumentFrameLineBackgrounds({
   return {
     activeBlockBackground: resolveActiveBlockBackgroundFrame({
       blockFlashes,
-      activeBlockId,
+      activeBlockPath,
       block,
       codeBlockBackgroundRect,
       containerBounds,
@@ -162,7 +162,7 @@ function resolveContainerBackgroundFrame({
 
 function resolveActiveBlockBackgroundFrame({
   blockFlashes,
-  activeBlockId,
+  activeBlockPath,
   block,
   codeBlockBackgroundRect,
   containerBounds,
@@ -172,7 +172,7 @@ function resolveActiveBlockBackgroundFrame({
   width,
 }: {
   blockFlashes: Map<string, BlockFlashFrame>;
-  activeBlockId: string | null;
+  activeBlockPath: string | null;
   block: Block | null;
   codeBlockBackgroundRect: LayoutRect | null;
   containerBounds: RegionBounds | null;
@@ -181,7 +181,7 @@ function resolveActiveBlockBackgroundFrame({
   theme: ResolvedEditorTheme;
   width: number;
 }): ActiveBlockBackgroundFrame | null {
-  const isActiveBlock = line.blockId === activeBlockId;
+  const isActiveBlock = line.blockPath === activeBlockPath;
 
   if (!isActiveBlock) {
     return null;

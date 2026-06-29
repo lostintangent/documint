@@ -21,6 +21,7 @@ import {
   insertText,
   normalizeSelection,
   readEditorEffects,
+  resolveRegion,
   setSelection,
   type EditorState,
 } from "@/editor/state";
@@ -63,13 +64,13 @@ describe("Block and chrome paint order", () => {
     }
 
     state = setSelection(state, {
-      regionId: activeContainer.id,
+      regionPath: activeContainer.path,
       offset: 1,
     });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 480 });
-    const activeBounds = layout.regionBounds.get(activeContainer.id);
-    const rightBounds = layout.regionBounds.get(rightContainer.id);
+    const activeBounds = layout.regionBounds.get(activeContainer.path);
+    const rightBounds = layout.regionBounds.get(rightContainer.path);
 
     if (!activeBounds || !rightBounds) {
       throw new Error("Expected active table cell bounds");
@@ -125,7 +126,7 @@ describe("Block and chrome paint order", () => {
     }
 
     state = setSelection(state, {
-      regionId: container.id,
+      regionPath: container.path,
       offset: 1,
     });
 
@@ -163,17 +164,18 @@ describe("Block and chrome paint order", () => {
     const { context } = renderPaintOperations(state, {
       documentChanges: [
         {
-          blockId: container.block.id,
+          changeKey: "change-alpha",
           changeKind: "modified",
-          kind: "block",
+          target: { blockPath: container.blockPath, kind: "block" },
         },
       ],
       effects: [
         {
+          changeKey: "change-alpha",
           changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { blockId: container.block.id, kind: "block" },
+          target: { blockPath: container.blockPath, kind: "block" },
         },
       ],
       height: 160,
@@ -217,16 +219,19 @@ describe("Block and chrome paint order", () => {
     const { context, layout } = renderPaintOperations(state, {
       documentChanges: [
         {
+          changeKey: "change-cell",
           changeKind: "added",
-          kind: "table-cell",
-          regionId: cell.id,
+          target: {
+            kind: "table-cell",
+            regionPath: cell.path,
+          },
         },
       ],
       height: 240,
       now: 110,
       width: 480,
     });
-    const cellBounds = layout.regionBounds.get(cell.id);
+    const cellBounds = layout.regionBounds.get(cell.path);
 
     if (!cellBounds) {
       throw new Error("Expected table cell bounds");
@@ -265,7 +270,7 @@ describe("Block and chrome paint order", () => {
       throw new Error("Expected second paragraph region");
     }
 
-    state = setSelection(state, { regionId: second.id, offset: 0 });
+    state = setSelection(state, { regionPath: second.path, offset: 0 });
 
     const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
     const { context } = renderPaintOperations(state, {
@@ -305,7 +310,7 @@ describe("Block and chrome paint order", () => {
       throw new Error("Expected table cell region");
     }
 
-    state = setSelection(state, { regionId: cell.id, offset: 0 });
+    state = setSelection(state, { regionPath: cell.path, offset: 0 });
 
     const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
     const { context } = renderPaintOperations(state, {
@@ -535,7 +540,7 @@ describe("Block chrome geometry", () => {
       throw new Error("Expected code region");
     }
 
-    state = setSelection(state, { regionId: region.id, offset: "const".length });
+    state = setSelection(state, { regionPath: region.path, offset: "const".length });
 
     const { context, layout } = renderPaintOperations(state, { height: 180, width: 240 });
     const line = layout.lines.find((entry) => entry.text === "const value = 1;");
@@ -573,11 +578,11 @@ describe("Block chrome geometry", () => {
       throw new Error("Expected quoted paragraph");
     }
 
-    state = setSelection(state, { regionId: activeRegion.id, offset: 1 });
+    state = setSelection(state, { regionPath: activeRegion.path, offset: 1 });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
     const firstLine = layout.lines.find((line) => line.text === "alpha");
-    const activeLine = layout.lines.find((line) => line.regionId === activeRegion.id);
+    const activeLine = layout.lines.find((line) => line.regionPath === activeRegion.path);
 
     if (!firstLine || !activeLine) {
       throw new Error("Expected quoted lines");
@@ -614,8 +619,8 @@ describe("Selections, comments, and text overlays", () => {
     }
 
     state = setSelection(state, {
-      anchor: { regionId: first.id, offset: 2 },
-      focus: { regionId: third.id, offset: 3 },
+      anchor: { regionPath: first.path, offset: 2 },
+      focus: { regionPath: third.path, offset: 3 },
     });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
@@ -628,9 +633,9 @@ describe("Selections, comments, and text overlays", () => {
 
     expect(selectionFills.length).toBe(3);
 
-    const firstLine = layout.lines.find((line) => line.regionId === first.id);
-    const secondLine = layout.lines.find((line) => line.regionId === second.id);
-    const thirdLine = layout.lines.find((line) => line.regionId === third.id);
+    const firstLine = layout.lines.find((line) => line.regionPath === first.path);
+    const secondLine = layout.lines.find((line) => line.regionPath === second.path);
+    const thirdLine = layout.lines.find((line) => line.regionPath === third.path);
 
     if (!firstLine || !secondLine || !thirdLine) {
       throw new Error("Expected one line per paragraph region");
@@ -663,7 +668,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected paragraph region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: 2 });
+    state = setSelection(state, { regionPath: container.path, offset: 2 });
 
     const { context } = renderPaintOperations(state, { height: 180, width: 240 });
 
@@ -685,7 +690,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected paragraph region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -724,7 +729,7 @@ describe("Selections, comments, and text overlays", () => {
     }
 
     highlightState = setSelection(highlightState, {
-      regionId: highlightContainer.id,
+      regionPath: highlightContainer.path,
       offset: highlightContainer.text.length,
     });
     highlightState = insertText(highlightState, "!") ?? highlightState;
@@ -737,7 +742,7 @@ describe("Selections, comments, and text overlays", () => {
     }
 
     pulseState = setSelection(pulseState, {
-      regionId: pulseContainer.id,
+      regionPath: pulseContainer.path,
       offset: pulseContainer.text.length,
     });
     pulseState = insertText(pulseState, ".") ?? pulseState;
@@ -819,7 +824,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected paragraph region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -861,7 +866,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected code region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
@@ -904,7 +909,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected paragraph region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
@@ -933,7 +938,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected code region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
@@ -962,7 +967,7 @@ describe("Selections, comments, and text overlays", () => {
       throw new Error("Expected paragraph region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -1098,8 +1103,8 @@ describe("Selections, comments, and text overlays", () => {
     }
 
     state = setSelection(state, {
-      anchor: { regionId: container.id, offset: 6 },
-      focus: { regionId: container.id, offset: 10 },
+      anchor: { regionPath: container.path, offset: 6 },
+      focus: { regionPath: container.path, offset: 10 },
     });
 
     const { context, layout } = renderPaintOperations(state, {
@@ -1287,7 +1292,7 @@ describe("Selections, comments, and text overlays", () => {
       commentRanges: [
         {
           endOffset: 13,
-          regionId: region.id,
+          regionPath: region.path,
           resolution: { match: null, repair: null, status: "stale" },
           resolved: false,
           startOffset: 6,
@@ -1321,7 +1326,7 @@ describe("Selections, comments, and text overlays", () => {
       commentRanges: [
         {
           endOffset: 13,
-          regionId: region.id,
+          regionPath: region.path,
           resolution: { match: null, repair: null, status: "stale" },
           resolved: false,
           startOffset: 6,
@@ -1613,7 +1618,7 @@ describe("List marker painting", () => {
       throw new Error("Expected list item region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = insertLineBreak(state) ?? state;
 
     const receivedMarkers: string[] = [];
@@ -1660,7 +1665,7 @@ describe("List marker painting", () => {
       throw new Error("Expected task list item region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = insertLineBreak(state) ?? state;
 
     const receivedMarkers: string[] = [];
@@ -1686,7 +1691,7 @@ describe("List marker painting", () => {
       throw new Error("Expected list item region");
     }
 
-    state = setSelection(state, { regionId: container.id, offset: container.text.length });
+    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
     state = insertLineBreak(state) ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -1759,9 +1764,9 @@ function renderPaintOperations(
   );
 
   const frame = createDocumentFrame(state, layoutState, {
-    activeBlockId:
-      state.documentIndex.regionIndex.get(state.selection.focus.regionId)?.block.id ?? null,
-    activeRegionId: state.selection.focus.regionId,
+    activeBlockPath:
+      resolveRegion(state.documentIndex, state.selection.focus.regionPath)?.blockPath ?? null,
+    activeRegionPath: state.selection.focus.regionPath,
     activeThreadIndex: null,
     ambientTime: options.ambientTime,
     customEffects: options.customEffects,

@@ -27,6 +27,7 @@ type OutputMode = "json" | "table";
 const manifestPath = new URL("./manifest.json", import.meta.url);
 const manifest = (await Bun.file(manifestPath).json()) as BenchmarkManifest;
 const benchmarkSuiteRunCount = 3;
+const benchmarkWarmupSuiteRunCount = 1;
 const allowedBudgetFailureCount = 1;
 const benchmarkGroupOrder = ["markdown", "layout", "component", "editor"] as const;
 const outputMode = resolveOutputMode(process.argv);
@@ -49,7 +50,8 @@ if (unusedBudgetNames.length > 0) {
   throw new Error(`Unused benchmark budget ids: ${unusedBudgetNames.join(", ")}`);
 }
 
-const suiteRuns = runBenchmarkSuite(benchmarkScenarios);
+runBenchmarkWarmupSuites(benchmarkScenarios);
+const suiteRuns = runBenchmarkSuite();
 const failures = collectRepeatedBudgetFailures(suiteRuns, allowedBudgetFailureCount);
 
 if (outputMode === "json") {
@@ -72,9 +74,19 @@ if (failures.length > 0) {
   }
 }
 
-function runBenchmarkSuite(firstRunScenarios: BenchmarkScenario[]) {
+function runBenchmarkWarmupSuites(firstRunScenarios: BenchmarkScenario[]) {
+  for (let index = 0; index < benchmarkWarmupSuiteRunCount; index += 1) {
+    if (outputMode === "table") {
+      console.log(`Benchmark suite warmup ${index + 1}/${benchmarkWarmupSuiteRunCount}`);
+    }
+
+    void runScenarios(index === 0 ? firstRunScenarios : createBenchmarkScenarios());
+  }
+}
+
+function runBenchmarkSuite() {
   return Array.from({ length: benchmarkSuiteRunCount }, (_, index) => {
-    const scenarioRuns = runScenarios(index === 0 ? firstRunScenarios : createBenchmarkScenarios());
+    const scenarioRuns = runScenarios(createBenchmarkScenarios());
 
     if (outputMode === "table") {
       console.log(`Benchmark suite run ${index + 1}/${benchmarkSuiteRunCount}`);

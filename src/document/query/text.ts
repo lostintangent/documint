@@ -29,33 +29,6 @@ export function extractPlainTextFromInlineNodes(nodes: readonly Inline[]): strin
     .join("");
 }
 
-// Plain-text projection of a single uncommitted block shape. Builders call this
-// before a node has a durable id, while document queries over committed
-// snapshots should prefer the cached `plainText` fields already stored on the
-// document model.
-export function extractBlockPlainText(node: Block): string {
-  switch (node.type) {
-    case "blockquote":
-    case "listItem":
-      return extractPlainTextFromBlockNodes(node.children);
-    case "code":
-      return node.source;
-    case "directive":
-      return node.body;
-    case "heading":
-    case "paragraph":
-      return extractPlainTextFromInlineNodes(node.children);
-    case "list":
-      return extractListPlainText(node.items);
-    case "table":
-      return extractTablePlainText(node.rows);
-    case "divider":
-      return "";
-    case "raw":
-      return node.source;
-  }
-}
-
 export function extractListPlainText(items: readonly ListItemBlock[]): string {
   return items.map((item) => item.plainText).join("\n");
 }
@@ -67,12 +40,10 @@ export function extractTablePlainText(rows: readonly TableRow[]): string {
 // Canonical plain-text projection of a block tree. The result is `.trim()`-ed
 // so it matches the canonical form cached on `block.plainText` for container
 // blocks (blockquote, listItem) — callers that compare against `plainText` get
-// the same answer either way. If you need an untrimmed projection of a single
-// node, use `extractBlockPlainText` directly.
+// the same answer either way.
 //
-// Reads each block's cached `plainText` field directly rather than routing
-// through `extractBlockPlainText`. Every `Block` reaches this function via a
-// builder (`createParagraphBlock`, `createBlockquoteBlock`, etc.) that
+// Reads each block's cached `plainText` field directly. Every `Block` reaches
+// this function via a builder (`createParagraphBlock`, `createBlockquoteBlock`, etc.) that
 // already computed `plainText` from the same text content a recursive walk
 // would visit; recursing here would redo `O(total descendant text)` work
 // per nesting level for callers like `createListItemBlock` /

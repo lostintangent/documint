@@ -70,7 +70,7 @@ describe("resolveMentionLineChange", () => {
     expect(
       resolveMentionLineChange(transition, {
         ...target,
-        regionId: "missing-region",
+        regionPath: "missing-region",
       }),
     ).toBeNull();
   });
@@ -87,7 +87,7 @@ function createMentionTransition(markdown: string, regionText: string) {
 
   const target: TextRangeTarget = {
     endOffset: startOffset + "@Ja".length,
-    regionId: region.id,
+    regionPath: region.path,
     startOffset,
   };
   const next = insertMention(previous, target, "u-jane", "Jane", " ");

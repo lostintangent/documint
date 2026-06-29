@@ -10,7 +10,7 @@ import {
   type TableCell,
   type TableRow,
 } from "@/document";
-import { resolveTableCellRegion } from "../../../index/query";
+import { resolveTableCellRegionByTablePath } from "../../../index/query";
 import type { DocumentIndex } from "../../../index/types";
 import { target, type EditorSelection, type SelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
@@ -71,7 +71,7 @@ export function resolveTableCellLineBreak(context: TableCellContext): EditorStat
   return {
     kind: "replace-block",
     block: replacement.block,
-    blockId: replacement.blockId,
+    blockPath: replacement.blockPath,
     selection: replacement.selection,
   };
 }
@@ -156,7 +156,7 @@ function moveSelectionToTableCell(
     selection: createTableCellSelection(
       context.documentIndex,
       context.selection,
-      context.table,
+      context.tablePath,
       position.rowIndex,
       position.cellIndex,
       Math.min(context.selection.focus.offset, nextCell.plainText.length),
@@ -218,7 +218,7 @@ function replaceTable(
   return {
     kind: "replace-block",
     block,
-    blockId: context.table.id,
+    blockPath: context.tablePath,
     selection: intent.selection,
   };
 }
@@ -260,20 +260,20 @@ function clampCellIndex(cellIndex: number, columnCount: number): number {
 function createTableCellSelection(
   documentIndex: DocumentIndex,
   fallbackSelection: EditorSelection,
-  table: TableBlock,
+  tablePath: string,
   rowIndex: number,
   cellIndex: number,
   offset: number,
 ): EditorSelection {
-  const region = resolveTableCellRegion(documentIndex, table.id, rowIndex, cellIndex);
+  const region = resolveTableCellRegionByTablePath(documentIndex, tablePath, rowIndex, cellIndex);
 
   if (!region) {
     return fallbackSelection;
   }
 
   return {
-    anchor: { regionId: region.id, offset },
-    focus: { regionId: region.id, offset },
+    anchor: { regionPath: region.path, offset },
+    focus: { regionPath: region.path, offset },
   };
 }
 

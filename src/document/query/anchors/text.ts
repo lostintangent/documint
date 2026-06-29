@@ -81,19 +81,20 @@ export type TextAnchor = {
   suffix?: string;
 };
 
-// A text region an anchor can attach to. `id` is the underlying block or
-// table-cell id. `containerOrdinal` is the position among containers in
-// document order — used to disambiguate identical-text containers.
+// A text region an anchor can attach to. `path` is the structural container
+// path in the current snapshot. `containerOrdinal` is the position among
+// containers in document order — used to disambiguate identical-text
+// containers when content alone is tied.
 export type AnchorContainer = {
   containerKind: AnchorKind;
   containerOrdinal: number;
-  id: string;
+  path: string;
   text: string;
 };
 
 // Where a `TextAnchor` resolved to in a current `Document` snapshot.
 export type AnchorMatch = {
-  containerId: string;
+  containerPath: string;
   containerKind: AnchorKind;
   containerOrdinal: number;
   startOffset: number;
@@ -143,23 +144,23 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
   const containers: AnchorContainer[] = [];
 
   visitDocument(document, {
-    enterBlock(block) {
+    enterBlock(block, context) {
       const anchorKind = anchorKindForBlockType(block.type);
 
       if (anchorKind) {
         containers.push({
           containerKind: anchorKind,
           containerOrdinal: containers.length,
-          id: block.id,
+          path: context.path,
           text: block.plainText,
         });
       }
     },
-    enterTableCell(cell) {
+    enterTableCell(cell, context) {
       containers.push({
         containerKind: tableCellAnchorKind,
         containerOrdinal: containers.length,
-        id: cell.id,
+        path: context.path,
         text: cell.plainText,
       });
     },
@@ -192,7 +193,7 @@ export function captureContextWindows(
 // fingerprint. Used by any consumer that wants to record a position by
 // content rather than by index.
 export function createAnchorFromContainer(
-  container: AnchorContainer,
+  container: Pick<AnchorContainer, "containerKind" | "text">,
   startOffset: number,
   endOffset: number,
 ): TextAnchor {
@@ -211,7 +212,7 @@ export function createAnchorFromContainer(
 // `createAnchorFromContainer` to capture both the descriptor and the original
 // quoted text for later drift detection.
 export function extractQuoteFromContainer(
-  container: AnchorContainer,
+  container: Pick<AnchorContainer, "text">,
   startOffset: number,
   endOffset: number,
 ): string {

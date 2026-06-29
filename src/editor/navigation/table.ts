@@ -10,8 +10,7 @@ import {
   resolveIndexedBlock,
   resolveRegion,
   resolveRegionOutsideRoot,
-  resolveTableCellPosition,
-  resolveTableCellRegion,
+  resolveTableCellRegionByTablePath,
 } from "../state";
 import { placeCaretAtLineY } from "./line";
 
@@ -24,23 +23,23 @@ export function resolveVerticalTableRegionTarget(
   state: EditorState,
   direction: -1 | 1,
 ): VerticalTableRegionTarget | null {
-  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionId);
+  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
 
   if (!currentRegion) {
     return null;
   }
 
-  const currentCell = resolveTableCellPosition(currentRegion);
-  const tableBlock = resolveIndexedBlock(state.documentIndex, currentRegion.block.id);
+  const currentCell = currentRegion.tableCellPosition;
+  const tableBlock = resolveIndexedBlock(state.documentIndex, currentRegion.blockPath);
 
   if (!currentCell || tableBlock?.block.type !== "table") {
     return null;
   }
 
   const targetRegion =
-    resolveTableCellRegion(
+    resolveTableCellRegionByTablePath(
       state.documentIndex,
-      tableBlock.block.id,
+      tableBlock.path,
       currentCell.rowIndex + direction,
       currentCell.cellIndex,
     ) ?? resolveRegionOutsideRoot(state.documentIndex, tableBlock.rootIndex, direction);
@@ -67,8 +66,8 @@ export function moveCaretVerticallyInTable(
     return state;
   }
 
-  const currentExtent = layout.regionBounds.get(currentRegion.id);
-  const targetExtent = layout.regionBounds.get(targetRegion.id);
+  const currentExtent = layout.regionBounds.get(currentRegion.path);
+  const targetExtent = layout.regionBounds.get(targetRegion.path);
 
   if (!currentExtent || !targetExtent) {
     return state;

@@ -15,6 +15,7 @@
 // block/region-level orchestration.
 
 import {
+  blockPathFromCoordinates,
   createParagraphTextBlock,
   createTableCell as createDocumentTableCell,
   rebuildCodeBlock,
@@ -30,9 +31,7 @@ import { trimBlockToPrefix, trimBlockToSuffix } from "../fragments/blocks";
 import { mergeTrimmedBlocks } from "./fragments";
 import {
   resolveRegion,
-  resolveRegionByPath,
   resolveRootBlock,
-  resolveTableCellPosition,
 } from "../index/query";
 import { replaceDocumentMetadata, replaceEditorBlock, spliceDocumentIndex } from "../index/splice";
 import type { DocumentIndex, EditableRegion } from "../index/types";
@@ -59,7 +58,7 @@ export function spliceText(
 ): TextEditResult {
   const normalized = normalizeSelection(documentIndex, selection);
 
-  if (normalized.start.regionId === normalized.end.regionId) {
+  if (normalized.start.regionPath === normalized.end.regionPath) {
     return replaceInSingleRegion(documentIndex, normalized, text);
   }
 
@@ -84,8 +83,8 @@ export function replaceWithBlocks(
 ): TextEditResult {
   const normalized = normalizeSelection(documentIndex, selection);
 
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionId);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionId);
+  const startRegion = resolveRegion(documentIndex, normalized.start.regionPath);
+  const endRegion = resolveRegion(documentIndex, normalized.end.regionPath);
 
   if (!startRegion || !endRegion) {
     throw new Error("Unknown selection endpoints.");
@@ -129,13 +128,17 @@ export function replaceWithBlocks(
       )
     : nextDocumentIndex;
 
+  const caretBlockPath = blockPathFromCoordinates(
+    rootIndex + merged.caretLocalIndex,
+    merged.caretChildIndices,
+  );
+  if (!caretBlockPath) {
+    throw new Error("Cross-region text edit resolved to an invalid caret block path.");
+  }
+
   return {
     documentIndex: finalizedDocumentIndex,
-    selection: target.descendant(
-      rootIndex + merged.caretLocalIndex,
-      merged.caretChildIndices,
-      merged.caretOffset,
-    ),
+    selection: target.blockPath(caretBlockPath, merged.caretOffset),
   };
 }
 
@@ -146,18 +149,18 @@ function replaceInSingleRegion(
   normalized: NormalizedEditorSelection,
   text: string,
 ): TextEditResult {
-  const region = resolveRegion(documentIndex, normalized.start.regionId);
+  const region = resolveRegion(documentIndex, normalized.start.regionPath);
 
   if (!region) {
-    throw new Error(`Unknown region: ${normalized.start.regionId}`);
+    throw new Error(`Unknown region: ${normalized.start.regionPath}`);
   }
 
-  const nextDocumentIndex = replaceEditorBlock(documentIndex, region.block.id, (block) =>
+  const nextDocumentIndex = replaceEditorBlock(documentIndex, region.blockPath, (block) =>
     replaceBlockRegionText(block, region, normalized.start.offset, normalized.end.offset, text),
   );
 
   if (!nextDocumentIndex) {
-    throw new Error(`Failed to replace block for region: ${region.id}`);
+    throw new Error(`Failed to replace block for region: ${region.path}`);
   }
 
   const finalizedDocumentIndex = finalizeCommentsAfterEdit(
@@ -169,7 +172,7 @@ function replaceInSingleRegion(
     text,
   );
 
-  const nextRegion = resolveRegionByPath(finalizedDocumentIndex, region.path);
+  const nextRegion = resolveRegion(finalizedDocumentIndex, region.path);
 
   if (!nextRegion) {
     throw new Error(`Failed to remap region after replacement: ${region.path}`);
@@ -243,12 +246,12 @@ function replaceTableCellText(
   endOffset: number,
   replacementText: string,
 ): Extract<Block, { type: "table" }> {
-  const tableCellPosition = resolveTableCellPosition(region);
+  const tableCellPosition = region.tableCellPosition;
   const rowIndex = tableCellPosition?.rowIndex;
   const cellIndex = tableCellPosition?.cellIndex;
 
   if (rowIndex === undefined || cellIndex === undefined) {
-    throw new Error(`Unable to resolve table cell position for region: ${region.id}`);
+    throw new Error(`Unable to resolve table cell position for region: ${region.path}`);
   }
 
   const nextChildren = editRegionInlines(region, startOffset, endOffset, replacementText);

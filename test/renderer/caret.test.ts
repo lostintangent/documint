@@ -22,7 +22,7 @@ test("paints resolved presence cursors on the overlay canvas", () => {
   }
 
   state = setSelection(state, {
-    regionId: container.id,
+    regionPath: container.path,
     offset: 1,
   });
 
@@ -36,7 +36,7 @@ test("paints resolved presence cursors on the overlay canvas", () => {
         color: "#0ea5e9",
         commentThreadIndex: null,
         cursorPoint: {
-          regionId: container.id,
+          regionPath: container.path,
           offset: 5,
         },
         id: "user",

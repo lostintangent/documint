@@ -1,14 +1,13 @@
 import {
   documentChangeLocationKey,
-  hasSameDocumentChangeTargetEvidence,
-  retargetDocumentChanges,
+  documentChangeTargetAnchorKey,
+  hasSameDocumentChangeTargetAnchor,
   type DocumentChange,
+  type DocumentChangeTarget,
 } from "@/document";
+import { resolveNodeAnchors, type EditorNodeAnchor } from "@/editor/anchors";
 import {
-  resolveIndexedBlock,
-  resolveRegion,
-  resolveRegionByPath,
-  selectionIntersectsBlock,
+  selectionIntersectsBlockPath,
   selectionIntersectsRegion,
   type EditorState,
 } from "@/editor/state";
@@ -16,6 +15,9 @@ import type { ResolvedDocumentChangeTarget } from "@/types";
 
 export type UnacknowledgedDocumentChange = {
   change: DocumentChange;
+  // Stable lifecycle identity for animation and merge bookkeeping. The
+  // `editorTarget` is the current path projection and may retarget.
+  changeKey: string;
   editorTarget: ResolvedDocumentChangeTarget;
 };
 
@@ -33,43 +35,61 @@ export function acknowledgeUnacknowledgedDocumentChanges(
     return current;
   }
 
-  const changes: UnacknowledgedDocumentChange[] = [];
+  const changes = Array.from<UnacknowledgedDocumentChange | null>({
+    length: current.length,
+  }).fill(null);
   let didChange = false;
   const shouldRetargetMissingTargets = options.retarget ?? false;
-  const changesToRetarget: DocumentChange[] = [];
-  const retargetInsertionIndexes: number[] = [];
+  const changesToRetarget: {
+    anchorMatch: EditorNodeAnchor;
+    change: UnacknowledgedDocumentChange;
+    index: number;
+  }[] = [];
+  const anchorMatches = resolveChangeAnchorMatches(
+    state,
+    current.map((change) => change.change),
+  );
 
   for (const [index, change] of current.entries()) {
-    const retained = retainVisibleUnacknowledgedDocumentChange(
-      change,
-      state,
+    const anchorMatch = anchorMatches[index] ?? { status: "unmatched" };
+    const currentTarget = verifyStoredEditorChangeTarget(
+      change.change,
+      anchorMatch,
     );
+    const retained =
+      currentTarget && !isSelectionOnDocumentChangeTarget(state, currentTarget)
+        ? { ...change, editorTarget: currentTarget }
+        : null;
 
     if (retained) {
-      changes.push(retained);
+      changes[index] = retained;
       continue;
     }
 
-    if (
-      shouldRetargetMissingTargets &&
-      !isSelectionOnDocumentChangeTarget(state, change.editorTarget)
-    ) {
-      changesToRetarget.push(change.change);
-      retargetInsertionIndexes.push(index);
+    if (shouldRetargetMissingTargets && !currentTarget) {
+      changesToRetarget.push({
+        anchorMatch,
+        change,
+        index,
+      });
     } else {
       didChange = true;
     }
   }
 
   if (changesToRetarget.length > 0) {
-    const retargeted = retargetUnacknowledgedDocumentChanges(
-      changesToRetarget,
-      state,
-    );
-
-    for (const [index, retargetedChange] of retargeted.entries()) {
+    for (const candidate of changesToRetarget) {
+      const retargetedChange = resolveVisibleDocumentChange(
+        candidate.change.change,
+        state,
+        candidate.anchorMatch,
+        {
+          changeKey: candidate.change.changeKey,
+          retarget: true,
+        },
+      );
       if (retargetedChange) {
-        changes.splice(retargetInsertionIndexes[index]!, 0, retargetedChange);
+        changes[candidate.index] = retargetedChange;
       } else {
         didChange = true;
       }
@@ -78,7 +98,11 @@ export function acknowledgeUnacknowledgedDocumentChanges(
     didChange = true;
   }
 
-  return !didChange && changes.length === current.length ? current : changes;
+  const compactedChanges = changes.filter((change) => change !== null);
+
+  return !didChange && compactedChanges.length === current.length
+    ? current
+    : compactedChanges;
 }
 
 export function mergeUnacknowledgedDocumentChanges(
@@ -90,7 +114,7 @@ export function mergeUnacknowledgedDocumentChanges(
   const consumedIncoming = new Set<number>();
   const resolvedIncoming = resolveIncomingDocumentChanges(changes, state);
   const resolvedCurrent = retargetUnacknowledgedDocumentChanges(
-    current.map((change) => change.change),
+    current,
     state,
   );
   const newChanges: UnacknowledgedDocumentChange[] = [];
@@ -140,56 +164,73 @@ export function mergeUnacknowledgedDocumentChanges(
   };
 }
 
-function retainVisibleUnacknowledgedDocumentChange(
-  change: UnacknowledgedDocumentChange,
-  state: EditorState,
-): UnacknowledgedDocumentChange | null {
-  return isResolvedDocumentChangeTargetPresent(state, change.editorTarget) &&
-    !isSelectionOnDocumentChangeTarget(state, change.editorTarget)
-    ? change
-    : null;
-}
-
-function isResolvedDocumentChangeTargetPresent(
-  state: EditorState,
-  target: ResolvedDocumentChangeTarget,
-) {
-  return target.kind === "block"
-    ? resolveIndexedBlock(state.documentIndex, target.blockId) !== null
-    : resolveRegion(state.documentIndex, target.regionId) !== null;
-}
-
 function resolveIncomingDocumentChanges(
   changes: readonly DocumentChange[],
   state: EditorState,
 ): readonly (UnacknowledgedDocumentChange | null)[] {
-  return changes.map((change) => resolveVisibleDocumentChange(change, state));
+  return resolveVisibleDocumentChanges(changes, state, { retarget: false });
 }
 
 function retargetUnacknowledgedDocumentChanges(
-  changes: readonly DocumentChange[],
+  changes: readonly UnacknowledgedDocumentChange[],
   state: EditorState,
 ): readonly (UnacknowledgedDocumentChange | null)[] {
-  const retargetedChanges = retargetDocumentChanges(
-    state.documentIndex.document,
-    changes,
+  return resolveVisibleDocumentChanges(
+    changes.map((change) => change.change),
+    state,
+    {
+      changeKeys: changes.map((change) => change.changeKey),
+      retarget: true,
+    },
   );
-  return retargetedChanges.map((change) =>
-    change ? resolveVisibleDocumentChange(change, state) : null,
+}
+
+function resolveVisibleDocumentChanges(
+  changes: readonly DocumentChange[],
+  state: EditorState,
+  options: {
+    readonly changeKeys?: readonly string[];
+    readonly retarget: boolean;
+  },
+): readonly (UnacknowledgedDocumentChange | null)[] {
+  const anchorMatches = resolveChangeAnchorMatches(state, changes);
+
+  return changes.map((change, index) =>
+    resolveVisibleDocumentChange(
+      change,
+      state,
+      anchorMatches[index] ?? { status: "unmatched" },
+      {
+        changeKey:
+          options.changeKeys?.[index] ??
+          documentChangeTargetAnchorKey(change.target),
+        retarget: options.retarget,
+      },
+    ),
   );
 }
 
 function resolveVisibleDocumentChange(
   change: DocumentChange,
   state: EditorState,
+  anchorMatch: EditorNodeAnchor,
+  options: {
+    readonly changeKey: string;
+    readonly retarget: boolean;
+  },
 ): UnacknowledgedDocumentChange | null {
-  const target = resolveDocumentChangeTarget(state, change);
+  const target = options.retarget
+    ? resolveRetargetedEditorChangeTarget(change, anchorMatch)
+    : verifyStoredEditorChangeTarget(change, anchorMatch);
   if (!target || isSelectionOnDocumentChangeTarget(state, target)) {
     return null;
   }
 
   return {
-    change,
+    change: options.retarget
+      ? retargetDocumentChange(change, anchorMatch)
+      : change,
+    changeKey: options.changeKey,
     editorTarget: target,
   };
 }
@@ -226,7 +267,7 @@ function refreshExistingDocumentChange(
       !candidate ||
       consumedIncoming.has(index) ||
       candidate.change.changeKind !== "modified" ||
-      !hasSameDocumentChangeTargetEvidence(
+      !hasSameDocumentChangeTargetAnchor(
         active.change.target,
         candidate.change.previousTarget,
       )
@@ -241,6 +282,7 @@ function refreshExistingDocumentChange(
             changeKind: "added",
             target: candidate.change.target,
           },
+          changeKey: active.changeKey,
           editorTarget: candidate.editorTarget,
         }
       : {
@@ -249,6 +291,7 @@ function refreshExistingDocumentChange(
             previousTarget: active.change.previousTarget,
             target: candidate.change.target,
           },
+          changeKey: active.changeKey,
           editorTarget: candidate.editorTarget,
         };
   }
@@ -256,29 +299,107 @@ function refreshExistingDocumentChange(
   return null;
 }
 
-function resolveDocumentChangeTarget(
+function resolveChangeAnchorMatches(
   state: EditorState,
+  changes: readonly DocumentChange[],
+): readonly EditorNodeAnchor[] {
+  const matches = resolveNodeAnchors(
+    state.documentIndex,
+    changes.map((change) => change.target.anchor),
+  );
+
+  return changes.map(
+    (change) =>
+      matches.get(documentChangeTargetAnchorKey(change.target)) ?? {
+        status: "unmatched",
+      },
+  );
+}
+
+function verifyStoredEditorChangeTarget(
   change: DocumentChange,
+  anchorMatch: EditorNodeAnchor,
 ): ResolvedDocumentChangeTarget | null {
-  if (change.target.kind === "block") {
-    return resolveIndexedBlock(state.documentIndex, change.target.node.blockId)
-      ? {
-          blockId: change.target.node.blockId,
-          kind: "block",
-        }
-      : null;
+  if (anchorMatch.status !== "matched" || anchorMatch.path !== change.target.path) {
+    return null;
   }
 
-  const region = resolveRegionByPath(
-    state.documentIndex,
-    change.target.node.path,
-  );
-  return region
+  return resolveMatchedEditorChangeTarget(change, anchorMatch);
+}
+
+function resolveRetargetedEditorChangeTarget(
+  change: DocumentChange,
+  anchorMatch: EditorNodeAnchor,
+): ResolvedDocumentChangeTarget | null {
+  return resolveMatchedEditorChangeTarget(change, anchorMatch);
+}
+
+function resolveMatchedEditorChangeTarget(
+  change: DocumentChange,
+  anchorMatch: EditorNodeAnchor,
+): ResolvedDocumentChangeTarget | null {
+  if (
+    anchorMatch.status !== "matched" ||
+    anchorMatch.anchor.kind !== change.target.kind
+  ) {
+    return null;
+  }
+
+  if (change.target.kind === "block") {
+    return {
+      blockPath: anchorMatch.path,
+      kind: "block",
+    };
+  }
+
+  return anchorMatch.region
     ? {
         kind: "table-cell",
-        regionId: region.id,
+        regionPath: anchorMatch.region.path,
       }
     : null;
+}
+
+function retargetDocumentChange(
+  change: DocumentChange,
+  anchorMatch: EditorNodeAnchor,
+): DocumentChange {
+  if (anchorMatch.status !== "matched") {
+    throw new Error("Expected matched document change anchor");
+  }
+
+  const target = documentChangeTargetFromAnchorMatch(anchorMatch);
+
+  if (change.changeKind === "added") {
+    return {
+      changeKind: "added",
+      target,
+    };
+  }
+
+  return {
+    changeKind: "modified",
+    previousTarget: change.previousTarget,
+    target,
+  };
+}
+
+function documentChangeTargetFromAnchorMatch(
+  anchorMatch: Extract<EditorNodeAnchor, { status: "matched" }>,
+): DocumentChangeTarget {
+  if (anchorMatch.anchor.kind === "block") {
+    return {
+      anchor: anchorMatch.anchor,
+      kind: "block",
+      path: anchorMatch.path,
+    };
+  }
+
+  return {
+    anchor: anchorMatch.anchor,
+    kind: "table-cell",
+    path: anchorMatch.path,
+  };
 }
 
 function isSelectionOnDocumentChangeTarget(
@@ -286,8 +407,8 @@ function isSelectionOnDocumentChangeTarget(
   target: ResolvedDocumentChangeTarget,
 ) {
   return target.kind === "block"
-    ? selectionIntersectsBlock(state, target.blockId)
-    : selectionIntersectsRegion(state, target.regionId);
+    ? selectionIntersectsBlockPath(state, target.blockPath)
+    : selectionIntersectsRegion(state, target.regionPath);
 }
 
 function hasSameResolvedDocumentChangeTarget(
@@ -299,11 +420,11 @@ function hasSameResolvedDocumentChangeTarget(
   }
 
   if (left.kind === "block" && right.kind === "block") {
-    return left.blockId === right.blockId;
+    return left.blockPath === right.blockPath;
   }
 
   if (left.kind === "table-cell" && right.kind === "table-cell") {
-    return left.regionId === right.regionId;
+    return left.regionPath === right.regionPath;
   }
 
   return false;

@@ -27,7 +27,7 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
     return emptySelectionFormatting();
   }
 
-  const region = resolveRegion(state.documentIndex, selectionRange.regionId);
+  const region = resolveRegion(state.documentIndex, selectionRange.regionPath);
 
   if (!region) {
     return emptySelectionFormatting();

@@ -1,7 +1,7 @@
 // Owns list/task marker metrics shared by exact layout, virtualization, and
 // visual queries.
 
-import { findAncestorIndexedBlock, type DocumentIndex } from "../../state";
+import { findAncestorIndexedBlockByPath, type DocumentIndex } from "../../state";
 import { resolveFontSize } from "../../text/measure";
 
 export const LIST_MARKER_TEXT_INSET = 18;
@@ -22,13 +22,13 @@ export type LayoutBlockExtent = {
 
 export function mergeLayoutBlockExtent(
   blockExtents: Map<string, LayoutBlockExtent>,
-  blockId: string,
+  blockPath: string,
   top: number,
   bottom: number,
 ) {
-  const current = blockExtents.get(blockId);
+  const current = blockExtents.get(blockPath);
 
-  blockExtents.set(blockId, {
+  blockExtents.set(blockPath, {
     bottom: current ? Math.max(current.bottom, bottom) : bottom,
     top: current ? Math.min(current.top, top) : top,
   });
@@ -42,16 +42,16 @@ export function mergeLayoutBlockExtent(
 // estimation so both agree on what a list-item line can hold.
 export function resolveListMarkerInset(
   documentIndex: DocumentIndex,
-  blockId: string,
+  blockPath: string,
   fontSize: number,
 ): number {
-  const listItem = findAncestorIndexedBlock(documentIndex, blockId, "listItem");
+  const listItem = findAncestorIndexedBlockByPath(documentIndex, blockPath, "listItem");
 
   if (!listItem) {
     return 0;
   }
 
-  const marker = documentIndex.listItems.get(listItem.block.id);
+  const marker = documentIndex.listItems.get(listItem.path);
 
   return marker?.kind === "task"
     ? resolveTaskMarkerTextInsetFromFontSize(fontSize)

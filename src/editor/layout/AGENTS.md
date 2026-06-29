@@ -8,6 +8,7 @@ Small/common documents use exact full-document layout. Large documents use whole
 
 - **Visible geometry is exact.** Estimation is only a large-document optimization. Anything visible, selected, or hit-testable must have exact measured geometry, even when pinned outside the ordinary viewport slice.
 - **Document space is the shared coordinate system.** Line/block Y values are positions in the full document, even when measured from a virtualized slice.
+- **Virtual slices keep the index whole.** Exact slice measurement receives the canonical `DocumentIndex` plus global region start/end indices. Do not pass a shallow index with sliced `regions`, because index block ranges are global coordinates.
 - **Exact and estimated paths must agree.** Both paths must walk blocks the same way and use the same gap, inset, image, and table policies. If one policy changes, update the other.
 - **Cache keys are correctness.** Prepared text, measured lines, boundaries, heights, grapheme widths, and virtual layouts all depend on text, resources, and layout options.
 - **Refinement is the cache write-back boundary.** Virtualized layout may update cached estimated heights after exact slice measurement; other layout work treats cache reads as memoization.

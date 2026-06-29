@@ -1,7 +1,7 @@
 export { findDocumentChanges } from "./detect";
 export {
   documentChangeLocationKey,
-  hasSameDocumentChangeTargetEvidence,
-  retargetDocumentChanges,
+  documentChangeTargetAnchorKey,
+  hasSameDocumentChangeTargetAnchor,
 } from "./targets";
 export type { DocumentChange, DocumentChangeKind, DocumentChangeTarget } from "./types";

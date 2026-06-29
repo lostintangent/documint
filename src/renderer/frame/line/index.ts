@@ -2,6 +2,7 @@ import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import {
   resolveIndexedBlock,
+  resolveRegion,
   type EditorState,
   type NormalizedEditorSelection,
 } from "@/editor/state";
@@ -42,7 +43,7 @@ export type DocumentFrameLine = DocumentFrameLineText & {
 
 type ResolveDocumentFrameLineOptions = {
   blockFlashes: Map<string, BlockFlashFrame>;
-  activeBlockId: string | null;
+  activeBlockPath: string | null;
   blockPulses: Map<string, BlockPulseFrame>;
   textFades: Map<string, TextFadeFrame[]>;
   textHighlights: Map<string, TextHighlightFrame[]>;
@@ -65,7 +66,7 @@ type ResolveDocumentFrameLineOptions = {
 
 export function resolveDocumentFrameLine({
   blockFlashes,
-  activeBlockId,
+  activeBlockPath,
   blockPulses,
   textFades,
   textHighlights,
@@ -85,15 +86,15 @@ export function resolveDocumentFrameLine({
   listMarkerPlans,
   width,
 }: ResolveDocumentFrameLineOptions): DocumentFrameLine {
-  const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockId);
+  const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockPath);
   const block = indexedBlock?.block ?? null;
   const runtimeBlockPath = indexedBlock?.path ?? null;
-  const container = editorState.documentIndex.regionIndex.get(line.regionId) ?? null;
+  const container = resolveRegion(editorState.documentIndex, line.regionPath);
   const documentChange =
     block?.type === "table"
       ? null
-      : resolveDocumentChange(editorState, indexedBlock, line.regionId);
-  const containerBounds = layoutState.layout.regionBounds.get(line.regionId) ?? null;
+      : resolveDocumentChange(editorState, indexedBlock, line.regionPath);
+  const containerBounds = layoutState.layout.regionBounds.get(line.regionPath) ?? null;
   const text = resolveDocumentFrameLineText({
     textFades,
     textHighlights,
@@ -111,7 +112,7 @@ export function resolveDocumentFrameLine({
     ...text,
     ...resolveDocumentFrameLineBackgrounds({
       blockFlashes,
-      activeBlockId,
+      activeBlockPath,
       block,
       containerBounds,
       documentChange,
@@ -125,10 +126,10 @@ export function resolveDocumentFrameLine({
     ...resolveDocumentFrameLineRanges({
       activeThreadIndex,
       commentPresence,
-      commentRanges: commentRangesByRegion.get(line.regionId) ?? null,
+      commentRanges: commentRangesByRegion.get(line.regionPath) ?? null,
       line,
       normalizedSelection,
-      regionOrder: container?.documentOrder ?? null,
+      regionOrder: container?.regionArrayIndex ?? null,
       selectionRegionOrderRange,
       theme,
     }),

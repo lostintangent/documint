@@ -27,7 +27,7 @@ export function resolveCharacterDelete(
   }
 
   const point = selection.focus;
-  const region = resolveRegion(state.documentIndex, point.regionId);
+  const region = resolveRegion(state.documentIndex, point.regionPath);
 
   if (!region) {
     return null;
@@ -59,8 +59,8 @@ export function resolveCharacterDelete(
   return {
     kind: "splice-text",
     range: {
-      anchor: { regionId: region.id, offset: startOffset },
-      focus: { regionId: region.id, offset: endOffset },
+      anchor: { regionPath: region.path, offset: startOffset },
+      focus: { regionPath: region.path, offset: endOffset },
     },
     text: "",
     effect: effect.textDeleted(region, startOffset, endOffset, direction, placement),

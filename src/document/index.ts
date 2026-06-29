@@ -4,11 +4,11 @@
 //                  container/resource policy, and inline mark canonicalization.
 //   build/        — producing canonical Documents. Per-node builders,
 //                   high-level operations, save-time canonicalization.
-//                   `normalize.ts` is internal and not re-exported.
+//                   Non-node structural IDs stay internal.
 //   query/        — reading from existing Documents. Traversal, projection,
 //                   anchor algebra.
-//   diff/         — bounded semantic change detection and correspondence
-//                   evidence across immutable Document snapshots.
+//   diff/         — bounded semantic change detection and anchor matching
+//                   across immutable Document snapshots.
 //   comments/     — anchored-annotation domain.
 //
 // Each subfolder has its own `index.ts` that is the single source of truth

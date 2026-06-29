@@ -12,7 +12,7 @@ import { setup, getRegion, placeAt } from "../../helpers";
 function stateWithThread() {
   const state = setup("Hello world\n");
   const region = getRegion(state, "Hello world");
-  return addComment(state, { regionId: region.id, startOffset: 0, endOffset: 5 }, "First comment")!;
+  return addComment(state, { regionPath: region.path, startOffset: 0, endOffset: 5 }, "First comment")!;
 }
 
 describe("Comment thread commands", () => {

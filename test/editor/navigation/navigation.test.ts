@@ -33,7 +33,7 @@ test("moves left to the previous container when the caret is at the start", () =
   const paragraph = getRegion(state, "Paragraph");
   const nextState = moveCaretHorizontally(placeAt(state, paragraph, "start"), -1);
 
-  expect(nextState.selection.focus.regionId).toBe(heading.id);
+  expect(nextState.selection.focus.regionPath).toBe(heading.path);
   expect(nextState.selection.focus.offset).toBe(heading.text.length);
 });
 
@@ -43,7 +43,7 @@ test("moves right to the next container when the caret is at the end", () => {
   const paragraph = getRegion(state, "Paragraph");
   const nextState = moveCaretHorizontally(placeAt(state, heading, "end"), 1);
 
-  expect(nextState.selection.focus.regionId).toBe(paragraph.id);
+  expect(nextState.selection.focus.regionPath).toBe(paragraph.path);
   expect(nextState.selection.focus.offset).toBe(0);
 });
 
@@ -69,9 +69,9 @@ test("extends the selection across regions when shift-arrow-right crosses a boun
     extendSelection: true,
   });
 
-  expect(nextState.selection.anchor.regionId).toBe(first.id);
+  expect(nextState.selection.anchor.regionPath).toBe(first.path);
   expect(nextState.selection.anchor.offset).toBe(first.text.length);
-  expect(nextState.selection.focus.regionId).toBe(second.id);
+  expect(nextState.selection.focus.regionPath).toBe(second.path);
   expect(nextState.selection.focus.offset).toBe(0);
 });
 
@@ -129,9 +129,9 @@ test("extends the selection to the start of the current line", () => {
     extendSelection: true,
   });
 
-  expect(nextState.selection.anchor.regionId).toBe(container.id);
+  expect(nextState.selection.anchor.regionPath).toBe(container.path);
   expect(nextState.selection.anchor.offset).toBe(container.text.length);
-  expect(nextState.selection.focus.regionId).toBe(container.id);
+  expect(nextState.selection.focus.regionPath).toBe(container.path);
   expect(nextState.selection.focus.offset).toBeGreaterThan(0);
   expect(nextState.selection.focus.offset).toBeLessThan(container.text.length);
 });
@@ -147,9 +147,9 @@ test("extends the selection to the end of the current line", () => {
     { extendSelection: true },
   );
 
-  expect(nextState.selection.anchor.regionId).toBe(container.id);
+  expect(nextState.selection.anchor.regionPath).toBe(container.path);
   expect(nextState.selection.anchor.offset).toBe(0);
-  expect(nextState.selection.focus.regionId).toBe(container.id);
+  expect(nextState.selection.focus.regionPath).toBe(container.path);
   expect(nextState.selection.focus.offset).toBeGreaterThan(0);
   expect(nextState.selection.focus.offset).toBeLessThan(container.text.length);
 });
@@ -162,11 +162,11 @@ test("moves vertically between table cells in the same column", () => {
   const layout = layoutAt(state, 420);
   const upState = moveCaretVertically(placeAt(state, beta, 2), layout, -1);
 
-  expect(upState.selection.focus.regionId).toBe(headerB.id);
+  expect(upState.selection.focus.regionPath).toBe(headerB.path);
 
   const downState = moveCaretVertically(placeAt(state, beta, 2), layout, 1);
 
-  expect(downState.selection.focus.regionId).toBe(delta.id);
+  expect(downState.selection.focus.regionPath).toBe(delta.path);
 });
 
 test("moves horizontally by region in block navigation mode", () => {
@@ -178,8 +178,8 @@ test("moves horizontally by region in block navigation mode", () => {
   const rightState = moveCaretHorizontally(placeAt(state, alpha, 2), 1, { mode: "block" });
   const leftState = moveCaretHorizontally(placeAt(state, gamma, 3), -1, { mode: "block" });
 
-  expect(rightState.selection.focus).toEqual({ offset: 0, regionId: beta.id });
-  expect(leftState.selection.focus).toEqual({ offset: 0, regionId: beta.id });
+  expect(rightState.selection.focus).toEqual({ offset: 0, regionPath: beta.path });
+  expect(leftState.selection.focus).toEqual({ offset: 0, regionPath: beta.path });
 });
 
 test("moves vertically by table cell in block navigation mode", () => {
@@ -192,8 +192,8 @@ test("moves vertically by table cell in block navigation mode", () => {
   const upState = moveCaretVertically(placeAt(state, beta, 2), layout, -1, { mode: "block" });
   const downState = moveCaretVertically(placeAt(state, beta, 2), layout, 1, { mode: "block" });
 
-  expect(upState.selection.focus).toEqual({ offset: 0, regionId: headerB.id });
-  expect(downState.selection.focus).toEqual({ offset: 0, regionId: delta.id });
+  expect(upState.selection.focus).toEqual({ offset: 0, regionPath: headerB.path });
+  expect(downState.selection.focus).toEqual({ offset: 0, regionPath: delta.path });
 });
 
 test("extends block navigation selections by whole regions", () => {
@@ -206,8 +206,8 @@ test("extends block navigation selections by whole regions", () => {
     mode: "block",
   });
 
-  expect(nextState.selection.anchor).toEqual({ offset: 0, regionId: alpha.id });
-  expect(nextState.selection.focus).toEqual({ offset: beta.text.length, regionId: beta.id });
+  expect(nextState.selection.anchor).toEqual({ offset: 0, regionPath: alpha.path });
+  expect(nextState.selection.focus).toEqual({ offset: beta.text.length, regionPath: beta.path });
 });
 
 test("moves out of a table when there is no row above or below", () => {
@@ -220,8 +220,8 @@ test("moves out of a table when there is no row above or below", () => {
   const upState = moveCaretVertically(placeAt(state, headerB, 1), layout, -1);
   const downState = moveCaretVertically(placeAt(state, beta, 1), layout, 1);
 
-  expect(upState.selection.focus.regionId).toBe(before.id);
-  expect(downState.selection.focus.regionId).toBe(after.id);
+  expect(upState.selection.focus.regionPath).toBe(before.path);
+  expect(downState.selection.focus.regionPath).toBe(after.path);
 });
 
 test("extends the selection vertically across a region boundary while keeping the anchor", () => {
@@ -233,9 +233,9 @@ test("extends the selection vertically across a region boundary while keeping th
     extendSelection: true,
   });
 
-  expect(nextState.selection.anchor.regionId).toBe(first.id);
+  expect(nextState.selection.anchor.regionPath).toBe(first.path);
   expect(nextState.selection.anchor.offset).toBe(2);
-  expect(nextState.selection.focus.regionId).toBe(second.id);
+  expect(nextState.selection.focus.regionPath).toBe(second.path);
 });
 
 test("extends the selection to a viewport point while keeping the anchor", () => {
@@ -260,10 +260,10 @@ test("extends the selection to a viewport point while keeping the anchor", () =>
 
   expect(hit).not.toBeNull();
   expect(extended).not.toBeNull();
-  expect(extended!.selection.anchor).toEqual({ offset: 0, regionId: region.id });
+  expect(extended!.selection.anchor).toEqual({ offset: 0, regionPath: region.path });
   expect(extended!.selection.focus).toEqual({
     offset: hit!.offset,
-    regionId: hit!.regionId,
+    regionPath: hit!.regionPath,
   });
 });
 
@@ -273,8 +273,8 @@ test("jumps to the start of the document when moveCaretToDocumentBoundary is inv
   const third = getRegion(state, "gamma");
   const nextState = moveCaretToDocumentBoundary(placeAt(state, third, 2), "start");
 
-  expect(nextState.selection.anchor).toEqual({ offset: 0, regionId: first.id });
-  expect(nextState.selection.focus).toEqual({ offset: 0, regionId: first.id });
+  expect(nextState.selection.anchor).toEqual({ offset: 0, regionPath: first.path });
+  expect(nextState.selection.focus).toEqual({ offset: 0, regionPath: first.path });
 });
 
 test("jumps to the end of the document when moveCaretToDocumentBoundary is invoked with end", () => {
@@ -285,11 +285,11 @@ test("jumps to the end of the document when moveCaretToDocumentBoundary is invok
 
   expect(nextState.selection.anchor).toEqual({
     offset: third.text.length,
-    regionId: third.id,
+    regionPath: third.path,
   });
   expect(nextState.selection.focus).toEqual({
     offset: third.text.length,
-    regionId: third.id,
+    regionPath: third.path,
   });
 });
 
@@ -299,10 +299,10 @@ test("extends the selection to the end of the document while keeping the anchor"
   const third = getRegion(state, "gamma");
   const nextState = moveCaretToDocumentBoundary(placeAt(state, first, 2), "end", true);
 
-  expect(nextState.selection.anchor).toEqual({ offset: 2, regionId: first.id });
+  expect(nextState.selection.anchor).toEqual({ offset: 2, regionPath: first.path });
   expect(nextState.selection.focus).toEqual({
     offset: third.text.length,
-    regionId: third.id,
+    regionPath: third.path,
   });
 });
 
@@ -317,12 +317,12 @@ test("moves vertically across an inline soft break inside one paragraph", () => 
   const layout = layoutAt(state, 320);
   const downState = moveCaretVertically(placeAt(state, region, 1), layout, 1);
 
-  expect(downState.selection.focus.regionId).toBe(region.id);
+  expect(downState.selection.focus.regionPath).toBe(region.path);
   // Crossing the soft break advances past the `\n` into the second line.
   expect(downState.selection.focus.offset).toBeGreaterThan(3);
 
   const upState = moveCaretVertically(downState, layout, -1);
 
-  expect(upState.selection.focus.regionId).toBe(region.id);
+  expect(upState.selection.focus.regionPath).toBe(region.path);
   expect(upState.selection.focus.offset).toBeLessThanOrEqual(3);
 });

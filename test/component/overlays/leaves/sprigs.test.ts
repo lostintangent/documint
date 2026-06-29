@@ -38,7 +38,7 @@ describe("overlay leaf sprigs", () => {
         state,
         {
           endOffset: "Review".length,
-          regionId: region.id,
+          regionPath: region.path,
           startOffset: 0,
         },
         "note",

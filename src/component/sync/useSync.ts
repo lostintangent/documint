@@ -9,7 +9,7 @@ import {
   mergeUnacknowledgedDocumentChanges,
 } from "./external-changes";
 import type { UnacknowledgedDocumentChange } from "./external-changes";
-import { reconcileExternalContentChange } from "./external-reconciliation";
+import { reconcileExternalContentChange } from "./selection";
 import { resolveMentionLineChange } from "./mention-event";
 import type { DocumintStore, EditorStateTransition } from "../store";
 
@@ -205,8 +205,9 @@ export function useSync({
 
 function createDocumentChangeFrameInput(change: UnacknowledgedDocumentChange) {
   return {
+    changeKey: change.changeKey,
     changeKind: change.change.changeKind,
-    ...change.editorTarget,
+    target: change.editorTarget,
   };
 }
 
@@ -214,6 +215,7 @@ function createDocumentChangeEffect(
   change: UnacknowledgedDocumentChange,
 ): DocumentChangeEffect {
   return {
+    changeKey: change.changeKey,
     changeKind: change.change.changeKind,
     kind: "document-change",
     target: change.editorTarget,

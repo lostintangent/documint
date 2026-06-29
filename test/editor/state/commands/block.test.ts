@@ -90,7 +90,7 @@ describe("Block commands", () => {
     const paragraph = state.documentIndex.regions.find((c) => c.text === "alpha");
 
     expect(toMarkdown(state)).toBe("Lead\n\nalpha\n");
-    expect(state.selection.focus.regionId).toBe(paragraph!.id);
+    expect(state.selection.focus.regionPath).toBe(paragraph!.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -182,7 +182,7 @@ describe("Block commands", () => {
     state = insertLineBreak(state) ?? state;
 
     const selected = state.documentIndex.regions.find(
-      (region) => region.id === state.selection.focus.regionId,
+      (region) => region.path === state.selection.focus.regionPath,
     );
 
     expect(state.documentIndex.regions.map((region) => region.text)).toEqual([text, ""]);
@@ -224,7 +224,7 @@ describe("Block commands", () => {
     const merged = getRegion(state, "FirstSecond");
 
     expect(toMarkdown(state)).toBe("FirstSecond\n");
-    expect(state.selection.focus.regionId).toBe(merged.id);
+    expect(state.selection.focus.regionPath).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("First".length);
   });
 
@@ -242,7 +242,7 @@ describe("Block commands", () => {
 
     expect(toMarkdown(state)).toBe("Leadalpha\n\n- bravo\n");
     const merged = state.documentIndex.regions.find((c) => c.text === "Leadalpha");
-    expect(state.selection.focus.regionId).toBe(merged!.id);
+    expect(state.selection.focus.regionPath).toBe(merged!.path);
     expect(state.selection.focus.offset).toBe("Lead".length);
   });
 
@@ -270,7 +270,7 @@ describe("Block commands", () => {
     expect(state.documentIndex.regions.filter((container) => container.text === "")).toHaveLength(
       0,
     );
-    expect(state.selection.focus.regionId).toBe(nextParagraph.id);
+    expect(state.selection.focus.regionPath).toBe(nextParagraph.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -295,7 +295,7 @@ describe("Block commands", () => {
     const after = getRegion(state, "After");
 
     expect(toMarkdown(state)).toBe("After\n");
-    expect(state.selection.focus.regionId).toBe(after.id);
+    expect(state.selection.focus.regionPath).toBe(after.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -347,7 +347,7 @@ describe("Block commands", () => {
     expect(toMarkdown(state)).toBe("- top\n  - nested\n\nstub\n");
     // The caret should land where the left arrow would take us — at the end
     // of the nested item, not the end of the top-level item.
-    expect(state.selection.focus.regionId).toBe(nested.id);
+    expect(state.selection.focus.regionPath).toBe(nested.path);
     expect(state.selection.focus.offset).toBe(nested.text.length);
   });
 
@@ -376,7 +376,7 @@ describe("Block commands", () => {
     const top = getRegion(state, "top");
 
     expect(toMarkdown(state)).toBe("- top\n  - nested\n");
-    expect(state.selection.focus.regionId).toBe(top.id);
+    expect(state.selection.focus.regionPath).toBe(top.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -413,7 +413,7 @@ describe("Block commands", () => {
       throw new Error("Expected inserted empty paragraph");
     }
 
-    expect(paragraphState.selection.focus.regionId).toBe(insertedParagraph.id);
+    expect(paragraphState.selection.focus.regionPath).toBe(insertedParagraph.path);
     expect(paragraphState.selection.focus.offset).toBe(0);
   });
 
@@ -474,7 +474,7 @@ describe("Block commands", () => {
     quoteState = deleteBackward(quoteState) ?? quoteState;
 
     expect(toMarkdown(quoteState)).toBe("> alpha\n");
-    expect(quoteState.selection.focus.regionId).toBe(alpha.id);
+    expect(quoteState.selection.focus.regionPath).toBe(alpha.path);
     expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
   });
 
@@ -495,7 +495,7 @@ describe("Block commands", () => {
     quoteState = deleteBackward(quoteState) ?? quoteState;
 
     expect(toMarkdown(quoteState)).toBe("> alpha\n");
-    expect(quoteState.selection.focus.regionId).toBe(alpha.id);
+    expect(quoteState.selection.focus.regionPath).toBe(alpha.path);
     expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
   });
 
@@ -606,7 +606,7 @@ describe("Block commands", () => {
 
     const merged = getRegion(quoteState, "alphabeta");
 
-    expect(quoteState.selection.focus.regionId).toBe(merged.id);
+    expect(quoteState.selection.focus.regionPath).toBe(merged.path);
     expect(quoteState.selection.focus.offset).toBe("alpha".length);
   });
 
@@ -627,7 +627,7 @@ describe("Block commands", () => {
     const merged = getRegion(state, "bravocharlie");
 
     expect(toMarkdown(state)).toBe("> alpha\n>\n> bravocharlie\n");
-    expect(state.selection.focus.regionId).toBe(merged.id);
+    expect(state.selection.focus.regionPath).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("bravo".length);
   });
 
@@ -642,7 +642,7 @@ describe("Block commands", () => {
 
     const merged = getRegion(state, "FirstSecond");
 
-    expect(state.selection.focus.regionId).toBe(merged.id);
+    expect(state.selection.focus.regionPath).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("First".length);
   });
 
@@ -664,7 +664,7 @@ describe("Block commands", () => {
 
       expect(toMarkdown(state)).toBe("alpha\n\nbeta\n");
       const survivor = getRegion(state, "beta");
-      expect(state.selection.focus.regionId).toBe(survivor.id);
+      expect(state.selection.focus.regionPath).toBe(survivor.path);
       expect(state.selection.focus.offset).toBe(0);
     });
 
@@ -677,7 +677,7 @@ describe("Block commands", () => {
 
       expect(toMarkdown(state)).toBe("alpha\n\nbeta\n");
       const survivor = getRegion(state, "alpha");
-      expect(state.selection.focus.regionId).toBe(survivor.id);
+      expect(state.selection.focus.regionPath).toBe(survivor.path);
       expect(state.selection.focus.offset).toBe("alpha".length);
     });
 

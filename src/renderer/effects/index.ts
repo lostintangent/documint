@@ -10,7 +10,6 @@ import type { RendererEffect, TextFadeFrame, TextPulseFrame } from "./types";
 export type { EffectEnvironment } from "@/types";
 export type { PaintEffect } from "./custom-effects";
 export { createPaintEffect } from "./custom-effects";
-export { documentChangeFrameTargetKey } from "./types";
 export type {
   BlockFlashFrame,
   BlockPulseFrame,

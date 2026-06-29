@@ -2,21 +2,15 @@ import { describe, expect, test } from "bun:test";
 import {
   createDocument,
   createBlockquoteBlock,
-  createImage,
   createParagraphTextBlock,
   createLink,
-  createLineBreak,
   createMention,
-  createParagraphBlock,
-  createResource,
   createText,
   createListBlock,
   createListItemBlock,
   extractPlainTextFromInlineNodes,
-  findBlockById,
   findBlockChildIndicesByReference,
   mapInlines,
-  measureInlineNodeText,
   visitBlockTree,
   visitDocument,
 } from "@/document";
@@ -134,60 +128,6 @@ Second
     expect(visited).toEqual(["root.1.children"]);
   });
 
-  test("visits plain text with region paths and text-coordinate offsets", () => {
-    const snapshot = createDocument([
-      createParagraphBlock([
-        createText("plain "),
-        createText("bold", ["bold"]),
-        createText("code", ["code"]),
-        createLink({ children: [createText("link")], url: "https://example.com" }),
-        createText(" tail"),
-      ]),
-    ]);
-    const visited: string[] = [];
-
-    visitDocument(snapshot, {
-      enterPlainText(text, context) {
-        visited.push(`${context.path}:${context.startOffset}-${context.endOffset}:${text}`);
-      },
-    });
-
-    expect(visited).toEqual(["root.0.children:0-6:plain ", "root.0.children:18-23: tail"]);
-  });
-
-  test("measures references as single text-coordinate offsets", () => {
-    const image = createImage({ alt: "Preview", url: "https://example.com/image.png" });
-    const mention = createMention({ name: "Jane Doe", userId: "user-123" });
-    const resource = createResource({
-      label: "Recording session",
-      protocol: "demo-resource:",
-      url: "demo-resource://recording/live",
-    });
-    const lineBreak = createLineBreak();
-    const snapshot = createDocument([
-      createParagraphBlock([
-        createText("a"),
-        image,
-        mention,
-        resource,
-        lineBreak,
-        createText("bc", ["code"]),
-        createText("z"),
-      ]),
-    ]);
-    const visited: string[] = [];
-
-    expect([image, mention, resource, lineBreak].map(measureInlineNodeText)).toEqual([1, 1, 1, 1]);
-
-    visitDocument(snapshot, {
-      enterPlainText(text, context) {
-        visited.push(`${context.startOffset}-${context.endOffset}:${text}`);
-      },
-    });
-
-    expect(visited).toEqual(["0-1:a", "7-8:z"]);
-  });
-
   test("maps inline lists with nested link children and stable paths", () => {
     const inlines = [
       createText("See "),
@@ -238,22 +178,23 @@ Second
     expect(visited).toEqual(["A", "B", "one"]);
   });
 
-  test("finds nested blocks through document queries", () => {
+  test("locates nested blocks by reference in committed trees", () => {
     const nestedParagraph = createParagraphTextBlock("Inside");
     const snapshot = createDocument([createBlockquoteBlock([nestedParagraph])]);
-    const nestedParagraphId =
-      snapshot.blocks[0]?.type === "blockquote" ? snapshot.blocks[0].children[0]?.id : null;
+    const root = snapshot.blocks[0];
+    const committedParagraph = root?.type === "blockquote" ? root.children[0] : null;
 
-    if (!nestedParagraphId) {
-      throw new Error("Expected nested paragraph id");
+    if (!committedParagraph) {
+      throw new Error("Expected nested paragraph");
     }
 
-    const resolved = findBlockById(snapshot.blocks, nestedParagraphId);
-
-    expect(resolved?.id).toBe(nestedParagraphId);
-    expect(resolved?.type).toBe("paragraph");
-    expect(resolved?.plainText).toBe("Inside");
-    expect(findBlockById(snapshot.blocks, "missing-block")).toBeNull();
+    expect(findBlockChildIndicesByReference(snapshot.blocks, committedParagraph)).toEqual({
+      childIndices: [0],
+      rootOffset: 0,
+    });
+    expect(
+      findBlockChildIndicesByReference(snapshot.blocks, createParagraphTextBlock("Inside")),
+    ).toBeNull();
   });
 
   test("locates blocks by reference identity in un-normalized trees", () => {

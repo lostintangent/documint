@@ -36,14 +36,14 @@ export function resolveTableCellChromeFrame(
 
 export function resolveActiveTableCellGeometryFrame({
   activeFlash,
-  activeRegionId,
+  activeRegionPath,
   endLineIndex,
   layout,
   regionBounds,
   startLineIndex,
 }: {
   activeFlash: BlockFlashFrame | null;
-  activeRegionId: string;
+  activeRegionPath: string;
   endLineIndex: number;
   layout: DocumentLayout;
   regionBounds: Map<string, RegionBounds>;
@@ -53,7 +53,7 @@ export function resolveActiveTableCellGeometryFrame({
     endLineIndex,
     layout,
     regionBounds,
-    regionId: activeRegionId,
+    regionPath: activeRegionPath,
     startLineIndex,
   });
 
@@ -64,17 +64,17 @@ export function resolveTableCellGeometryFrame({
   endLineIndex,
   layout,
   regionBounds,
-  regionId,
+  regionPath,
   startLineIndex,
 }: {
   endLineIndex: number;
   layout: DocumentLayout;
   regionBounds: Map<string, RegionBounds>;
-  regionId: string;
+  regionPath: string;
   startLineIndex: number;
 }): TableCellGeometryFrame | null {
-  const cellBounds = regionBounds.get(regionId) ?? null;
-  const cellLineIndices = layout.regionLineIndices.get(regionId) ?? null;
+  const cellBounds = regionBounds.get(regionPath) ?? null;
+  const cellLineIndices = layout.regionLineIndices.get(regionPath) ?? null;
 
   if (!cellBounds || !cellLineIndices || cellLineIndices.length === 0) {
     return null;

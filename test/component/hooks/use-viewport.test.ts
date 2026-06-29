@@ -8,7 +8,7 @@ test("keeps cached layout for selection-only editor transitions", () => {
   const region = state.documentIndex.regions[0]!;
   const nextState = setSelection(state, {
     offset: region.text.length,
-    regionId: region.id,
+    regionPath: region.path,
   });
 
   expect(shouldInvalidateLayoutAfterEditorTransition(state, nextState)).toBe(false);

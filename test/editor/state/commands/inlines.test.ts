@@ -1,6 +1,7 @@
 // Inline command coverage: mark toggles, soft line breaks, and images.
 
 import { describe, expect, test } from "bun:test";
+import { createLineBreak, createMention, createRaw, createText } from "@/document";
 import {
   deleteBackward,
   deleteForward,
@@ -11,7 +12,30 @@ import {
   resizeImage,
   toggleMark,
 } from "@/editor/state";
+import { spliceInlineNodes } from "@/editor/state/commands/actions/inlines/shared";
 import { getRegion, placeAt, selectSubstring, setup, toMarkdown } from "../../helpers";
+
+describe("Inline splicing", () => {
+  test("inserts structured inline nodes at collapsed boundaries", () => {
+    expect(spliceInlineNodes([createText("abc")], 0, 0, [createLineBreak()])).toEqual([
+      createLineBreak(),
+      createText("abc"),
+    ]);
+
+    expect(
+      spliceInlineNodes(
+        [createText("alpha"), createText("omega")],
+        "alpha".length,
+        "alpha".length,
+        [createMention({ name: "Jane Doe", userId: "user-123" })],
+      ),
+    ).toEqual([
+      createText("alpha"),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createText("omega"),
+    ]);
+  });
+});
 
 describe("Inline mark toggles", () => {
   test("toggles strong and emphasis marks on a single-container selection", () => {
@@ -263,7 +287,7 @@ describe("Mentions", () => {
       base,
       {
         endOffset: region.text.length,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: region.text.length,
       },
       "user-123",
@@ -281,7 +305,7 @@ describe("Mentions", () => {
       base,
       {
         endOffset: "Hello @ja".length,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: "Hello ".length,
       },
       "user-123",
@@ -299,7 +323,7 @@ describe("Mentions", () => {
       base,
       {
         endOffset: "Hello @ja".length,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: "Hello ".length,
       },
       "user-123",
@@ -310,6 +334,51 @@ describe("Mentions", () => {
     expect(next).not.toBeNull();
     expect(getRegion(next!, "Hello ￼ ").text).toBe("Hello ￼ ");
     expect(next!.selection.focus.offset).toBe("Hello ￼ ".length);
+  });
+
+  test("replaces an image atom with a user mention", () => {
+    const base = setup("Hello ![alt](https://example.com/image.png)!\n");
+    const region = getRegion(base, "Hello ￼!");
+    const imageRun = regionInlines(region).find((run) => run.node.type === "image");
+
+    if (!imageRun) {
+      throw new Error("Expected image run");
+    }
+
+    const next = insertMention(
+      base,
+      {
+        endOffset: imageRun.end,
+        regionPath: region.path,
+        startOffset: imageRun.start,
+      },
+      "user-123",
+      "Jane Doe",
+    );
+
+    expect(next).not.toBeNull();
+    expect(toMarkdown(next!)).toBe("Hello @[Jane Doe](user-123)!\n");
+  });
+
+  test("preserves raw inline text around structured inline replacements", () => {
+    const nextNodes = spliceInlineNodes(
+      [
+        createText("before "),
+        createRaw({ originalType: "html", source: "<x-raw>" }),
+        createText(" after"),
+      ],
+      "before <x".length,
+      "before <x-".length,
+      [createMention({ name: "Jane Doe", userId: "user-123" })],
+    );
+
+    expect(nextNodes).toEqual([
+      createText("before "),
+      createRaw({ originalType: "html", source: "<x" }),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createRaw({ originalType: "html", source: "raw>" }),
+      createText(" after"),
+    ]);
   });
 
   test("deletes user mentions atomically", () => {

@@ -1,5 +1,9 @@
 import type { DocumentLayout, LayoutRect } from "@/editor/layout";
-import { findAncestorIndexedBlock, resolveBlock, type EditorState } from "@/editor/state";
+import {
+  findAncestorIndexedBlockByPath,
+  resolveBlockByPath,
+  type EditorState,
+} from "@/editor/state";
 
 export type BlockquoteRuleFrame = {
   isActive: boolean;
@@ -25,13 +29,13 @@ export function resolveHeadingRules(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    const block = resolveBlock(editorState.documentIndex, line.blockId);
+    const block = resolveBlockByPath(editorState.documentIndex, line.blockPath);
 
     if (block?.type !== "heading" || (block.depth !== 1 && block.depth !== 2)) {
       continue;
     }
 
-    const current = rules.get(block.id);
+    const current = rules.get(line.blockPath);
     const left = line.left + line.contentInset;
     const right = width - layout.options.paddingX;
     const next: LayoutRect = {
@@ -41,7 +45,7 @@ export function resolveHeadingRules(
       width: Math.max(headingRuleMinimumWidth, right - left),
     };
 
-    rules.set(block.id, current ? mergeHeadingRuleRects(current, next) : next);
+    rules.set(line.blockPath, current ? mergeHeadingRuleRects(current, next) : next);
   }
 
   return rules;
@@ -64,7 +68,7 @@ function mergeHeadingRuleRects(
 export function resolveBlockquoteRuleFrames(
   layout: DocumentLayout,
   editorState: EditorState,
-  activeBlockId: string | null,
+  activeBlockPath: string | null,
   startIndex: number,
   endIndex: number,
 ) {
@@ -72,9 +76,9 @@ export function resolveBlockquoteRuleFrames(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
-    const blockquoteEntry = findAncestorIndexedBlock(
+    const blockquoteEntry = findAncestorIndexedBlockByPath(
       editorState.documentIndex,
-      line.blockId,
+      line.blockPath,
       "blockquote",
     );
 
@@ -82,11 +86,11 @@ export function resolveBlockquoteRuleFrames(
       continue;
     }
 
-    const current = rules.get(blockquoteEntry.block.id);
+    const current = rules.get(blockquoteEntry.path);
     const top = line.top - blockquoteRuleTopBleed;
     const bottom = line.top + line.height - blockquoteRuleBottomInset;
     const next: BlockquoteRuleFrame = {
-      isActive: line.blockId === activeBlockId,
+      isActive: line.blockPath === activeBlockPath,
       rect: {
         height: Math.max(blockquoteRuleMinimumHeight, bottom - top),
         left:
@@ -97,7 +101,7 @@ export function resolveBlockquoteRuleFrames(
     };
 
     rules.set(
-      blockquoteEntry.block.id,
+      blockquoteEntry.path,
       current
         ? {
             isActive: current.isActive || next.isActive,

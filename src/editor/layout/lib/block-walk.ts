@@ -1,15 +1,20 @@
 // Owns the leaf-block walk shared by exact layout and virtual height estimation.
 
-import { isContainerBlock, isInertBlock, type DocumentIndex } from "../../state";
+import {
+  isContainerBlock,
+  isInertBlock,
+  type DocumentIndex,
+} from "../../state";
 import { resolveBlockGap } from "./block-spacing";
 
 export type LayoutBlockWalkEntry = {
-  blockRegionsInScope: string[];
   gapBefore: number;
   indexedBlock: DocumentIndex["blocks"][number];
   isInert: boolean;
   previousLaidOutBlock: DocumentIndex["blocks"][number] | null;
   previousLaidOutBlockIsInert: boolean;
+  regionEndIndex: number;
+  regionStartIndex: number;
 };
 
 export function* walkLayoutBlocks(
@@ -17,11 +22,13 @@ export function* walkLayoutBlocks(
   {
     blockGap,
     layoutBlocks = documentIndex.blocks,
-    visibleRegionIds,
+    visibleRegionEndIndex = documentIndex.regions.length,
+    visibleRegionStartIndex = 0,
   }: {
     blockGap: number;
     layoutBlocks?: DocumentIndex["blocks"];
-    visibleRegionIds?: Set<string>;
+    visibleRegionEndIndex?: number;
+    visibleRegionStartIndex?: number;
   },
 ): Generator<LayoutBlockWalkEntry> {
   let previousLaidOutBlock: DocumentIndex["blocks"][number] | null = null;
@@ -30,23 +37,21 @@ export function* walkLayoutBlocks(
     if (isContainerBlock(indexedBlock)) continue;
 
     const isInert = isInertBlock(indexedBlock);
-    const blockRegionsInScope = visibleRegionIds
-      ? indexedBlock.regionIds.filter((id) => visibleRegionIds.has(id))
-      : indexedBlock.regionIds;
+    const regionStartIndex = Math.max(indexedBlock.regionRangeStart, visibleRegionStartIndex);
+    const regionEndIndex = Math.min(indexedBlock.regionRangeEnd, visibleRegionEndIndex);
 
     // Skip text/table blocks whose regions are outside this walk. Inert leaves
     // still lay out because they reserve block-flow height without regions.
-    if (!isInert && blockRegionsInScope.length === 0) continue;
+    if (!isInert && regionStartIndex >= regionEndIndex) continue;
 
     yield {
-      blockRegionsInScope,
       gapBefore:
         previousLaidOutBlock === null
           ? 0
           : resolveBlockGap(
               documentIndex.blockIndex,
-              previousLaidOutBlock.block.id,
-              indexedBlock.block.id,
+              previousLaidOutBlock.path,
+              indexedBlock.path,
               blockGap,
             ),
       indexedBlock,
@@ -54,6 +59,8 @@ export function* walkLayoutBlocks(
       previousLaidOutBlock,
       previousLaidOutBlockIsInert:
         previousLaidOutBlock !== null && isInertBlock(previousLaidOutBlock),
+      regionEndIndex,
+      regionStartIndex,
     };
 
     previousLaidOutBlock = indexedBlock;

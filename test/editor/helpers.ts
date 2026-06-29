@@ -60,7 +60,7 @@ export function placeAt(
 ): EditorState {
   const resolvedOffset = offset === "start" ? 0 : offset === "end" ? region.text.length : offset;
 
-  return setSelection(state, { regionId: region.id, offset: resolvedOffset });
+  return setSelection(state, { regionPath: region.path, offset: resolvedOffset });
 }
 
 /**
@@ -74,8 +74,8 @@ export function selectIn(
   end: number,
 ): EditorState {
   return setSelection(state, {
-    anchor: { regionId: region.id, offset: start },
-    focus: { regionId: region.id, offset: end },
+    anchor: { regionPath: region.path, offset: start },
+    focus: { regionPath: region.path, offset: end },
   });
 }
 

@@ -7,57 +7,7 @@ import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdo
 import { fixtureOptions } from "../../playground/src/lib/data";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
 
-describe("Inline parsing", () => {
-  // --- Hard line breaks ---
-  // All four CommonMark encodings produce a `lineBreak` inline between the
-  // surrounding `a` and `b` text runs. The `<br>\n` case additionally
-  // consumes the trailing newline so authored `<br>\n` (a common line-wrap
-  // convention) doesn't leave a soft break.
-  test.each([
-    ["bare <br>", "a<br>b\n"],
-    ["<br>\\n (trailing newline absorbed)", "a<br>\nb\n"],
-    ["two-or-more trailing spaces", "a  \nb\n"],
-    ["backslash-newline", "a\\\nb\n"],
-  ])("parses %s as a hard line break", (_label, source) => {
-    const paragraph = parseParagraph(source);
-
-    expect(paragraph.children).toHaveLength(3);
-    expectTextAt(paragraph.children, 0, "a");
-    expectInlineAt(paragraph.children, 1, "lineBreak");
-    expectTextAt(paragraph.children, 2, "b");
-  });
-
-  test.each([["<br/>"], ["<br />"], ["<BR>"], ["<Br/>"]])(
-    "accepts %s as a self-closing / case-insensitive <br> spelling",
-    (spelling) => {
-      const paragraph = parseParagraph(`a${spelling}b\n`);
-
-      expect(paragraph.children).toHaveLength(3);
-      expectInlineAt(paragraph.children, 1, "lineBreak");
-    },
-  );
-
-  test("treats a bare intra-paragraph newline as a soft break, not a hard break", () => {
-    // A soft break is preserved as a literal `\n` inside the text run; the
-    // layout's whitespace handling is what collapses it visually. There must
-    // be no `lineBreak` inline produced.
-    const paragraph = parseParagraph("a\nb\n");
-
-    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
-  });
-
-  test.each([
-    ["hex", "&#x20;leading\n", " leading"],
-    ["uppercase hex", "&#X20;leading\n", " leading"],
-    ["decimal", "&#32;leading\n", " leading"],
-    ["repeated", "&#x20;&#32;leading\n", "  leading"],
-  ])("decodes %s ordinary-space entities as inline spaces", (_label, source, expected) => {
-    const paragraph = parseParagraph(source);
-
-    expectTextAt(paragraph.children, 0, expected);
-  });
-
-  // --- Mentions ---
+describe("Mentions", () => {
   test("parses user mentions as semantic inline nodes", () => {
     const paragraph = parseParagraph("Hello @[Jane Doe](user-123)!\n");
     const mention = expectInlineAt(paragraph.children, 1, "mention");
@@ -98,7 +48,9 @@ describe("Inline parsing", () => {
     expect(paragraph.children).toHaveLength(1);
     expectTextAt(paragraph.children, 0, "email@Jane.com and @JaneDoe");
   });
+});
 
+describe("Resources", () => {
   test("parses registered protocol links as semantic resource nodes", () => {
     const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n", {
       resourceProtocols: ["demo-resource:"],
@@ -227,23 +179,9 @@ describe("Inline parsing", () => {
       "link",
     );
   });
+});
 
-  // --- Edge cases that mimic hard-break / mark syntax but aren't ---
-  test("preserves <br>-like tags that aren't actually `<br>` as raw HTML", () => {
-    const paragraph = parseParagraph("a<bridge>b\n");
-
-    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
-    expect(paragraph.children.some((child) => child.type === "raw")).toBe(true);
-  });
-
-  test("does not treat an escaped backslash followed by newline as a hard break", () => {
-    // `\\\\\n` in source = two literal backslashes + newline. The first
-    // backslash escapes the second, leaving the `\n` as a soft break.
-    const paragraph = parseParagraph("a\\\\\nb\n");
-
-    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
-  });
-
+describe("Inline marks", () => {
   test("does not treat intra-word underscores as italic delimiters", () => {
     const paragraph = parseParagraph("snake_case_identifier\n");
 
@@ -269,6 +207,83 @@ describe("Inline parsing", () => {
 
     expectTextAt(paragraph.children, 0, "code", ["code", "italic"]);
     expectTextAt(paragraph.children, 2, "underlined", ["code", "underline"]);
+  });
+});
+
+describe("Line breaks", () => {
+  // All four CommonMark encodings produce a `lineBreak` inline between the
+  // surrounding `a` and `b` text runs. The `<br>\n` case additionally
+  // consumes the trailing newline so authored `<br>\n` (a common line-wrap
+  // convention) doesn't leave a soft break.
+  test.each([
+    ["bare <br>", "a<br>b\n"],
+    ["<br>\\n (trailing newline absorbed)", "a<br>\nb\n"],
+    ["two-or-more trailing spaces", "a  \nb\n"],
+    ["backslash-newline", "a\\\nb\n"],
+  ])("parses %s as a hard line break", (_label, source) => {
+    const paragraph = parseParagraph(source);
+
+    expect(paragraph.children).toHaveLength(3);
+    expectTextAt(paragraph.children, 0, "a");
+    expectInlineAt(paragraph.children, 1, "lineBreak");
+    expectTextAt(paragraph.children, 2, "b");
+  });
+
+  test.each([["<br/>"], ["<br />"], ["<BR>"], ["<Br/>"]])(
+    "accepts %s as a self-closing / case-insensitive <br> spelling",
+    (spelling) => {
+      const paragraph = parseParagraph(`a${spelling}b\n`);
+
+      expect(paragraph.children).toHaveLength(3);
+      expectInlineAt(paragraph.children, 1, "lineBreak");
+    },
+  );
+
+  test("treats a bare intra-paragraph newline as a soft break, not a hard break", () => {
+    // A soft break is preserved as a literal `\n` inside the text run; the
+    // layout's whitespace handling is what collapses it visually. There must
+    // be no `lineBreak` inline produced.
+    const paragraph = parseParagraph("a\nb\n");
+
+    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
+  });
+
+  test("does not treat an escaped backslash followed by newline as a hard break", () => {
+    // `\\\\\n` in source = two literal backslashes + newline. The first
+    // backslash escapes the second, leaving the `\n` as a soft break.
+    const paragraph = parseParagraph("a\\\\\nb\n");
+
+    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
+  });
+});
+
+describe("Entities", () => {
+  test.each([
+    ["hex", "&#x20;leading\n", " leading"],
+    ["uppercase hex", "&#X20;leading\n", " leading"],
+    ["decimal", "&#32;leading\n", " leading"],
+    ["repeated", "&#x20;&#32;leading\n", "  leading"],
+  ])("decodes %s ordinary-space entities as inline spaces", (_label, source, expected) => {
+    const paragraph = parseParagraph(source);
+
+    expectTextAt(paragraph.children, 0, expected);
+  });
+});
+
+describe("Unsupported inline syntax", () => {
+  test("preserves text directives as unsupported inline content", () => {
+    const paragraph = parseParagraph("Paragraph with :badge[alpha]{disabled} inline.\n");
+    const textDirective = findInline(paragraph.children, "raw");
+
+    expect(textDirective.originalType).toBe("textDirective");
+    expect(textDirective.source).toBe(":badge[alpha]{disabled}");
+  });
+
+  test("preserves <br>-like tags that aren't actually `<br>` as raw HTML", () => {
+    const paragraph = parseParagraph("a<bridge>b\n");
+
+    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
+    expect(paragraph.children.some((child) => child.type === "raw")).toBe(true);
   });
 });
 
@@ -304,22 +319,16 @@ describe("Backslash escapes", () => {
 });
 
 describe("Block parsing", () => {
-  test("preserves directives as semantic block and unsupported inline content", () => {
+  test("preserves container directives as semantic blocks", () => {
     const document = parseDocument(`:::callout{tone}
 Body
 :::
-
-Paragraph with :badge[alpha]{disabled} inline.
 `);
     const containerDirective = expectBlockAt(document, 0, "directive");
-    const paragraph = expectBlockAt(document, 1, "paragraph");
-    const textDirective = findInline(paragraph.children, "raw");
 
     expect(containerDirective.name).toBe("callout");
     expect(containerDirective.attributes).toBe("tone");
     expect(containerDirective.body).toBe("Body");
-    expect(textDirective.originalType).toBe("textDirective");
-    expect(textDirective.source).toBe(":badge[alpha]{disabled}");
   });
 
   test("normalizes blank task items into empty semantic paragraphs", () => {
@@ -424,7 +433,7 @@ describe("Comment appendix extraction", () => {
     expect(document.comments[2]?.quote).toBe("Table cell anchors");
   });
 
-  test("lets document normalization own parsed comment thread ids", () => {
+  test("lets document construction own parsed comment thread ids", () => {
     const document = parseDocument(`Paragraph with a comment.
 
 :::documint-comments
@@ -449,6 +458,32 @@ describe("Comment appendix extraction", () => {
 
     expect(document.comments[0]?.id).toMatch(/^commentThread-/);
     expect(document.comments[0]?.id).not.toBe("persisted-comment-id");
+  });
+
+  test("keeps generated comment thread ids stable across markdown round trips", () => {
+    const first = parseDocument(`Paragraph with a comment.
+
+:::documint-comments
+[
+  {
+    "anchor": {
+      "prefix": "Paragraph",
+      "suffix": " with a comment."
+    },
+    "comments": [
+      {
+        "body": "Reviewing this.",
+        "updatedAt": "2026-04-05T12:00:00.000Z"
+      }
+    ],
+    "quote": " with "
+  }
+]
+:::
+`);
+    const second = parseDocument(serializeDocument(first));
+
+    expect(second.comments[0]?.id).toBe(first.comments[0]?.id);
   });
 
   test("drops misplaced comment appendices from document content", () => {
@@ -484,8 +519,8 @@ Paragraph after misplaced appendix.
   });
 });
 
-describe("Document identity", () => {
-  test("produces stable ids across repeated parses", () => {
+describe("Document canonicalization", () => {
+  test("produces stable semantic nodes across repeated parses", () => {
     const source = `# Heading
 
 \`\`\`ts
@@ -545,26 +580,16 @@ function summarizeRepresentativeNodes(document: ReturnType<typeof parseDocument>
   const containerDirective = expectBlockAt(document, 5, "directive");
 
   return {
-    codeId: code.id,
     codeLanguage: code.language,
     codeSource: code.source,
     containerDirectiveAttributes: containerDirective.attributes,
     containerDirectiveBody: containerDirective.body,
-    containerDirectiveId: containerDirective.id,
     containerDirectiveName: containerDirective.name,
-    firstTableCellId: firstCell.id,
-    firstTableRowId: firstRow.id,
-    headingId: heading.id,
     headingText: heading.plainText,
-    inlineDirectiveId: inlineDirective.id,
     inlineDirectiveRaw: inlineDirective.source,
-    listId: list.id,
-    listItemId: listItem.id,
     listItemText: listItem.plainText,
     listText: list.plainText,
-    paragraphId: paragraph.id,
     paragraphText: paragraph.plainText,
-    tableId: table.id,
     tableText: table.plainText,
   };
 }

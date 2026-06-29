@@ -14,10 +14,10 @@ describe("Inert leaf blocks", () => {
     }
 
     expect(isInertBlock(divider)).toBe(true);
-    expect(previousBlockInFlow(state.documentIndex, divider.block.id)?.block.type).toBe(
+    expect(previousBlockInFlow(state.documentIndex, divider.path)?.block.type).toBe(
       "paragraph",
     );
-    expect(nextBlockInFlow(state.documentIndex, divider.block.id)?.block.type).toBe("paragraph");
+    expect(nextBlockInFlow(state.documentIndex, divider.path)?.block.type).toBe("paragraph");
   });
 
   test("right arrow at end of paragraph skips the divider and lands at start of the next paragraph", () => {
@@ -27,7 +27,7 @@ describe("Inert leaf blocks", () => {
 
     const next = moveCaretHorizontally(placeAt(state, alpha, "end"), 1);
 
-    expect(next.selection.focus.regionId).toBe(beta.id);
+    expect(next.selection.focus.regionPath).toBe(beta.path);
     expect(next.selection.focus.offset).toBe(0);
   });
 
@@ -38,7 +38,7 @@ describe("Inert leaf blocks", () => {
 
     const next = moveCaretHorizontally(placeAt(state, beta, "start"), -1);
 
-    expect(next.selection.focus.regionId).toBe(alpha.id);
+    expect(next.selection.focus.regionPath).toBe(alpha.path);
     expect(next.selection.focus.offset).toBe(alpha.text.length);
   });
 
@@ -54,7 +54,7 @@ describe("Inert leaf blocks", () => {
 
     const next = moveCaretVertically(placeAt(state, alpha, "end"), layout, 1);
 
-    expect(next.selection.focus.regionId).toBe(beta.id);
+    expect(next.selection.focus.regionPath).toBe(beta.path);
   });
 
   test("up arrow from a paragraph below a divider lands in the paragraph above it", () => {
@@ -69,6 +69,6 @@ describe("Inert leaf blocks", () => {
 
     const next = moveCaretVertically(placeAt(state, beta, "start"), layout, -1);
 
-    expect(next.selection.focus.regionId).toBe(alpha.id);
+    expect(next.selection.focus.regionPath).toBe(alpha.path);
   });
 });

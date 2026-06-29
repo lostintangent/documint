@@ -11,8 +11,7 @@ import type { DocumentIndex } from "../state";
 
 export type EditorSearchMatch = {
   endOffset: number;
-  path: string;
-  regionId: string;
+  regionPath: string;
   startOffset: number;
 };
 
@@ -52,8 +51,7 @@ export function resolveEditorSearchMatches(
 
       matches.push({
         endOffset,
-        path: region.path,
-        regionId: region.id,
+        regionPath: region.path,
         startOffset: searchText.startOffsetAt(matchOffset),
       });
       matchOffset = searchText.text.indexOf(normalizedQuery, matchOffset + normalizedQuery.length);

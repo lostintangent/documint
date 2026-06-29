@@ -10,7 +10,7 @@ import { previousRegionInFlow, resolveSiblingRootBlock } from "../../../index/qu
 import { normalizeSelection, target } from "../../../selection";
 import { resolveSelectionTextReplacement } from "../insertion/replace";
 import { areCompatibleLists } from "../shared";
-import { regionPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
+import { shiftedRegionBlockTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
 import { resolveCharacterDelete } from "./character";
 
@@ -76,7 +76,7 @@ function resolveExpandedSelectionDelete(state: EditorState): EditorStateAction |
   const normalized = normalizeSelection(state.documentIndex, state.selection);
 
   if (
-    normalized.start.regionId === normalized.end.regionId &&
+    normalized.start.regionPath === normalized.end.regionPath &&
     normalized.start.offset === normalized.end.offset
   ) {
     return null;
@@ -155,9 +155,9 @@ function mergeAdjacentLists(
   // unchanged into the merged list, and the next list's items get
   // appended after, so nothing shifts indices in the previous list's
   // subtree.
-  const previousInFlow = previousRegionInFlow(documentIndex, ctx.region.id);
+  const previousInFlow = previousRegionInFlow(documentIndex, ctx.region.path);
   const cursorTarget = previousInFlow
-    ? regionPathTarget(previousInFlow, ctx.rootIndex - 1, "end")
+    ? shiftedRegionBlockTarget(previousInFlow, ctx.rootIndex - 1, "end")
     : target.root(ctx.rootIndex - 1, "end");
 
   return {

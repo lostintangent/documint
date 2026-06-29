@@ -54,8 +54,8 @@ export function createDocumentFrame(
   );
   const { chrome, listMarkerPlans } = resolveDocumentFrameChrome({
     blockFlashes: resolvedEffects.blockFlashes,
-    activeBlockId: options.activeBlockId,
-    activeRegionId: options.activeRegionId,
+    activeBlockPath: options.activeBlockPath,
+    activeRegionPath: options.activeRegionPath,
     endBlockIndex: visibleBlocks.endIndex,
     editorState,
     endLineIndex: visibleLines.endIndex,
@@ -81,7 +81,7 @@ export function createDocumentFrame(
   for (let index = visibleLines.startIndex; index < visibleLines.endIndex; index += 1) {
     const line = resolveDocumentFrameLine({
       blockFlashes: resolvedEffects.blockFlashes,
-      activeBlockId: options.activeBlockId,
+      activeBlockPath: options.activeBlockPath,
       blockPulses: resolvedEffects.blockPulses,
       textFades: resolvedEffects.textFades,
       textHighlights: resolvedEffects.textHighlights,
@@ -136,8 +136,8 @@ export function createDocumentFrame(
 }
 
 type CreateDocumentFrameOptions = {
-  activeBlockId: string | null;
-  activeRegionId: string | null;
+  activeBlockPath: string | null;
+  activeRegionPath: string | null;
   activeThreadIndex: number | null;
   ambientTime?: number;
   commentPresence?: ReadonlyMap<number, EditorPresence>;
@@ -160,12 +160,12 @@ function groupCommentRangesByRegion(commentRanges: EditorCommentRange[]) {
   const rangesByRegion = new Map<string, EditorCommentRange[]>();
 
   for (const range of commentRanges) {
-    const ranges = rangesByRegion.get(range.regionId);
+    const ranges = rangesByRegion.get(range.regionPath);
 
     if (ranges) {
       ranges.push(range);
     } else {
-      rangesByRegion.set(range.regionId, [range]);
+      rangesByRegion.set(range.regionPath, [range]);
     }
   }
 

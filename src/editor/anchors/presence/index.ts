@@ -4,7 +4,7 @@
  * Presence is ephemeral collaboration state provided by the host as a
  * content-addressable anchor. Text anchors resolve to remote cursor points;
  * comment-thread anchors resolve to active thread indices so the comment rule
- * can carry the user's presence color. Viewport projection lives in
+ * can carry the user's presence color. Viewport mapping lives in
  * `viewport.ts`.
  */
 
@@ -18,7 +18,7 @@ import {
 } from "@/document";
 import type { DocumentUserPresence } from "@/types";
 import type { DocumentIndex, EditorSelectionPoint } from "../../state";
-import { projectAnchorContainersToEditor } from "../index";
+import { createEditorTextAnchorResolver, type EditorTextAnchorResolver } from "../text";
 
 // --- Types ---
 
@@ -39,11 +39,16 @@ export type EditorPresence = DocumentUserPresence & {
   viewport: EditorPresenceViewport | null;
 };
 
+type TextPresenceContext = {
+  anchorContainers: AnchorContainer[];
+  textAnchorResolver: EditorTextAnchorResolver;
+};
+
 // --- Public API ---
 
 // Resolve each host-provided presence into editor-side targets. Text anchors
 // produce cursor points; comment-thread anchors produce active thread indices
-// without projecting a cursor.
+// without resolving a cursor.
 export function resolvePresenceTargets(
   documentIndex: DocumentIndex,
   presence: DocumentUserPresence[],
@@ -52,12 +57,22 @@ export function resolvePresenceTargets(
     return [];
   }
 
-  const containerProjection = projectAnchorContainersToEditor(documentIndex);
-  const semanticContainers = containerProjection.list();
+  let textContext: TextPresenceContext | null = null;
+  const getTextContext = () => {
+    if (!textContext) {
+      const textAnchorResolver = createEditorTextAnchorResolver(documentIndex);
+      textContext = {
+        anchorContainers: textAnchorResolver.listContainers(),
+        textAnchorResolver,
+      };
+    }
+
+    return textContext;
+  };
 
   return presence.map((presenceItem) => ({
     ...presenceItem,
-    ...resolvePresenceTarget(presenceItem, semanticContainers, containerProjection, documentIndex),
+    ...resolvePresenceTarget(presenceItem, getTextContext, documentIndex),
     viewport: null,
   }));
 }
@@ -66,8 +81,7 @@ export function resolvePresenceTargets(
 
 function resolvePresenceTarget(
   presence: DocumentUserPresence,
-  semanticContainers: AnchorContainer[],
-  containerProjection: ReturnType<typeof projectAnchorContainersToEditor>,
+  getTextContext: () => TextPresenceContext,
   documentIndex: DocumentIndex,
 ) {
   if (!presence.cursor) {
@@ -82,12 +96,14 @@ function resolvePresenceTarget(
     return resolveCommentThreadPresenceTarget(presence.cursor, documentIndex);
   }
 
+  const { anchorContainers, textAnchorResolver } = getTextContext();
+
   return {
     commentThreadIndex: null,
     cursorPoint: resolvePresenceCursorPoint(
       presence.cursor,
-      semanticContainers,
-      containerProjection,
+      anchorContainers,
+      textAnchorResolver,
     ),
     isOnUnresolvedCommentThread: false,
   };
@@ -112,24 +128,38 @@ function resolveCommentThreadPresenceTarget(
 
 function resolvePresenceCursorPoint(
   anchor: TextAnchor,
-  semanticContainers: AnchorContainer[],
-  containerProjection: ReturnType<typeof projectAnchorContainersToEditor>,
+  anchorContainers: AnchorContainer[],
+  textAnchorResolver: EditorTextAnchorResolver,
 ) {
-  const matches = collectTextAnchorCandidates(semanticContainers, anchor);
+  const matches = collectTextAnchorCandidates(anchorContainers, anchor);
 
   if (matches.length !== 1) {
     return null;
   }
 
   const match = matches[0]!;
-  const runtimeContainer = containerProjection.resolveRuntimeContainer(match.container.id);
+  const editorRange = textAnchorResolver.resolveEditorRange(
+    {
+      containerOrdinal: match.container.containerOrdinal,
+      containerPath: match.container.path,
+      endOffset: match.startOffset,
+      startOffset: match.startOffset,
+    },
+    {
+      collapsedAffinity: resolvePresenceCursorAffinity(anchor),
+    },
+  );
 
-  if (!runtimeContainer) {
+  if (!editorRange) {
     return null;
   }
 
   return {
-    offset: Math.max(0, Math.min(match.startOffset, runtimeContainer.text.length)),
-    regionId: runtimeContainer.id,
+    offset: editorRange.startOffset,
+    regionPath: editorRange.runtimeContainer.path,
   };
+}
+
+function resolvePresenceCursorAffinity(anchor: TextAnchor) {
+  return anchor.prefix ? "after" : "before";
 }

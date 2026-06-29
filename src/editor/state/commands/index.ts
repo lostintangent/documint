@@ -17,7 +17,10 @@
 // Commands never reach into reducer internals.
 
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "../reducer/state";
-import { resolveBlock, resolveDocumentBoundaryRegion } from "../index/query";
+import {
+  resolveDocumentBoundaryRegion,
+  resolveIndexedBlock,
+} from "../index/query";
 import {
   resolveBlockContext,
   resolveInlineContext,
@@ -177,8 +180,8 @@ export function selectAll(state: EditorState): EditorState {
   }
 
   return setSelection(state, {
-    anchor: { regionId: first.id, offset: 0 },
-    focus: { regionId: last.id, offset: last.text.length },
+    anchor: { regionPath: first.path, offset: 0 },
+    focus: { regionPath: last.path, offset: last.text.length },
   });
 }
 
@@ -289,8 +292,9 @@ export const moveListItemDown = makeCommand(
   resolveListItemContext,
 );
 
-export const toggleTask = makeCommand((state, listItemId: string) => {
-  const block = resolveBlock(state.documentIndex, listItemId);
+export const toggleTask = makeCommand((state, listItemPath: string) => {
+  const indexedBlock = resolveIndexedBlock(state.documentIndex, listItemPath);
+  const block = indexedBlock?.block ?? null;
 
   if (!block || block.type !== "listItem" || typeof block.checked !== "boolean") {
     return null;
@@ -299,7 +303,7 @@ export const toggleTask = makeCommand((state, listItemId: string) => {
   return {
     kind: "replace-block",
     block: { ...block, checked: !block.checked },
-    blockId: listItemId,
+    blockPath: listItemPath,
   };
 });
 
@@ -335,7 +339,7 @@ export const deleteTable = makeCommand(resolveTableDeletion, resolveTableCellCon
 export const addComment = makeCommand(
   (
     state: EditorState,
-    selection: { endOffset: number; regionId: string; startOffset: number },
+    selection: { endOffset: number; regionPath: string; startOffset: number },
     body: string,
   ): EditorStateAction | null => {
     const thread = createCommentThreadForSelection(state.documentIndex, selection, body);

@@ -63,7 +63,7 @@ export function createComponentScenarios(fixtures: {
     createBenchmarkScenario(
       "component",
       "component_grammar_tokenize_code_heavy",
-      50,
+      150,
       () =>
         void codeHeavySnapshot.blocks.forEach((block, rootIndex) =>
           resolveCodeDecorationRanges(block, rootIndex, compiledGrammars),
@@ -266,7 +266,7 @@ function selectRegion(state: ReturnType<typeof createEditorState>, regionIndex: 
 
   return setSelection(state, {
     offset: Math.floor(region.text.length / 2),
-    regionId: region.id,
+    regionPath: region.path,
   });
 }
 
@@ -289,8 +289,8 @@ function insertTransientEmptyRootParagraph(
   const region = resolveRootPrimaryRegion(nextState.documentIndex, rootIndex);
   const selection = region
     ? {
-        anchor: { regionId: region.id, offset: 0 },
-        focus: { regionId: region.id, offset: 0 },
+        anchor: { regionPath: region.path, offset: 0 },
+        focus: { regionPath: region.path, offset: 0 },
       }
     : null;
 

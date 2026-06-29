@@ -233,7 +233,7 @@ export function usePointer({
 
       cancelHide();
       setHoverTarget((previous) =>
-        previous?.kind === "task-toggle" && previous.listItemId === target.listItemId
+        previous?.kind === "task-toggle" && previous.listItemPath === target.listItemPath
           ? previous
           : target,
       );
@@ -507,7 +507,7 @@ export function usePointer({
         return;
       }
 
-      const transition = toggleTaskItem(target.listItemId);
+      const transition = toggleTaskItem(target.listItemPath);
       if (transition) {
         event.preventDefault();
         event.stopPropagation();

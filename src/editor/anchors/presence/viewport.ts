@@ -1,5 +1,5 @@
 /**
- * Geometric projection of a presence target against the prepared viewport.
+ * Geometric resolution of a presence target against the prepared viewport.
  * Decides whether a text cursor or comment thread sits above, below, or
  * inside the visible scroll window.
  *
@@ -113,7 +113,7 @@ function resolveCursorPosition(
   if (exactCaret) {
     return { bottom: exactCaret.top + exactCaret.height, top: exactCaret.top };
   }
-  return viewport.estimateRegionBounds(point.regionId);
+  return viewport.estimateRegionBounds(point.regionPath);
 }
 
 function resolvePresenceTargetScrollTop(

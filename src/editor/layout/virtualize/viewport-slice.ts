@@ -32,7 +32,6 @@ export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayou
 
 export function expandViewportSliceToBlockBoundaries(
   documentIndex: DocumentIndex,
-  containerIndices: Map<string, number>,
   startIndex: number,
   endIndex: number,
 ) {
@@ -41,23 +40,15 @@ export function expandViewportSliceToBlockBoundaries(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const container = documentIndex.regions[index]!;
-    const block = resolveIndexedBlock(documentIndex, container.block.id);
+    const block = resolveIndexedBlock(documentIndex, container.blockPath);
 
     if (!block) {
       continue;
     }
 
     if (block.block.type === "table") {
-      const firstIndex = containerIndices.get(block.regionIds[0] ?? "");
-      const lastIndex = containerIndices.get(block.regionIds[block.regionIds.length - 1] ?? "");
-
-      if (firstIndex !== undefined) {
-        nextStartIndex = Math.min(nextStartIndex, firstIndex);
-      }
-
-      if (lastIndex !== undefined) {
-        nextEndIndex = Math.max(nextEndIndex, lastIndex + 1);
-      }
+      nextStartIndex = Math.min(nextStartIndex, block.regionRangeStart);
+      nextEndIndex = Math.max(nextEndIndex, block.regionRangeEnd);
     }
   }
 
@@ -74,11 +65,11 @@ export function updateMeasuredContainerHeights(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  for (const [regionId, extent] of layout.regionBounds) {
+  for (const [regionPath, extent] of layout.regionBounds) {
     const height = extent.bottom - extent.top;
-    const container = resolveRegion(documentIndex, regionId);
+    const container = resolveRegion(documentIndex, regionPath);
     if (!container) continue;
-    const indexedBlock = resolveIndexedBlock(documentIndex, container.block.id);
+    const indexedBlock = resolveIndexedBlock(documentIndex, container.blockPath);
     if (!indexedBlock) continue;
     // Mirror the metrics applied when estimating this region —
     // otherwise the cache key for the measured height won't match the

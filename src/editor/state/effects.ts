@@ -226,10 +226,10 @@ function resolveSameRegionSelectionContext(
 ): { normalized: NormalizedEditorSelection; region: EditableRegion } | null {
   const normalized = normalizeSelection(documentIndex, selection);
 
-  if (normalized.start.regionId !== normalized.end.regionId) {
+  if (normalized.start.regionPath !== normalized.end.regionPath) {
     return null;
   }
 
-  const region = resolveRegion(documentIndex, normalized.start.regionId);
+  const region = resolveRegion(documentIndex, normalized.start.regionPath);
   return region ? { normalized, region } : null;
 }

@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  findDocumentChanges,
-  retargetDocumentChanges,
-  type DocumentChange,
-} from "@/document";
+import { findDocumentChanges } from "@/document";
 import { parseDocument } from "@/markdown";
 
 describe("document changes", () => {
@@ -15,17 +11,12 @@ describe("document changes", () => {
       expect.objectContaining({
         changeKind: "modified",
         previousTarget: expect.objectContaining({
-          node: expect.objectContaining({
-            path: "root.0",
-          }),
           kind: "block",
+          path: "root.0",
         }),
         target: expect.objectContaining({
-          node: expect.objectContaining({
-            blockId: next.blocks[0]!.id,
-            path: "root.0",
-          }),
           kind: "block",
+          path: "root.0",
         }),
       }),
     ]);
@@ -41,16 +32,12 @@ describe("document changes", () => {
       expect.objectContaining({
         changeKind: "modified",
         previousTarget: expect.objectContaining({
-          node: expect.objectContaining({
-            path: "root.0.rows.1.cells.1",
-          }),
           kind: "table-cell",
+          path: "root.0.rows.1.cells.1",
         }),
         target: expect.objectContaining({
-          node: expect.objectContaining({
-            path: "root.0.rows.1.cells.1",
-          }),
           kind: "table-cell",
+          path: "root.0.rows.1.cells.1",
         }),
       }),
     ]);
@@ -59,9 +46,7 @@ describe("document changes", () => {
   test("finds added table cells and shifted modified cells in the same row window", () => {
     const changes = findDocumentChanges(
       parse("| A | B |\n| - | - |\n| one | old |\n| two | stable |\n"),
-      parse(
-        "| A | B |\n| - | - |\n| new | row |\n| one | changed |\n| two | stable |\n",
-      ),
+      parse("| A | B |\n| - | - |\n| new | row |\n| one | changed |\n| two | stable |\n"),
     );
 
     expect(changes).toEqual(
@@ -69,34 +54,26 @@ describe("document changes", () => {
         expect.objectContaining({
           changeKind: "added",
           target: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.1.cells.0",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.1.cells.0",
           }),
         }),
         expect.objectContaining({
           changeKind: "added",
           target: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.1.cells.1",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.1.cells.1",
           }),
         }),
         expect.objectContaining({
           changeKind: "modified",
           previousTarget: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.1.cells.1",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.1.cells.1",
           }),
           target: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.2.cells.1",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.2.cells.1",
           }),
         }),
       ]),
@@ -106,9 +83,7 @@ describe("document changes", () => {
   test("finds added table columns and shifted modified cells in the same row", () => {
     const changes = findDocumentChanges(
       parse("| A | B | C |\n| - | - | - |\n| one | old | stable |\n"),
-      parse(
-        "| A | X | B | C |\n| - | - | - | - |\n| one | added | old changed | stable |\n",
-      ),
+      parse("| A | X | B | C |\n| - | - | - | - |\n| one | added | old changed | stable |\n"),
     );
 
     expect(changes).toEqual(
@@ -116,25 +91,19 @@ describe("document changes", () => {
         expect.objectContaining({
           changeKind: "added",
           target: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.1.cells.1",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.1.cells.1",
           }),
         }),
         expect.objectContaining({
           changeKind: "modified",
           previousTarget: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.1.cells.1",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.1.cells.1",
           }),
           target: expect.objectContaining({
-            node: expect.objectContaining({
-              path: "root.0.rows.1.cells.2",
-            }),
             kind: "table-cell",
+            path: "root.0.rows.1.cells.2",
           }),
         }),
       ]),
@@ -142,13 +111,8 @@ describe("document changes", () => {
   });
 
   test("returns no targetable changes for broad rewrites", () => {
-    const previous = Array.from(
-      { length: 12 },
-      (_, index) => `Old ${index}`,
-    ).join("\n\n");
-    const next = Array.from({ length: 12 }, (_, index) => `New ${index}`).join(
-      "\n\n",
-    );
+    const previous = Array.from({ length: 12 }, (_, index) => `Old ${index}`).join("\n\n");
+    const next = Array.from({ length: 12 }, (_, index) => `New ${index}`).join("\n\n");
 
     expect(findDocumentChanges(parse(previous), parse(next))).toEqual([]);
   });
@@ -169,15 +133,15 @@ describe("document changes", () => {
       expect.objectContaining({
         changeKind: "modified",
         target: expect.objectContaining({
-          node: expect.objectContaining({ path: "root.0" }),
           kind: "block",
+          path: "root.0",
         }),
       }),
       expect.objectContaining({
         changeKind: "modified",
         target: expect.objectContaining({
-          node: expect.objectContaining({ path: "root.11" }),
           kind: "block",
+          path: "root.11",
         }),
       }),
     ]);
@@ -193,15 +157,15 @@ describe("document changes", () => {
       expect.objectContaining({
         changeKind: "added",
         target: expect.objectContaining({
-          node: expect.objectContaining({ path: "root.0" }),
           kind: "block",
+          path: "root.0",
         }),
       }),
       expect.objectContaining({
         changeKind: "added",
         target: expect.objectContaining({
-          node: expect.objectContaining({ path: "root.13" }),
           kind: "block",
+          path: "root.13",
         }),
       }),
     ]);
@@ -218,9 +182,7 @@ describe("document changes", () => {
         changeKind: "modified",
         target: {
           kind: "block",
-          node: {
-            path: `root.${index * 2}`,
-          },
+          path: `root.${index * 2}`,
         },
       });
     }
@@ -233,7 +195,7 @@ describe("document changes", () => {
 
     expect(changes).toHaveLength(10);
     expect(changes.every((change) => change.changeKind === "modified")).toBe(true);
-    expect(changes.map((change) => change.target.node.path)).toEqual(
+    expect(changes.map((change) => change.target.path)).toEqual(
       Array.from({ length: 10 }, (_, index) => `root.${index}`),
     );
   });
@@ -245,76 +207,6 @@ describe("document changes", () => {
     expect(findDocumentChanges(parse(previous), parse(next))).toEqual([]);
   });
 
-  test("retargets a block change after an insertion shifts its path", () => {
-    const initial = parse("Alpha\n\nBeta\n");
-    const change = blockChangeAt(
-      findDocumentChanges(parse("Alpha\n\nOld\n"), initial),
-      "root.1",
-    );
-    const next = parse("Intro\n\nAlpha\n\nBeta\n");
-
-    expect(retargetChange(next, change)).toMatchObject({
-      changeKind: "modified",
-      previousTarget: {
-        ...change.previousTarget,
-      },
-      target: {
-        node: {
-          blockId: next.blocks[2]!.id,
-          path: "root.2",
-        },
-        kind: "block",
-      },
-    });
-  });
-
-  test("retargets a table-cell change after a row insertion shifts its path", () => {
-    const initial = parse("| A | B |\n| - | - |\n| one | two |\n");
-    const change = cellChangeAt(
-      findDocumentChanges(
-        parse("| A | B |\n| - | - |\n| one | old |\n"),
-        initial,
-      ),
-      "root.0.rows.1.cells.1",
-    );
-    const next = parse("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
-
-    expect(retargetChange(next, change)).toMatchObject({
-      changeKind: "modified",
-      previousTarget: {
-        ...change.previousTarget,
-      },
-      target: {
-        node: expect.objectContaining({
-          path: "root.0.rows.2.cells.1",
-        }),
-        kind: "table-cell",
-      },
-    });
-  });
-
-  test("does not retarget a block change when matching content is ambiguous", () => {
-    const change = blockChangeAt(
-      findDocumentChanges(parse("Old\n"), parse("Alpha\n")),
-      "root.0",
-    );
-
-    expect(retargetChange(parse("Alpha\n\nAlpha\n"), change)).toBeNull();
-  });
-
-  test("does not retarget a table-cell change when matching content is ambiguous", () => {
-    const change = cellChangeAt(
-      findDocumentChanges(
-        parse("| A | B |\n| - | - |\n| one | old |\n"),
-        parse("| A | B |\n| - | - |\n| one | two |\n"),
-      ),
-      "root.0.rows.1.cells.1",
-    );
-
-    expect(
-      retargetChange(parse("| A | B |\n| - | - |\n| two | two |\n"), change),
-    ).toBeNull();
-  });
 });
 
 function parse(markdown: string) {
@@ -342,52 +234,4 @@ function createHeadingDocument(count: number, headingForIndex: (index: number) =
   return `${Array.from({ length: count }, (_, index) => `# ${headingForIndex(index)}`).join(
     "\n\n",
   )}\n`;
-}
-
-function retargetChange(
-  document: ReturnType<typeof parse>,
-  change: DocumentChange,
-) {
-  return retargetDocumentChanges(document, [change])[0] ?? null;
-}
-
-function blockChangeAt(
-  changes: readonly DocumentChange[],
-  path: string,
-): Extract<DocumentChange, { changeKind: "modified" }> {
-  const change = changes.find(
-    (candidate) =>
-      candidate.target.kind === "block" && candidate.target.node.path === path,
-  );
-
-  if (
-    !change ||
-    change.changeKind !== "modified" ||
-    change.target.kind !== "block"
-  ) {
-    throw new Error(`Expected block change at ${path}`);
-  }
-
-  return change;
-}
-
-function cellChangeAt(
-  changes: readonly DocumentChange[],
-  path: string,
-): Extract<DocumentChange, { changeKind: "modified" }> {
-  const change = changes.find(
-    (candidate) =>
-      candidate.target.kind === "table-cell" &&
-      candidate.target.node.path === path,
-  );
-
-  if (
-    !change ||
-    change.changeKind !== "modified" ||
-    change.target.kind !== "table-cell"
-  ) {
-    throw new Error(`Expected table-cell change at ${path}`);
-  }
-
-  return change;
 }

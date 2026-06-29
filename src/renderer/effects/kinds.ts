@@ -1,7 +1,6 @@
 import type { TextDeletedEffect, TextInsertedEffect } from "@/editor/state";
 import { containsColorEmoji } from "@/editor/text/emoji";
 import type { DocumintEffects } from "@/types";
-import { documentChangeFrameTargetKey } from "./types";
 import type {
   BlockFlashFrame,
   BlockPulseFrame,
@@ -61,7 +60,7 @@ export const effectKinds: {
   "document-change": {
     animatesByDefault: () => true,
     collect: (groups, effect, progress) => {
-      groups.documentChangeFades.set(documentChangeFrameTargetKey(effect.target), {
+      groups.documentChangeFades.set(effect.changeKey, {
         progress,
       });
     },

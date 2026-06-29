@@ -50,11 +50,11 @@ export function resolveInsertionTrigger(
   // Cross-region selections have no sensible trigger interpretation:
   // the post-replacement text would only contain the inserted
   // characters, dropping anything from the spanned regions.
-  if (selection.anchor.regionId !== selection.focus.regionId) {
+  if (selection.anchor.regionPath !== selection.focus.regionPath) {
     return null;
   }
 
-  const region = resolveRegion(documentIndex, selection.anchor.regionId);
+  const region = resolveRegion(documentIndex, selection.anchor.regionPath);
   if (!region) {
     return null;
   }
@@ -367,7 +367,7 @@ function transformListAction(
       ),
       { ordered: options.ordered, start: options.start },
     ),
-    blockId: context.list.id,
+    blockPath: context.listPath,
     selection: target.block(transformedItem),
   };
 }

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createImage,
   createHeadingTextBlock,
   createLink,
+  createMention,
   createParagraphBlock,
   createParagraphTextBlock,
+  createResource,
   createTableBlock,
   createTableCell,
   createTableRow,
@@ -155,6 +158,48 @@ describe("resolveBlockDecorationRanges", () => {
     ]);
 
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /pha/ }])).toEqual([]);
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
+      { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
+    ]);
+  });
+
+  test("skips reference inlines and preserves later offsets", () => {
+    const block = createParagraphBlock([
+      createText("before "),
+      createImage({ alt: "preview", url: "https://example.com/image.png" }),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createResource({
+        label: "Recording",
+        protocol: "demo-resource:",
+        url: "demo-resource://recording/live",
+      }),
+      createText(" target"),
+    ]);
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /Jane/ }])).toEqual(
+      [],
+    );
+    expect(
+      resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /preview|Recording/ }]),
+    ).toEqual([]);
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
+      { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
+    ]);
+  });
+
+  test("skips links containing references and preserves later offsets", () => {
+    const block = createParagraphBlock([
+      createText("before "),
+      createLink({
+        children: [createText("go"), createMention({ name: "Jane Doe", userId: "user-123" })],
+        url: "https://example.com",
+      }),
+      createText(" target"),
+    ]);
+
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /go|Jane/ }])).toEqual(
+      [],
+    );
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
       { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
     ]);

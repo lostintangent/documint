@@ -10,10 +10,15 @@
 // pays for the per-root delta, not for re-iterating the whole document.
 //
 // Per-document projections (`commentContainerIndex`, `listItems`,
-// `imageUrls`, `resourceUrls`) live next to the primitive so the cache-reuse policies
-// (`document.comments === prev.document.comments`, etc.) stay in one place.
+// `imageUrls`, `resourceUrls`) live next to the primitive so their cache-reuse
+// policies stay in one place.
 
-import { resolveCommentThread, type Document } from "@/document";
+import {
+  listAnchorContainers,
+  resolveCommentThread,
+  rootIndexForPath,
+  type Document,
+} from "@/document";
 import type {
   IndexedBlock,
   DocumentIndex,
@@ -39,7 +44,6 @@ export function applyRootDelta(
 
   const blockIndex = new Map(prev?.blockIndex);
   const regionIndex = new Map(prev?.regionIndex);
-  const regionPathIndex = new Map(prev?.regionPathIndex);
 
   const prevRoots = prev?.roots;
   const sharedLength = prevRoots ? Math.min(prevRoots.length, positionedRoots.length) : 0;
@@ -47,29 +51,24 @@ export function applyRootDelta(
   // For each shared position, compare references:
   //   - same reference → reused, no work
   //   - different reference → remove previous records, then add next records.
-  //     Same rootIndex does not imply stable block/region ids; root replacement
-  //     and root insertion can both put different block ids at the same slot.
+  //     Same rootIndex does not imply stable block/region paths; root replacement
+  //     and root insertion can both put different blocks at the same slot.
   if (prevRoots) {
     for (let i = 0; i < sharedLength; i += 1) {
       const prevRoot = prevRoots[i]!;
       const positionedRoot = positionedRoots[i]!;
       if (positionedRoot === prevRoot) continue;
-      removeRootRecords(prevRoot, blockIndex, regionIndex, regionPathIndex);
-      addRootRecords(positionedRoot, blockIndex, regionIndex, regionPathIndex);
+      removeRootRecords(prevRoot, blockIndex, regionIndex);
+      addRootRecords(positionedRoot, blockIndex, regionIndex);
     }
     // Trailing prev roots (deletions at tail) — remove their records.
     for (let i = sharedLength; i < prevRoots.length; i += 1) {
-      removeRootRecords(prevRoots[i]!, blockIndex, regionIndex, regionPathIndex);
-    }
-  } else {
-    // Cold build (no prev): every positioned root contributes records.
-    for (let i = 0; i < sharedLength; i += 1) {
-      addRootRecords(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+      removeRootRecords(prevRoots[i]!, blockIndex, regionIndex);
     }
   }
-  // Trailing positioned roots (additions at tail) — add their records.
+  // Trailing positioned roots, including every root on cold build.
   for (let i = sharedLength; i < positionedRoots.length; i += 1) {
-    addRootRecords(positionedRoots[i]!, blockIndex, regionIndex, regionPathIndex);
+    addRootRecords(positionedRoots[i]!, blockIndex, regionIndex);
   }
 
   const blocks = positionedRoots.flatMap((root) => root.blocks);
@@ -78,16 +77,14 @@ export function applyRootDelta(
   return {
     blockIndex,
     blocks,
-    commentContainerIndex:
-      prev && nextDocument.comments === prev.document.comments
-        ? prev.commentContainerIndex
-        : createCommentContainerIndex(nextDocument),
+    commentContainerIndex: canReuseCommentContainerIndex(prev, positionedRoots, nextDocument)
+      ? prev.commentContainerIndex
+      : createCommentContainerIndex(nextDocument),
     document: nextDocument,
     imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
     resourceUrls: createDocumentResourceUrls(positionedRoots, prev?.resourceUrls),
     listItems: createDocumentListItems(positionedRoots, prev?.listItems),
     regionIndex,
-    regionPathIndex,
     regions,
     roots: positionedRoots,
   };
@@ -97,14 +94,12 @@ function removeRootRecords(
   root: IndexedRoot,
   blockIndex: Map<string, IndexedBlock>,
   regionIndex: Map<string, EditableRegion>,
-  regionPathIndex: Map<string, EditableRegion>,
 ) {
   for (const indexedBlock of root.blocks) {
-    blockIndex.delete(indexedBlock.block.id);
+    blockIndex.delete(indexedBlock.path);
   }
   for (const region of root.regions) {
-    regionIndex.delete(region.id);
-    regionPathIndex.delete(region.path);
+    regionIndex.delete(region.path);
   }
 }
 
@@ -112,14 +107,12 @@ function addRootRecords(
   root: IndexedRoot,
   blockIndex: Map<string, IndexedBlock>,
   regionIndex: Map<string, EditableRegion>,
-  regionPathIndex: Map<string, EditableRegion>,
 ) {
   for (const indexedBlock of root.blocks) {
-    blockIndex.set(indexedBlock.block.id, indexedBlock);
+    blockIndex.set(indexedBlock.path, indexedBlock);
   }
   for (const region of root.regions) {
-    regionIndex.set(region.id, region);
-    regionPathIndex.set(region.path, region);
+    regionIndex.set(region.path, region);
   }
 }
 
@@ -132,19 +125,18 @@ function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document)
   }
   return {
     ...prev,
-    commentContainerIndex:
-      nextDocument.comments === prev.document.comments
-        ? prev.commentContainerIndex
-        : createCommentContainerIndex(nextDocument),
+    commentContainerIndex: canReuseCommentContainerIndex(prev, prev.roots, nextDocument)
+      ? prev.commentContainerIndex
+      : createCommentContainerIndex(nextDocument),
     document: nextDocument,
     listItems: prev.listItems,
   };
 }
 
-// Builds the document-level union of image URLs from per-root sets,
-// reusing the previous index's reference when the URL set is unchanged so
-// downstream consumers (notably the image loader hook's effect dep) can
-// short-circuit on identity.
+// URL projections -----------------------------------------------------------
+
+// Builds the document-level union of image URLs from per-root sets, reusing
+// the previous index's reference when the URL set is unchanged.
 function createDocumentImageUrls(
   roots: IndexedRoot[],
   previous: ReadonlySet<string> | undefined,
@@ -187,6 +179,8 @@ function areUrlSetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolea
   return true;
 }
 
+// List-item projection ------------------------------------------------------
+
 // Builds the document-level contextual list-item map from per-root maps,
 // reusing the previous map when the projected values are unchanged.
 function createDocumentListItems(
@@ -195,7 +189,7 @@ function createDocumentListItems(
 ): ReadonlyMap<string, IndexedListItem> {
   const next = new Map<string, IndexedListItem>();
   for (const root of roots) {
-    for (const [id, item] of root.listItems) next.set(id, item);
+    for (const [path, item] of root.listItems) next.set(path, item);
   }
   return previous && areListItemMapsEqual(previous, next) ? previous : next;
 }
@@ -205,8 +199,8 @@ function areListItemMapsEqual(
   b: ReadonlyMap<string, IndexedListItem>,
 ): boolean {
   if (a.size !== b.size) return false;
-  for (const [id, item] of a) {
-    const next = b.get(id);
+  for (const [path, item] of a) {
+    const next = b.get(path);
     if (!next || !areListItemsEqual(item, next)) return false;
   }
   return true;
@@ -225,24 +219,123 @@ function areListItemsEqual(a: IndexedListItem, b: IndexedListItem): boolean {
   }
 }
 
+// Comment-container projection ---------------------------------------------
+
 // Note: this is O(C × N) on cold build — each thread resolves against the
-// full document via `resolveCommentThread`. Reuse via `document.comments`
-// identity hides this on edits, but documents loaded with many existing
-// threads pay it once.
+// full document via `resolveCommentThread`. Warm edits reuse the previous
+// projection when every resolved comment container's root is still the same
+// positioned root, so typing outside commented roots avoids the full scan
+// without projecting comments onto shifted or replaced paths.
 function createCommentContainerIndex(document: Document) {
   const commentContainerIndex = new Map<string, number[]>();
 
   for (const [threadIndex, thread] of document.comments.entries()) {
-    const containerId = resolveCommentThread(thread, document).match?.containerId ?? null;
+    const containerPath = resolveCommentThread(thread, document).match?.containerPath ?? null;
 
-    if (!containerId) {
+    if (!containerPath) {
       continue;
     }
 
-    const threadIndices = commentContainerIndex.get(containerId) ?? [];
+    const threadIndices = commentContainerIndex.get(containerPath) ?? [];
     threadIndices.push(threadIndex);
-    commentContainerIndex.set(containerId, threadIndices);
+    commentContainerIndex.set(containerPath, threadIndices);
   }
 
   return commentContainerIndex;
+}
+
+function canReuseCommentContainerIndex(
+  prev: DocumentIndex | null,
+  positionedRoots: readonly IndexedRoot[],
+  nextDocument: Document,
+): prev is DocumentIndex {
+  if (!prev || nextDocument.comments !== prev.document.comments) {
+    return false;
+  }
+
+  if (positionedRoots === prev.roots || prev.document.comments.length === 0) {
+    return true;
+  }
+
+  const indexedThreadCount = countIndexedCommentThreads(prev.commentContainerIndex);
+
+  // If any thread was stale or ambiguous in the previous projection, a
+  // document edit could make it resolvable. Rebuild rather than preserving a
+  // partial index that would miss the newly repairable thread.
+  if (indexedThreadCount !== prev.document.comments.length) {
+    return false;
+  }
+
+  for (const containerPath of prev.commentContainerIndex.keys()) {
+    const rootIndex = rootIndexForPath(containerPath);
+
+    if (rootIndex == null || positionedRoots[rootIndex] !== prev.roots[rootIndex]) {
+      return false;
+    }
+  }
+
+  if (changedRootsMayAffectCommentResolution(prev, positionedRoots, nextDocument)) {
+    return false;
+  }
+
+  return true;
+}
+
+function changedRootsMayAffectCommentResolution(
+  prev: DocumentIndex,
+  positionedRoots: readonly IndexedRoot[],
+  nextDocument: Document,
+) {
+  for (let rootIndex = 0; rootIndex < positionedRoots.length; rootIndex += 1) {
+    const rootBlock = nextDocument.blocks[rootIndex];
+
+    // Re-positioning can allocate fresh `IndexedRoot` objects when block or
+    // region coordinates shift, but unchanged document blocks cannot introduce
+    // a new comment-anchor collision.
+    if (!rootBlock || rootBlock === prev.document.blocks[rootIndex]) {
+      continue;
+    }
+
+    if (rootBlockMayAffectCommentResolution(rootBlock, nextDocument.comments)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function rootBlockMayAffectCommentResolution(
+  rootBlock: Document["blocks"][number],
+  comments: Document["comments"],
+) {
+  // Match comment resolution's semantic text projection. Editor regions use
+  // selection-space text for references, but comments anchor against document
+  // `plainText` via `listAnchorContainers`.
+  for (const container of listAnchorContainers({ blocks: [rootBlock], comments: [] })) {
+    for (const thread of comments) {
+      if (textMayAffectCommentResolution(container.text, thread)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function textMayAffectCommentResolution(text: string, thread: Document["comments"][number]) {
+  return (
+    (thread.quote.length > 0 && text.includes(thread.quote)) ||
+    (thread.anchor.prefix !== undefined && text.includes(thread.anchor.prefix)) ||
+    (thread.anchor.suffix !== undefined && text.includes(thread.anchor.suffix))
+  );
+}
+
+function countIndexedCommentThreads(commentContainerIndex: ReadonlyMap<string, readonly number[]>) {
+  let count = 0;
+
+  for (const threadIndices of commentContainerIndex.values()) {
+    count += threadIndices.length;
+  }
+
+  return count;
 }

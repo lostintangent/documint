@@ -29,11 +29,11 @@ Paragraph for caret metrics.
   }
 
   const caret = measureCaretTarget(layout, runtime, {
-    regionId: paragraphContainer.id,
+    regionPath: paragraphContainer.path,
     offset: 8,
   });
 
-  expect(caret?.regionId).toBe(paragraphContainer.id);
+  expect(caret?.regionPath).toBe(paragraphContainer.path);
   expect(caret?.offset).toBe(8);
   expect(caret?.left).toBeGreaterThan(layout.lines[1]!.left);
   expect(caret?.height).toBe(layout.options.lineHeight);
@@ -51,11 +51,11 @@ test("advances the active caret across collapsed trailing spaces", () => {
   }
 
   const beforeSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionId: paragraphContainer.id,
+    regionPath: paragraphContainer.path,
     offset: 5,
   });
   const afterSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionId: paragraphContainer.id,
+    regionPath: paragraphContainer.path,
     offset: 6,
   });
 
@@ -80,11 +80,11 @@ test("measures caret geometry inside a space-only paragraph", () => {
   }
 
   const beforeSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionId: paragraphContainer.id,
+    regionPath: paragraphContainer.path,
     offset: 0,
   });
   const afterSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionId: paragraphContainer.id,
+    regionPath: paragraphContainer.path,
     offset: 1,
   });
 
@@ -106,19 +106,19 @@ test("measures the empty-looking paragraph produced by Enter before a trailing s
     throw new Error("Expected paragraph container");
   }
 
-  state = setSelection(state, { regionId: paragraphContainer.id, offset: "alpha".length });
+  state = setSelection(state, { regionPath: paragraphContainer.path, offset: "alpha".length });
   state = insertLineBreak(state) ?? state;
 
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
   const active = state.documentIndex.regions.find(
-    (region) => region.id === state.selection.focus.regionId,
+    (region) => region.path === state.selection.focus.regionPath,
   );
   const caret = measureCaretTarget(layout, state.documentIndex, state.selection.focus);
 
   expect(active?.text).toBe(" ");
-  expect(caret?.regionId).toBe(active?.id);
+  expect(caret?.regionPath).toBe(active?.path);
   expect(caret?.offset).toBe(0);
 });
 
@@ -155,7 +155,7 @@ test("materializes the trailing empty source line in code blocks", () => {
 
   const nextRegion = getRegionByType(state, "code");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
-  const regionLines = layout.lines.filter((line) => line.regionId === nextRegion.id);
+  const regionLines = layout.lines.filter((line) => line.regionPath === nextRegion.path);
   const caret = measureCaretTarget(layout, state.documentIndex, state.selection.focus);
 
   expect(regionLines.map((line) => line.text)).toEqual(["const value = 1;", ""]);

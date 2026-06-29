@@ -13,7 +13,7 @@ export type VirtualLayout = {
     bottom: number;
     top: number;
   }>;
-  estimateRegionBounds: (regionId: string) => { bottom: number; top: number } | null;
+  estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
   totalHeight: number;
 };
 

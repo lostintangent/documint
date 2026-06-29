@@ -1,9 +1,6 @@
-// Semantic node builders and rebuild helpers. Builders set `id: ""` as a
-// placeholder; the canonical id is assigned by `createDocument` /
-// `spliceDocument` from each node's structural path. Builders are otherwise
-// canonical: every derived field (`plainText` on blocks, default property
-// values) is computed here, so a builder's output is immediately usable as
-// the corresponding node type minus the deferred id assignment.
+// Semantic node builders and rebuild helpers. Builders return canonical
+// semantic values: every derived field (`plainText` on blocks/cells,
+// canonical mark order, default property values) is computed here.
 
 import {
   extractListPlainText,
@@ -42,7 +39,6 @@ import type {
 export function createParagraphBlock(children: Inline[]): ParagraphBlock {
   return {
     children,
-    id: "",
     plainText: extractPlainTextFromInlineNodes(children),
     type: "paragraph",
   };
@@ -59,7 +55,6 @@ export function createHeadingBlock(options: {
   return {
     children: options.children,
     depth: options.depth,
-    id: "",
     plainText: extractPlainTextFromInlineNodes(options.children),
     type: "heading",
   };
@@ -77,7 +72,6 @@ export function createHeadingTextBlock(options: {
 
 export function createText(text: string, marks: readonly Mark[] = []): Text {
   return {
-    id: "",
     marks: canonicalizeMarks(marks),
     text,
     type: "text",
@@ -86,7 +80,6 @@ export function createText(text: string, marks: readonly Mark[] = []): Text {
 
 export function createLineBreak(): LineBreak {
   return {
-    id: "",
     type: "lineBreak",
   };
 }
@@ -98,7 +91,6 @@ export function createLink(options: {
 }): Link {
   return {
     children: options.children,
-    id: "",
     title: options.title ?? null,
     type: "link",
     url: options.url,
@@ -113,7 +105,6 @@ export function createImage(options: {
 }): Image {
   return {
     alt: options.alt ?? null,
-    id: "",
     title: options.title ?? null,
     type: "image",
     url: options.url,
@@ -123,7 +114,6 @@ export function createImage(options: {
 
 export function createMention(target: MentionTarget): Mention {
   return {
-    id: "",
     name: target.name,
     type: "mention",
     userId: target.userId,
@@ -139,7 +129,6 @@ export function createResource(options: {
     resolveResourceProtocol(options.url) ?? normalizeResourceProtocol(options.protocol ?? "") ?? "";
 
   return {
-    id: "",
     label: options.label,
     protocol,
     type: "resource",
@@ -149,7 +138,6 @@ export function createResource(options: {
 
 export function createRaw(options: { originalType: string; source: string }): Raw {
   return {
-    id: "",
     originalType: options.originalType,
     source: options.source,
     type: "raw",
@@ -165,7 +153,6 @@ export function createListItemBlock(options: {
     checked: options.checked ?? null,
     children: options.children,
     compact: options.compact ?? true,
-    id: "",
     plainText: extractPlainTextFromBlockNodes(options.children),
     type: "listItem",
   };
@@ -179,7 +166,6 @@ export function createListBlock(options: {
 }): ListBlock {
   return {
     compact: options.compact ?? true,
-    id: "",
     items: options.items,
     ordered: options.ordered,
     plainText: extractListPlainText(options.items),
@@ -191,7 +177,6 @@ export function createListBlock(options: {
 export function createBlockquoteBlock(children: Block[]): BlockquoteBlock {
   return {
     children,
-    id: "",
     plainText: extractPlainTextFromBlockNodes(children),
     type: "blockquote",
   };
@@ -203,7 +188,6 @@ export function createCodeBlock(options: {
   source: string;
 }): CodeBlock {
   return {
-    id: "",
     language: options.language ?? null,
     meta: options.meta ?? null,
     plainText: options.source,
@@ -215,7 +199,6 @@ export function createCodeBlock(options: {
 export function createTableCell(children: Inline[]): TableCell {
   return {
     children,
-    id: "",
     plainText: extractPlainTextFromInlineNodes(children),
   };
 }
@@ -223,7 +206,6 @@ export function createTableCell(children: Inline[]): TableCell {
 export function createTableRow(cells: TableCell[]): TableRow {
   return {
     cells,
-    id: "",
   };
 }
 
@@ -233,7 +215,6 @@ export function createTableBlock(options: {
 }): TableBlock {
   return {
     align: options.align ?? [],
-    id: "",
     plainText: extractTablePlainText(options.rows),
     rows: options.rows,
     type: "table",
@@ -242,7 +223,6 @@ export function createTableBlock(options: {
 
 export function createDividerBlock(): DividerBlock {
   return {
-    id: "",
     plainText: "",
     type: "divider",
   };
@@ -250,7 +230,6 @@ export function createDividerBlock(): DividerBlock {
 
 export function createRawBlock(options: { originalType: string; source: string }): RawBlock {
   return {
-    id: "",
     originalType: options.originalType,
     plainText: options.source,
     source: options.source,
@@ -266,7 +245,6 @@ export function createDirectiveBlock(options: {
   return {
     attributes: options.attributes,
     body: options.body,
-    id: "",
     name: options.name,
     plainText: options.body,
     type: "directive",

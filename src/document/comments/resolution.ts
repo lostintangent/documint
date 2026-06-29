@@ -144,6 +144,10 @@ function collectContainerContextCandidates(thread: CommentThread, container: Anc
   for (const range of collectTextAnchorCandidates([container], thread.anchor, {
     estimatedLength: originalLength,
   })) {
+    if (!isAcceptableContextRepairCandidate(thread, container, range.startOffset, range.endOffset)) {
+      continue;
+    }
+
     candidates.push({
       container,
       endOffset: range.endOffset,
@@ -159,6 +163,38 @@ function collectContainerContextCandidates(thread: CommentThread, container: Anc
   }
 
   return candidates;
+}
+
+function isAcceptableContextRepairCandidate(
+  thread: CommentThread,
+  container: AnchorContainer,
+  startOffset: number,
+  endOffset: number,
+) {
+  if (thread.anchor.prefix && thread.anchor.suffix) {
+    return true;
+  }
+
+  if (thread.quote.length === 0) {
+    return false;
+  }
+
+  const candidateText = container.text.slice(startOffset, endOffset);
+
+  if (candidateText.length === 0) {
+    return false;
+  }
+
+  const cap = MAX_SIMILARITY_COMPARE_LENGTH;
+  const shared =
+    sharedCharacterPrefixLength(thread.quote, candidateText, cap) +
+    sharedCharacterSuffixLength(thread.quote, candidateText, cap);
+
+  return shared >= minimumOneSidedRepairSimilarity(thread.quote.length);
+}
+
+function minimumOneSidedRepairSimilarity(quoteLength: number) {
+  return Math.max(2, Math.ceil(Math.min(quoteLength, MAX_SIMILARITY_COMPARE_LENGTH) / 2));
 }
 
 // --- Resolution finalization ---
@@ -235,7 +271,7 @@ function pickWinningCandidate(
     const tied = candidates.filter((candidate) => candidate.score === first.score);
     const priorMatch = tied.find(
       (candidate) =>
-        candidate.container.id === previousMatch.containerId &&
+        candidate.container.path === previousMatch.containerPath &&
         candidate.startOffset === previousMatch.startOffset &&
         candidate.endOffset === previousMatch.endOffset,
     );
@@ -254,7 +290,7 @@ function toAnchorMatch(
   endOffset: number,
 ): AnchorMatch {
   return {
-    containerId: container.id,
+    containerPath: container.path,
     containerKind: container.containerKind,
     containerOrdinal: container.containerOrdinal,
     endOffset,

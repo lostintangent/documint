@@ -1,5 +1,7 @@
 import {
+  blockPathSiblingIndex,
   getBlockChildren,
+  parentBlockPath,
   type Block,
   type Document,
   type TableBlock,
@@ -60,7 +62,7 @@ export type DocumentTableCellAnchor = {
 
 export type DocumentNodeAnchor = DocumentBlockAnchor | DocumentTableCellAnchor;
 
-export type DocumentNodeAnchorCandidate = {
+type DocumentNodeAnchorCandidate = {
   readonly anchor: DocumentNodeAnchor;
   readonly node: Block | TableCell;
   readonly path: string;
@@ -112,20 +114,6 @@ export function createDocumentNodeAnchor(
   return cellMatch
     ? createTableCellAnchor(cellMatch.cell, path, cellMatch)
     : null;
-}
-
-export function findDocumentNodeAnchorCandidates(
-  document: Document,
-  anchor: DocumentNodeAnchor,
-  options: DocumentNodeAnchorResolveOptions = {},
-): readonly DocumentNodeAnchorCandidate[] {
-  return (
-    collectDocumentNodeAnchorCandidates(
-      document,
-      [anchor],
-      options,
-    ).candidates.get(documentNodeAnchorContentKey(anchor)) ?? []
-  );
 }
 
 export function resolveDocumentNodeAnchor(
@@ -391,15 +379,19 @@ function resolveSingleAnchorCandidate(
   anchor: DocumentNodeAnchor,
   candidate: DocumentNodeAnchorCandidate,
 ): DocumentNodeAnchorResolution {
-  if (!anchorRequiresContextualMatch(anchor)) {
-    return createMatchedAnchorResolution(anchor, candidate, "exact-content");
+  if (!anchorRequiresContextualMatch(anchor) || candidate.path === anchor.path) {
+    return createMatchedAnchorResolution(
+      anchor,
+      candidate,
+      candidate.path === anchor.path ? "exact-content-location" : "exact-content",
+    );
   }
 
   const trustedContextMatch =
     anchor.kind === "block"
       ? candidate.anchor.kind === "block" && matchesBlockSiblingContext(anchor, candidate.anchor)
       : candidate.anchor.kind === "table-cell" &&
-        matchesTableCellNeighborContext(anchor, candidate.anchor);
+        hasTableCellContextMatch(anchor, candidate.anchor);
 
   return trustedContextMatch
     ? createMatchedAnchorResolution(
@@ -410,7 +402,7 @@ function resolveSingleAnchorCandidate(
     : {
         reason: "weak-evidence",
         status: "ambiguous",
-    };
+      };
 }
 
 function anchorRequiresContextualMatch(anchor: DocumentNodeAnchor) {
@@ -448,15 +440,30 @@ function resolveTableCellAnchorContext(
   anchor: DocumentTableCellAnchor,
   candidates: readonly DocumentNodeAnchorCandidate[],
 ): DocumentNodeAnchorResolution | null {
-  return (
-    resolveUniqueContextualCandidate(anchor, candidates, (candidate) => {
-      if (candidate.anchor.kind !== "table-cell") {
-        return false;
-      }
-
-      return matchesTableCellNeighborContext(anchor, candidate.anchor);
-    }) ?? null
+  const cellContextMatches = candidates.filter((candidate) => {
+    return (
+      candidate.anchor.kind === "table-cell" &&
+      matchesTableCellNeighborContext(anchor, candidate.anchor)
+    );
+  });
+  const rowContextMatches = candidates.filter((candidate) => {
+    return (
+      candidate.anchor.kind === "table-cell" &&
+      matchesTableCellRowContext(anchor, candidate.anchor)
+    );
+  });
+  const matched = selectTableCellContextCandidate(
+    cellContextMatches,
+    rowContextMatches,
   );
+
+  return matched
+    ? createMatchedAnchorResolution(
+        anchor,
+        matched,
+        resolveContextualMatchBasis(anchor, matched),
+      )
+    : null;
 }
 
 function matchesBlockSiblingContext(
@@ -477,6 +484,46 @@ function matchesTableCellNeighborContext(
     hasMatchingHash(anchor.cells.previousHash, candidateAnchor.cells.previousHash) ||
     hasMatchingHash(anchor.cells.nextHash, candidateAnchor.cells.nextHash)
   );
+}
+
+function matchesTableCellRowContext(
+  anchor: DocumentTableCellAnchor,
+  candidateAnchor: DocumentTableCellAnchor,
+) {
+  return (
+    hasMatchingHash(anchor.rows.previousHash, candidateAnchor.rows.previousHash) ||
+    hasMatchingHash(anchor.rows.nextHash, candidateAnchor.rows.nextHash)
+  );
+}
+
+function hasTableCellContextMatch(
+  anchor: DocumentTableCellAnchor,
+  candidateAnchor: DocumentTableCellAnchor,
+) {
+  return (
+    matchesTableCellNeighborContext(anchor, candidateAnchor) ||
+    matchesTableCellRowContext(anchor, candidateAnchor)
+  );
+}
+
+function selectTableCellContextCandidate<T>(
+  cellContextMatches: readonly T[],
+  rowContextMatches: readonly T[],
+): T | null {
+  if (cellContextMatches.length > 0 && rowContextMatches.length > 0) {
+    const rowContextSet = new Set(rowContextMatches);
+    const intersection = cellContextMatches.filter((candidate) => rowContextSet.has(candidate));
+
+    return selectOnlyCandidate(intersection);
+  }
+
+  const matches = cellContextMatches.length > 0 ? cellContextMatches : rowContextMatches;
+
+  return selectOnlyCandidate(matches);
+}
+
+function selectOnlyCandidate<T>(candidates: readonly T[]): T | null {
+  return candidates.length === 1 ? candidates[0]! : null;
 }
 
 function resolveUniqueContextualCandidate(
@@ -565,20 +612,22 @@ function hasMatchingHash<T>(left: T | undefined, right: T | undefined) {
 }
 
 function resolveBlockSiblingContext(document: Document, path: string) {
-  const segments = path.split(".");
-  const siblingIndex = Number(segments.at(-1));
-  const containerPath = segments.slice(0, -1).join(".");
-  const parent =
-    containerPath.endsWith(".children") && containerPath !== "root"
-      ? resolveBlockByPath(
-          document,
-          containerPath.slice(0, -".children".length),
-        )
-      : null;
+  const siblingIndex = blockPathSiblingIndex(path);
+  const parentPath = parentBlockPath(path);
+  const parent = parentPath ? resolveBlockByPath(document, parentPath) : null;
+  if (siblingIndex === null) {
+    return {
+      index: -1,
+      next: null,
+      parent,
+      previous: null,
+    };
+  }
+
   const siblings = parent ? (getBlockChildren(parent) ?? []) : document.blocks;
 
   return {
-    index: Number.isInteger(siblingIndex) ? siblingIndex : -1,
+    index: siblingIndex,
     next: siblings[siblingIndex + 1] ?? null,
     parent,
     previous: siblings[siblingIndex - 1] ?? null,

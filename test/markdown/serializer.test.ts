@@ -12,6 +12,8 @@ import {
   createTableCell,
   createTableRow,
   createText,
+  type Inline,
+  type ListItemBlock,
 } from "@/document";
 import { parseDocument, serializeCommentAppendix, serializeDocument } from "@/markdown";
 import { expectBlockAt } from "../document/helpers";
@@ -37,20 +39,18 @@ describe("Inline marks", () => {
   });
 
   test("emits nested marks in canonical semantic mark order", () => {
-    const document = createDocument([
-      createParagraphBlock([createText("marked", ["superscript", "underline", "bold"])]),
+    const document = createParagraphDocument([
+      createText("marked", ["superscript", "underline", "bold"]),
     ]);
 
     expect(serializeDocument(document)).toBe("<sup><ins>**marked**</ins></sup>\n");
   });
 
   test("emits inline code as the innermost composable mark", () => {
-    const document = createDocument([
-      createParagraphBlock([
-        createText("code", ["italic", "code"]),
-        createText(" and "),
-        createText("underlined", ["underline", "code"]),
-      ]),
+    const document = createParagraphDocument([
+      createText("code", ["italic", "code"]),
+      createText(" and "),
+      createText("underlined", ["underline", "code"]),
     ]);
 
     expect(serializeDocument(document)).toBe("*`code`* and <ins>`underlined`</ins>\n");
@@ -97,16 +97,14 @@ describe("Inline references", () => {
   });
 
   test("emits resource inlines as markdown links", () => {
-    const document = createDocument([
-      createParagraphBlock([
-        createText("Use "),
-        createResource({
-          label: "Recording",
-          protocol: "demo-resource:",
-          url: "demo-resource://recording/live",
-        }),
-        createText(" now."),
-      ]),
+    const document = createParagraphDocument([
+      createText("Use "),
+      createResource({
+        label: "Recording",
+        protocol: "demo-resource:",
+        url: "demo-resource://recording/live",
+      }),
+      createText(" now."),
     ]);
 
     expect(serializeDocument(document)).toBe(
@@ -149,39 +147,25 @@ describe("Lists", () => {
   });
 
   test("serializes non-compact lists with blank lines between items", () => {
-    const document = createDocument([
-      createListBlock({
-        compact: false,
-        items: [
-          createListItemBlock({
-            children: [createParagraphBlock([createText("alpha")])],
-          }),
-          createListItemBlock({
-            children: [createParagraphBlock([createText("beta")])],
-          }),
-        ],
-        ordered: false,
-      }),
-    ]);
+    const document = createListDocument({
+      compact: false,
+      items: [createParagraphListItem("alpha"), createParagraphListItem("beta")],
+      ordered: false,
+    });
 
     expect(serializeDocument(document)).toBe("- alpha\n\n- beta\n");
   });
 
   test("serializes non-compact list items with blank lines between child blocks", () => {
-    const document = createDocument([
-      createListBlock({
-        items: [
-          createListItemBlock({
-            children: [
-              createParagraphBlock([createText("alpha")]),
-              createParagraphBlock([createText("beta")]),
-            ],
-            compact: false,
-          }),
-        ],
-        ordered: false,
-      }),
-    ]);
+    const document = createListDocument({
+      items: [
+        createListItemBlock({
+          children: [createParagraph("alpha"), createParagraph("beta")],
+          compact: false,
+        }),
+      ],
+      ordered: false,
+    });
 
     expect(serializeDocument(document)).toBe("- alpha\n\n  beta\n");
   });
@@ -193,21 +177,13 @@ describe("Lists", () => {
     // editor's structural-split path can — pressing Enter at the end of a
     // task item creates exactly this Document. The serializer must keep
     // both checkbox markers intact.
-    const document = createDocument([
-      createListBlock({
-        items: [
-          createListItemBlock({
-            checked: false,
-            children: [createParagraphBlock([createText("alpha")])],
-          }),
-          createListItemBlock({
-            checked: false,
-            children: [createParagraphBlock([])],
-          }),
-        ],
-        ordered: false,
-      }),
-    ]);
+    const document = createListDocument({
+      items: [
+        createParagraphListItem("alpha", { checked: false }),
+        createParagraphListItem("", { checked: false }),
+      ],
+      ordered: false,
+    });
 
     expect(serializeDocument(document)).toBe("- [ ] alpha\n- [ ] \n");
   });
@@ -403,6 +379,30 @@ describe("Paragraph block-start escapes", () => {
     expectRoundTrip(canonical);
   });
 });
+
+type ListItemOptions = Omit<Parameters<typeof createListItemBlock>[0], "children">;
+
+function createParagraphDocument(children: Inline[]) {
+  return createDocument([createParagraphBlock(children)]);
+}
+
+function createParagraph(text: string) {
+  return createParagraphBlock(text.length > 0 ? [createText(text)] : []);
+}
+
+function createListDocument(options: Parameters<typeof createListBlock>[0]) {
+  return createDocument([createListBlock(options)]);
+}
+
+function createParagraphListItem(
+  text: string,
+  options: ListItemOptions = {},
+): ListItemBlock {
+  return createListItemBlock({
+    ...options,
+    children: [createParagraph(text)],
+  });
+}
 
 function createTableDocument(rows: string[][]) {
   return createDocument([

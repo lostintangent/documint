@@ -167,7 +167,7 @@ export function createEditorScenarios(fixtures: {
       void deleteBackward(longEditingState);
     }),
     // Full-frame counterpart to editor_backspace_long. See typing_long_full_frame.
-    createBenchmarkScenario("editor", "editor_backspace_long_full_frame", 100, () => {
+    createBenchmarkScenario("editor", "editor_backspace_long_full_frame", 200, () => {
       const nextState = deleteBackward(longEditingState);
       if (!nextState) return;
       void serializeDocument(nextState.documentIndex.document);
@@ -275,7 +275,7 @@ export function createEditorScenarios(fixtures: {
     createBenchmarkScenario(
       "editor",
       "editor_cursor_move_huge",
-      30,
+      200,
       () => {
         const { layout } = hugeInteractionFixture;
         let state = hugeInteractionFixture.state;
@@ -366,7 +366,7 @@ function selectCanvasText(
   }
 
   return setSelection(state, {
-    regionId: container.id,
+    regionPath: container.path,
     offset: container.text.indexOf(text) + offset,
   });
 }
@@ -381,7 +381,7 @@ function selectMiddleTextRegion(snapshot: Parameters<typeof createEditorState>[0
   }
 
   return setSelection(state, {
-    regionId: region.id,
+    regionPath: region.path,
     offset: Math.floor(region.text.length / 2),
   });
 }
@@ -431,7 +431,7 @@ function moveSelectionToNextLine(
   layout: DocumentLayout,
 ) {
   const caret = measureCaretTarget(layout, state.documentIndex, {
-    regionId: state.selection.focus.regionId,
+    regionPath: state.selection.focus.regionPath,
     offset: state.selection.focus.offset,
   });
   const currentLine = findCurrentLine(state, layout);
@@ -442,7 +442,7 @@ function moveSelectionToNextLine(
 
   const currentLineEntry = findLineEntryForRegionOffset(
     layout,
-    currentLine.regionId,
+    currentLine.regionPath,
     state.selection.focus.offset,
   );
   const targetLine = currentLineEntry ? layout.lines[currentLineEntry.index + 1] : null;
@@ -458,7 +458,7 @@ function moveSelectionToNextLine(
 
   return hit
     ? setSelection(state, {
-        regionId: hit.regionId,
+        regionPath: hit.regionPath,
         offset: hit.offset,
       })
     : null;
@@ -467,7 +467,7 @@ function moveSelectionToNextLine(
 function findCurrentLine(state: ReturnType<typeof createEditorState>, layout: DocumentLayout) {
   return findLineForRegionOffset(
     layout,
-    state.selection.focus.regionId,
+    state.selection.focus.regionPath,
     state.selection.focus.offset,
   );
 }
@@ -482,8 +482,8 @@ function selectEntireDocument(snapshot: Parameters<typeof createEditorState>[0])
   }
 
   return setSelection(state, {
-    anchor: { regionId: first.id, offset: 0 },
-    focus: { regionId: last.id, offset: last.text.length },
+    anchor: { regionPath: first.path, offset: 0 },
+    focus: { regionPath: last.path, offset: last.text.length },
   });
 }
 

@@ -5,8 +5,8 @@
 
 import type { DocumentResources } from "@/types";
 import {
-  findAncestorIndexedBlock,
-  resolvePrimaryRegion,
+  findAncestorIndexedBlockByPath,
+  resolvePrimaryRegionForBlockPath,
   resolveRegion,
   type IndexedInline,
   type IndexedListItem,
@@ -33,7 +33,7 @@ export type InlineBounds = {
 
 export type ListMarkerTarget = {
   blockPath: string;
-  listItemId: string;
+  listItemPath: string;
   marker: IndexedListItem;
 };
 
@@ -73,9 +73,9 @@ export function resolveUnorderedListMarkerBounds(line: LayoutLine) {
 
 export function resolveIndexedListItem(
   state: EditorState,
-  listItemId: string,
+  listItemPath: string,
 ): IndexedListItem | null {
-  return state.documentIndex.listItems.get(listItemId) ?? null;
+  return state.documentIndex.listItems.get(listItemPath) ?? null;
 }
 
 export function resolveListMarkerTarget(
@@ -86,24 +86,28 @@ export function resolveListMarkerTarget(
     return null;
   }
 
-  const listItemEntry = findAncestorIndexedBlock(state.documentIndex, line.blockId, "listItem");
+  const listItemEntry = findAncestorIndexedBlockByPath(
+    state.documentIndex,
+    line.blockPath,
+    "listItem",
+  );
 
   if (!listItemEntry) {
     return null;
   }
 
-  const primaryRegion = resolvePrimaryRegion(state.documentIndex, listItemEntry.block.id);
+  const primaryRegion = resolvePrimaryRegionForBlockPath(state.documentIndex, listItemEntry.path);
 
-  if (primaryRegion?.id !== line.regionId) {
+  if (primaryRegion?.path !== line.regionPath) {
     return null;
   }
 
-  const marker = resolveIndexedListItem(state, listItemEntry.block.id);
+  const marker = resolveIndexedListItem(state, listItemEntry.path);
 
   return marker
     ? {
         blockPath: listItemEntry.path,
-        listItemId: listItemEntry.block.id,
+        listItemPath: listItemEntry.path,
         marker,
       }
     : null;
@@ -123,13 +127,13 @@ export function measureInlineImageBounds(
   resources: DocumentResources,
   run: IndexedInline,
 ): InlineBounds | null {
-  const region = resolveRegion(state.documentIndex, state.selection.anchor.regionId);
+  const region = resolveRegion(state.documentIndex, state.selection.anchor.regionPath);
 
   if (run.node.type !== "image" || !region) {
     return null;
   }
 
-  const line = findDocumentLayoutLineForRegionOffset(viewport.layout, region.id, run.start);
+  const line = findDocumentLayoutLineForRegionOffset(viewport.layout, region.path, run.start);
 
   if (!line) {
     return null;

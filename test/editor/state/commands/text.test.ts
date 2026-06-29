@@ -16,6 +16,7 @@ import {
   regionInlines,
   replaceSelection,
   replaceTextRange,
+  resolveRegion,
   setSelection,
   type EditorSelection,
 } from "@/editor/state";
@@ -33,11 +34,11 @@ describe("Text commands", () => {
 
     state = setSelection(state, {
       anchor: {
-        regionId: paragraph.id,
+        regionPath: paragraph.path,
         offset: 0,
       },
       focus: {
-        regionId: paragraph.id,
+        regionPath: paragraph.path,
         offset: "Paragraph".length,
       },
     });
@@ -53,11 +54,11 @@ describe("Text commands", () => {
 
     state = setSelection(state, {
       anchor: {
-        regionId: selectedBody.id,
+        regionPath: selectedBody.path,
         offset: "Selected".length,
       },
       focus: {
-        regionId: selectedBody.id,
+        regionPath: selectedBody.path,
         offset: "Selected body".length,
       },
     });
@@ -76,7 +77,7 @@ describe("Text commands", () => {
 
     expect(toMarkdown(nextState)).toBe("Hello @Jane  friend\n");
     expect(nextState.selection.anchor).toEqual({
-      regionId: nextState.selection.focus.regionId,
+      regionPath: nextState.selection.focus.regionPath,
       offset: "Hello @Jane ".length,
     });
   });
@@ -114,6 +115,31 @@ describe("Text commands", () => {
     expect(replaceTextRange(state, 3, 0, "@Jane ")).toBeNull();
   });
 
+  test("keeps cached plain text canonical after a nested text edit", () => {
+    const state = setup("> - alpha\n");
+    const region = getRegion(state, "alpha");
+    const nextState = insertText(placeAt(state, region, "end"), " beta");
+
+    if (!nextState) {
+      throw new Error("Expected insertText to produce a new state");
+    }
+
+    const root = nextState.documentIndex.document.blocks[0];
+
+    if (root?.type !== "blockquote") {
+      throw new Error("Expected edited root to remain a blockquote");
+    }
+
+    const nestedList = root.children[0];
+    const listItem = nestedList?.type === "list" ? nestedList.items[0] : null;
+    const paragraph = listItem?.children[0];
+
+    expect(root.plainText).toBe("alpha beta");
+    expect(nestedList?.plainText).toBe("alpha beta");
+    expect(listItem?.plainText).toBe("alpha beta");
+    expect(paragraph?.plainText).toBe("alpha beta");
+  });
+
   test("deleting all text within a single heading keeps the heading block", () => {
     let state = setup("# Heading\n");
     const heading = state.documentIndex.regions[0];
@@ -144,7 +170,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
+      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
     );
     state = replaceSelection(state, "X");
 
@@ -161,7 +187,7 @@ describe("Text commands", () => {
       throw new Error("Expected three paragraph regions");
     }
 
-    state = setSelection(state, selectionBetween(first.id, 2, third.id, 3));
+    state = setSelection(state, selectionBetween(first.path, 2, third.path, 3));
     state = replaceSelection(state, "-");
 
     expect(toMarkdown(state)).toBe("al-ma\n");
@@ -177,7 +203,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
+      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
     );
     const nextState = deleteBackward(state);
 
@@ -200,7 +226,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
+      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
     );
     const nextState = deleteForward(state);
 
@@ -221,7 +247,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
+      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
     );
     state = deleteSelection(state);
 
@@ -238,7 +264,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(heading.id, "Headin".length, paragraph.id, "Paragraph ".length),
+      selectionBetween(heading.path, "Headin".length, paragraph.path, "Paragraph ".length),
     );
     state = replaceSelection(state, "/");
 
@@ -255,7 +281,7 @@ describe("Text commands", () => {
       throw new Error("Expected paragraph regions around the code block");
     }
 
-    state = setSelection(state, selectionBetween(first.id, 2, last.id, 3));
+    state = setSelection(state, selectionBetween(first.path, 2, last.path, 3));
     state = replaceSelection(state, "!");
 
     expect(toMarkdown(state)).toBe("al!ma\n");
@@ -266,7 +292,7 @@ describe("Text commands", () => {
     const codeRegion = getRegionByType(state, "code");
     const paragraphRegion = getRegionByType(state, "paragraph");
 
-    state = setSelection(state, selectionBetween(codeRegion.id, 3, paragraphRegion.id, 2));
+    state = setSelection(state, selectionBetween(codeRegion.path, 3, paragraphRegion.path, 2));
     state = deleteSelection(state);
 
     // Code-block prefix kept; paragraph suffix kept; no inline merge (not text-like on both sides).
@@ -284,7 +310,7 @@ describe("Text commands", () => {
       throw new Error("Expected paragraphs surrounding the table");
     }
 
-    state = setSelection(state, selectionBetween(first.id, 2, second.id, 2));
+    state = setSelection(state, selectionBetween(first.path, 2, second.path, 2));
     state = replaceSelection(state, "X");
 
     expect(toMarkdown(state)).toBe("alXta\n");
@@ -300,8 +326,8 @@ describe("Text commands", () => {
     const two = getRegion(state, "two");
 
     state = setSelection(state, {
-      anchor: { regionId: alpha.id, offset: alpha.text.length },
-      focus: { regionId: two.id, offset: two.text.length },
+      anchor: { regionPath: alpha.path, offset: alpha.text.length },
+      focus: { regionPath: two.path, offset: two.text.length },
     });
     state = deleteSelection(state);
 
@@ -316,7 +342,7 @@ describe("Text commands", () => {
       throw new Error("Expected two paragraph regions");
     }
 
-    state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
+    state = setSelection(state, selectionBetween(first.path, 0, second.path, second.text.length));
     state = deleteSelection(state);
 
     expect(toMarkdown(state)).toBe("\n");
@@ -338,7 +364,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(firstListItem.id, "al".length, afterParagraph.id, "af".length),
+      selectionBetween(firstListItem.path, "al".length, afterParagraph.path, "af".length),
     );
     state = replaceSelection(state, "!");
 
@@ -352,7 +378,7 @@ describe("Text commands", () => {
 
     // Caret lands inside the merged "!ter" paragraph, just after the typed
     // text — not at the start of the trimmed list.
-    const caretRegion = state.documentIndex.regionIndex.get(state.selection.focus.regionId);
+    const caretRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
     expect(caretRegion?.text).toBe("!ter");
     expect(state.selection.focus.offset).toBe("!".length);
   });
@@ -380,7 +406,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(first.id, "alpha ".length, second.id, "gamma ".length),
+      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
     );
     state = deleteSelection(state);
 
@@ -402,7 +428,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(firstRegion.id, 0, lastRegion.id, lastRegion.text.length),
+      selectionBetween(firstRegion.path, 0, lastRegion.path, lastRegion.text.length),
     );
     state = replaceSelection(state, "x");
 
@@ -425,7 +451,7 @@ describe("Text commands", () => {
     // Select from mid-paragraph through the entire trailing heading.
     state = setSelection(
       state,
-      selectionBetween(paragraph.id, "alpha".length, heading.id, heading.text.length),
+      selectionBetween(paragraph.path, "alpha".length, heading.path, heading.text.length),
     );
     state = deleteSelection(state);
 
@@ -450,7 +476,7 @@ describe("Text commands", () => {
 
     state = setSelection(
       state,
-      selectionBetween(paragraph.id, "alpha".length, heading.id, heading.text.length),
+      selectionBetween(paragraph.path, "alpha".length, heading.path, heading.text.length),
     );
     state = replaceSelection(state, "X");
 
@@ -468,7 +494,7 @@ describe("Text commands", () => {
       throw new Error("Expected heading and paragraph regions");
     }
 
-    state = setSelection(state, selectionBetween(first.id, 0, second.id, second.text.length));
+    state = setSelection(state, selectionBetween(first.path, 0, second.path, second.text.length));
     state = deleteSelection(state);
 
     // The heading's type must not survive — the deletion consumed it entirely.
@@ -478,14 +504,14 @@ describe("Text commands", () => {
   });
 
   function selectionBetween(
-    anchorRegionId: string,
+    anchorRegionPath: string,
     anchorOffset: number,
-    focusRegionId: string,
+    focusRegionPath: string,
     focusOffset: number,
   ): EditorSelection {
     return {
-      anchor: { regionId: anchorRegionId, offset: anchorOffset },
-      focus: { regionId: focusRegionId, offset: focusOffset },
+      anchor: { regionPath: anchorRegionPath, offset: anchorOffset },
+      focus: { regionPath: focusRegionPath, offset: focusOffset },
     };
   }
 

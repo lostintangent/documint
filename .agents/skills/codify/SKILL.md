@@ -49,12 +49,9 @@ metadata:
 1. Review and iterate until the guide codifies the subsystem clearly and satisfies the standard:
 
    - For source-grounded changes, make at least one contradiction pass against the source.
-   - Make one bloat-removal pass against the standard: value first, concrete vocabulary, design notes as a learning path, map as routing, and no file-tree filler.
-   - Make one plain-language pass against the standard.
-   - Make one design-truth pass against the standard.
-   - For dense notes, rewrite from the ownership idea first, then add back only the source facts needed to prevent the wrong change.
-   - Before finalizing a new or substantially changed guide, challenge each design note by naming the wrong change, burden, or risk it prevents. Revise or delete notes that fail.
-   - After adding, removing, or splitting design notes, reread only the bold lead-ins and fix duplication or order drift against the standard.
+   - Make one standard-shape pass: the intro frames subsystem value and vocabulary, Design Notes deepen into sub-concepts under that frame, and the map routes readers to the owning files.
+   - Make one design-note pass. Read only the bold lead-ins first, then each note body. Each note should name one load-bearing concept plus the value it creates, explain only details that serve that lead-in, and prevent a real wrong change, burden, or risk. Revise, merge, or delete notes that fail.
+   - Make one bloat and plain-language pass. Remove repeated mechanism detail, true-but-adjacent facts, exhaustive file inventories, and insider language that does not make the guide clearer.
    - For high-impact guides, use five targeted reviewer perspectives when available: new contributor, domain model, runtime flow, ruthless editor, and standard compliance. Reviewer agents are optional/tooling-dependent. When they are unavailable, perform those passes manually.
 
    Take only feedback that fixes a real contradiction, clarifies ownership or routing, prevents a likely wrong change, improves repeatability of the guide-writing process, or removes noise. Reject feedback that is merely stylistic, speculative, or would make the guide more complete but less useful.

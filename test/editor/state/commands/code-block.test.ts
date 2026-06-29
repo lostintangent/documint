@@ -14,7 +14,7 @@ describe("Code block insertion", () => {
     const codeRegion = state.documentIndex.regions.find((region) => region.block.type === "code");
 
     expect(codeRegion).toBeDefined();
-    expect(state.selection.focus.regionId).toBe(codeRegion!.id);
+    expect(state.selection.focus.regionPath).toBe(codeRegion!.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -37,7 +37,7 @@ describe("Code block line breaks", () => {
 
     expect(toMarkdown(state)).toBe("```ts\nconst x = 1;\n\n\n```\n");
     expect(state.documentIndex.regions).toHaveLength(1);
-    expect(state.selection.focus.regionId).toBe(state.documentIndex.regions[0]?.id);
+    expect(state.selection.focus.regionPath).toBe(state.documentIndex.regions[0]?.path);
   });
 
   test("exits a code block from consecutive trailing blank lines", () => {
@@ -58,7 +58,7 @@ describe("Code block line breaks", () => {
     expect(trimmedCode?.text).toBe("const x = 1;");
     expect(paragraph?.block.type).toBe("paragraph");
     expect(paragraph?.text).toBe("");
-    expect(state.selection.focus.regionId).toBe(paragraph?.id);
+    expect(state.selection.focus.regionPath).toBe(paragraph?.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -95,7 +95,7 @@ describe("Code block deletion", () => {
     expect(toMarkdown(state)).toBe("\n");
     expect(paragraph?.block.type).toBe("paragraph");
     expect(paragraph?.text).toBe("");
-    expect(state.selection.focus.regionId).toBe(paragraph?.id);
+    expect(state.selection.focus.regionPath).toBe(paragraph?.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 

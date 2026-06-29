@@ -37,22 +37,22 @@ Start directly with the notes. Do not add a generic framing paragraph.
 Each note should be a present-tense truth with this shape:
 
 ```md
-- **<Value plus mechanism>.** Explain how the mechanism works and why it matters.
+- **<Concept plus problem or consumer value>.** Explain how the mechanism delivers that value and why the shape matters.
 ```
 
-Lead with the architectural truth, then name the mechanism that makes it true. Make the idea land quickly. Avoid abstraction-first labels like "decoupling" unless the value is already obvious.
+Lead with the load-bearing design, architecture, or domain concept, and make the problem it solves or value it creates visible in the same lead-in. Use concrete subsystem nouns and simple active phrasing. A strong lead-in should sound like a useful sentence a contributor could repeat in review.
 
-For example, prefer `Frames keep painters focused on 2D drawing` over `Frames decouple editor meaning from renderer output`.
+Avoid three weak openings. Abstraction-first labels such as "decoupling" hide the value. Structure-first descriptions such as "X is a coordinate overlay" or "Region records own local offsets" state what the code is before why it exists. Problem-first descriptions such as "Selection needs one text surface" state a need without naming the concept that answers it. Avoid inflated nouns such as "contract" or "abstraction" when a plainer value phrase says the same thing.
 
-The bold lead-ins should stand alone as the scannable design story, ordered from the central model or contract through the mechanisms, hot paths, correctness concerns, and boundaries a contributor needs next.
+For example, prefer `Frames keep painters focused on 2D drawing` over `Frames decouple editor meaning from renderer output`, and prefer `Editable regions give selection, layout, and paint one text surface` over either `Selection needs one text surface` or `Region records own local text offsets`. The stronger lead names the concept and the job it does. The weaker ones only describe the need or the mechanism.
 
-Include facts only when they explain ownership, invariants, tradeoffs, risks, integration contracts, boundaries, or work moved off hot paths. Design notes state how the subsystem works and why that shape matters. They are not contributor instructions, review checklists, or local operating procedures.
+Use `src/component/decorations/AGENTS.md` as the reference example for Design Notes. Its lead-ins name the concept and value together: `Worker classification keeps typing non-blocking`, `Changed roots drive incremental invalidation`, and `Region-relative caches make scroll cheap`.
 
-Each note should be a load-bearing concept in the reader's mental model of how the subsystem works and what role it plays in the application. If removing a note would not make the guide less useful, remove it. If two notes tell the same ownership story, merge them or delete the weaker one.
+The intro frames the subsystem's overall concept. Design Notes should deepen into sub-concepts, invariants, and mechanisms under that concept instead of repeating the intro's thesis as the first note. Deepening a concept named by the intro is not repetition: keep a note when it is the only place that explains how the concept works, why it matters, or what wrong change it prevents. The bold lead-ins should stand alone as the scannable design story, ordered from the first sub-concept a contributor needs through hot paths, correctness concerns, and boundaries.
 
-Order notes by progressive disclosure. Start with the first important question a reader should ask after the intro, do not spend a note restating the intro, and put dependency choices, implementation materials, and other FYI-style context later unless they are the subsystem's central design contract. Use real subsystem nouns and verbs instead of generic labels. Do not bury the lede behind implementation terms or tradeoff language.
+Each note should carry one load-bearing concept in the reader's mental model of how the subsystem works and why that shape matters. Include facts only when they explain ownership, invariants, tradeoffs, risks, integration contracts, boundaries, or work moved off hot paths. When a concept exists because two shapes, layers, or constraints do not naturally line up, name that mismatch directly so the concept feels necessary. Every sentence in a note should earn its place against the bold lead-in. If a detail names nearby machinery but does not explain the concept and value in the lead-in, move it to another note, move it to the map, or delete it.
 
-Keep the list concise, but do not merge distinct load-bearing concepts just to keep the count down. Each note should carry one sharp idea, usually in one or two sentences. Aim for three tight, load-bearing notes for a focused subsystem. Add more only when the subsystem has genuinely distinct architecture elements worth preserving. Never add notes to hit a quota.
+Keep the list concise, but do not merge distinct load-bearing concepts just to keep the count down. If removing a note would not make the guide less useful, remove it. If two notes tell the same ownership story, merge them or delete the weaker one. Aim for three tight notes for a focused subsystem. Add more only when the subsystem has genuinely distinct architecture worth preserving. Never add notes to hit a quota.
 
 ## Subsystem Map
 

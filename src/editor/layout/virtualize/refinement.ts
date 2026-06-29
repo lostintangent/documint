@@ -105,8 +105,8 @@ function resolveMeasuredEntryGroupBounds(
   let top = Number.POSITIVE_INFINITY;
 
   for (let index = startIndex; index < endIndex; index += 1) {
-    const regionId = documentIndex.regions[index]?.id;
-    const bounds = regionId ? layout.regionBounds.get(regionId) : null;
+    const regionPath = documentIndex.regions[index]?.path;
+    const bounds = regionPath ? layout.regionBounds.get(regionPath) : null;
 
     if (!bounds) {
       continue;

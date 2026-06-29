@@ -8,6 +8,19 @@ import { parseDocument } from "@/markdown";
 
 describe("document node anchors", () => {
   describe("exact content matching", () => {
+    test("matches a moved block by unique content when the original anchor has no sibling context", () => {
+      const previous = parseDocument("Target\n");
+      const next = parseDocument("Intro\n\nTarget\n");
+      const anchor = createAnchor(previous, "root.0");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
+        basis: "exact-content",
+        node: { plainText: "Target", type: "paragraph" },
+        path: "root.1",
+        status: "matched",
+      });
+    });
+
     test("matches a block by content after its path shifts", () => {
       const previous = parseDocument("Alpha\n\nTarget\n");
       const next = parseDocument("Intro\n\nAlpha\n\nTarget\n");
@@ -52,6 +65,29 @@ describe("document node anchors", () => {
         basis: "exact-content-context",
         path: "root.2",
         status: "matched",
+      });
+    });
+
+    test("keeps a single same-path content match when sibling context changes", () => {
+      const previous = parseDocument("Alpha\n\nTarget\n");
+      const next = parseDocument("Other\n\nTarget\n");
+      const anchor = createAnchor(previous, "root.1");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
+        basis: "exact-content-location",
+        path: "root.1",
+        status: "matched",
+      });
+    });
+
+    test("keeps a context-bearing moved block ambiguous when sibling context changes", () => {
+      const previous = parseDocument("Before\n\nTarget\n\nAfter\n");
+      const next = parseDocument("Intro\n\nOther\n\nTarget\n\nOutro\n");
+      const anchor = createAnchor(previous, "root.1");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
+        reason: "weak-evidence",
+        status: "ambiguous",
       });
     });
 
@@ -139,20 +175,110 @@ describe("document node anchors", () => {
 
     test("resolves duplicate table-cell content with row and cell context", () => {
       const previous = parseDocument("| A | B | C |\n| - | - | - |\n| one | two | three |\n");
-      const next = parseDocument("| A | B | C |\n| - | - | - |\n| x | two | y |\n| one | two | three |\n");
+      const next = parseDocument("| A | B | C |\n| - | - | - |\n| one | two | three |\n| x | two | y |\n");
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
 
       expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
-        path: "root.0.rows.2.cells.1",
+        basis: "exact-content-location",
+        path: "root.0.rows.1.cells.1",
         status: "matched",
       });
     });
 
-    test("keeps duplicate table-cell content ambiguous when rows are identical", () => {
+    test("resolves duplicate table-cell content when row context identifies the candidate", () => {
+      const previous = parseDocument(`| A | B | C |
+| - | - | - |
+| before | row | context |
+| left | target | right |
+| after | row | context |
+`);
+      const next = parseDocument(`| A | B | C |
+| - | - | - |
+| left | target | right |
+| before | row | context |
+| left | target | right |
+| after | row | context |
+`);
+      const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
+        basis: "exact-content-context",
+        path: "root.0.rows.3.cells.1",
+        status: "matched",
+      });
+    });
+
+    test("resolves duplicate table-cell content when header row context identifies the candidate", () => {
       const previous = parseDocument("| A | B |\n| - | - |\n| one | two |\n");
       const next = parseDocument("| A | B |\n| - | - |\n| one | two |\n| one | two |\n");
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
+        basis: "exact-content-location",
+        path: "root.0.rows.1.cells.1",
+        status: "matched",
+      });
+    });
+
+    test("keeps a context-bearing moved table-cell ambiguous when row and cell context change", () => {
+      const previous = parseDocument(`| A | B |
+| - | - |
+| left | target |
+| below | row |
+`);
+      const next = parseDocument(`| A | B |
+| - | - |
+| changed | cell |
+| other | target |
+| tail | row |
+`);
+      const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
+        reason: "weak-evidence",
+        status: "ambiguous",
+      });
+    });
+
+    test("keeps duplicate table-cell content ambiguous when row context also ties", () => {
+      const previous = parseDocument(`| A | B | C |
+| - | - | - |
+| before | row | context |
+| left | target | right |
+| after | row | context |
+`);
+      const next = parseDocument(`| A | B | C |
+| - | - | - |
+| before | row | context |
+| left | target | right |
+| after | row | context |
+| before | row | context |
+| left | target | right |
+| after | row | context |
+`);
+      const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
+
+      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
+        reason: "weak-evidence",
+        status: "ambiguous",
+      });
+    });
+
+    test("keeps duplicate table-cell content ambiguous when row and cell context conflict", () => {
+      const previous = parseDocument(`| A | B | C |
+| - | - | - |
+| before | row | context |
+| left | target | right |
+| after | row | context |
+`);
+      const next = parseDocument(`| A | B | C |
+| - | - | - |
+| left | target | right |
+| before | row | context |
+| other | target | cells |
+| after | row | context |
+`);
+      const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
 
       expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
         reason: "weak-evidence",

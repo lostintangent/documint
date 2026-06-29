@@ -27,7 +27,7 @@ export function trimBlockToPrefix(
     return null;
   }
 
-  if (block.id === targetRegion.block.id) {
+  if (block === targetRegion.block) {
     return trimLeafBlockToPrefix(block, targetRegion, offset);
   }
 
@@ -46,7 +46,7 @@ export function trimBlockToSuffix(
     return null;
   }
 
-  if (block.id === targetRegion.block.id) {
+  if (block === targetRegion.block) {
     return trimLeafBlockToSuffix(block, targetRegion, offset);
   }
 
@@ -56,9 +56,9 @@ export function trimBlockToSuffix(
 }
 
 // Whether `block` directly is or transitively contains the leaf identified by
-// `region.block.id`. Shared by trimming and fragment path narrowing.
+// `region.block`. Shared by trimming and fragment path narrowing.
 export function blockContainsRegion(block: Block, region: EditableRegion): boolean {
-  if (block.id === region.block.id) {
+  if (block === region.block) {
     return true;
   }
 

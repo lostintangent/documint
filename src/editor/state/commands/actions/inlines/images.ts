@@ -28,6 +28,6 @@ export function resolveImageResize(
   return {
     kind: "replace-block",
     block: replacement.block,
-    blockId: replacement.blockId,
+    blockPath: replacement.blockPath,
   };
 }

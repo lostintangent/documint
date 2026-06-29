@@ -8,19 +8,13 @@ export type DocumentChangeKind = "added" | "modified";
 export type DocumentChangeTarget =
   | {
       readonly anchor: DocumentBlockAnchor;
-      readonly node: {
-        readonly blockId: string;
-        readonly path: string;
-      };
       readonly kind: "block";
+      readonly path: string;
     }
   | {
       readonly anchor: DocumentTableCellAnchor;
-      readonly node: {
-        readonly cellId: string;
-        readonly path: string;
-      };
       readonly kind: "table-cell";
+      readonly path: string;
     };
 
 export type DocumentChange =

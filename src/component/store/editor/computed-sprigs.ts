@@ -56,7 +56,7 @@ export type ImageAtCursor = {
 };
 
 const equalSelectionRanges = equalNullableBy<EditorSelectionRange>((range) => [
-  range.regionId,
+  range.regionPath,
   range.startOffset,
   range.endOffset,
 ]);
@@ -69,8 +69,8 @@ const equalSelectionHandles = equalNullableBy<SelectionHandles>((handles) => [
 ]);
 
 const equalCaretTargets = equalNullableBy<CaretTarget>((target) => [
-  target.blockId,
-  target.regionId,
+  target.blockPath,
+  target.regionPath,
   target.height,
   target.left,
   target.offset,

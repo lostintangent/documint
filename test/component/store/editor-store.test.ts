@@ -37,7 +37,7 @@ describe("EditorStore", () => {
     const state = setup("alpha\n");
     const region = getRegion(state, "alpha");
     const store = createEditorStore(state);
-    const transition = store.command(setSelection, { regionId: region.id, offset: 2 });
+    const transition = store.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(transition).toEqual(
       expect.objectContaining({
@@ -124,7 +124,7 @@ describe("EditorStore", () => {
       focusNotifications += 1;
     });
 
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(documentNotifications).toBe(0);
     expect(focusNotifications).toBe(1);
@@ -144,7 +144,7 @@ describe("EditorStore", () => {
     });
 
     unsubscribe();
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(notifications).toBe(0);
   });
@@ -164,7 +164,7 @@ describe("EditorStore", () => {
       notifications += 1;
     });
 
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
     expect(notifications).toBe(0);
   });
@@ -183,11 +183,11 @@ describe("EditorStore", () => {
       notifications += 1;
     });
 
-    expect(focusSprig.read(store)).toEqual({ regionId: region.id, offset: 0 });
+    expect(focusSprig.read(store)).toEqual({ regionPath: region.path, offset: 0 });
 
-    store.editor.command(setSelection, { regionId: region.id, offset: 2 });
+    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
 
-    expect(focusSprig.read(store)).toEqual({ regionId: region.id, offset: 2 });
+    expect(focusSprig.read(store)).toEqual({ regionPath: region.path, offset: 2 });
     expect(notifications).toBe(1);
   });
 });

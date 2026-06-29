@@ -8,7 +8,7 @@ export function createMarkdownScenarios(fixtures: BenchmarkFixtures): BenchmarkS
     { id: "markdown_to_document_comments", iterations: 200, markdown: fixtures.commentsMarkdown },
     { id: "markdown_to_document_short", iterations: 200, markdown: fixtures.sampleMarkdown },
     { id: "markdown_to_document_medium", iterations: 200, markdown: fixtures.mediumMarkdown },
-    { id: "markdown_to_document", iterations: 100, markdown: fixtures.longMarkdown },
+    { id: "markdown_to_document", iterations: 300, markdown: fixtures.longMarkdown },
     { id: "markdown_to_document_rich", iterations: 200, markdown: fixtures.richMixedMarkdown },
   ] as const;
   const serializeScenarios = [

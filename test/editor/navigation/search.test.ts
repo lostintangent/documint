@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveEditorSearchMatches, type EditorSearchMatch } from "@/editor";
+import { resolveEditorSearchMatches, resolveRegion, type EditorSearchMatch } from "@/editor";
 import { setup } from "../helpers";
 
 describe("editor search", () => {
@@ -40,7 +40,7 @@ describe("editor search", () => {
 
     expect(matches.map(resolveMatchText(state))).toEqual(["target", "target", "target", "target"]);
     expect(
-      matches.map((match) => state.documentIndex.regionIndex.get(match.regionId)?.text),
+      matches.map((match) => resolveRegion(state.documentIndex, match.regionPath)?.text),
     ).toEqual([
       "bold target and link target",
       "bold target and link target",
@@ -59,7 +59,7 @@ describe("editor search", () => {
 
 function resolveMatchText(state: ReturnType<typeof setup>) {
   return (match: EditorSearchMatch) => {
-    const region = state.documentIndex.regionIndex.get(match.regionId);
+    const region = resolveRegion(state.documentIndex, match.regionPath);
     return region?.text.slice(match.startOffset, match.endOffset) ?? "";
   };
 }

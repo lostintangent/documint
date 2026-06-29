@@ -7,6 +7,7 @@ import {
   moveListItemDown,
   moveListItemUp,
   readEditorEffects,
+  resolveIndexedBlock,
   toggleTask,
 } from "@/editor/state";
 import { redoEditorState, setSelection, undoEditorState } from "@/editor/state";
@@ -233,7 +234,7 @@ describe("List structure", () => {
     // item's leading paragraph, which the old hardcoded path produced).
     const nested = getRegion(state, "nested");
 
-    expect(state.selection.focus.regionId).toBe(nested.id);
+    expect(state.selection.focus.regionPath).toBe(nested.path);
     expect(state.selection.focus.offset).toBe("nested".length);
   });
 
@@ -251,7 +252,7 @@ describe("List structure", () => {
     const beta = getRegion(state, "beta");
 
     expect(toMarkdown(state)).toBe("- alpha\n- beta\n");
-    expect(state.selection.focus.regionId).toBe(beta.id);
+    expect(state.selection.focus.regionPath).toBe(beta.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -269,15 +270,32 @@ describe("List structure", () => {
     const after = getRegion(state, "after");
 
     expect(toMarkdown(state)).toBe("- alpha\n\nafter\n");
-    expect(state.selection.focus.regionId).toBe(after.id);
+    expect(state.selection.focus.regionPath).toBe(after.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("lifts empty nested list items one level before exiting the list entirely", () => {
     let state = setup("- parent\n  - child\n  - \n- sibling\n");
-    const empty = state.documentIndex.regions.find(
-      (container) => container.text === "" && container.path.includes(".children.0.children."),
-    );
+    const empty = state.documentIndex.regions.find((container) => {
+      if (container.text !== "") {
+        return false;
+      }
+
+      const block = resolveIndexedBlock(state.documentIndex, container.blockPath);
+      const item = block?.parentBlockPath
+        ? resolveIndexedBlock(state.documentIndex, block.parentBlockPath)
+        : null;
+      const list = item?.parentBlockPath
+        ? resolveIndexedBlock(state.documentIndex, item.parentBlockPath)
+        : null;
+
+      return (
+        block?.block.type === "paragraph" &&
+        item?.block.type === "listItem" &&
+        list?.block.type === "list" &&
+        list.parentBlockPath !== null
+      );
+    });
 
     if (!empty) {
       throw new Error("Expected empty nested list item");
@@ -307,11 +325,11 @@ describe("List structure", () => {
 
     inputState = setSelection(inputState, {
       anchor: {
-        regionId: placeholder.id,
+        regionPath: placeholder.path,
         offset: 0,
       },
       focus: {
-        regionId: placeholder.id,
+        regionPath: placeholder.path,
         offset: placeholder.text.length,
       },
     });
@@ -333,11 +351,11 @@ describe("List structure", () => {
 
     canonicalInputState = setSelection(canonicalInputState, {
       anchor: {
-        regionId: canonicalPlaceholder.id,
+        regionPath: canonicalPlaceholder.path,
         offset: 0,
       },
       focus: {
-        regionId: canonicalPlaceholder.id,
+        regionPath: canonicalPlaceholder.path,
         offset: canonicalPlaceholder.text.length,
       },
     });
@@ -361,11 +379,11 @@ describe("List structure", () => {
 
     unorderedState = setSelection(unorderedState, {
       anchor: {
-        regionId: unorderedContainer.id,
+        regionPath: unorderedContainer.path,
         offset: 0,
       },
       focus: {
-        regionId: unorderedContainer.id,
+        regionPath: unorderedContainer.path,
         offset: unorderedContainer.text.length,
       },
     });
@@ -375,7 +393,7 @@ describe("List structure", () => {
     expect(toMarkdown(unorderedState)).toBe("-\n");
     expect(
       unorderedState.documentIndex.regions.some(
-        (container) => container.id === unorderedState.selection.focus.regionId,
+        (container) => container.path === unorderedState.selection.focus.regionPath,
       ),
     ).toBe(true);
 
@@ -388,11 +406,11 @@ describe("List structure", () => {
 
     orderedState = setSelection(orderedState, {
       anchor: {
-        regionId: orderedContainer.id,
+        regionPath: orderedContainer.path,
         offset: 0,
       },
       focus: {
-        regionId: orderedContainer.id,
+        regionPath: orderedContainer.path,
         offset: orderedContainer.text.length,
       },
     });
@@ -403,7 +421,7 @@ describe("List structure", () => {
     expect(toMarkdown(orderedState)).toBe("1.\n");
     expect(
       orderedState.documentIndex.regions.some(
-        (container) => container.id === orderedState.selection.focus.regionId,
+        (container) => container.path === orderedState.selection.focus.regionPath,
       ),
     ).toBe(true);
 
@@ -416,11 +434,11 @@ describe("List structure", () => {
 
     taskState = setSelection(taskState, {
       anchor: {
-        regionId: taskContainer.id,
+        regionPath: taskContainer.path,
         offset: 0,
       },
       focus: {
-        regionId: taskContainer.id,
+        regionPath: taskContainer.path,
         offset: taskContainer.text.length,
       },
     });
@@ -432,7 +450,7 @@ describe("List structure", () => {
     expect(toMarkdown(taskState)).toBe("- [ ] \n");
     expect(
       taskState.documentIndex.regions.some(
-        (container) => container.id === taskState.selection.focus.regionId,
+        (container) => container.path === taskState.selection.focus.regionPath,
       ),
     ).toBe(true);
   });
@@ -489,7 +507,10 @@ describe("List structure", () => {
       throw new Error("Expected task list item");
     }
 
-    const toggled = toggleTask(state, listItem.id);
+    const listItemPath = state.documentIndex.blocks.find(
+      (entry) => entry.block === listItem,
+    )?.path;
+    const toggled = listItemPath ? toggleTask(state, listItemPath) : null;
 
     if (!toggled) {
       throw new Error("Expected toggled task state");
@@ -510,7 +531,7 @@ describe("List structure", () => {
       throw new Error("Expected task list item");
     }
 
-    const toggled = toggleTask(state, taskItem.block.id);
+    const toggled = toggleTask(state, taskItem.path);
 
     if (!toggled) {
       throw new Error("Expected task toggle state");
@@ -541,7 +562,10 @@ describe("List structure", () => {
       throw new Error("Expected nested task list item");
     }
 
-    const toggled = toggleTask(state, nestedItem.id);
+    const nestedItemPath = state.documentIndex.blocks.find(
+      (entry) => entry.block === nestedItem,
+    )?.path;
+    const toggled = nestedItemPath ? toggleTask(state, nestedItemPath) : null;
 
     if (!toggled) {
       throw new Error("Expected toggled nested task state");
@@ -558,7 +582,7 @@ describe("List structure", () => {
       throw new Error("Expected task list item");
     }
 
-    const nextState = toggleTask(state, taskItem.block.id);
+    const nextState = toggleTask(state, taskItem.path);
 
     if (!nextState) {
       throw new Error("Expected task toggle state");
@@ -576,18 +600,17 @@ describe("List structure", () => {
 
     const merged = getRegion(state, "onetwo");
 
-    expect(state.selection.focus.regionId).toBe(merged.id);
+    expect(state.selection.focus.regionPath).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("one".length);
   });
 
   test("places the cursor at the merge junction when backspacing past the first item in a list", () => {
-    // Regression: the merge-cursor target used to walk the rebuilt block
-    // tree by id; freshly-rebuilt blocks all carry an empty id (until
-    // reducer normalization), so the walk's first match was the outer
-    // container, and root-primary-region targeting cascaded to the first
-    // leaf — the *first* item, not the merge seam in items[1]. Now the
-    // target is based on the absorber, so the cursor lands at the seam
-    // regardless of how deep into the list we are.
+    // Regression: the merge-cursor target used to identify the rebuilt block
+    // through a runtime handle instead of the absorber reference, so the walk's
+    // first match was the outer container and root-primary-region targeting
+    // cascaded to the first leaf — the *first* item, not the merge seam in
+    // items[1]. The target is now based on the absorber reference, so the cursor
+    // lands at the seam regardless of how deep into the list we are.
     let state = setup("- one\n- two\n- three\n");
     const three = getRegion(state, "three");
 
@@ -597,7 +620,7 @@ describe("List structure", () => {
     const merged = getRegion(state, "twothree");
 
     expect(toMarkdown(state)).toBe("- one\n- twothree\n");
-    expect(state.selection.focus.regionId).toBe(merged.id);
+    expect(state.selection.focus.regionPath).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("two".length);
   });
 
@@ -616,7 +639,7 @@ describe("List structure", () => {
     const merged = getRegion(state, "onetwo");
 
     expect(toMarkdown(state)).toBe("- alpha\n  - onetwo\n");
-    expect(state.selection.focus.regionId).toBe(merged.id);
+    expect(state.selection.focus.regionPath).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("one".length);
   });
 
@@ -641,7 +664,7 @@ describe("List structure", () => {
     const top = getRegion(state, "top");
 
     expect(toMarkdown(state)).toBe("- top\n  - sibling\n");
-    expect(state.selection.focus.regionId).toBe(top.id);
+    expect(state.selection.focus.regionPath).toBe(top.path);
     expect(state.selection.focus.offset).toBe("top".length);
   });
 
@@ -660,7 +683,7 @@ describe("List structure", () => {
 
     expect(toMarkdown(state)).toBe("- one\n  - two\n");
     const two = state.documentIndex.regions.find((r) => r.text === "two");
-    expect(state.selection.focus.regionId).toBe(two!.id);
+    expect(state.selection.focus.regionPath).toBe(two!.path);
     expect(state.selection.focus.offset).toBe("two".length);
   });
 
@@ -704,7 +727,7 @@ describe("List structure", () => {
 
     const bravo = getRegion(state, "bravo");
 
-    expect(state.selection.focus.regionId).toBe(bravo.id);
+    expect(state.selection.focus.regionPath).toBe(bravo.path);
     expect(state.selection.focus.offset).toBe("bravo".length);
   });
 });

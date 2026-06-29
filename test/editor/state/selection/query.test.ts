@@ -3,7 +3,7 @@ import {
   getCaretTextContext,
   getSelectionContext,
   getSelectionRange,
-  selectionIntersectsBlock,
+  selectionIntersectsBlockPath,
   selectionIntersectsRegion,
   setSelection,
 } from "@/editor/state";
@@ -19,7 +19,7 @@ describe("Selection queries", () => {
     }
 
     state = setSelection(state, {
-      regionId: container.id,
+      regionPath: container.path,
       offset: container.text.indexOf("strong") + 1,
     });
 
@@ -29,7 +29,7 @@ describe("Selection queries", () => {
     expect(marked.span.kind).toBe("marks");
 
     state = setSelection(state, {
-      regionId: container.id,
+      regionPath: container.path,
       offset: container.text.indexOf("link") + 1,
     });
 
@@ -48,25 +48,25 @@ describe("Selection queries", () => {
     }
 
     state = setSelection(state, {
-      anchor: { regionId: first.id, offset: 4 },
-      focus: { regionId: first.id, offset: 1 },
+      anchor: { regionPath: first.path, offset: 4 },
+      focus: { regionPath: first.path, offset: 1 },
     });
 
     expect(getSelectionRange(state)).toEqual({
       endOffset: 4,
-      regionId: first.id,
+      regionPath: first.path,
       startOffset: 1,
     });
 
     state = setSelection(state, {
-      anchor: { regionId: first.id, offset: 1 },
-      focus: { regionId: second.id, offset: 1 },
+      anchor: { regionPath: first.path, offset: 1 },
+      focus: { regionPath: second.path, offset: 1 },
     });
 
     expect(getSelectionRange(state)).toBeNull();
 
     state = setSelection(state, {
-      regionId: first.id,
+      regionPath: first.path,
       offset: 1,
     });
 
@@ -82,19 +82,19 @@ describe("Selection queries", () => {
     }
 
     state = setSelection(state, {
-      regionId: first.id,
+      regionPath: first.path,
       offset: 6,
     });
 
     expect(getCaretTextContext(state)).toEqual({
       offset: 6,
-      regionId: first.id,
+      regionPath: first.path,
       text: "alpha beta",
     });
 
     state = setSelection(state, {
-      anchor: { regionId: first.id, offset: 0 },
-      focus: { regionId: second.id, offset: 1 },
+      anchor: { regionPath: first.path, offset: 0 },
+      focus: { regionPath: second.path, offset: 1 },
     });
 
     expect(getCaretTextContext(state)).toBeNull();
@@ -108,20 +108,20 @@ describe("Selection queries", () => {
       throw new Error("Expected regions");
     }
 
-    state = setSelection(state, { regionId: second.id, offset: 0 });
+    state = setSelection(state, { regionPath: second.path, offset: 0 });
 
-    expect(selectionIntersectsRegion(state, second.id)).toBe(true);
-    expect(selectionIntersectsRegion(state, first.id)).toBe(false);
+    expect(selectionIntersectsRegion(state, second.path)).toBe(true);
+    expect(selectionIntersectsRegion(state, first.path)).toBe(false);
     expect(selectionIntersectsRegion(state, "missing")).toBe(false);
 
     state = setSelection(state, {
-      anchor: { regionId: first.id, offset: first.text.length },
-      focus: { regionId: second.id, offset: 0 },
+      anchor: { regionPath: first.path, offset: first.text.length },
+      focus: { regionPath: second.path, offset: 0 },
     });
 
-    expect(selectionIntersectsRegion(state, first.id)).toBe(true);
-    expect(selectionIntersectsRegion(state, second.id)).toBe(true);
-    expect(selectionIntersectsRegion(state, third.id)).toBe(false);
+    expect(selectionIntersectsRegion(state, first.path)).toBe(true);
+    expect(selectionIntersectsRegion(state, second.path)).toBe(true);
+    expect(selectionIntersectsRegion(state, third.path)).toBe(false);
   });
 
   test("checks selection intersection with blocks and descendants", () => {
@@ -137,19 +137,21 @@ outside
       throw new Error("Expected regions");
     }
 
-    state = setSelection(state, { regionId: child.id, offset: 0 });
+    state = setSelection(state, { regionPath: child.path, offset: 0 });
 
-    expect(selectionIntersectsBlock(state, child.block.id)).toBe(true);
-    expect(selectionIntersectsBlock(state, list.id)).toBe(true);
-    expect(selectionIntersectsBlock(state, outside.block.id)).toBe(false);
-    expect(selectionIntersectsBlock(state, "missing")).toBe(false);
+    const listBlockPath = state.documentIndex.blocks.find((entry) => entry.block === list)?.path;
+
+    expect(selectionIntersectsBlockPath(state, child.blockPath)).toBe(true);
+    expect(listBlockPath ? selectionIntersectsBlockPath(state, listBlockPath) : false).toBe(true);
+    expect(selectionIntersectsBlockPath(state, outside.blockPath)).toBe(false);
+    expect(selectionIntersectsBlockPath(state, "missing")).toBe(false);
 
     state = setSelection(state, {
-      anchor: { regionId: parent.id, offset: 0 },
-      focus: { regionId: outside.id, offset: 1 },
+      anchor: { regionPath: parent.path, offset: 0 },
+      focus: { regionPath: outside.path, offset: 1 },
     });
 
-    expect(selectionIntersectsBlock(state, child.block.id)).toBe(true);
+    expect(selectionIntersectsBlockPath(state, child.blockPath)).toBe(true);
   });
 
   test("checks selection intersection with a fully covered container block", () => {
@@ -168,10 +170,42 @@ after
     }
 
     state = setSelection(state, {
-      anchor: { regionId: before.id, offset: before.text.length },
-      focus: { regionId: after.id, offset: 0 },
+      anchor: { regionPath: before.path, offset: before.text.length },
+      focus: { regionPath: after.path, offset: 0 },
     });
 
-    expect(selectionIntersectsBlock(state, list.id)).toBe(true);
+    const listBlockPath = state.documentIndex.blocks.find((entry) => entry.block === list)?.path;
+
+    expect(listBlockPath ? selectionIntersectsBlockPath(state, listBlockPath) : false).toBe(true);
+  });
+
+  test("checks selection intersection with table cell blocks", () => {
+    let state = setup(`before
+
+| A | B |
+| - | - |
+| alpha | beta |
+
+after
+`);
+    const before = state.documentIndex.regions.find((region) => region.text === "before");
+    const beta = state.documentIndex.regions.find((region) => region.text === "beta");
+    const after = state.documentIndex.regions.find((region) => region.text === "after");
+
+    if (!before || !beta || !after) {
+      throw new Error("Expected table and surrounding paragraph regions");
+    }
+
+    state = setSelection(state, { regionPath: beta.path, offset: 0 });
+
+    expect(selectionIntersectsBlockPath(state, beta.blockPath)).toBe(true);
+    expect(selectionIntersectsBlockPath(state, before.blockPath)).toBe(false);
+
+    state = setSelection(state, {
+      anchor: { regionPath: before.path, offset: before.text.length },
+      focus: { regionPath: after.path, offset: 0 },
+    });
+
+    expect(selectionIntersectsBlockPath(state, beta.blockPath)).toBe(true);
   });
 });

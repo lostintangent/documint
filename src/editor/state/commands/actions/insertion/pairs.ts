@@ -28,7 +28,7 @@ export function resolvePairedDelimiterInsertion(
     return null;
   }
 
-  const region = resolveRegion(documentIndex, selection.focus.regionId);
+  const region = resolveRegion(documentIndex, selection.focus.regionPath);
 
   if (!region) {
     return null;

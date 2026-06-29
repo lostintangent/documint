@@ -48,12 +48,14 @@ export function getOrCreateVirtualLayout(
   // for inert leaves (which have no region) are never written.
   const entries: VirtualLayout["entries"] = [];
   const containerIndices = new Map<string, number>();
-  let regionCursor = 0;
 
-  for (const { blockRegionsInScope, gapBefore, indexedBlock, isInert } of walkLayoutBlocks(
-    documentIndex,
-    { blockGap: options.blockGap },
-  )) {
+  for (const {
+    gapBefore,
+    indexedBlock,
+    isInert,
+    regionEndIndex,
+    regionStartIndex,
+  } of walkLayoutBlocks(documentIndex, { blockGap: options.blockGap })) {
     const block = indexedBlock.block;
 
     totalHeight += gapBefore;
@@ -63,26 +65,24 @@ export function getOrCreateVirtualLayout(
     } else if (block.type === "table") {
       const result = appendTableEstimateEntries({
         block,
-        indexedBlock,
         containerIndices,
+        depth: indexedBlock.depth,
         entries,
-        index: regionCursor,
         options,
+        regionEndIndex,
+        regionStartIndex,
         totalHeight,
         regions: documentIndex.regions,
       });
       if (result) {
-        regionCursor = result.nextIndex;
         totalHeight = result.totalHeight;
       }
     } else {
       const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
-      for (const _regionId of blockRegionsInScope) {
-        const container = documentIndex.regions[regionCursor];
-        if (!container) {
-          regionCursor += 1;
-          continue;
-        }
+      for (let regionIndex = regionStartIndex; regionIndex < regionEndIndex; regionIndex += 1) {
+        const container = documentIndex.regions[regionIndex];
+        if (!container) continue;
+
         const estimatedHeight = estimateContainerHeight(
           cache,
           container,
@@ -93,10 +93,9 @@ export function getOrCreateVirtualLayout(
         );
         const top = totalHeight;
         const bottom = top + estimatedHeight;
-        entries[regionCursor] = { bottom, top };
-        containerIndices.set(container.id, regionCursor);
+        entries[regionIndex] = { bottom, top };
+        containerIndices.set(container.path, regionIndex);
         totalHeight = bottom;
-        regionCursor += 1;
       }
     }
   }
@@ -104,8 +103,8 @@ export function getOrCreateVirtualLayout(
   return setVirtualLayout(cache, documentIndex, cacheKey, {
     containerIndices,
     entries,
-    estimateRegionBounds(regionId) {
-      const index = containerIndices.get(regionId);
+    estimateRegionBounds(regionPath) {
+      const index = containerIndices.get(regionPath);
 
       return index === undefined ? null : (entries[index] ?? null);
     },
@@ -115,40 +114,37 @@ export function getOrCreateVirtualLayout(
 
 function appendTableEstimateEntries({
   block,
-  indexedBlock,
   containerIndices,
+  depth,
   entries,
-  index,
   options,
+  regionEndIndex,
+  regionStartIndex,
   totalHeight,
   regions,
 }: {
   block: Extract<Block, { type: "table" }>;
-  indexedBlock: DocumentIndex["blocks"][number];
   containerIndices: Map<string, number>;
+  depth: number;
   entries: VirtualLayout["entries"];
-  index: number;
   options: DocumentLayoutOptions;
+  regionEndIndex: number;
+  regionStartIndex: number;
   totalHeight: number;
-  regions: DocumentIndex["regions"];
+  regions: readonly DocumentIndex["regions"][number][];
 }) {
-  const tableRegionIds = indexedBlock.regionIds;
-
-  if (tableRegionIds.length === 0) {
+  if (regionStartIndex >= regionEndIndex) {
     return null;
   }
 
-  const tableRegions = regions.slice(index, index + tableRegionIds.length);
-
-  if (tableRegions.length === 0 || tableRegions[0]?.block.id !== block.id) {
+  if (regions[regionStartIndex]?.block !== block) {
     return null;
   }
 
-  const depth = indexedBlock.depth;
   const left = options.paddingX + depth * options.indentWidth;
   const { cellWidth } = resolveTableColumnMetrics(block, left, options);
   const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight, options.fontSize);
-  const rowCells = collectTableRowRegions(tableRegions, index);
+  const rowCells = collectTableRowRegions(regions, regionStartIndex, regionEndIndex);
   let nextTop = totalHeight;
 
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
@@ -166,13 +162,13 @@ function appendTableEstimateEntries({
         bottom,
         top: nextTop,
       };
-      containerIndices.set(region.id, regionIndex);
+      containerIndices.set(region.path, regionIndex);
     }
 
     nextTop = bottom;
   }
 
-  for (let regionIndex = index; regionIndex < index + tableRegions.length; regionIndex += 1) {
+  for (let regionIndex = regionStartIndex; regionIndex < regionEndIndex; regionIndex += 1) {
     const region = regions[regionIndex];
 
     if (!region || entries[regionIndex]) {
@@ -183,18 +179,21 @@ function appendTableEstimateEntries({
       bottom: nextTop,
       top: nextTop,
     };
-    containerIndices.set(region.id, regionIndex);
+    containerIndices.set(region.path, regionIndex);
   }
 
   return {
-    nextIndex: index + tableRegions.length,
     totalHeight: nextTop,
   };
 }
 
-function collectTableRowRegions(regions: DocumentIndex["regions"], startIndex: number) {
-  return groupTableRegionsByRow(regions, (region, index) => ({
-    index: startIndex + index,
+function collectTableRowRegions(
+  regions: readonly DocumentIndex["regions"][number][],
+  regionStartIndex: number,
+  regionEndIndex: number,
+) {
+  return groupTableRegionsByRow(regions, regionStartIndex, regionEndIndex, (region, index) => ({
+    index,
     region,
   }));
 }
