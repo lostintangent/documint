@@ -14,9 +14,10 @@ import type { DocumentLayout, LayoutLine } from "../layout/measure";
 import {
   isInertBlock,
   nextBlockInFlow,
-  regionInlines,
+  resolveEditorTextAtPath,
   resolveIndexedBlock,
-  resolveRegion,
+  resolveIndexedText,
+  resolveIndexedTextInlines,
   type EditorSelectionPoint,
   type EditorState,
 } from "../state";
@@ -26,13 +27,8 @@ export type EditorHit = {
   height: number;
   left: number;
   offset: number;
-  regionPath: string;
+  path: string;
   top: number;
-};
-
-export type SelectionHit = {
-  regionPath: string;
-  offset: number;
 };
 
 export type CanvasCheckboxHit = {
@@ -41,7 +37,7 @@ export type CanvasCheckboxHit = {
 
 export type CanvasLinkHit = {
   endOffset: number;
-  regionPath: string;
+  path: string;
   startOffset: number;
   title: string | null;
   url: string;
@@ -50,7 +46,7 @@ export type CanvasLinkHit = {
 export type CanvasResourceHit = {
   label: string;
   protocol: string;
-  regionPath: string;
+  path: string;
   url: string;
 };
 
@@ -59,7 +55,7 @@ export type EditorHoverTarget =
       endOffset: number;
       kind: "link";
       commentThreadIndex: number | null;
-      regionPath: string;
+      path: string;
       startOffset: number;
       title: string | null;
       url: string;
@@ -69,7 +65,7 @@ export type EditorHoverTarget =
       commentThreadIndex: number | null;
       label: string;
       protocol: string;
-      regionPath: string;
+      path: string;
       url: string;
     }
   | {
@@ -113,29 +109,30 @@ export function resolveHitBelowLayout(
   return resolveHitOnLine(state, lastLine, point.x);
 }
 
-export function resolveSelectionHit(
+export function resolveSelectionPointAt(
   state: EditorState,
   viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
-): SelectionHit | null {
-  return (
+): EditorSelectionPoint | null {
+  const hit =
     resolveEditorHitAtPoint(viewport.layout, state, point) ??
-    resolveHitBelowLayout(viewport.layout, state, point)
-  );
+    resolveHitBelowLayout(viewport.layout, state, point);
+
+  return hit ? { path: hit.path, offset: hit.offset } : null;
 }
 
 // Resolves the focus point of a mouse drag. The focus follows the pointer's
-// hit across any region; if the pointer overshoots the document's content
-// edge, it clamps to the anchor region's near edge instead of collapsing.
+// hit across any path; if the pointer overshoots the document's content edge,
+// it clamps to the anchor path's near edge instead of collapsing.
 export function resolveDragFocusPoint(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
   anchor: EditorSelectionPoint,
 ): EditorSelectionPoint | null {
-  const anchorContainer = findContainer(state, anchor.regionPath);
+  const anchorText = resolveEditorTextAtPath(state.documentIndex, anchor.path);
 
-  if (!anchorContainer) {
+  if (anchorText === null) {
     return null;
   }
 
@@ -143,7 +140,7 @@ export function resolveDragFocusPoint(
 
   if (hit) {
     return {
-      regionPath: hit.regionPath,
+      path: hit.path,
       offset: hit.offset,
     };
   }
@@ -151,8 +148,8 @@ export function resolveDragFocusPoint(
   const isAboveLayout = point.y < resolveViewportTop(layout);
 
   return {
-    regionPath: anchor.regionPath,
-    offset: isAboveLayout ? 0 : anchorContainer.text.length,
+    path: anchor.path,
+    offset: isAboveLayout ? 0 : anchorText.length,
   };
 }
 
@@ -161,7 +158,7 @@ export function resolveDragFocus(
   viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
   anchor: EditorSelectionPoint,
-): SelectionHit | null {
+): EditorSelectionPoint | null {
   return resolveDragFocusPoint(viewport.layout, state, point, anchor);
 }
 
@@ -176,13 +173,13 @@ export function resolveWordSelectionAtPoint(
     return null;
   }
 
-  const container = findContainer(state, hit.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, hit.path);
 
-  if (!container || container.text.length === 0) {
+  if (text === null || text.length === 0) {
     return null;
   }
 
-  const range = resolveWordRangeAtOffset(container.text, hit.offset);
+  const range = resolveWordRangeAtOffset(text, hit.offset);
 
   if (!range) {
     return null;
@@ -190,11 +187,11 @@ export function resolveWordSelectionAtPoint(
 
   return {
     anchor: {
-      regionPath: hit.regionPath,
+      path: hit.path,
       offset: range.start,
     },
     focus: {
-      regionPath: hit.regionPath,
+      path: hit.path,
       offset: range.end,
     },
   };
@@ -253,13 +250,14 @@ export function resolveLinkHitAtPoint(
 }
 
 function resolveLinkHit(state: EditorState, hit: EditorHit): CanvasLinkHit | null {
-  const container = findContainer(state, hit.regionPath);
+  const indexedText = resolveIndexedText(state.documentIndex, hit.path);
+  const inlines = indexedText ? resolveIndexedTextInlines(indexedText) : null;
 
-  if (!container) {
+  if (!inlines) {
     return null;
   }
 
-  const run = regionInlines(container).find(
+  const run = inlines.find(
     (entry) => entry.link && hit.offset >= entry.start && hit.offset < entry.end,
   );
 
@@ -269,7 +267,7 @@ function resolveLinkHit(state: EditorState, hit: EditorHit): CanvasLinkHit | nul
 
   return {
     endOffset: run.end,
-    regionPath: hit.regionPath,
+    path: hit.path,
     startOffset: run.start,
     title: run.link.title,
     url: run.link.url,
@@ -291,13 +289,14 @@ export function resolveResourceHitAtPoint(
 }
 
 function resolveResourceHit(state: EditorState, hit: EditorHit): CanvasResourceHit | null {
-  const container = findContainer(state, hit.regionPath);
+  const indexedText = resolveIndexedText(state.documentIndex, hit.path);
+  const inlines = indexedText ? resolveIndexedTextInlines(indexedText) : null;
 
-  if (!container) {
+  if (!inlines) {
     return null;
   }
 
-  const run = regionInlines(container).find(
+  const run = inlines.find(
     (entry) =>
       entry.node.type === "resource" && hit.offset >= entry.start && hit.offset <= entry.end,
   );
@@ -309,7 +308,7 @@ function resolveResourceHit(state: EditorState, hit: EditorHit): CanvasResourceH
   return {
     label: run.node.label,
     protocol: run.node.protocol,
-    regionPath: hit.regionPath,
+    path: hit.path,
     url: run.node.url,
   };
 }
@@ -329,15 +328,24 @@ export function resolveHoverTargetAtPoint(
     };
   }
 
-  const hit = resolveEditorHitAtPoint(layout, state, point);
+  const line = findDocumentLayoutLineAtPoint(layout, point)?.line ?? null;
+  // Click placement intentionally redirects block padding to nearby text.
+  // Hover affordances must stay within the painted line's vertical bounds so
+  // an absent leaf's bridge area cannot activate the leaf.
+  if (!line || point.y < line.top || point.y >= line.top + line.height) {
+    return null;
+  }
+
+  const hit = resolveHitOnLine(state, line, point.x);
 
   if (!hit) {
     return null;
   }
 
-  const commentThreadIndex = resolveCommentThreadIndexAtOffset(
-    hit.regionPath,
+  const commentThreadIndex = resolveCommentThreadIndexAtPoint(
+    line,
     hit.offset,
+    point.x,
     commentRanges,
   );
   const resourceHit = resolveResourceHit(state, hit);
@@ -348,7 +356,7 @@ export function resolveHoverTargetAtPoint(
       kind: "resource",
       label: resourceHit.label,
       protocol: resourceHit.protocol,
-      regionPath: resourceHit.regionPath,
+      path: resourceHit.path,
       url: resourceHit.url,
     };
   }
@@ -360,7 +368,7 @@ export function resolveHoverTargetAtPoint(
       endOffset: linkHit.endOffset,
       kind: "link",
       commentThreadIndex,
-      regionPath: linkHit.regionPath,
+      path: linkHit.path,
       startOffset: linkHit.startOffset,
       title: linkHit.title,
       url: linkHit.url,
@@ -385,19 +393,19 @@ export function resolveHoverTarget(
 // Resolves what user-actionable target sits at a given document offset.
 export function resolveTargetAtOffset(
   state: EditorState,
-  regionPath: string,
+  path: string,
   offset: number,
   commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
-  const container = resolveRegion(state.documentIndex, regionPath);
+  const indexedText = resolveIndexedText(state.documentIndex, path);
+  const inlines = indexedText ? resolveIndexedTextInlines(indexedText) : null;
 
-  if (!container) {
+  if (!inlines) {
     return null;
   }
 
-  const commentThreadIndex = resolveCommentThreadIndexAtOffset(regionPath, offset, commentRanges);
-  const run =
-    regionInlines(container).find((entry) => offset >= entry.start && offset <= entry.end) ?? null;
+  const commentThreadIndex = resolveCommentThreadIndexAtOffset(path, offset, commentRanges);
+  const run = inlines.find((entry) => offset >= entry.start && offset <= entry.end) ?? null;
 
   if (run?.node.type === "resource") {
     return {
@@ -405,7 +413,7 @@ export function resolveTargetAtOffset(
       kind: "resource",
       label: run.node.label,
       protocol: run.node.protocol,
-      regionPath,
+      path,
       url: run.node.url,
     };
   }
@@ -415,7 +423,7 @@ export function resolveTargetAtOffset(
       commentThreadIndex,
       endOffset: run.end,
       kind: "link",
-      regionPath,
+      path,
       startOffset: run.start,
       title: run.link.title,
       url: run.link.url,
@@ -436,18 +444,18 @@ export function resolveTargetAtOffset(
 // hit. This avoids re-resolving the line from coordinates, which can land on
 // the wrong line when Y falls exactly on a line boundary.
 function resolveHitOnLine(state: EditorState, line: LayoutLine, x: number): EditorHit | null {
-  const region = resolveRegion(state.documentIndex, line.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, line.path);
 
-  if (!region) {
+  if (text === null) {
     return null;
   }
 
   const localX = Math.max(0, x - line.contentInset - line.left);
   const offset = resolveBoundaryOffset(line.boundaries, localX);
-  const resolvedOffset = Math.min(region.text.length, line.start + offset);
+  const resolvedOffset = Math.min(text.length, line.start + offset);
 
   return {
-    regionPath: line.regionPath,
+    path: line.path,
     offset: resolvedOffset,
     left: measureCanvasLineOffsetLeft(line, offset),
     top: line.top,
@@ -476,7 +484,7 @@ function resolveLayoutLineAtPoint(
 
   // If the point is in a block's padding, resolve to the block's last line.
   // Inert leaf blocks have no lines of their own and redirect to the first
-  // line of the next region in flow.
+  // line of the next text path in flow.
   for (const block of layout.blocks) {
     if (point.y < block.top || point.y > block.bottom) continue;
 
@@ -500,12 +508,44 @@ function resolveLayoutLineAtPoint(
 }
 
 function resolveCommentThreadIndexAtOffset(
-  regionPath: string,
+  path: string,
   offset: number,
   commentRanges: readonly EditorCommentRange[],
 ) {
   for (const range of commentRanges) {
-    if (range.regionPath === regionPath && offset >= range.startOffset && offset <= range.endOffset) {
+    if (range.path === path && offset >= range.startOffset && offset <= range.endOffset) {
+      return range.threadIndex;
+    }
+  }
+
+  return null;
+}
+
+function resolveCommentThreadIndexAtPoint(
+  line: LayoutLine,
+  offset: number,
+  x: number,
+  commentRanges: readonly EditorCommentRange[],
+) {
+  // Horizontal whitespace clamps to a line boundary offset. Confirm the
+  // candidate against the quote's measured span so an end-boundary match
+  // does not extend beyond the painted text.
+  for (const range of commentRanges) {
+    if (range.path !== line.path || offset < range.startOffset || offset > range.endOffset) {
+      continue;
+    }
+
+    const startOffset = Math.max(range.startOffset, line.start);
+    const endOffset = Math.min(range.endOffset, line.end);
+
+    if (endOffset <= startOffset) {
+      continue;
+    }
+
+    const left = measureCanvasLineOffsetLeft(line, startOffset - line.start) + line.contentInset;
+    const right = measureCanvasLineOffsetLeft(line, endOffset - line.start) + line.contentInset;
+
+    if (x >= left && x <= right) {
       return range.threadIndex;
     }
   }
@@ -530,10 +570,6 @@ function resolveInteractiveLineAtPoint(
       )[0] ??
     null
   );
-}
-
-function findContainer(state: EditorState, regionPath: string) {
-  return resolveRegion(state.documentIndex, regionPath);
 }
 
 function resolveViewportTop(layout: DocumentLayout) {

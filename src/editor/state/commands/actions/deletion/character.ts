@@ -1,8 +1,7 @@
-import { isSelectionCollapsed, resolveRegion, type EditorSelection } from "../../../selection";
+import { isSelectionCollapsed, type EditorSelection } from "../../../selection";
 import { moveGraphemeOffset } from "../../../../text/graphemes";
 import { effect } from "../../../effects";
-import { regionInlines } from "../../../index/inlines";
-import type { EditableRegion } from "../../../index/types";
+import { resolveEditorTextAtPath, resolveInlinesAtPath } from "../../../index/query";
 import type { EditorState, EditorStateAction } from "../../../types";
 
 // Resolves the splice-text action for a single-grapheme delete at the
@@ -27,48 +26,55 @@ export function resolveCharacterDelete(
   }
 
   const point = selection.focus;
-  const region = resolveRegion(state.documentIndex, point.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, point.path);
 
-  if (!region) {
+  if (text === null) {
     return null;
   }
 
   if (
     (direction === "backward" && point.offset <= 0) ||
-    (direction === "forward" && point.offset >= region.text.length)
+    (direction === "forward" && point.offset >= text.length)
   ) {
     return null;
   }
 
   const startOffset =
-    direction === "backward" ? moveGraphemeOffset(region.text, point.offset, -1) : point.offset;
+    direction === "backward" ? moveGraphemeOffset(text, point.offset, -1) : point.offset;
   const endOffset =
-    direction === "backward" ? point.offset : moveGraphemeOffset(region.text, point.offset, 1);
+    direction === "backward" ? point.offset : moveGraphemeOffset(text, point.offset, 1);
 
   if (startOffset === endOffset) {
     return null;
   }
 
   const placement =
-    endOffset === region.text.length
+    endOffset === text.length
       ? "line-end"
-      : hasSoftLineBreakAtOffset(region, endOffset)
+      : hasSoftLineBreakAtOffset(state, point.path, endOffset)
         ? "soft-line-break"
         : "line-middle";
 
   return {
     kind: "splice-text",
     range: {
-      anchor: { regionPath: region.path, offset: startOffset },
-      focus: { regionPath: region.path, offset: endOffset },
+      anchor: { path: point.path, offset: startOffset },
+      focus: { path: point.path, offset: endOffset },
     },
     text: "",
-    effect: effect.textDeleted(region, startOffset, endOffset, direction, placement),
+    effect: effect.textDeletedAtPath(
+      state.documentIndex,
+      point.path,
+      startOffset,
+      endOffset,
+      direction,
+      placement,
+    ),
   };
 }
 
-function hasSoftLineBreakAtOffset(region: EditableRegion, offset: number) {
-  return regionInlines(region).some(
+function hasSoftLineBreakAtOffset(state: EditorState, path: string, offset: number) {
+  return (resolveInlinesAtPath(state.documentIndex, path) ?? []).some(
     (inline) => inline.node.type === "lineBreak" && inline.start === offset,
   );
 }

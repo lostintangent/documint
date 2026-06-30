@@ -1,11 +1,12 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import { insertText, setSelection } from "@/editor/state";
-import { getRegion, placeAt, setup, toMarkdown } from "../../helpers";
+import { getPath, placeAt, setup, toMarkdown } from "../../helpers";
 
 describe("Text input", () => {
-  test("applies text input inside nested editable regions", () => {
+  test("applies text input inside nested editable paths", () => {
     let state = setup("- parent\n  - child\n");
-    const child = getRegion(state, "child");
+    const child = getPath(state, "child");
 
     state = placeAt(state, child, 0);
     state = insertText(state, "z") ?? state;
@@ -16,32 +17,32 @@ describe("Text input", () => {
 
 describe("Markdown creation triggers", () => {
   test("creates headings from lightweight markdown triggers", () => {
-    const headingState = applyTriggerToWholeRegion("x\n", "#");
+    const headingState = applyTriggerToWholePath("x\n", "#");
 
     expect(toMarkdown(headingState)).toBe("#\n");
     expect(
-      headingState.documentIndex.regions.some(
-        (container) => container.path === headingState.selection.focus.regionPath,
+      indexedTextEntries(headingState).some(
+        (container) => container.path === headingState.selection.focus.path,
       ),
     ).toBe(true);
 
-    const subheadingState = applyTriggerToWholeRegion("x\n", "####");
+    const subheadingState = applyTriggerToWholePath("x\n", "####");
 
     expect(toMarkdown(subheadingState)).toBe("####\n");
     expect(
-      subheadingState.documentIndex.regions.some(
-        (container) => container.path === subheadingState.selection.focus.regionPath,
+      indexedTextEntries(subheadingState).some(
+        (container) => container.path === subheadingState.selection.focus.path,
       ),
     ).toBe(true);
   });
 
   test("creates blockquotes from lightweight markdown triggers", () => {
-    const quoteState = applyTriggerToWholeRegion("x\n", ">");
+    const quoteState = applyTriggerToWholePath("x\n", ">");
 
     expect(toMarkdown(quoteState)).toBe(">\n");
     expect(
-      quoteState.documentIndex.regions.some(
-        (container) => container.path === quoteState.selection.focus.regionPath,
+      indexedTextEntries(quoteState).some(
+        (container) => container.path === quoteState.selection.focus.path,
       ),
     ).toBe(true);
   });
@@ -49,13 +50,13 @@ describe("Markdown creation triggers", () => {
   test("does not complete creation triggers from pre-existing suffix whitespace", () => {
     for (const marker of [">", "#", "-", "*", "+", "1.", "---"]) {
       let state = setup("&#x20;\n");
-      const region = getRegion(state, " ");
+      const path = getPath(state, " ");
 
-      state = placeAt(state, region, 0);
+      state = placeAt(state, path, 0);
       state = insertText(state, marker) ?? state;
 
-      const active = state.documentIndex.regions.find(
-        (container) => container.path === state.selection.focus.regionPath,
+      const active = indexedTextEntries(state).find(
+        (container) => container.path === state.selection.focus.path,
       );
 
       expect(active?.block.type).toBe("paragraph");
@@ -67,7 +68,7 @@ describe("Markdown creation triggers", () => {
 describe("Markdown transform triggers", () => {
   test("transforms heading depth from typed markdown markers at the start of a heading", () => {
     let state = setup("## Heading\n");
-    const heading = getRegion(state, "Heading");
+    const heading = getPath(state, "Heading");
 
     state = placeAt(state, heading, 0);
     state = insertText(state, "#") ?? state;
@@ -78,7 +79,7 @@ describe("Markdown transform triggers", () => {
 
   test("transforms list type from typed markdown markers at the start of a list item", () => {
     let unorderedState = setup("1. alpha\n2. beta\n");
-    const alpha = getRegion(unorderedState, "alpha");
+    const alpha = getPath(unorderedState, "alpha");
 
     unorderedState = placeAt(unorderedState, alpha, 0);
     unorderedState = insertText(unorderedState, "-") ?? unorderedState;
@@ -87,7 +88,7 @@ describe("Markdown transform triggers", () => {
     expect(toMarkdown(unorderedState)).toBe("- alpha\n- beta\n");
 
     let orderedState = setup("- alpha\n- beta\n");
-    const beta = getRegion(orderedState, "beta");
+    const beta = getPath(orderedState, "beta");
 
     orderedState = placeAt(orderedState, beta, 0);
     orderedState = insertText(orderedState, "1.") ?? orderedState;
@@ -97,22 +98,22 @@ describe("Markdown transform triggers", () => {
   });
 });
 
-function applyTriggerToWholeRegion(markdown: string, marker: string) {
+function applyTriggerToWholePath(markdown: string, marker: string) {
   let state = setup(markdown);
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected region");
+  if (!path) {
+    throw new Error("Expected path");
   }
 
   state = setSelection(state, {
     anchor: {
-      regionPath: region.path,
+      path: path.path,
       offset: 0,
     },
     focus: {
-      regionPath: region.path,
-      offset: region.text.length,
+      path: path.path,
+      offset: path.text.length,
     },
   });
   state = insertText(state, marker) ?? state;

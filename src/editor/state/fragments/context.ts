@@ -1,33 +1,44 @@
 import type { Block } from "@/document";
-import type { DocumentIndex, EditableRegion } from "../index/types";
+import type { DocumentIndex, IndexedTableCell } from "../index/types";
+import {
+  resolveIndexedText,
+  resolveIndexedBlockContainingPath,
+  resolveIndexedTextInlines,
+  resolveIndexedTableCell,
+} from "../index/query";
 import {
   normalizeSelection,
-  resolveRegion,
   type EditorSelection,
   type NormalizedEditorSelection,
 } from "../selection";
+import type { LeafTrimTarget } from "./blocks";
 
 // Fragment source context. Copy/extract needs a normalized, non-collapsed
-// selection plus the resolved endpoint regions and roots so extraction can
+// selection plus the resolved endpoint paths and roots so extraction can
 // decide whether the result is inline, one narrowed root, or a cross-root
 // structural slice.
 
+export type FragmentEndpoint = LeafTrimTarget & {
+  path: string;
+  tableCell: IndexedTableCell | null;
+};
+
 export type FragmentSourceContext =
   | {
-      kind: "single-region";
+      endpoint: FragmentEndpoint;
+      kind: "single-path";
       normalized: NormalizedEditorSelection;
-      region: EditableRegion;
       root: Block;
-      wholeRegion: boolean;
+      wholePath: boolean;
     }
   | {
-      kind: "multi-region";
-      normalized: NormalizedEditorSelection;
-      startRegion: EditableRegion;
-      endRegion: EditableRegion;
-      sameRoot: boolean;
-      startRoot: Block;
+      endEndpoint: FragmentEndpoint;
       endRoot: Block;
+      kind: "multi-path";
+      normalized: NormalizedEditorSelection;
+      sameRoot: boolean;
+      startEndpoint: FragmentEndpoint;
+      startRoot: Block;
     };
 
 export function resolveFragmentSourceContext(
@@ -40,38 +51,59 @@ export function resolveFragmentSourceContext(
     return null;
   }
 
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionPath);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionPath);
+  const startEndpoint = resolveFragmentEndpoint(documentIndex, normalized.start.path);
+  const endEndpoint = resolveFragmentEndpoint(documentIndex, normalized.end.path);
 
-  if (!startRegion || !endRegion) {
+  if (!startEndpoint || !endEndpoint) {
     return null;
   }
 
-  const startRoot = documentIndex.document.blocks[startRegion.rootIndex];
-  const endRoot = documentIndex.document.blocks[endRegion.rootIndex];
+  const startRoot = documentIndex.document.blocks[startEndpoint.indexedBlock.rootIndex];
+  const endRoot = documentIndex.document.blocks[endEndpoint.indexedBlock.rootIndex];
 
   if (!startRoot || !endRoot) {
     return null;
   }
 
-  if (startRegion === endRegion) {
+  if (startEndpoint.path === endEndpoint.path) {
     return {
-      kind: "single-region",
+      endpoint: startEndpoint,
+      kind: "single-path",
       normalized,
-      region: startRegion,
       root: startRoot,
-      wholeRegion:
-        normalized.start.offset === 0 && normalized.end.offset === startRegion.text.length,
+      wholePath:
+        normalized.start.offset === 0 &&
+        normalized.end.offset === startEndpoint.text.length,
     };
   }
 
   return {
-    kind: "multi-region",
-    normalized,
-    startRegion,
-    endRegion,
-    sameRoot: startRegion.rootIndex === endRegion.rootIndex,
-    startRoot,
+    endEndpoint,
     endRoot,
+    kind: "multi-path",
+    normalized,
+    sameRoot: startEndpoint.indexedBlock.rootIndex === endEndpoint.indexedBlock.rootIndex,
+    startEndpoint,
+    startRoot,
+  };
+}
+
+export function resolveFragmentEndpoint(
+  documentIndex: DocumentIndex,
+  path: string,
+): FragmentEndpoint | null {
+  const indexedText = resolveIndexedText(documentIndex, path);
+  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
+
+  if (!indexedText || !indexedBlock) {
+    return null;
+  }
+
+  return {
+    inlines: resolveIndexedTextInlines(indexedText),
+    indexedBlock,
+    path,
+    tableCell: resolveIndexedTableCell(documentIndex, path),
+    text: indexedText.text,
   };
 }

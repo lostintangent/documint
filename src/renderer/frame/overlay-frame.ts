@@ -1,6 +1,6 @@
 import type { EditorPresence } from "@/editor/anchors";
 import {
-  findLineForRegionOffset,
+  findLineForPathOffset,
   measureCaretTarget,
   resolveCaretVisualLeft,
   type EditorLayoutState,
@@ -20,7 +20,7 @@ export function createOverlayFrame(
 ): OverlayFrame {
   const carets: OverlayCaretFrame[] = [];
   const hasRangeSelection =
-    options.normalizedSelection.start.regionPath !== options.normalizedSelection.end.regionPath ||
+    options.normalizedSelection.start.path !== options.normalizedSelection.end.path ||
     options.normalizedSelection.start.offset !== options.normalizedSelection.end.offset;
   const shouldPaintUserCaret = options.showCaret && !hasRangeSelection;
 
@@ -28,7 +28,7 @@ export function createOverlayFrame(
     const caret = resolveOverlayCaretFrame(editorState, layoutState, {
       color: options.theme.caret,
       offset: editorState.selection.focus.offset,
-      regionPath: editorState.selection.focus.regionPath,
+      path: editorState.selection.focus.path,
     });
 
     if (caret) {
@@ -45,7 +45,7 @@ export function createOverlayFrame(
       const caret = resolveOverlayCaretFrame(editorState, layoutState, {
         color: presence.color ?? options.theme.leafAccent,
         offset: presence.cursorPoint.offset,
-        regionPath: presence.cursorPoint.regionPath,
+        path: presence.cursorPoint.path,
       });
 
       if (caret) {
@@ -93,7 +93,7 @@ function resolveOverlayCaretFrame(
   target: {
     color: string;
     offset: number;
-    regionPath: string;
+    path: string;
   },
 ): OverlayCaretFrame | null {
   const measured = measureCaretTarget(layoutState.layout, editorState.documentIndex, target);
@@ -117,7 +117,7 @@ function resolveCaretPaintMetrics(
   layoutState: EditorLayoutState,
   caret: NonNullable<ReturnType<typeof measureCaretTarget>>,
 ) {
-  const line = findLineForRegionOffset(layoutState.layout, caret.regionPath, caret.offset);
+  const line = findLineForPathOffset(layoutState.layout, caret.path, caret.offset);
   const font =
     line?.font ??
     '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';

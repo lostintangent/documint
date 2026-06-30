@@ -156,7 +156,7 @@ function resolvePresenceCursorPoint(
 
   return {
     offset: editorRange.startOffset,
-    regionPath: editorRange.runtimeContainer.path,
+    path: editorRange.path,
   };
 }
 

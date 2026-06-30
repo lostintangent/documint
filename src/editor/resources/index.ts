@@ -9,7 +9,7 @@ import type { Resource } from "@/document";
 import { resolveResourceProtocol } from "@/document";
 import { someVisibleDocumentLayoutLine } from "../layout/query";
 import type { EditorLayoutState } from "../layout/state";
-import { resolveRegion, type EditorState, type IndexedInline } from "../state";
+import { resolveInlinesAtPath, type EditorState, type IndexedInline } from "../state";
 
 export type ResolvedResource = {
   icon: DocumentResourceIcon | null;
@@ -98,12 +98,12 @@ export function hasActiveResourcesInViewport(
   }
 
   return someVisibleDocumentLayoutLine(viewport, (line) => {
-    const region = resolveRegion(state.documentIndex, line.regionPath);
-    if (region?.content.kind !== "inlines") {
+    const inlines = resolveInlinesAtPath(state.documentIndex, line.path);
+    if (!inlines) {
       return false;
     }
 
-    return region.content.inlines.some(
+    return inlines.some(
       (inline) =>
         inline.node.type === "resource" &&
         inline.end > line.start &&

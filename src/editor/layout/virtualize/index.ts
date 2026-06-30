@@ -22,7 +22,7 @@ type VirtualizedViewport = {
 };
 
 export type VirtualizedLayoutSlice = {
-  estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
+  estimatePathBounds: (path: string) => { bottom: number; top: number } | null;
   layout: DocumentLayout;
   totalHeight: number;
 };
@@ -66,11 +66,11 @@ export function createVirtualizedLayoutSlice({
 
   const pinTop = Math.max(0, expandedTop - viewport.overscan);
   const pinBottom = expandedBottom + viewport.overscan;
-  const pinned = new Set([state.selection.anchor.regionPath, state.selection.focus.regionPath]);
+  const pinned = new Set([state.selection.anchor.path, state.selection.focus.path]);
 
-  for (const regionPath of pinned) {
-    const index = virtualLayout.containerIndices.get(regionPath);
-    const bounds = virtualLayout.estimateRegionBounds(regionPath);
+  for (const path of pinned) {
+    const index = virtualLayout.pathIndices.get(path);
+    const bounds = virtualLayout.estimatePathBounds(path);
 
     if (index === undefined || !bounds) {
       continue;
@@ -91,10 +91,11 @@ export function createVirtualizedLayoutSlice({
   } else {
     const expandedSlice = expandViewportSliceToBlockBoundaries(
       documentIndex,
+      virtualLayout,
       sliceStartIndex,
       sliceEndIndex,
     );
-    const sliceTop = virtualLayout.entries[expandedSlice.startIndex]?.top ?? options.paddingY;
+    const sliceTop = expandedSlice.top ?? options.paddingY;
     // Seed measurement at the slice's document-space top so geometry is
     // produced directly in document coordinates — no post-shift needed.
     // Override `height` with the full-document estimate so consumers that
@@ -106,15 +107,15 @@ export function createVirtualizedLayoutSlice({
       cache,
       resources,
       sliceTop,
-      expandedSlice.startIndex,
-      expandedSlice.endIndex,
+      expandedSlice.blockStartIndex,
+      expandedSlice.blockEndIndex,
     );
 
     layout = { ...sliceLayout, height: virtualLayout.totalHeight };
 
     updateMeasuredContainerHeights(cache, documentIndex, layout, options, resources);
 
-    if (refineVirtualLayoutWithMeasuredSlice(virtualLayout, documentIndex, layout)) {
+    if (refineVirtualLayoutWithMeasuredSlice(virtualLayout, layout)) {
       layout = {
         ...layout,
         height: virtualLayout.totalHeight,
@@ -123,7 +124,7 @@ export function createVirtualizedLayoutSlice({
   }
 
   return {
-    estimateRegionBounds: virtualLayout.estimateRegionBounds,
+    estimatePathBounds: virtualLayout.estimatePathBounds,
     layout,
     totalHeight: virtualLayout.totalHeight,
   };

@@ -73,10 +73,10 @@ function applyDecorationsToRoots(
   codeGrammars: Record<string, readonly DocumintDecoration[]>,
 ): DecorationRootResult[] {
   return roots.map((root) => ({
-    // Invariant: prose and code passes occupy disjoint region paths — host
+    // Invariant: prose and code passes occupy disjoint paths — host
     // decorations match inline text (which skips leaf code blocks) while code
-    // grammar decorations match source regions — so concatenating them never
-    // yields overlapping ranges on one region. If host decorations ever target
+    // grammar decorations match source blocks — so concatenating them never
+    // yields overlapping ranges on one path. If host decorations ever target
     // code, this needs an explicit layering rule instead of a plain concat.
     ranges: [
       ...resolveCompiledBlockDecorationRanges(root.block, root.rootIndex, decorations),

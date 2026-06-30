@@ -1,92 +1,61 @@
-// Single source of truth for the structural-container family of blocks: which
-// block types own a child block list, where that list lives on the node, and
-// how to rebuild the container around a fresh child list.
+// Structural-container access: read and rewrite the children of the blocks that
+// own them. Block containers (blockquote, list, listItem) own a `Block[]` child
+// list, read and rebuilt through `getBlockChildren` / `rebuildBlockChildren`.
+// Tables are the cells-shaped container: their structural children are
+// `TableCell` rows, not blocks, so they read through `getTableCellRows` and never
+// leak into block recursion — `getBlockChildren` returns null for a table.
 //
-// Before this module, the same dispatch was hand-written in block-child access,
-// replacement, and tree-rebuild helpers. Adding a new container kind required
-// touching every site, and TypeScript's exhaustiveness check did not protect
-// every dispatch. The registry closes that leak — adding a container kind means
-// one new entry below.
-//
-// Two operations per typed spec:
-//   - `read(block)`               returns the existing child list in its
-//     concrete shape. Lists own `ListItemBlock[]`; blockquotes/list items own
-//     ordinary `Block[]`.
-//   - `rebuild(block, children)`  returns a canonical copy with the new
-//     children, including a recomputed `plainText`.
-//
-// Non-container blocks (paragraph, heading, code, table, divider, raw,
-// directive) have no spec — `containerSpec` returns `null`. Tables are
-// intentionally excluded: their structural children live one level deeper
-// (rows → cells → inlines), so the inline-container vocabulary handles them
-// instead.
+// Block classification (`blockContentKind`) lives with the `Block` union in
+// `types.ts`; this module is only about reaching and rebuilding children.
 
 import { createBlockquoteBlock, rebuildListBlock, rebuildListItemBlock } from "../build/builders";
-import type { Block, BlockquoteBlock, ListBlock, ListItemBlock } from "./types";
+import type { Block, ListItemBlock, TableCell } from "./types";
 
-type BlockContainerSpec = {
-  read(block: Block): Block[];
-  rebuild(block: Block, children: Block[]): Block;
-};
-
-type ContainerBlock = BlockquoteBlock | ListBlock | ListItemBlock;
-
-type TypedBlockContainerSpec<TBlock extends ContainerBlock, TChild extends Block> = {
-  read(block: TBlock): TChild[];
-  rebuild(block: TBlock, children: TChild[]): TBlock;
-  type: TBlock["type"];
-};
-
-const BLOCK_CONTAINER_SPECS: { [K in Block["type"]]?: BlockContainerSpec } = {
-  blockquote: defineBlockContainerSpec<BlockquoteBlock, Block>({
-    type: "blockquote",
-    read: (block) => block.children,
-    rebuild: (_block, children) => createBlockquoteBlock(children),
-  }),
-  listItem: defineBlockContainerSpec<ListItemBlock, Block>({
-    type: "listItem",
-    read: (block) => block.children,
-    rebuild: rebuildListItemBlock,
-  }),
-  list: defineBlockContainerSpec<ListBlock, ListItemBlock>({
-    type: "list",
-    read: (block) => block.items,
-    rebuild: (block, children) => rebuildListBlock(block, children),
-  }),
-};
-
-function defineBlockContainerSpec<TBlock extends ContainerBlock, TChild extends Block>(
-  spec: TypedBlockContainerSpec<TBlock, TChild>,
-): BlockContainerSpec {
-  return {
-    read(block) {
-      return block.type === spec.type ? spec.read(block as TBlock) : [];
-    },
-    rebuild(block, children) {
-      return block.type === spec.type ? spec.rebuild(block as TBlock, children as TChild[]) : block;
-    },
-  };
-}
-
-export function blockContainerSpec(block: Block): BlockContainerSpec | null {
-  return BLOCK_CONTAINER_SPECS[block.type] ?? null;
-}
-
-// Polymorphic accessor: returns the container's child block list, or null for
-// non-container blocks. Use when you need to walk or rewrite children without
-// re-deriving the dispatch.
+// Child block list for block containers; null for every other block, so
+// block-tree walks never descend into a table's cells.
 export function getBlockChildren(block: Block): Block[] | null {
-  return blockContainerSpec(block)?.read(block) ?? null;
+  switch (block.type) {
+    case "blockquote":
+    case "listItem":
+      return block.children;
+    case "list":
+      return block.items;
+    default:
+      return null;
+  }
 }
 
-// Rebuild a container with a replacement child list and a fresh canonical
-// `plainText`. Returns null when `block` is not a container or when the
-// replacement is empty — empty structural containers carry no visible content
-// and collapse out of the model.
+// Cell rows for the cells-shaped container (table); null for every other block.
+// Cells are not blocks, so they get their own reader instead of widening
+// `getBlockChildren`.
+export function getTableCellRows(block: Block): readonly (readonly TableCell[])[] | null {
+  return block.type === "table" ? block.rows.map((row) => row.cells) : null;
+}
+
+// Rebuild a block container around a replacement child list with a fresh
+// canonical `plainText`. Total over blocks: non-containers return unchanged, and
+// empty child lists still rebuild (callers that want empty containers to collapse
+// use `replaceBlockChildren`).
+export function rebuildBlockChildren(block: Block, children: Block[]): Block {
+  switch (block.type) {
+    case "blockquote":
+      return createBlockquoteBlock(children);
+    case "listItem":
+      return rebuildListItemBlock(block, children);
+    case "list":
+      return rebuildListBlock(block, children as ListItemBlock[]);
+    default:
+      return block;
+  }
+}
+
+// Rebuild a block container, collapsing empty results to null: an empty
+// structural container carries no visible content and drops out of the model.
+// Returns null for non-container blocks (`getBlockChildren` is null for them).
 export function replaceBlockChildren(block: Block, children: Block[]): Block | null {
-  if (children.length === 0) {
+  if (children.length === 0 || getBlockChildren(block) === null) {
     return null;
   }
 
-  return blockContainerSpec(block)?.rebuild(block, children) ?? null;
+  return rebuildBlockChildren(block, children);
 }

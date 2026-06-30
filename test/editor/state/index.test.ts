@@ -1,17 +1,25 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   commitDocument,
   createDocumentIndex,
-  findUniqueEditableRegion,
-  hasSameEditableRegionShape,
-  hasSameTableCellPosition,
+  hasSameEditorTextPathShape,
   indexedInlineText,
   normalizeSelection,
-  regionInlines,
+  resolveAdjacentEditorPathWithTextInFlow,
+  resolveAdjacentEditorPathWithTextOutsideBlock,
+  resolveBlockTextPathBoundary,
+  resolveDocumentTextPathBoundary,
+  resolveInlinesAtPath,
+  resolveIndexedBlockContainingPath,
+  resolveIndexedText,
+  resolveIndexedTableCell,
+  resolveEditorTextAtPath,
+  type DocumentIndex,
 } from "@/editor/state";
 import {
-  plainTextOffsetToRegionOffset,
-  regionOffsetToPlainTextOffset,
+  indexedOffsetToPlainTextOffset,
+  plainTextOffsetToIndexedOffset,
 } from "@/editor/state/index/inlines";
 import { createDocument, createMention, createParagraphBlock, createText } from "@/document";
 import { spliceText } from "@/editor/state/reducer/text";
@@ -37,14 +45,14 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       "listItem",
       "paragraph",
     ]);
-    expect(runtime.regions.map((container) => container.text)).toEqual([
+    expect(indexedTextEntries(runtime).map((container) => container.text)).toEqual([
       "Runtime",
       "Paragraph with link, code, \uFFFC, and \uFFFC.",
       "alpha",
       "beta",
     ]);
-    const paragraphInlines = regionInlines(runtime.regions[1]!);
-    expect(paragraphInlines.map((run) => run.node.type)).toEqual([
+    const paragraphInlines = indexedTextEntries(runtime)[1]!.inlines ?? [];
+    expect(paragraphInlines.map((inline) => inline.node.type)).toEqual([
       "text",
       "text",
       "text",
@@ -68,37 +76,43 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     expect(imageNode?.type === "image" && imageNode.alt).toBe("alt text");
   });
 
-  test("preserves inline emphasis and strong marks in runtime text runs", () => {
+  test("preserves inline emphasis and strong marks in runtime inlines", () => {
     const runtime = createDocumentIndex(parseDocument("Plain *italic* and **bold** text.\n"));
-    const paragraph = runtime.regions[0];
+    const paragraph = indexedTextEntries(runtime)[0];
 
     if (!paragraph) {
       throw new Error("Expected paragraph container");
     }
 
-    const italicRun = regionInlines(paragraph).find((run) => indexedInlineText(run) === "italic");
-    const boldRun = regionInlines(paragraph).find((run) => indexedInlineText(run) === "bold");
-
-    expect(italicRun?.node.type === "text" && italicRun.node.marks).toEqual(["italic"]);
-    expect(boldRun?.node.type === "text" && boldRun.node.marks).toEqual(["bold"]);
-  });
-
-  test("preserves inline underline marks in runtime text runs", () => {
-    const runtime = createDocumentIndex(parseDocument("Plain <ins>underlined</ins> text.\n"));
-    const paragraph = runtime.regions[0];
-
-    if (!paragraph) {
-      throw new Error("Expected paragraph container");
-    }
-
-    const underlineRun = regionInlines(paragraph).find(
-      (run) => indexedInlineText(run) === "underlined",
+    const italicInline = ((paragraph).inlines ?? []).find(
+      (inline) => indexedInlineText(inline) === "italic",
+    );
+    const boldInline = ((paragraph).inlines ?? []).find(
+      (inline) => indexedInlineText(inline) === "bold",
     );
 
-    expect(underlineRun?.node.type === "text" && underlineRun.node.marks).toEqual(["underline"]);
+    expect(italicInline?.node.type === "text" && italicInline.node.marks).toEqual(["italic"]);
+    expect(boldInline?.node.type === "text" && boldInline.node.marks).toEqual(["bold"]);
   });
 
-  test("converts offsets between runtime region text and semantic plain text", () => {
+  test("preserves inline underline marks in runtime inlines", () => {
+    const runtime = createDocumentIndex(parseDocument("Plain <ins>underlined</ins> text.\n"));
+    const paragraph = indexedTextEntries(runtime)[0];
+
+    if (!paragraph) {
+      throw new Error("Expected paragraph container");
+    }
+
+    const underlineInline = ((paragraph).inlines ?? []).find(
+      (inline) => indexedInlineText(inline) === "underlined",
+    );
+
+    expect(underlineInline?.node.type === "text" && underlineInline.node.marks).toEqual([
+      "underline",
+    ]);
+  });
+
+  test("converts offsets between indexed editor text and semantic plain text", () => {
     const runtime = createDocumentIndex(
       createDocument([
         createParagraphBlock([
@@ -108,31 +122,38 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
         ]),
       ]),
     );
-    const region = runtime.regions[0];
-    if (!region) {
-      throw new Error("Expected mention region");
+    const path = indexedTextEntries(runtime)[0];
+    if (!path) {
+      throw new Error("Expected mention path");
     }
 
-    expect(region.text).not.toContain("@Jane Doe");
-    expect(regionOffsetToPlainTextOffset(region, "Hello ".length)).toBe("Hello ".length);
-    expect(regionOffsetToPlainTextOffset(region, "Hello ".length + 1)).toBe(
+    expect(path.text).not.toContain("@Jane Doe");
+    expect(indexedOffsetToPlainTextOffset(path.text, path.inlines, "Hello ".length)).toBe(
+      "Hello ".length,
+    );
+    expect(indexedOffsetToPlainTextOffset(path.text, path.inlines, "Hello ".length + 1)).toBe(
       "Hello @Jane Doe".length,
     );
     expect(
-      plainTextOffsetToRegionOffset(region, "Hello ".length, "before"),
+      plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello ".length, "before"),
     ).toBe("Hello ".length);
     expect(
-      plainTextOffsetToRegionOffset(region, "Hello @Jane Doe".length, "after"),
+      plainTextOffsetToIndexedOffset(
+        path.text,
+        path.inlines,
+        "Hello @Jane Doe".length,
+        "after",
+      ),
     ).toBe("Hello ".length + 1);
     expect(
-      plainTextOffsetToRegionOffset(region, "Hello @Jane".length, "before"),
+      plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello @Jane".length, "before"),
     ).toBe("Hello ".length);
     expect(
-      plainTextOffsetToRegionOffset(region, "Hello @Jane".length, "after"),
+      plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello @Jane".length, "after"),
     ).toBe("Hello ".length + 1);
   });
 
-  test("exposes neutral editable region projection queries", () => {
+  test("resolves paths with editor text through the block and table-cell indexes", () => {
     const runtime = createDocumentIndex(
       parseDocument(`alpha
 
@@ -143,23 +164,139 @@ beta
 | one | two |
 `),
     );
-    const alpha = runtime.regions[0];
-    const beta = runtime.regions[1];
-    const one = runtime.regions.find((region) => region.text === "one");
-    const two = runtime.regions.find((region) => region.text === "two");
+    const alpha = indexedTextEntries(runtime)[0];
+    const beta = indexedTextEntries(runtime)[1];
+    const one = indexedTextEntries(runtime).find((entry) => entry.text === "one");
+    const two = indexedTextEntries(runtime).find((entry) => entry.text === "two");
 
     if (!alpha || !beta || !one || !two) {
-      throw new Error("Expected paragraph and table-cell regions");
+      throw new Error("Expected paragraph and table-cell paths");
     }
 
     expect(alpha.path).not.toBe(beta.path);
-    expect(hasSameEditableRegionShape(alpha, beta)).toBe(true);
-    expect(hasSameTableCellPosition(one, two)).toBe(false);
-    expect(hasSameEditableRegionShape(one, two)).toBe(false);
-    expect(findUniqueEditableRegion(runtime, (region) => region.text === "beta")).toBe(beta);
+    expect(resolveIndexedBlockContainingPath(runtime, alpha.path)?.path).toBe(alpha.blockPath);
+    expect(resolveIndexedBlockContainingPath(runtime, beta.path)?.path).toBe(beta.blockPath);
+    expect(resolveIndexedBlockContainingPath(runtime, one.path)?.path).toBe(one.blockPath);
+    expect(resolveIndexedTableCell(runtime, one.path)).toMatchObject({
+      cellIndex: 0,
+      rowIndex: 1,
+      tablePath: one.blockPath,
+    });
+    expect(resolveIndexedTableCell(runtime, two.path)).toMatchObject({
+      cellIndex: 1,
+      rowIndex: 1,
+      tablePath: two.blockPath,
+    });
+    expect(indexedTextEntries(runtime).filter((entry) => entry.text === "beta")).toEqual([beta]);
+    expect(indexedTextEntries(runtime).filter((entry) => entry.block.type === "paragraph"))
+      .toHaveLength(2);
+  });
+
+  test("uses canonical block and table-cell paths for editor text", () => {
+    const runtime = createDocumentIndex(
+      parseDocument(`> nested
+
+\`\`\`ts
+const x = 1
+\`\`\`
+
+| A | B |
+| - | - |
+| one | two |
+`),
+    );
+
+    expect(indexedTextEntries(runtime).map((path) => path.path)).toEqual([
+      "root.0.children.0",
+      "root.1",
+      "root.2.rows.0.cells.0",
+      "root.2.rows.0.cells.1",
+      "root.2.rows.1.cells.0",
+      "root.2.rows.1.cells.1",
+    ]);
+    expect(resolveIndexedText(runtime, "root.0.children.0")).not.toBeNull();
+    expect(resolveIndexedText(runtime, "root.0.children.0.children")).toBeNull();
+    expect(resolveIndexedText(runtime, "root.1")).not.toBeNull();
+    expect(resolveIndexedText(runtime, "root.1.source")).toBeNull();
+    expect(resolveIndexedTableCell(runtime, "root.2.rows.1.cells.1")).not.toBeNull();
+    expect(resolveIndexedText(runtime, "root.2")).toBeNull();
+
+    expect(resolveEditorTextAtPath(runtime, "root.0.children.0")).toBe("nested");
+    expect(resolveEditorTextAtPath(runtime, "root.1")).toBe("const x = 1");
+    expect(resolveEditorTextAtPath(runtime, "root.2.rows.1.cells.1")).toBe("two");
+    expect(resolveInlinesAtPath(runtime, "root.1")).toBeNull();
+    expect(resolveInlinesAtPath(runtime, "root.2.rows.1.cells.1")?.map(indexedInlineText)).toEqual([
+      "two",
+    ]);
+    expect(resolveIndexedText(runtime, "root.1")).toMatchObject({
+      kind: "source",
+      text: "const x = 1",
+    });
+    expect(resolveIndexedTableCell(runtime, "root.2.rows.1.cells.1")).toMatchObject({
+      path: "root.2.rows.1.cells.1",
+      cellIndex: 1,
+      inlines: expect.any(Array),
+      rowIndex: 1,
+      tablePath: "root.2",
+      text: "two",
+    });
+    expect(resolveIndexedText(runtime, "root.2")).toBeNull();
+    expect(hasSameEditorTextPathShape(runtime, "root.1", runtime, "root.1")).toBe(true);
     expect(
-      findUniqueEditableRegion(runtime, (region) => region.block.type === "paragraph"),
-    ).toBeNull();
+      hasSameEditorTextPathShape(
+        runtime,
+        "root.2.rows.1.cells.1",
+        runtime,
+        "root.2.rows.1.cells.1",
+      ),
+    ).toBe(true);
+    expect(hasSameEditorTextPathShape(runtime, "root.2", runtime, "root.2")).toBe(false);
+    expect(resolveIndexedBlockContainingPath(runtime, "root.2.rows.1.cells.1")?.path).toBe("root.2");
+    expect(resolveIndexedTableCell(runtime, "root.2.rows.1.cells.1")).toMatchObject({
+      cellIndex: 1,
+      rowIndex: 1,
+      tablePath: "root.2",
+    });
+  });
+
+  test("resolves editor path flow from blocks and table-local cells", () => {
+    const runtime = createDocumentIndex(
+      parseDocument(`- top
+  - nested
+
+| A | B |
+| - | - |
+| C | D |
+
+---
+
+omega
+`),
+    );
+    const top = findEditorPathByText(runtime, "top");
+    const nested = findEditorPathByText(runtime, "nested");
+    const firstCell = findEditorPathByText(runtime, "A");
+    const secondCell = findEditorPathByText(runtime, "B");
+    const lastCell = findEditorPathByText(runtime, "D");
+    const omega = findEditorPathByText(runtime, "omega");
+    const table = runtime.blocks.find((entry) => entry.block.type === "table");
+
+    if (!top || !nested || !firstCell || !secondCell || !lastCell || !omega || !table) {
+      throw new Error("Expected indexed flow paths");
+    }
+
+    expect(resolveDocumentTextPathBoundary(runtime, "start")).toBe(top);
+    expect(resolveDocumentTextPathBoundary(runtime, "end")).toBe(omega);
+    expect(resolveBlockTextPathBoundary(runtime, "root.0", "start")).toBe(top);
+    expect(resolveBlockTextPathBoundary(runtime, "root.0", "end")).toBe(nested);
+    expect(resolveAdjacentEditorPathWithTextInFlow(runtime, nested, 1)).toBe(firstCell);
+    expect(resolveAdjacentEditorPathWithTextInFlow(runtime, firstCell, -1)).toBe(nested);
+    expect(resolveAdjacentEditorPathWithTextInFlow(runtime, firstCell, 1)).toBe(secondCell);
+    expect(resolveAdjacentEditorPathWithTextInFlow(runtime, lastCell, 1)).toBe(omega);
+    expect(
+      resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, -1),
+    ).toBe(nested);
+    expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, 1)).toBe(omega);
   });
 
   test("round-trips through editor model materialization without changing markdown", () => {
@@ -180,13 +317,13 @@ beta
     const snapshot = parseDocument("");
     const runtime = createDocumentIndex(snapshot);
 
-    expect(runtime.regions).toHaveLength(1);
-    expect(runtime.regions[0]?.text).toBe("");
+    expect(indexedTextEntries(runtime)).toHaveLength(1);
+    expect(indexedTextEntries(runtime)[0]?.text).toBe("");
     expect(runtime.document.blocks[0]?.type).toBe("paragraph");
     expect(serializeDocument(commitDocument(runtime))).toBe("");
   });
 
-  test("stores positioned block and region order on the unified editor model", () => {
+  test("stores positioned block order on the unified editor model", () => {
     const runtime = createDocumentIndex(
       parseDocument(`# Heading
 
@@ -198,8 +335,11 @@ beta
 
     expect(runtime.roots).toHaveLength(3);
     expect(runtime.roots.map((root) => root.blocks[0]?.blockArrayIndex)).toEqual([0, 1, 2]);
-    expect(runtime.roots.map((root) => root.blocks[0]?.regionRangeStart)).toEqual([0, 1, 2]);
-    expect(runtime.regions.map((region) => region.regionArrayIndex)).toEqual([0, 1, 2]);
+    expect(indexedTextEntries(runtime).map((entry) => entry.path)).toEqual([
+      "root.0",
+      "root.1",
+      "root.2",
+    ]);
   });
 
   test("normalizes canvas selections and replaces plain text within one container", () => {
@@ -209,7 +349,7 @@ beta
 Paragraph body.
 `),
     );
-    const paragraphContainer = runtime.regions[1];
+    const paragraphContainer = indexedTextEntries(runtime)[1];
 
     if (!paragraphContainer) {
       throw new Error("Expected paragraph container");
@@ -217,11 +357,11 @@ Paragraph body.
 
     const normalized = normalizeSelection(runtime, {
       anchor: {
-        regionPath: paragraphContainer.path,
+        path: paragraphContainer.path,
         offset: 12,
       },
       focus: {
-        regionPath: paragraphContainer.path,
+        path: paragraphContainer.path,
         offset: 10,
       },
     });
@@ -229,20 +369,20 @@ Paragraph body.
       runtime,
       {
         anchor: {
-          regionPath: paragraphContainer.path,
+          path: paragraphContainer.path,
           offset: 10,
         },
         focus: {
-          regionPath: paragraphContainer.path,
+          path: paragraphContainer.path,
           offset: 14,
         },
       },
       "text",
-    );
+    )!;
 
     expect(normalized.start.offset).toBe(10);
     expect(normalized.end.offset).toBe(12);
-    expect(replaced.documentIndex.regions[1]?.text).toBe("Paragraph text.");
+    expect(indexedTextEntries(replaced.documentIndex)[1]?.text).toBe("Paragraph text.");
     expect(serializeDocument(replaced.documentIndex.document)).toContain("Paragraph text.");
   });
 
@@ -252,7 +392,7 @@ Paragraph body.
         "Paragraph with [link](https://example.com), `code`, and ![alt](https://example.com/image.png).\n",
       ),
     );
-    const paragraph = runtime.regions[0];
+    const paragraph = indexedTextEntries(runtime)[0];
 
     if (!paragraph) {
       throw new Error("Expected paragraph container");
@@ -262,37 +402,37 @@ Paragraph body.
       runtime,
       {
         anchor: {
-          regionPath: paragraph.path,
+          path: paragraph.path,
           offset: "Paragraph with ".length,
         },
         focus: {
-          regionPath: paragraph.path,
+          path: paragraph.path,
           offset: "Paragraph with link".length,
         },
       },
       "ref",
-    );
+    )!;
     const replacedCode = spliceText(
       replacedLink.documentIndex,
       {
         anchor: {
-          regionPath: replacedLink.documentIndex.regions[0]!.path,
+          path: indexedTextEntries(replacedLink.documentIndex)[0]!.path,
           offset: "Paragraph with ref, ".length,
         },
         focus: {
-          regionPath: replacedLink.documentIndex.regions[0]!.path,
+          path: indexedTextEntries(replacedLink.documentIndex)[0]!.path,
           offset: "Paragraph with ref, code".length,
         },
       },
       "snippet",
-    );
+    )!;
 
     expect(serializeDocument(replacedCode.documentIndex.document)).toBe(
       "Paragraph with [ref](https://example.com), `snippet`, and ![alt](https://example.com/image.png).\n",
     );
   });
 
-  test("reuses untouched runtime regions for same-length single-root edits", () => {
+  test("reuses untouched indexed roots and blocks for same-length single-root edits", () => {
     const runtime = createDocumentIndex(
       parseDocument(`# Heading
 
@@ -301,7 +441,7 @@ alpha
 beta
 `),
     );
-    const paragraph = runtime.regions[1];
+    const paragraph = indexedTextEntries(runtime)[1];
 
     if (!paragraph) {
       throw new Error("Expected editable paragraph container");
@@ -311,20 +451,21 @@ beta
       runtime,
       {
         anchor: {
-          regionPath: paragraph.path,
+          path: paragraph.path,
           offset: 0,
         },
         focus: {
-          regionPath: paragraph.path,
+          path: paragraph.path,
           offset: paragraph.text.length,
         },
       },
       "omega",
-    );
+    )!;
 
-    expect(replaced.documentIndex.regions[0]).toBe(runtime.regions[0]);
-    expect(replaced.documentIndex.regions[1]).not.toBe(paragraph);
-    expect(replaced.documentIndex.regions[2]).toBe(runtime.regions[2]);
+    expect(replaced.documentIndex.blocks[0]).toBe(runtime.blocks[0]);
+    expect(replaced.documentIndex.blocks[1]).not.toBe(runtime.blocks[1]);
+    expect(replaced.documentIndex.blocks[2]).toBe(runtime.blocks[2]);
+    expect(resolveEditorTextAtPath(replaced.documentIndex, paragraph.path)).toBe("omega");
     expect(replaced.documentIndex.roots[0]).toBe(runtime.roots[0]);
     expect(replaced.documentIndex.roots[1]).not.toBe(runtime.roots[1]);
     expect(replaced.documentIndex.roots[2]).toBe(runtime.roots[2]);
@@ -339,7 +480,7 @@ alpha
 beta
 `),
     );
-    const paragraph = runtime.regions[1];
+    const paragraph = indexedTextEntries(runtime)[1];
 
     if (!paragraph) {
       throw new Error("Expected editable paragraph container");
@@ -349,53 +490,75 @@ beta
       runtime,
       {
         anchor: {
-          regionPath: paragraph.path,
+          path: paragraph.path,
           offset: 0,
         },
         focus: {
-          regionPath: paragraph.path,
+          path: paragraph.path,
           offset: paragraph.text.length,
         },
       },
       "alphabet",
-    );
+    )!;
 
     expect(replaced.documentIndex.roots[2]).toBe(runtime.roots[2]);
-    expect(replaced.documentIndex.roots[2]?.regions[0]?.path).toBe(runtime.roots[2]?.regions[0]?.path);
-    expect(replaced.documentIndex.regions[2]).toBe(runtime.regions[2]);
+    expect(resolveEditorTextAtPath(replaced.documentIndex, "root.2")).toBe("beta");
   });
 
   test("replaces a selected image atomically instead of editing its alt text", () => {
     const runtime = createDocumentIndex(
       parseDocument("before ![alt](https://example.com/image.png) after\n"),
     );
-    const paragraph = runtime.regions[0];
+    const paragraph = indexedTextEntries(runtime)[0];
 
     if (!paragraph) {
       throw new Error("Expected paragraph container");
     }
 
-    const imageRun = regionInlines(paragraph).find((run) => run.node.type === "image");
+    const imageInline = ((paragraph).inlines ?? []).find((inline) => inline.node.type === "image");
 
-    if (!imageRun) {
-      throw new Error("Expected image run");
+    if (!imageInline) {
+      throw new Error("Expected image inline");
     }
 
     const replaced = spliceText(
       runtime,
       {
         anchor: {
-          regionPath: paragraph.path,
-          offset: imageRun.start,
+          path: paragraph.path,
+          offset: imageInline.start,
         },
         focus: {
-          regionPath: paragraph.path,
-          offset: imageRun.end,
+          path: paragraph.path,
+          offset: imageInline.end,
         },
       },
       "media",
-    );
+    )!;
 
     expect(serializeDocument(replaced.documentIndex.document)).toBe("before media after\n");
   });
 });
+
+function findEditorPathByText(documentIndex: DocumentIndex, text: string) {
+  for (const indexedBlock of documentIndex.blocks) {
+    if (
+      (indexedBlock.kind === "inlines" || indexedBlock.kind === "source") &&
+      indexedBlock.text === text
+    ) {
+      return indexedBlock.path;
+    }
+
+    if (indexedBlock.kind === "cells") {
+      for (const row of indexedBlock.tableCellRows) {
+        for (const cell of row) {
+          if (cell.text === text) {
+            return cell.path;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}

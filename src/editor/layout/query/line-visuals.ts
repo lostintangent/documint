@@ -6,8 +6,9 @@
 import type { DocumentResources } from "@/types";
 import {
   findAncestorIndexedBlockByPath,
-  resolvePrimaryRegionForBlockPath,
-  resolveRegion,
+  resolveBlockTextPathBoundary,
+  type DocumentIndex,
+  type IndexedBlock,
   type IndexedInline,
   type IndexedListItem,
   type EditorState,
@@ -22,7 +23,7 @@ import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/meas
 import type { EditorLayoutState } from "../state";
 import { resolveInlineImageDimensions } from "../measure/inline-image";
 import type { DocumentLayout, LayoutLine } from "../measure";
-import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
+import { findDocumentLayoutLineForPathOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
 export type InlineBounds = {
   height: number;
@@ -96,9 +97,7 @@ export function resolveListMarkerTarget(
     return null;
   }
 
-  const primaryRegion = resolvePrimaryRegionForBlockPath(state.documentIndex, listItemEntry.path);
-
-  if (primaryRegion?.path !== line.regionPath) {
+  if (resolveFirstPathInBlock(state.documentIndex, listItemEntry) !== line.path) {
     return null;
   }
 
@@ -127,13 +126,15 @@ export function measureInlineImageBounds(
   resources: DocumentResources,
   run: IndexedInline,
 ): InlineBounds | null {
-  const region = resolveRegion(state.documentIndex, state.selection.anchor.regionPath);
-
-  if (run.node.type !== "image" || !region) {
+  if (run.node.type !== "image") {
     return null;
   }
 
-  const line = findDocumentLayoutLineForRegionOffset(viewport.layout, region.path, run.start);
+  const line = findDocumentLayoutLineForPathOffset(
+    viewport.layout,
+    state.selection.anchor.path,
+    run.start,
+  );
 
   if (!line) {
     return null;
@@ -146,4 +147,8 @@ export function measureInlineImageBounds(
   const top = line.top + Math.max(0, Math.floor((line.height - height) / 2));
 
   return { left, top, width: right - left, height };
+}
+
+function resolveFirstPathInBlock(documentIndex: DocumentIndex, indexedBlock: IndexedBlock) {
+  return resolveBlockTextPathBoundary(documentIndex, indexedBlock.path, "start");
 }

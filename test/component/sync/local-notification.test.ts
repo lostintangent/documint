@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import { createStore, type DocumintStore } from "@/component/store";
 import {
@@ -19,10 +20,10 @@ describe("local content notifications", () => {
     runCommandAndEmit(store, insertLineBreak);
     const emittedContent = runCommandAndEmit(store, insertLineBreak);
 
-    expect(regionTexts(store.editor.getState())).toEqual(["Alpha", "", "", ""]);
+    expect(pathTexts(store.editor.getState())).toEqual(["Alpha", "", "", ""]);
 
     const reparsedEchoState = createEditorState(parseDocument(emittedContent, {}));
-    expect(regionTexts(reparsedEchoState)).toEqual(["Alpha"]);
+    expect(pathTexts(reparsedEchoState)).toEqual(["Alpha"]);
   });
 
   test.each([
@@ -41,14 +42,14 @@ describe("local content notifications", () => {
     const emissions = [runCommandAndEmit(store, insertLineBreak)];
 
     emissions.push(runCommandAndEmit(store, insertText, typedPrefix));
-    expect(regionTexts(store.editor.getState())).toEqual(["Alpha", `${typedPrefix} `]);
+    expect(pathTexts(store.editor.getState())).toEqual(["Alpha", `${typedPrefix} `]);
 
     for (const _ of typedPrefix) {
       emissions.push(runCommandAndEmit(store, deleteBackward));
     }
 
     expect(emissions.some((content) => content.includes("&#x20;"))).toBe(true);
-    expect(regionTexts(store.editor.getState())).toEqual(["Alpha", " "]);
+    expect(pathTexts(store.editor.getState())).toEqual(["Alpha", " "]);
     expect(selectionOffset(store.editor.getState())).toBe(0);
   });
 });
@@ -67,17 +68,17 @@ function runCommandAndEmit<A extends unknown[]>(
   return serializeDocument(transition.next.documentIndex.document, {});
 }
 
-function placeCaret(store: DocumintStore, regionIndex: number, offset: number | "end") {
+function placeCaret(store: DocumintStore, pathIndex: number, offset: number | "end") {
   const state = store.editor.getState();
-  const region = state.documentIndex.regions[regionIndex];
+  const path = indexedTextEntries(state)[pathIndex];
 
-  if (!region) {
-    throw new Error(`Missing region ${regionIndex}`);
+  if (!path) {
+    throw new Error(`Missing path ${pathIndex}`);
   }
 
-  const resolvedOffset = offset === "end" ? region.text.length : offset;
+  const resolvedOffset = offset === "end" ? path.text.length : offset;
   const nextState = setSelection(state, {
-    regionPath: region.path,
+    path: path.path,
     offset: resolvedOffset,
   });
 
@@ -88,13 +89,13 @@ function placeCaret(store: DocumintStore, regionIndex: number, offset: number | 
   store.editor.replace(nextState);
 }
 
-function regionTexts(state: EditorState) {
-  return state.documentIndex.regions.map((region) => region.text);
+function pathTexts(state: EditorState) {
+  return indexedTextEntries(state).map((path) => path.text);
 }
 
 function selectionOffset(state: EditorState) {
-  if (!state.selection || state.selection.anchor.regionPath !== state.selection.focus.regionPath) {
-    throw new Error("Expected a collapsed single-region selection.");
+  if (!state.selection || state.selection.anchor.path !== state.selection.focus.path) {
+    throw new Error("Expected a collapsed single-path selection.");
   }
 
   expect(state.selection.anchor.offset).toBe(state.selection.focus.offset);

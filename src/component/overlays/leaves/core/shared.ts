@@ -38,7 +38,7 @@ export type DocumentAnchorTarget = {
 // underlying anchor target hasn't moved.
 export function areDocumentAnchorTargetsEqual(previous: DocumentAnchorTarget, next: DocumentAnchorTarget) {
   return (
-    previous.anchor.regionPath === next.anchor.regionPath &&
+    previous.anchor.path === next.anchor.path &&
     previous.anchor.offset === next.anchor.offset &&
     previous.leftOverride === next.leftOverride &&
     previous.paddingY === next.paddingY
@@ -94,7 +94,7 @@ export type AnnotationLeaf = DocumentAnchorTarget & {
   kind: "annotation";
   selection: {
     endOffset: number;
-    regionPath: string;
+    path: string;
     startOffset: number;
   };
 };
@@ -103,7 +103,7 @@ export type AnnotationLeaf = DocumentAnchorTarget & {
 export type LinkLeaf = DocumentAnchorTarget & {
   endOffset: number;
   kind: "link";
-  regionPath: string;
+  path: string;
   startOffset: number;
   title: string | null;
   url: string;
@@ -177,7 +177,7 @@ export function resolveContextualLeaf(
     }
 
     return {
-      anchor: { regionPath: range.regionPath, offset: range.startOffset },
+      anchor: { path: range.path, offset: range.startOffset },
       animateInitialComment: false,
       kind: "thread",
       link:
@@ -198,10 +198,10 @@ export function resolveContextualLeaf(
   }
 
   return {
-    anchor: { regionPath: target.regionPath, offset: target.startOffset },
+    anchor: { path: target.path, offset: target.startOffset },
     endOffset: target.endOffset,
     kind: "link",
-    regionPath: target.regionPath,
+    path: target.path,
     startOffset: target.startOffset,
     title: target.title,
     url: target.url,

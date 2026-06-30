@@ -1,84 +1,29 @@
 // Root construction and positioning: turns one top-level document `Block` into
-// an `IndexedRoot` slice, then places those slices in block-array and
-// region-array coordinate space.
+// an `IndexedRoot` slice, then places those slices in block-array coordinate
+// space.
 
 import {
+  blockContentKind,
   childBlockPath,
-  childContainerPath,
+  getBlockChildren,
+  getTableCellRows,
   rootBlockPath,
-  sourcePath,
   tableCellPath,
   tableRowPath,
   type Block,
-  type Inline,
-  type TableCell,
+  type CodeBlock,
+  type HeadingBlock,
+  type ParagraphBlock,
+  type RawBlock,
 } from "@/document";
 import { flattenInlineNodes, indexedInlineText } from "./inlines";
 import type {
   IndexedBlock,
-  BlockKind,
   IndexedInline,
+  IndexedTableCell,
   IndexedListItem,
-  EditableRegionContent,
-  EditableRegion,
   IndexedRoot,
 } from "./types";
-
-// How a block contributes to the editor's region/coordinate stream. Five
-// kinds cover every existing block type and any future one:
-//
-//   - `container`: recurse into the block's children (blockquote, list, listItem)
-//   - `inline-text`: emit one region with flattened inlines (heading, paragraph)
-//   - `source-text`: emit one source region holding raw text (code, raw)
-//   - `cells`: emit one inline-bearing region per table cell (table)
-//   - `inert`: no region (divider, directive)
-//
-// A new block type is one entry in `BLOCK_CONTRIBUTIONS` below. The visitor
-// dispatches on contribution kind, so no per-type branching escapes the table.
-// The discriminator literals are constrained by `BlockKind` (see types.ts) so
-// contribution kind and `IndexedBlock.kind` stay in lockstep.
-type BlockContribution =
-  | { kind: "container"; children: readonly Block[] }
-  | { kind: "inline-text"; inlines: readonly Inline[] }
-  | { kind: "source-text"; source: string }
-  | { kind: "cells"; cells: readonly { rowIndex: number; cellIndex: number; cell: TableCell }[] }
-  | { kind: "inert" };
-
-// Compile-time guard: every `BlockContribution` discriminator must be a
-// `BlockKind`, and every `BlockKind` must appear in `BlockContribution`.
-// `kind: contribution.kind` in `visitBlock` enforces the first direction;
-// this satisfies-pair enforces the second.
-type _BlockKindBidirectional = {
-  forward: BlockContribution["kind"] extends BlockKind ? true : never;
-  reverse: BlockKind extends BlockContribution["kind"] ? true : never;
-};
-const _blockKindCheck = { forward: true, reverse: true } satisfies _BlockKindBidirectional;
-void _blockKindCheck;
-
-const BLOCK_CONTRIBUTIONS: {
-  [K in Block["type"]]: (block: Extract<Block, { type: K }>) => BlockContribution;
-} = {
-  blockquote: (b) => ({ kind: "container", children: b.children }),
-  code: (b) => ({ kind: "source-text", source: b.source }),
-  directive: () => ({ kind: "inert" }),
-  // Inert leaf block: contributes no region. Inertness is structural — a
-  // leaf block (not a container) with no regions. Layout reserves a fixed-
-  // height geometry slot; renderer paints chrome via `paintInertBlock`.
-  // Caret navigation, hit testing, and the universal merge-collapse rule
-  // treat inert blocks correctly by virtue of their absence from region-flow.
-  divider: () => ({ kind: "inert" }),
-  heading: (b) => ({ kind: "inline-text", inlines: b.children }),
-  list: (b) => ({ kind: "container", children: b.items }),
-  listItem: (b) => ({ kind: "container", children: b.children }),
-  paragraph: (b) => ({ kind: "inline-text", inlines: b.children }),
-  raw: (b) => ({ kind: "source-text", source: b.source }),
-  table: (b) => ({
-    kind: "cells",
-    cells: b.rows.flatMap((row, rowIndex) =>
-      row.cells.map((cell, cellIndex) => ({ cell, cellIndex, rowIndex })),
-    ),
-  }),
-};
 
 type ListContext = {
   depth: number;
@@ -89,20 +34,14 @@ type ListContext = {
 
 const EMPTY_URLS: ReadonlySet<string> = new Set();
 
-function resolveBlockContribution(block: Block): BlockContribution {
-  // Cast is safe: the table's discriminator and the block's discriminator
-  // are the same union; TypeScript just doesn't track the relationship.
-  return (BLOCK_CONTRIBUTIONS[block.type] as (b: Block) => BlockContribution)(block);
-}
-
 export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedRoot {
   const blocks: IndexedBlock[] = [];
-  const regions: EditableRegion[] = [];
   // Collected during the inline walk below, alongside the work already
-  // happening in region construction.
+  // happening in text projection.
   const imageUrls = new Set<string>();
   let resourceUrls: Set<string> | null = null;
   const listItems = new Map<string, IndexedListItem>();
+  let pathsWithTextCount = 0;
 
   function visitBlock(
     block: Block,
@@ -111,82 +50,93 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
     parentBlockPath: string | null,
     listContext: ListContext | null = null,
   ) {
-    const contribution = resolveBlockContribution(block);
+    const kind = blockContentKind(block);
     const blockArrayIndex = blocks.length;
-    const regionRangeStart = regions.length;
-    const indexedBlock: IndexedBlock = {
+    const baseBlock = {
       block,
-      // Local per-root index here; re-stamped to the global position when
+      // Local per-root index here; re-stamped to global document order when
       // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
       blockArrayIndex,
       blockRangeEnd: blockArrayIndex + 1,
       depth,
-      kind: contribution.kind,
       parentBlockPath,
       path,
-      regionRangeEnd: regionRangeStart,
-      regionRangeStart,
       rootIndex,
     };
 
-    blocks.push(indexedBlock);
-
     appendIndexedListItem(block, path, listContext);
 
-    switch (contribution.kind) {
-      case "container":
-        for (const [index, child] of contribution.children.entries()) {
-          visitBlock(
-            child,
-            childBlockPath(path, index),
-            depth + 1,
-            path,
-            resolveChildListContext(block, index, listContext),
-          );
+    // The document owns the classification (`kind`); the index only projects the
+    // payload it implies. The leaf casts are sound under the kind switch:
+    // `inlines` is paragraph/heading, `source` is code/raw.
+    switch (kind) {
+      case "blocks":
+      case "void":
+        {
+          const indexedBlock: IndexedBlock = { ...baseBlock, kind };
+          blocks.push(indexedBlock);
+
+          for (const [index, child] of (getBlockChildren(block) ?? []).entries()) {
+            visitBlock(
+              child,
+              childBlockPath(path, index),
+              depth + 1,
+              path,
+              resolveChildListContext(block, index, listContext),
+            );
+          }
+          indexedBlock.blockRangeEnd = blocks.length;
         }
         break;
-      case "inline-text":
-        appendInlineRegion(
-          block,
-          childContainerPath(path),
-          path,
-          path,
-          flattenInlineNodes(contribution.inlines),
-        );
+      case "inlines":
+        {
+          const inlines = flattenInlineNodes((block as ParagraphBlock | HeadingBlock).children);
+          const text = recordInlineProjection(inlines);
+          blocks.push({ ...baseBlock, editorOrder: pathsWithTextCount, inlines, kind, text });
+          pathsWithTextCount += 1;
+        }
         break;
-      case "source-text":
-        appendSourceRegion(block, sourcePath(path), path, contribution.source);
+      case "source":
+        {
+          blocks.push({
+            ...baseBlock,
+            editorOrder: pathsWithTextCount,
+            kind,
+            text: (block as CodeBlock | RawBlock).source,
+          });
+          pathsWithTextCount += 1;
+        }
         break;
       case "cells":
-        for (const { cell, cellIndex, rowIndex } of contribution.cells) {
-          const rowPath = tableRowPath(path, rowIndex);
-          const cellPath = tableCellPath(rowPath, cellIndex);
-          appendInlineRegion(
-            block,
-            cellPath,
-            path,
-            cellPath,
-            flattenInlineNodes(cell.children),
-            { cellIndex, rowIndex },
+        {
+          const tableCellRows = (getTableCellRows(block) ?? []).map((row, rowIndex) =>
+            row.map((cell, cellIndex) => {
+              const rowPath = tableRowPath(path, rowIndex);
+              const cellPath = tableCellPath(rowPath, cellIndex);
+              const inlines = flattenInlineNodes(cell.children);
+              const text = recordInlineProjection(inlines);
+              const indexedCell: IndexedTableCell = {
+                cell,
+                cellIndex,
+                editorOrder: pathsWithTextCount,
+                inlines,
+                path: cellPath,
+                rootIndex: baseBlock.rootIndex,
+                rowIndex,
+                tablePath: path,
+                text,
+              };
+              pathsWithTextCount += 1;
+              return indexedCell;
+            }),
           );
+          blocks.push({ ...baseBlock, kind, tableCellRows });
         }
         break;
-      case "inert":
-        break;
     }
-
-    indexedBlock.blockRangeEnd = blocks.length;
-    indexedBlock.regionRangeEnd = regions.length;
   }
 
-  function appendInlineRegion(
-    block: Block,
-    path: string,
-    blockPath: string,
-    containerPath: string,
-    inlines: IndexedInline[],
-    tableCellPosition: { cellIndex: number; rowIndex: number } | null = null,
-  ) {
+  function recordInlineProjection(inlines: IndexedInline[]) {
     const text = inlines.map(indexedInlineText).join("");
     for (const inline of inlines) {
       if (inline.node.type === "image") imageUrls.add(inline.node.url);
@@ -195,43 +145,7 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
         resourceUrls.add(inline.node.url);
       }
     }
-    pushRegion(
-      block,
-      path,
-      blockPath,
-      containerPath,
-      { kind: "inlines", inlines },
-      text,
-      tableCellPosition,
-    );
-  }
-
-  function appendSourceRegion(block: Block, path: string, blockPath: string, source: string) {
-    pushRegion(block, path, blockPath, blockPath, { kind: "source" }, source, null);
-  }
-
-  function pushRegion(
-    block: Block,
-    path: string,
-    blockPath: string,
-    containerPath: string,
-    content: EditableRegionContent,
-    text: string,
-    tableCellPosition: { cellIndex: number; rowIndex: number } | null,
-  ) {
-    regions.push({
-      block,
-      blockPath,
-      containerPath,
-      content,
-      // Local per-root region index here; re-stamped to the global position when
-      // the root is positioned in `positionIndexedRoots` / `positionIndexedRoot`.
-      regionArrayIndex: regions.length,
-      path,
-      rootIndex,
-      tableCellPosition,
-      text,
-    });
+    return text;
   }
 
   function appendIndexedListItem(block: Block, path: string, context: ListContext | null) {
@@ -287,28 +201,28 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
     imageUrls,
     resourceUrls: resourceUrls ?? EMPTY_URLS,
     listItems,
-    regions,
     rootIndex,
+    pathsWithTextCount,
   };
 }
 
-// Positions a list of roots in block-array and region-array coordinate space.
+// Positions a list of roots in block-array and editor-text coordinate space.
 // Root identity is reused when those coordinates are unchanged. Shifted roots
-// receive new root records, while their nested block and region records are
-// reused or shifted according to the coordinate spaces they actually carry.
+// receive new root records, while their nested block records are reused or
+// shifted according to the coordinate space they carry.
 export function positionIndexedRoots(
   roots: IndexedRoot[],
   previousRoots: IndexedRoot[] | null = null,
 ) {
   const positionedRoots: IndexedRoot[] = [];
   let blockIndex = 0;
-  let regionIndex = 0;
+  let editorOrder = 0;
 
   for (const [rootIndex, root] of roots.entries()) {
     const nextBlockStart = blockIndex;
     const nextBlockEnd = nextBlockStart + root.blocks.length;
-    const nextRegionStart = regionIndex;
-    const nextRegionEnd = nextRegionStart + root.regions.length;
+    const nextEditorOrderStart = editorOrder;
+    const nextEditorOrderEnd = nextEditorOrderStart + root.pathsWithTextCount;
     const previousRoot = previousRoots?.[rootIndex];
 
     positionedRoots.push(
@@ -317,15 +231,14 @@ export function positionIndexedRoots(
         root,
         nextBlockStart,
         nextBlockEnd,
-        nextRegionStart,
-        nextRegionEnd,
+        nextEditorOrderStart,
       )
         ? previousRoot
-        : positionIndexedRoot(root, nextBlockStart, nextRegionStart),
+        : positionIndexedRoot(root, nextBlockStart, nextEditorOrderStart),
     );
 
     blockIndex = nextBlockEnd;
-    regionIndex = nextRegionEnd;
+    editorOrder = nextEditorOrderEnd;
   }
 
   return positionedRoots;
@@ -334,25 +247,21 @@ export function positionIndexedRoots(
 function positionIndexedRoot(
   root: IndexedRoot,
   nextBlockStart: number,
-  nextRegionStart: number,
+  nextEditorOrderStart: number,
 ): IndexedRoot {
   const rootBlock = root.blocks[0]!;
   const blockIndexDelta = nextBlockStart - rootBlock.blockArrayIndex;
-  const regionIndexDelta = nextRegionStart - rootBlock.regionRangeStart;
-  const blocks = shiftEditorBlocks(root.blocks, blockIndexDelta, regionIndexDelta);
-  const regions = shiftEditorRegions(root.regions, regionIndexDelta);
+  const editorOrderDelta =
+    root.pathsWithTextCount === 0 ? 0 : nextEditorOrderStart - resolveFirstEditorOrder(root);
+  const blocks = shiftEditorBlocks(root.blocks, blockIndexDelta, editorOrderDelta);
 
-  if (blocks === root.blocks && regions === root.regions) {
+  if (blocks === root.blocks) {
     return root;
   }
 
   return {
     ...root,
-    // A freshly built root starts with local coordinates, so non-zero deltas
-    // stamp it into global space. Reused suffix roots only shift the record
-    // families whose coordinate spaces moved.
     blocks,
-    regions,
   };
 }
 
@@ -361,8 +270,7 @@ function canReuseIndexedRoot(
   root: IndexedRoot,
   nextBlockStart: number,
   nextBlockEnd: number,
-  nextRegionStart: number,
-  nextRegionEnd: number,
+  nextEditorOrderStart: number,
 ): previousRoot is IndexedRoot {
   const previousRootBlock = previousRoot?.blocks[0];
 
@@ -372,39 +280,93 @@ function canReuseIndexedRoot(
     root === previousRoot &&
     previousRootBlock.blockArrayIndex === nextBlockStart &&
     previousRootBlock.blockRangeEnd === nextBlockEnd &&
-    previousRootBlock.regionRangeStart === nextRegionStart &&
-    previousRootBlock.regionRangeEnd === nextRegionEnd,
+    (root.pathsWithTextCount === 0 || resolveFirstEditorOrder(root) === nextEditorOrderStart),
   );
 }
 
 function shiftEditorBlocks(
   blocks: IndexedBlock[],
   blockIndexDelta: number,
-  regionIndexDelta: number,
+  editorOrderDelta: number,
 ) {
-  if (blockIndexDelta === 0 && regionIndexDelta === 0) {
+  if (blockIndexDelta === 0 && editorOrderDelta === 0) {
     return blocks;
   }
 
-  return blocks.map<IndexedBlock>((block) => ({
+  return blocks.map<IndexedBlock>((block) =>
+    shiftEditorBlock(block, blockIndexDelta, editorOrderDelta),
+  );
+}
+
+function shiftEditorBlock(
+  block: IndexedBlock,
+  blockIndexDelta: number,
+  editorOrderDelta: number,
+): IndexedBlock {
+  switch (block.kind) {
+    case "blocks":
+    case "void":
+      return shiftIndexedBlockCoordinates(block, blockIndexDelta);
+    case "inlines":
+    case "source":
+      return {
+        ...shiftIndexedBlockCoordinates(block, blockIndexDelta),
+        editorOrder: shiftEditorOrder(block.editorOrder, editorOrderDelta),
+      };
+    case "cells":
+      return {
+        ...shiftIndexedBlockCoordinates(block, blockIndexDelta),
+        tableCellRows: shiftIndexedTableCellRows(block.tableCellRows, editorOrderDelta),
+      };
+  }
+}
+
+function shiftIndexedBlockCoordinates<T extends IndexedBlock>(
+  block: T,
+  blockIndexDelta: number,
+): T {
+  return {
     ...block,
     blockArrayIndex: block.blockArrayIndex + blockIndexDelta,
     blockRangeEnd: block.blockRangeEnd + blockIndexDelta,
-    regionRangeEnd: block.regionRangeEnd + regionIndexDelta,
-    regionRangeStart: block.regionRangeStart + regionIndexDelta,
-  }));
+  };
 }
 
-function shiftEditorRegions(
-  regions: EditableRegion[],
-  regionIndexDelta: number,
-) {
-  if (regionIndexDelta === 0) {
-    return regions;
+function resolveFirstEditorOrder(root: IndexedRoot): number {
+  for (const indexedBlock of root.blocks) {
+    if (indexedBlock.kind === "inlines" || indexedBlock.kind === "source") {
+      return indexedBlock.editorOrder;
+    }
+
+    if (indexedBlock.kind === "cells") {
+      for (const row of indexedBlock.tableCellRows) {
+        const firstCell = row[0];
+        if (firstCell) {
+          return firstCell.editorOrder;
+        }
+      }
+    }
   }
 
-  return regions.map<EditableRegion>((region) => ({
-    ...region,
-    regionArrayIndex: region.regionArrayIndex + regionIndexDelta,
-  }));
+  return 0;
+}
+
+function shiftEditorOrder(editorOrder: number, editorOrderDelta: number) {
+  return editorOrder + editorOrderDelta;
+}
+
+function shiftIndexedTableCellRows(
+  rows: readonly (readonly IndexedTableCell[])[],
+  editorOrderDelta: number,
+) {
+  if (editorOrderDelta === 0) {
+    return rows;
+  }
+
+  return rows.map((row) =>
+    row.map((cell) => ({
+      ...cell,
+      editorOrder: shiftEditorOrder(cell.editorOrder, editorOrderDelta),
+    })),
+  );
 }

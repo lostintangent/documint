@@ -5,18 +5,15 @@
 // occupy the object-replacement character so selection arithmetic stays
 // uniform across the flat character stream.
 //
-// `regionInlines` / `findInlinesInRange` are the canonical accessors over
-// the resulting `IndexedInline[]`. They live alongside the construction
-// primitive so a contributor reading "where do region inlines come from?"
-// finds both construction and consumption in one place.
+// `findInlinesInRange` and the offset conversion helpers are the canonical
+// accessors over the resulting `IndexedInline[]`. They live alongside the
+// construction primitive so construction and consumption stay in one place.
 
 import { extractPlainTextFromInlineNodes, type Inline, type Link, type Mark } from "@/document";
 import { editorInlineText } from "../../text/inline-offsets";
-import type { IndexedInline, EditableRegion } from "./types";
+import type { IndexedInline } from "./types";
 
 export type InlineOffsetAffinity = "after" | "before";
-
-const EMPTY_INLINES: readonly IndexedInline[] = [];
 
 // Construction --------------------------------------------------------------
 
@@ -58,14 +55,6 @@ export function inlineMarks(inline: Pick<IndexedInline, "node">): readonly Mark[
 
 // Accessors -----------------------------------------------------------------
 
-// Returns the indexed inlines for an inline-bearing region, or an empty array for
-// source regions (code, raw). Renderer/layout consumers can iterate the
-// result uniformly; source regions fall through their inline loop and
-// paint `region.text` as a single text run instead.
-export function regionInlines(region: EditableRegion): readonly IndexedInline[] {
-  return region.content.kind === "inlines" ? region.content.inlines : EMPTY_INLINES;
-}
-
 // Returns the inlines whose extent overlaps the half-open range [start, end).
 // Right-exclusive matches the wrapping convention everywhere else: a line
 // that ends at offset N does not include the inline starting at N.
@@ -79,16 +68,20 @@ export function findInlinesInRange(
 
 // Offset conversion ---------------------------------------------------------
 
-export function regionOffsetToPlainTextOffset(region: EditableRegion, offset: number) {
-  const normalizedOffset = clamp(offset, 0, region.text.length);
+export function indexedOffsetToPlainTextOffset(
+  text: string,
+  inlines: readonly IndexedInline[] | null,
+  offset: number,
+) {
+  const normalizedOffset = clamp(offset, 0, text.length);
 
-  if (region.content.kind === "source") {
+  if (!inlines) {
     return normalizedOffset;
   }
 
   let plainTextOffset = 0;
 
-  for (const inline of region.content.inlines) {
+  for (const inline of inlines) {
     const plainTextLength = indexedInlinePlainText(inline).length;
 
     if (normalizedOffset <= inline.start) {
@@ -111,19 +104,20 @@ export function regionOffsetToPlainTextOffset(region: EditableRegion, offset: nu
   return plainTextOffset;
 }
 
-export function plainTextOffsetToRegionOffset(
-  region: EditableRegion,
+export function plainTextOffsetToIndexedOffset(
+  text: string,
+  inlines: readonly IndexedInline[] | null,
   offset: number,
   affinity: InlineOffsetAffinity,
 ) {
-  if (region.content.kind === "source") {
-    return clamp(offset, 0, region.text.length);
+  if (!inlines) {
+    return clamp(offset, 0, text.length);
   }
 
   const normalizedOffset = Math.max(0, offset);
   let plainTextOffset = 0;
 
-  for (const inline of region.content.inlines) {
+  for (const inline of inlines) {
     const inlinePlainTextLength = indexedInlinePlainText(inline).length;
     const inlinePlainTextEnd = plainTextOffset + inlinePlainTextLength;
 
@@ -150,7 +144,7 @@ export function plainTextOffsetToRegionOffset(
     plainTextOffset = inlinePlainTextEnd;
   }
 
-  return region.text.length;
+  return text.length;
 }
 
 function indexedInlinePlainText(inline: IndexedInline) {

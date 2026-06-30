@@ -10,108 +10,109 @@
 
 import { isBlockPath, rootBlockPath, type Block } from "@/document";
 import {
-  resolvePrimaryRegionForBlockPath,
-  resolveRegion,
-  resolveRootBlock,
-  resolveRootPrimaryRegion,
-  resolveTableCellRegionByTablePath,
+  resolveEditorTextAtPath,
+  resolveBlockTextPathBoundary,
+  resolveIndexedTableCellByTablePath,
 } from "../index/query";
 import type { DocumentIndex } from "../index/types";
 import type { EditorSelection } from "./index";
 
 type SelectionOffset = number | "end";
 
-export type RegionPathSelectionTarget = {
+export type PathSelectionTarget = {
   focusOffset?: SelectionOffset;
-  kind: "region-path";
+  kind: "path";
   offset: SelectionOffset;
   path: string;
 };
 
 export type SelectionTarget =
   | {
-      kind: "block-primary-region";
+      kind: "block";
       block: Block;
       offset: SelectionOffset;
     }
-  | RegionPathSelectionTarget
+  | PathSelectionTarget
   | {
       cellIndex: number;
       kind: "table-cell";
       offset: SelectionOffset;
-      rootIndex: number;
       rowIndex: number;
+      tablePath: string;
     }
   | {
-      kind: "root-primary-region";
+      kind: "root";
       offset: SelectionOffset;
       rootIndex: number;
     }
   | {
       blockPath: string;
-      kind: "block-path-primary-region";
+      kind: "block-path";
       offset: SelectionOffset;
     };
 
 // SelectionTarget is editor-action vocabulary: commands use it to declare
 // where the selection should land after the reducer commits a mutation.
 export const target = {
-  // Select the primary editable region of a block included in this action's
+  // Select the first editable path of a block included in this action's
   // replacement payload. Used by structural commands that build or move the
   // exact block that should receive the caret.
   block(block: Block, offset: SelectionOffset = 0): SelectionTarget {
     return {
       block,
-      kind: "block-primary-region",
+      kind: "block",
       offset,
     };
   },
 
-  // Select an editable region by index path, optionally as a range. Used after
-  // inline/text edits where the same region should be remapped through a block
-  // rebuild.
+  // Select an editor path, optionally as a range. Used after inline/text edits
+  // where the same path should be remapped through a block rebuild.
   path(
     path: string,
     offset: SelectionOffset = 0,
     focusOffset: SelectionOffset = offset,
-  ): RegionPathSelectionTarget {
+  ): PathSelectionTarget {
     return {
       focusOffset,
-      kind: "region-path",
+      kind: "path",
       offset,
       path,
     };
   },
 
-  // Select a table cell by row/column in a table root. Used by table editing
+  // Select a table cell by row/column in a table block. Used by table editing
   // because cells are not blocks and row/column is the user's intent.
   tableCell(
-    rootIndex: number,
+    tablePath: string,
     rowIndex: number,
     cellIndex: number,
     offset: SelectionOffset = 0,
   ): SelectionTarget {
+    if (!isBlockPath(tablePath)) {
+      throw new Error(`Invalid table path selection target: ${tablePath}`);
+    }
+
     return {
       cellIndex,
       kind: "table-cell",
       offset,
-      rootIndex,
       rowIndex,
+      tablePath,
     };
   },
 
-  // Select the primary editable region of a root by post-edit index. Used when
-  // the target root is outside the action payload or only known by shifted
+  // Select the first editable path of a root by post-edit index. Used when the
+  // target root is outside the action payload or only known by shifted
   // coordinate.
   root(rootIndex: number, offset: SelectionOffset = 0): SelectionTarget {
     return {
-      kind: "root-primary-region",
+      kind: "root",
       offset,
       rootIndex,
     };
   },
 
-  // Select the primary editable region for a block path after the commit.
+  // Select the first editable path for a block path after the commit.
   blockPath(blockPath: string, offset: SelectionOffset = 0): SelectionTarget {
     if (!isBlockPath(blockPath)) {
       throw new Error(`Invalid block path selection target: ${blockPath}`);
@@ -119,7 +120,7 @@ export const target = {
 
     return {
       blockPath,
-      kind: "block-path-primary-region",
+      kind: "block-path",
       offset,
     };
   },
@@ -133,78 +134,87 @@ export function resolveSelectionTarget(
     return null;
   }
 
-  if (selection.kind === "block-primary-region") {
+  if (selection.kind === "block") {
     // Block references are only meaningful against the action payload they
     // came from; dispatch must materialize them before resolution. Reaching
     // this point means an action kind that doesn't support block targets
     // carried one — fail loudly instead of silently losing the caret.
-    throw new Error("block-primary-region targets must be materialized by dispatch.");
+    throw new Error("block targets must be materialized by dispatch.");
   }
 
-  if (selection.kind === "root-primary-region") {
-    const region = resolveRootPrimaryRegion(documentIndex, selection.rootIndex);
+  if (selection.kind === "root") {
+    const path = resolveBlockTextPathBoundary(
+      documentIndex,
+      rootBlockPath(selection.rootIndex),
+      "start",
+    );
 
-    return region
-      ? createCollapsedSelection(region.path, resolveRegionOffset(region.text, selection.offset))
-      : null;
+    return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
   }
 
-  if (selection.kind === "block-path-primary-region") {
-    const region = resolvePrimaryRegionForBlockPath(documentIndex, selection.blockPath);
+  if (selection.kind === "block-path") {
+    const path = resolveBlockTextPathBoundary(
+      documentIndex,
+      selection.blockPath,
+      "start",
+    );
 
-    return region
-      ? createCollapsedSelection(region.path, resolveRegionOffset(region.text, selection.offset))
-      : null;
+    return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
   }
 
   if (selection.kind === "table-cell") {
-    const rootBlock = resolveRootBlock(documentIndex, selection.rootIndex);
-
-    if (!rootBlock || rootBlock.type !== "table") {
-      return null;
-    }
-
-    const region = resolveTableCellRegionByTablePath(
+    const path = resolveIndexedTableCellByTablePath(
       documentIndex,
-      rootBlockPath(selection.rootIndex),
+      selection.tablePath,
       selection.rowIndex,
       selection.cellIndex,
-    );
+    )?.path;
 
-    return region
-      ? createCollapsedSelection(region.path, resolveRegionOffset(region.text, selection.offset))
-      : null;
+    return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
   }
 
-  const region = resolveRegion(documentIndex, selection.path);
+  return createSelectionAtPath(
+    documentIndex,
+    selection.path,
+    selection.offset,
+    selection.focusOffset ?? selection.offset,
+  );
+}
 
-  if (!region) {
+function createSelectionAtPath(
+  documentIndex: DocumentIndex,
+  path: string,
+  anchor: SelectionOffset,
+  focus: SelectionOffset,
+): EditorSelection | null {
+  const text = resolveEditorTextAtPath(documentIndex, path);
+
+  if (text === null) {
     return null;
   }
 
-  const anchorOffset = resolveRegionOffset(region.text, selection.offset);
-  const focusOffset = resolveRegionOffset(region.text, selection.focusOffset ?? selection.offset);
+  const anchorOffset = resolveEditorOffset(text, anchor);
+  const focusOffset = resolveEditorOffset(text, focus);
   return {
     anchor: {
-      regionPath: region.path,
+      path,
       offset: anchorOffset,
     },
     focus: {
-      regionPath: region.path,
+      path,
       offset: focusOffset,
     },
   };
 }
 
-function createCollapsedSelection(regionPath: string, offset: number): EditorSelection {
-  const point = { offset, regionPath };
-
-  return {
-    anchor: point,
-    focus: point,
-  };
+function createCollapsedSelectionAtPath(
+  documentIndex: DocumentIndex,
+  path: string,
+  offset: SelectionOffset,
+): EditorSelection | null {
+  return createSelectionAtPath(documentIndex, path, offset, offset);
 }
 
-function resolveRegionOffset(text: string, offset: SelectionOffset) {
+function resolveEditorOffset(text: string, offset: SelectionOffset) {
   return offset === "end" ? text.length : Math.max(0, Math.min(offset, text.length));
 }

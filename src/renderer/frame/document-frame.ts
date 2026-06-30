@@ -20,7 +20,7 @@ import {
 } from "./document-changes";
 import type { BandedGeometryFrame } from "./banded-geometry";
 import { resolveDocumentFrameLine, type DocumentFrameLine } from "./line";
-import { resolveSelectionRegionOrderRange } from "./selection-frame";
+import { resolveSelectionPathRange } from "./selection-frame";
 
 export function createDocumentFrame(
   editorState: EditorState,
@@ -41,21 +41,21 @@ export function createDocumentFrame(
   const clocks: DocumentFrameClocks = {
     ambientTime,
   };
-  const commentRangesByRegion = groupCommentRangesByRegion(options.commentRanges);
+  const commentRangesByPath = groupCommentRangesByPath(options.commentRanges);
   const textDecorations = options.textDecorations ?? null;
   const documentChanges = options.documentChanges ?? [];
   const resolveDocumentChange = createDocumentChangeResolver(
     documentChanges,
     resolvedEffects.documentChangeFades,
   );
-  const selectionRegionOrderRange = resolveSelectionRegionOrderRange(
-    editorState,
+  const selectionPathRange = resolveSelectionPathRange(
+    editorState.documentIndex,
     options.normalizedSelection,
   );
   const { chrome, listMarkerPlans } = resolveDocumentFrameChrome({
     blockFlashes: resolvedEffects.blockFlashes,
     activeBlockPath: options.activeBlockPath,
-    activeRegionPath: options.activeRegionPath,
+    activePath: options.activePath,
     endBlockIndex: visibleBlocks.endIndex,
     editorState,
     endLineIndex: visibleLines.endIndex,
@@ -88,13 +88,13 @@ export function createDocumentFrame(
       textPulses: resolvedEffects.textPulses,
       activeThreadIndex: options.activeThreadIndex,
       commentPresence: options.commentPresence ?? null,
-      commentRangesByRegion,
+      commentRangesByPath,
       editorState,
       layoutState,
       line: layout.lines[index]!,
       normalizedSelection: options.normalizedSelection,
       resolveDocumentChange,
-      selectionRegionOrderRange,
+      selectionPathRange,
       textDecorations,
       resources,
       theme: options.theme,
@@ -137,7 +137,7 @@ export function createDocumentFrame(
 
 type CreateDocumentFrameOptions = {
   activeBlockPath: string | null;
-  activeRegionPath: string | null;
+  activePath: string | null;
   activeThreadIndex: number | null;
   ambientTime?: number;
   commentPresence?: ReadonlyMap<number, EditorPresence>;
@@ -156,20 +156,20 @@ type CreateDocumentFrameOptions = {
   width: number;
 };
 
-function groupCommentRangesByRegion(commentRanges: EditorCommentRange[]) {
-  const rangesByRegion = new Map<string, EditorCommentRange[]>();
+function groupCommentRangesByPath(commentRanges: EditorCommentRange[]) {
+  const rangesByPath = new Map<string, EditorCommentRange[]>();
 
   for (const range of commentRanges) {
-    const ranges = rangesByRegion.get(range.regionPath);
+    const ranges = rangesByPath.get(range.path);
 
     if (ranges) {
       ranges.push(range);
     } else {
-      rangesByRegion.set(range.regionPath, [range]);
+      rangesByPath.set(range.path, [range]);
     }
   }
 
-  return rangesByRegion;
+  return rangesByPath;
 }
 
 export type DocumentFrame = {

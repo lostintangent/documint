@@ -18,7 +18,8 @@
 
 import { dispatch, redoEditorState, setSelection, undoEditorState } from "../reducer/state";
 import {
-  resolveDocumentBoundaryRegion,
+  resolveDocumentTextPathBoundary,
+  resolveEditorTextAtPath,
   resolveIndexedBlock,
 } from "../index/query";
 import {
@@ -100,7 +101,7 @@ export const insertLineBreak = makeCommand(resolveLineBreakAction, resolveBlockC
 
 // Inserts an inline LineBreak at the caret (the Shift+Enter gesture). This
 // mirrors `insertImage` — both are single-inline inserts at the selection —
-// and falls back to a literal `\n` splice for source-text regions (code
+// and falls back to a literal `\n` splice for source-text paths (code
 // blocks, raw blocks) where no inline tree exists.
 export const insertSoftLineBreak = makeCommand(
   (state) =>
@@ -115,15 +116,23 @@ export const replaceSelection = makeCommand(
     resolveSelectionTextReplacement(state.documentIndex, state.selection, text),
 );
 
+type TextRangeCommandContext = {
+  documentIndex: EditorState["documentIndex"];
+  range: TextRangeContext;
+};
+
 export const replaceTextRange = makeCommand(
   (
-    context: TextRangeContext,
+    context: TextRangeCommandContext,
     _startOffset: number,
     _endOffset: number,
     text: string,
-  ): EditorStateAction => resolveTextRangeReplacement(context, text),
-  (state, startOffset: number, endOffset: number) =>
-    resolveTextRangeContext(state, startOffset, endOffset),
+  ): EditorStateAction =>
+    resolveTextRangeReplacement(context.documentIndex, context.range, text),
+  (state, startOffset: number, endOffset: number): TextRangeCommandContext | null => {
+    const range = resolveTextRangeContext(state, startOffset, endOffset);
+    return range ? { documentIndex: state.documentIndex, range } : null;
+  },
 );
 
 export const deleteSelection = (state: EditorState) => replaceSelection(state, "");
@@ -172,16 +181,22 @@ export function pasteFragment(
 // --- Selection ---
 
 export function selectAll(state: EditorState): EditorState {
-  const first = resolveDocumentBoundaryRegion(state.documentIndex, "start");
-  const last = resolveDocumentBoundaryRegion(state.documentIndex, "end");
+  const first = resolveDocumentTextPathBoundary(state.documentIndex, "start");
+  const last = resolveDocumentTextPathBoundary(state.documentIndex, "end");
 
   if (!first || !last) {
     return state;
   }
 
+  const lastText = resolveEditorTextAtPath(state.documentIndex, last);
+
+  if (lastText === null) {
+    return state;
+  }
+
   return setSelection(state, {
-    anchor: { regionPath: first.path, offset: 0 },
-    focus: { regionPath: last.path, offset: last.text.length },
+    anchor: { path: first, offset: 0 },
+    focus: { path: last, offset: lastText.length },
   });
 }
 
@@ -199,8 +214,8 @@ export const toggleMark = makeCommand(
 
 export const updateLink = makeCommand(
   (context: InlineContext, _target: TextRangeTarget, url: string) =>
-    resolveInlineRangeReplacement(context, (region, start, end) =>
-      updateInlineLinkUrl(region, start, end, url),
+    resolveInlineRangeReplacement(context, (inlineContainer, start, end) =>
+      updateInlineLinkUrl(inlineContainer, start, end, url),
     ),
   resolveInlineTargetContext,
 );
@@ -213,8 +228,8 @@ export const removeLink = makeCommand(
 
 export const insertLink = makeCommand(
   (context: InlineContext, url: string) =>
-    resolveInlineRangeReplacement(context, (region, start, end) =>
-      wrapInlineLink(region, start, end, url),
+    resolveInlineRangeReplacement(context, (inlineContainer, start, end) =>
+      wrapInlineLink(inlineContainer, start, end, url),
     ),
   resolveInlineContext,
 );
@@ -339,7 +354,7 @@ export const deleteTable = makeCommand(resolveTableDeletion, resolveTableCellCon
 export const addComment = makeCommand(
   (
     state: EditorState,
-    selection: { endOffset: number; regionPath: string; startOffset: number },
+    selection: { endOffset: number; path: string; startOffset: number },
     body: string,
   ): EditorStateAction | null => {
     const thread = createCommentThreadForSelection(state.documentIndex, selection, body);

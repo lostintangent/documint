@@ -49,10 +49,6 @@ export function resolveBlockByPath(document: Document, path: string): Block | nu
   return block;
 }
 
-export function resolveTableCellByPath(document: Document, path: string): TableCell | null {
-  return resolveTableCellPathMatch(document, path)?.cell ?? null;
-}
-
 export function resolveTableCellPathMatch(
   document: Document,
   path: string,

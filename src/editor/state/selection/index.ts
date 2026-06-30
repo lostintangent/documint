@@ -3,14 +3,12 @@
 // selection target/query/formatting modules so callers can keep importing from
 // `state/selection`.
 
-import type { DocumentIndex, EditableRegion } from "../index/types";
-import { compareEditorPositions, resolveRegion } from "../index/query";
+import type { DocumentIndex } from "../index/types";
+import { compareEditorPositions } from "../index/query";
 import type { EditorState } from "../types";
 
-export { resolveRegion } from "../index/query";
-
 export type EditorSelectionPoint = {
-  regionPath: string;
+  path: string;
   offset: number;
 };
 
@@ -27,47 +25,9 @@ export type NormalizedEditorSelection = {
 
 export type EditorSelectionRange = {
   endOffset: number;
-  regionPath: string;
+  path: string;
   startOffset: number;
 };
-
-export type ResolvedRegionRange = {
-  endOffset: number;
-  region: EditableRegion;
-  selection: EditorSelection;
-  startOffset: number;
-};
-
-export function resolveRegionRange(
-  documentIndex: DocumentIndex,
-  regionPath: string,
-  startOffset: number,
-  endOffset: number,
-  options: { allowCollapsed?: boolean } = {},
-): ResolvedRegionRange | null {
-  const region = resolveRegion(documentIndex, regionPath);
-
-  if (!region || startOffset > endOffset) {
-    return null;
-  }
-
-  const start = clampOffset(startOffset, region.text.length);
-  const end = clampOffset(endOffset, region.text.length);
-
-  if (start === end && options.allowCollapsed !== true) {
-    return null;
-  }
-
-  return {
-    endOffset: end,
-    region,
-    selection: {
-      anchor: { regionPath, offset: start },
-      focus: { regionPath, offset: end },
-    },
-    startOffset: start,
-  };
-}
 
 export function isSelectionCollapsed(selection: EditorSelection): boolean {
   return areSelectionPointsEqual(selection.anchor, selection.focus);
@@ -77,7 +37,7 @@ export function areSelectionPointsEqual(
   left: EditorSelectionPoint,
   right: EditorSelectionPoint,
 ) {
-  return left.regionPath === right.regionPath && left.offset === right.offset;
+  return left.path === right.path && left.offset === right.offset;
 }
 
 export function normalizeSelection(state: EditorState): NormalizedEditorSelection;
@@ -107,10 +67,6 @@ export function normalizeSelection(
     end: sel.anchor,
     start: sel.focus,
   };
-}
-
-function clampOffset(offset: number, length: number) {
-  return Math.max(0, Math.min(offset, length));
 }
 
 export * from "./target";

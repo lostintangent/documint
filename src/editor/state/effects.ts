@@ -3,21 +3,22 @@
 // policy live outside this subsystem.
 
 import type { Block } from "@/document";
-import { regionInlines } from "./index/inlines";
-import type { DocumentIndex, EditableRegion } from "./index/types";
+import type { DocumentIndex } from "./index/types";
 import {
-  normalizeSelection,
-  resolveRegion,
-  type EditorSelection,
-  type NormalizedEditorSelection,
-} from "./selection";
+  resolveIndexedText,
+  resolveIndexedTextInlines,
+  resolveIndexedTextKind,
+} from "./index/query";
+import { normalizeSelection, type EditorSelection } from "./selection";
 import type { EditorState } from "./types";
+
+export type TextEffectContentKind = "inlines" | "source";
 
 export type TextInsertedEffect = {
   kind: "text-inserted";
   text: string;
-  regionKind: EditableRegion["content"]["kind"];
-  regionPath: string;
+  contentKind: TextEffectContentKind;
+  path: string;
   startOffset: number;
   endOffset: number;
 };
@@ -25,8 +26,8 @@ export type TextInsertedEffect = {
 export type TextDeletedEffect = {
   kind: "text-deleted";
   text: string;
-  regionKind: EditableRegion["content"]["kind"];
-  regionPath: string;
+  contentKind: TextEffectContentKind;
+  path: string;
   startOffset: number;
   direction: "backward" | "forward";
   placement: "line-end" | "line-middle" | "soft-line-break";
@@ -68,26 +69,35 @@ export const effect = {
     return resolveTextInsertedEffect(documentIndex, selection, insertedText);
   },
 
-  // Text inserted into a known editable region. Used when the command already
-  // resolved the target region and can avoid re-normalizing selection.
-  textInsertedAtRegion(
-    region: EditableRegion,
+  // Text inserted into a known path. Used when the command has already resolved
+  // the target and can avoid re-normalizing selection.
+  textInsertedAtPath(
+    documentIndex: DocumentIndex,
+    path: string,
     startOffset: number,
     insertedText: string,
   ): TextInsertedEffect | undefined {
-    return resolveTextInsertedEffectForRegion(region, startOffset, insertedText);
+    return resolveTextInsertedEffectAtPath(documentIndex, path, startOffset, insertedText);
   },
 
-  // Text deleted from a known editable region. Used by character deletion,
+  // Text deleted from a known path. Used by character deletion,
   // which computes grapheme boundaries before creating the splice action.
-  textDeleted(
-    region: EditableRegion,
+  textDeletedAtPath(
+    documentIndex: DocumentIndex,
+    path: string,
     startOffset: number,
     endOffset: number,
     direction: "backward" | "forward",
     placement: "line-end" | "line-middle" | "soft-line-break",
   ): TextDeletedEffect | undefined {
-    return resolveTextDeletedEffect(region, startOffset, endOffset, direction, placement);
+    return resolveTextDeletedEffectAtPath(
+      documentIndex,
+      path,
+      startOffset,
+      endOffset,
+      direction,
+      placement,
+    );
   },
 
   // List item inserted from a block included in this action's payload.
@@ -141,21 +151,35 @@ function resolveTextInsertedEffect(
     return undefined;
   }
 
-  const context = resolveSameRegionSelectionContext(documentIndex, selection);
-
-  if (!context) {
+  const normalized = normalizeSelection(documentIndex, selection);
+  if (normalized.start.path !== normalized.end.path) {
     return undefined;
   }
 
-  return resolveTextInsertedEffectForRegion(
-    context.region,
-    context.normalized.start.offset,
+  return resolveTextInsertedEffectAtPath(
+    documentIndex,
+    normalized.start.path,
+    normalized.start.offset,
     insertedText,
   );
 }
 
-function resolveTextInsertedEffectForRegion(
-  region: EditableRegion,
+function resolveTextInsertedEffectAtPath(
+  documentIndex: DocumentIndex,
+  path: string,
+  startOffset: number,
+  insertedText: string,
+): TextInsertedEffect | undefined {
+  const contentKind = resolveTextContentKind(documentIndex, path);
+
+  return contentKind
+    ? resolveTextInsertedEffectFromKnownContentKind(path, contentKind, startOffset, insertedText)
+    : undefined;
+}
+
+function resolveTextInsertedEffectFromKnownContentKind(
+  path: string,
+  contentKind: TextEffectContentKind,
   startOffset: number,
   insertedText: string,
 ): TextInsertedEffect | undefined {
@@ -166,29 +190,37 @@ function resolveTextInsertedEffectForRegion(
   return {
     kind: "text-inserted",
     text: insertedText,
-    regionKind: region.content.kind,
-    regionPath: region.path,
+    contentKind,
+    path,
     startOffset,
     endOffset: startOffset + insertedText.length,
   };
 }
 
-function resolveTextDeletedEffect(
-  region: EditableRegion,
+function resolveTextDeletedEffectAtPath(
+  documentIndex: DocumentIndex,
+  path: string,
   startOffset: number,
   endOffset: number,
   direction: "backward" | "forward",
   placement: "line-end" | "line-middle" | "soft-line-break",
 ): TextDeletedEffect | undefined {
-  const text = region.text.slice(startOffset, endOffset);
+  const indexedText = resolveIndexedText(documentIndex, path);
+
+  if (!indexedText) {
+    return undefined;
+  }
+
+  const text = indexedText.text.slice(startOffset, endOffset);
 
   if (text.length === 0) {
     return undefined;
   }
 
+  const inlines = resolveIndexedTextInlines(indexedText);
   const isPlainText =
-    region.content.kind === "source" ||
-    regionInlines(region).some(
+    inlines === null ||
+    inlines.some(
       (entry) =>
         entry.start <= startOffset &&
         entry.end >= endOffset &&
@@ -200,8 +232,8 @@ function resolveTextDeletedEffect(
   return {
     kind: "text-deleted",
     text,
-    regionKind: region.content.kind,
-    regionPath: region.path,
+    contentKind: resolveIndexedTextKind(indexedText),
+    path,
     startOffset,
     direction,
     placement,
@@ -220,16 +252,11 @@ function isValidEditorEffect(effect: EditorEffect): boolean {
   }
 }
 
-function resolveSameRegionSelectionContext(
+function resolveTextContentKind(
   documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): { normalized: NormalizedEditorSelection; region: EditableRegion } | null {
-  const normalized = normalizeSelection(documentIndex, selection);
+  path: string,
+): TextEffectContentKind | null {
+  const indexedText = resolveIndexedText(documentIndex, path);
 
-  if (normalized.start.regionPath !== normalized.end.regionPath) {
-    return null;
-  }
-
-  const region = resolveRegion(documentIndex, normalized.start.regionPath);
-  return region ? { normalized, region } : null;
+  return indexedText ? resolveIndexedTextKind(indexedText) : null;
 }

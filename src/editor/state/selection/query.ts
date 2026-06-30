@@ -1,17 +1,16 @@
 // Read-only projections from the current selection. These helpers let UI and
 // command code ask semantic questions like "what block/span is active?"
-// without reimplementing region and inline lookup.
+// without reimplementing path and inline lookup.
 
 import type { Mark } from "@/document";
-import { regionInlines } from "../index/inlines";
 import {
   blockContainsBlock,
   compareEditorPositions,
-  firstRegionInBlock,
-  lastRegionInBlock,
-  resolveIndexedBlockForRegion,
+  resolveBlockTextPathBoundary,
   resolveIndexedBlock,
-  resolveRegion,
+  resolveInlinesAtPath,
+  resolveIndexedBlockContainingPath,
+  resolveEditorTextAtPath,
 } from "../index/query";
 import type { IndexedBlock, IndexedInline } from "../index/types";
 import type { EditorState } from "../types";
@@ -41,7 +40,7 @@ export type SelectionContext = {
 
 export type CaretTextContext = {
   offset: number;
-  regionPath: string;
+  path: string;
   text: string;
 };
 
@@ -50,22 +49,20 @@ export function getCaretTextContext(state: EditorState): CaretTextContext | null
     return null;
   }
 
-  const region = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, state.selection.focus.path);
 
-  return region
+  return text !== null
     ? {
         offset: state.selection.focus.offset,
-        regionPath: region.path,
-        text: region.text,
+        path: state.selection.focus.path,
+        text,
       }
     : null;
 }
 
 export function getSelectionContext(state: EditorState): SelectionContext {
-  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionPath);
-  const block = container
-    ? resolveIndexedBlock(state.documentIndex, container.blockPath)
-    : null;
+  const block = resolveIndexedBlockContainingPath(state.documentIndex, state.selection.anchor.path);
+  const text = resolveEditorTextAtPath(state.documentIndex, state.selection.anchor.path) ?? "";
   const inline = resolveInlineAtAnchor(state);
 
   return {
@@ -74,7 +71,7 @@ export function getSelectionContext(state: EditorState): SelectionContext {
           blockPath: block.path,
           depth: block.depth,
           nodeType: block.block.type,
-          text: container?.text ?? "",
+          text,
         }
       : null,
     span: inline?.link
@@ -94,7 +91,7 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
   const normalized = normalizeSelection(state.documentIndex, state.selection);
 
   if (
-    normalized.start.regionPath !== normalized.end.regionPath ||
+    normalized.start.path !== normalized.end.path ||
     normalized.start.offset === normalized.end.offset
   ) {
     return null;
@@ -102,33 +99,33 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
 
   return {
     endOffset: normalized.end.offset,
-    regionPath: normalized.start.regionPath,
+    path: normalized.start.path,
     startOffset: normalized.start.offset,
   };
 }
 
-export function selectionIntersectsRegion(
+export function selectionIntersectsPath(
   state: EditorState,
-  regionPath: string,
+  path: string,
   selection: NormalizedEditorSelection = normalizeSelection(state),
 ) {
-  const region = resolveRegion(state.documentIndex, regionPath);
-  if (!region) {
+  const text = resolveEditorTextAtPath(state.documentIndex, path);
+  if (text === null) {
     return false;
   }
 
   if (selection.collapsed) {
-    return selection.start.regionPath === regionPath;
+    return selection.start.path === path;
   }
 
   return (
     compareEditorPositions(state.documentIndex, selection.start, {
-      offset: region.text.length,
-      regionPath,
+      offset: text.length,
+      path,
     }) <= 0 &&
     compareEditorPositions(state.documentIndex, selection.end, {
       offset: 0,
-      regionPath,
+      path,
     }) >= 0
   );
 }
@@ -144,7 +141,7 @@ export function selectionIntersectsBlockPath(
   }
 
   for (const point of [selection.start, selection.end]) {
-    const focusedBlock = resolveIndexedBlockForRegion(state.documentIndex, point.regionPath);
+    const focusedBlock = resolveIndexedBlockContainingPath(state.documentIndex, point.path);
     if (focusedBlock && isIndexedBlockWithinTarget(focusedBlock, target)) {
       return true;
     }
@@ -154,34 +151,33 @@ export function selectionIntersectsBlockPath(
     return false;
   }
 
-  const firstRegion = firstRegionInBlock(state.documentIndex, target);
-  const lastRegion = lastRegionInBlock(state.documentIndex, target);
+  const firstPath = resolveBlockTextPathBoundary(state.documentIndex, blockPath, "start");
+  const lastPath = resolveBlockTextPathBoundary(state.documentIndex, blockPath, "end");
+  const lastText = lastPath ? resolveEditorTextAtPath(state.documentIndex, lastPath) : null;
 
-  if (!firstRegion || !lastRegion) {
+  if (!firstPath || !lastPath || lastText === null) {
     return false;
   }
 
   return (
     compareEditorPositions(state.documentIndex, selection.start, {
-      offset: lastRegion.text.length,
-      regionPath: lastRegion.path,
+      offset: lastText.length,
+      path: lastPath,
     }) <= 0 &&
     compareEditorPositions(state.documentIndex, selection.end, {
       offset: 0,
-      regionPath: firstRegion.path,
+      path: firstPath,
     }) >= 0
   );
 }
 
 function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
-  const container = resolveRegion(state.documentIndex, state.selection.anchor.regionPath);
-
-  if (!container) {
+  const inlines = resolveInlinesAtPath(state.documentIndex, state.selection.anchor.path);
+  if (!inlines) {
     return null;
   }
 
   const offset = state.selection.anchor.offset;
-  const inlines = regionInlines(container);
 
   return (
     inlines.find((entry) => offset > entry.start && offset < entry.end) ??

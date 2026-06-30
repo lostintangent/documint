@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createStore } from "@/component/store";
-import { cursorLeafSprig } from "@/component/overlays/leaves/sprigs";
+import { cursorLeafSprig, pointerViewSprig } from "@/component/overlays/leaves/sprigs";
 import { createLayoutCache, getDocument, createEditorLayoutState } from "@/editor";
 import { addComment } from "@/editor/state";
-import { getRegion, placeAt, setup } from "@test/editor/helpers";
+import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("overlay leaf sprigs", () => {
   test("emits insertion leaves only when content editing is available", () => {
@@ -15,7 +15,7 @@ describe("overlay leaf sprigs", () => {
 
   test("emits table leaves only when content editing is available", () => {
     const state = setup("| Label |\n| --- |\n| Cell |\n");
-    const selected = placeAt(state, getRegion(state, "Cell"), 1);
+    const selected = placeAt(state, getPath(state, "Cell"), 1);
 
     expect(readCursorLeaf(selected, false)?.kind).toBe("table");
     expect(readCursorLeaf(selected, true)).toBeNull();
@@ -23,30 +23,59 @@ describe("overlay leaf sprigs", () => {
 
   test("prefers cursor link leaves over table leaves", () => {
     const state = setup("| Label |\n| --- |\n| [Docs](https://example.com) |\n");
-    const region = getRegion(state, "Docs");
-    const selected = placeAt(state, region, 1);
+    const path = getPath(state, "Docs");
+    const selected = placeAt(state, path, 1);
 
     expect(readCursorLeaf(selected, false)?.kind).toBe("link");
-    expect(readCursorLeaf(selected, true)?.kind).toBe("link");
+    expect(readCursorLeaf(selected, true)).toBeNull();
   });
 
   test("prefers cursor comment leaves over table leaves", () => {
     let state = setup("| Label |\n| --- |\n| Review target |\n");
-    const region = getRegion(state, "Review target");
+    const path = getPath(state, "Review target");
     state =
       addComment(
         state,
         {
           endOffset: "Review".length,
-          regionPath: region.path,
+          path: path.path,
           startOffset: 0,
         },
         "note",
       ) ?? state;
-    state = placeAt(state, getRegion(state, "Review target"), 2);
+    state = placeAt(state, getPath(state, "Review target"), 2);
 
     expect(readCursorLeaf(state, false)?.kind).toBe("thread");
-    expect(readCursorLeaf(state, true)?.kind).toBe("thread");
+    expect(readCursorLeaf(state, true)).toBeNull();
+  });
+
+  test("keeps hover leaves available when read-only suppresses cursor leaves", () => {
+    let state = setup("Review target\n");
+    const path = getPath(state, "Review target").path;
+    state =
+      addComment(
+        state,
+        {
+          endOffset: "Review".length,
+          path,
+          startOffset: 0,
+        },
+        "note",
+      ) ?? state;
+    state = placeAt(state, getPath(state, "Review target"), 2);
+    const store = createStore(getDocument(state));
+
+    store.editor.replace(state);
+    store.layout.setLayoutResolver(() => createLayout(state));
+    store.layout.commit();
+
+    expect(cursorLeafSprig.read(store, true)).toBeNull();
+    expect(
+      pointerViewSprig.read(store, {
+        commentThreadIndex: 0,
+        kind: "text",
+      }).leaf?.kind,
+    ).toBe("thread");
   });
 });
 

@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   blockPathContainsPath,
@@ -11,7 +12,13 @@ import {
   listAnchorContainers,
   spliceDocument,
 } from "@/document";
-import { createDocumentIndex, spliceDocumentIndex, type DocumentIndex } from "@/editor/state";
+import {
+  createDocumentIndex,
+  resolveEditorTextAtPath,
+  spliceDocumentIndex,
+  type DocumentIndex,
+  type IndexedBlock,
+} from "@/editor/state";
 import {
   createIndexedRoot,
   positionIndexedRoots,
@@ -38,10 +45,7 @@ beta
 
     expect(roots).toHaveLength(3);
     expect(roots.map((root) => root.blocks[0]?.blockArrayIndex)).toEqual([0, 1, 2]);
-    expect(roots.map((root) => root.regions[0]?.regionArrayIndex)).toEqual([0, 1, 2]);
-    expect(runtime.roots[2]?.blocks[0]?.regionRangeStart).toBe(
-      runtime.roots[1]?.blocks[0]?.regionRangeEnd,
-    );
+    expect(runtime.blocks.map((block) => block.blockArrayIndex)).toEqual([0, 1, 2]);
     expectDocumentIndexMaps(runtime);
   });
 
@@ -55,8 +59,8 @@ alpha
     const rebuilt = createIndexedRoot(nextDocument.blocks[1]!, original.rootIndex);
 
     expect(rebuilt.rootIndex).toBe(1);
-    expect(rebuilt.regions[0]?.path).toBe("root.1.children");
-    expect(rebuilt.regions[0]?.text).toBe("omega");
+    expect(rebuilt.blocks[0]?.path).toBe("root.1");
+    expect(rebuilt.blocks[0]).toMatchObject({ kind: "inlines", text: "omega" });
   });
 
   test("splices one editor model root while preserving unchanged sibling content", () => {
@@ -76,11 +80,11 @@ beta
     expect(replacedModel.roots[0]).toBe(model.roots[0]);
     expect(replacedModel.roots[1]).not.toBe(model.roots[1]);
     expect(replacedModel.roots[2]).toBe(model.roots[2]);
-    expect(replacedModel.roots[2]?.regions[0]?.path).toBe(model.roots[2]?.regions[0]?.path);
     expect(replaced.roots[0]).toBe(runtime.roots[0]);
     expect(replaced.roots[1]).not.toBe(runtime.roots[1]);
     expect(replaced.roots[2]).toBe(runtime.roots[2]);
-    expect(replaced.roots[2]?.regions[0]?.path).toBe(runtime.roots[2]?.regions[0]?.path);
+    expect(resolveEditorTextAtPath(replacedModel, "root.2")).toBe("beta");
+    expect(resolveEditorTextAtPath(replaced, "root.2")).toBe("beta");
     expectDocumentIndexMaps(replacedModel);
     expectDocumentIndexMaps(replaced);
   });
@@ -98,14 +102,12 @@ gamma
 
     expect(next.roots[1]).toBe(index.roots[1]);
     expect(next.roots[1]?.blocks[0]).toBe(index.roots[1]?.blocks[0]);
-    expect(next.roots[1]?.regions[0]).toBe(index.roots[1]?.regions[0]);
     expect(next.roots[2]).toBe(index.roots[2]);
     expect(next.roots[2]?.blocks[0]).toBe(index.roots[2]?.blocks[0]);
-    expect(next.roots[2]?.regions[0]).toBe(index.roots[2]?.regions[0]);
     expectDocumentIndexMaps(next);
   });
 
-  test("re-stamps suffix block records when region order shifts", () => {
+  test("restamps suffix text order when text-host count changes without block-order changes", () => {
     const snapshot = parseDocument(`alpha
 
 ---
@@ -116,15 +118,52 @@ beta
     const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("middle")]);
     const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
+    expect(next.document.blocks[2]).toBe(index.document.blocks[2]);
+    expect(next.roots[2]?.blocks[0]?.block).toBe(index.roots[2]?.blocks[0]?.block);
+    expect(next.roots[2]?.blocks[0]).toMatchObject({
+      editorOrder: 2,
+      kind: "inlines",
+      text: "beta",
+    });
+    expect(resolveEditorTextAtPath(next, "root.2")).toBe("beta");
+    expectDocumentIndexMaps(next);
+  });
+
+  test("restamps suffix table cell order when text-host count changes", () => {
+    const snapshot = parseDocument(`alpha
+
+---
+
+| A | B |
+| - | - |
+| one | two |
+`);
+    const index = createDocumentIndex(snapshot);
+    const previousTable = index.blockIndex.get("root.2");
+    const previousCell = index.tableCellIndex.get("root.2.rows.1.cells.1");
+    const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("middle")]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
+    const nextTable = next.blockIndex.get("root.2");
+    const nextCell = next.tableCellIndex.get("root.2.rows.1.cells.1");
+
+    if (!previousTable || !previousCell || !nextTable || !nextCell) {
+      throw new Error("Expected suffix table and target cell");
+    }
+
+    expect(next.document.blocks[2]).toBe(index.document.blocks[2]);
+    expect(nextTable.block).toBe(previousTable.block);
     expect(next.roots[2]).not.toBe(index.roots[2]);
-    expect(next.roots[2]?.blocks[0]).not.toBe(index.roots[2]?.blocks[0]);
-    expect(next.roots[2]?.blocks[0]?.regionRangeStart).toBe(
-      index.roots[2]!.blocks[0]!.regionRangeStart + 1,
-    );
-    expect(next.roots[2]?.regions[0]).not.toBe(index.roots[2]?.regions[0]);
-    expect(next.roots[2]?.regions[0]?.regionArrayIndex).toBe(
-      index.roots[2]!.regions[0]!.regionArrayIndex + 1,
-    );
+    expect(nextTable).not.toBe(previousTable);
+    expect(nextCell).not.toBe(previousCell);
+    expect(nextCell).toMatchObject({
+      cellIndex: 1,
+      path: "root.2.rows.1.cells.1",
+      rootIndex: 2,
+      rowIndex: 1,
+      tablePath: "root.2",
+      editorOrder: previousCell.editorOrder + 1,
+      text: "two",
+    });
     expectDocumentIndexMaps(next);
   });
 
@@ -138,25 +177,24 @@ beta
     const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
     expect(next.blocks).toHaveLength(2);
-    expect(next.regions).toHaveLength(2);
+    expect(indexedTextEntries(next)).toHaveLength(2);
     expectDocumentIndexMaps(next);
   });
 
-  test("keeps region paths stable for in-place content edits", () => {
+  test("keeps editor paths stable for in-place content edits", () => {
     const index = createDocumentIndex(parseDocument("alpha\n"));
-    const region = index.regions[0];
+    const path = indexedTextEntries(index)[0];
 
-    if (!region) {
-      throw new Error("Expected editable region");
+    if (!path) {
+      throw new Error("Expected editable path");
     }
 
-    const next = replaceEditorBlock(index, region.blockPath, () =>
+    const next = replaceEditorBlock(index, path.blockPath, () =>
       createParagraphTextBlock("alphabet"),
     );
 
-    expect(next?.regions[0]?.path).toBe(region.path);
-    expect(next?.regions[0]?.blockPath).toBe(region.blockPath);
-    expect(next?.regions[0]?.text).toBe("alphabet");
+    expect(resolveEditorTextAtPath(next!, path.path)).toBe("alphabet");
+    expect(next?.blockIndex.get(path.blockPath)?.path).toBe(path.blockPath);
     expectDocumentIndexMaps(next!);
   });
 
@@ -192,21 +230,24 @@ beta
     expect(index.blockIndex.get(item.parentBlockPath!)).toBe(list);
   });
 
-  test("tracks table region block paths separately from cell paths", () => {
+  test("tracks table block paths separately from cell editor paths", () => {
     const index = createDocumentIndex(parseDocument(`| A |\n| - |\n| B |\n`));
     const table = index.blocks.find((entry) => entry.block.type === "table");
-    const cellRegion = index.regions.find((region) => region.tableCellPosition !== null);
+    const cellPath = indexedTextEntries(index).find((entry) => entry.tableCell !== null);
 
-    if (!table || !cellRegion) {
-      throw new Error("Expected table cell region");
+    if (!table || !cellPath) {
+      throw new Error("Expected table cell path");
+    }
+    if (!cellPath.tableCell) {
+      throw new Error("Expected table cell path context");
     }
 
-    expect(cellRegion.blockPath).toBe(table.path);
-    expect(cellRegion.containerPath).toBe(cellRegion.path);
-    expect(index.blockIndex.get(cellRegion.blockPath)).toBe(table);
+    expect(cellPath.blockPath).toBe(table.path);
+    expect(index.blockIndex.get(cellPath.blockPath)).toBe(table);
+    expect(index.tableCellIndex.get(cellPath.path)).toBe(cellPath.tableCell);
   });
 
-  test("stamps nested block and region ranges", () => {
+  test("stamps nested block ranges and table-cell lookups", () => {
     const index = createDocumentIndex(
       parseDocument(`> alpha
 >
@@ -231,10 +272,17 @@ beta
 
     expect(blockquote.blockRangeEnd).toBeGreaterThan(list.blockArrayIndex);
     expect(blockquote.blockRangeEnd).toBeGreaterThan(listItem.blockArrayIndex);
-    expect(blockquote.regionRangeEnd - blockquote.regionRangeStart).toBe(2);
-    expect(list.regionRangeEnd - list.regionRangeStart).toBe(1);
-    expect(divider.regionRangeStart).toBe(divider.regionRangeEnd);
-    expect(table.regionRangeEnd - table.regionRangeStart).toBe(2);
+    expect(blockPathContainsPath(blockquote.path, listItem.path)).toBe(true);
+    expect(index.tableCellIndex.get("root.2.rows.0.cells.0")).toMatchObject({
+      cellIndex: 0,
+      rowIndex: 0,
+      tablePath: table.path,
+    });
+    expect(index.tableCellIndex.get("root.2.rows.1.cells.0")).toMatchObject({
+      cellIndex: 0,
+      rowIndex: 1,
+      tablePath: table.path,
+    });
     expectDocumentIndexMaps(index);
   });
 
@@ -252,13 +300,15 @@ gamma
     expect(next.blocks[0]).toBe(index.blocks[0]);
     expect(next.blocks[1]).not.toBe(index.blocks[1]);
     expect(next.blocks[2]).toBe(index.blocks[2]);
-    expect(next.regions[0]).toBe(index.regions[0]);
-    expect(next.regions[1]).not.toBe(index.regions[1]);
-    expect(next.regions[2]).toBe(index.regions[2]);
+    expect(indexedTextEntries(next).map((entry) => entry.text)).toEqual([
+      "alpha",
+      "zeta",
+      "gamma",
+    ]);
     expectDocumentIndexMaps(next);
   });
 
-  test("keeps flat region arrays exact when replacing regionless roots", () => {
+  test("keeps indexed text paths exact when replacing inert roots", () => {
     const snapshot = parseDocument(`alpha
 
 ---
@@ -267,20 +317,20 @@ beta
 `);
     const index = createDocumentIndex(snapshot);
     const withMiddleText = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("middle")]);
-    const insertedRegion = spliceDocumentIndex(index, withMiddleText, 1, 1);
+    const insertedText = spliceDocumentIndex(index, withMiddleText, 1, 1);
 
-    expect(insertedRegion.regions.map((region) => region.text)).toEqual([
+    expect(indexedTextEntries(insertedText).map((entry) => entry.text)).toEqual([
       "alpha",
       "middle",
       "beta",
     ]);
-    expectDocumentIndexMaps(insertedRegion);
+    expectDocumentIndexMaps(insertedText);
 
     const withoutMiddleText = spliceDocument(withMiddleText, 1, 1, [createDividerBlock()]);
-    const removedRegion = spliceDocumentIndex(insertedRegion, withoutMiddleText, 1, 1);
+    const removedText = spliceDocumentIndex(insertedText, withoutMiddleText, 1, 1);
 
-    expect(removedRegion.regions.map((region) => region.text)).toEqual(["alpha", "beta"]);
-    expectDocumentIndexMaps(removedRegion);
+    expect(indexedTextEntries(removedText).map((entry) => entry.text)).toEqual(["alpha", "beta"]);
+    expectDocumentIndexMaps(removedText);
   });
 
   test("collects image URLs per root and unions them at the document level", () => {
@@ -459,13 +509,12 @@ beta
     const next = replaceDocumentMetadata(index, nextDocument);
 
     expect(next.document).toBe(nextDocument);
-    // Roots, blocks, regions and lookup maps all keep reference identity —
+    // Roots, blocks, and lookup maps all keep reference identity —
     // the metadata fast path doesn't allocate any of them.
     expect(next.roots).toBe(index.roots);
     expect(next.blocks).toBe(index.blocks);
-    expect(next.regions).toBe(index.regions);
     expect(next.blockIndex).toBe(index.blockIndex);
-    expect(next.regionIndex).toBe(index.regionIndex);
+    expect(next.tableCellIndex).toBe(index.tableCellIndex);
     expect(next.imageUrls).toBe(index.imageUrls);
     // listItems reuses when document.blocks identity holds.
     expect(next.listItems).toBe(index.listItems);
@@ -541,7 +590,7 @@ outside text
     ]);
     const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
-    expect(next.regions[1]?.text).not.toContain("target");
+    expect(indexedTextEntries(next)[1]?.text).not.toContain("target");
     expect(next.document.blocks[1]?.plainText).toContain("target");
     expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
     expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
@@ -593,17 +642,52 @@ commented target
 
   function expectDocumentIndexMaps(index: DocumentIndex) {
     expect(index.blockIndex.size).toBe(index.blocks.length);
-    expect(index.regionIndex.size).toBe(index.regions.length);
+    expect(index.tableCellIndex.size).toBe(
+      index.blocks.reduce((count, block) => count + countIndexedTableCells(block), 0),
+    );
 
     for (const block of index.blocks) {
       expect(index.blockIndex.get(block.path)).toBe(block);
+      if (block.kind !== "cells") {
+        continue;
+      }
+
+      for (const [rowIndex, row] of block.tableCellRows.entries()) {
+        for (const [cellIndex, cell] of row.entries()) {
+          expect(index.tableCellIndex.get(cell.path)).toBe(cell);
+          expect(cell).toMatchObject({
+            cellIndex,
+            rowIndex,
+            tablePath: block.path,
+          });
+        }
+      }
     }
 
-    for (const region of index.regions) {
-      expect(index.regionIndex.get(region.path)).toBe(region);
+    for (const entry of indexedTextEntries(index)) {
+      if (entry.tableCell) {
+        const cell = index.tableCellIndex.get(entry.path);
+        expect(cell).toBe(entry.tableCell);
+        expect(cell?.text).toBe(entry.text);
+        expect(cell?.inlines ?? null).toBe(entry.inlines);
+      } else {
+        const block = index.blockIndex.get(entry.path);
+        const text = block?.kind === "inlines" || block?.kind === "source"
+          ? block.text
+          : null;
+        const inlines = block?.kind === "inlines" ? block.inlines : null;
+        expect(text).toBe(entry.text);
+        expect(inlines).toBe(entry.inlines);
+      }
     }
 
     expectDocumentIndexRanges(index);
+  }
+
+  function countIndexedTableCells(block: IndexedBlock) {
+    return block.kind === "cells"
+      ? block.tableCellRows.reduce((count, row) => count + row.length, 0)
+      : 0;
   }
 
   function expectDocumentIndexRanges(index: DocumentIndex) {
@@ -615,16 +699,12 @@ commented target
       }
 
       expect(rootBlock.blockRangeEnd - rootBlock.blockArrayIndex).toBe(root.blocks.length);
-      expect(rootBlock.regionRangeEnd - rootBlock.regionRangeStart).toBe(root.regions.length);
     }
 
     for (const [arrayIndex, block] of index.blocks.entries()) {
       expect(block.blockArrayIndex).toBe(arrayIndex);
       expect(block.blockRangeEnd).toBeGreaterThan(block.blockArrayIndex);
       expect(block.blockRangeEnd).toBeLessThanOrEqual(index.blocks.length);
-      expect(block.regionRangeStart).toBeGreaterThanOrEqual(0);
-      expect(block.regionRangeStart).toBeLessThanOrEqual(block.regionRangeEnd);
-      expect(block.regionRangeEnd).toBeLessThanOrEqual(index.regions.length);
     }
 
     for (const parent of index.blocks) {
@@ -634,14 +714,6 @@ commented target
           child.blockRangeEnd <= parent.blockRangeEnd;
 
         expect(rangeContains).toBe(blockPathContainsPath(parent.path, child.path));
-      }
-
-      for (const region of index.regions) {
-        const rangeContains =
-          parent.regionRangeStart <= region.regionArrayIndex &&
-          region.regionArrayIndex < parent.regionRangeEnd;
-
-        expect(rangeContains).toBe(blockPathContainsPath(parent.path, region.path));
       }
     }
   }

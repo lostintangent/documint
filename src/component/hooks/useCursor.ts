@@ -206,7 +206,7 @@ function resolveCursorRevealTarget({
     };
   }
 
-  const bounds = layout.estimateRegionBounds(normalizedSelection.end.regionPath);
+  const bounds = layout.estimatePathBounds(normalizedSelection.end.path);
   return bounds
     ? {
         ...bounds,

@@ -3,7 +3,7 @@ import { resolveMentionLineChange } from "@/component/sync";
 import { createEditorStateTransition } from "@/component/store/editor/transitions";
 import { insertMention } from "@/editor/state";
 import type { TextRangeTarget } from "@/editor";
-import { getRegion, setup } from "@test/editor/helpers";
+import { getPath, setup } from "@test/editor/helpers";
 
 describe("resolveMentionLineChange", () => {
   test("returns the changed canonical markdown line", () => {
@@ -70,24 +70,24 @@ describe("resolveMentionLineChange", () => {
     expect(
       resolveMentionLineChange(transition, {
         ...target,
-        regionPath: "missing-region",
+        path: "missing-path",
       }),
     ).toBeNull();
   });
 });
 
-function createMentionTransition(markdown: string, regionText: string) {
+function createMentionTransition(markdown: string, text: string) {
   const previous = setup(markdown);
-  const region = getRegion(previous, regionText);
-  const startOffset = region.text.indexOf("@Ja");
+  const path = getPath(previous, text);
+  const startOffset = path.text.indexOf("@Ja");
 
   if (startOffset === -1) {
-    throw new Error(`Expected @Ja in region "${region.text}"`);
+    throw new Error(`Expected @Ja in path "${path.text}"`);
   }
 
   const target: TextRangeTarget = {
     endOffset: startOffset + "@Ja".length,
-    regionPath: region.path,
+    path: path.path,
     startOffset,
   };
   const next = insertMention(previous, target, "u-jane", "Jane", " ");

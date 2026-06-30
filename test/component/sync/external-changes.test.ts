@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   acknowledgeUnacknowledgedDocumentChanges,
@@ -5,7 +6,7 @@ import {
   type UnacknowledgedDocumentChange,
 } from "@/component/sync/external-changes";
 import {
-  documentChangeTargetAnchorKey,
+  documentNodeAnchorKey,
   findDocumentChanges,
   type DocumentChange,
 } from "@/document";
@@ -18,8 +19,8 @@ describe("external change targets", () => {
 
     expect(targets).toEqual([
       expect.objectContaining({
-        changeKind: "modified",
-        target: expect.objectContaining({
+        kind: "modified",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.0",
         }),
@@ -32,8 +33,8 @@ describe("external change targets", () => {
 
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({
-      changeKind: "added",
-      target: {
+      kind: "added",
+      anchor: {
         kind: "block",
         path: "root.0",
       },
@@ -45,8 +46,8 @@ describe("external change targets", () => {
 
     expect(targets).toHaveLength(1);
     expect(targets[0]).toMatchObject({
-      changeKind: "modified",
-      target: { kind: "block" },
+      kind: "modified",
+      anchor: { kind: "block" },
     });
   });
 
@@ -56,13 +57,13 @@ describe("external change targets", () => {
       "| A | B |\n| - | - |\n| one | two |\n",
       "| A | B |\n| - | - |\n| one | three |\n",
     );
-    const changedCell = nextState.documentIndex.regions.find((region) => region.text === "three");
+    const changedCell = indexedTextEntries(nextState).find((path) => path.text === "three");
 
     expect(targets).toHaveLength(1);
     expect(changedCell).toBeDefined();
     expect(targets[0]).toMatchObject({
-      changeKind: "modified",
-      target: {
+      kind: "modified",
+      anchor: {
         kind: "table-cell",
         path: changedCell!.path,
       },
@@ -79,12 +80,12 @@ describe("external change targets", () => {
     expect(targets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({ kind: "table-cell" }),
+          kind: "added",
+          anchor: expect.objectContaining({ kind: "table-cell" }),
         }),
       ]),
     );
-    expect(targets.every((target) => target.changeKind === "added")).toBe(true);
+    expect(targets.every((target) => target.kind === "added")).toBe(true);
   });
 
   test("classifies inserted rows before modified rows in the same snapshot", () => {
@@ -96,22 +97,22 @@ describe("external change targets", () => {
     expect(targets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          changeKind: "modified",
-          target: expect.objectContaining({
+          kind: "modified",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.2.cells.1",
           }),
         }),
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.0",
           }),
         }),
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.1",
           }),
@@ -128,7 +129,7 @@ describe("external change targets", () => {
     );
 
     expect(targets).toHaveLength(2);
-    expect(targets.every((target) => target.changeKind === "added")).toBe(true);
+    expect(targets.every((target) => target.kind === "added")).toBe(true);
   });
 
   test("classifies inserted columns before modified cells in the same snapshot", () => {
@@ -140,22 +141,22 @@ describe("external change targets", () => {
     expect(targets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          changeKind: "modified",
-          target: expect.objectContaining({
+          kind: "modified",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.2",
           }),
         }),
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.0.cells.1",
           }),
         }),
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.1",
           }),
@@ -183,13 +184,13 @@ describe("external change targets", () => {
 describe("unacknowledged document changes", () => {
   test("merges targets, consumes repeated targets, and reports only new fade targets", () => {
     let state = createState("Alpha\n\nBeta\n\nGamma\n");
-    const third = state.documentIndex.regions[2];
+    const third = indexedTextEntries(state)[2];
 
     if (!third) {
-      throw new Error("Expected three regions");
+      throw new Error("Expected three paths");
     }
 
-    state = setSelection(state, { regionPath: third.path, offset: 0 });
+    state = setSelection(state, { path: third.path, offset: 0 });
     const current = [
       resolveChangeForState(
         state,
@@ -205,7 +206,7 @@ describe("unacknowledged document changes", () => {
       state,
     );
 
-    expect(next.changes.map((change) => change.change.changeKind)).toEqual([
+    expect(next.changes.map((change) => change.change.kind)).toEqual([
       "modified",
       "modified",
     ]);
@@ -215,13 +216,13 @@ describe("unacknowledged document changes", () => {
   test("keeps unacknowledged added blocks added when later external snapshots modify them", () => {
     const initialState = createState("Alpha\n\nOther\n");
     let state = createState("Alpha updated\n\nOther\n");
-    const otherRegion = state.documentIndex.regions[1];
+    const otherPath = indexedTextEntries(state)[1];
 
-    if (!otherRegion) {
-      throw new Error("Expected regions");
+    if (!otherPath) {
+      throw new Error("Expected paths");
     }
 
-    state = setSelection(state, { regionPath: otherRegion.path, offset: 0 });
+    state = setSelection(state, { path: otherPath.path, offset: 0 });
 
     const current = resolveChangeForState(
       initialState,
@@ -232,8 +233,8 @@ describe("unacknowledged document changes", () => {
 
     expect(next.changes).toHaveLength(1);
     expect(next.changes[0]!.change).toMatchObject({
-      changeKind: "added",
-      target: incoming.target,
+      kind: "added",
+      anchor: incoming.anchor,
     });
     expect(next.newChanges).toEqual([]);
   });
@@ -257,8 +258,8 @@ describe("unacknowledged document changes", () => {
 
     expect(next.changes).toHaveLength(1);
     expect(next.changes[0]!.change).toMatchObject({
-      changeKind: "added",
-      target: incoming.target,
+      kind: "added",
+      anchor: incoming.anchor,
     });
     expect(next.newChanges).toEqual([]);
   });
@@ -266,19 +267,19 @@ describe("unacknowledged document changes", () => {
   test("refreshes unacknowledged modified blocks without reporting a new fade target", () => {
     const initialState = createState("Alpha\n\nOther\n");
     let state = createState("Alpine\n\nOther\n");
-    const otherRegion = state.documentIndex.regions[1];
+    const otherPath = indexedTextEntries(state)[1];
 
-    if (!otherRegion) {
-      throw new Error("Expected regions");
+    if (!otherPath) {
+      throw new Error("Expected paths");
     }
 
-    state = setSelection(state, { regionPath: otherRegion.path, offset: 0 });
+    state = setSelection(state, { path: otherPath.path, offset: 0 });
 
     const current = resolveChangeForState(
       initialState,
       changeAt(diff("Old\n\nOther\n", "Alpha\n\nOther\n"), "root.0"),
     );
-    if (current.change.changeKind !== "modified") {
+    if (current.change.kind !== "modified") {
       throw new Error("Expected current modified change");
     }
     const incoming = changeAt(diff("Alpha\n\nOther\n", "Alpine\n\nOther\n"), "root.0");
@@ -286,19 +287,19 @@ describe("unacknowledged document changes", () => {
 
     expect(next.changes).toHaveLength(1);
     expect(next.changes[0]!.change).toMatchObject({
-      changeKind: "modified",
-      previousTarget: current.change.previousTarget,
-      target: incoming.target,
+      kind: "modified",
+      previousAnchor: current.change.previousAnchor,
+      anchor: incoming.anchor,
     });
     expect(next.newChanges).toEqual([]);
   });
 
   test("does not add changes for the current selection target", () => {
     const state = createState("Alpha\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected region");
+    if (!path) {
+      throw new Error("Expected path");
     }
 
     expect(
@@ -308,13 +309,13 @@ describe("unacknowledged document changes", () => {
 
   test("keeps fresh modified block changes when the new content is duplicated", () => {
     let state = createState("Same\n\nSame\n");
-    const secondRegion = state.documentIndex.regions[1];
+    const secondPath = indexedTextEntries(state)[1];
 
-    if (!secondRegion) {
-      throw new Error("Expected second region");
+    if (!secondPath) {
+      throw new Error("Expected second path");
     }
 
-    state = setSelection(state, { regionPath: secondRegion.path, offset: 0 });
+    state = setSelection(state, { path: secondPath.path, offset: 0 });
     const incoming = changeAt(diff("Old\n\nSame\n", "Same\n\nSame\n"), "root.0");
     const next = mergeUnacknowledgedDocumentChanges([], [incoming], state);
 
@@ -325,15 +326,15 @@ describe("unacknowledged document changes", () => {
 
   test("keeps fresh modified table-cell changes when the new content is duplicated", () => {
     let state = createState("| A | B |\n| - | - |\n| same | same |\n");
-    const secondCell = state.documentIndex.regions.find(
-      (region) => region.path === "root.0.rows.1.cells.1",
+    const secondCell = indexedTextEntries(state).find(
+      (path) => path.path === "root.0.rows.1.cells.1",
     );
 
     if (!secondCell) {
       throw new Error("Expected second table cell");
     }
 
-    state = setSelection(state, { regionPath: secondCell.path, offset: 0 });
+    state = setSelection(state, { path: secondCell.path, offset: 0 });
     const incoming = changeAt(
       diff("| A | B |\n| - | - |\n| old | same |\n", "| A | B |\n| - | - |\n| same | same |\n"),
       "root.0.rows.1.cells.0",
@@ -347,12 +348,12 @@ describe("unacknowledged document changes", () => {
 
   test("retargets existing changes when a later external snapshot has no targetable changes", () => {
     const initial = createState("Alpha\n\nBeta\n");
-    const beta = initial.documentIndex.regions.find((region) => region.text === "Beta");
+    const beta = indexedTextEntries(initial).find((path) => path.text === "Beta");
     const next = createState("Intro\n\nAlpha\n\nBeta\n");
-    const shiftedBeta = next.documentIndex.regions.find((region) => region.text === "Beta");
+    const shiftedBeta = indexedTextEntries(next).find((path) => path.text === "Beta");
 
     if (!beta || !shiftedBeta) {
-      throw new Error("Expected beta regions");
+      throw new Error("Expected beta paths");
     }
 
     const active = resolveChangeForState(
@@ -365,14 +366,14 @@ describe("unacknowledged document changes", () => {
       changes: [
         expect.objectContaining({
           change: expect.objectContaining({
-            changeKind: "modified",
-            target: expect.objectContaining({
+            kind: "modified",
+            anchor: expect.objectContaining({
               kind: "block",
               path: "root.2",
             }),
           }),
           editorTarget: expect.objectContaining({
-            blockPath: "root.2",
+            path: "root.2",
             kind: "block",
           }),
           changeKey: active.changeKey,
@@ -383,12 +384,12 @@ describe("unacknowledged document changes", () => {
 
   test("retargets active changes when an external insert shifts block paths", () => {
     const initial = createState("Alpha\n\nBeta\n");
-    const beta = initial.documentIndex.regions.find((region) => region.text === "Beta");
+    const beta = indexedTextEntries(initial).find((path) => path.text === "Beta");
     const next = createState("Intro\n\nAlpha\n\nBeta\n");
-    const shiftedBeta = next.documentIndex.regions.find((region) => region.text === "Beta");
+    const shiftedBeta = indexedTextEntries(next).find((path) => path.text === "Beta");
 
     if (!beta || !shiftedBeta) {
-      throw new Error("Expected beta regions");
+      throw new Error("Expected beta paths");
     }
 
     const active = resolveChangeForState(
@@ -401,14 +402,14 @@ describe("unacknowledged document changes", () => {
       changes: [
         expect.objectContaining({
           change: expect.objectContaining({
-            changeKind: "modified",
-            target: expect.objectContaining({
+            kind: "modified",
+            anchor: expect.objectContaining({
               kind: "block",
               path: "root.2",
             }),
           }),
           editorTarget: expect.objectContaining({
-            blockPath: "root.2",
+            path: "root.2",
             kind: "block",
           }),
           changeKey: active.changeKey,
@@ -420,13 +421,13 @@ describe("unacknowledged document changes", () => {
   test("acknowledges after retargeting instead of dismissing selected stale block paths", () => {
     const initial = createState("Alpha\n\nBeta\n");
     let next = createState("Stale occupant\n\nAlpha\n\nBeta\n");
-    const staleRegion = next.documentIndex.regions.find((region) => region.text === "Alpha");
+    const stalePath = indexedTextEntries(next).find((path) => path.text === "Alpha");
 
-    if (!staleRegion) {
-      throw new Error("Expected stale path region");
+    if (!stalePath) {
+      throw new Error("Expected stale path path");
     }
 
-    next = setSelection(next, { regionPath: staleRegion.path, offset: 0 });
+    next = setSelection(next, { path: stalePath.path, offset: 0 });
     const active = resolveChangeForState(
       initial,
       changeAt(diff("Alpha\n\nOld\n", "Alpha\n\nBeta\n"), "root.1"),
@@ -435,7 +436,7 @@ describe("unacknowledged document changes", () => {
     expect(acknowledgeUnacknowledgedDocumentChanges([active], next, { retarget: true })).toEqual([
       expect.objectContaining({
         editorTarget: expect.objectContaining({
-          blockPath: "root.2",
+          path: "root.2",
           kind: "block",
         }),
       }),
@@ -457,12 +458,12 @@ describe("unacknowledged document changes", () => {
 
   test("retargets active table-cell changes when an external row insert shifts cell paths", () => {
     const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
-    const cell = initial.documentIndex.regions.find((region) => region.text === "two");
+    const cell = indexedTextEntries(initial).find((path) => path.text === "two");
     const next = createState("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
-    const shiftedCell = next.documentIndex.regions.find((region) => region.text === "two");
+    const shiftedCell = indexedTextEntries(next).find((path) => path.text === "two");
 
     if (!cell || !shiftedCell) {
-      throw new Error("Expected table cell regions");
+      throw new Error("Expected table cell paths");
     }
 
     const active = resolveChangeForState(
@@ -478,15 +479,15 @@ describe("unacknowledged document changes", () => {
       changes: [
         expect.objectContaining({
           change: expect.objectContaining({
-            changeKind: "modified",
-            target: expect.objectContaining({
+            kind: "modified",
+            anchor: expect.objectContaining({
               kind: "table-cell",
               path: "root.0.rows.2.cells.1",
             }),
           }),
           editorTarget: expect.objectContaining({
             kind: "table-cell",
-            regionPath: "root.0.rows.2.cells.1",
+            path: "root.0.rows.2.cells.1",
           }),
           changeKey: active.changeKey,
         }),
@@ -497,15 +498,15 @@ describe("unacknowledged document changes", () => {
   test("acknowledges after retargeting instead of dismissing selected stale table-cell paths", () => {
     const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
     let next = createState("| A | B |\n| - | - |\n| stale | occupant |\n| one | two |\n");
-    const staleCell = next.documentIndex.regions.find(
-      (region) => region.path === "root.0.rows.1.cells.1",
+    const staleCell = indexedTextEntries(next).find(
+      (path) => path.path === "root.0.rows.1.cells.1",
     );
 
     if (!staleCell) {
       throw new Error("Expected stale path table cell");
     }
 
-    next = setSelection(next, { regionPath: staleCell.path, offset: 0 });
+    next = setSelection(next, { path: staleCell.path, offset: 0 });
     const active = resolveChangeForState(
       initial,
       changeAt(
@@ -518,7 +519,7 @@ describe("unacknowledged document changes", () => {
       expect.objectContaining({
         editorTarget: expect.objectContaining({
           kind: "table-cell",
-          regionPath: "root.0.rows.2.cells.1",
+          path: "root.0.rows.2.cells.1",
         }),
       }),
     ]);
@@ -549,16 +550,16 @@ describe("unacknowledged document changes", () => {
         "",
       ].join("\n"),
     );
-    const droppedRegion = next.documentIndex.regions.find(
-      (region) => region.text === "Drop",
+    const droppedPath = indexedTextEntries(next).find(
+      (path) => path.text === "Drop",
     );
 
-    if (!droppedRegion) {
-      throw new Error("Expected dropped region");
+    if (!droppedPath) {
+      throw new Error("Expected dropped path");
     }
 
     next = setSelection(next, {
-      regionPath: droppedRegion.path,
+      path: droppedPath.path,
       offset: 0,
     });
 
@@ -593,7 +594,7 @@ describe("unacknowledged document changes", () => {
       retargeted.changeKey,
       retained.changeKey,
     ]);
-    expect(acknowledged.map((change) => change.change.target.path)).toEqual([
+    expect(acknowledged.map((change) => change.change.anchor.path)).toEqual([
       "root.1.rows.2.cells.1",
       "root.2",
     ]);
@@ -617,12 +618,12 @@ describe("unacknowledged document changes", () => {
 
   test("retargets active table-cell changes when a local edit shifts cell paths", () => {
     const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
-    const cell = initial.documentIndex.regions.find((region) => region.text === "two");
+    const cell = indexedTextEntries(initial).find((path) => path.text === "two");
     const locallyEdited = createState("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
-    const shiftedCell = locallyEdited.documentIndex.regions.find((region) => region.text === "two");
+    const shiftedCell = indexedTextEntries(locallyEdited).find((path) => path.text === "two");
 
     if (!cell || !shiftedCell) {
-      throw new Error("Expected table cell regions");
+      throw new Error("Expected table cell paths");
     }
 
     const active = resolveChangeForState(
@@ -638,15 +639,15 @@ describe("unacknowledged document changes", () => {
       changes: [
         expect.objectContaining({
           change: expect.objectContaining({
-            changeKind: "modified",
-            target: expect.objectContaining({
+            kind: "modified",
+            anchor: expect.objectContaining({
               kind: "table-cell",
               path: "root.0.rows.2.cells.1",
             }),
           }),
           editorTarget: expect.objectContaining({
             kind: "table-cell",
-            regionPath: "root.0.rows.2.cells.1",
+            path: "root.0.rows.2.cells.1",
           }),
           changeKey: active.changeKey,
         }),
@@ -657,12 +658,12 @@ describe("unacknowledged document changes", () => {
   test("keeps added block changes added when the same external snapshot shifts and edits them", () => {
     const initial = createState("Alpha\n");
     let nextState = createState("Intro\n\nAlpha updated\n\nOther\n");
-    const otherRegion = nextState.documentIndex.regions[2];
-    if (!otherRegion) {
-      throw new Error("Expected other region");
+    const otherPath = indexedTextEntries(nextState)[2];
+    if (!otherPath) {
+      throw new Error("Expected other path");
     }
     nextState = setSelection(nextState, {
-      regionPath: otherRegion.path,
+      path: otherPath.path,
       offset: 0,
     });
     const active = resolveChangeForState(initial, changeAt(diff("", "Alpha\n"), "root.0"));
@@ -670,15 +671,15 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(2);
-    expect(next.changes.map((change) => change.change.changeKind)).toEqual(["added", "added"]);
-    expect(next.changes.map((change) => change.change.target.path).sort()).toEqual([
+    expect(next.changes.map((change) => change.change.kind)).toEqual(["added", "added"]);
+    expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0",
       "root.1",
     ]);
-    expect(next.changes.find((change) => change.change.target.path === "root.1")).toMatchObject({
+    expect(next.changes.find((change) => change.change.anchor.path === "root.1")).toMatchObject({
       change: {
-        changeKind: "added",
-        target: expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.1",
         }),
@@ -687,7 +688,7 @@ describe("unacknowledged document changes", () => {
     expect(next.newChanges).toEqual([
       expect.objectContaining({
         change: expect.objectContaining({
-          target: expect.objectContaining({
+          anchor: expect.objectContaining({
             path: "root.0",
           }),
         }),
@@ -698,12 +699,12 @@ describe("unacknowledged document changes", () => {
   test("keeps added block changes added after multiple inserted blocks before the edit", () => {
     const initial = createState("Alpha\n");
     let nextState = createState("Intro 1\n\nIntro 2\n\nAlpha updated\n\nOther\n");
-    const otherRegion = nextState.documentIndex.regions[3];
-    if (!otherRegion) {
-      throw new Error("Expected other region");
+    const otherPath = indexedTextEntries(nextState)[3];
+    if (!otherPath) {
+      throw new Error("Expected other path");
     }
     nextState = setSelection(nextState, {
-      regionPath: otherRegion.path,
+      path: otherPath.path,
       offset: 0,
     });
     const active = resolveChangeForState(initial, changeAt(diff("", "Alpha\n"), "root.0"));
@@ -711,26 +712,26 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(3);
-    expect(next.changes.map((change) => change.change.changeKind)).toEqual([
+    expect(next.changes.map((change) => change.change.kind)).toEqual([
       "added",
       "added",
       "added",
     ]);
-    expect(next.changes.map((change) => change.change.target.path).sort()).toEqual([
+    expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0",
       "root.1",
       "root.2",
     ]);
-    expect(next.changes.find((change) => change.change.target.path === "root.2")).toMatchObject({
+    expect(next.changes.find((change) => change.change.anchor.path === "root.2")).toMatchObject({
       change: {
-        changeKind: "added",
-        target: expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.2",
         }),
       },
     });
-    expect(next.newChanges.map((change) => change.change.target.path).sort()).toEqual([
+    expect(next.newChanges.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0",
       "root.1",
     ]);
@@ -741,12 +742,12 @@ describe("unacknowledged document changes", () => {
     let nextState = createState(
       "| A | B |\n| - | - |\n| inserted | row |\n| one | changed |\n\nOther\n",
     );
-    const otherRegion = nextState.documentIndex.regions.find((region) => region.text === "Other");
-    if (!otherRegion) {
-      throw new Error("Expected other region");
+    const otherPath = indexedTextEntries(nextState).find((path) => path.text === "Other");
+    if (!otherPath) {
+      throw new Error("Expected other path");
     }
     nextState = setSelection(nextState, {
-      regionPath: otherRegion.path,
+      path: otherPath.path,
       offset: 0,
     });
 
@@ -764,28 +765,28 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(3);
-    expect(next.changes.map((change) => change.change.changeKind)).toEqual([
+    expect(next.changes.map((change) => change.change.kind)).toEqual([
       "added",
       "added",
       "added",
     ]);
-    expect(next.changes.map((change) => change.change.target.path).sort()).toEqual([
+    expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0.rows.1.cells.0",
       "root.0.rows.1.cells.1",
       "root.0.rows.2.cells.1",
     ]);
     expect(
-      next.changes.find((change) => change.change.target.path === "root.0.rows.2.cells.1"),
+      next.changes.find((change) => change.change.anchor.path === "root.0.rows.2.cells.1"),
     ).toMatchObject({
       change: {
-        changeKind: "added",
-        target: expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
           kind: "table-cell",
           path: "root.0.rows.2.cells.1",
         }),
       },
     });
-    expect(next.newChanges.map((change) => change.change.target.path).sort()).toEqual([
+    expect(next.newChanges.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0.rows.1.cells.0",
       "root.0.rows.1.cells.1",
     ]);
@@ -794,12 +795,12 @@ describe("unacknowledged document changes", () => {
   test("does not preserve added when only the path matches", () => {
     const activeState = createState("Alpha\n");
     let nextState = createState("Gamma\n\nOther\n");
-    const otherRegion = nextState.documentIndex.regions[1];
-    if (!otherRegion) {
-      throw new Error("Expected other region");
+    const otherPath = indexedTextEntries(nextState)[1];
+    if (!otherPath) {
+      throw new Error("Expected other path");
     }
     nextState = setSelection(nextState, {
-      regionPath: otherRegion.path,
+      path: otherPath.path,
       offset: 0,
     });
     const active = resolveChangeForState(activeState, changeAt(diff("", "Alpha\n"), "root.0"));
@@ -807,7 +808,7 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], [incoming], nextState);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change.changeKind).toBe("modified");
+    expect(next.changes[0]!.change.kind).toBe("modified");
     expect(next.newChanges).toEqual(next.changes);
   });
 });
@@ -817,7 +818,7 @@ function diff(previousMarkdown: string, nextMarkdown: string) {
 }
 
 function changeAt(changes: readonly DocumentChange[], path: string) {
-  const change = changes.find((candidate) => candidate.target.path === path);
+  const change = changes.find((candidate) => candidate.anchor.path === path);
 
   if (!change) {
     throw new Error(`Expected document change at ${path}`);
@@ -830,30 +831,30 @@ function resolveChangeForState(
   state: ReturnType<typeof createState>,
   change: DocumentChange,
 ): UnacknowledgedDocumentChange {
-  const changeKey = documentChangeTargetAnchorKey(change.target);
+  const changeKey = documentNodeAnchorKey(change.anchor);
 
-  if (change.target.kind === "block") {
+  if (change.anchor.kind === "block") {
     return {
       change,
       editorTarget: {
-        blockPath: change.target.path,
+        path: change.anchor.path,
         kind: "block",
       },
       changeKey,
     };
   }
 
-  const region = state.documentIndex.regions.find(
-    (candidate) => candidate.path === change.target.path,
+  const path = indexedTextEntries(state).find(
+    (candidate) => candidate.path === change.anchor.path,
   );
-  if (!region) {
-    throw new Error(`Expected region at ${change.target.path}`);
+  if (!path) {
+    throw new Error(`Expected path at ${change.anchor.path}`);
   }
   return {
     change,
     editorTarget: {
       kind: "table-cell",
-      regionPath: region.path,
+      path: path.path,
     },
     changeKey,
   };

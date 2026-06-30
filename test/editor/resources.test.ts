@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
 import {
   createEditorLayoutState,
@@ -28,17 +29,15 @@ test("detects active resources only when their line is visible", () => {
     layoutCache,
     resources,
   );
-  const resourceRegion = state.documentIndex.regions.find((region) =>
-    region.content.kind === "inlines"
-      ? region.content.inlines.some((inline) => inline.node.type === "resource")
-      : false,
+  const resourcePath = indexedTextEntries(state).find((path) =>
+    (path.inlines ?? []).some((inline) => inline.node.type === "resource"),
   );
 
-  if (!resourceRegion) {
-    throw new Error("Expected resource region");
+  if (!resourcePath) {
+    throw new Error("Expected resource path");
   }
 
-  const resourceLine = viewport.layout.lines.find((line) => line.regionPath === resourceRegion.path);
+  const resourceLine = viewport.layout.lines.find((line) => line.path === resourcePath.path);
 
   if (!resourceLine) {
     throw new Error("Expected resource line");

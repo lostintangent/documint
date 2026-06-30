@@ -1,6 +1,6 @@
 // Document-level adapter for shared completion primitives. It projects the
-// editor's current collapsed selection into the active text region, then lets
-// the pure completion detector operate on that region text.
+// editor's current collapsed selection into the active text path, then lets
+// the pure completion detector operate on that path text.
 
 import { getCaretTextContext, type EditorState, type TextRangeTarget } from "@/editor";
 import {
@@ -13,7 +13,7 @@ import {
 } from "./completions";
 
 export type DocumentCompletion = ActiveCompletion & {
-  regionPath: string;
+  path: string;
 };
 
 export function resolveDocumentCompletionContext(
@@ -31,7 +31,7 @@ export function resolveDocumentCompletionContext(
     completionSources ?? [],
   );
 
-  return activeCompletion ? { ...activeCompletion, regionPath: textContext.regionPath } : null;
+  return activeCompletion ? { ...activeCompletion, path: textContext.path } : null;
 }
 
 export function equalDocumentCompletions(
@@ -42,7 +42,7 @@ export function equalDocumentCompletions(
   if (!previous || !next) return false;
 
   return (
-    previous.regionPath === next.regionPath &&
+    previous.path === next.path &&
     previous.trigger === next.trigger &&
     previous.query === next.query &&
     previous.triggerStart === next.triggerStart &&
@@ -72,7 +72,7 @@ export function resolveDocumentCompletionApplication(
 ): DocumentCompletionApplication {
   const target = {
     endOffset: completion.caret,
-    regionPath: completion.regionPath,
+    path: completion.path,
     startOffset: completion.triggerStart,
   };
 

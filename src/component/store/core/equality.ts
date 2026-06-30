@@ -111,7 +111,7 @@ export function equalByKind<T extends { kind: string }>(perKind: {
 }
 
 export const equalSelectionPoints = equalBy<EditorSelectionPoint>((point) => [
-  point.regionPath,
+  point.path,
   point.offset,
 ]);
 
@@ -156,7 +156,7 @@ function equalSelectionSpans(a: SelectionContext["span"], b: SelectionContext["s
 
 const equalCommentRange = equalBy<EditorCommentRange>((range) => [
   range.endOffset,
-  range.regionPath,
+  range.path,
   range.resolved,
   range.startOffset,
   range.threadIndex,

@@ -8,12 +8,14 @@ import type { LineBoundary } from "../measure";
 import type { MeasuredTextLine } from "../measure/text";
 
 export type VirtualLayout = {
-  containerIndices: Map<string, number>;
+  pathIndices: Map<string, number>;
   entries: Array<{
+    blockArrayIndex: number;
     bottom: number;
+    path: string;
     top: number;
   }>;
-  estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
+  estimatePathBounds: (path: string) => { bottom: number; top: number } | null;
   totalHeight: number;
 };
 

@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 // Frame-level renderer tests. These assert the paint contract produced by
 // `createDocumentFrame` / `createOverlayFrame` before any canvas operations run.
 
@@ -7,7 +8,7 @@ import { createEditorLayoutState } from "@/editor/layout";
 import {
   createEditorState,
   normalizeSelection,
-  resolveRegion,
+  resolveIndexedBlockContainingPath,
   setSelection,
   type EditorState,
 } from "@/editor/state";
@@ -82,23 +83,30 @@ describe("DocumentFrame line text rows", () => {
 });
 
 describe("DocumentFrame line range rows", () => {
+  test("skips selection highlight rows for collapsed selections", () => {
+    const state = setup("alpha\n\nbeta\n");
+    const frame = createTestDocumentFrame(state);
+
+    expect(frame.lines.every((line) => line.selectionHighlight === null)).toBe(true);
+  });
+
   test("clips selection and comment highlights into line range frame rows", () => {
     let state = setup("alpha\n\nbeta\n\ngamma\n");
-    const [first, second, third] = state.documentIndex.regions;
+    const [first, second, third] = indexedTextEntries(state);
 
     if (!first || !second || !third) {
-      throw new Error("Expected three paragraph regions");
+      throw new Error("Expected three paragraph paths");
     }
 
     state = setSelection(state, {
-      anchor: { regionPath: first.path, offset: 2 },
-      focus: { regionPath: third.path, offset: 3 },
+      anchor: { path: first.path, offset: 2 },
+      focus: { path: third.path, offset: 3 },
     });
 
     const commentRanges: EditorCommentRange[] = [
       {
         endOffset: 3,
-        regionPath: second.path,
+        path: second.path,
         resolution: { match: null, repair: null, status: "stale" },
         resolved: false,
         startOffset: 1,
@@ -109,9 +117,9 @@ describe("DocumentFrame line range rows", () => {
       commentPresence: new Map([[7, createPresence(7, "#f97316")]]),
       commentRanges,
     });
-    const firstLine = lineFrameForRegion(frame, first.path);
-    const secondLine = lineFrameForRegion(frame, second.path);
-    const thirdLine = lineFrameForRegion(frame, third.path);
+    const firstLine = lineFrameForPath(frame, first.path);
+    const secondLine = lineFrameForPath(frame, second.path);
+    const thirdLine = lineFrameForPath(frame, third.path);
 
     expect(frame.lines.filter((line) => line.selectionHighlight).length).toBe(3);
     expect(firstLine.selectionHighlight?.left).toBeGreaterThan(secondLine.selectionHighlight!.left);
@@ -130,19 +138,19 @@ describe("DocumentFrame line range rows", () => {
 describe("DocumentFrame effect policy", () => {
   test("forwards custom effect policy into frame lines", () => {
     const state = setup("alpha 🔥\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected paragraph region");
+    if (!path) {
+      throw new Error("Expected paragraph path");
     }
 
     const effect: RendererEffect = {
       kind: "text-inserted",
       text: "🔥",
-      regionKind: "inlines",
-      regionPath: region.path,
-      startOffset: region.text.indexOf("🔥"),
-      endOffset: region.text.length,
+      contentKind: "inlines",
+      path: path.path,
+      startOffset: path.text.indexOf("🔥"),
+      endOffset: path.text.length,
       startedAt: 100,
     };
     const effectPolicy: EffectPolicy = {
@@ -161,27 +169,27 @@ describe("DocumentFrame effect policy", () => {
 
     expect(defaultFrame.effects).toEqual([]);
     expect(customFrame.effects).toEqual([effect]);
-    expect(lineFrameForRegion(defaultFrame, region.path).textHighlights).toEqual([]);
-    expect(lineFrameForRegion(customFrame, region.path).textHighlights).toEqual([
+    expect(lineFrameForPath(defaultFrame, path.path).textHighlights).toEqual([]);
+    expect(lineFrameForPath(customFrame, path.path).textHighlights).toEqual([
       expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
     ]);
   });
 
   test("keeps default-skipped effects active when a matching custom handler exists", () => {
     const state = setup("alpha 🔥\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected paragraph region");
+    if (!path) {
+      throw new Error("Expected paragraph path");
     }
 
     const effect: RendererEffect = {
       kind: "text-inserted",
       text: "🔥",
-      regionKind: "inlines",
-      regionPath: region.path,
-      startOffset: region.text.indexOf("🔥"),
-      endOffset: region.text.length,
+      contentKind: "inlines",
+      path: path.path,
+      startOffset: path.text.indexOf("🔥"),
+      endOffset: path.text.length,
       startedAt: 100,
     };
 
@@ -199,8 +207,8 @@ describe("DocumentFrame effect policy", () => {
 
     expect(defaultFrame.effects).toEqual([]);
     expect(customFrame.effects).toEqual([effect]);
-    expect(lineFrameForRegion(defaultFrame, region.path).textHighlights).toEqual([]);
-    expect(lineFrameForRegion(customFrame, region.path).textHighlights).toEqual([
+    expect(lineFrameForPath(defaultFrame, path.path).textHighlights).toEqual([]);
+    expect(lineFrameForPath(customFrame, path.path).textHighlights).toEqual([
       expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
     ]);
   });
@@ -209,19 +217,19 @@ describe("DocumentFrame effect policy", () => {
 describe("DocumentFrame chrome and block rows", () => {
   test("document-change backgrounds stay separate from active block backgrounds", () => {
     let state = setup("alpha\n\nbeta\n");
-    const first = state.documentIndex.regions[0];
+    const first = indexedTextEntries(state)[0];
 
     if (!first) {
-      throw new Error("Expected first region");
+      throw new Error("Expected first path");
     }
 
-    state = setSelection(state, { regionPath: first.path, offset: 0 });
+    state = setSelection(state, { path: first.path, offset: 0 });
     const frame = createTestDocumentFrame(state, {
       documentChanges: [
         {
           changeKey: "change-alpha",
           changeKind: "modified",
-          target: { blockPath: first.blockPath, kind: "block" },
+          target: { kind: "block", path: first.blockPath },
         },
       ],
       effects: [
@@ -230,12 +238,12 @@ describe("DocumentFrame chrome and block rows", () => {
           changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { blockPath: "root.old", kind: "block" },
+          target: { kind: "block", path: "root.old" },
         },
       ],
       now: 110,
     });
-    const line = lineFrameForRegion(frame, first.path);
+    const line = lineFrameForPath(frame, first.path);
 
     expect(line.activeBlockBackground).toMatchObject({
       activeFlash: null,
@@ -252,10 +260,10 @@ describe("DocumentFrame chrome and block rows", () => {
 
   test("document-change backgrounds keep steady color after the fade effect expires", () => {
     const state = setup("alpha\n\nbeta\n");
-    const first = state.documentIndex.regions[0];
+    const first = indexedTextEntries(state)[0];
 
     if (!first) {
-      throw new Error("Expected first region");
+      throw new Error("Expected first path");
     }
 
     const frame = createTestDocumentFrame(state, {
@@ -263,7 +271,7 @@ describe("DocumentFrame chrome and block rows", () => {
         {
           changeKey: "change-alpha",
           changeKind: "modified",
-          target: { blockPath: first.blockPath, kind: "block" },
+          target: { kind: "block", path: first.blockPath },
         },
       ],
       effects: [
@@ -272,12 +280,12 @@ describe("DocumentFrame chrome and block rows", () => {
           changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { blockPath: "root.old", kind: "block" },
+          target: { kind: "block", path: "root.old" },
         },
       ],
       now: 600,
     });
-    const line = lineFrameForRegion(frame, first.path);
+    const line = lineFrameForPath(frame, first.path);
 
     expect(line.documentChangeBackground).toMatchObject({
       color: resolvedLightTheme.externalChangeModificationBackground,
@@ -291,10 +299,10 @@ describe("DocumentFrame chrome and block rows", () => {
 | - | - |
 | one | two |
 `);
-    const cell = state.documentIndex.regions.find((region) => region.text === "two");
+    const cell = indexedTextEntries(state).find((path) => path.text === "two");
 
     if (!cell) {
-      throw new Error("Expected table cell region");
+      throw new Error("Expected table cell path");
     }
 
     const frame = createTestDocumentFrame(state, {
@@ -304,7 +312,7 @@ describe("DocumentFrame chrome and block rows", () => {
           changeKind: "added",
           target: {
             kind: "table-cell",
-            regionPath: cell.path,
+            path: cell.path,
           },
         },
       ],
@@ -316,7 +324,7 @@ describe("DocumentFrame chrome and block rows", () => {
           startedAt: 100,
           target: {
             kind: "table-cell",
-            regionPath: "root.0.rows.9.cells.9",
+            path: "root.0.rows.9.cells.9",
           },
         },
       ],
@@ -360,17 +368,17 @@ describe("DocumentFrame chrome and block rows", () => {
 | --- | --- | --- |
 | one | two | three |
 `);
-    const activeRegion = state.documentIndex.regions.find((region) => region.text === "Active");
+    const activePath = indexedTextEntries(state).find((path) => path.text === "Active");
 
-    if (!activeRegion) {
-      throw new Error("Expected active table cell region");
+    if (!activePath) {
+      throw new Error("Expected active table cell path");
     }
 
-    state = setSelection(state, { regionPath: activeRegion.path, offset: 1 });
+    state = setSelection(state, { path: activePath.path, offset: 1 });
 
     const frame = createTestDocumentFrame(state, {
-      activeBlockPath: activeRegion.blockPath,
-      activeRegionPath: activeRegion.path,
+      activeBlockPath: activePath.blockPath,
+      activePath: activePath.path,
       width: 480,
     });
 
@@ -378,7 +386,7 @@ describe("DocumentFrame chrome and block rows", () => {
     expect(frame.chrome.activeTableCellGeometry?.bands.length).toBeGreaterThan(0);
 
     const tableLines = frame.lines.filter(
-      (line) => line.layoutLine.blockPath === activeRegion.blockPath,
+      (line) => line.layoutLine.blockPath === activePath.blockPath,
     );
     expect(tableLines.length).toBeGreaterThan(0);
     expect(tableLines.every((line) => line.activeBlockBackground === null)).toBe(true);
@@ -387,19 +395,19 @@ describe("DocumentFrame chrome and block rows", () => {
 
   test("resolves code chrome once while keeping code text rows paint-ready", () => {
     let state = setup("```ts\nconst value = 1;\nconst next = 2;\n```\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected code region");
+    if (!path) {
+      throw new Error("Expected code path");
     }
 
-    state = setSelection(state, { regionPath: region.path, offset: 2 });
+    state = setSelection(state, { path: path.path, offset: 2 });
 
     const frame = createTestDocumentFrame(state, {
-      activeBlockPath: region.blockPath,
+      activeBlockPath: path.blockPath,
       width: 320,
     });
-    const codeLines = frame.lines.filter((line) => line.layoutLine.regionPath === region.path);
+    const codeLines = frame.lines.filter((line) => line.layoutLine.path === path.path);
 
     expect(codeLines).toHaveLength(2);
     expect(codeLines.filter((line) => line.containerBackground?.kind === "code")).toHaveLength(1);
@@ -418,22 +426,22 @@ describe("DocumentFrame chrome and block rows", () => {
 describe("OverlayFrame caret rows", () => {
   test("resolves overlay caret rows before overlay painting", () => {
     let state = setup("alpha beta gamma\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected paragraph region");
+    if (!path) {
+      throw new Error("Expected paragraph path");
     }
 
     state = setSelection(state, {
-      anchor: { regionPath: region.path, offset: 1 },
-      focus: { regionPath: region.path, offset: 5 },
+      anchor: { path: path.path, offset: 1 },
+      focus: { path: path.path, offset: 5 },
     });
 
     const frame = createTestOverlayFrame(state, {
       presence: [
         createPresence(1, "#0ea5e9", {
           offset: 7,
-          regionPath: region.path,
+          path: path.path,
         }),
         createPresence(2, "#f97316", null),
       ],
@@ -455,7 +463,7 @@ function createTestDocumentFrame(
   state: EditorState,
   {
     activeBlockPath,
-    activeRegionPath = state.selection.focus.regionPath,
+    activePath = state.selection.focus.path,
     activeThreadIndex = null,
     commentPresence,
     commentRanges = [],
@@ -470,7 +478,7 @@ function createTestDocumentFrame(
     width = 420,
   }: {
     activeBlockPath?: string | null;
-    activeRegionPath?: string | null;
+    activePath?: string | null;
     activeThreadIndex?: number | null;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     commentRanges?: EditorCommentRange[];
@@ -487,7 +495,7 @@ function createTestDocumentFrame(
 ) {
   const resolvedActiveBlockPath =
     activeBlockPath ??
-    resolveRegion(state.documentIndex, state.selection.focus.regionPath)?.blockPath ??
+    resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ??
     null;
   const layoutState = createEditorLayoutState(
     state,
@@ -501,7 +509,7 @@ function createTestDocumentFrame(
   );
   return createDocumentFrame(state, layoutState, {
     activeBlockPath: resolvedActiveBlockPath,
-    activeRegionPath,
+    activePath,
     activeThreadIndex,
     commentPresence,
     commentRanges,
@@ -558,11 +566,11 @@ function lineFrameContaining(frame: DocumentFrame, text: string): DocumentFrameL
   return line;
 }
 
-function lineFrameForRegion(frame: DocumentFrame, regionPath: string): DocumentFrameLine {
-  const line = frame.lines.find((candidate) => candidate.layoutLine.regionPath === regionPath);
+function lineFrameForPath(frame: DocumentFrame, path: string): DocumentFrameLine {
+  const line = frame.lines.find((candidate) => candidate.layoutLine.path === path);
 
   if (!line) {
-    throw new Error(`Expected frame line for region "${regionPath}"`);
+    throw new Error(`Expected frame line for path "${path}"`);
   }
 
   return line;

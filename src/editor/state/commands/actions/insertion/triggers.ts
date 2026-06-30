@@ -9,8 +9,8 @@ import {
   type Block,
   type HeadingBlock,
 } from "@/document";
-import type { DocumentIndex, EditableRegion } from "../../../index/types";
-import { resolveRegion } from "../../../index/query";
+import type { DocumentIndex } from "../../../index/types";
+import { resolveEditorTextAtPath, resolveIndexedBlockContainingPath } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import { normalizeSelection, target, type EditorSelection } from "../../../selection";
 import {
@@ -38,7 +38,7 @@ import {
 //   - list-item       → TRANSFORM list shape (bullet / ordered / task).
 //
 // All trigger patterns are precompiled at module load. The hot path
-// on a typical keystroke is: a region lookup, a block-type field
+// on a typical keystroke is: a path text lookup, a block-type field
 // check, a single context resolution, and (for root-paragraph) a
 // single-character whitespace precheck before any regex walk.
 
@@ -47,32 +47,34 @@ export function resolveInsertionTrigger(
   selection: EditorSelection,
   text: string,
 ): EditorStateAction | null {
-  // Cross-region selections have no sensible trigger interpretation:
+  // Cross-path selections have no sensible trigger interpretation:
   // the post-replacement text would only contain the inserted
-  // characters, dropping anything from the spanned regions.
-  if (selection.anchor.regionPath !== selection.focus.regionPath) {
+  // characters, dropping anything from the spanned paths.
+  if (selection.anchor.path !== selection.focus.path) {
     return null;
   }
 
-  const region = resolveRegion(documentIndex, selection.anchor.regionPath);
-  if (!region) {
+  const path = selection.anchor.path;
+  const textAtPath = resolveEditorTextAtPath(documentIndex, path);
+  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
+  if (textAtPath === null || !indexedBlock) {
     return null;
   }
 
-  // Field-level precheck via `region.block.type`: code blocks, table
+  // Field-level precheck via the indexed block type: code blocks, table
   // cells, dividers, etc. resolve no context and produce no trigger.
-  const context = resolveTriggerContext(documentIndex, selection, region);
+  const context = resolveTriggerContext(documentIndex, selection, indexedBlock.block);
   if (!context) {
     return null;
   }
 
   const { start, end } = resolveInsertionRange(documentIndex, selection);
-  return matchTriggerForContext(region, text, start, end, context);
+  return matchTriggerForContext(textAtPath, text, start, end, context);
 }
 
 // ---- Selection range -------------------------------------------------------
 
-// Same-region post-insertion endpoints. Skips the `normalizeSelection`
+// Same-path post-insertion endpoints. Skips the `normalizeSelection`
 // allocation for the collapsed-cursor path (the dominant case while
 // typing).
 function resolveInsertionRange(
@@ -98,12 +100,12 @@ type TriggerContext =
 function resolveTriggerContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-  region: EditableRegion,
+  block: Block,
 ): TriggerContext | null {
-  // Triggers can only fire inside paragraph and heading regions.
+  // Triggers can only fire inside paragraph and heading paths.
   // Everything else (code, table cells, dividers, …) splices without
   // further work.
-  switch (region.block.type) {
+  switch (block.type) {
     case "heading": {
       // Confirm the heading is at root level — `resolveRootTextBlockContextFromSelection`
       // returns null for non-root blocks (e.g. nested in containers), and
@@ -133,7 +135,7 @@ function resolveTriggerContext(
 // ---- Trigger dispatch ------------------------------------------------------
 
 function matchTriggerForContext(
-  region: EditableRegion,
+  textAtPath: string,
   text: string,
   start: number,
   end: number,
@@ -146,7 +148,7 @@ function matchTriggerForContext(
     return null;
   }
 
-  const prospectiveText = region.text.slice(0, start) + text + region.text.slice(end);
+  const prospectiveText = textAtPath.slice(0, start) + text + textAtPath.slice(end);
 
   switch (context.kind) {
     case "root-paragraph":
@@ -280,17 +282,17 @@ const LIST_ITEM_TRIGGERS: readonly Trigger<ListItemContext>[] = [
   },
 ];
 
-// ---- Pattern compilation (runs once, at module load) -----------------------
+// ---- Pattern compilation (computed once, at module load) -------------------
 
 function compileCreatePattern(body: RegExp, options: { allowIndent: boolean }): RegExp {
-  // Entire region (modulo optional indent) must be the trigger followed by
+  // Entire path text (modulo optional indent) must be the trigger followed by
   // a single terminating whitespace; nothing else.
   const leading = options.allowIndent ? "\\s*" : "";
   return new RegExp(`^${leading}(${body.source})\\s$`);
 }
 
 function compileTransformPattern(body: RegExp): RegExp {
-  // Region begins with the trigger plus whitespace; everything after the
+  // Path text begins with the trigger plus whitespace; everything after the
   // whitespace is preserved as the new block's text content.
   return new RegExp(`^\\s*(${body.source})\\s(.+)$`);
 }

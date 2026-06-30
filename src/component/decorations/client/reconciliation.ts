@@ -1,5 +1,5 @@
 // Snapshot and stale-result helpers for the async decoration pipeline. The
-// editor owns reconciliation against its region projection; this module only
+// editor owns reconciliation against indexed text paths; this module only
 // deals with worker source keys and document-root snapshots.
 
 import type { Block, Document } from "@/document";
@@ -48,7 +48,7 @@ export function reconcileDecorationRootResults(
 type DecorationTextEdit = {
   deletedLength: number;
   insertedLength: number;
-  regionPath: string;
+  path: string;
   startOffset: number;
 };
 
@@ -56,7 +56,7 @@ export function remapDecorationIndexForTextEdit(
   previous: TextDecorationIndex,
   edit: DecorationTextEdit,
 ): TextDecorationIndex | null {
-  const ranges = previous.get(edit.regionPath);
+  const ranges = previous.get(edit.path);
   if (!ranges || ranges.length === 0) {
     return null;
   }
@@ -68,9 +68,9 @@ export function remapDecorationIndexForTextEdit(
 
   const next = new Map(previous);
   if (nextRanges.length === 0) {
-    next.delete(edit.regionPath);
+    next.delete(edit.path);
   } else {
-    next.set(edit.regionPath, nextRanges);
+    next.set(edit.path, nextRanges);
   }
   return next;
 }

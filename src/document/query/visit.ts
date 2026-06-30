@@ -7,7 +7,7 @@
 // so a node's path here is the same structural address used by anchors and the
 // editor index.
 
-import { blockContainerSpec } from "../model/containers";
+import { getBlockChildren, rebuildBlockChildren } from "../model/containers";
 import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../model/paths";
 import type {
   Block,
@@ -109,7 +109,7 @@ function findChildIndicesByReference(block: Block, target: Block): number[] | nu
     return [];
   }
 
-  const children = blockContainerSpec(block)?.read(block);
+  const children = getBlockChildren(block);
 
   if (!children) {
     return null;
@@ -137,8 +137,7 @@ export function findBlockByChildIndices(
       return null;
     }
 
-    const containerSpec = blockContainerSpec(current);
-    const children = containerSpec?.read(current);
+    const children = getBlockChildren(current);
 
     if (!children) {
       return null;
@@ -172,10 +171,10 @@ function visitBlocks(
       continue;
     }
 
-    const containerSpec = blockContainerSpec(block);
+    const children = getBlockChildren(block);
 
-    if (containerSpec) {
-      visitBlocks(containerSpec.read(block), visitor, state, {
+    if (children) {
+      visitBlocks(children, visitor, state, {
         pathPrefix: childContainerPath(path),
         startIndex: 0,
       });
@@ -189,7 +188,7 @@ function visitBlocks(
           block,
           container: block,
           kind: "block",
-          path: childContainerPath(path),
+          path,
         });
         break;
       case "table":
@@ -291,9 +290,7 @@ function visitInlineContainer(
 
   visitInlines(nodes, visitor, state, {
     block: context.block,
-    // Table cells nest their inlines under a `.children` segment; block
-    // inline containers (paragraph, heading) already are the children path.
-    pathPrefix: context.kind === "tableCell" ? childContainerPath(context.path) : context.path,
+    pathPrefix: childContainerPath(context.path),
   });
 }
 
@@ -431,18 +428,17 @@ export function mapBlockTree(
 // preserving unaffected child references while keeping cached `plainText`
 // correct without a later whole-document normalization pass.
 function recurseBlockChildren(block: Block, visit: BlockMapVisitor, childrenPath: string): Block {
-  const spec = blockContainerSpec(block);
+  const children = getBlockChildren(block);
 
-  if (!spec) {
+  if (!children) {
     return block;
   }
 
-  const children = spec.read(block);
   const next = mapBlockTree(children, visit, childrenPath, block);
 
   if (next === children) {
     return block;
   }
 
-  return spec.rebuild(block, next);
+  return rebuildBlockChildren(block, next);
 }

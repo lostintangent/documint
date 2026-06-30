@@ -163,14 +163,6 @@
     z-index: 1100;
   }
 
-  /* Hover: wrapper occupies the bridge gap so the bridge child can hand
-     off pointer events between anchor row and shell. */
-  &[data-bridge="true"] {
-    padding-top: var(--leaf-bridge-height);
-    margin-top: calc(var(--leaf-bridge-height) * -1);
-    pointer-events: auto;
-  }
-
   /* Bridgeless (cursor + selection): wrapper is pointer-event-transparent
      so canvas gestures pass through the gap area to the underlying canvas.
      The shell carries the visual gap via its own margin-top below. */

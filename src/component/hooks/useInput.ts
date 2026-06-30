@@ -25,7 +25,7 @@ import {
   moveCaretToLineBoundary,
   moveCaretVertically,
   replaceTextRange,
-  resolveRegion,
+  resolveEditorTextAtPath,
   dedent,
   indent,
   moveListItemDown,
@@ -547,7 +547,7 @@ export function useInput({
     if (isUndoStackPrimingRef.current) return;
 
     // Textarea got cleared past INPUT_SEED (e.g. backspace on an empty
-    // region). Re-seed it so further backspaces still fire `beforeinput`
+    // path). Re-seed it so further backspaces still fire `beforeinput`
     // — browsers won't emit the event when the textarea is truly empty.
     if (stripSyncedInputPrefix(value, prefix).length === 0) {
       syncInputContext(event.currentTarget, state);
@@ -694,7 +694,7 @@ export function useInput({
   // Mirror editable state into the hidden textarea after every editor state
   // change so the OS sees up-to-date context (preceding chars, caret
   // position) for autocorrect, IME, and dictation. TODO: scope
-  // this to region transitions only (or otherwise let the OS keep the
+  // this to path transitions only (or otherwise let the OS keep the
   // textarea as its own scratch space for the duration of an input
   // session) — see thread on dictation flush behavior.
   useEffect(() => {
@@ -702,7 +702,7 @@ export function useInput({
 
     if (process.env.NODE_ENV !== "production") {
       emitDiagnostic("editorStateEffect", {
-        regionPath: editorState.selection.focus.regionPath,
+        path: editorState.selection.focus.path,
         caretOffset: editorState.selection.focus.offset,
         hasInput: !!input,
       });
@@ -887,17 +887,17 @@ export function stripInputSeed(value: string) {
 export function resolveInputPrefix(state: EditorState, maxLength = INPUT_CONTEXT_WINDOW) {
   const { anchor, focus } = state.selection;
 
-  if (anchor.regionPath !== focus.regionPath || anchor.offset !== focus.offset) {
+  if (anchor.path !== focus.path || anchor.offset !== focus.offset) {
     return "";
   }
 
-  const region = resolveRegion(state.documentIndex, focus.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, focus.path);
 
-  if (!region) {
+  if (text === null) {
     return "";
   }
 
-  return region.text.slice(Math.max(0, focus.offset - maxLength), focus.offset);
+  return text.slice(Math.max(0, focus.offset - maxLength), focus.offset);
 }
 
 export function stripSyncedInputPrefix(value: string, prefix: string) {
@@ -911,7 +911,7 @@ export function stripSyncedInputPrefix(value: string, prefix: string) {
 //
 //   INPUT_SEED (zero-width space) — ensures the textarea is never truly
 //   empty, so browsers always fire beforeinput for backspace/delete even
-//   when the caret is at the start of a region with no preceding text.
+//   when the caret is at the start of a path with no preceding text.
 //
 //   prefix (up to INPUT_CONTEXT_WINDOW chars before the caret) — gives
 //   the IME and browser autocorrect enough surrounding context to offer
@@ -939,7 +939,7 @@ export function syncInputContext(input: HTMLTextAreaElement, state: EditorState)
       prefix,
       prefixLength: prefix.length,
       taValueLength: nextValue.length,
-      regionPath: state.selection.focus.regionPath,
+      path: state.selection.focus.path,
       caretOffset: state.selection.focus.offset,
     });
   }

@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   reconcileExternalContentChange,
@@ -6,7 +7,7 @@ import {
 } from "@/component/sync";
 import {
   createEditorState,
-  resolveRootPrimaryRegion,
+  resolveBlockTextPathBoundary,
   setSelection,
   type EditorSelection,
   type EditorState,
@@ -20,13 +21,14 @@ import {
   createTableBlock,
   createTableCell,
   createTableRow,
+  rootBlockPath,
   spliceDocument,
 } from "@/document";
 import { parseDocument } from "@/markdown";
 
 describe("selection reconciliation", () => {
-  test("preserves a collapsed cursor when the equivalent region survives", () => {
-    const previousState = selectRegionText(
+  test("preserves a collapsed cursor when the equivalent path survives", () => {
+    const previousState = selectPathText(
       createState("Alpha paragraph\n\nTarget paragraph\n"),
       1,
       6,
@@ -41,7 +43,7 @@ describe("selection reconciliation", () => {
   });
 
   test("preserves a range selection when both endpoints resolve", () => {
-    const previousState = selectRegionText("Alpha paragraph\n\nTarget paragraph\n", 1, 2, 8);
+    const previousState = selectPathText("Alpha paragraph\n\nTarget paragraph\n", 1, 2, 8);
     const nextState = createState("Alpha paragraph\n\nTarget paragraph extended\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -50,8 +52,8 @@ describe("selection reconciliation", () => {
     });
   });
 
-  test("preserves a selection across regions during unrelated external edits", () => {
-    const previousState = selectRegionRange(
+  test("preserves a selection across paths during unrelated external edits", () => {
+    const previousState = selectPathRange(
       "First paragraph\n\nSecond paragraph\n\nThird paragraph\n",
       0,
       6,
@@ -71,7 +73,7 @@ describe("selection reconciliation", () => {
   test("preserves a selection in a long document shifted by an inserted root", () => {
     const previousMarkdown = createNumberedParagraphMarkdown(1200);
     const nextMarkdown = `External intro paragraph.\n\n${previousMarkdown}`;
-    const previousState = selectRegionText(previousMarkdown, 600, 12, 12);
+    const previousState = selectPathText(previousMarkdown, 600, 12, 12);
     const nextState = createState(nextMarkdown);
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -81,7 +83,7 @@ describe("selection reconciliation", () => {
   });
 
   test("preserves a range selection when an external empty paragraph is inserted above it", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 0, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 0, 6);
     const previousDocument = previousState.documentIndex.document;
     const nextDocument = spliceDocument(previousDocument, 0, 1, [
       createParagraphTextBlock(""),
@@ -95,8 +97,8 @@ describe("selection reconciliation", () => {
     });
   });
 
-  test("clamps the restored cursor when a matched region becomes shorter", () => {
-    const previousState = selectRegionText("Alpha paragraph\n", 0, 12, 12);
+  test("clamps the restored cursor when a matched path becomes shorter", () => {
+    const previousState = selectPathText("Alpha paragraph\n", 0, 12, 12);
     const nextState = createState("Alpha\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -105,15 +107,15 @@ describe("selection reconciliation", () => {
     });
   });
 
-  test("returns null when the selected region cannot be matched", () => {
-    const previousState = selectRegionText("Alpha paragraph\n\nTarget paragraph\n", 1, 4, 4);
+  test("returns null when the selected path cannot be matched", () => {
+    const previousState = selectPathText("Alpha paragraph\n\nTarget paragraph\n", 1, 4, 4);
     const nextState = createState("Alpha paragraph\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
   test("does not guess when text matching is ambiguous", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       "Alpha paragraph\n\nBeta paragraph\n\nTarget paragraph\n",
       2,
       4,
@@ -124,8 +126,8 @@ describe("selection reconciliation", () => {
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
-  test("uses document node anchors to disambiguate matching region text", () => {
-    const previousState = selectRegionText("**Target paragraph**\n", 0, 2, 8);
+  test("uses document node anchors to disambiguate matching path text", () => {
+    const previousState = selectPathText("**Target paragraph**\n", 0, 2, 8);
     const nextState = createState("Intro paragraph\n\nTarget paragraph\n\n**Target paragraph**\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -135,7 +137,7 @@ describe("selection reconciliation", () => {
   });
 
   test("prefers node-anchor matches over same-path duplicate text", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       "Target paragraph\n\nAfter paragraph\n\nOther paragraph\n\nTarget paragraph\n",
       0,
       6,
@@ -152,7 +154,7 @@ describe("selection reconciliation", () => {
   });
 
   test("prefers a moved exact node over a same-path context match", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       "Before context\n\nAlpha target omega\n\nAfter context\n",
       1,
       12,
@@ -169,7 +171,7 @@ describe("selection reconciliation", () => {
   });
 
   test("does not use same-path context when competing exact content is ambiguous", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       "Before context\n\nAlpha target omega\n\nAfter context\n",
       1,
       12,
@@ -183,7 +185,7 @@ describe("selection reconciliation", () => {
   });
 
   test("uses unique projected editor text when formatting changes make the node anchor absent", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const nextState = createState("Intro paragraph\n\n**Target paragraph**\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -193,7 +195,7 @@ describe("selection reconciliation", () => {
   });
 
   test("preserves same-path edits when the old offset has a strong text-anchor match", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const nextState = createState("Target paragraph extended\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -203,7 +205,7 @@ describe("selection reconciliation", () => {
   });
 
   test("preserves a path-based selection when the same path has unchanged content", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const nextState = createState("Target paragraph\n\nEdited elsewhere\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -213,7 +215,7 @@ describe("selection reconciliation", () => {
   });
 
   test("preserves a path-based selection when the same path has a text-anchor match", () => {
-    const previousState = selectRegionText("Alpha target omega\n", 0, 12, 12);
+    const previousState = selectPathText("Alpha target omega\n", 0, 12, 12);
     const nextState = createState("Alpha inserted target omega\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -223,42 +225,42 @@ describe("selection reconciliation", () => {
   });
 
   test("does not repair a path-based selection when same-path content is unrelated", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const nextState = createState("Unrelated replacement\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
   test("does not repair a same-path selection from weak prefix overlap alone", () => {
-    const previousState = selectRegionText("Paragraph target\n", 0, "Paragraph ".length, 10);
+    const previousState = selectPathText("Paragraph target\n", 0, "Paragraph ".length, 10);
     const nextState = createState("Paragraph changed\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
   test("does not repair a same-path selection from weak suffix overlap alone", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 7, 7);
+    const previousState = selectPathText("Target paragraph\n", 0, 7, 7);
     const nextState = createState("Changed paragraph\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
   test("does not jump to a unique projected-text decoy when the node anchor is ambiguous", () => {
-    const previousState = selectRegionText("Target paragraph\n\nOther paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n\nOther paragraph\n", 0, 6, 6);
     const nextState = createState("Completely different\n\nTarget paragraph\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
   test("does not repair a path-based range when one endpoint lacks an anchor/content match", () => {
-    const previousState = selectRegionRange("Alpha stable\n\nTarget paragraph\n", 0, 5, 1, 6);
+    const previousState = selectPathRange("Alpha stable\n\nTarget paragraph\n", 0, 5, 1, 6);
     const nextState = createState("Alpha stable\n\nUnrelated replacement\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
   test("does not repair a path-based table cell when same-path content is unrelated", () => {
-    const previousState = selectRegionByText(
+    const previousState = selectPathByText(
       "| A | B |\n| - | - |\n| Target cell | Stable |\n",
       "Target cell",
       6,
@@ -269,8 +271,40 @@ describe("selection reconciliation", () => {
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
   });
 
+  test("preserves a caret in a still-empty list item path", () => {
+    const previousState = selectPathByText("- \n\nOther\n", "", 0, 0);
+    const nextState = createState("- \n\nOther edited\n");
+
+    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(
+      previousState.selection,
+    );
+  });
+
+  test("preserves a caret in a still-empty table cell path", () => {
+    const previousState = selectPathByText(
+      "| A | B |\n| - | - |\n| | Stable |\n",
+      "",
+      0,
+      0,
+    );
+    const nextState = createState("| A | B |\n| - | - |\n| | Stable edited |\n");
+
+    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(
+      previousState.selection,
+    );
+  });
+
+  test("preserves a caret in a still-empty code path", () => {
+    const previousState = selectPathByText("```ts\n\n```\n\nOther\n", "", 0, 0);
+    const nextState = createState("```ts\n\n```\n\nOther edited\n");
+
+    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(
+      previousState.selection,
+    );
+  });
+
   test("does not repair through inserted-empty-root fallback when shifted content is unrelated", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const previousDocument = previousState.documentIndex.document;
     const nextDocument = spliceDocument(previousDocument, 0, 1, [
       createParagraphTextBlock(""),
@@ -282,7 +316,7 @@ describe("selection reconciliation", () => {
   });
 
   test("repairs through inserted-empty-root fallback when shifted content keeps anchor context", () => {
-    const previousState = selectRegionText("Alpha target omega\n", 0, 12, 12);
+    const previousState = selectPathText("Alpha target omega\n", 0, 12, 12);
     const previousDocument = previousState.documentIndex.document;
     const nextDocument = spliceDocument(previousDocument, 0, 1, [
       createParagraphTextBlock(""),
@@ -297,7 +331,7 @@ describe("selection reconciliation", () => {
   });
 
   test("does not repair non-empty selections by stale path across structural shifts", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const nextState = createState("Intro paragraph\n\nTarget paragraph extended\n");
 
     expect(resolveEquivalentSelection(previousState, nextState)).toBeNull();
@@ -305,8 +339,8 @@ describe("selection reconciliation", () => {
 
   test("returns null when the previous selection path is stale", () => {
     const previousState = withSelection(createState("Target paragraph\n"), {
-      anchor: { offset: 0, regionPath: "root.404.children" },
-      focus: { offset: 0, regionPath: "root.404.children" },
+      anchor: { offset: 0, path: "root.404.children" },
+      focus: { offset: 0, path: "root.404.children" },
     });
     const nextState = createState("Target paragraph\n");
 
@@ -315,14 +349,14 @@ describe("selection reconciliation", () => {
 
   test("returns null when one range endpoint is stale", () => {
     const previousState = createState("Target paragraph\n");
-    const region = previousState.documentIndex.regions[0]!;
-    const staleEndpoint = { offset: 0, regionPath: "root.404.children" };
+    const path = indexedTextEntries(previousState)[0]!;
+    const staleEndpoint = { offset: 0, path: "root.404.children" };
     const nextState = createState("Target paragraph edited\n");
 
     expect(
       resolveEquivalentSelection(
         withSelection(previousState, {
-          anchor: { offset: 6, regionPath: region.path },
+          anchor: { offset: 6, path: path.path },
           focus: staleEndpoint,
         }),
         nextState,
@@ -333,7 +367,7 @@ describe("selection reconciliation", () => {
 
 describe("selection anchor reconciliation", () => {
   test("moves a collapsed cursor forward when text is inserted before it", () => {
-    const previousState = selectRegionText("Alpha target omega\n", 0, 12, 12);
+    const previousState = selectPathText("Alpha target omega\n", 0, 12, 12);
     const nextState = createState("Alpha inserted target omega\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -343,7 +377,7 @@ describe("selection anchor reconciliation", () => {
   });
 
   test("moves a collapsed cursor backward when text before it is deleted", () => {
-    const previousState = selectRegionText("Alpha removed target omega\n", 0, 20, 20);
+    const previousState = selectPathText("Alpha removed target omega\n", 0, 20, 20);
     const nextState = createState("Alpha target omega\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -353,7 +387,7 @@ describe("selection anchor reconciliation", () => {
   });
 
   test("keeps a collapsed cursor stable when only text after it changes", () => {
-    const previousState = selectRegionText("Alpha target omega\n", 0, 12, 12);
+    const previousState = selectPathText("Alpha target omega\n", 0, 12, 12);
     const nextState = createState("Alpha target revised omega\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -363,7 +397,7 @@ describe("selection anchor reconciliation", () => {
   });
 
   test("moves a range selection when text is inserted before the range", () => {
-    const previousState = selectRegionText("Alpha target omega\n", 0, 6, 12);
+    const previousState = selectPathText("Alpha target omega\n", 0, 6, 12);
     const nextState = createState("Alpha inserted target omega\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -373,7 +407,7 @@ describe("selection anchor reconciliation", () => {
   });
 
   test("expands a range selection when text is inserted inside the selected text", () => {
-    const previousState = selectRegionText("The quick brown fox\n", 0, 4, 15);
+    const previousState = selectPathText("The quick brown fox\n", 0, 4, 15);
     const nextState = createState("The quick red brown fox\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -383,7 +417,7 @@ describe("selection anchor reconciliation", () => {
   });
 
   test("shrinks a range selection when text is deleted inside the selected text", () => {
-    const previousState = selectRegionText("The quick red brown fox\n", 0, 4, 19);
+    const previousState = selectPathText("The quick red brown fox\n", 0, 4, 19);
     const nextState = createState("The quick brown fox\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -393,7 +427,7 @@ describe("selection anchor reconciliation", () => {
   });
 
   test("collapses a range selection when the selected text is deleted", () => {
-    const previousState = selectRegionText("The quick brown fox\n", 0, 4, 15);
+    const previousState = selectPathText("The quick brown fox\n", 0, 4, 15);
     const nextState = createState("The  fox\n");
 
     expectSelection(resolveEquivalentSelection(previousState, nextState), nextState, {
@@ -404,10 +438,10 @@ describe("selection anchor reconciliation", () => {
 
   test("preserves reverse range affinity", () => {
     const state = createState("Alpha target omega\n");
-    const region = state.documentIndex.regions[0]!;
+    const path = indexedTextEntries(state)[0]!;
     const previousState = withSelection(state, {
-      anchor: { offset: 12, regionPath: region.path },
-      focus: { offset: 6, regionPath: region.path },
+      anchor: { offset: 12, path: path.path },
+      focus: { offset: 6, path: path.path },
     });
     const nextState = createState("Alpha inserted target omega\n");
 
@@ -420,7 +454,7 @@ describe("selection anchor reconciliation", () => {
 
 describe("state restoration", () => {
   test("restores selection without mutating editor state shape", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       createState("Alpha paragraph\n\nTarget paragraph\n"),
       1,
       6,
@@ -439,22 +473,22 @@ describe("state restoration", () => {
 
 describe("external content reconciliation", () => {
   test("reports no reconciliation when a same-path replacement is unrelated", () => {
-    const previousState = selectRegionText("Target paragraph\n", 0, 6, 6);
+    const previousState = selectPathText("Target paragraph\n", 0, 6, 6);
     const reconciliation = reconcileExternalContentChange(
       previousState,
       createState("Unrelated replacement\n"),
     );
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, ["Unrelated replacement"]);
+    expectTextEntries(reconciliation.state, ["Unrelated replacement"]);
   });
 
   test("recreates a missing empty paragraph before a reconciled following block", () => {
     expectTransientEmptyParagraphReconciliation({
       nextMarkdown: "Alpha paragraph\n",
       previousMarkdown: "Alpha paragraph\n",
-      regions: ["", "Alpha paragraph"],
-      selectionRegionIndex: 0,
+      paths: ["", "Alpha paragraph"],
+      selectionPathIndex: 0,
       transientRootIndex: 0,
     });
   });
@@ -463,8 +497,8 @@ describe("external content reconciliation", () => {
     expectTransientEmptyParagraphReconciliation({
       nextMarkdown: "Alpha paragraph edited\n",
       previousMarkdown: "Alpha paragraph\n",
-      regions: ["Alpha paragraph edited", ""],
-      selectionRegionIndex: 1,
+      paths: ["Alpha paragraph edited", ""],
+      selectionPathIndex: 1,
       transientRootIndex: 1,
     });
   });
@@ -473,8 +507,8 @@ describe("external content reconciliation", () => {
     expectTransientEmptyParagraphReconciliation({
       nextMarkdown: "Alpha paragraph edited\n\nBeta paragraph\n",
       previousMarkdown: "Alpha paragraph\n\nBeta paragraph\n",
-      regions: ["Alpha paragraph edited", "", "Beta paragraph"],
-      selectionRegionIndex: 1,
+      paths: ["Alpha paragraph edited", "", "Beta paragraph"],
+      selectionPathIndex: 1,
       transientRootIndex: 1,
     });
   });
@@ -483,27 +517,27 @@ describe("external content reconciliation", () => {
     expectTransientEmptyParagraphReconciliation({
       nextMarkdown: "Alpha paragraph edited\n\n- [ ] task one\n- [x] task two\n",
       previousMarkdown: "Alpha paragraph\n\n- [ ] task one\n- [x] task two\n",
-      regions: ["Alpha paragraph edited", "task one", "task two", ""],
-      selectionRegionIndex: 3,
+      paths: ["Alpha paragraph edited", "task one", "task two", ""],
+      selectionPathIndex: 3,
       transientRootIndex: 2,
     });
   });
 
   test("does not recreate a transient empty paragraph for a range selection", () => {
     const previousState = insertTransientEmptyRootParagraph("Alpha paragraph\n", 0);
-    const alphaRegion = previousState.documentIndex.regions[1]!;
+    const alphaEntry = indexedTextEntries(previousState)[1]!;
     const rangeState = withSelection(previousState, {
       anchor: previousState.selection.anchor,
-      focus: { offset: 5, regionPath: alphaRegion.path },
+      focus: { offset: 5, path: alphaEntry.path },
     });
     const reconciliation = reconcileExternalContentChange(rangeState, createState("Alpha paragraph\n"));
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, ["Alpha paragraph"]);
+    expectTextEntries(reconciliation.state, ["Alpha paragraph"]);
   });
 
   test("does not recreate nested empty paragraphs", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       createEditorState(
         createDocument([
           createBlockquoteBlock([createParagraphTextBlock("")]),
@@ -520,11 +554,11 @@ describe("external content reconciliation", () => {
     );
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, ["Alpha paragraph"]);
+    expectTextEntries(reconciliation.state, ["Alpha paragraph"]);
   });
 
   test("does not recreate empty list item paragraphs", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       createEditorState(
         createDocument([
           createListBlock({
@@ -552,11 +586,11 @@ describe("external content reconciliation", () => {
     );
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, ["Alpha paragraph"]);
+    expectTextEntries(reconciliation.state, ["Alpha paragraph"]);
   });
 
   test("does not recreate empty table cells", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       createEditorState(
         createDocument([
           createTableBlock({
@@ -575,11 +609,11 @@ describe("external content reconciliation", () => {
     );
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, ["Alpha paragraph"]);
+    expectTextEntries(reconciliation.state, ["Alpha paragraph"]);
   });
 
   test("does not recreate a transient empty paragraph without surviving neighbors", () => {
-    const previousState = selectRegionText(
+    const previousState = selectPathText(
       createEditorState(createDocument([createParagraphTextBlock("")])),
       0,
       0,
@@ -588,7 +622,7 @@ describe("external content reconciliation", () => {
     const reconciliation = reconcileExternalContentChange(previousState, createState(""));
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, [""]);
+    expectTextEntries(reconciliation.state, [""]);
   });
 
   test("does not recreate a transient empty paragraph with ambiguous duplicate neighbors", () => {
@@ -604,9 +638,47 @@ describe("external content reconciliation", () => {
     );
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, [
+    expectTextEntries(reconciliation.state, [
       "Intro paragraph",
       "Alpha paragraph",
+      "Alpha paragraph",
+      "Beta paragraph",
+      "Beta paragraph",
+    ]);
+  });
+
+  test("does not recreate a transient empty paragraph when shifted neighbor matches multiple paths in one root", () => {
+    const initialState = createEditorState(
+      createDocument([
+        createParagraphTextBlock("Alpha paragraph"),
+        createBlockquoteBlock([createParagraphTextBlock("Beta paragraph")]),
+      ]),
+    );
+    const previousState = selectPathText(
+      createEditorState(
+        spliceDocument(initialState.documentIndex.document, 1, 0, [
+          createParagraphTextBlock(""),
+        ]),
+      ),
+      1,
+      0,
+      0,
+    );
+    const reconciliation = reconcileExternalContentChange(
+      previousState,
+      createEditorState(
+        createDocument([
+          createParagraphTextBlock("Alpha paragraph"),
+          createBlockquoteBlock([
+            createParagraphTextBlock("Beta paragraph"),
+            createParagraphTextBlock("Beta paragraph"),
+          ]),
+        ]),
+      ),
+    );
+
+    expect(reconciliation.didReconcile).toBe(false);
+    expectTextEntries(reconciliation.state, [
       "Alpha paragraph",
       "Beta paragraph",
       "Beta paragraph",
@@ -624,7 +696,7 @@ describe("external content reconciliation", () => {
     );
 
     expect(reconciliation.didReconcile).toBe(false);
-    expectRegions(reconciliation.state, ["Beta paragraph", "Alpha paragraph"]);
+    expectTextEntries(reconciliation.state, ["Beta paragraph", "Alpha paragraph"]);
   });
 });
 
@@ -653,11 +725,15 @@ function insertTransientEmptyRootParagraph(markdown: string, rootIndex: number) 
     createParagraphTextBlock(""),
   ]);
   const nextState = createEditorState(nextDocument);
-  const region = resolveRootPrimaryRegion(nextState.documentIndex, rootIndex);
-  const selection = region
+  const point = resolveBlockTextPathBoundary(
+    nextState.documentIndex,
+    rootBlockPath(rootIndex),
+    "start",
+  );
+  const selection = point
     ? {
-        anchor: { regionPath: region.path, offset: 0 },
-        focus: { regionPath: region.path, offset: 0 },
+        anchor: { path: point, offset: 0 },
+        focus: { path: point, offset: 0 },
       }
     : null;
 
@@ -671,49 +747,49 @@ function insertTransientEmptyRootParagraph(markdown: string, rootIndex: number) 
 function expectTransientEmptyParagraphReconciliation({
   nextMarkdown,
   previousMarkdown,
-  regions,
-  selectionRegionIndex,
+  paths,
+  selectionPathIndex,
   transientRootIndex,
 }: {
   nextMarkdown: string;
   previousMarkdown: string;
-  regions: string[];
-  selectionRegionIndex: number;
+  paths: string[];
+  selectionPathIndex: number;
   transientRootIndex: number;
 }) {
   expectExternalReconciliation({
     nextMarkdown,
     previousState: insertTransientEmptyRootParagraph(previousMarkdown, transientRootIndex),
-    regions,
+    paths,
     selection: {
-      anchor: [selectionRegionIndex, 0],
-      focus: [selectionRegionIndex, 0],
+      anchor: [selectionPathIndex, 0],
+      focus: [selectionPathIndex, 0],
     },
   });
 }
 
-function expectRegions(state: EditorState, expectedText: string[]) {
-  expect(state.documentIndex.regions.map((region) => region.text)).toEqual(expectedText);
+function expectTextEntries(state: EditorState, expectedText: string[]) {
+  expect(indexedTextEntries(state).map((path) => path.text)).toEqual(expectedText);
 }
 
 function expectExternalReconciliation({
   nextMarkdown,
   previousState,
-  regions,
+  paths,
   selection,
 }: {
   nextMarkdown: string;
   previousState: EditorState;
-  regions: string[];
+  paths: string[];
   selection: {
-    anchor: [regionIndex: number, offset: number];
-    focus: [regionIndex: number, offset: number];
+    anchor: [pathIndex: number, offset: number];
+    focus: [pathIndex: number, offset: number];
   };
 }) {
   const reconciliation = reconcileExternalContentChange(previousState, createState(nextMarkdown));
 
   expect(reconciliation.didReconcile).toBe(true);
-  expectRegions(reconciliation.state, regions);
+  expectTextEntries(reconciliation.state, paths);
   expectSelection(reconciliation.state.selection, reconciliation.state, selection);
 }
 
@@ -721,8 +797,8 @@ function expectSelection(
   selection: EditorSelection | null,
   state: EditorState,
   expected: {
-    anchor: [regionIndex: number, offset: number];
-    focus: [regionIndex: number, offset: number];
+    anchor: [pathIndex: number, offset: number];
+    focus: [pathIndex: number, offset: number];
   },
 ) {
   expect(selection).toEqual({
@@ -731,105 +807,105 @@ function expectSelection(
   });
 }
 
-function resolveExpectedPoint(state: EditorState, point: [regionIndex: number, offset: number]) {
-  const [regionIndex, offset] = point;
-  const region = state.documentIndex.regions[regionIndex];
+function resolveExpectedPoint(state: EditorState, point: [pathIndex: number, offset: number]) {
+  const [pathIndex, offset] = point;
+  const path = indexedTextEntries(state)[pathIndex];
 
-  if (!region) {
-    throw new Error(`Missing editor region at index ${regionIndex}`);
+  if (!path) {
+    throw new Error(`Missing editor path at index ${pathIndex}`);
   }
 
   return {
     offset,
-    regionPath: region.path,
+    path: path.path,
   };
 }
 
-function selectRegionText(
+function selectPathText(
   markdown: string,
-  regionIndex: number,
+  pathIndex: number,
   startOffset: number,
   endOffset: number,
 ): EditorState;
-function selectRegionText(
+function selectPathText(
   state: EditorState,
-  regionIndex: number,
+  pathIndex: number,
   startOffset: number,
   endOffset: number,
 ): EditorState;
-function selectRegionText(
+function selectPathText(
   input: EditorState | string,
-  regionIndex: number,
+  pathIndex: number,
   startOffset: number,
   endOffset: number,
 ) {
   const state = typeof input === "string" ? createState(input) : input;
-  const region = state.documentIndex.regions[regionIndex];
+  const path = indexedTextEntries(state)[pathIndex];
 
-  if (!region) {
-    throw new Error(`Missing editor region at index ${regionIndex}`);
+  if (!path) {
+    throw new Error(`Missing editor path at index ${pathIndex}`);
   }
 
   return setSelection(state, {
     anchor: {
       offset: startOffset,
-      regionPath: region.path,
+      path: path.path,
     },
     focus: {
       offset: endOffset,
-      regionPath: region.path,
+      path: path.path,
     },
   });
 }
 
-function selectRegionRange(
+function selectPathRange(
   markdown: string,
-  anchorRegionIndex: number,
+  anchorPathIndex: number,
   selectionAnchorOffset: number,
-  focusRegionIndex: number,
+  focusPathIndex: number,
   focusOffset: number,
 ) {
   const state = createState(markdown);
-  const anchorRegion = state.documentIndex.regions[anchorRegionIndex];
-  const focusRegion = state.documentIndex.regions[focusRegionIndex];
+  const anchorPath = indexedTextEntries(state)[anchorPathIndex];
+  const focusPath = indexedTextEntries(state)[focusPathIndex];
 
-  if (!anchorRegion || !focusRegion) {
-    throw new Error("Missing editor region for range selection");
+  if (!anchorPath || !focusPath) {
+    throw new Error("Missing editor path for range selection");
   }
 
   return setSelection(state, {
     anchor: {
       offset: selectionAnchorOffset,
-      regionPath: anchorRegion.path,
+      path: anchorPath.path,
     },
     focus: {
       offset: focusOffset,
-      regionPath: focusRegion.path,
+      path: focusPath.path,
     },
   });
 }
 
-function selectRegionByText(
+function selectPathByText(
   markdown: string,
   text: string,
   startOffset: number,
   endOffset: number,
 ) {
   const state = createState(markdown);
-  const region = state.documentIndex.regions.find((candidate) => candidate.text === text);
+  const path = indexedTextEntries(state).find((candidate) => candidate.text === text);
 
-  if (!region) {
-    throw new Error(`Missing editor region with text: ${text}`);
+  if (!path) {
+    throw new Error(`Missing editor path with text: ${text}`);
   }
 
   return setSelection(state, {
     anchor: {
       offset: startOffset,
-      regionPath: region.path,
+      path: path.path,
     },
     focus: {
       offset: endOffset,
-      regionPath: region.path,
+      path: path.path,
     },
   });
 }

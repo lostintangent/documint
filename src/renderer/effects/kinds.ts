@@ -83,12 +83,12 @@ export const effectKinds: {
   "text-deleted": {
     animatesByDefault: shouldAnimateTextDeletedEffect,
     collect: (groups, effect, progress, defaultEnabled) => {
-      collectMany(groups.textFades, effect.regionPath, {
+      collectMany(groups.textFades, effect.path, {
         contentKind: resolveTextEffectContentKind(effect),
         customEffectName: "textDeleted",
         defaultEnabled,
         progress,
-        regionPath: effect.regionPath,
+        path: effect.path,
         startOffset: effect.startOffset,
         text: effect.text,
       });
@@ -100,26 +100,26 @@ export const effectKinds: {
     animatesByDefault: shouldAnimateTextInsertedEffect,
     collect: (groups, effect, progress, defaultEnabled) => {
       if (isPunctuationInsertion(effect)) {
-        collectMany(groups.textPulses, effect.regionPath, {
+        collectMany(groups.textPulses, effect.path, {
           contentKind: resolveTextEffectContentKind(effect),
           customEffectName: "textInserted",
           defaultEnabled,
           endOffset: effect.endOffset,
           progress,
-          regionPath: effect.regionPath,
+          path: effect.path,
           startOffset: effect.startOffset,
           text: effect.text,
         });
         return;
       }
 
-      collectMany(groups.textHighlights, effect.regionPath, {
+      collectMany(groups.textHighlights, effect.path, {
         contentKind: resolveTextEffectContentKind(effect),
         customEffectName: "textInserted",
         defaultEnabled,
         endOffset: effect.endOffset,
         progress,
-        regionPath: effect.regionPath,
+        path: effect.path,
         startOffset: effect.startOffset,
         text: effect.text,
       });
@@ -150,7 +150,7 @@ function collectMany<TEffect>(
 
 function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
   return (
-    effect.regionKind === "inlines" &&
+    effect.contentKind === "inlines" &&
     effect.direction === "backward" &&
     effect.textKind === "plain" &&
     effect.placement !== "line-middle" &&
@@ -159,7 +159,7 @@ function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
 }
 
 function shouldAnimateTextInsertedEffect(effect: TextInsertedEffect) {
-  return effect.regionKind === "inlines" && !containsColorEmoji(effect.text);
+  return effect.contentKind === "inlines" && !containsColorEmoji(effect.text);
 }
 
 function isPunctuationInsertion(effect: TextInsertedEffect) {
@@ -167,5 +167,5 @@ function isPunctuationInsertion(effect: TextInsertedEffect) {
 }
 
 function resolveTextEffectContentKind(effect: TextDeletedEffect | TextInsertedEffect): "code" | "text" {
-  return effect.regionKind === "source" ? "code" : "text";
+  return effect.contentKind === "source" ? "code" : "text";
 }

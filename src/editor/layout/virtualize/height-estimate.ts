@@ -1,11 +1,10 @@
-// Owns cheap per-region height estimates for large-document virtualization.
+// Owns cheap per-path height estimates for large-document virtualization.
 // Estimation tolerates text underestimation within overscan but not structural
 // overestimation: the exact pass must always be free to extend past the
 // estimated bottom.
 
 import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import { regionInlines, type EditableRegion } from "../../state";
 import type { LayoutCache } from "../state/cache";
 import type { LayoutContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
@@ -14,12 +13,13 @@ import { estimateTextLayout } from "./text-estimate";
 import {
   measureTextContainerLines,
   resolveBlockTypography,
-  resolveRegionMeasurementCacheIdentity,
+  resolveTextMeasurementCacheIdentity,
+  type LayoutTextInput,
 } from "../measure/text";
 
 export function estimateContainerHeight(
   cache: LayoutCache,
-  container: EditableRegion,
+  container: LayoutTextInput,
   block: Block | null,
   contentMetrics: LayoutContentMetrics,
   options: DocumentLayoutOptions,
@@ -34,7 +34,10 @@ export function estimateContainerHeight(
 
   const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
 
-  if (regionInlines(container).some((inline) => isReferenceInlineNode(inline.node))) {
+  if (
+    container.kind === "inlines" &&
+    container.inlines.some((inline) => isReferenceInlineNode(inline.node))
+  ) {
     return measureTextContainerLines(
       cache,
       container,
@@ -62,7 +65,7 @@ export function estimateContainerHeight(
 }
 
 export function estimateTableCellHeight(
-  region: EditableRegion,
+  container: LayoutTextInput,
   width: number,
   lineHeight: number,
   charWidth: number | undefined,
@@ -70,7 +73,7 @@ export function estimateTableCellHeight(
   const estimate = estimateTextLayout({
     charWidth,
     lineHeight,
-    text: region.text,
+    text: container.text,
     width,
   });
 
@@ -78,7 +81,7 @@ export function estimateTableCellHeight(
 }
 
 export function createContainerHeightCacheKey(
-  container: EditableRegion,
+  container: LayoutTextInput,
   contentMetrics: Pick<LayoutContentMetrics, "codeContentInset" | "listInset">,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
@@ -86,5 +89,5 @@ export function createContainerHeightCacheKey(
   // fontSize joins lineHeight in the key: if an embedder pins lineHeight
   // explicitly while fontSize varies, heading/code-derived heights would
   // otherwise be served stale from this cache.
-  return `${resolveRegionMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.fontSize}:${options.lineHeight}:${contentMetrics.listInset}:${contentMetrics.codeContentInset}`;
+  return `${resolveTextMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.fontSize}:${options.lineHeight}:${contentMetrics.listInset}:${contentMetrics.codeContentInset}`;
 }

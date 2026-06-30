@@ -1,5 +1,5 @@
 // Owns paint for the host-supplied text decoration index (spell-check
-// hints, search matches, AI suggestions — anything that decorates a region
+// hints, search matches, AI suggestions — anything that decorates a text
 // span without owning a marked-up document range). Decorations paint in two
 // phases: backgrounds run before the text runs so glyph color stays on top;
 // color overlays run after the text runs so they replace base glyph fills.

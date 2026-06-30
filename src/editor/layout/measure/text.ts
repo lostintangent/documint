@@ -16,10 +16,7 @@ import type { DocumentResources } from "@/types";
 import {
   findInlinesInRange,
   inlineMarks,
-  isSourceRegion,
-  regionInlines,
   type IndexedInline,
-  type EditableRegion,
 } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import {
@@ -50,6 +47,19 @@ export type TextLineBoundary = {
 };
 
 export type TextInlineReference = InlineReferenceLayoutMetric;
+
+export type LayoutTextInput =
+  | {
+      inlines: readonly IndexedInline[];
+      kind: "inlines";
+      path: string;
+      text: string;
+    }
+  | {
+      kind: "source";
+      path: string;
+      text: string;
+    };
 
 export type MeasuredTextLine = {
   end: number;
@@ -212,13 +222,13 @@ function isAsciiText(text: string) {
 
 export function measureTextContainerLines(
   cache: LayoutCache,
-  container: EditableRegion,
+  container: LayoutTextInput,
   block: Block | null,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
 ) {
-  const cacheKey = `${resolveRegionMeasurementCacheIdentity(container, resources)}:${availableWidth}:${typography.lineHeight}:${typography.baseFontSize}:${typography.font}`;
+  const cacheKey = `${resolveTextMeasurementCacheIdentity(container, resources)}:${availableWidth}:${typography.lineHeight}:${typography.baseFontSize}:${typography.font}`;
   const cached = cache.measuredLines.get(cacheKey);
 
   if (cached) {
@@ -239,7 +249,7 @@ export function measureTextContainerLines(
 
 export function measureTextLineBoundaries(
   cache: LayoutCache,
-  container: EditableRegion,
+  container: LayoutTextInput,
   start: number,
   end: number,
   text: string,
@@ -250,7 +260,7 @@ export function measureTextLineBoundaries(
   // Pretext returns line ranges and widths, but it does not currently expose
   // every editor offset's x-position. Keep this boundary projection local so
   // caret placement, hit testing, and decoration clipping share one cache.
-  const cacheKey = `${resolveRegionMeasurementCacheIdentity(container, resources)}:${start}:${end}:${typography.baseFontSize}:${typography.font}:${availableWidth}`;
+  const cacheKey = `${resolveTextMeasurementCacheIdentity(container, resources)}:${start}:${end}:${typography.baseFontSize}:${typography.font}:${availableWidth}`;
   const cached = cache.lineBoundaries.get(cacheKey);
 
   if (cached) {
@@ -267,7 +277,7 @@ export function measureTextLineBoundaries(
   ];
   let width = 0;
 
-  if (isSourceRegion(container)) {
+  if (isSourceContainer(container)) {
     let offset = 0;
     context.font = typography.font;
 
@@ -283,7 +293,7 @@ export function measureTextLineBoundaries(
     return cacheLineBoundaries(cache, cacheKey, boundaries);
   }
 
-  const visibleRuns = findInlinesInRange(regionInlines(container), start, end);
+  const visibleRuns = findInlinesInRange(containerInlines(container), start, end);
 
   for (const run of visibleRuns) {
     const segmentStart = Math.max(start, run.start);
@@ -345,7 +355,7 @@ function prepareTextSegments(
 
 function createMeasuredTextLines(
   cache: LayoutCache,
-  container: EditableRegion,
+  container: LayoutTextInput,
   block: Block | null,
   availableWidth: number,
   typography: BlockTypography,
@@ -358,11 +368,11 @@ function createMeasuredTextLines(
     return [emptyMeasuredLine(0, typography.lineHeight)];
   }
 
-  if (requiresLocalInlineLayout(inlineProfile)) {
+  if (container.kind === "inlines" && requiresLocalInlineLayout(inlineProfile)) {
     return createInlineMeasuredTextLines(cache, container, availableWidth, typography, resources);
   }
 
-  if (inlineProfile.hasRichInline) {
+  if (container.kind === "inlines" && inlineProfile.hasRichInline) {
     return createRichInlineMeasuredTextLines(container, availableWidth, typography, resources);
   }
 
@@ -400,7 +410,7 @@ function createMeasuredTextLines(
   // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
   // visual row after a trailing source newline. Materialize it so code-block
   // carets can land immediately after pressing Enter at end-of-source.
-  return isSourceRegion(container) && text.endsWith("\n")
+  return isSourceContainer(container) && text.endsWith("\n")
     ? materializeTrailingSourceTextLine(lines, text.length, typography.lineHeight)
     : lines;
 }
@@ -428,7 +438,7 @@ function resolveMeasuredLineEnd(text: string, start: number, end: number) {
 // `pre-wrap` semantics, while `rich-inline` is a `white-space: normal` helper.
 function createInlineMeasuredTextLines(
   cache: LayoutCache,
-  container: EditableRegion,
+  container: Extract<LayoutTextInput, { kind: "inlines" }>,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
@@ -450,7 +460,7 @@ function createInlineMeasuredTextLines(
 }
 
 function createRichInlineMeasuredTextLines(
-  container: EditableRegion,
+  container: Extract<LayoutTextInput, { kind: "inlines" }>,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
@@ -506,7 +516,7 @@ function resolveInlineReferencesFromMeasurementItems(
 }
 
 function createRichInlineMeasurementItems(
-  container: EditableRegion,
+  container: Extract<LayoutTextInput, { kind: "inlines" }>,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
@@ -515,7 +525,7 @@ function createRichInlineMeasurementItems(
   const measurementItems: RichInlineMeasurementItem[] = [];
   const context = getTextMeasurementContext();
 
-  for (const run of regionInlines(container)) {
+  for (const run of containerInlines(container)) {
     const runText = container.text.slice(run.start, run.end);
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
@@ -758,11 +768,11 @@ function layoutSegmentsIntoLines(
     index = Math.max(index + 1, cursor);
   }
 
-  // If the region ends on a `\n`, the loop consumes it as a separator but
+  // If the path text ends on a `\n`, the loop consumes it as a separator but
   // never materializes the empty line on the other side. Emit it explicitly
-  // so the caret has somewhere to land after a soft break at end-of-region.
-  // Mirrors the empty-region path at the top of `createMeasuredTextLines`,
-  // which materializes one empty line for a region with no content at all.
+  // so the caret has somewhere to land after a soft break at the path end.
+  // Mirrors the empty-text path at the top of `createMeasuredTextLines`,
+  // which materializes one empty line for a path with no content at all.
   const lastSegment = segments.at(-1);
   if (lastSegment?.text === "\n") {
     lines.push(emptyMeasuredLine(lastSegment.end, lineHeight));
@@ -815,14 +825,14 @@ function resolveLineInlineReferences(
 function flattenMeasuredInlineSegments(
   cache: LayoutCache,
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-  container: EditableRegion,
+  container: Extract<LayoutTextInput, { kind: "inlines" }>,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
 ) {
   const segments: MeasuredTextSegment[] = [];
 
-  for (const run of regionInlines(container)) {
+  for (const run of containerInlines(container)) {
     const runText = container.text.slice(run.start, run.end);
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
@@ -867,12 +877,20 @@ function flattenMeasuredInlineSegments(
   return segments;
 }
 
-function resolveInlineMeasurementProfile(container: EditableRegion): InlineMeasurementProfile {
+function resolveInlineMeasurementProfile(container: LayoutTextInput): InlineMeasurementProfile {
   let hasHardBreak = false;
   let hasImage = false;
   let hasRichInline = false;
 
-  for (const run of regionInlines(container)) {
+  if (isSourceContainer(container)) {
+    return {
+      hasHardBreak,
+      hasImage,
+      hasRichInline,
+    };
+  }
+
+  for (const run of containerInlines(container)) {
     if (run.node.type === "image") {
       hasImage = true;
     } else if (run.node.type === "lineBreak") {
@@ -898,32 +916,35 @@ function requiresLocalInlineLayout(profile: InlineMeasurementProfile) {
   return profile.hasImage || (profile.hasHardBreak && profile.hasRichInline);
 }
 
-// Memoizes the per-region cache identity by the region's `inlines` array
-// reference. The inlines array survives `{...region, start, end}` shifts done
-// by the indexer during typing, so unchanged regions hit this cache on every
-// keystroke instead of re-hashing their text and re-serializing every inline.
+// Memoizes the per-path cache identity by the indexed `inlines` array
+// reference. The inlines array survives index position shifts, so unchanged
+// text paths hit this cache on every keystroke instead of re-hashing their
+// text and re-serializing every inline.
 //
-// Image/resource regions are skipped because their identity also depends on
+// Image/resource paths are skipped because their identity also depends on
 // mutable `resources` state (image load/intrinsic dimensions, resource protocol
 // labels/icons); cheap to recompute.
-const regionIdentityByInlines = new WeakMap<
+const textIdentityByInlines = new WeakMap<
   readonly IndexedInline[],
   { identity: string; path: string; text: string }
 >();
 
-export function resolveRegionMeasurementCacheIdentity(
-  container: EditableRegion,
+export function resolveTextMeasurementCacheIdentity(
+  container: LayoutTextInput,
   resources: DocumentResources,
 ) {
-  const inlines = regionInlines(container);
-  const cached = regionIdentityByInlines.get(inlines);
+  if (isSourceContainer(container)) {
+    return [container.path, hashMeasurementText(container.text), ""].join(":");
+  }
+
+  const inlines = containerInlines(container);
+  const cached = textIdentityByInlines.get(inlines);
 
   // Path and text are validated as defense-in-depth. In current code, an
-  // `inlines` array reference is only reachable from a region whose path and
-  // text are also unchanged (the indexer's `{...region, start, end}` shift
-  // preserves all three by reference; any content edit allocates a fresh
-  // inlines array). The extra checks are essentially free and protect the
-  // cache against any future code path that decouples them.
+  // `inlines` array reference is only reachable from a text path whose path
+  // and text are also unchanged. Any content edit allocates a fresh inlines
+  // array. The extra checks are essentially free and protect the cache
+  // against any future code path that decouples them.
   if (cached && cached.path === container.path && cached.text === container.text) {
     return cached.identity;
   }
@@ -935,7 +956,7 @@ export function resolveRegionMeasurementCacheIdentity(
   const identity = [container.path, hashMeasurementText(container.text), signature].join(":");
 
   if (!hasResourceDependency) {
-    regionIdentityByInlines.set(inlines, {
+    textIdentityByInlines.set(inlines, {
       identity,
       path: container.path,
       text: container.text,
@@ -946,13 +967,17 @@ export function resolveRegionMeasurementCacheIdentity(
 }
 
 function resolveContainerMeasurementSignature(
-  container: EditableRegion,
+  container: LayoutTextInput,
   resources: DocumentResources,
 ) {
   let hasResourceDependency = false;
   let signature = "";
 
-  for (const run of regionInlines(container)) {
+  if (isSourceContainer(container)) {
+    return { hasResourceDependency, signature };
+  }
+
+  for (const run of containerInlines(container)) {
     if (signature) {
       signature += "|";
     }
@@ -966,6 +991,16 @@ function resolveContainerMeasurementSignature(
   }
 
   return { hasResourceDependency, signature };
+}
+
+function isSourceContainer(
+  container: LayoutTextInput,
+): container is Extract<LayoutTextInput, { kind: "source" }> {
+  return container.kind === "source";
+}
+
+function containerInlines(container: Extract<LayoutTextInput, { kind: "inlines" }>) {
+  return container.inlines;
 }
 
 function resolveRunMeasurementSignature(run: IndexedInline) {

@@ -5,7 +5,7 @@
 // previous state onto the history stack. Also owns the selection and
 // undo/redo primitives commands call directly.
 //
-// Text-level mutations (single-region splice, cross-region merge, inline
+// Text-level mutations (single-path splice, cross-path merge, inline
 // rewrites) live in ./text and ./inlines; this file handles the action
 // dispatch, document index swap, selection clamping, and history.
 
@@ -24,8 +24,10 @@ import { getCommentState } from "../../anchors";
 import { recordEditorEffects, takeEditorEffects, type EditorEffect } from "../effects";
 import {
   resolveActiveBlockKey,
-  resolveDocumentBoundaryRegion,
+  resolveDocumentTextPathBoundary,
   resolveIndexedBlock,
+  resolveIndexedBlockContainingPath,
+  resolveEditorTextAtPath,
 } from "../index/query";
 import {
   createDocumentIndex,
@@ -36,7 +38,6 @@ import {
 import type { DocumentIndex } from "../index/types";
 import type { EditorState, EditorStateAction, HistoryEntry } from "../types";
 import {
-  resolveRegion,
   resolveSelectionTarget,
   target,
   type EditorSelection,
@@ -136,6 +137,10 @@ function reduceEditorStateAction(
 
     case "splice-text": {
       const result = spliceText(state.documentIndex, action.range ?? state.selection, action.text);
+      if (!result) {
+        return state;
+      }
+
       return applyDocumentMutation(
         state,
         result.documentIndex,
@@ -219,7 +224,7 @@ function blockReferenceSelection(action: EditorStateAction) {
     return null;
   }
 
-  return action.selection?.kind === "block-primary-region" ? action.selection : null;
+  return action.selection?.kind === "block" ? action.selection : null;
 }
 
 type BlockPayloadBase = {
@@ -306,7 +311,7 @@ export function setSelection(
   activeBlockChanged?: boolean,
 ): EditorState {
   const nextSelection: EditorSelection =
-    "regionPath" in selection
+    "path" in selection
       ? {
           anchor: clampSelectionPoint(state.documentIndex, selection),
           focus: clampSelectionPoint(state.documentIndex, selection),
@@ -327,8 +332,8 @@ export function setSelection(
     return nextState;
   }
 
-  const focusedRegion = resolveRegion(nextState.documentIndex, nextState.selection.focus.regionPath);
-  const blockPath = focusedRegion?.blockPath ?? "";
+  const focusedBlock = resolveIndexedBlockContainingPath(nextState.documentIndex, nextState.selection.focus.path);
+  const blockPath = focusedBlock?.path ?? null;
 
   return recordEditorEffects(
     nextState,
@@ -338,11 +343,11 @@ export function setSelection(
 
 export function setSelectionPoint(
   state: EditorState,
-  regionPath: string,
+  path: string,
   offset: number,
   extendSelection: boolean,
 ): EditorState {
-  const point: EditorSelectionPoint = { regionPath, offset };
+  const point: EditorSelectionPoint = { path, offset };
 
   return setSelection(
     state,
@@ -414,24 +419,30 @@ function restoreHistoryEntry(
 /* Internal helpers */
 
 function resolveDefaultSelectionPoint(documentIndex: DocumentIndex): EditorSelectionPoint {
-  const region = resolveDocumentBoundaryRegion(documentIndex, "start");
+  const path =
+    resolveDocumentTextPathBoundary(documentIndex, "start") ??
+    documentIndex.blocks[0]?.path;
 
-  return region ? { regionPath: region.path, offset: 0 } : { regionPath: "empty", offset: 0 };
+  if (!path) {
+    throw new Error("Document index must contain at least one selectable block.");
+  }
+
+  return { path, offset: 0 };
 }
 
 function clampSelectionPoint(
   documentIndex: DocumentIndex,
   point: EditorSelectionPoint,
 ): EditorSelectionPoint {
-  const region = resolveRegion(documentIndex, point.regionPath);
+  const text = resolveEditorTextAtPath(documentIndex, point.path);
 
-  if (!region) {
+  if (text === null) {
     return point;
   }
 
   return {
-    regionPath: region.path,
-    offset: Math.max(0, Math.min(point.offset, region.text.length)),
+    path: point.path,
+    offset: Math.max(0, Math.min(point.offset, text.length)),
   };
 }
 
@@ -446,9 +457,9 @@ function canPreserveSelectionPoint(
   documentIndex: DocumentIndex,
   point: EditorSelectionPoint,
 ): boolean {
-  const region = resolveRegion(documentIndex, point.regionPath);
+  const text = resolveEditorTextAtPath(documentIndex, point.path);
 
-  return Boolean(region && point.offset >= 0 && point.offset <= region.text.length);
+  return text !== null && point.offset >= 0 && point.offset <= text.length;
 }
 
 function didActiveBlockChange(

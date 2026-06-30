@@ -25,9 +25,9 @@ export { hitTestDocumentLayout, type DocumentHitTestResult } from "./hit-test";
 
 export {
   findDocumentLayoutLineAtPoint,
-  findDocumentLayoutLineEntryForRegionOffset,
-  findDocumentLayoutLineForRegionOffset,
-  findNearestDocumentLayoutLineForRegion,
+  findDocumentLayoutLineEntryForPathOffset,
+  findDocumentLayoutLineForPathOffset,
+  findNearestDocumentLayoutLineForPath,
   measureCanvasLineOffsetLeft,
 } from "./line-lookup";
 

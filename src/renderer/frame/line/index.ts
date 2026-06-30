@@ -2,7 +2,8 @@ import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import {
   resolveIndexedBlock,
-  resolveRegion,
+  resolveIndexedText,
+  resolveIndexedTextInlines,
   type EditorState,
   type NormalizedEditorSelection,
 } from "@/editor/state";
@@ -28,7 +29,7 @@ import type { DocumentFrameLineText } from "./text";
 import { resolveDocumentFrameLineText } from "./text";
 import type { ListMarkerFrame, ListMarkerPlan } from "../chrome/list-markers";
 import type { DocumentChangeResolver } from "../document-changes";
-import type { SelectionRegionOrderRange } from "../selection-frame";
+import type { SelectionPathRange } from "../selection-frame";
 
 export type DocumentFrameLine = DocumentFrameLineText & {
   readonly activeBlockBackground: ActiveBlockBackgroundFrame | null;
@@ -50,14 +51,14 @@ type ResolveDocumentFrameLineOptions = {
   textPulses: Map<string, TextPulseFrame[]>;
   activeThreadIndex: number | null;
   commentPresence: ReadonlyMap<number, EditorPresence> | null;
-  commentRangesByRegion: ReadonlyMap<string, EditorCommentRange[]>;
+  commentRangesByPath: ReadonlyMap<string, EditorCommentRange[]>;
   editorState: EditorState;
   layoutState: EditorLayoutState;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
   resources: DocumentResources;
   resolveDocumentChange: DocumentChangeResolver;
-  selectionRegionOrderRange: SelectionRegionOrderRange | null;
+  selectionPathRange: SelectionPathRange | null;
   textDecorations: TextDecorationIndex | null;
   theme: ResolvedEditorTheme;
   listMarkerPlans: Map<string, ListMarkerPlan>;
@@ -73,14 +74,14 @@ export function resolveDocumentFrameLine({
   textPulses,
   activeThreadIndex,
   commentPresence,
-  commentRangesByRegion,
+  commentRangesByPath,
   editorState,
   layoutState,
   line,
   normalizedSelection,
   resources,
   resolveDocumentChange,
-  selectionRegionOrderRange,
+  selectionPathRange,
   textDecorations,
   theme,
   listMarkerPlans,
@@ -89,21 +90,23 @@ export function resolveDocumentFrameLine({
   const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockPath);
   const block = indexedBlock?.block ?? null;
   const runtimeBlockPath = indexedBlock?.path ?? null;
-  const container = resolveRegion(editorState.documentIndex, line.regionPath);
+  const indexedText = resolveIndexedText(editorState.documentIndex, line.path);
+  const indexedCell = indexedText && "rowIndex" in indexedText ? indexedText : null;
   const documentChange =
     block?.type === "table"
       ? null
-      : resolveDocumentChange(editorState, indexedBlock, line.regionPath);
-  const containerBounds = layoutState.layout.regionBounds.get(line.regionPath) ?? null;
+      : resolveDocumentChange(editorState, indexedBlock, line.path);
+  const containerBounds = layoutState.layout.pathBounds.get(line.path) ?? null;
   const text = resolveDocumentFrameLineText({
     textFades,
     textHighlights,
     textPulses,
     block,
-    container,
+    inlines: indexedText ? resolveIndexedTextInlines(indexedText) : null,
     layout: layoutState.layout,
     line,
     resources,
+    text: indexedText?.text ?? null,
     textDecorations,
     theme,
   });
@@ -119,18 +122,20 @@ export function resolveDocumentFrameLine({
       layout: layoutState.layout,
       line,
       runtimeBlockPath,
-      tableCellPosition: container?.tableCellPosition ?? null,
+      tableCellPosition: indexedCell
+        ? { cellIndex: indexedCell.cellIndex, rowIndex: indexedCell.rowIndex }
+        : null,
       theme,
       width,
     }),
     ...resolveDocumentFrameLineRanges({
+      documentIndex: editorState.documentIndex,
       activeThreadIndex,
       commentPresence,
-      commentRanges: commentRangesByRegion.get(line.regionPath) ?? null,
+      commentRanges: commentRangesByPath.get(line.path) ?? null,
       line,
       normalizedSelection,
-      regionOrder: container?.regionArrayIndex ?? null,
-      selectionRegionOrderRange,
+      selectionPathRange,
       theme,
     }),
     ...resolveDocumentFrameLineList({

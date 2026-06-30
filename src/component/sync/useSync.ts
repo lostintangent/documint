@@ -206,7 +206,7 @@ export function useSync({
 function createDocumentChangeFrameInput(change: UnacknowledgedDocumentChange) {
   return {
     changeKey: change.changeKey,
-    changeKind: change.change.changeKind,
+    changeKind: change.change.kind,
     target: change.editorTarget,
   };
 }
@@ -216,7 +216,7 @@ function createDocumentChangeEffect(
 ): DocumentChangeEffect {
   return {
     changeKey: change.changeKey,
-    changeKind: change.change.changeKind,
+    changeKind: change.change.kind,
     kind: "document-change",
     target: change.editorTarget,
   };

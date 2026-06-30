@@ -56,7 +56,7 @@ export type ImageAtCursor = {
 };
 
 const equalSelectionRanges = equalNullableBy<EditorSelectionRange>((range) => [
-  range.regionPath,
+  range.path,
   range.startOffset,
   range.endOffset,
 ]);
@@ -70,7 +70,7 @@ const equalSelectionHandles = equalNullableBy<SelectionHandles>((handles) => [
 
 const equalCaretTargets = equalNullableBy<CaretTarget>((target) => [
   target.blockPath,
-  target.regionPath,
+  target.path,
   target.height,
   target.left,
   target.offset,
@@ -282,7 +282,8 @@ function resolveSelectionHandles(
   };
 }
 
-export const activeCommentIndexSprig = createComputedSprig(
+export const activeCommentIndexSprig = createParameterizedSprig(
   [editorStateSprig, commentStateSprig],
-  (_store, state, commentState) => resolveActiveCommentIndex(state, commentState.ranges),
+  (_store, [readOnly]: readonly [boolean], state, commentState) =>
+    readOnly ? null : resolveActiveCommentIndex(state, commentState.ranges),
 );

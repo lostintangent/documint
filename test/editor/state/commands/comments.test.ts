@@ -7,12 +7,12 @@ import {
   replyToThread,
   resolveThread,
 } from "@/editor/state";
-import { setup, getRegion, placeAt } from "../../helpers";
+import { setup, getPath, placeAt } from "../../helpers";
 
 function stateWithThread() {
   const state = setup("Hello world\n");
-  const region = getRegion(state, "Hello world");
-  return addComment(state, { regionPath: region.path, startOffset: 0, endOffset: 5 }, "First comment")!;
+  const path = getPath(state, "Hello world");
+  return addComment(state, { path: path.path, startOffset: 0, endOffset: 5 }, "First comment")!;
 }
 
 describe("Comment thread commands", () => {
@@ -62,9 +62,9 @@ describe("Comment thread commands", () => {
 
   test("preserves selection identity when resolving a comment thread", () => {
     let state = stateWithThread();
-    const region = getRegion(state, "Hello world");
+    const path = getPath(state, "Hello world");
 
-    state = placeAt(state, region, "Hello ".length);
+    state = placeAt(state, path, "Hello ".length);
 
     const resolved = resolveThread(state, 0, true);
 

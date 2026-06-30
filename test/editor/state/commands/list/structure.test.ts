@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   deleteBackward,
@@ -11,12 +12,12 @@ import {
   toggleTask,
 } from "@/editor/state";
 import { redoEditorState, setSelection, undoEditorState } from "@/editor/state";
-import { getRegion, placeAt, selectIn, setup, toMarkdown } from "../../../helpers";
+import { getPath, placeAt, selectIn, setup, toMarkdown } from "../../../helpers";
 
 describe("List structure", () => {
   test("supports canvas list splits with undo and redo", () => {
     let state = setup("- alpha\n- beta\n");
-    const target = getRegion(state, "beta");
+    const target = getPath(state, "beta");
 
     state = placeAt(state, target, 2);
 
@@ -39,7 +40,7 @@ describe("List structure", () => {
 
   test("preserves nested children when splitting a list item mid-text", () => {
     let state = setup("- alpha\n  - child\n- beta\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 2);
     state = insertLineBreak(state) ?? state;
@@ -49,7 +50,7 @@ describe("List structure", () => {
 
   test("reports a list item inserted effect when Enter splits a regular list item", () => {
     let state = setup("- alpha\n");
-    const target = state.documentIndex.regions[0];
+    const target = indexedTextEntries(state)[0];
 
     if (!target) {
       throw new Error("Expected list item container");
@@ -67,7 +68,7 @@ describe("List structure", () => {
 
   test("reports a list item inserted effect when Enter splits a task list item", () => {
     let state = setup("- [ ] alpha\n");
-    const target = state.documentIndex.regions[0];
+    const target = indexedTextEntries(state)[0];
 
     if (!target) {
       throw new Error("Expected task list item container");
@@ -85,7 +86,7 @@ describe("List structure", () => {
 
   test("moves top-level list items up and down while preserving their nested subtree", () => {
     let state = setup("- alpha\n  - child\n- beta\n- gamma\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
     state = moveListItemDown(state) ?? state;
@@ -99,7 +100,7 @@ describe("List structure", () => {
 
   test("moves nested list items only within their current parent list", () => {
     let state = setup("- parent\n  - first\n  - second\n  - third\n");
-    const second = getRegion(state, "second");
+    const second = getPath(state, "second");
 
     state = placeAt(state, second, 0);
     state = moveListItemUp(state) ?? state;
@@ -113,11 +114,11 @@ describe("List structure", () => {
 
   test("does not move list items past the boundaries of their current parent list", () => {
     let state = setup("- alpha\n- beta\n");
-    const alpha = state.documentIndex.regions.find((container) => container.text === "alpha");
-    const beta = state.documentIndex.regions.find((container) => container.text === "beta");
+    const alpha = indexedTextEntries(state).find((container) => container.text === "alpha");
+    const beta = indexedTextEntries(state).find((container) => container.text === "beta");
 
     if (!alpha || !beta) {
-      throw new Error("Expected top-level list regions");
+      throw new Error("Expected top-level list paths");
     }
 
     state = placeAt(state, alpha, 0);
@@ -131,7 +132,7 @@ describe("List structure", () => {
 
   test("routes list item move commands through the editor command layer", () => {
     let state = setup("- alpha\n- beta\n");
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, 0);
     state = moveListItemUp(state) ?? state;
@@ -141,14 +142,14 @@ describe("List structure", () => {
 
   test("inserts new list items above or below at list boundaries", () => {
     let state = setup("- alpha\n- beta\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
     state = insertLineBreak(state) ?? state;
 
     expect(toMarkdown(state)).toBe("-\n- alpha\n- beta\n");
 
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, beta.text.length);
     state = insertLineBreak(state) ?? state;
@@ -158,12 +159,12 @@ describe("List structure", () => {
 
   test("pressing enter on an empty list item exits it as a paragraph", () => {
     let state = setup("- alpha\n- beta\n");
-    const target = getRegion(state, "beta");
+    const target = getPath(state, "beta");
 
     state = placeAt(state, target, 0);
     state = insertLineBreak(state) ?? state;
 
-    const empty = state.documentIndex.regions.find((container) => container.text === "");
+    const empty = indexedTextEntries(state).find((container) => container.text === "");
 
     if (!empty) {
       throw new Error("Expected empty item");
@@ -177,12 +178,12 @@ describe("List structure", () => {
 
   test("rejoins adjacent compatible lists when deleting the empty paragraph between them", () => {
     let state = setup("- alpha\n- beta\n");
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, 0);
     state = insertLineBreak(state) ?? state;
 
-    const emptyItem = state.documentIndex.regions.find((container) => container.text === "");
+    const emptyItem = indexedTextEntries(state).find((container) => container.text === "");
 
     if (!emptyItem) {
       throw new Error("Expected empty list item");
@@ -191,7 +192,7 @@ describe("List structure", () => {
     state = placeAt(state, emptyItem, 0);
     state = insertLineBreak(state) ?? state;
 
-    const paragraph = state.documentIndex.regions.find((container) => container.text === "");
+    const paragraph = indexedTextEntries(state).find((container) => container.text === "");
 
     if (!paragraph) {
       throw new Error("Expected empty paragraph between lists");
@@ -203,22 +204,22 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n- beta\n");
   });
 
-  test("joining adjacent lists across an empty paragraph lands the cursor at the deepest-last region of the previous list", () => {
+  test("joining adjacent lists across an empty paragraph lands the cursor at the deepest-last path of the previous list", () => {
     // Regression: the override used to hardcode the cursor at
     // [last-top-level-item, leading-child], which is correct only when
     // the last top-level item has no nested children. With nested
-    // children, the actual previous-in-flow region is deeper. The
-    // override now reuses `previousRegionInFlow` to land at the same
+    // children, the actual previous in-flow editor path is deeper. The
+    // override uses the shared flow query to land at the same
     // spot the universal in-flow rule would.
     let state = setup("- top\n  - nested\n\nstub\n\n- another\n");
 
-    const stub = getRegion(state, "stub");
+    const stub = getPath(state, "stub");
 
     // Empty out 'stub' to leave a bare empty paragraph between the two lists.
     state = selectIn(state, stub, 0, stub.text.length);
     state = insertText(state, "") ?? state;
 
-    const empty = state.documentIndex.regions.find(
+    const empty = indexedTextEntries(state).find(
       (r) => r.block.type === "paragraph" && r.text === "",
     );
     if (!empty) throw new Error("Expected empty paragraph between lists");
@@ -229,18 +230,18 @@ describe("List structure", () => {
     // Two lists merged into one.
     expect(toMarkdown(state)).toBe("- top\n  - nested\n- another\n");
 
-    // Cursor at end of "nested" — the deepest-last region of the
+    // Cursor at end of "nested" — the deepest-last path of the
     // pre-merge previous list — not at end of "top" (the last top-level
     // item's leading paragraph, which the old hardcoded path produced).
-    const nested = getRegion(state, "nested");
+    const nested = getPath(state, "nested");
 
-    expect(state.selection.focus.regionPath).toBe(nested.path);
+    expect(state.selection.focus.path).toBe(nested.path);
     expect(state.selection.focus.offset).toBe("nested".length);
   });
 
   test("forward delete removes an empty list item and moves the caret to the next list item", () => {
     let state = setup("- alpha\n-\n- beta\n");
-    const emptyItem = state.documentIndex.regions.find((container) => container.text === "");
+    const emptyItem = indexedTextEntries(state).find((container) => container.text === "");
 
     if (!emptyItem) {
       throw new Error("Expected empty list item");
@@ -249,16 +250,16 @@ describe("List structure", () => {
     state = placeAt(state, emptyItem, 0);
     state = deleteForward(state) ?? state;
 
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     expect(toMarkdown(state)).toBe("- alpha\n- beta\n");
-    expect(state.selection.focus.regionPath).toBe(beta.path);
+    expect(state.selection.focus.path).toBe(beta.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("forward delete removes a trailing empty list item and moves the caret to the next root block", () => {
     let state = setup("- alpha\n-\n\nafter\n");
-    const emptyItem = state.documentIndex.regions.find((container) => container.text === "");
+    const emptyItem = indexedTextEntries(state).find((container) => container.text === "");
 
     if (!emptyItem) {
       throw new Error("Expected empty list item");
@@ -267,16 +268,16 @@ describe("List structure", () => {
     state = placeAt(state, emptyItem, 0);
     state = deleteForward(state) ?? state;
 
-    const after = getRegion(state, "after");
+    const after = getPath(state, "after");
 
     expect(toMarkdown(state)).toBe("- alpha\n\nafter\n");
-    expect(state.selection.focus.regionPath).toBe(after.path);
+    expect(state.selection.focus.path).toBe(after.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("lifts empty nested list items one level before exiting the list entirely", () => {
     let state = setup("- parent\n  - child\n  - \n- sibling\n");
-    const empty = state.documentIndex.regions.find((container) => {
+    const empty = indexedTextEntries(state).find((container) => {
       if (container.text !== "") {
         return false;
       }
@@ -309,7 +310,7 @@ describe("List structure", () => {
 
   test("routes list enter behavior and markdown task rules", () => {
     let state = setup("- [x] shipped baseline\n");
-    const task = getRegion(state, "shipped baseline");
+    const task = getPath(state, "shipped baseline");
 
     state = placeAt(state, task, "shipped b".length);
     state = insertLineBreak(state) ?? state;
@@ -317,7 +318,7 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- [x] shipped b\n- [ ] aseline\n");
 
     let inputState = setup("x\n");
-    const placeholder = inputState.documentIndex.regions[0];
+    const placeholder = indexedTextEntries(inputState)[0];
 
     if (!placeholder) {
       throw new Error("Expected placeholder container");
@@ -325,11 +326,11 @@ describe("List structure", () => {
 
     inputState = setSelection(inputState, {
       anchor: {
-        regionPath: placeholder.path,
+        path: placeholder.path,
         offset: 0,
       },
       focus: {
-        regionPath: placeholder.path,
+        path: placeholder.path,
         offset: placeholder.text.length,
       },
     });
@@ -343,7 +344,7 @@ describe("List structure", () => {
     expect(toMarkdown(taskRuleState)).toBe("- [ ] \n");
 
     let canonicalInputState = setup("x\n");
-    const canonicalPlaceholder = canonicalInputState.documentIndex.regions[0];
+    const canonicalPlaceholder = indexedTextEntries(canonicalInputState)[0];
 
     if (!canonicalPlaceholder) {
       throw new Error("Expected placeholder container");
@@ -351,11 +352,11 @@ describe("List structure", () => {
 
     canonicalInputState = setSelection(canonicalInputState, {
       anchor: {
-        regionPath: canonicalPlaceholder.path,
+        path: canonicalPlaceholder.path,
         offset: 0,
       },
       focus: {
-        regionPath: canonicalPlaceholder.path,
+        path: canonicalPlaceholder.path,
         offset: canonicalPlaceholder.text.length,
       },
     });
@@ -371,7 +372,7 @@ describe("List structure", () => {
 
   test("creates unordered, ordered, and task lists from lightweight markdown triggers", () => {
     let unorderedState = setup("x\n");
-    const unorderedContainer = unorderedState.documentIndex.regions[0];
+    const unorderedContainer = indexedTextEntries(unorderedState)[0];
 
     if (!unorderedContainer) {
       throw new Error("Expected empty paragraph container");
@@ -379,11 +380,11 @@ describe("List structure", () => {
 
     unorderedState = setSelection(unorderedState, {
       anchor: {
-        regionPath: unorderedContainer.path,
+        path: unorderedContainer.path,
         offset: 0,
       },
       focus: {
-        regionPath: unorderedContainer.path,
+        path: unorderedContainer.path,
         offset: unorderedContainer.text.length,
       },
     });
@@ -392,13 +393,13 @@ describe("List structure", () => {
 
     expect(toMarkdown(unorderedState)).toBe("-\n");
     expect(
-      unorderedState.documentIndex.regions.some(
-        (container) => container.path === unorderedState.selection.focus.regionPath,
+      indexedTextEntries(unorderedState).some(
+        (container) => container.path === unorderedState.selection.focus.path,
       ),
     ).toBe(true);
 
     let orderedState = setup("x\n");
-    const orderedContainer = orderedState.documentIndex.regions[0];
+    const orderedContainer = indexedTextEntries(orderedState)[0];
 
     if (!orderedContainer) {
       throw new Error("Expected empty paragraph container");
@@ -406,11 +407,11 @@ describe("List structure", () => {
 
     orderedState = setSelection(orderedState, {
       anchor: {
-        regionPath: orderedContainer.path,
+        path: orderedContainer.path,
         offset: 0,
       },
       focus: {
-        regionPath: orderedContainer.path,
+        path: orderedContainer.path,
         offset: orderedContainer.text.length,
       },
     });
@@ -420,13 +421,13 @@ describe("List structure", () => {
 
     expect(toMarkdown(orderedState)).toBe("1.\n");
     expect(
-      orderedState.documentIndex.regions.some(
-        (container) => container.path === orderedState.selection.focus.regionPath,
+      indexedTextEntries(orderedState).some(
+        (container) => container.path === orderedState.selection.focus.path,
       ),
     ).toBe(true);
 
     let taskState = setup("x\n");
-    const taskContainer = taskState.documentIndex.regions[0];
+    const taskContainer = indexedTextEntries(taskState)[0];
 
     if (!taskContainer) {
       throw new Error("Expected empty paragraph container");
@@ -434,11 +435,11 @@ describe("List structure", () => {
 
     taskState = setSelection(taskState, {
       anchor: {
-        regionPath: taskContainer.path,
+        path: taskContainer.path,
         offset: 0,
       },
       focus: {
-        regionPath: taskContainer.path,
+        path: taskContainer.path,
         offset: taskContainer.text.length,
       },
     });
@@ -449,15 +450,15 @@ describe("List structure", () => {
 
     expect(toMarkdown(taskState)).toBe("- [ ] \n");
     expect(
-      taskState.documentIndex.regions.some(
-        (container) => container.path === taskState.selection.focus.regionPath,
+      indexedTextEntries(taskState).some(
+        (container) => container.path === taskState.selection.focus.path,
       ),
     ).toBe(true);
   });
 
   test("merges or removes list items when backspacing at the start", () => {
     let listState = setup("- one\n- two\n");
-    const two = getRegion(listState, "two");
+    const two = getPath(listState, "two");
 
     listState = placeAt(listState, two, 0);
     listState = deleteBackward(listState) ?? listState;
@@ -465,7 +466,7 @@ describe("List structure", () => {
     expect(toMarkdown(listState)).toBe("- onetwo\n");
 
     let blankListState = setup("- one\n-\n- two\n");
-    const emptyItem = blankListState.documentIndex.regions.find(
+    const emptyItem = indexedTextEntries(blankListState).find(
       (container) => container.text === "",
     );
 
@@ -481,7 +482,7 @@ describe("List structure", () => {
 
   test("preserves nested list semantics when splitting a nested task item at the end", () => {
     let state = setup("- alpha\n  - [x] shipped child\n  - gamma\n");
-    const task = getRegion(state, "shipped child");
+    const task = getPath(state, "shipped child");
 
     state = placeAt(state, task, task.text.length);
     state = insertLineBreak(state) ?? state;
@@ -521,7 +522,7 @@ describe("List structure", () => {
 
   test("preserves selection identity when toggling task-list state", () => {
     let state = setup("- [ ] task\n\ncursor\n");
-    const cursor = getRegion(state, "cursor");
+    const cursor = getPath(state, "cursor");
 
     state = placeAt(state, cursor, "cursor".length);
 
@@ -593,34 +594,34 @@ describe("List structure", () => {
 
   test("places the cursor at the merge junction when backspacing a non-empty list item", () => {
     let state = setup("- one\n- two\n");
-    const two = getRegion(state, "two");
+    const two = getPath(state, "two");
 
     state = placeAt(state, two, 0);
     state = deleteBackward(state) ?? state;
 
-    const merged = getRegion(state, "onetwo");
+    const merged = getPath(state, "onetwo");
 
-    expect(state.selection.focus.regionPath).toBe(merged.path);
+    expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("one".length);
   });
 
   test("places the cursor at the merge junction when backspacing past the first item in a list", () => {
     // Regression: the merge-cursor target used to identify the rebuilt block
     // through a runtime handle instead of the absorber reference, so the walk's
-    // first match was the outer container and root-primary-region targeting
+    // first match was the outer container and root-primary-path targeting
     // cascaded to the first leaf — the *first* item, not the merge seam in
     // items[1]. The target is now based on the absorber reference, so the cursor
     // lands at the seam regardless of how deep into the list we are.
     let state = setup("- one\n- two\n- three\n");
-    const three = getRegion(state, "three");
+    const three = getPath(state, "three");
 
     state = placeAt(state, three, 0);
     state = deleteBackward(state) ?? state;
 
-    const merged = getRegion(state, "twothree");
+    const merged = getPath(state, "twothree");
 
     expect(toMarkdown(state)).toBe("- one\n- twothree\n");
-    expect(state.selection.focus.regionPath).toBe(merged.path);
+    expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("two".length);
   });
 
@@ -631,15 +632,15 @@ describe("List structure", () => {
     // (the first leaf of the rebuilt root list), not the seam in
     // "onetwo" inside the nested list.
     let state = setup("- alpha\n  - one\n  - two\n");
-    const two = getRegion(state, "two");
+    const two = getPath(state, "two");
 
     state = placeAt(state, two, 0);
     state = deleteBackward(state) ?? state;
 
-    const merged = getRegion(state, "onetwo");
+    const merged = getPath(state, "onetwo");
 
     expect(toMarkdown(state)).toBe("- alpha\n  - onetwo\n");
-    expect(state.selection.focus.regionPath).toBe(merged.path);
+    expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("one".length);
   });
 
@@ -649,10 +650,10 @@ describe("List structure", () => {
     // The universal rule routes through structural removal: drop the
     // empty nested item from its containing list (collapsing the empty
     // nested list into the parent item if it was the sole item), and
-    // land the cursor at the previous-in-flow region — which is the
+    // land the cursor at the previous-in-flow path — which is the
     // parent's leading paragraph.
     let state = setup("- top\n  - \n  - sibling\n");
-    const empty = state.documentIndex.regions.find(
+    const empty = indexedTextEntries(state).find(
       (r) => r.block.type === "paragraph" && r.text === "",
     );
 
@@ -661,10 +662,10 @@ describe("List structure", () => {
     state = placeAt(state, empty, 0);
     state = deleteBackward(state) ?? state;
 
-    const top = getRegion(state, "top");
+    const top = getPath(state, "top");
 
     expect(toMarkdown(state)).toBe("- top\n  - sibling\n");
-    expect(state.selection.focus.regionPath).toBe(top.path);
+    expect(state.selection.focus.path).toBe(top.path);
     expect(state.selection.focus.offset).toBe("top".length);
   });
 
@@ -672,7 +673,7 @@ describe("List structure", () => {
     // "Regardless of depth" — the structural removal walks down to the
     // smallest containing list whose removal handles the deletion.
     let state = setup("- one\n  - two\n    - \n");
-    const empty = state.documentIndex.regions.find(
+    const empty = indexedTextEntries(state).find(
       (r) => r.block.type === "paragraph" && r.text === "",
     );
 
@@ -682,18 +683,18 @@ describe("List structure", () => {
     state = deleteBackward(state) ?? state;
 
     expect(toMarkdown(state)).toBe("- one\n  - two\n");
-    const two = state.documentIndex.regions.find((r) => r.text === "two");
-    expect(state.selection.focus.regionPath).toBe(two!.path);
+    const two = indexedTextEntries(state).find((r) => r.text === "two");
+    expect(state.selection.focus.path).toBe(two!.path);
     expect(state.selection.focus.offset).toBe("two".length);
   });
 
-  test("backspace at start of a non-empty nested first list item merges into the previous in-flow region", () => {
+  test("backspace at start of a non-empty nested first list item merges into the previous in-flow path", () => {
     // Only top-level first items get the paragraph-demotion override.
     // Nested first items fall through to the universal boundary rule, so
     // their text merges into the parent item's leading paragraph and the
     // item itself collapses in place.
     let state = setup("- alpha\n  - bravo\n  - charlie\n");
-    const bravo = getRegion(state, "bravo");
+    const bravo = getPath(state, "bravo");
 
     state = placeAt(state, bravo, 0);
     state = deleteBackward(state) ?? state;
@@ -701,7 +702,7 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alphabravo\n  - charlie\n");
   });
 
-  test("backspacing an empty list item lands the cursor at the visually previous region, not the previous sibling", () => {
+  test("backspacing an empty list item lands the cursor at the visually previous path, not the previous sibling", () => {
     // - alpha
     //   - bravo   ← visually previous to the empty third item
     // - (empty)   ← backspace here
@@ -710,7 +711,7 @@ describe("List structure", () => {
     // previous editable position in document order is the end of bravo. The
     // cursor should land where left-arrow would.
     let state = setup("- alpha\n  - bravo\n- charlie\n");
-    const charlie = getRegion(state, "charlie");
+    const charlie = getPath(state, "charlie");
 
     // Empty out charlie so the structural-empty-removal branch fires.
     state = placeAt(state, charlie, 0);
@@ -718,16 +719,16 @@ describe("List structure", () => {
       state = deleteForward(state) ?? state;
     }
 
-    const empty = state.documentIndex.regions.find((r) => r.text === "");
+    const empty = indexedTextEntries(state).find((r) => r.text === "");
 
     if (!empty) throw new Error("Expected empty third item");
 
     state = placeAt(state, empty, 0);
     state = deleteBackward(state) ?? state;
 
-    const bravo = getRegion(state, "bravo");
+    const bravo = getPath(state, "bravo");
 
-    expect(state.selection.focus.regionPath).toBe(bravo.path);
+    expect(state.selection.focus.path).toBe(bravo.path);
     expect(state.selection.focus.offset).toBe("bravo".length);
   });
 });

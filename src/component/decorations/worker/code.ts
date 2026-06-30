@@ -1,4 +1,4 @@
-import { sourcePath, visitBlockTree, type Block } from "@/document";
+import { visitBlockTree, type Block } from "@/document";
 import type { TextDecoration } from "@/editor";
 import type { DocumintDecoration } from "@/types";
 import { normalizeLanguage } from "../grammars";
@@ -24,7 +24,7 @@ export function compileCodeGrammars(
 const MAX_CODE_SOURCE_LENGTH = 100_000;
 
 // The code-targeting decoration pass: walk a root for code blocks and tokenize
-// each block's source into colored ranges at its source-region path.
+// each block's source into colored ranges at its block path.
 export function resolveCodeDecorationRanges(
   block: Block,
   rootIndex: number,
@@ -48,13 +48,12 @@ export function resolveCodeDecorationRanges(
           return;
         }
 
-        const path = sourcePath(context.path);
         for (const match of resolveDecorationMatches(node.source, compiled)) {
           const { end, start, ...decoration } = match;
           ranges.push({
             ...decoration,
             endOffset: end,
-            path,
+            path: context.path,
             startOffset: start,
           });
         }

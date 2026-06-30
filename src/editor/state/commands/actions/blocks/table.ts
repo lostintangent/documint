@@ -5,12 +5,13 @@ import {
   createTableCell,
   createTableRow,
   rebuildTableBlock,
+  rootBlockPath,
   type Block,
   type TableBlock,
   type TableCell,
   type TableRow,
 } from "@/document";
-import { resolveTableCellRegionByTablePath } from "../../../index/query";
+import { resolveIndexedTableCellByTablePath } from "../../../index/query";
 import type { DocumentIndex } from "../../../index/types";
 import { target, type EditorSelection, type SelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
@@ -46,14 +47,19 @@ export function resolveTableSelectionMove(
   direction: -1 | 1,
 ): EditorStateAction | null {
   const nextPosition = resolveTableCellMove(
-    context.table,
-    context.rowIndex,
-    context.cellIndex,
+    context.indexedTable.block,
+    context.indexedCell.rowIndex,
+    context.indexedCell.cellIndex,
     direction,
   );
 
   if (!nextPosition) {
-    return direction > 0 && isLastTableCell(context.table, context.rowIndex, context.cellIndex)
+    return direction > 0 &&
+      isLastTableCell(
+        context.indexedTable.block,
+        context.indexedCell.rowIndex,
+        context.indexedCell.cellIndex,
+      )
       ? appendEmptyTableRow(context)
       : { kind: "keep-state" };
   }
@@ -80,52 +86,66 @@ export function resolveTableColumnInsertion(
   context: TableCellContext,
   direction: "left" | "right",
 ): EditorStateAction | null {
-  const cellIndex = direction === "left" ? context.cellIndex : context.cellIndex + 1;
+  const cellIndex =
+    direction === "left" ? context.indexedCell.cellIndex : context.indexedCell.cellIndex + 1;
 
-  return replaceTable(context, insertTableColumn(context.table, cellIndex), {
-    selection: selectTableCell(context, context.rowIndex, cellIndex),
+  return replaceTable(context, insertTableColumn(context.indexedTable.block, cellIndex), {
+    selection: selectTableCell(context, context.indexedCell.rowIndex, cellIndex),
   });
 }
 
 export function resolveTableColumnDeletion(context: TableCellContext): EditorStateAction | null {
-  const columnCount = tableColumnCount(context.table);
+  const columnCount = tableColumnCount(context.indexedTable.block);
 
   if (columnCount <= 1) {
     return null;
   }
 
-  return replaceTable(context, deleteTableColumn(context.table, context.cellIndex), {
-    selection: selectTableCell(
-      context,
-      context.rowIndex,
-      clampCellIndex(context.cellIndex, columnCount - 1),
-    ),
-  });
+  return replaceTable(
+    context,
+    deleteTableColumn(context.indexedTable.block, context.indexedCell.cellIndex),
+    {
+      selection: selectTableCell(
+        context,
+        context.indexedCell.rowIndex,
+        clampCellIndex(context.indexedCell.cellIndex, columnCount - 1),
+      ),
+    },
+  );
 }
 
 export function resolveTableRowInsertion(
   context: TableCellContext,
   direction: "above" | "below",
 ): EditorStateAction | null {
-  const rowIndex = direction === "above" ? context.rowIndex : context.rowIndex + 1;
-  const columnCount = tableColumnCount(context.table);
+  const rowIndex =
+    direction === "above" ? context.indexedCell.rowIndex : context.indexedCell.rowIndex + 1;
+  const columnCount = tableColumnCount(context.indexedTable.block);
 
-  return replaceTable(context, insertTableRow(context.table, rowIndex), {
-    selection: selectTableCell(context, rowIndex, clampCellIndex(context.cellIndex, columnCount)),
+  return replaceTable(context, insertTableRow(context.indexedTable.block, rowIndex), {
+    selection: selectTableCell(
+      context,
+      rowIndex,
+      clampCellIndex(context.indexedCell.cellIndex, columnCount),
+    ),
   });
 }
 
 export function resolveTableRowDeletion(context: TableCellContext): EditorStateAction | null {
-  if (context.table.rows.length <= 1) {
+  if (context.indexedTable.block.rows.length <= 1) {
     return null;
   }
 
-  const table = deleteTableRow(context.table, context.rowIndex);
-  const rowIndex = clampRowIndex(context.rowIndex, table.rows.length);
+  const table = deleteTableRow(context.indexedTable.block, context.indexedCell.rowIndex);
+  const rowIndex = clampRowIndex(context.indexedCell.rowIndex, table.rows.length);
   const columnCount = table.rows[rowIndex]?.cells.length ?? 1;
 
   return replaceTable(context, table, {
-    selection: selectTableCell(context, rowIndex, clampCellIndex(context.cellIndex, columnCount)),
+    selection: selectTableCell(
+      context,
+      rowIndex,
+      clampCellIndex(context.indexedCell.cellIndex, columnCount),
+    ),
   });
 }
 
@@ -134,9 +154,9 @@ export function resolveTableDeletion(context: TableCellContext): EditorStateActi
 }
 
 function appendEmptyTableRow(context: TableCellContext): EditorStateAction {
-  const rowIndex = context.table.rows.length;
+  const rowIndex = context.indexedTable.block.rows.length;
 
-  return replaceTable(context, insertTableRow(context.table, rowIndex), {
+  return replaceTable(context, insertTableRow(context.indexedTable.block, rowIndex), {
     selection: selectTableCell(context, rowIndex, 0),
   });
 }
@@ -145,7 +165,7 @@ function moveSelectionToTableCell(
   context: TableCellContext,
   position: TableCellPosition,
 ): EditorStateAction {
-  const nextCell = context.table.rows[position.rowIndex]?.cells[position.cellIndex];
+  const nextCell = context.indexedTable.block.rows[position.rowIndex]?.cells[position.cellIndex];
 
   if (!nextCell) {
     return { kind: "keep-state" };
@@ -156,7 +176,7 @@ function moveSelectionToTableCell(
     selection: createTableCellSelection(
       context.documentIndex,
       context.selection,
-      context.tablePath,
+      context.indexedTable.path,
       position.rowIndex,
       position.cellIndex,
       Math.min(context.selection.focus.offset, nextCell.plainText.length),
@@ -206,7 +226,7 @@ function insertTableAtRoot(
     kind: "splice-blocks",
     blocks: [table],
     rootIndex: context.rootIndex,
-    selection: target.tableCell(context.rootIndex, 0, 0),
+    selection: target.tableCell(rootBlockPath(context.rootIndex), 0, 0),
   };
 }
 
@@ -218,7 +238,7 @@ function replaceTable(
   return {
     kind: "replace-block",
     block,
-    blockPath: context.tablePath,
+    blockPath: context.indexedTable.path,
     selection: intent.selection,
   };
 }
@@ -228,7 +248,7 @@ function selectTableCell(
   rowIndex: number,
   cellIndex: number,
 ): SelectionTarget {
-  return target.tableCell(context.rootIndex, rowIndex, cellIndex);
+  return target.tableCell(context.indexedTable.path, rowIndex, cellIndex);
 }
 
 function createEmptyTable(columnCount: number): TableBlock {
@@ -265,15 +285,20 @@ function createTableCellSelection(
   cellIndex: number,
   offset: number,
 ): EditorSelection {
-  const region = resolveTableCellRegionByTablePath(documentIndex, tablePath, rowIndex, cellIndex);
+  const path = resolveIndexedTableCellByTablePath(
+    documentIndex,
+    tablePath,
+    rowIndex,
+    cellIndex,
+  )?.path;
 
-  if (!region) {
+  if (!path) {
     return fallbackSelection;
   }
 
   return {
-    anchor: { regionPath: region.path, offset },
-    focus: { regionPath: region.path, offset },
+    anchor: { path, offset },
+    focus: { path, offset },
   };
 }
 

@@ -4,16 +4,16 @@ export {
   hasActiveCommentHighlightsInViewport,
   resolveActiveCommentIndex,
   resolveCommentThreadViewportPosition,
-  updateCommentThreadsForRegionEdit,
+  updateCommentThreadsForPathEdit,
   type EditorCommentRange,
   type EditorCommentState,
 } from "./comments";
 
 export {
-  createNodeAnchorForRegion,
+  createNodeAnchorForPath,
   resolveNodeAnchor,
   resolveNodeAnchors,
-  resolveNodeAnchorForRegion,
+  resolveNodeAnchorForPath,
   type EditorNodeAnchor,
 } from "./nodes";
 

@@ -4,29 +4,36 @@ import {
   type AnchorContainer,
   type AnchorMatch,
 } from "@/document";
-import type { DocumentIndex, EditableRegion } from "../state";
 import {
-  plainTextOffsetToRegionOffset,
-  regionOffsetToPlainTextOffset,
+  indexedOffsetToPlainTextOffset,
+  plainTextOffsetToIndexedOffset,
+  resolveIndexedText,
+  resolveIndexedBlockContainingPath,
+  resolveIndexedTableCell,
+  resolveIndexedTextInlines,
+  type DocumentIndex,
+  type IndexedInline,
   type InlineOffsetAffinity,
-} from "../state/index/inlines";
+} from "../state";
 
-type EditorAnchorContainer = {
+type EditorAnchorPath = {
   anchorContainer: AnchorContainer;
-  runtimeContainer: EditableRegion | null;
+  inlines: readonly IndexedInline[] | null;
+  path: string;
+  text: string;
 };
 
 type EditorDocumentRange = {
   anchorContainer: Pick<AnchorContainer, "containerKind" | "text">;
   endOffset: number;
-  runtimeContainer: EditableRegion;
+  path: string;
   startOffset: number;
 };
 
 type EditorAnchorRange = {
   anchorContainer: AnchorContainer;
   endOffset: number;
-  runtimeContainer: EditableRegion;
+  path: string;
   startOffset: number;
 };
 
@@ -48,12 +55,9 @@ export function createEditorTextAnchorResolver(
   const anchorContainersByPath = new Map(
     anchorContainers.map((container) => [container.path, container]),
   );
-  const runtimeContainersByPath = new Map(
-    documentIndex.regions.map((region) => [region.containerPath, region]),
-  );
-  const resolveContainer = (
+  const resolvePath = (
     match: Pick<AnchorMatch, "containerOrdinal" | "containerPath">,
-  ): EditorAnchorContainer | null => {
+  ): EditorAnchorPath | null => {
     const anchorContainer = anchorContainersByPath.get(match.containerPath) ?? null;
 
     if (!anchorContainer) {
@@ -66,9 +70,19 @@ export function createEditorTextAnchorResolver(
       return null;
     }
 
+    const indexedText = resolveIndexedText(documentIndex, anchorContainer.path);
+
+    if (!indexedText) {
+      return null;
+    }
+
+    const inlines = resolveIndexedTextInlines(indexedText);
+
     return {
       anchorContainer,
-      runtimeContainer: runtimeContainersByPath.get(anchorContainer.path) ?? null,
+      inlines,
+      path: anchorContainer.path,
+      text: indexedText.text,
     };
   };
 
@@ -79,68 +93,93 @@ export function createEditorTextAnchorResolver(
         : anchorContainers;
     },
     resolveEditorRange(match, options) {
-      const container = resolveContainer(match);
-      const runtimeContainer = container?.runtimeContainer ?? null;
+      const resolved = resolvePath(match);
 
-      if (!container || !runtimeContainer) {
+      if (!resolved) {
         return null;
       }
 
       const isCollapsed = match.startOffset === match.endOffset;
-      const startOffset = plainTextOffsetToRegionOffset(
-        runtimeContainer,
+      const startOffset = plainTextOffsetToIndexedOffset(
+        resolved.text,
+        resolved.inlines,
         match.startOffset,
         isCollapsed ? (options?.collapsedAffinity ?? "after") : "before",
       );
 
       return {
-        anchorContainer: container.anchorContainer,
+        anchorContainer: resolved.anchorContainer,
         endOffset: isCollapsed
           ? startOffset
-          : plainTextOffsetToRegionOffset(runtimeContainer, match.endOffset, "after"),
-        runtimeContainer,
+          : plainTextOffsetToIndexedOffset(
+              resolved.text,
+              resolved.inlines,
+              match.endOffset,
+              "after",
+            ),
+        path: resolved.path,
         startOffset,
       };
     },
   };
 }
 
-export function resolveDocumentRangeForRegion(
-  runtimeContainer: EditableRegion,
+export function resolveDocumentRangeForPath(
+  documentIndex: DocumentIndex,
+  path: string,
   range: {
     endOffset: number;
     startOffset: number;
   },
 ): EditorDocumentRange | null {
-  const anchorContainer = resolveAnchorContainerForRegion(runtimeContainer);
+  const anchorContainer = resolveAnchorContainerForPath(documentIndex, path);
+  const indexedText = resolveIndexedText(documentIndex, path);
 
-  if (!anchorContainer) {
+  if (!anchorContainer || !indexedText) {
     return null;
   }
 
   return {
     anchorContainer,
-    endOffset: regionOffsetToPlainTextOffset(runtimeContainer, range.endOffset),
-    runtimeContainer,
-    startOffset: regionOffsetToPlainTextOffset(runtimeContainer, range.startOffset),
+    endOffset: indexedOffsetToPlainTextOffset(
+      indexedText.text,
+      resolveIndexedTextInlines(indexedText),
+      range.endOffset,
+    ),
+    path,
+    startOffset: indexedOffsetToPlainTextOffset(
+      indexedText.text,
+      resolveIndexedTextInlines(indexedText),
+      range.startOffset,
+    ),
   };
 }
 
-function resolveAnchorContainerForRegion(
-  region: EditableRegion,
+function resolveAnchorContainerForPath(
+  documentIndex: DocumentIndex,
+  path: string,
 ): Pick<AnchorContainer, "containerKind" | "text"> | null {
-  if (region.tableCellPosition) {
-    if (region.block.type !== "table") {
-      return null;
-    }
+  const indexedText = resolveIndexedText(documentIndex, path);
 
-    const { cellIndex, rowIndex } = region.tableCellPosition;
-    const cell = region.block.rows[rowIndex]?.cells[cellIndex] ?? null;
-
-    return cell ? { containerKind: "tableCell", text: cell.plainText } : null;
+  if (!indexedText) {
+    return null;
   }
 
-  const containerKind = anchorKindForBlockType(region.block.type);
+  const indexedCell = resolveIndexedTableCell(documentIndex, path);
+  if (indexedCell) {
+    const cell = indexedCell.cell;
 
-  return containerKind ? { containerKind, text: region.block.plainText } : null;
+    return cell
+      ? { containerKind: "tableCell", text: cell.plainText }
+      : null;
+  }
+
+  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
+  const containerKind = indexedBlock
+    ? anchorKindForBlockType(indexedBlock.block.type)
+    : null;
+
+  return containerKind && indexedBlock
+    ? { containerKind, text: indexedBlock.block.plainText }
+    : null;
 }

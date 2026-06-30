@@ -1,9 +1,14 @@
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
-import type { NormalizedEditorSelection } from "@/editor/state";
+import {
+  compareResolvedEditorPositions,
+  resolveEditorPosition,
+  type DocumentIndex,
+  type NormalizedEditorSelection,
+} from "@/editor/state";
 import type { ResolvedEditorTheme } from "@/types";
 import { resolveLineRangeRectFrame } from "../range-frame";
-import type { SelectionRegionOrderRange } from "../selection-frame";
+import type { SelectionPathRange } from "../selection-frame";
 
 const commentHighlightBottomInset = 5;
 const commentHighlightMinimumWidth = 2;
@@ -22,19 +27,19 @@ export function resolveDocumentFrameLineRanges({
   activeThreadIndex,
   commentPresence,
   commentRanges,
+  documentIndex,
   line,
   normalizedSelection,
-  regionOrder,
-  selectionRegionOrderRange,
+  selectionPathRange,
   theme,
 }: {
   activeThreadIndex: number | null;
   commentPresence: ReadonlyMap<number, EditorPresence> | null;
   commentRanges: EditorCommentRange[] | null;
+  documentIndex: DocumentIndex;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
-  regionOrder: number | null;
-  selectionRegionOrderRange: SelectionRegionOrderRange | null;
+  selectionPathRange: SelectionPathRange | null;
   theme: ResolvedEditorTheme;
 }): {
   commentHighlights: CommentHighlightFrame[];
@@ -49,42 +54,49 @@ export function resolveDocumentFrameLineRanges({
       theme,
     }),
     selectionHighlight: resolveSelectionHighlightFrame({
+      documentIndex,
       line,
       normalizedSelection,
-      regionOrder,
-      selectionRegionOrderRange,
+      selectionPathRange,
     }),
   };
 }
 
 function resolveSelectionHighlightFrame({
+  documentIndex,
   line,
   normalizedSelection,
-  regionOrder,
-  selectionRegionOrderRange,
+  selectionPathRange,
 }: {
+  documentIndex: DocumentIndex;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
-  regionOrder: number | null;
-  selectionRegionOrderRange: SelectionRegionOrderRange | null;
+  selectionPathRange: SelectionPathRange | null;
 }): LayoutRect | null {
-  if (!selectionRegionOrderRange || regionOrder === null) {
+  if (!selectionPathRange) {
     return null;
   }
 
+  const lineStart = resolveEditorPosition(
+    documentIndex,
+    { path: line.path, offset: line.start },
+    { unknown: "before" },
+  );
+  const lineEnd = { ...lineStart, offset: line.end };
+
   if (
-    regionOrder < selectionRegionOrderRange.start ||
-    regionOrder > selectionRegionOrderRange.end
+    compareResolvedEditorPositions(lineEnd, selectionPathRange.start) < 0 ||
+    compareResolvedEditorPositions(lineStart, selectionPathRange.end) > 0
   ) {
     return null;
   }
 
   const overlapStart =
-    regionOrder === selectionRegionOrderRange.start
+    line.path === selectionPathRange.start.path
       ? Math.max(line.start, normalizedSelection.start.offset)
       : line.start;
   const overlapEnd =
-    regionOrder === selectionRegionOrderRange.end
+    line.path === selectionPathRange.end.path
       ? Math.min(line.end, normalizedSelection.end.offset)
       : line.end;
 

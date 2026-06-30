@@ -4,14 +4,17 @@
  * overrides such as tables.
  */
 import {
-  findLineEntryForRegionOffset,
-  findLineForRegionOffset,
+  findLineEntryForPathOffset,
+  findLineForPathOffset,
   resolveCaretHitTestX,
   type CaretTarget,
   type DocumentLayout,
 } from "../layout";
 import { setSelectionPoint, type EditorState } from "../state";
-import { nextRegionInFlow, previousRegionInFlow, resolveRegion } from "../state/index/query";
+import {
+  resolveAdjacentEditorPathWithTextInFlow,
+  resolveEditorTextAtPath,
+} from "../state/index/query";
 import { moveGraphemeOffset } from "../text/graphemes";
 import { resolveEditorHitAtPoint } from "./hit";
 
@@ -20,39 +23,43 @@ export function moveCaretHorizontallyInFlow(
   delta: -1 | 1,
   extendSelection: boolean,
 ) {
-  const container = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
+  const path = state.selection.focus.path;
+  const text = resolveEditorTextAtPath(state.documentIndex, path);
 
-  if (!container) {
+  if (text === null) {
     return state;
   }
-  const nextOffset = moveGraphemeOffset(container.text, state.selection.focus.offset, delta);
+  const nextOffset = moveGraphemeOffset(text, state.selection.focus.offset, delta);
 
   if (nextOffset !== state.selection.focus.offset) {
-    return setSelectionPoint(state, container.path, nextOffset, extendSelection);
+    return setSelectionPoint(state, path, nextOffset, extendSelection);
   }
 
   if (delta < 0) {
-    const previousContainer = previousRegionInFlow(state.documentIndex, container.path);
+    const previousPath = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, delta);
+    const previousText = previousPath
+      ? resolveEditorTextAtPath(state.documentIndex, previousPath)
+      : null;
 
-    if (!previousContainer) {
+    if (!previousPath || previousText === null) {
       return state;
     }
 
     return setSelectionPoint(
       state,
-      previousContainer.path,
-      previousContainer.text.length,
+      previousPath,
+      previousText.length,
       extendSelection,
     );
   }
 
-  const nextContainer = nextRegionInFlow(state.documentIndex, container.path);
+  const nextPath = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, delta);
 
-  if (!nextContainer) {
+  if (!nextPath) {
     return state;
   }
 
-  return setSelectionPoint(state, nextContainer.path, 0, extendSelection);
+  return setSelectionPoint(state, nextPath, 0, extendSelection);
 }
 
 export function moveCaretVerticallyInFlow(
@@ -62,7 +69,7 @@ export function moveCaretVerticallyInFlow(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentLine = findLineEntryForRegionOffset(layout, caret.regionPath, caret.offset);
+  const currentLine = findLineEntryForPathOffset(layout, caret.path, caret.offset);
 
   if (!currentLine) {
     return state;
@@ -97,7 +104,7 @@ export function moveCaretToCurrentLineBoundary(
 
   return setSelectionPoint(
     state,
-    currentLine.regionPath,
+    currentLine.path,
     boundary === "Home" ? currentLine.start : currentLine.end,
     extendSelection,
   );
@@ -111,7 +118,7 @@ export function moveCaretByViewportInFlow(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentLineEntry = findLineEntryForRegionOffset(layout, caret.regionPath, caret.offset);
+  const currentLineEntry = findLineEntryForPathOffset(layout, caret.path, caret.offset);
 
   if (!currentLineEntry) {
     return state;
@@ -155,13 +162,13 @@ export function placeCaretAtLineY(
     return state;
   }
 
-  return setSelectionPoint(state, hit.regionPath, hit.offset, extendSelection);
+  return setSelectionPoint(state, hit.path, hit.offset, extendSelection);
 }
 
 function findCurrentLine(state: EditorState, layout: DocumentLayout) {
-  return findLineForRegionOffset(
+  return findLineForPathOffset(
     layout,
-    state.selection.focus.regionPath,
+    state.selection.focus.path,
     state.selection.focus.offset,
   );
 }

@@ -1,6 +1,6 @@
 import type { Block } from "@/document";
 import type { EditorLayoutState } from "@/editor/layout";
-import type { EditableRegion } from "@/editor/state";
+import type { IndexedInline } from "@/editor/state";
 import type { TextDecoration, TextDecorationIndex } from "@/editor/text/decorations";
 import { resolveCenteredTextBaseline } from "@/editor/text/measure";
 import type { DocumentResources, ResolvedEditorTheme } from "@/types";
@@ -23,10 +23,11 @@ export function resolveDocumentFrameLineText({
   textHighlights,
   textPulses,
   block,
-  container,
+  inlines,
   layout,
   line,
   resources,
+  text,
   textDecorations,
   theme,
 }: {
@@ -34,29 +35,28 @@ export function resolveDocumentFrameLineText({
   textHighlights: Map<string, TextHighlightFrame[]>;
   textPulses: Map<string, TextPulseFrame[]>;
   block: Block | null;
-  container: EditableRegion | null;
+  inlines: readonly IndexedInline[] | null;
   layout: EditorLayoutState["layout"];
   line: EditorLayoutState["layout"]["lines"][number];
   resources: DocumentResources;
+  text: string | null;
   textDecorations: TextDecorationIndex | null;
   theme: ResolvedEditorTheme;
 }): DocumentFrameLineText {
-  const containerPath = container?.path ?? "";
-  const textFadesForLine = container ? (textFades.get(containerPath) ?? []) : [];
-  const textHighlightsForLine = container
-    ? (textHighlights.get(containerPath) ?? [])
-    : [];
-  const textPulsesForLine = container ? (textPulses.get(containerPath) ?? []) : [];
-  const textDecorationsForLine = container ? (textDecorations?.get(containerPath) ?? null) : null;
+  const textFadesForLine = text !== null ? (textFades.get(line.path) ?? []) : [];
+  const textHighlightsForLine = text !== null ? (textHighlights.get(line.path) ?? []) : [];
+  const textPulsesForLine = text !== null ? (textPulses.get(line.path) ?? []) : [];
+  const textDecorationsForLine = text !== null ? (textDecorations?.get(line.path) ?? null) : null;
   const textLeft = line.left + line.contentInset;
   const textBaseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
   const defaultTextColor = block?.type === "code" ? theme.codeText : resolveTextColor(block, theme);
   const segments = resolveLineTextSegments({
     baseFontSize: layout.options.fontSize,
-    container,
     defaultTextColor,
+    inlines,
     line,
     resources,
+    text,
     textBaseline,
     textLeft,
     theme,

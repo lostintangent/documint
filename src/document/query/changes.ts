@@ -3,7 +3,7 @@
 // - Trim unchanged edges with semantic content hashes.
 // - Skip empty, oversized, or low-context broad root windows instead of guessing.
 // - Walk remaining block and table arrays left-to-right with small lookahead.
-// - Recurse into nested blocks and table cells, emitting anchored block/cell targets.
+// - Recurse into nested blocks and table cells, emitting anchored block/cell changes.
 // - Track work and target budgets; if either is exhausted, return no changes.
 import {
   childBlockPath,
@@ -14,6 +14,11 @@ import {
 } from "../model";
 import type { Block, Document, TableBlock, TableCell, TableRow } from "../model";
 import {
+  createDocumentNodeAnchor,
+  documentNodeAnchorKey,
+  type DocumentNodeAnchor,
+} from "./anchors/node";
+import {
   type DocumentNodeContentHash,
   estimateDocumentNodeContentHashCost,
   estimateTableCellContentHashCost,
@@ -21,16 +26,27 @@ import {
   resolveBlockContentHash,
   resolveTableCellContentHash,
   resolveTableRowContentHash,
-} from "../query/content-hash";
-import { createDocumentChangeTarget, documentChangeTargetAnchorKey } from "./targets";
-import type { DocumentChange } from "./types";
+} from "./content-hash";
+
+export type DocumentChangeKind = "added" | "modified";
+
+// A node that changed between two snapshots, identified by its content-addressable
+// `DocumentNodeAnchor` — which already carries the snapshot path and the block vs
+// table-cell kind, so there is no separate change "target".
+export type DocumentChange =
+  | { readonly anchor: DocumentNodeAnchor; readonly kind: "added" }
+  | {
+      readonly anchor: DocumentNodeAnchor;
+      readonly kind: "modified";
+      readonly previousAnchor: DocumentNodeAnchor;
+    };
 
 type DiffContext = {
   nextDocument: Document;
   overBudget: boolean;
   previousDocument: Document;
-  targetKeys: Set<string>;
-  targets: DocumentChange[];
+  changeKeys: Set<string>;
+  changes: DocumentChange[];
   visitedNodes: number;
 };
 
@@ -45,7 +61,7 @@ const maxChangedRootRatio = 0.45;
 const maxBlockSimilarityLookahead = 8;
 const minBroadRootWindowStableRoots = 4;
 const maxRootWindow = 96;
-const maxTargets = 64;
+const maxChanges = 64;
 const maxVisitedNodes = 800;
 
 export function findDocumentChanges(
@@ -56,13 +72,13 @@ export function findDocumentChanges(
     nextDocument,
     overBudget: false,
     previousDocument,
-    targetKeys: new Set(),
-    targets: [],
+    changeKeys: new Set(),
+    changes: [],
     visitedNodes: 0,
   };
 
   collectRootBlockChanges(previousDocument, nextDocument, context);
-  return context.overBudget ? [] : context.targets;
+  return context.overBudget ? [] : context.changes;
 }
 
 function collectRootBlockChanges(
@@ -148,7 +164,7 @@ function shouldSkipRootWindow({
   }
 
   // Broad same-length outline edits have no stable paragraph anchors, but
-  // heading-to-heading pairs still produce precise, bounded targets.
+  // heading-to-heading pairs still produce precise, bounded changes.
   if (hasOnlyHeadingRootChanges({ context, nextBlocks, previousBlocks, window })) {
     return false;
   }
@@ -282,7 +298,7 @@ function diffBlockArray({
     const previousBlock = previousBlocks[previousIndex] ?? null;
 
     if (!previousBlock || previousIndex >= previousEnd) {
-      addBlockTarget(nextBlock, pathForIndex(nextIndex), context);
+      recordAdded(pathForIndex(nextIndex), context);
       nextIndex += 1;
       continue;
     }
@@ -303,7 +319,7 @@ function diffBlockArray({
         nextEnd,
       )
     ) {
-      addBlockTarget(nextBlock, pathForIndex(nextIndex), context);
+      recordAdded(pathForIndex(nextIndex), context);
       nextIndex += 1;
       continue;
     }
@@ -324,7 +340,7 @@ function diffBlockArray({
     );
 
     if (previousContentHashAppearsLater && !nextContentHashAppearsLater) {
-      addBlockTarget(nextBlock, pathForIndex(nextIndex), context);
+      recordAdded(pathForIndex(nextIndex), context);
       nextIndex += 1;
       continue;
     }
@@ -346,7 +362,7 @@ function diffBlockArray({
   }
 
   for (; nextIndex < nextEnd && !shouldStopDiffing(context); nextIndex += 1) {
-    addBlockTarget(nextBlocks[nextIndex]!, pathForIndex(nextIndex), context);
+    recordAdded(pathForIndex(nextIndex), context);
   }
 }
 
@@ -366,7 +382,7 @@ function diffBlocks(
   }
 
   if (previousBlock.type !== nextBlock.type) {
-    addBlockChange(previousBlock, nextBlock, previousPath, nextPath, context);
+    recordModified(previousPath, nextPath, context);
     return;
   }
 
@@ -376,7 +392,7 @@ function diffBlocks(
   }
 
   if (didBlockMetadataChange(previousBlock, nextBlock)) {
-    addBlockChange(previousBlock, nextBlock, previousPath, nextPath, context);
+    recordModified(previousPath, nextPath, context);
     return;
   }
 
@@ -397,7 +413,7 @@ function diffBlocks(
     return;
   }
 
-  addBlockChange(previousBlock, nextBlock, previousPath, nextPath, context);
+  recordModified(previousPath, nextPath, context);
 }
 
 function diffTableRowsAndCells(
@@ -425,7 +441,7 @@ function diffTableRowsAndCells(
     const nextRow = nextTable.rows[nextIndex]!;
 
     if (!previousRow || previousIndex >= window.previousEnd) {
-      addTableRowTargets(nextPath, nextIndex, nextRow, context);
+      recordAddedTableRow(nextPath, nextIndex, nextRow, context);
       nextIndex += 1;
       continue;
     }
@@ -436,7 +452,7 @@ function diffTableRowsAndCells(
       tableRowSimilarity(context, previousRow, followingNextRow) >
         tableRowSimilarity(context, previousRow, nextRow)
     ) {
-      addTableRowTargets(nextPath, nextIndex, nextRow, context);
+      recordAddedTableRow(nextPath, nextIndex, nextRow, context);
       nextIndex += 1;
       continue;
     }
@@ -551,8 +567,7 @@ function diffTableRowCells(
     const nextCell = nextRow.cells[nextCellIndex]!;
 
     if (!previousCell) {
-      addTableCellTarget(
-        nextCell,
+      recordAdded(
         tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex),
         context,
       );
@@ -567,8 +582,7 @@ function diffTableRowCells(
       tableCellSimilarity(context, previousCell, followingNextCell) >
         tableCellSimilarity(context, previousCell, nextCell)
     ) {
-      addTableCellTarget(
-        nextCell,
+      recordAdded(
         tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex),
         context,
       );
@@ -576,9 +590,7 @@ function diffTableRowCells(
       continue;
     }
 
-    addTableCellChange(
-      previousCell,
-      nextCell,
+    recordModified(
       tableCellPath(tableRowPath(previousTablePath, previousRowIndex), previousCellIndex),
       tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex),
       context,
@@ -693,7 +705,7 @@ function addTrimmedTableRowChanges(
     rowIndex < window.previousStart && !shouldStopDiffing(context);
     rowIndex += 1
   ) {
-    addTableRowChanges(
+    recordModifiedTableRow(
       previousTablePath,
       nextTablePath,
       rowIndex,
@@ -708,7 +720,7 @@ function addTrimmedTableRowChanges(
   for (let offset = 0; offset < suffixRows && !shouldStopDiffing(context); offset += 1) {
     const previousRowIndex = window.previousEnd + offset;
     const nextRowIndex = window.nextEnd + offset;
-    addTableRowChanges(
+    recordModifiedTableRow(
       previousTablePath,
       nextTablePath,
       previousRowIndex,
@@ -720,7 +732,7 @@ function addTrimmedTableRowChanges(
   }
 }
 
-function addTableRowTargets(
+function recordAddedTableRow(
   tablePath: string,
   rowIndex: number,
   row: TableRow,
@@ -731,15 +743,14 @@ function addTableRowTargets(
     cellIndex < row.cells.length && !shouldStopDiffing(context);
     cellIndex += 1
   ) {
-    addTableCellTarget(
-      row.cells[cellIndex]!,
+    recordAdded(
       tableCellPath(tableRowPath(tablePath, rowIndex), cellIndex),
       context,
     );
   }
 }
 
-function addTableRowChanges(
+function recordModifiedTableRow(
   previousTablePath: string,
   nextTablePath: string,
   previousRowIndex: number,
@@ -750,9 +761,7 @@ function addTableRowChanges(
 ) {
   const width = Math.min(previousRow.cells.length, nextRow.cells.length);
   for (let cellIndex = 0; cellIndex < width && !shouldStopDiffing(context); cellIndex += 1) {
-    addTableCellChange(
-      previousRow.cells[cellIndex]!,
-      nextRow.cells[cellIndex]!,
+    recordModified(
       tableCellPath(tableRowPath(previousTablePath, previousRowIndex), cellIndex),
       tableCellPath(tableRowPath(nextTablePath, nextRowIndex), cellIndex),
       context,
@@ -764,8 +773,7 @@ function addTableRowChanges(
     cellIndex < nextRow.cells.length && !shouldStopDiffing(context);
     cellIndex += 1
   ) {
-    addTableCellTarget(
-      nextRow.cells[cellIndex]!,
+    recordAdded(
       tableCellPath(tableRowPath(nextTablePath, nextRowIndex), cellIndex),
       context,
     );
@@ -828,94 +836,39 @@ function trimMatchingEdges<T>(
   return { nextEnd, nextStart, previousEnd, previousStart };
 }
 
-function addBlockTarget(block: Block, path: string, context: DiffContext) {
-  pushTarget(
+function recordAdded(path: string, context: DiffContext) {
+  pushChange({ anchor: requireAnchor(context.nextDocument, path), kind: "added" }, context);
+}
+
+function recordModified(previousPath: string, nextPath: string, context: DiffContext) {
+  pushChange(
     {
-      changeKind: "added",
-      target: createDocumentChangeTarget(context.nextDocument, {
-        block,
-        kind: "block",
-        path,
-      }),
+      anchor: requireAnchor(context.nextDocument, nextPath),
+      kind: "modified",
+      previousAnchor: requireAnchor(context.previousDocument, previousPath),
     },
     context,
   );
 }
 
-function addTableCellTarget(cell: TableCell, path: string, context: DiffContext) {
-  pushTarget(
-    {
-      changeKind: "added",
-      target: createDocumentChangeTarget(context.nextDocument, {
-        cell,
-        kind: "table-cell",
-        path,
-      }),
-    },
-    context,
-  );
+function requireAnchor(document: Document, path: string): DocumentNodeAnchor {
+  const anchor = createDocumentNodeAnchor(document, path);
+  if (!anchor) {
+    throw new Error(`Unable to anchor document change at ${path}`);
+  }
+  return anchor;
 }
 
-function addBlockChange(
-  previousBlock: Block,
-  nextBlock: Block,
-  previousPath: string,
-  nextPath: string,
-  context: DiffContext,
-) {
-  pushTarget(
-    {
-      changeKind: "modified",
-      previousTarget: createDocumentChangeTarget(context.previousDocument, {
-        block: previousBlock,
-        kind: "block",
-        path: previousPath,
-      }),
-      target: createDocumentChangeTarget(context.nextDocument, {
-        block: nextBlock,
-        kind: "block",
-        path: nextPath,
-      }),
-    },
-    context,
-  );
-}
-
-function addTableCellChange(
-  previousCell: TableCell,
-  nextCell: TableCell,
-  previousPath: string,
-  nextPath: string,
-  context: DiffContext,
-) {
-  pushTarget(
-    {
-      changeKind: "modified",
-      previousTarget: createDocumentChangeTarget(context.previousDocument, {
-        cell: previousCell,
-        kind: "table-cell",
-        path: previousPath,
-      }),
-      target: createDocumentChangeTarget(context.nextDocument, {
-        cell: nextCell,
-        kind: "table-cell",
-        path: nextPath,
-      }),
-    },
-    context,
-  );
-}
-
-function pushTarget(target: DocumentChange, context: DiffContext) {
-  if (context.targets.length >= maxTargets) {
+function pushChange(target: DocumentChange, context: DiffContext) {
+  if (context.changes.length >= maxChanges) {
     context.overBudget = true;
     return;
   }
 
-  const key = `${target.changeKind}:${documentChangeTargetAnchorKey(target.target)}`;
-  if (!context.targetKeys.has(key)) {
-    context.targetKeys.add(key);
-    context.targets.push(target);
+  const key = `${target.kind}:${documentNodeAnchorKey(target.anchor)}`;
+  if (!context.changeKeys.has(key)) {
+    context.changeKeys.add(key);
+    context.changes.push(target);
   }
 }
 
@@ -932,7 +885,7 @@ function shouldStopDiffing(context: DiffContext) {
     return true;
   }
 
-  if (context.targets.length >= maxTargets || context.visitedNodes >= maxVisitedNodes) {
+  if (context.changes.length >= maxChanges || context.visitedNodes >= maxVisitedNodes) {
     context.overBudget = true;
     return true;
   }

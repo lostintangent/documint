@@ -1,6 +1,6 @@
 # Layout
 
-The layout subsystem owns editor geometry. It turns `EditorState` into an `EditorLayoutState`: positioned lines, regions, blocks, total scroll height, paint overscan, off-screen bounds, and queryable geometry for caret measurement, navigation, anchors, and renderer paint.
+The layout subsystem owns editor geometry. It turns `EditorState` into an `EditorLayoutState`: positioned lines, text-path bounds, blocks, total scroll height, paint overscan, off-screen bounds, and queryable geometry for caret measurement, navigation, anchors, and renderer paint.
 
 Small/common documents use exact full-document layout. Large documents use whole-document height estimation to choose a virtualized visible slice, then measure that slice exactly.
 
@@ -8,7 +8,7 @@ Small/common documents use exact full-document layout. Large documents use whole
 
 - **Visible geometry is exact.** Estimation is only a large-document optimization. Anything visible, selected, or hit-testable must have exact measured geometry, even when pinned outside the ordinary viewport slice.
 - **Document space is the shared coordinate system.** Line/block Y values are positions in the full document, even when measured from a virtualized slice.
-- **Virtual slices keep the index whole.** Exact slice measurement receives the canonical `DocumentIndex` plus global region start/end indices. Do not pass a shallow index with sliced `regions`, because index block ranges are global coordinates.
+- **Virtual slices keep the index whole.** Exact slice measurement receives the canonical `DocumentIndex` plus slice boundaries expressed over measured block/path bounds. Do not pass a shallow index with sliced records, because index block ranges are global coordinates.
 - **Exact and estimated paths must agree.** Both paths must walk blocks the same way and use the same gap, inset, image, and table policies. If one policy changes, update the other.
 - **Cache keys are correctness.** Prepared text, measured lines, boundaries, heights, grapheme widths, and virtual layouts all depend on text, resources, and layout options.
 - **Refinement is the cache write-back boundary.** Virtualized layout may update cached estimated heights after exact slice measurement; other layout work treats cache reads as memoization.
@@ -16,7 +16,7 @@ Small/common documents use exact full-document layout. Large documents use whole
 - **Measurement details stay behind layout/text APIs.** Browser-backed text metrics and resource-dependent image sizes are inputs to measurement, not reasons for callers to inspect DOM or duplicate layout math.
 - **Store core geometry, derive visual geometry.** `DocumentLayout` stores the
   measured primitives that define document space: line boxes, block extents,
-  region bounds, line indices, options, and total height. Cheap or
+  text-path bounds, line indices, options, and total height. Cheap or
   caller-specific geometry lives in `query/` helpers and is resolved just in
   time from prepared lines: caret visual X, list-marker anchors/bounds, inline
   object bounds, and text segment bounds. This keeps virtualized layout from
@@ -31,6 +31,6 @@ Small/common documents use exact full-document layout. Large documents use whole
 - `index.ts` exposes the layout API and editor-facing adapters.
 - `lib/` owns shared layout policy: options, block spacing, and list/task marker metrics.
 - `state/` owns `createEditorLayoutState` and the per-editor `LayoutCache`.
-- `measure/` owns exact layout composition for text, inline objects, tables, lines, regions, and blocks.
+- `measure/` owns exact layout composition for text, inline objects, tables, lines, text paths, and blocks.
 - `virtualize/` owns large-document estimates, virtual layout construction, visible slice selection, exact slice measurement, and refinement.
 - [`query/`](query/AGENTS.md) owns reads over prepared geometry: visible ranges, caret measurement, point-to-line hit testing, and visual bounds.

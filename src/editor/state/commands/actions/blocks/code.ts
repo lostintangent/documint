@@ -29,7 +29,7 @@ export function resolveCodeBlockLineBreak(ctx: CodeBlockContext): EditorStateAct
 // Blank lines are source content, so code blocks require two trailing blank
 // lines before Enter exits and trims the exit marker.
 function shouldExitCodeBlock(ctx: CodeBlockContext): boolean {
-  return ctx.atEnd && ctx.region.text.endsWith("\n\n");
+  return ctx.atEnd && ctx.text.endsWith("\n\n");
 }
 
 function insertCodeBlockSourceLineBreak(): EditorStateAction {
@@ -43,9 +43,9 @@ function exitCodeBlock(ctx: CodeBlockContext): EditorStateAction {
     kind: "splice-blocks",
     blocks: [
       createCodeBlock({
-        language: ctx.region.block.language,
-        meta: ctx.region.block.meta,
-        source: ctx.region.text.replace(/\n+$/, ""),
+        language: ctx.block.language,
+        meta: ctx.block.meta,
+        source: ctx.text.replace(/\n+$/, ""),
       }),
       exitParagraph,
     ],

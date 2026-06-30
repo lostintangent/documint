@@ -7,6 +7,10 @@ export type TableCellPathPosition = {
   rowIndex: number;
 };
 
+export type TableCellPathContext = TableCellPathPosition & {
+  tablePath: string;
+};
+
 export type BlockPathCoordinates = {
   childIndices: number[];
   rootIndex: number;
@@ -106,6 +110,10 @@ export function tableCellPositionFromPath(path: string): TableCellPathPosition |
   return cellPath
     ? { cellIndex: cellPath.cellIndex, rowIndex: cellPath.rowIndex }
     : null;
+}
+
+export function tableCellPathContextFromPath(path: string): TableCellPathContext | null {
+  return readTableCellPath(path);
 }
 
 const tableCellPathPattern =

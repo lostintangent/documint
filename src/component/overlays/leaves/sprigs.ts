@@ -10,8 +10,10 @@
 import { isResolvedCommentThread } from "@/document";
 import {
   isRootIndexedBlock,
+  resolveEditorTextAtPath,
   resolveIndexedBlock,
-  resolveRegion,
+  resolveIndexedBlockContainingPath,
+  resolveIndexedTableCell,
   resolveTargetAtSelection,
   type EditorHoverTarget,
   type EditorLayoutState,
@@ -85,7 +87,7 @@ const equalInsertionLeaf = (a: InsertionLeaf, b: InsertionLeaf): boolean =>
 const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
   areDocumentAnchorTargetsEqual(a, b) &&
   a.endOffset === b.endOffset &&
-  a.regionPath === b.regionPath &&
+  a.path === b.path &&
   a.startOffset === b.startOffset &&
   a.title === b.title &&
   a.url === b.url;
@@ -176,14 +178,13 @@ export const cursorLeafSprig = createParameterizedSprig(
     threads,
     ranges,
   ): CursorLeaf | null => {
-    if (!layout) {
+    if (readOnly || !layout) {
       return null;
     }
 
     return resolveCursorLeaf({
       ranges,
       normalizedSelection,
-      readOnly,
       state,
       threads,
       layout,
@@ -204,7 +205,7 @@ export const pointerViewSprig = createParameterizedSprig(
     const target =
       hoverTarget?.kind === "link"
         ? resolveTargetAtSelection(state, {
-            regionPath: hoverTarget.regionPath,
+            path: hoverTarget.path,
             offset: resolveLinkInteriorOffset(hoverTarget),
           })
         : hoverTarget;
@@ -237,7 +238,7 @@ function resolveAnnotationLeaf(
     formatting,
     // Anchor row comes from selection-end (the leaf renders below the
     // entire selected range).
-    anchor: { regionPath: selection.regionPath, offset: selection.endOffset },
+    anchor: { path: selection.path, offset: selection.endOffset },
     kind: "annotation",
     // Cross-corner: x from selection-start while top comes from
     // selection-end's row, so the leaf sits at the bottom-left of the
@@ -284,14 +285,12 @@ function resolveSelectionLeaf({
 function resolveCursorLeaf({
   ranges,
   normalizedSelection,
-  readOnly,
   state,
   threads,
   layout,
 }: {
   ranges: CommentRanges;
   normalizedSelection: NormalizedEditorSelection;
-  readOnly: boolean;
   state: EditorState;
   threads: CommentThreads;
   layout: EditorLayoutState;
@@ -302,7 +301,7 @@ function resolveCursorLeaf({
     return null;
   }
 
-  const insertionLeaf = readOnly ? null : resolveInsertionLeaf(state);
+  const insertionLeaf = resolveInsertionLeaf(state);
 
   if (insertionLeaf) {
     return insertionLeaf;
@@ -318,7 +317,7 @@ function resolveCursorLeaf({
     return contextualLeaf;
   }
 
-  const tableLeaf = readOnly ? null : resolveTableLeaf(state, layout);
+  const tableLeaf = resolveTableLeaf(state, layout);
 
   if (tableLeaf) {
     return tableLeaf;
@@ -329,56 +328,54 @@ function resolveCursorLeaf({
 
 function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableLeaf | null {
   const focus = state.selection.focus;
-  const focusedRegion = resolveRegion(state.documentIndex, focus.regionPath);
-  const tableCellPosition = focusedRegion?.tableCellPosition ?? null;
+  const tableCell = resolveIndexedTableCell(state.documentIndex, focus.path);
 
-  if (!focusedRegion || !tableCellPosition) {
+  if (!tableCell) {
     return null;
   }
 
-  const blockEntry = resolveIndexedBlock(state.documentIndex, focusedRegion.blockPath);
+  const blockEntry = resolveIndexedBlock(state.documentIndex, tableCell.tablePath);
 
   if (!blockEntry || blockEntry.block.type !== "table") {
     return null;
   }
 
-  const textLeft = resolveRegionTextLeft(layout, focusedRegion.path);
+  const textLeft = resolvePathTextLeft(layout, focus.path);
   const columnCount = Math.max(1, ...blockEntry.block.rows.map((row) => row.cells.length));
 
   return textLeft !== null
     ? {
         anchor: focus,
-        cellIndex: tableCellPosition.cellIndex,
+        cellIndex: tableCell.cellIndex,
         columnCount,
         kind: "table",
         // The cell's text-area edge isn't a caret position, so override the
         // host's default left (caret-x at the anchor).
         leftOverride: textLeft,
         rowCount: blockEntry.block.rows.length,
-        rowIndex: tableCellPosition.rowIndex,
+        rowIndex: tableCell.rowIndex,
       }
     : null;
 }
 
-function resolveRegionTextLeft(layout: EditorLayoutState, regionPath: string) {
-  const firstLine = layout.layout.lines.find((line) => line.regionPath === regionPath);
+function resolvePathTextLeft(layout: EditorLayoutState, path: string) {
+  const firstLine = layout.layout.lines.find((line) => line.path === path);
 
   return firstLine ? firstLine.left : null;
 }
 
 function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
   const focus = state.selection.focus;
-  const focusedRegion = resolveRegion(state.documentIndex, focus.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, focus.path);
+  const blockEntry = resolveIndexedBlockContainingPath(state.documentIndex, focus.path);
 
-  if (!focusedRegion || focusedRegion.block.type !== "paragraph" || focusedRegion.text.length > 0) {
+  if (!blockEntry || blockEntry.block.type !== "paragraph" || text !== "") {
     return null;
   }
 
   if (focus.offset !== 0) {
     return null;
   }
-
-  const blockEntry = resolveIndexedBlock(state.documentIndex, focusedRegion.blockPath);
 
   if (!blockEntry || !isRootIndexedBlock(blockEntry)) {
     return null;

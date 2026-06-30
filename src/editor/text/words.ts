@@ -1,5 +1,5 @@
 // Shared word-boundary helpers for editor text selection. Offsets are UTF-16
-// string offsets, matching the editor region model.
+// string offsets in editor path text.
 
 export type TextRange = {
   end: number;

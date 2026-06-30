@@ -5,13 +5,13 @@ import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 import { createLayoutStore } from "@/component/store/layout/store";
 import { insertText, readEditorEffects, setSelection } from "@/editor/state";
-import { getRegion, placeAt, setup } from "@test/editor/helpers";
+import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("EditorStore", () => {
   test("applies command results and publishes transition metadata", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const store = createEditorStore(placeAt(state, region, "end"));
+    const path = getPath(state, "alpha");
+    const store = createEditorStore(placeAt(state, path, "end"));
     const transitions: EditorStateTransition[] = [];
 
     store.subscribe((transition) => transitions.push(transition));
@@ -35,9 +35,9 @@ describe("EditorStore", () => {
 
   test("classifies selection-only changes without document changes", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
+    const path = getPath(state, "alpha");
     const store = createEditorStore(state);
-    const transition = store.command(setSelection, { regionPath: region.path, offset: 2 });
+    const transition = store.command(setSelection, { path: path.path, offset: 2 });
 
     expect(transition).toEqual(
       expect.objectContaining({
@@ -80,8 +80,8 @@ describe("EditorStore", () => {
 
   test("drains but does not publish effects from external replacements", () => {
     const initial = setup("alpha\n");
-    const region = getRegion(initial, "alpha");
-    const next = insertText(placeAt(initial, region, "end"), "!");
+    const path = getPath(initial, "alpha");
+    const next = insertText(placeAt(initial, path, "end"), "!");
 
     if (!next) {
       throw new Error("Expected insertText to produce a state");
@@ -104,7 +104,7 @@ describe("EditorStore", () => {
 
   test("source sprigs notify only when the selected slice changes", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
+    const path = getPath(state, "alpha");
     const store = createDocumintStore(state);
     const documentSprig = createSourceSprig(
       editorSource,
@@ -124,7 +124,7 @@ describe("EditorStore", () => {
       focusNotifications += 1;
     });
 
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(documentNotifications).toBe(0);
     expect(focusNotifications).toBe(1);
@@ -132,7 +132,7 @@ describe("EditorStore", () => {
 
   test("source sprig subscribers can unsubscribe", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
+    const path = getPath(state, "alpha");
     const store = createDocumintStore(state);
     const focusSprig = createSourceSprig(
       editorSource,
@@ -144,14 +144,14 @@ describe("EditorStore", () => {
     });
 
     unsubscribe();
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(notifications).toBe(0);
   });
 
   test("source sprigs use custom equality to suppress equivalent updates", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
+    const path = getPath(state, "alpha");
     const store = createDocumintStore(state);
     const imageUrlsSprig = createSourceSprig(
       editorSource,
@@ -164,14 +164,14 @@ describe("EditorStore", () => {
       notifications += 1;
     });
 
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(notifications).toBe(0);
   });
 
   test("source sprig reads project the current editor state", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
+    const path = getPath(state, "alpha");
     const store = createDocumintStore(state);
     const focusSprig = createSourceSprig(
       editorSource,
@@ -183,11 +183,11 @@ describe("EditorStore", () => {
       notifications += 1;
     });
 
-    expect(focusSprig.read(store)).toEqual({ regionPath: region.path, offset: 0 });
+    expect(focusSprig.read(store)).toEqual({ path: path.path, offset: 0 });
 
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
-    expect(focusSprig.read(store)).toEqual({ regionPath: region.path, offset: 2 });
+    expect(focusSprig.read(store)).toEqual({ path: path.path, offset: 2 });
     expect(notifications).toBe(1);
   });
 });

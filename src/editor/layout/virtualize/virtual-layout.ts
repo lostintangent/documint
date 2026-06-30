@@ -1,11 +1,11 @@
 // Owns construction and caching of the whole-document virtual layout estimate.
 // The virtual layout mirrors exact block walking, but stores only estimated
-// region bounds and total document height.
+// path bounds and total document height.
 
 import type { DocumentResources } from "@/types";
 import { resolveResourceProtocol, type Block } from "@/document";
 import { createResourceIconSignature } from "@/editor/resources";
-import type { DocumentIndex } from "../../state";
+import type { DocumentIndex, IndexedBlock } from "../../state";
 import {
   getVirtualLayout,
   setVirtualLayout,
@@ -16,11 +16,11 @@ import { walkLayoutBlocks } from "../lib/block-walk";
 import { resolveBlockContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import {
-  groupTableRegionsByRow,
   resolveTableColumnMetrics,
   resolveTableRowHeight,
 } from "../measure/table";
 import { resolveTextBlockLineHeight } from "../measure/text";
+import { resolveBlockLayoutTextInput, tableCellLayoutTextInput } from "../measure/text-input";
 import { estimateContainerHeight, estimateTableCellHeight } from "./height-estimate";
 
 export function getOrCreateVirtualLayout(
@@ -37,24 +37,18 @@ export function getOrCreateVirtualLayout(
   }
 
   // Estimation walks blocks (mirroring `measureLayoutSlice`). Inert leaf
-  // blocks contribute fixed height to `totalHeight` so subsequent regions
-  // land at Y positions consistent with what layout actually produces.
-  // They have no virtual-layout entry — the entries array stays 1:1 with
-  // `documentIndex.regions`. Container blocks (blockquote, list,
-  // listItem) are skipped here just as in layout — their leaf descendants
-  // emit the actual entries.
+  // blocks contribute fixed height to `totalHeight` so subsequent paths land
+  // at Y positions consistent with exact layout. They have no virtual-layout
+  // entry. Container blocks (blockquote, list, listItem) are skipped here just
+  // as in layout — their leaf descendants emit the actual entries.
   let totalHeight = options.paddingY;
-  // Sparse array — entries[i] corresponds to documentIndex.regions[i]; slots
-  // for inert leaves (which have no region) are never written.
   const entries: VirtualLayout["entries"] = [];
-  const containerIndices = new Map<string, number>();
+  const pathIndices = new Map<string, number>();
 
   for (const {
     gapBefore,
     indexedBlock,
     isInert,
-    regionEndIndex,
-    regionStartIndex,
   } of walkLayoutBlocks(documentIndex, { blockGap: options.blockGap })) {
     const block = indexedBlock.block;
 
@@ -65,27 +59,24 @@ export function getOrCreateVirtualLayout(
     } else if (block.type === "table") {
       const result = appendTableEstimateEntries({
         block,
-        containerIndices,
         depth: indexedBlock.depth,
         entries,
+        indexedBlock,
         options,
-        regionEndIndex,
-        regionStartIndex,
+        pathIndices,
         totalHeight,
-        regions: documentIndex.regions,
       });
       if (result) {
         totalHeight = result.totalHeight;
       }
     } else {
       const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
-      for (let regionIndex = regionStartIndex; regionIndex < regionEndIndex; regionIndex += 1) {
-        const container = documentIndex.regions[regionIndex];
-        if (!container) continue;
+      const input = resolveBlockLayoutTextInput(indexedBlock);
 
+      if (input) {
         const estimatedHeight = estimateContainerHeight(
           cache,
-          container,
+          input,
           block,
           contentMetrics,
           options,
@@ -93,20 +84,25 @@ export function getOrCreateVirtualLayout(
         );
         const top = totalHeight;
         const bottom = top + estimatedHeight;
-        entries[regionIndex] = { bottom, top };
-        containerIndices.set(container.path, regionIndex);
+        appendEstimateEntry(entries, pathIndices, {
+          blockArrayIndex: indexedBlock.blockArrayIndex,
+          bottom,
+          path: input.path,
+          top,
+        });
         totalHeight = bottom;
       }
     }
   }
 
   return setVirtualLayout(cache, documentIndex, cacheKey, {
-    containerIndices,
     entries,
-    estimateRegionBounds(regionPath) {
-      const index = containerIndices.get(regionPath);
+    pathIndices,
+    estimatePathBounds(path) {
+      const index = pathIndices.get(path);
+      const entry = index === undefined ? null : (entries[index] ?? null);
 
-      return index === undefined ? null : (entries[index] ?? null);
+      return entry ? { bottom: entry.bottom, top: entry.top } : null;
     },
     totalHeight,
   });
@@ -114,72 +110,51 @@ export function getOrCreateVirtualLayout(
 
 function appendTableEstimateEntries({
   block,
-  containerIndices,
   depth,
   entries,
+  indexedBlock,
   options,
-  regionEndIndex,
-  regionStartIndex,
+  pathIndices,
   totalHeight,
-  regions,
 }: {
   block: Extract<Block, { type: "table" }>;
-  containerIndices: Map<string, number>;
   depth: number;
   entries: VirtualLayout["entries"];
+  indexedBlock: IndexedBlock;
   options: DocumentLayoutOptions;
-  regionEndIndex: number;
-  regionStartIndex: number;
+  pathIndices: Map<string, number>;
   totalHeight: number;
-  regions: readonly DocumentIndex["regions"][number][];
 }) {
-  if (regionStartIndex >= regionEndIndex) {
-    return null;
-  }
-
-  if (regions[regionStartIndex]?.block !== block) {
+  if (indexedBlock.kind !== "cells") {
     return null;
   }
 
   const left = options.paddingX + depth * options.indentWidth;
   const { cellWidth } = resolveTableColumnMetrics(block, left, options);
   const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight, options.fontSize);
-  const rowCells = collectTableRowRegions(regions, regionStartIndex, regionEndIndex);
   let nextTop = totalHeight;
 
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
-    const cells = rowCells.get(rowIndex) ?? [];
+    const cells = indexedBlock.tableCellRows[rowIndex] ?? [];
+    const inputs = cells.map(tableCellLayoutTextInput);
     const rowHeight = resolveTableRowHeight(
       lineHeight,
-      cells.map(({ region }) =>
-        estimateTableCellHeight(region, cellWidth, lineHeight, options.charWidth),
+      inputs.map((input) =>
+        estimateTableCellHeight(input, cellWidth, lineHeight, options.charWidth),
       ),
     );
     const bottom = nextTop + rowHeight;
 
-    for (const { index: regionIndex, region } of cells) {
-      entries[regionIndex] = {
+    for (const input of inputs) {
+      appendEstimateEntry(entries, pathIndices, {
+        blockArrayIndex: indexedBlock.blockArrayIndex,
         bottom,
+        path: input.path,
         top: nextTop,
-      };
-      containerIndices.set(region.path, regionIndex);
+      });
     }
 
     nextTop = bottom;
-  }
-
-  for (let regionIndex = regionStartIndex; regionIndex < regionEndIndex; regionIndex += 1) {
-    const region = regions[regionIndex];
-
-    if (!region || entries[regionIndex]) {
-      continue;
-    }
-
-    entries[regionIndex] = {
-      bottom: nextTop,
-      top: nextTop,
-    };
-    containerIndices.set(region.path, regionIndex);
   }
 
   return {
@@ -187,15 +162,14 @@ function appendTableEstimateEntries({
   };
 }
 
-function collectTableRowRegions(
-  regions: readonly DocumentIndex["regions"][number][],
-  regionStartIndex: number,
-  regionEndIndex: number,
+function appendEstimateEntry(
+  entries: VirtualLayout["entries"],
+  pathIndices: Map<string, number>,
+  entry: VirtualLayout["entries"][number],
 ) {
-  return groupTableRegionsByRow(regions, regionStartIndex, regionEndIndex, (region, index) => ({
-    index,
-    region,
-  }));
+  const index = entries.length;
+  entries.push(entry);
+  pathIndices.set(entry.path, index);
 }
 
 function createVirtualLayoutCacheKey(

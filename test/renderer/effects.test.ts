@@ -37,8 +37,8 @@ describe("Renderer effect policy", () => {
       expect(resolvedEffects.rendererEffects).toEqual([]);
     });
 
-    test("does not animate source-region insertion by default", () => {
-      const effects = [insertedText("x", { regionKind: "source" })];
+    test("does not animate source-text insertion by default", () => {
+      const effects = [insertedText("x", { contentKind: "source" })];
       const resolvedEffects = resolveRendererEffects(effects, now);
 
       expect(resolvedEffects.textHighlights.size).toBe(0);
@@ -70,8 +70,8 @@ describe("Renderer effect policy", () => {
       expect(resolvedEffects.rendererEffects).toEqual([]);
     });
 
-    test("does not animate source-region deletion by default", () => {
-      const effects = [deletedText({ regionKind: "source" })];
+    test("does not animate source-text deletion by default", () => {
+      const effects = [deletedText({ contentKind: "source" })];
       const resolvedEffects = resolveRendererEffects(effects, now);
 
       expect(resolvedEffects.textFades.size).toBe(0);
@@ -179,8 +179,8 @@ function insertedText(
   return {
     kind: "text-inserted",
     text,
-    regionKind: "inlines",
-    regionPath: "root.0",
+    contentKind: "inlines",
+    path: "root.0",
     startOffset: 4,
     endOffset: 4 + text.length,
     startedAt,
@@ -194,8 +194,8 @@ function deletedText(
   return {
     kind: "text-deleted",
     text: "a",
-    regionKind: "inlines",
-    regionPath: "root.0",
+    contentKind: "inlines",
+    path: "root.0",
     startOffset: 3,
     direction: "backward",
     placement: "line-end",
@@ -211,6 +211,6 @@ function documentChangeEffect(): RendererEffect {
     changeKind: "modified",
     kind: "document-change",
     startedAt,
-    target: { blockPath: "root.0", kind: "block" },
+    target: { kind: "block", path: "root.0" },
   };
 }

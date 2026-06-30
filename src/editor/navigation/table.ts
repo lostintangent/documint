@@ -5,46 +5,50 @@
  */
 import { type CaretTarget, type DocumentLayout } from "../layout";
 import {
-  type EditableRegion,
   type EditorState,
+  resolveAdjacentEditorPathWithTextOutsideBlock,
   resolveIndexedBlock,
-  resolveRegion,
-  resolveRegionOutsideRoot,
-  resolveTableCellRegionByTablePath,
+  resolveIndexedTableCell,
+  resolveIndexedTableCellByTablePath,
 } from "../state";
 import { placeCaretAtLineY } from "./line";
 
-export type VerticalTableRegionTarget = {
-  currentRegion: EditableRegion;
-  targetRegion: EditableRegion | null;
+export type VerticalTablePathTarget = {
+  currentPath: string;
+  targetPath: string | null;
 };
 
-export function resolveVerticalTableRegionTarget(
+export function resolveVerticalTablePathTarget(
   state: EditorState,
   direction: -1 | 1,
-): VerticalTableRegionTarget | null {
-  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
+): VerticalTablePathTarget | null {
+  const currentPath = state.selection.focus.path;
+  const currentCell = resolveIndexedTableCell(state.documentIndex, currentPath);
 
-  if (!currentRegion) {
+  if (!currentCell) {
     return null;
   }
 
-  const currentCell = currentRegion.tableCellPosition;
-  const tableBlock = resolveIndexedBlock(state.documentIndex, currentRegion.blockPath);
+  const tableBlock = resolveIndexedBlock(state.documentIndex, currentCell.tablePath);
 
-  if (!currentCell || tableBlock?.block.type !== "table") {
+  if (tableBlock?.block.type !== "table") {
     return null;
   }
 
-  const targetRegion =
-    resolveTableCellRegionByTablePath(
+  const targetPath =
+    resolveIndexedTableCellByTablePath(
       state.documentIndex,
       tableBlock.path,
       currentCell.rowIndex + direction,
       currentCell.cellIndex,
-    ) ?? resolveRegionOutsideRoot(state.documentIndex, tableBlock.rootIndex, direction);
+    )?.path ??
+    resolveAdjacentEditorPathWithTextOutsideBlock(
+      state.documentIndex,
+      tableBlock.path,
+      direction,
+    );
 
-  return { currentRegion, targetRegion };
+  return { currentPath, targetPath };
 }
 
 export function moveCaretVerticallyInTable(
@@ -54,20 +58,20 @@ export function moveCaretVerticallyInTable(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const target = resolveVerticalTableRegionTarget(state, direction);
+  const target = resolveVerticalTablePathTarget(state, direction);
 
   if (!target) {
     return null;
   }
 
-  const { currentRegion, targetRegion } = target;
+  const { currentPath, targetPath } = target;
 
-  if (!targetRegion) {
+  if (!targetPath) {
     return state;
   }
 
-  const currentExtent = layout.regionBounds.get(currentRegion.path);
-  const targetExtent = layout.regionBounds.get(targetRegion.path);
+  const currentExtent = layout.pathBounds.get(currentPath);
+  const targetExtent = layout.pathBounds.get(targetPath);
 
   if (!currentExtent || !targetExtent) {
     return state;

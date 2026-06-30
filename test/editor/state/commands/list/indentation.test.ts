@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { dedent, indent } from "@/editor/state";
-import { getRegion, placeAt, setup, toMarkdown } from "../../../helpers";
+import { getPath, placeAt, setup, toMarkdown } from "../../../helpers";
 
 describe("List indentation", () => {
   test("indents a list item under its previous sibling", () => {
     let state = setup("- alpha\n- beta\n- gamma\n");
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, 0);
     state = indent(state) ?? state;
@@ -15,7 +15,7 @@ describe("List indentation", () => {
 
   test("does not indent the first list item without a previous sibling", () => {
     let state = setup("- alpha\n- beta\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
 
@@ -24,7 +24,7 @@ describe("List indentation", () => {
 
   test("dedents a nested list item one level up", () => {
     let state = setup("- alpha\n  - beta\n  - gamma\n- tail\n");
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, 0);
     state = dedent(state) ?? state;
@@ -34,7 +34,7 @@ describe("List indentation", () => {
 
   test("does not dedent top-level list items", () => {
     let state = setup("- alpha\n- beta\n");
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, 0);
 
@@ -43,14 +43,14 @@ describe("List indentation", () => {
 
   test("routes tab and shift-tab through list indentation semantics", () => {
     let state = setup("- alpha\n- beta\n");
-    const beta = getRegion(state, "beta");
+    const beta = getPath(state, "beta");
 
     state = placeAt(state, beta, 0);
     state = indent(state) ?? state;
 
     expect(toMarkdown(state)).toBe("- alpha\n  - beta\n");
 
-    const nestedBeta = getRegion(state, "beta");
+    const nestedBeta = getPath(state, "beta");
 
     state = placeAt(state, nestedBeta, 0);
     state = dedent(state) ?? state;

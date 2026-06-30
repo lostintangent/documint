@@ -1,7 +1,7 @@
 import type { Mark } from "@/document";
 import type { EditorLayoutState } from "@/editor/layout";
-import type { EditableRegion, IndexedInline } from "@/editor/state";
-import { findInlinesInRange, regionInlines } from "@/editor/state";
+import type { IndexedInline } from "@/editor/state";
+import { findInlinesInRange } from "@/editor/state";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
 import { resolveResource } from "@/editor/resources";
 import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
@@ -59,19 +59,20 @@ export type TextSegment = TextRunSegment | ImageSegment | MentionSegment | Resou
 
 type ResolveLineTextSegmentsInput = {
   baseFontSize: number;
-  container: EditableRegion | null;
   defaultTextColor: string;
+  inlines: readonly IndexedInline[] | null;
   line: EditorLayoutState["layout"]["lines"][number];
   resources: DocumentResources;
+  text: string | null;
   textBaseline: number;
   textLeft: number;
   theme: ResolvedEditorTheme;
 };
 
 export function resolveLineTextSegments(input: ResolveLineTextSegmentsInput): TextSegment[] {
-  const { container, line } = input;
+  const { inlines, line, text } = input;
 
-  if (!container) {
+  if (!text || !inlines) {
     return [
       createPlainTextSegment({
         end: line.end,
@@ -82,7 +83,7 @@ export function resolveLineTextSegments(input: ResolveLineTextSegmentsInput): Te
     ];
   }
 
-  const visibleInlines = findInlinesInRange(regionInlines(container), line.start, line.end);
+  const visibleInlines = findInlinesInRange(inlines, line.start, line.end);
 
   if (visibleInlines.length === 0) {
     return [
@@ -100,13 +101,13 @@ export function resolveLineTextSegments(input: ResolveLineTextSegmentsInput): Te
   for (const inline of visibleInlines) {
     const start = Math.max(line.start, inline.start);
     const end = Math.min(line.end, inline.end);
-    const text = container.text.slice(start, end);
+    const segmentText = text.slice(start, end);
 
-    if (text.length === 0) {
+    if (segmentText.length === 0) {
       continue;
     }
 
-    segments.push(createInlineTextSegment(input, inline, start, end, text));
+    segments.push(createInlineTextSegment(input, inline, start, end, segmentText));
   }
 
   return segments;

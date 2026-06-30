@@ -78,7 +78,7 @@ Paragraph with [alpha](https://example.com) inline.
     expect(visited).toEqual(["cell:A", "cell:one"]);
   });
 
-  test("visits editable inline containers with their region paths", () => {
+  test("visits inline containers with their owner paths", () => {
     const snapshot = parseDocument(`# Title
 
 Paragraph.
@@ -99,8 +99,8 @@ Paragraph.
     });
 
     expect(visited).toEqual([
-      "block:root.0.children:Title",
-      "block:root.1.children:Paragraph.",
+      "block:root.0:Title",
+      "block:root.1:Paragraph.",
       "tableCell:root.2.rows.0.cells.0:A",
       "tableCell:root.2.rows.0.cells.1:B",
       "tableCell:root.2.rows.1.cells.0:one",
@@ -125,7 +125,7 @@ Second
       { startIndex: 1 },
     );
 
-    expect(visited).toEqual(["root.1.children"]);
+    expect(visited).toEqual(["root.1"]);
   });
 
   test("maps inline lists with nested link children and stable paths", () => {

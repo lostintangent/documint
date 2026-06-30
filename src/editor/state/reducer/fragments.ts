@@ -4,10 +4,10 @@
 // how a structural replacement rejoins the preserved ends with inserted blocks.
 //
 // This is the seam-merge policy for *range-selection* operations: paste,
-// cross-region replace, and cross-region delete. Caret-driven boundary delete
+// cross-path replace, and cross-path delete. Caret-driven boundary delete
 // lives in `actions/deletion/boundary-collapse.ts` and uses a different shape
 // — it knows the surviving block's identity and merges into
-// the deepest text-like region in flow rather than peeling shallow container
+// the deepest text-like path in flow rather than peeling shallow container
 // pairs. Both paths share the index-owned in-flow neighbor primitives, so any
 // future topology change propagates everywhere it should.
 
@@ -27,8 +27,8 @@ export type MergeResult = {
   caretLocalIndex: number;
   caretChildIndices: number[];
   caretOffset: number | "end";
-  startRegionInsertedText: string;
-  startRegionPreservedAtRoot0: boolean;
+  startPathInsertedText: string;
+  startPathPreservedAtRoot0: boolean;
 };
 
 // Joins a trimmed prefix root and a trimmed suffix root with a fragment of
@@ -45,7 +45,7 @@ export type MergeResult = {
 //     (either fragment was empty, or its only block was absorbed at the
 //     front seam), prefix and suffix collapse directly. Two text-likes
 //     concatenate into prefix's type; same-kind containers peel into one.
-//     Matches the long-standing cross-region delete-merge semantics.
+//     Matches the long-standing cross-path delete-merge semantics.
 //   - Container peel: a same-kind container (list/blockquote/listItem) at
 //     either fragment end merges its children into the neighbor's
 //     children, so adjacent lists or quotes flow into one.
@@ -60,12 +60,12 @@ export function mergeTrimmedBlocks(
   const blocks: Block[] = [];
   let caretLocalIndex = 0;
   let caret: CaretTarget = { childIndices: [], offset: 0 };
-  let startRegionInsertedText = "";
-  // The start region's path resolves to result.blocks[0] after the splice.
-  // When that block doesn't carry the original region's content (e.g. a
+  let startPathInsertedText = "";
+  // The start path resolves to result.blocks[0] after the splice.
+  // When that block doesn't carry the original path's content (e.g. a
   // multi-block paste with no prefix), optimistic comment repair has no
   // reliable offset math; flip this off so the full resolver takes over.
-  let startRegionPreservedAtRoot0 = prefix !== null;
+  let startPathPreservedAtRoot0 = prefix !== null;
 
   if (prefix) {
     blocks.push(prefix);
@@ -82,7 +82,7 @@ export function mergeTrimmedBlocks(
       blocks[blocks.length - 1] = merged;
       caret = { childIndices: [], offset: merged.plainText.length };
       absorbedFromFront = 1;
-      startRegionInsertedText = head.plainText;
+      startPathInsertedText = head.plainText;
     } else if (canPeelContainers(prefix, head)) {
       const merged = peelContainers(prefix, head);
       blocks[blocks.length - 1] = merged;
@@ -108,8 +108,8 @@ export function mergeTrimmedBlocks(
       if (!isBridge && tail.type === "paragraph" && isTextLikeBlock(suffix)) {
         merged = concatTextLikeChildren(suffix, tail.children, suffix.children);
         if (prefix === null && fragment.length === 1) {
-          startRegionPreservedAtRoot0 = true;
-          startRegionInsertedText = tail.plainText;
+          startPathPreservedAtRoot0 = true;
+          startPathInsertedText = tail.plainText;
         }
       } else if (isBridge && isTextLikeBlock(tail) && isTextLikeBlock(suffix)) {
         merged = concatTextLikeChildren(tail, tail.children, suffix.children);
@@ -119,7 +119,7 @@ export function mergeTrimmedBlocks(
         caret = { childIndices: [leftChildren.length - 1], offset: "end" };
       }
     } else if (prefix === null && fragment.length === 0) {
-      startRegionPreservedAtRoot0 = true;
+      startPathPreservedAtRoot0 = true;
     }
 
     if (merged) {
@@ -134,8 +134,8 @@ export function mergeTrimmedBlocks(
     caretLocalIndex,
     caretChildIndices: caret.childIndices,
     caretOffset: caret.offset,
-    startRegionInsertedText,
-    startRegionPreservedAtRoot0,
+    startPathInsertedText,
+    startPathPreservedAtRoot0,
   };
 }
 

@@ -5,8 +5,8 @@ import type { DocumintDecoration } from "@/types";
 import { compileDecorations, resolveDecorationMatches } from "./matching";
 
 // Applies host rules to a root's inline prose, emitting decoration ranges by
-// region path. Leaf code blocks have no inline text and are skipped here;
-// `code` highlights those instead.
+// canonical block/cell path. Leaf code blocks have no inline text and are
+// skipped here; `code` highlights those instead.
 export function resolveBlockDecorationRanges(
   block: Block,
   rootIndex: number,

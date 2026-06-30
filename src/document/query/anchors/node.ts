@@ -168,6 +168,13 @@ export function resolveDocumentNodeAnchors(
   return matches;
 }
 
+// Snapshot-local location key: where the anchored node currently sits. Distinct
+// from `documentNodeAnchorKey`, the content-addressable identity used to match a
+// node across rebuilds.
+export function documentNodeAnchorLocationKey(anchor: DocumentNodeAnchor) {
+  return `${anchor.kind}:${anchor.path}`;
+}
+
 export function documentNodeAnchorKey(anchor: DocumentNodeAnchor) {
   if (anchor.kind === "block") {
     return [

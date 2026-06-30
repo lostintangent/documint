@@ -31,7 +31,7 @@ export type ListMarkerFrame =
       rect: LayoutRect;
     };
 
-// Builds the per-frame map of list markers keyed by the first-line region path.
+// Builds the per-frame map of list markers keyed by the first-line text path.
 // Only `line.start === 0` lines carry a marker, so wrapped lines never need a
 // lookup.
 export function resolveListMarkerPlans(
@@ -45,7 +45,7 @@ export function resolveListMarkerPlans(
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
 
-    if (line.start !== 0 || listMarkerPlans.has(line.regionPath)) {
+    if (line.start !== 0 || listMarkerPlans.has(line.path)) {
       continue;
     }
 
@@ -55,7 +55,7 @@ export function resolveListMarkerPlans(
       continue;
     }
 
-    listMarkerPlans.set(line.regionPath, { blockPath: target.blockPath, marker: target.marker });
+    listMarkerPlans.set(line.path, { blockPath: target.blockPath, marker: target.marker });
   }
 
   return listMarkerPlans;

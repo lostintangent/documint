@@ -6,9 +6,8 @@
 //                   high-level operations, save-time canonicalization.
 //                   Non-node structural IDs stay internal.
 //   query/        — reading from existing Documents. Traversal, projection,
-//                   anchor algebra.
-//   diff/         — bounded semantic change detection and anchor matching
-//                   across immutable Document snapshots.
+//                   anchor algebra, and bounded change detection across
+//                   immutable Document snapshots.
 //   comments/     — anchored-annotation domain.
 //
 // Each subfolder has its own `index.ts` that is the single source of truth
@@ -18,6 +17,5 @@
 
 export * from "./build";
 export * from "./comments";
-export * from "./diff";
 export * from "./model";
 export * from "./query";

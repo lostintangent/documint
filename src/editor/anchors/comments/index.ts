@@ -25,18 +25,16 @@ import {
 } from "@/document";
 import {
   compareEditorPositions,
-  resolveCommentThreadIndicesForRegion,
-  resolveRegion,
   type DocumentIndex,
-  type EditableRegion,
+  resolveCommentThreadIndicesForPath,
 } from "../../state";
 import {
-  findLineEntryForRegionOffset,
+  findLineEntryForPathOffset,
   someVisibleDocumentLayoutLine,
   type EditorLayoutState,
 } from "../../layout";
 import type { EditorState } from "../../state/types";
-import { createEditorTextAnchorResolver, resolveDocumentRangeForRegion } from "../text";
+import { createEditorTextAnchorResolver, resolveDocumentRangeForPath } from "../text";
 import type { EditorPresence } from "../presence";
 import { remapEditedRange } from "./remap";
 
@@ -44,8 +42,8 @@ import { remapEditedRange } from "./remap";
 
 export type EditorCommentRange = {
   endOffset: number;
+  path: string;
   resolution: CommentResolution;
-  regionPath: string;
   resolved: boolean;
   startOffset: number;
   threadIndex: number;
@@ -60,12 +58,12 @@ export type EditorCommentState = {
 
 // Build a `CommentThread` from the current editor selection. Returns
 // `null` if the body is empty, the selection is collapsed, or the selected
-// region isn't an anchorable kind (e.g. a list-item marker region).
+// path isn't an anchorable kind (for example, a structural list-item marker).
 export function createCommentThreadForSelection(
   documentIndex: DocumentIndex,
   selection: {
     endOffset: number;
-    regionPath: string;
+    path: string;
     startOffset: number;
   },
   body: string,
@@ -76,13 +74,10 @@ export function createCommentThreadForSelection(
     return null;
   }
 
-  const region = resolveRegion(documentIndex, selection.regionPath);
-  const anchorRange = region
-    ? resolveDocumentRangeForRegion(region, {
-        endOffset: selection.endOffset,
-        startOffset: selection.startOffset,
-      })
-    : null;
+  const anchorRange = resolveDocumentRangeForPath(documentIndex, selection.path, {
+    endOffset: selection.endOffset,
+    startOffset: selection.startOffset,
+  });
 
   if (!anchorRange) {
     return null;
@@ -168,8 +163,8 @@ function resolveCommentStateForThreadIndices(
 
     ranges.push({
       endOffset: editorRange.endOffset,
+      path: editorRange.path,
       resolution,
-      regionPath: editorRange.runtimeContainer.path,
       resolved: thread.resolvedAt != null,
       startOffset: editorRange.startOffset,
       threadIndex,
@@ -196,7 +191,7 @@ export function hasActiveCommentHighlightsInViewport(
       (range) =>
         !range.resolved &&
         commentPresence.has(range.threadIndex) &&
-        range.regionPath === line.regionPath &&
+        range.path === line.path &&
         range.endOffset > line.start &&
         range.startOffset < line.end,
     ),
@@ -205,8 +200,8 @@ export function hasActiveCommentHighlightsInViewport(
 
 // Return the index (into `Document.comments`) of the comment whose range
 // either contains the collapsed caret or overlaps the active (non-collapsed)
-// selection. Selections can cross regions, so positions are compared in
-// document order via each region's `regionArrayIndex` field.
+// selection. Selections can cross paths, so positions are compared through
+// the index's document-flow position comparator.
 export function resolveActiveCommentIndex(
   state: EditorState,
   ranges: readonly EditorCommentRange[],
@@ -217,8 +212,8 @@ export function resolveActiveCommentIndex(
 
   const { anchor, focus } = state.selection;
   const cmp = (
-    left: { offset: number; regionPath: string },
-    right: { offset: number; regionPath: string },
+    left: { offset: number; path: string },
+    right: { offset: number; path: string },
   ) => compareEditorPositions(state.documentIndex, left, right, { unknown: "before" });
 
   const orientation = cmp(anchor, focus);
@@ -226,8 +221,8 @@ export function resolveActiveCommentIndex(
   const [start, end] = orientation <= 0 ? [anchor, focus] : [focus, anchor];
 
   for (const range of ranges) {
-    const rangeStart = { regionPath: range.regionPath, offset: range.startOffset };
-    const rangeEnd = { regionPath: range.regionPath, offset: range.endOffset };
+    const rangeStart = { path: range.path, offset: range.startOffset };
+    const rangeEnd = { path: range.path, offset: range.endOffset };
 
     if (isCollapsed) {
       // Caret-in-range: rangeStart ≤ caret ≤ rangeEnd in document order.
@@ -262,14 +257,14 @@ export function resolveCommentThreadViewportPosition(
     return null;
   }
 
-  const startLine = findLineEntryForRegionOffset(
+  const startLine = findLineEntryForPathOffset(
     viewport.layout,
-    range.regionPath,
+    range.path,
     range.startOffset,
   )?.line;
-  const endLine = findLineEntryForRegionOffset(
+  const endLine = findLineEntryForPathOffset(
     viewport.layout,
-    range.regionPath,
+    range.path,
     Math.max(range.startOffset, range.endOffset - 1),
   )?.line;
 
@@ -280,20 +275,20 @@ export function resolveCommentThreadViewportPosition(
     };
   }
 
-  return viewport.estimateRegionBounds(range.regionPath);
+  return viewport.estimatePathBounds(range.path);
 }
 
 // --- Edit-time repair ---
 
-// Optimistically keep comments sticky within an edited region by remapping
+// Optimistically keep comments sticky within an edited path by remapping
 // each affected thread's comment range through the splice math. General
 // resolution still runs against the next document snapshot via
 // `getCommentState`; this fast path just minimizes anchor drift for inline
 // edits where prefix/suffix context is about to shift.
-export function updateCommentThreadsForRegionEdit(
+export function updateCommentThreadsForPathEdit(
   documentIndex: DocumentIndex,
   nextDocumentIndex: DocumentIndex,
-  region: EditableRegion,
+  path: string,
   selectionStart: number,
   selectionEnd: number,
   insertedText: string,
@@ -302,14 +297,14 @@ export function updateCommentThreadsForRegionEdit(
     return nextDocumentIndex.document.comments;
   }
 
-  const threadIndices = resolveCommentThreadIndicesForRegion(documentIndex, region);
+  const threadIndices = resolveCommentThreadIndicesForPath(documentIndex, path);
   const threadIndexSet = new Set(threadIndices);
 
   if (threadIndices.length === 0) {
     return nextDocumentIndex.document.comments;
   }
 
-  const currentEditRange = resolveDocumentRangeForRegion(region, {
+  const currentEditRange = resolveDocumentRangeForPath(documentIndex, path, {
     endOffset: selectionEnd,
     startOffset: selectionStart,
   });
@@ -317,16 +312,14 @@ export function updateCommentThreadsForRegionEdit(
     ? {
         ...currentEditRange.anchorContainer,
         containerOrdinal: -1,
-        path: region.containerPath,
+        path,
       }
     : null;
-  const nextRegion = resolveRegion(nextDocumentIndex, region.path);
-  const nextContainer = nextRegion
-    ? resolveDocumentRangeForRegion(nextRegion, {
-        endOffset: 0,
-        startOffset: 0,
-      })?.anchorContainer ?? null
-    : null;
+  const nextContainer =
+    resolveDocumentRangeForPath(nextDocumentIndex, path, {
+      endOffset: 0,
+      startOffset: 0,
+    })?.anchorContainer ?? null;
 
   if (!currentEditRange || !currentContainer || !nextContainer) {
     return nextDocumentIndex.document.comments;
@@ -348,7 +341,7 @@ export function updateCommentThreadsForRegionEdit(
       [currentContainer],
     ).match;
 
-    if (!repairedMatch || repairedMatch.containerPath !== region.containerPath) {
+    if (!repairedMatch || repairedMatch.containerPath !== path) {
       continue;
     }
 

@@ -27,7 +27,7 @@ describe("resolveBlockDecorationRanges", () => {
     const before = structuredClone(block);
 
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "tomato", pattern: /world/ }])).toEqual(
-      [{ color: "tomato", endOffset: 11, path: "root.0.children", startOffset: 6 }],
+      [{ color: "tomato", endOffset: 11, path: "root.0", startOffset: 6 }],
     );
     expect(block).toEqual(before);
   });
@@ -38,8 +38,8 @@ describe("resolveBlockDecorationRanges", () => {
     expect(
       resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /\((\d+)\)/ }]),
     ).toEqual([
-      { color: "gray", endOffset: 9, path: "root.0.children", startOffset: 6 },
-      { color: "gray", endOffset: 19, path: "root.0.children", startOffset: 16 },
+      { color: "gray", endOffset: 9, path: "root.0", startOffset: 6 },
+      { color: "gray", endOffset: 19, path: "root.0", startOffset: 16 },
     ]);
   });
 
@@ -47,7 +47,7 @@ describe("resolveBlockDecorationRanges", () => {
     const block = createParagraphTextBlock("aa");
 
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /a(a)/ }])).toEqual([
-      { color: "gray", endOffset: 2, path: "root.0.children", startOffset: 1 },
+      { color: "gray", endOffset: 2, path: "root.0", startOffset: 1 },
     ]);
   });
 
@@ -56,7 +56,7 @@ describe("resolveBlockDecorationRanges", () => {
 
     expect(
       resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /\((\d+)?\)/ }]),
-    ).toEqual([{ color: "gray", endOffset: 16, path: "root.0.children", startOffset: 13 }]);
+    ).toEqual([{ color: "gray", endOffset: 16, path: "root.0", startOffset: 13 }]);
   });
 
   test("does not match styled text or across styled text boundaries", () => {
@@ -77,8 +77,8 @@ describe("resolveBlockDecorationRanges", () => {
         { color: "blue", pattern: /bcd/ },
       ]),
     ).toEqual([
-      { color: "red", endOffset: 3, path: "root.0.children", startOffset: 0 },
-      { color: "blue", endOffset: 4, path: "root.0.children", startOffset: 3 },
+      { color: "red", endOffset: 3, path: "root.0", startOffset: 0 },
+      { color: "blue", endOffset: 4, path: "root.0", startOffset: 3 },
     ]);
   });
 
@@ -95,13 +95,13 @@ describe("resolveBlockDecorationRanges", () => {
         backgroundColor: "yellow",
         color: "black",
         endOffset: 4,
-        path: "root.0.children",
+        path: "root.0",
         startOffset: 0,
       },
       {
         backgroundColor: "yellow",
         endOffset: 9,
-        path: "root.0.children",
+        path: "root.0",
         startOffset: 4,
       },
     ]);
@@ -121,7 +121,7 @@ describe("resolveBlockDecorationRanges", () => {
         backgroundColor: "gold",
         pulse: true,
         endOffset: 8,
-        path: "root.0.children",
+        path: "root.0",
         startOffset: 0,
       },
       {
@@ -129,7 +129,7 @@ describe("resolveBlockDecorationRanges", () => {
         pulse: true,
         color: "black",
         endOffset: 12,
-        path: "root.0.children",
+        path: "root.0",
         startOffset: 8,
       },
     ]);
@@ -146,7 +146,7 @@ describe("resolveBlockDecorationRanges", () => {
       [],
     );
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 16, path: "root.0.children", startOffset: 10 },
+      { color: "red", endOffset: 16, path: "root.0", startOffset: 10 },
     ]);
   });
 
@@ -159,7 +159,7 @@ describe("resolveBlockDecorationRanges", () => {
 
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /pha/ }])).toEqual([]);
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
+      { color: "red", endOffset: 17, path: "root.0", startOffset: 11 },
     ]);
   });
 
@@ -183,7 +183,7 @@ describe("resolveBlockDecorationRanges", () => {
       resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /preview|Recording/ }]),
     ).toEqual([]);
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
+      { color: "red", endOffset: 17, path: "root.0", startOffset: 11 },
     ]);
   });
 
@@ -201,7 +201,7 @@ describe("resolveBlockDecorationRanges", () => {
       [],
     );
     expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 17, path: "root.0.children", startOffset: 11 },
+      { color: "red", endOffset: 17, path: "root.0", startOffset: 11 },
     ]);
   });
 
@@ -214,7 +214,7 @@ describe("resolveBlockDecorationRanges", () => {
 
     expect(
       resolveBlockDecorationRanges(heading, 0, [{ color: "purple", pattern: /target/ }]),
-    ).toEqual([{ color: "purple", endOffset: 14, path: "root.0.children", startOffset: 8 }]);
+    ).toEqual([{ color: "purple", endOffset: 14, path: "root.0", startOffset: 8 }]);
     expect(
       resolveBlockDecorationRanges(table, 1, [{ color: "purple", pattern: /target/ }]),
     ).toEqual([

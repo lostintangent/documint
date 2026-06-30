@@ -1,15 +1,16 @@
 // Owns large-document slice picking and post-exact processing: find the visible
 // window in estimate space, expand it so tables stay whole, and feed measured
 // heights back into the cache so subsequent estimates use real numbers for
-// visible regions. The slice is measured directly in document space (via
+// visible paths. The slice is measured directly in document space (via
 // `measureLayoutSlice`'s `startY`), so no coordinate shift is needed here.
 
 import type { DocumentResources } from "@/types";
-import { resolveIndexedBlock, resolveRegion, type DocumentIndex } from "../../state";
+import type { DocumentIndex } from "../../state";
 import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
 import { resolveBlockContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { DocumentLayout } from "../measure";
+import { resolveLayoutTextInputAtPath } from "../measure/text-input";
 import { createContainerHeightCacheKey } from "./height-estimate";
 
 export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayout, y: number) {
@@ -32,30 +33,48 @@ export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayou
 
 export function expandViewportSliceToBlockBoundaries(
   documentIndex: DocumentIndex,
+  virtualLayout: VirtualLayout,
   startIndex: number,
   endIndex: number,
 ) {
-  let nextStartIndex = startIndex;
-  let nextEndIndex = endIndex;
+  let blockStartIndex = Number.POSITIVE_INFINITY;
+  let blockEndIndex = Number.NEGATIVE_INFINITY;
+  let top: number | null = null;
 
   for (let index = startIndex; index < endIndex; index += 1) {
-    const container = documentIndex.regions[index]!;
-    const block = resolveIndexedBlock(documentIndex, container.blockPath);
+    const entry = virtualLayout.entries[index];
+    const block = entry ? documentIndex.blocks[entry.blockArrayIndex] : null;
 
-    if (!block) {
+    if (!entry || !block) {
       continue;
     }
 
-    if (block.block.type === "table") {
-      nextStartIndex = Math.min(nextStartIndex, block.regionRangeStart);
-      nextEndIndex = Math.max(nextEndIndex, block.regionRangeEnd);
-    }
+    top = top === null ? entry.top : Math.min(top, entry.top);
+    blockStartIndex = Math.min(blockStartIndex, block.blockArrayIndex);
+    blockEndIndex = Math.max(blockEndIndex, block.blockRangeEnd);
   }
 
   return {
-    endIndex: nextEndIndex,
-    startIndex: nextStartIndex,
+    blockEndIndex: Number.isFinite(blockEndIndex) ? blockEndIndex : 0,
+    blockStartIndex: Number.isFinite(blockStartIndex) ? blockStartIndex : 0,
+    top: Number.isFinite(blockStartIndex) && Number.isFinite(blockEndIndex)
+      ? resolveExpandedSliceTop(virtualLayout, blockStartIndex, blockEndIndex) ?? top
+      : top,
   };
+}
+
+function resolveExpandedSliceTop(
+  virtualLayout: VirtualLayout,
+  blockStartIndex: number,
+  blockEndIndex: number,
+) {
+  for (const entry of virtualLayout.entries) {
+    if (entry.blockArrayIndex >= blockStartIndex && entry.blockArrayIndex < blockEndIndex) {
+      return entry.top;
+    }
+  }
+
+  return null;
 }
 
 export function updateMeasuredContainerHeights(
@@ -65,20 +84,18 @@ export function updateMeasuredContainerHeights(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  for (const [regionPath, extent] of layout.regionBounds) {
+  for (const [path, extent] of layout.pathBounds) {
     const height = extent.bottom - extent.top;
-    const container = resolveRegion(documentIndex, regionPath);
-    if (!container) continue;
-    const indexedBlock = resolveIndexedBlock(documentIndex, container.blockPath);
-    if (!indexedBlock) continue;
-    // Mirror the metrics applied when estimating this region —
+    const resolved = resolveLayoutTextInputAtPath(documentIndex, path);
+    if (!resolved) continue;
+    // Mirror the metrics applied when estimating this path —
     // otherwise the cache key for the measured height won't match the
     // cache key the next estimate pass looks up, defeating the cache.
-    const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
+    const contentMetrics = resolveBlockContentMetrics(documentIndex, resolved.indexedBlock, options);
 
     cacheMeasuredContainerHeight(
       cache,
-      createContainerHeightCacheKey(container, contentMetrics, options, resources),
+      createContainerHeightCacheKey(resolved.input, contentMetrics, options, resources),
       height,
     );
   }

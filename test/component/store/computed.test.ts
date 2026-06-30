@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import { createStore } from "@/component/store";
 import { createParameterizedSprig, createComputedSprig } from "@/component/store/core/computed";
@@ -14,7 +15,7 @@ import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/s
 import { commentPresenceSprig, resolvedPresenceSprig } from "@/component/store/presence";
 import { getDocument } from "@/editor";
 import { addComment, insertText, resolveThread, setSelection } from "@/editor/state";
-import { getRegion, placeAt, setup } from "@test/editor/helpers";
+import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("computed sprigs", () => {
   test("caches one derived value per dependency snapshot", () => {
@@ -36,14 +37,14 @@ describe("computed sprigs", () => {
   test("notifies subscribers when the computed output changes", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
-    const region = getRegion(store.editor.getState(), "alpha");
+    const path = getPath(store.editor.getState(), "alpha");
     let notifications = 0;
 
     normalizedSelectionSprig.subscribe(store, () => {
       notifications += 1;
     });
 
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(notifications).toBe(1);
     expect(normalizedSelectionSprig.read(store).start.offset).toBe(2);
@@ -52,8 +53,8 @@ describe("computed sprigs", () => {
   test("does not notify when the derived output is equal", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
-    const region = getRegion(store.editor.getState(), "alpha");
-    store.editor.replace(placeAt(store.editor.getState(), region, "end"));
+    const path = getPath(store.editor.getState(), "alpha");
+    store.editor.replace(placeAt(store.editor.getState(), path, "end"));
     let notifications = 0;
     const imageUrlSet = createComputedSprig(
       [editorStateSprig],
@@ -74,7 +75,7 @@ describe("computed sprigs", () => {
   test("shares the cached derivation across subscribers", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
-    const region = getRegion(store.editor.getState(), "alpha");
+    const path = getPath(store.editor.getState(), "alpha");
     let computeCount = 0;
     const computed = createComputedSprig([editorStateSprig], (_store, state) => {
       computeCount += 1;
@@ -83,7 +84,7 @@ describe("computed sprigs", () => {
 
     computed.subscribe(store, () => {});
     computed.subscribe(store, () => {});
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(computeCount).toBe(2);
   });
@@ -91,14 +92,14 @@ describe("computed sprigs", () => {
   test("unsubscribes computed subscribers", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
-    const region = getRegion(store.editor.getState(), "alpha");
+    const path = getPath(store.editor.getState(), "alpha");
     let notifications = 0;
     const unsubscribe = normalizedSelectionSprig.subscribe(store, () => {
       notifications += 1;
     });
 
     unsubscribe();
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(notifications).toBe(0);
   });
@@ -106,14 +107,14 @@ describe("computed sprigs", () => {
   test("recomputes dependency-driven values only when their dependencies change", () => {
     const state = setup("alpha\n");
     const store = createStore(getDocument(state));
-    const region = getRegion(store.editor.getState(), "alpha");
+    const path = getPath(store.editor.getState(), "alpha");
     let computeCount = 0;
     let notifications = 0;
     const computed = createComputedSprig([documentIndexSprig], (documintStore, documentIndex) => {
       computeCount += 1;
       return {
         focusOffset: documintStore.editor.getState().selection.focus.offset,
-        regionCount: documentIndex.regions.length,
+        pathCount: indexedTextEntries(documentIndex).length,
       };
     });
 
@@ -122,7 +123,7 @@ describe("computed sprigs", () => {
     });
     const previous = computed.read(store);
 
-    store.editor.command(setSelection, { regionPath: region.path, offset: 2 });
+    store.editor.command(setSelection, { path: path.path, offset: 2 });
 
     expect(computed.read(store)).toBe(previous);
     expect(computeCount).toBe(1);
@@ -143,7 +144,7 @@ describe("computed sprigs", () => {
       [documentIndexSprig],
       (_documintStore, [label]: readonly [string], documentIndex) => {
         computeCount += 1;
-        return `${label}:${documentIndex.regions.length}`;
+        return `${label}:${indexedTextEntries(documentIndex).length}`;
       },
     );
 
@@ -174,7 +175,7 @@ describe("computed sprigs", () => {
 
     expect(presence?.cursorPoint).toEqual({
       offset: 5,
-      regionPath: getRegion(state, "alpha beta").path,
+      path: getPath(state, "alpha beta").path,
     });
     expect(presence?.viewport).toBeNull();
     expect(presence?.status).toBe("Reviewing introduction");
@@ -183,15 +184,15 @@ describe("computed sprigs", () => {
 
   test("derives comment presence by thread index", () => {
     let state = setup("alpha beta\n");
-    const region = getRegion(state, "alpha beta");
+    const path = getPath(state, "alpha beta");
     state = setSelection(state, {
-      anchor: { regionPath: region.path, offset: 0 },
-      focus: { regionPath: region.path, offset: "alpha".length },
+      anchor: { path: path.path, offset: 0 },
+      focus: { path: path.path, offset: "alpha".length },
     });
     state =
       addComment(
         state,
-        { endOffset: "alpha".length, regionPath: region.path, startOffset: 0 },
+        { endOffset: "alpha".length, path: path.path, startOffset: 0 },
         "Working here",
       ) ?? state;
     const store = createStore(getDocument(state));
@@ -271,8 +272,8 @@ describe("computed sprigs", () => {
   test("derives document completion from the active editor selection", () => {
     const state = setup("Hello @Ja\n");
     const store = createStore(getDocument(state));
-    const region = getRegion(store.editor.getState(), "Hello @Ja");
-    store.editor.command(setSelection, { regionPath: region.path, offset: region.text.length });
+    const path = getPath(store.editor.getState(), "Hello @Ja");
+    store.editor.command(setSelection, { path: path.path, offset: path.text.length });
 
     expect(
       documentCompletionSprig.read(store, [
@@ -285,7 +286,7 @@ describe("computed sprigs", () => {
         },
       ]),
     ).toEqual({
-      regionPath: region.path,
+      path: path.path,
       trigger: "@",
       query: "Ja",
       triggerStart: 6,
@@ -379,23 +380,24 @@ describe("computed sprigs", () => {
 
   test("derives the active comment thread index", () => {
     let state = setup("alpha beta\n");
-    const region = getRegion(state, "alpha beta");
+    const path = getPath(state, "alpha beta");
     state = setSelection(state, {
-      anchor: { regionPath: region.path, offset: 0 },
-      focus: { regionPath: region.path, offset: 5 },
+      anchor: { path: path.path, offset: 0 },
+      focus: { path: path.path, offset: 5 },
     });
     const commented = addComment(
       state,
       {
         endOffset: 5,
-        regionPath: region.path,
+        path: path.path,
         startOffset: 0,
       },
       "note",
     );
     const store = createStore(getDocument(commented ?? state));
 
-    expect(activeCommentIndexSprig.read(store)).toBe(0);
+    expect(activeCommentIndexSprig.read(store, false)).toBe(0);
+    expect(activeCommentIndexSprig.read(store, true)).toBeNull();
   });
 });
 
@@ -414,14 +416,14 @@ function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
 
 function setupPresenceCommentState() {
   let state = setup("alpha beta gamma\n");
-  const region = getRegion(state, "alpha beta gamma");
+  const path = getPath(state, "alpha beta gamma");
 
   state =
     addComment(
       state,
       {
         endOffset: "alpha".length,
-        regionPath: region.path,
+        path: path.path,
         startOffset: 0,
       },
       "Unresolved thread",
@@ -432,7 +434,7 @@ function setupPresenceCommentState() {
       state,
       {
         endOffset: "alpha beta".length,
-        regionPath: region.path,
+        path: path.path,
         startOffset: "alpha ".length,
       },
       "Resolved thread",

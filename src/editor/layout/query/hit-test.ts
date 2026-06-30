@@ -1,7 +1,7 @@
 // Owns point-to-line resolution against a prepared `DocumentLayout`.
 
 import { type DocumentIndex } from "../../state";
-import { resolveRegion } from "../../state/index/query";
+import { resolveEditorTextAtPath } from "../../state/index/query";
 import type { DocumentLayout } from "../measure";
 import type { DocumentCaretTarget } from "./caret";
 import {
@@ -28,13 +28,12 @@ export function hitTestDocumentLayout(
   }
 
   const { index: lineIndex, line } = lineEntry;
-  // The line came from this layout, so its region is in scope; the lookup
-  // is here to read the region's full text length for the offset clamp
-  // (clicking past the end of the last line should land at the region's
-  // end, not the line's).
-  const region = resolveRegion(documentIndex, line.regionPath);
+  // The line came from this layout, so its path is in scope; the lookup is
+  // here to read the full text length for the offset clamp (clicking past
+  // the end of the last line should land at the path's end, not the line's).
+  const text = resolveEditorTextAtPath(documentIndex, line.path);
 
-  if (!region) {
+  if (text === null) {
     return null;
   }
 
@@ -43,11 +42,11 @@ export function hitTestDocumentLayout(
 
   return {
     blockPath: line.blockPath,
-    regionPath: line.regionPath,
+    path: line.path,
     height: line.height,
     left: measureCanvasLineOffsetLeft(line, offset),
     lineIndex,
-    offset: Math.min(region.text.length, line.start + offset),
+    offset: Math.min(text.length, line.start + offset),
     top: line.top,
   };
 }

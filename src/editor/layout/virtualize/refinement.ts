@@ -1,13 +1,11 @@
 // Owns refinement of cached virtual-layout estimates from exact measured
 // viewport slices.
 
-import type { DocumentIndex } from "../../state";
 import type { VirtualLayout } from "../state/cache";
 import type { DocumentLayout } from "../measure";
 
 export function refineVirtualLayoutWithMeasuredSlice(
   virtualLayout: VirtualLayout,
-  documentIndex: DocumentIndex,
   layout: DocumentLayout,
 ) {
   let offset = 0;
@@ -22,7 +20,7 @@ export function refineVirtualLayoutWithMeasuredSlice(
 
     const groupEndIndex = findEquivalentEntryGroupEnd(virtualLayout.entries, index);
     const measuredBounds = resolveMeasuredEntryGroupBounds(
-      documentIndex,
+      virtualLayout,
       layout,
       index,
       groupEndIndex,
@@ -96,7 +94,7 @@ function findEquivalentEntryGroupEnd(entries: VirtualLayout["entries"], startInd
 }
 
 function resolveMeasuredEntryGroupBounds(
-  documentIndex: DocumentIndex,
+  virtualLayout: VirtualLayout,
   layout: DocumentLayout,
   startIndex: number,
   endIndex: number,
@@ -105,8 +103,8 @@ function resolveMeasuredEntryGroupBounds(
   let top = Number.POSITIVE_INFINITY;
 
   for (let index = startIndex; index < endIndex; index += 1) {
-    const regionPath = documentIndex.regions[index]?.path;
-    const bounds = regionPath ? layout.regionBounds.get(regionPath) : null;
+    const path = virtualLayout.entries[index]?.path;
+    const bounds = path ? layout.pathBounds.get(path) : null;
 
     if (!bounds) {
       continue;

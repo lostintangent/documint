@@ -1,10 +1,10 @@
-// Owns exact layout for a concrete set of editor regions. This module resolves
-// local line, region, and block geometry without doing viewport virtualization
+// Owns exact layout for a concrete set of indexed editor blocks. This module resolves
+// local line, path, and block geometry without doing viewport virtualization
 // or whole-document height estimation.
 import type { Block } from "@/document";
 import { emptyDocumentResources } from "@/editor/resources";
 import type { DocumentResources } from "@/types";
-import { isContainerBlock, resolveIndexedBlock, type DocumentIndex } from "../../state";
+import { isContainerBlock, type DocumentIndex } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
 import { walkLayoutBlocks } from "../lib/block-walk";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
@@ -23,6 +23,7 @@ import {
   type TextLineBoundary,
   type TextInlineReference,
 } from "./text";
+import { resolveBlockLayoutTextInput } from "./text-input";
 
 export type { DocumentLayoutOptions } from "../lib/options";
 export type { LayoutBlockExtent } from "../lib/marker-metrics";
@@ -33,8 +34,8 @@ export type LayoutInlineReference = TextInlineReference;
 export type LayoutLine = {
   // Identity: connects this visual row back to indexed editor content.
   blockPath: string;
-  regionPath: string;
-  // Model span: offsets and text slice from the owning editable region.
+  path: string;
+  // Model span: offsets and text slice from the owning editor path.
   start: number;
   end: number;
   // Geometry: document-space rectangle occupied by this visual row.
@@ -67,8 +68,8 @@ export type LayoutBlock = {
 
 export type DocumentLayout = {
   blocks: LayoutBlock[];
-  regionBounds: Map<string, { bottom: number; left: number; right: number; top: number }>;
-  regionLineIndices: Map<string, number[]>;
+  pathBounds: Map<string, { bottom: number; left: number; right: number; top: number }>;
+  pathLineIndices: Map<string, number[]>;
   height: number;
   lines: LayoutLine[];
   options: DocumentLayoutOptions;
@@ -85,29 +86,29 @@ export function measureLayoutSlice(
   // the slice so geometry emerges directly in document space and no
   // post-measurement shift is needed.
   startY?: number,
-  regionStartIndex = 0,
-  regionEndIndex = documentIndex.regions.length,
+  blockStartIndex = 0,
+  blockEndIndex = documentIndex.blocks.length,
 ): DocumentLayout {
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
   const lines: LayoutLine[] = [];
-  const regionBounds = new Map<
+  const pathBounds = new Map<
     string,
     { bottom: number; left: number; right: number; top: number }
   >();
   const blockExtents = new Map<string, LayoutBlockExtent>();
-  const boundedRegionStartIndex = clampRegionIndex(documentIndex, regionStartIndex);
-  const boundedRegionEndIndex = clampRegionIndex(documentIndex, regionEndIndex);
+  const boundedBlockStartIndex = clampBlockIndex(documentIndex, blockStartIndex);
+  const boundedBlockEndIndex = clampBlockIndex(documentIndex, blockEndIndex);
   const layoutBlocks = resolveLayoutBlockScope(
     documentIndex,
-    boundedRegionStartIndex,
-    boundedRegionEndIndex,
+    boundedBlockStartIndex,
+    boundedBlockEndIndex,
   );
 
-  // Layout walks blocks (not regions) so inert leaves — those without
-  // any region — get a positioned geometry slot in document order. Text
-  // blocks dispatch through their regions; tables slurp all their cell
-  // regions in one pass; inert leaves reserve a fixed-height extent
+  // Layout walks blocks so inert leaves get a positioned geometry slot in
+  // document order. Text/source blocks lay out their indexed text projection;
+  // tables lay out their indexed cells in one pass; inert leaves reserve a
+  // fixed-height extent
   // without emitting any line. Container blocks (blockquote, list,
   // listItem) contribute no layout themselves — their leaf descendants
   // do — so we skip them here.
@@ -119,13 +120,9 @@ export function measureLayoutSlice(
     isInert,
     previousLaidOutBlock,
     previousLaidOutBlockIsInert,
-    regionEndIndex: blockRegionEndIndex,
-    regionStartIndex: blockRegionStartIndex,
   } of walkLayoutBlocks(documentIndex, {
     blockGap: resolvedOptions.blockGap,
     layoutBlocks,
-    visibleRegionEndIndex: boundedRegionEndIndex,
-    visibleRegionStartIndex: boundedRegionStartIndex,
   })) {
     const block = indexedBlock.block;
 
@@ -158,10 +155,8 @@ export function measureLayoutSlice(
       y = layoutTable(
         lines,
         blockExtents,
-        regionBounds,
-        documentIndex.regions,
-        blockRegionStartIndex,
-        blockRegionEndIndex,
+        pathBounds,
+        indexedBlock,
         cache,
         block,
         indexedBlock.path,
@@ -171,15 +166,13 @@ export function measureLayoutSlice(
         resolvedResources,
       );
     } else {
-      for (let regionIndex = blockRegionStartIndex; regionIndex < blockRegionEndIndex; regionIndex += 1) {
-        const container = documentIndex.regions[regionIndex];
-        if (!container) continue;
-
+      const input = resolveBlockLayoutTextInput(indexedBlock);
+      if (input) {
         y = layoutSingleContainer(
           lines,
           blockExtents,
-          regionBounds,
-          container,
+          pathBounds,
+          input,
           cache,
           block,
           indexedBlock.path,
@@ -215,8 +208,8 @@ export function measureLayoutSlice(
 
   return {
     blocks,
-    regionBounds,
-    regionLineIndices: createContainerLineIndices(lines),
+    pathBounds,
+    pathLineIndices: createPathLineIndices(lines),
     height: Math.max(y, seedY),
     lines,
     options: resolvedOptions,
@@ -226,47 +219,33 @@ export function measureLayoutSlice(
 
 function resolveLayoutBlockScope(
   documentIndex: DocumentIndex,
-  regionStartIndex: number,
-  regionEndIndex: number,
+  blockStartIndex: number,
+  blockEndIndex: number,
 ) {
-  if (regionStartIndex === 0 && regionEndIndex === documentIndex.regions.length) {
+  if (blockStartIndex === 0 && blockEndIndex === documentIndex.blocks.length) {
     return documentIndex.blocks;
   }
 
-  if (regionStartIndex >= regionEndIndex) {
+  if (blockStartIndex >= blockEndIndex) {
     return [];
   }
-
-  const firstRegion = documentIndex.regions[regionStartIndex];
-  const lastRegion = documentIndex.regions[regionEndIndex - 1];
-  const firstBlock = firstRegion
-    ? resolveIndexedBlock(documentIndex, firstRegion.blockPath)
-    : null;
-  const lastBlock = lastRegion ? resolveIndexedBlock(documentIndex, lastRegion.blockPath) : null;
-
-  if (!firstBlock || !lastBlock) {
-    return [];
-  }
-
-  const blockStartIndex = Math.min(firstBlock.blockArrayIndex, lastBlock.blockArrayIndex);
-  const blockEndIndex = Math.max(firstBlock.blockArrayIndex, lastBlock.blockArrayIndex) + 1;
 
   return documentIndex.blocks.slice(blockStartIndex, blockEndIndex);
 }
 
-function clampRegionIndex(documentIndex: DocumentIndex, index: number) {
+function clampBlockIndex(documentIndex: DocumentIndex, index: number) {
   if (!Number.isFinite(index)) {
     return 0;
   }
 
-  return Math.max(0, Math.min(documentIndex.regions.length, Math.trunc(index)));
+  return Math.max(0, Math.min(documentIndex.blocks.length, Math.trunc(index)));
 }
 
 function layoutSingleContainer(
   lines: LayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
-  regionBounds: DocumentLayout["regionBounds"],
-  container: DocumentIndex["regions"][number],
+  pathBounds: DocumentLayout["pathBounds"],
+  container: Parameters<typeof measureTextContainerLines>[1],
   cache: LayoutCache,
   block: Block | null,
   blockPath: string,
@@ -291,7 +270,7 @@ function layoutSingleContainer(
   for (const line of measuredLines) {
     const layoutLine = {
       blockPath,
-      regionPath: container.path,
+      path: container.path,
       start: line.start,
       end: line.end,
       top: y,
@@ -316,7 +295,7 @@ function layoutSingleContainer(
 
     lines.push(layoutLine);
     updateBlockExtent(blockExtents, layoutLine);
-    updateRegionBoundsFromLine(regionBounds, layoutLine);
+    updatePathBoundsFromLine(pathBounds, layoutLine);
     y += line.height;
   }
 
@@ -333,7 +312,7 @@ function layoutSingleContainer(
   return y + blockPaddingY;
 }
 
-function createContainerLineIndices(lines: LayoutLine[]) {
+function createPathLineIndices(lines: LayoutLine[]) {
   // Sort in place — table cell layout can interleave Y across the cells of
   // a row, so we need a single top-then-left order to feed binary search
   // in the paint/hit-test passes. (Cloning + `lines.push(...sortedLines)`
@@ -342,31 +321,31 @@ function createContainerLineIndices(lines: LayoutLine[]) {
 
   const entries = new Map<string, number[]>();
   for (let index = 0; index < lines.length; index += 1) {
-    const regionPath = lines[index]!.regionPath;
-    const current = entries.get(regionPath);
+    const path = lines[index]!.path;
+    const current = entries.get(path);
     if (current) {
       current.push(index);
     } else {
-      entries.set(regionPath, [index]);
+      entries.set(path, [index]);
     }
   }
 
   return entries;
 }
 
-// Folds a single line's geometry into its region's running bounds. Called
-// once per line as it is appended, replacing the prior pattern of a per-region
-// `lines.filter(...)` (O(N) inside an N-region loop) plus a final full re-walk.
-function updateRegionBoundsFromLine(
-  regionBounds: DocumentLayout["regionBounds"],
+// Folds a single line's geometry into its path's running bounds. Called once
+// per line as it is appended, replacing the prior pattern of a per-path
+// `lines.filter(...)` (O(N) inside an N-path loop) plus a final full re-walk.
+function updatePathBoundsFromLine(
+  pathBounds: DocumentLayout["pathBounds"],
   line: LayoutLine,
 ) {
-  const current = regionBounds.get(line.regionPath);
+  const current = pathBounds.get(line.path);
   const right = line.left + line.width;
   const bottom = line.top + line.height;
 
-  regionBounds.set(
-    line.regionPath,
+  pathBounds.set(
+    line.path,
     current
       ? {
           bottom: Math.max(current.bottom, bottom),

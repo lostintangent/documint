@@ -1,15 +1,15 @@
 // Owns viewport-aware layout orchestration. Small/common documents use exact
 // full-document layout; larger documents use cheap whole-document estimates to
-// choose the visible region slice, then run exact layout only for that slice.
+// choose the visible path slice, then run exact layout only for that slice.
 import type { DocumentResources } from "@/types";
 import { emptyDocumentResources } from "@/editor/resources";
-import type { EditorState } from "../../state";
+import { countEditorPathsWithText, type EditorState } from "../../state";
 import { createLayoutCache, type LayoutCache } from "./cache";
 import { resolveDocumentLayoutOptions, type DocumentLayoutOptions } from "../lib/options";
 import { measureLayoutSlice, type DocumentLayout } from "../measure";
 import { createVirtualizedLayoutSlice } from "../virtualize";
 
-const FULL_LAYOUT_REGION_THRESHOLD = 96;
+const FULL_LAYOUT_PATH_THRESHOLD = 96;
 
 type CanvasViewport = {
   height: number;
@@ -24,7 +24,7 @@ export type EditorViewport = {
 };
 
 export type EditorLayoutState = {
-  estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
+  estimatePathBounds: (path: string) => { bottom: number; top: number } | null;
   layout: DocumentLayout;
   paintHeight: number;
   paintTop: number;
@@ -51,13 +51,13 @@ export function createEditorLayoutState(
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   let layout: DocumentLayout;
   let totalHeight: number;
-  let estimateRegionBounds: (regionPath: string) => { bottom: number; top: number } | null;
+  let estimatePathBounds: (path: string) => { bottom: number; top: number } | null;
 
-  if (documentIndex.regions.length <= FULL_LAYOUT_REGION_THRESHOLD) {
+  if (countEditorPathsWithText(documentIndex) <= FULL_LAYOUT_PATH_THRESHOLD) {
     layout = measureLayoutSlice(documentIndex, resolvedOptions, cache, resolvedResources);
     totalHeight = layout.height;
-    estimateRegionBounds = (regionPath) => {
-      const bounds = layout.regionBounds.get(regionPath);
+    estimatePathBounds = (path) => {
+      const bounds = layout.pathBounds.get(path);
 
       return bounds ? { bottom: bounds.bottom, top: bounds.top } : null;
     };
@@ -71,13 +71,13 @@ export function createEditorLayoutState(
       viewport,
     });
 
-    estimateRegionBounds = virtualized.estimateRegionBounds;
+    estimatePathBounds = virtualized.estimatePathBounds;
     layout = virtualized.layout;
     totalHeight = virtualized.totalHeight;
   }
 
   return {
-    estimateRegionBounds,
+    estimatePathBounds,
     layout,
     paintHeight: Math.max(240, viewport.height + viewport.overscan * 2),
     paintTop: Math.max(0, viewport.top - viewport.overscan),

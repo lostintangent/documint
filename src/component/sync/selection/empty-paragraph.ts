@@ -6,23 +6,23 @@
 import {
   areSelectionPointsEqual,
   countRootBlocks,
-  hasSameEditableRegionShape,
+  findEditorPathWithText,
+  findUniqueEditorPathWithText,
+  hasSameEditorTextPathShape,
   isRootIndexedBlock,
-  resolveIndexedBlockForRegion,
-  resolveRegion,
-  resolveRootPrimaryRegion,
-  resolveRootRegions,
+  resolveBlockTextPathBoundary,
+  resolveEditorTextAtPath,
+  resolveIndexedBlockContainingPath,
   setSelection,
   spliceDocumentIndex,
-  type EditableRegion,
   type EditorState,
 } from "@/editor/state";
 import {
   createSelectionAnchor,
   hasSelectionAnchorTextContinuity,
 } from "@/editor/anchors";
-import { createParagraphTextBlock, spliceDocument } from "@/document";
-import { resolveExternalRegionMatch } from "./region-match";
+import { createParagraphTextBlock, rootBlockPath, spliceDocument } from "@/document";
+import { resolveExternalPathMatch } from "./path-match";
 
 type RootScanDirection = "after" | "before";
 
@@ -37,16 +37,16 @@ export function restoreTransientEmptyRootParagraphSelection(
     return null;
   }
 
-  const previousRegion = resolveSelectedEmptyRootParagraph(previousState);
+  const previousPath = resolveSelectedEmptyRootParagraph(previousState);
 
-  if (!previousRegion) {
+  if (!previousPath) {
     return null;
   }
 
   const insertionRootIndex = resolveRecreatedEmptyParagraphRootIndex(
     previousState,
     nextState,
-    previousRegion,
+    previousPath,
   );
 
   if (insertionRootIndex === null) {
@@ -57,129 +57,210 @@ export function restoreTransientEmptyRootParagraphSelection(
 }
 
 function resolveSelectedEmptyRootParagraph(state: EditorState) {
-  const region = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
+  const path = state.selection.focus.path;
+  const text = resolveEditorTextAtPath(state.documentIndex, path);
+  const block = resolveIndexedBlockContainingPath(state.documentIndex, path);
 
-  if (!region || region.block.type !== "paragraph" || region.text.length > 0) {
+  if (!block || text === null) {
     return null;
   }
 
-  const block = resolveIndexedBlockForRegion(state.documentIndex, region.path);
+  if (
+    block.block.type !== "paragraph" ||
+    text !== "" ||
+    !isRootIndexedBlock(block)
+  ) {
+    return null;
+  }
 
-  return block && isRootIndexedBlock(block) ? region : null;
+  return path;
 }
 
 // Pick the rootIndex in `nextState` where to insert the recreated empty
 // paragraph by anchoring it to the nearest surviving non-empty root content
 // around its previous position. Returns `null` when neither neighbor
-// survives or when the surviving neighbors are out of order (a structural
-// rewrite we shouldn't second-guess).
+// survives or when the surviving neighbors are out of order.
 function resolveRecreatedEmptyParagraphRootIndex(
   previousState: EditorState,
   nextState: EditorState,
-  previousRegion: EditableRegion,
+  previousPath: string,
 ) {
-  const precedingRegion = findNearestNonEmptyRootRegion(
+  const previousBlock = resolveIndexedBlockContainingPath(previousState.documentIndex, previousPath);
+
+  if (!previousBlock) {
+    return null;
+  }
+
+  const precedingPath = findNearestNonEmptyRootPath(
     previousState,
-    previousRegion.rootIndex,
+    previousBlock.rootIndex,
     "before",
   );
-  const followingRegion = findNearestNonEmptyRootRegion(
+  const followingPath = findNearestNonEmptyRootPath(
     previousState,
-    previousRegion.rootIndex,
+    previousBlock.rootIndex,
     "after",
   );
-  const precedingMatch = precedingRegion
-    ? resolveEmptyParagraphNeighborRegion(previousState, precedingRegion, nextState)
+  const precedingMatch = precedingPath
+    ? resolveEmptyParagraphNeighborRootIndex(previousState, precedingPath, nextState)
     : null;
-  const followingMatch = followingRegion
-    ? resolveEmptyParagraphNeighborRegion(previousState, followingRegion, nextState)
+  const followingMatch = followingPath
+    ? resolveEmptyParagraphNeighborRootIndex(previousState, followingPath, nextState)
     : null;
 
-  if (precedingMatch && followingMatch) {
-    return precedingMatch.rootIndex < followingMatch.rootIndex ? followingMatch.rootIndex : null;
+  if (precedingMatch !== null && followingMatch !== null) {
+    return precedingMatch < followingMatch ? followingMatch : null;
   }
 
-  if (precedingMatch) {
-    return followingRegion && hasMatchingNeighborRegion(nextState, followingRegion)
+  if (precedingMatch !== null) {
+    return followingPath && hasMatchingNeighborPath(nextState, previousState, followingPath)
       ? null
-      : precedingMatch.rootIndex + 1;
+      : precedingMatch + 1;
   }
 
-  if (followingMatch) {
-    return precedingRegion && hasMatchingNeighborRegion(nextState, precedingRegion)
+  if (followingMatch !== null) {
+    return precedingPath && hasMatchingNeighborPath(nextState, previousState, precedingPath)
       ? null
-      : followingMatch.rootIndex;
+      : followingMatch;
   }
 
   return null;
 }
 
-function hasMatchingNeighborRegion(nextState: EditorState, previousRegion: EditableRegion) {
-  return nextState.documentIndex.regions.some((candidate) =>
-    isEmptyParagraphNeighborMatch(previousRegion, candidate),
-  );
-}
-
-function resolveEmptyParagraphNeighborRegion(
-  previousState: EditorState,
-  previousRegion: EditableRegion,
+function hasMatchingNeighborPath(
   nextState: EditorState,
+  previousState: EditorState,
+  previousPath: string,
 ) {
-  const midpointAnchor = createMidpointSelectionAnchor(previousRegion);
+  const previousText = resolveEditorTextAtPath(previousState.documentIndex, previousPath);
+
+  if (previousText === null) {
+    return false;
+  }
+
+  const midpointAnchor = createMidpointSelectionAnchor(previousText);
 
   return (
-    resolveExternalRegionMatch(
-      previousState,
-      previousRegion,
-      nextState,
-      midpointAnchor,
-    ) ?? resolveShiftedEmptyParagraphNeighborRegion(previousRegion, nextState)
+    findEditorPathWithText(nextState.documentIndex, (candidatePath) =>
+      isEmptyParagraphNeighborPathMatch(
+        previousState,
+        previousPath,
+        previousText,
+        nextState,
+        candidatePath,
+        midpointAnchor,
+      ),
+    ) !== null
   );
 }
 
-function resolveShiftedEmptyParagraphNeighborRegion(
-  previousRegion: EditableRegion,
+function resolveEmptyParagraphNeighborRootIndex(
+  previousState: EditorState,
+  previousPath: string,
   nextState: EditorState,
 ) {
-  const candidateRootIndexes = [previousRegion.rootIndex, previousRegion.rootIndex - 1];
-  let match: EditableRegion | null = null;
+  const previousText = resolveEditorTextAtPath(previousState.documentIndex, previousPath);
+  const previousBlock = resolveIndexedBlockContainingPath(previousState.documentIndex, previousPath);
+
+  if (!previousBlock || previousText === null) {
+    return null;
+  }
+
+  const midpointAnchor = createMidpointSelectionAnchor(previousText);
+  const matchedPath = resolveExternalPathMatch(
+    previousState,
+    previousPath,
+    previousText,
+    nextState,
+    midpointAnchor,
+  );
+
+  const matchedRootIndex = matchedPath ? resolveRootIndexForPath(nextState, matchedPath) : null;
+
+  return (
+    matchedRootIndex ??
+    resolveShiftedEmptyParagraphNeighborRootIndex(
+      previousState,
+      previousPath,
+      previousText,
+      previousBlock.rootIndex,
+      nextState,
+      midpointAnchor,
+    )
+  );
+}
+
+function resolveShiftedEmptyParagraphNeighborRootIndex(
+  previousState: EditorState,
+  previousPath: string,
+  previousText: string,
+  previousRootIndex: number,
+  nextState: EditorState,
+  midpointAnchor: ReturnType<typeof createSelectionAnchor>,
+) {
+  const candidateRootIndexes = [previousRootIndex, previousRootIndex - 1];
+  let match: number | null = null;
 
   for (const rootIndex of candidateRootIndexes) {
-    for (const candidate of resolveRootRegions(nextState.documentIndex, rootIndex)) {
-      if (!isEmptyParagraphNeighborMatch(previousRegion, candidate)) {
-        continue;
-      }
+    const candidate = findUniqueEditorPathWithText(
+      nextState.documentIndex,
+      (path) =>
+        isEmptyParagraphNeighborPathMatch(
+          previousState,
+          previousPath,
+          previousText,
+          nextState,
+          path,
+          midpointAnchor,
+        ),
+      { rootIndex },
+    );
 
-      if (match) {
-        return null;
-      }
-
-      match = candidate;
+    if (candidate.ambiguous) {
+      return null;
     }
+
+    if (!candidate.path) {
+      continue;
+    }
+
+    if (match) {
+      return null;
+    }
+
+    match = rootIndex;
   }
 
   return match;
 }
 
-function isEmptyParagraphNeighborMatch(
-  previousRegion: EditableRegion,
-  nextRegion: EditableRegion,
+function isEmptyParagraphNeighborPathMatch(
+  previousState: EditorState,
+  previousPath: string,
+  previousText: string,
+  nextState: EditorState,
+  nextPath: string,
+  midpointAnchor: ReturnType<typeof createSelectionAnchor>,
 ) {
-  if (!hasSameEditableRegionShape(previousRegion, nextRegion)) {
+  const nextText = resolveEditorTextAtPath(nextState.documentIndex, nextPath);
+
+  if (
+    nextText === null ||
+    !hasSameEditorTextPathShape(
+      previousState.documentIndex,
+      previousPath,
+      nextState.documentIndex,
+      nextPath,
+    )
+  ) {
     return false;
   }
 
-  const midpointAnchor = createMidpointSelectionAnchor(previousRegion);
-
-  return hasSelectionAnchorTextContinuity(
-    previousRegion.text,
-    nextRegion.text,
-    midpointAnchor,
-  );
+  return hasSelectionAnchorTextContinuity(previousText, nextText, midpointAnchor);
 }
 
-function createMidpointSelectionAnchor(region: EditableRegion) {
-  return createSelectionAnchor(region.text, Math.floor(region.text.length / 2), "neutral");
+function createMidpointSelectionAnchor(text: string) {
+  return createSelectionAnchor(text, Math.floor(text.length / 2), "neutral");
 }
 
 function recreateEmptyRootParagraphSelection(nextState: EditorState, rootIndex: number) {
@@ -190,11 +271,15 @@ function recreateEmptyRootParagraphSelection(nextState: EditorState, rootIndex: 
     ...nextState,
     documentIndex: spliceDocumentIndex(nextState.documentIndex, nextDocument, rootIndex, 0),
   };
-  const region = resolveRootPrimaryRegion(restoredState.documentIndex, rootIndex);
-  const selection = region
+  const path = resolveBlockTextPathBoundary(
+    restoredState.documentIndex,
+    rootBlockPath(rootIndex),
+    "start",
+  );
+  const selection = path
     ? {
-        anchor: { regionPath: region.path, offset: 0 },
-        focus: { regionPath: region.path, offset: 0 },
+        anchor: { path, offset: 0 },
+        focus: { path, offset: 0 },
       }
     : null;
 
@@ -202,9 +287,9 @@ function recreateEmptyRootParagraphSelection(nextState: EditorState, rootIndex: 
 }
 
 // Walk roots outward from `rootIndex` in `direction` and return the first
-// non-empty region encountered. Used as a stable reference when recreating
-// a transient empty paragraph the markdown round-trip dropped.
-function findNearestNonEmptyRootRegion(
+// non-empty path encountered. Used as a stable reference when recreating a
+// transient empty paragraph the markdown round-trip dropped.
+function findNearestNonEmptyRootPath(
   state: EditorState,
   rootIndex: number,
   direction: RootScanDirection,
@@ -216,32 +301,30 @@ function findNearestNonEmptyRootRegion(
     index >= 0 && index < countRootBlocks(state.documentIndex);
     index += step
   ) {
-    const region = findFirstNonEmptyRegionInRoot(state, index, direction);
+    const path = findFirstNonEmptyPathInRoot(state, index, direction);
 
-    if (region) {
-      return region;
+    if (path) {
+      return path;
     }
   }
 
   return null;
 }
 
-function findFirstNonEmptyRegionInRoot(
+function findFirstNonEmptyPathInRoot(
   state: EditorState,
   rootIndex: number,
   direction: RootScanDirection,
 ) {
-  const regions = resolveRootRegions(state.documentIndex, rootIndex);
-  const start = direction === "before" ? regions.length - 1 : 0;
-  const step = direction === "before" ? -1 : 1;
+  return findEditorPathWithText(
+    state.documentIndex,
+    (_path, text) => text.length > 0,
+    { rootIndex, direction: direction === "before" ? -1 : 1 },
+  );
+}
 
-  for (let index = start; index >= 0 && index < regions.length; index += step) {
-    const region = regions[index];
+function resolveRootIndexForPath(state: EditorState, path: string) {
+  const block = resolveIndexedBlockContainingPath(state.documentIndex, path);
 
-    if (region && region.text.length > 0) {
-      return region;
-    }
-  }
-
-  return null;
+  return block?.rootIndex ?? null;
 }

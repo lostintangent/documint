@@ -2,7 +2,7 @@
 // canonical markdown line the host reports to the embedder.
 import type { Block, Document } from "@/document";
 import type { TextRangeTarget } from "@/editor";
-import { resolveRegion } from "@/editor/state";
+import { resolveIndexedBlockContainingPath } from "@/editor/state";
 import { serializeBlocks } from "@/markdown";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 
@@ -15,22 +15,25 @@ export function resolveMentionLineChange(
   transition: EditorStateTransition,
   target: TextRangeTarget,
 ): MentionLineChange | null {
-  const previousRegion = resolveRegion(transition.previous.documentIndex, target.regionPath);
+  const previousBlock = resolveIndexedBlockContainingPath(
+    transition.previous.documentIndex,
+    target.path,
+  );
 
-  if (!previousRegion) {
+  if (!previousBlock) {
     return null;
   }
 
-  const nextRegion = resolveRegion(transition.next.documentIndex, previousRegion.path);
+  const nextBlock = resolveIndexedBlockContainingPath(transition.next.documentIndex, target.path);
 
-  if (!nextRegion) {
+  if (!nextBlock) {
     return null;
   }
 
   const previousDocument = transition.previous.documentIndex.document;
   const nextDocument = transition.next.documentIndex.document;
-  const previousRoot = previousDocument.blocks[previousRegion.rootIndex];
-  const nextRoot = nextDocument.blocks[nextRegion.rootIndex];
+  const previousRoot = previousDocument.blocks[previousBlock.rootIndex];
+  const nextRoot = nextDocument.blocks[nextBlock.rootIndex];
 
   if (!previousRoot || !nextRoot) {
     return null;
@@ -48,7 +51,7 @@ export function resolveMentionLineChange(
   return {
     lineMarkdown: changedLine.lineMarkdown,
     lineNumber:
-      resolveRootStartLine(nextDocument, nextRegion.rootIndex) + changedLine.lineIndex + 1,
+      resolveRootStartLine(nextDocument, nextBlock.rootIndex) + changedLine.lineIndex + 1,
   };
 }
 

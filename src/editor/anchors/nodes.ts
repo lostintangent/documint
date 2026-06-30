@@ -9,10 +9,11 @@ import {
   type TableCell,
 } from "@/document";
 import {
-  resolvePrimaryRegionForBlockPath,
-  resolveRegion,
+  resolveBlockByPath,
+  resolveEditorTextAtPath,
+  resolveIndexedTableCell,
+  resolveBlockTextPathBoundary,
   type DocumentIndex,
-  type EditableRegion,
 } from "../state";
 
 type MatchedDocumentNodeAnchor = Extract<DocumentNodeAnchorResolution, { status: "matched" }>;
@@ -21,9 +22,9 @@ export type EditorNodeAnchor =
   | {
       anchor: DocumentNodeAnchor;
       basis: MatchedDocumentNodeAnchor["basis"];
+      editorPath: string | null;
       node: Block | TableCell;
       path: string;
-      region: EditableRegion | null;
       status: "matched";
     }
   | {
@@ -34,13 +35,13 @@ export type EditorNodeAnchor =
       status: "unmatched";
     };
 
-export function createNodeAnchorForRegion(
+export function createNodeAnchorForPath(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  path: string,
 ): DocumentNodeAnchor | null {
-  const node = resolveRegionDocumentNode(region);
+  const node = resolveDocumentNodeForPath(documentIndex, path);
 
-  return node ? createDocumentNodeAnchor(documentIndex.document, region.containerPath) : null;
+  return node ? createDocumentNodeAnchor(documentIndex.document, path) : null;
 }
 
 export function resolveNodeAnchor(
@@ -90,42 +91,44 @@ function editorNodeAnchorFromMatch(
   return {
     anchor: match.anchor,
     basis: match.basis,
+    editorPath: resolveDocumentNodeEditorPath(documentIndex, match.node, match.path),
     node: match.node,
     path: match.path,
-    region: resolveDocumentNodeRegion(documentIndex, match.node, match.path),
     status: "matched",
   };
 }
 
-export function resolveNodeAnchorForRegion(
+export function resolveNodeAnchorForPath(
   previousIndex: DocumentIndex,
-  previousRegion: EditableRegion,
+  previousPath: string,
   nextIndex: DocumentIndex,
 ): EditorNodeAnchor {
-  const anchor = createNodeAnchorForRegion(previousIndex, previousRegion);
+  const anchor = createNodeAnchorForPath(previousIndex, previousPath);
 
   return anchor ? resolveNodeAnchor(nextIndex, anchor) : { status: "unmatched" };
 }
 
-function resolveRegionDocumentNode(region: EditableRegion): Block | TableCell | null {
-  if (!region.tableCellPosition) {
-    return region.block;
+function resolveDocumentNodeForPath(
+  documentIndex: DocumentIndex,
+  path: string,
+): Block | TableCell | null {
+  const tableCell = resolveIndexedTableCell(documentIndex, path);
+
+  if (tableCell) {
+    return tableCell.cell;
   }
 
-  if (region.block.type !== "table") {
-    return null;
-  }
-
-  const { cellIndex, rowIndex } = region.tableCellPosition;
-  return region.block.rows[rowIndex]?.cells[cellIndex] ?? null;
+  return resolveBlockByPath(documentIndex, path);
 }
 
-function resolveDocumentNodeRegion(
+function resolveDocumentNodeEditorPath(
   documentIndex: DocumentIndex,
   node: Block | TableCell,
   path: string,
-): EditableRegion | null {
-  return "type" in node
-    ? resolvePrimaryRegionForBlockPath(documentIndex, path)
-    : resolveRegion(documentIndex, path);
+): string | null {
+  if ("type" in node) {
+    return resolveBlockTextPathBoundary(documentIndex, path, "start");
+  }
+
+  return resolveEditorTextAtPath(documentIndex, path) !== null ? path : null;
 }

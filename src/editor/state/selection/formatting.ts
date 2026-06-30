@@ -9,8 +9,8 @@
 // cursor-tracking, no per-type length re-derivation.
 
 import type { Mark } from "@/document";
-import { findInlinesInRange, regionInlines } from "../index/inlines";
-import { isInlineRegion, resolveRegion } from "../index/query";
+import { findInlinesInRange } from "../index/inlines";
+import { resolveEditorTextAtPath, resolveInlinesAtPath } from "../index/query";
 import type { IndexedInline } from "../index/types";
 import type { EditorState } from "../types";
 import { getSelectionRange } from "./query";
@@ -27,20 +27,20 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
     return emptySelectionFormatting();
   }
 
-  const region = resolveRegion(state.documentIndex, selectionRange.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, selectionRange.path);
 
-  if (!region) {
+  if (text === null) {
     return emptySelectionFormatting();
   }
 
-  if (!isInlineRegion(region)) {
+  const inlines = resolveInlinesAtPath(state.documentIndex, selectionRange.path);
+
+  if (!inlines) {
     return {
       marks: [],
       supported: false,
     };
   }
-
-  const inlines = regionInlines(region);
 
   if (inlines.length === 0) {
     return emptySelectionFormatting();

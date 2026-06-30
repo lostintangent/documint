@@ -1,5 +1,5 @@
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
-import { resolveIndexedBlock, resolveRegion, type EditorState } from "@/editor/state";
+import { resolveIndexedBlock, resolveIndexedTableCell, type EditorState } from "@/editor/state";
 import type { BlockFlashFrame } from "../../effects";
 import { resolveDividerRules } from "./divider-rules";
 import {
@@ -15,7 +15,7 @@ import {
 
 type ActiveTableCellGeometryTarget = {
   activeFlash: BlockFlashFrame | null;
-  activeRegionPath: string;
+  activePath: string;
 };
 
 export type DocumentFrameChrome = {
@@ -33,7 +33,7 @@ type ResolvedDocumentFrameChrome = {
 export function resolveDocumentFrameChrome({
   blockFlashes,
   activeBlockPath,
-  activeRegionPath,
+  activePath,
   endBlockIndex,
   editorState,
   endLineIndex,
@@ -44,7 +44,7 @@ export function resolveDocumentFrameChrome({
 }: {
   blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockPath: string | null;
-  activeRegionPath: string | null;
+  activePath: string | null;
   endBlockIndex: number;
   editorState: EditorState;
   endLineIndex: number;
@@ -57,7 +57,7 @@ export function resolveDocumentFrameChrome({
   const activeTableCellGeometry = resolveActiveTableCellGeometryTarget(
     editorState,
     activeBlockPath,
-    activeRegionPath,
+    activePath,
     blockFlashes,
   );
 
@@ -66,10 +66,10 @@ export function resolveDocumentFrameChrome({
       activeTableCellGeometry: activeTableCellGeometry
         ? resolveActiveTableCellGeometryFrame({
             activeFlash: activeTableCellGeometry.activeFlash,
-            activeRegionPath: activeTableCellGeometry.activeRegionPath,
+            activePath: activeTableCellGeometry.activePath,
             endLineIndex,
             layout,
-            regionBounds: layout.regionBounds,
+            pathBounds: layout.pathBounds,
             startLineIndex,
           })
         : null,
@@ -101,10 +101,10 @@ export function resolveDocumentFrameChrome({
 function resolveActiveTableCellGeometryTarget(
   editorState: EditorState,
   activeBlockPath: string | null,
-  activeRegionPath: string | null,
+  activePath: string | null,
   blockFlashes: Map<string, BlockFlashFrame>,
 ): ActiveTableCellGeometryTarget | null {
-  if (!activeBlockPath || !activeRegionPath) {
+  if (!activeBlockPath || !activePath) {
     return null;
   }
 
@@ -114,14 +114,14 @@ function resolveActiveTableCellGeometryTarget(
     return null;
   }
 
-  const activeCellRegion = resolveRegion(editorState.documentIndex, activeRegionPath);
+  const activeCell = resolveIndexedTableCell(editorState.documentIndex, activePath);
 
-  if (activeCellRegion?.blockPath !== activeBlockPath) {
+  if (activeCell?.tablePath !== activeBlockPath) {
     return null;
   }
 
   return {
     activeFlash: activeBlock.path ? (blockFlashes.get(activeBlock.path) ?? null) : null,
-    activeRegionPath,
+    activePath,
   };
 }

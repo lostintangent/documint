@@ -1,14 +1,12 @@
 import {
-  documentChangeLocationKey,
-  documentChangeTargetAnchorKey,
-  hasSameDocumentChangeTargetAnchor,
+  documentNodeAnchorKey,
+  documentNodeAnchorLocationKey,
   type DocumentChange,
-  type DocumentChangeTarget,
 } from "@/document";
 import { resolveNodeAnchors, type EditorNodeAnchor } from "@/editor/anchors";
 import {
   selectionIntersectsBlockPath,
-  selectionIntersectsRegion,
+  selectionIntersectsPath,
   type EditorState,
 } from "@/editor/state";
 import type { ResolvedDocumentChangeTarget } from "@/types";
@@ -128,7 +126,7 @@ export function mergeUnacknowledgedDocumentChanges(
         consumedIncoming,
       );
       byKey.set(
-        documentChangeLocationKey(retargeted.change.target),
+        documentNodeAnchorLocationKey(retargeted.change.anchor),
         retargeted,
       );
       continue;
@@ -140,7 +138,7 @@ export function mergeUnacknowledgedDocumentChanges(
       consumedIncoming,
     );
     if (refreshed) {
-      byKey.set(documentChangeLocationKey(refreshed.change.target), refreshed);
+      byKey.set(documentNodeAnchorLocationKey(refreshed.change.anchor), refreshed);
     }
   }
 
@@ -151,7 +149,7 @@ export function mergeUnacknowledgedDocumentChanges(
 
     if (unacknowledgedChange) {
       byKey.set(
-        documentChangeLocationKey(unacknowledgedChange.change.target),
+        documentNodeAnchorLocationKey(unacknowledgedChange.change.anchor),
         unacknowledgedChange,
       );
       newChanges.push(unacknowledgedChange);
@@ -203,7 +201,7 @@ function resolveVisibleDocumentChanges(
       {
         changeKey:
           options.changeKeys?.[index] ??
-          documentChangeTargetAnchorKey(change.target),
+          documentNodeAnchorKey(change.anchor),
         retarget: options.retarget,
       },
     ),
@@ -266,30 +264,28 @@ function refreshExistingDocumentChange(
     if (
       !candidate ||
       consumedIncoming.has(index) ||
-      candidate.change.changeKind !== "modified" ||
-      !hasSameDocumentChangeTargetAnchor(
-        active.change.target,
-        candidate.change.previousTarget,
-      )
+      candidate.change.kind !== "modified" ||
+      documentNodeAnchorKey(active.change.anchor) !==
+        documentNodeAnchorKey(candidate.change.previousAnchor)
     ) {
       continue;
     }
 
     consumedIncoming.add(index);
-    return active.change.changeKind === "added"
+    return active.change.kind === "added"
       ? {
           change: {
-            changeKind: "added",
-            target: candidate.change.target,
+            anchor: candidate.change.anchor,
+            kind: "added",
           },
           changeKey: active.changeKey,
           editorTarget: candidate.editorTarget,
         }
       : {
           change: {
-            changeKind: "modified",
-            previousTarget: active.change.previousTarget,
-            target: candidate.change.target,
+            anchor: candidate.change.anchor,
+            kind: "modified",
+            previousAnchor: active.change.previousAnchor,
           },
           changeKey: active.changeKey,
           editorTarget: candidate.editorTarget,
@@ -305,12 +301,12 @@ function resolveChangeAnchorMatches(
 ): readonly EditorNodeAnchor[] {
   const matches = resolveNodeAnchors(
     state.documentIndex,
-    changes.map((change) => change.target.anchor),
+    changes.map((change) => change.anchor),
   );
 
   return changes.map(
     (change) =>
-      matches.get(documentChangeTargetAnchorKey(change.target)) ?? {
+      matches.get(documentNodeAnchorKey(change.anchor)) ?? {
         status: "unmatched",
       },
   );
@@ -320,7 +316,7 @@ function verifyStoredEditorChangeTarget(
   change: DocumentChange,
   anchorMatch: EditorNodeAnchor,
 ): ResolvedDocumentChangeTarget | null {
-  if (anchorMatch.status !== "matched" || anchorMatch.path !== change.target.path) {
+  if (anchorMatch.status !== "matched" || anchorMatch.path !== change.anchor.path) {
     return null;
   }
 
@@ -340,22 +336,22 @@ function resolveMatchedEditorChangeTarget(
 ): ResolvedDocumentChangeTarget | null {
   if (
     anchorMatch.status !== "matched" ||
-    anchorMatch.anchor.kind !== change.target.kind
+    anchorMatch.anchor.kind !== change.anchor.kind
   ) {
     return null;
   }
 
-  if (change.target.kind === "block") {
+  if (change.anchor.kind === "block") {
     return {
-      blockPath: anchorMatch.path,
       kind: "block",
+      path: anchorMatch.path,
     };
   }
 
-  return anchorMatch.region
+  return anchorMatch.editorPath
     ? {
         kind: "table-cell",
-        regionPath: anchorMatch.region.path,
+        path: anchorMatch.editorPath,
       }
     : null;
 }
@@ -368,37 +364,17 @@ function retargetDocumentChange(
     throw new Error("Expected matched document change anchor");
   }
 
-  const target = documentChangeTargetFromAnchorMatch(anchorMatch);
-
-  if (change.changeKind === "added") {
-    return {
-      changeKind: "added",
-      target,
-    };
-  }
-
-  return {
-    changeKind: "modified",
-    previousTarget: change.previousTarget,
-    target,
-  };
-}
-
-function documentChangeTargetFromAnchorMatch(
-  anchorMatch: Extract<EditorNodeAnchor, { status: "matched" }>,
-): DocumentChangeTarget {
-  if (anchorMatch.anchor.kind === "block") {
+  if (change.kind === "added") {
     return {
       anchor: anchorMatch.anchor,
-      kind: "block",
-      path: anchorMatch.path,
+      kind: "added",
     };
   }
 
   return {
     anchor: anchorMatch.anchor,
-    kind: "table-cell",
-    path: anchorMatch.path,
+    kind: "modified",
+    previousAnchor: change.previousAnchor,
   };
 }
 
@@ -407,25 +383,13 @@ function isSelectionOnDocumentChangeTarget(
   target: ResolvedDocumentChangeTarget,
 ) {
   return target.kind === "block"
-    ? selectionIntersectsBlockPath(state, target.blockPath)
-    : selectionIntersectsRegion(state, target.regionPath);
+    ? selectionIntersectsBlockPath(state, target.path)
+    : selectionIntersectsPath(state, target.path);
 }
 
 function hasSameResolvedDocumentChangeTarget(
   left: ResolvedDocumentChangeTarget,
   right: ResolvedDocumentChangeTarget,
 ) {
-  if (left.kind !== right.kind) {
-    return false;
-  }
-
-  if (left.kind === "block" && right.kind === "block") {
-    return left.blockPath === right.blockPath;
-  }
-
-  if (left.kind === "table-cell" && right.kind === "table-cell") {
-    return left.regionPath === right.regionPath;
-  }
-
-  return false;
+  return left.kind === right.kind && left.path === right.path;
 }

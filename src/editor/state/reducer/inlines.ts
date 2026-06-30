@@ -1,13 +1,13 @@
 // Editor-inline manipulation: low-level primitives for slicing, replacing,
 // and rebuilding IndexedInline arrays. Used by text replacement and fragment
-// extraction to preserve inline semantics while editing region text.
+// extraction to preserve inline semantics while editing indexed path text.
 //
 // IndexedInline is the runtime range map: each record references the source
 // document Inline node directly (with Link wrappers flattened to an
 // orthogonal `link` field), and carries pre-computed char-offset coordinates.
 // These primitives operate on IndexedInline arrays and produce either new
 // IndexedInline arrays or document-side Inline nodes ready to slot back into a
-// Block. Inline text is derived from the node or the owning region; it is not
+// Block. Inline text is derived from the node or owning editor text path; it is not
 // duplicated here. Structured inline commands use
 // commands/actions/inlines/shared.ts instead, where replacement payloads are
 // still document `Inline[]` trees.
@@ -26,8 +26,8 @@ import {
   type Link,
   type Text,
 } from "@/document";
-import { indexedInlineText, regionInlines } from "../index/inlines";
-import type { IndexedInline, EditableRegion } from "../index/types";
+import { indexedInlineText } from "../index/inlines";
+import type { IndexedInline } from "../index/types";
 
 type DraftEditorInline = Omit<IndexedInline, "end" | "start">;
 
@@ -38,14 +38,14 @@ type EditContext = {
 
 /* Public entry points */
 
-export function editRegionInlines(
-  region: EditableRegion,
+export function editIndexedInlines(
+  inlines: readonly IndexedInline[],
   startOffset: number,
   endOffset: number,
   replacementText: string,
 ): Inline[] {
   return editorInlinesToDocumentInlines(
-    replaceEditorInlines(regionInlines(region), startOffset, endOffset, replacementText),
+    replaceEditorInlines(inlines, startOffset, endOffset, replacementText),
   );
 }
 

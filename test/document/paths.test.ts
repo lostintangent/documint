@@ -4,9 +4,9 @@ import {
   blockPathSiblingIndex,
   parentBlockPath,
   resolveBlockByPath,
-  resolveTableCellByPath,
   resolveTableCellPathMatch,
   rootIndexForPath,
+  tableCellPathContextFromPath,
   tableCellPositionFromPath,
 } from "@/document";
 import { parseDocument } from "@/markdown";
@@ -73,8 +73,8 @@ outside
 | one | two | three |
 | four | five | six |
 `);
-    const cell = resolveTableCellByPath(document, "root.0.rows.1.cells.1");
     const match = resolveTableCellPathMatch(document, "root.0.rows.1.cells.1");
+    const cell = match?.cell ?? null;
 
     expect(cell?.plainText).toBe("two");
     expect(match).toMatchObject({
@@ -95,12 +95,12 @@ outside
 | one | two |
 `);
 
-    expect(resolveTableCellByPath(document, "root.0.rows.-1.cells.0")).toBeNull();
-    expect(resolveTableCellByPath(document, "root.0.rows.1.cells.-1")).toBeNull();
-    expect(resolveTableCellByPath(document, "root.0.rows.3.cells.0")).toBeNull();
-    expect(resolveTableCellByPath(document, "root.0.rows.1.cells.3")).toBeNull();
-    expect(resolveTableCellByPath(document, "root.0.children.0.rows.1.cells.0")).toBeNull();
-    expect(resolveTableCellByPath(document, "root.0.rows.1")).toBeNull();
+    expect(resolveTableCellPathMatch(document, "root.0.rows.-1.cells.0")).toBeNull();
+    expect(resolveTableCellPathMatch(document, "root.0.rows.1.cells.-1")).toBeNull();
+    expect(resolveTableCellPathMatch(document, "root.0.rows.3.cells.0")).toBeNull();
+    expect(resolveTableCellPathMatch(document, "root.0.rows.1.cells.3")).toBeNull();
+    expect(resolveTableCellPathMatch(document, "root.0.children.0.rows.1.cells.0")).toBeNull();
+    expect(resolveTableCellPathMatch(document, "root.0.rows.1")).toBeNull();
   });
 
   test("derives table-cell positions from paths", () => {
@@ -109,6 +109,15 @@ outside
       rowIndex: 3,
     });
     expect(tableCellPositionFromPath("root.2.children.1.rows.3.cells.nope")).toBeNull();
+  });
+
+  test("derives table-cell context from paths", () => {
+    expect(tableCellPathContextFromPath("root.2.children.1.rows.3.cells.4")).toEqual({
+      cellIndex: 4,
+      rowIndex: 3,
+      tablePath: "root.2.children.1",
+    });
+    expect(tableCellPathContextFromPath("root.2.children.1.rows.3.cells.nope")).toBeNull();
   });
 
   test("checks strict block-path containment", () => {

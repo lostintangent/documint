@@ -9,12 +9,12 @@ describe("document changes", () => {
 
     expect(changes).toEqual([
       expect.objectContaining({
-        changeKind: "modified",
-        previousTarget: expect.objectContaining({
+        kind: "modified",
+        previousAnchor: expect.objectContaining({
           kind: "block",
           path: "root.0",
         }),
-        target: expect.objectContaining({
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.0",
         }),
@@ -30,12 +30,12 @@ describe("document changes", () => {
 
     expect(changes).toEqual([
       expect.objectContaining({
-        changeKind: "modified",
-        previousTarget: expect.objectContaining({
+        kind: "modified",
+        previousAnchor: expect.objectContaining({
           kind: "table-cell",
           path: "root.0.rows.1.cells.1",
         }),
-        target: expect.objectContaining({
+        anchor: expect.objectContaining({
           kind: "table-cell",
           path: "root.0.rows.1.cells.1",
         }),
@@ -52,26 +52,26 @@ describe("document changes", () => {
     expect(changes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.0",
           }),
         }),
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.1",
           }),
         }),
         expect.objectContaining({
-          changeKind: "modified",
-          previousTarget: expect.objectContaining({
+          kind: "modified",
+          previousAnchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.1",
           }),
-          target: expect.objectContaining({
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.2.cells.1",
           }),
@@ -89,19 +89,19 @@ describe("document changes", () => {
     expect(changes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          changeKind: "added",
-          target: expect.objectContaining({
+          kind: "added",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.1",
           }),
         }),
         expect.objectContaining({
-          changeKind: "modified",
-          previousTarget: expect.objectContaining({
+          kind: "modified",
+          previousAnchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.1",
           }),
-          target: expect.objectContaining({
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.1.cells.2",
           }),
@@ -131,15 +131,15 @@ describe("document changes", () => {
     expect(changes).toHaveLength(2);
     expect(changes).toEqual([
       expect.objectContaining({
-        changeKind: "modified",
-        target: expect.objectContaining({
+        kind: "modified",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.0",
         }),
       }),
       expect.objectContaining({
-        changeKind: "modified",
-        target: expect.objectContaining({
+        kind: "modified",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.11",
         }),
@@ -155,15 +155,15 @@ describe("document changes", () => {
     expect(changes).toHaveLength(2);
     expect(changes).toEqual([
       expect.objectContaining({
-        changeKind: "added",
-        target: expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.0",
         }),
       }),
       expect.objectContaining({
-        changeKind: "added",
-        target: expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
           kind: "block",
           path: "root.13",
         }),
@@ -179,8 +179,8 @@ describe("document changes", () => {
     expect(changes).toHaveLength(10);
     for (let index = 0; index < 10; index += 1) {
       expect(changes[index]).toMatchObject({
-        changeKind: "modified",
-        target: {
+        kind: "modified",
+        anchor: {
           kind: "block",
           path: `root.${index * 2}`,
         },
@@ -194,8 +194,8 @@ describe("document changes", () => {
     const changes = findDocumentChanges(parse(previous), parse(next));
 
     expect(changes).toHaveLength(10);
-    expect(changes.every((change) => change.changeKind === "modified")).toBe(true);
-    expect(changes.map((change) => change.target.path)).toEqual(
+    expect(changes.every((change) => change.kind === "modified")).toBe(true);
+    expect(changes.map((change) => change.anchor.path)).toEqual(
       Array.from({ length: 10 }, (_, index) => `root.${index}`),
     );
   });

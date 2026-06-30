@@ -62,15 +62,10 @@ export type DocumintDecoration = {
 
 // Current runtime location for a document-change highlight. The lifecycle key
 // that keeps animations stable across retargeting travels beside this target.
-export type ResolvedDocumentChangeTarget =
-  | {
-      blockPath: string;
-      kind: "block";
-    }
-  | {
-      kind: "table-cell";
-      regionPath: string;
-    };
+export type ResolvedDocumentChangeTarget = {
+  kind: "block" | "table-cell";
+  path: string;
+};
 
 export type EditorTheme = {
   // Tier-1 required tokens that

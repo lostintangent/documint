@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { updateLink, removeLink } from "@/editor/state";
-import { setup, getRegion, placeAt, toMarkdown } from "../../helpers";
+import { setup, getPath, placeAt, toMarkdown } from "../../helpers";
 
 describe("Link commands", () => {
   test("updates the url of an existing link", () => {
     const state = setup("See [docs](https://old.example.com) here.\n");
-    const region = getRegion(state, "See docs here.");
-    const linkStart = region.text.indexOf("docs");
+    const path = getPath(state, "See docs here.");
+    const linkStart = path.text.indexOf("docs");
     const next = updateLink(
       state,
-      { regionPath: region.path, startOffset: linkStart, endOffset: linkStart + 4 },
+      { path: path.path, startOffset: linkStart, endOffset: linkStart + 4 },
       "https://new.example.com",
     );
 
@@ -19,10 +19,10 @@ describe("Link commands", () => {
 
   test("removes a link while preserving its text", () => {
     const state = setup("See [docs](https://example.com) here.\n");
-    const region = getRegion(state, "See docs here.");
-    const linkStart = region.text.indexOf("docs");
+    const path = getPath(state, "See docs here.");
+    const linkStart = path.text.indexOf("docs");
     const next = removeLink(state, {
-      regionPath: region.path,
+      path: path.path,
       startOffset: linkStart,
       endOffset: linkStart + 4,
     });
@@ -33,14 +33,14 @@ describe("Link commands", () => {
 
   test("updates a link target outside the current selection", () => {
     const state = setup("See [docs](https://old.example.com) here.\n\nOther paragraph.\n");
-    const linkRegion = getRegion(state, "See docs here.");
-    const otherRegion = getRegion(state, "Other paragraph.");
-    const linkStart = linkRegion.text.indexOf("docs");
-    const selectedElsewhere = placeAt(state, otherRegion, "end");
+    const linkPath = getPath(state, "See docs here.");
+    const otherPath = getPath(state, "Other paragraph.");
+    const linkStart = linkPath.text.indexOf("docs");
+    const selectedElsewhere = placeAt(state, otherPath, "end");
 
     const next = updateLink(
       selectedElsewhere,
-      { regionPath: linkRegion.path, startOffset: linkStart, endOffset: linkStart + 4 },
+      { path: linkPath.path, startOffset: linkStart, endOffset: linkStart + 4 },
       "https://new.example.com",
     );
 

@@ -207,13 +207,13 @@ export function useDecorations({
         ? {
             deletedLength: 0,
             insertedLength: effect.text.length,
-            regionPath: effect.regionPath,
+            path: effect.path,
             startOffset: effect.startOffset,
           }
         : {
             deletedLength: effect.text.length,
             insertedLength: 0,
-            regionPath: effect.regionPath,
+            path: effect.path,
             startOffset: effect.startOffset,
           };
 
@@ -342,7 +342,7 @@ function isSourceTextEditTransition(transition: EditorStateTransition) {
   return transition.effects.some(
     (effect) =>
       (effect.kind === "text-inserted" || effect.kind === "text-deleted") &&
-      effect.regionKind === "source",
+      effect.contentKind === "source",
   );
 }
 

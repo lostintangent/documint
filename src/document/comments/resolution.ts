@@ -46,7 +46,7 @@ const MAX_LENGTH_SIMILARITY_SCORE = 32;
 // long quotes against many candidates inside a paragraph with repeated text
 // (e.g. a header that appears every few lines) is otherwise O(C·M·Q); the
 // cap bounds the tail. 64 is comfortably larger than the surrounding
-// `CONTEXT_WINDOW` of 24, so it never cuts inside a region the prefix/suffix
+// `CONTEXT_WINDOW` of 24, so it never cuts inside text the prefix/suffix
 // fingerprint already covered.
 const MAX_SIMILARITY_COMPARE_LENGTH = 64;
 

@@ -15,7 +15,7 @@ import {
   editorInlineTextLength,
   inlineNodesWithEditorRanges,
 } from "@/editor/text/inline-offsets";
-import { target, type RegionPathSelectionTarget } from "../../../selection";
+import { target, type PathSelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import type { InlineContainer } from "../../context";
 
@@ -24,7 +24,7 @@ export type { InlineContainer } from "../../context";
 export type InlineContainerReplacement = {
   block: Block;
   blockPath: string;
-  selection: RegionPathSelectionTarget;
+  selection: PathSelectionTarget;
 };
 
 // Wraps an inline-container rebuild in the reducer action that commits the
@@ -70,7 +70,7 @@ export function createInlineContainerReplacement(
       return {
         block: rebuildTextBlock(inlineContainer.block, nextChildren),
         blockPath: inlineContainer.blockPath,
-        selection: target.path(inlineContainer.regionPath, startOffset, endOffset),
+        selection: target.path(inlineContainer.path, startOffset, endOffset),
       };
     case "tableCell": {
       const nextCell = createDocumentTableCell(nextChildren);
@@ -82,7 +82,7 @@ export function createInlineContainerReplacement(
       return {
         block: rebuildTableBlock(inlineContainer.block, nextRows),
         blockPath: inlineContainer.blockPath,
-        selection: target.path(inlineContainer.regionPath, startOffset, endOffset),
+        selection: target.path(inlineContainer.path, startOffset, endOffset),
       };
     }
   }

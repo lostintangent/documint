@@ -1,4 +1,4 @@
-import { blockContainerSpec } from "../model/containers";
+import { getBlockChildren } from "../model/containers";
 import {
   FNV_OFFSET_BASIS,
   HASH_SEPARATOR_CHAR_CODE,
@@ -50,7 +50,7 @@ function computeDocumentNodeContentHash(block: Block): DocumentNodeContentHash {
 
   switch (block.type) {
     case "blockquote":
-      hash = mixBlockArray(hash, blockContainerSpec(block)?.read(block) ?? []);
+      hash = mixBlockArray(hash, getBlockChildren(block) ?? []);
       break;
     case "code":
       hash = mixNullableString(hash, block.language);

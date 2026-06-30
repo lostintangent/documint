@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
 import {
   createAnchorFromContainer,
@@ -29,13 +30,13 @@ import {
   insertText,
   measureCaretTarget,
   createEditorLayoutState,
+  resolveEditorTextAtPath,
   resolveHoverTarget,
-  resolveRegion,
   setSelection,
   type EditorPresence,
 } from "@/editor";
 import { parseDocument } from "@/markdown";
-import { getRegion, setup } from "../helpers";
+import { getPath, setup } from "../helpers";
 
 test("maps durable comment anchors to runtime comment ranges", () => {
   const snapshot = parseDocument("Review surface anchors survive.\n");
@@ -113,10 +114,10 @@ test("resolves reference-inline comment anchors to runtime offsets", () => {
     comments: [thread],
   });
   const range = getCommentState(state.documentIndex).ranges[0];
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  expect(region?.text).not.toContain("@Jane Doe");
-  expect(region?.text.length).toBe("Hello ".length + 1 + " world".length);
+  expect(path?.text).not.toContain("@Jane Doe");
+  expect(path?.text.length).toBe("Hello ".length + 1 + " world".length);
   expect(thread.quote).toBe("@Jane Doe");
   expect(range?.startOffset).toBe("Hello ".length);
   expect(range?.endOffset).toBe("Hello ".length + 1);
@@ -163,9 +164,9 @@ test("resolves image and resource comment anchors to runtime atoms", () => {
     comments: [imageThread, resourceThread],
   });
   const ranges = getCommentState(state.documentIndex).ranges;
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  expect(region?.text).toBe("See \uFFFC and \uFFFC now");
+  expect(path?.text).toBe("See \uFFFC and \uFFFC now");
   expect(ranges.map((range) => [range.startOffset, range.endOffset])).toEqual([
     ["See ".length, "See ".length + 1],
     ["See \uFFFC and ".length, "See \uFFFC and ".length + 1],
@@ -207,15 +208,15 @@ test("resolves table-cell reference comment anchors to runtime offsets", () => {
     comments: [thread],
   });
   const range = getCommentState(state.documentIndex).ranges[0];
-  const region = state.documentIndex.regions.find(
+  const path = indexedTextEntries(state).find(
     (candidate) => candidate.text === "Cell \uFFFC done",
   );
 
-  if (!region) {
-    throw new Error("Expected table-cell region");
+  if (!path) {
+    throw new Error("Expected table-cell path");
   }
 
-  expect(range?.regionPath).toBe(region.path);
+  expect(range?.path).toBe(path.path);
   expect(range?.startOffset).toBe("Cell ".length);
   expect(range?.endOffset).toBe("Cell ".length + 1);
 });
@@ -248,11 +249,9 @@ target phrase
   });
   const commentState = getCommentState(shiftedState.documentIndex);
   const range = commentState.ranges[0];
-  const region = range
-    ? resolveRegion(shiftedState.documentIndex, range.regionPath)
-    : null;
+  const text = range ? resolveEditorTextAtPath(shiftedState.documentIndex, range.path) : null;
 
-  expect(region?.text).toBe("target phrase");
+  expect(text).toBe("target phrase");
   expect(range?.startOffset).toBe(0);
   expect(range?.endOffset).toBe("target".length);
 });
@@ -316,12 +315,10 @@ test("resolves moved table-cell comments by anchor match instead of old cell pat
   });
   const commentState = getCommentState(shiftedState.documentIndex);
   const range = commentState.ranges[0];
-  const region = range
-    ? resolveRegion(shiftedState.documentIndex, range.regionPath)
-    : null;
+  const text = range ? resolveEditorTextAtPath(shiftedState.documentIndex, range.path) : null;
 
-  expect(region?.text).toBe("target");
-  expect(region?.containerPath).toBe("root.0.rows.2.cells.1");
+  expect(text).toBe("target");
+  expect(range?.path).toBe("root.0.rows.2.cells.1");
   expect(range?.startOffset).toBe(0);
   expect(range?.endOffset).toBe("target".length);
 });
@@ -422,15 +419,15 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     },
     layoutCache,
   );
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected region");
+  if (!path) {
+    throw new Error("Expected path");
   }
 
-  const linkOffset = region.text.indexOf("link") + 1;
+  const linkOffset = path.text.indexOf("link") + 1;
   const caret = measureCaretTarget(state, viewport, {
-    regionPath: region.path,
+    path: path.path,
     offset: linkOffset,
   });
   if (!caret) {
@@ -454,20 +451,20 @@ test("resolves link hover targets with overlapping comment metadata", () => {
 
 test("preserves selection when creating a comment thread", () => {
   let state = setup("Review surface\n");
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   state = setSelection(state, {
-    regionPath: region.path,
+    path: path.path,
     offset: 4,
   });
 
   const nextState = addEditorComment(
     state,
-    { regionPath: region.path, startOffset: 0, endOffset: 6 },
+    { path: path.path, startOffset: 0, endOffset: 6 },
     "Review this heading",
   );
 
@@ -475,29 +472,29 @@ test("preserves selection when creating a comment thread", () => {
     throw new Error("Expected state change");
   }
 
-  expect(nextState.selection.anchor.regionPath).toBe(state.selection.anchor.regionPath);
+  expect(nextState.selection.anchor.path).toBe(state.selection.anchor.path);
   expect(nextState.selection.anchor.offset).toBe(4);
-  expect(nextState.selection.focus.regionPath).toBe(state.selection.focus.regionPath);
+  expect(nextState.selection.focus.path).toBe(state.selection.focus.path);
   expect(nextState.selection.focus.offset).toBe(4);
   expect(getDocument(nextState).comments).toHaveLength(1);
 });
 
-test("creates a new comment thread from a single-region selection", () => {
+test("creates a new comment thread from a single-path selection", () => {
   let state = setup("Review surface\n");
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   state = setSelection(state, {
     anchor: {
       offset: 0,
-      regionPath: region.path,
+      path: path.path,
     },
     focus: {
       offset: 6,
-      regionPath: region.path,
+      path: path.path,
     },
   });
 
@@ -505,7 +502,7 @@ test("creates a new comment thread from a single-region selection", () => {
     state,
     {
       endOffset: 6,
-      regionPath: region.path,
+      path: path.path,
       startOffset: 0,
     },
     "Review this",
@@ -529,17 +526,17 @@ test("creates comments over reference inlines from runtime offsets", () => {
     ]),
   ]);
   const state = createEditorState(document);
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   const result = addEditorComment(
     state,
     {
       endOffset: "Hello ".length + 1,
-      regionPath: region.path,
+      path: path.path,
       startOffset: "Hello ".length,
     },
     "Review mention",
@@ -561,23 +558,23 @@ test("does not create comments over reference atoms without semantic text", () =
     ]),
   ]);
   const state = createEditorState(document);
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   const result = addEditorComment(
     state,
     {
       endOffset: "See ".length + 1,
-      regionPath: region.path,
+      path: path.path,
       startOffset: "See ".length,
     },
     "Review image",
   );
 
-  expect(region.text).toBe("See \uFFFC now");
+  expect(path.text).toBe("See \uFFFC now");
   expect(result).toBeNull();
 });
 
@@ -586,7 +583,7 @@ test("preserves an anchored quote when a soft line break is inserted before it",
   // inserting a soft line break adjacent to the anchored span must not
   // perturb the quote text or break resolution. The `\n` introduced by
   // the `LineBreak` inline is treated by the comment-repair logic as a
-  // single-character insertion in `region.text`, the same as any other
+  // single-character insertion in `path.text`, the same as any other
   // typed character.
   const document = parseDocument("abcd\n");
   const container = listAnchorContainers(document)[0];
@@ -605,15 +602,15 @@ test("preserves an anchored quote when a soft line break is inserted before it",
     ...document,
     comments: [thread],
   });
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   // Caret at the very start of the paragraph, before the anchored "bc".
   state = setSelection(state, {
-    regionPath: region.path,
+    path: path.path,
     offset: 0,
   });
 
@@ -629,7 +626,7 @@ test("preserves an anchored quote when a soft line break is inserted before it",
   expect(nextThread?.quote).toBe("bc");
 });
 
-test("keeps same-region comments sticky while typing inside the anchored quote", () => {
+test("keeps same-path comments sticky while typing inside the anchored quote", () => {
   const document = parseDocument("abcd\n");
   const container = listAnchorContainers(document)[0];
 
@@ -647,14 +644,14 @@ test("keeps same-region comments sticky while typing inside the anchored quote",
     ...document,
     comments: [thread],
   });
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   state = setSelection(state, {
-    regionPath: region.path,
+    path: path.path,
     offset: 2,
   });
 
@@ -681,23 +678,23 @@ test("keeps reference-inline comments sticky when typing before them", () => {
     ]),
   ]);
   let state = createEditorState(document);
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  if (!region) {
-    throw new Error("Expected editor region");
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
   state = addEditorComment(
     state,
     {
       endOffset: "Hello ".length + 1,
-      regionPath: region.path,
+      path: path.path,
       startOffset: "Hello ".length,
     },
     "Review mention",
   )!;
   state = setSelection(state, {
-    regionPath: region.path,
+    path: path.path,
     offset: 0,
   });
 
@@ -721,10 +718,10 @@ test("resolveActiveCommentIndex returns null when no ranges exist", () => {
 
 test("resolveActiveCommentIndex returns the thread covering a collapsed caret", () => {
   let state = setup("alpha beta\n");
-  const region = getRegion(state, "alpha beta");
+  const path = getPath(state, "alpha beta");
   const commented = addEditorComment(
     state,
-    { regionPath: region.path, startOffset: 0, endOffset: 5 },
+    { path: path.path, startOffset: 0, endOffset: 5 },
     "note",
   );
 
@@ -732,7 +729,7 @@ test("resolveActiveCommentIndex returns the thread covering a collapsed caret", 
     throw new Error("Expected comment to be added");
   }
 
-  state = setSelection(commented, { regionPath: region.path, offset: 3 });
+  state = setSelection(commented, { path: path.path, offset: 3 });
   const { ranges } = getCommentState(state);
 
   expect(resolveActiveCommentIndex(state, ranges)).toBe(0);
@@ -740,10 +737,10 @@ test("resolveActiveCommentIndex returns the thread covering a collapsed caret", 
 
 test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed caret", () => {
   let state = setup("alpha beta\n");
-  const region = getRegion(state, "alpha beta");
+  const path = getPath(state, "alpha beta");
   const commented = addEditorComment(
     state,
-    { regionPath: region.path, startOffset: 1, endOffset: 4 },
+    { path: path.path, startOffset: 1, endOffset: 4 },
     "note",
   );
 
@@ -752,10 +749,10 @@ test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed
   }
 
   const { ranges } = getCommentState(commented);
-  const atStart = setSelection(commented, { regionPath: region.path, offset: 1 });
-  const atEnd = setSelection(commented, { regionPath: region.path, offset: 4 });
-  const justBefore = setSelection(commented, { regionPath: region.path, offset: 0 });
-  const justAfter = setSelection(commented, { regionPath: region.path, offset: 5 });
+  const atStart = setSelection(commented, { path: path.path, offset: 1 });
+  const atEnd = setSelection(commented, { path: path.path, offset: 4 });
+  const justBefore = setSelection(commented, { path: path.path, offset: 0 });
+  const justAfter = setSelection(commented, { path: path.path, offset: 5 });
 
   expect(resolveActiveCommentIndex(atStart, ranges)).toBe(0);
   expect(resolveActiveCommentIndex(atEnd, ranges)).toBe(0);
@@ -765,10 +762,10 @@ test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed
 
 test("resolveActiveCommentIndex uses an open-interval overlap for ranged selections", () => {
   let state = setup("alpha beta\n");
-  const region = getRegion(state, "alpha beta");
+  const path = getPath(state, "alpha beta");
   const commented = addEditorComment(
     state,
-    { regionPath: region.path, startOffset: 2, endOffset: 5 },
+    { path: path.path, startOffset: 2, endOffset: 5 },
     "note",
   );
 
@@ -781,26 +778,26 @@ test("resolveActiveCommentIndex uses an open-interval overlap for ranged selecti
   // Touching the comment range at its end-boundary with a positive-length
   // selection: no shared interior, so no thread is reported.
   const touching = setSelection(commented, {
-    anchor: { regionPath: region.path, offset: 5 },
-    focus: { regionPath: region.path, offset: 8 },
+    anchor: { path: path.path, offset: 5 },
+    focus: { path: path.path, offset: 8 },
   });
   // Overlap by one character: shared interior, thread is reported.
   const overlapping = setSelection(commented, {
-    anchor: { regionPath: region.path, offset: 4 },
-    focus: { regionPath: region.path, offset: 8 },
+    anchor: { path: path.path, offset: 4 },
+    focus: { path: path.path, offset: 8 },
   });
 
   expect(resolveActiveCommentIndex(touching, ranges)).toBeNull();
   expect(resolveActiveCommentIndex(overlapping, ranges)).toBe(0);
 });
 
-test("resolveActiveCommentIndex resolves selections that span regions", () => {
+test("resolveActiveCommentIndex resolves selections that span paths", () => {
   let state = setup("alpha\n\nbeta\n");
-  const alpha = getRegion(state, "alpha");
-  const beta = getRegion(state, "beta");
+  const alpha = getPath(state, "alpha");
+  const beta = getPath(state, "beta");
   const commented = addEditorComment(
     state,
-    { regionPath: beta.path, startOffset: 0, endOffset: 2 },
+    { path: beta.path, startOffset: 0, endOffset: 2 },
     "note",
   );
 
@@ -810,8 +807,8 @@ test("resolveActiveCommentIndex resolves selections that span regions", () => {
 
   const { ranges } = getCommentState(commented);
   state = setSelection(commented, {
-    anchor: { regionPath: alpha.path, offset: 0 },
-    focus: { regionPath: beta.path, offset: 1 },
+    anchor: { path: alpha.path, offset: 0 },
+    focus: { path: beta.path, offset: 1 },
   });
 
   expect(resolveActiveCommentIndex(state, ranges)).toBe(0);

@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { reconcileExternalContentChange } from "@/component/sync";
 import {
   acknowledgeUnacknowledgedDocumentChanges,
@@ -15,10 +16,11 @@ import {
   createDocumentNodeAnchor,
   findDocumentChanges,
   resolveDocumentNodeAnchors,
+  rootBlockPath,
   spliceDocument,
   type Document,
 } from "@/document";
-import { createEditorState, resolveRootPrimaryRegion, setSelection } from "@/editor/state";
+import { createEditorState, resolveBlockTextPathBoundary, setSelection } from "@/editor/state";
 import { parseDocument } from "@/markdown";
 import type { BenchmarkScenario } from "../harness";
 import { createBenchmarkScenario } from "../harness";
@@ -135,15 +137,15 @@ function createExternalChangesFixture() {
   ].join("\n");
   const previousBlocks = parseDocument(previousBlocksMarkdown);
   const nextBlocks = parseDocument(nextBlocksMarkdown);
-  const incomingState = selectLastRegion(createEditorState(nextBlocks));
+  const incomingState = selectLastPath(createEditorState(nextBlocks));
   const incomingChanges = findDocumentChanges(previousBlocks, nextBlocks);
   const merge = mergeUnacknowledgedDocumentChanges([], incomingChanges, incomingState);
   const nextManyBlocksMarkdown = createManyExternalBlockChangesMarkdown(180);
   const nextManyBlocks = parseDocument(nextManyBlocksMarkdown);
-  const manyIncomingState = selectLastRegion(createEditorState(nextManyBlocks));
+  const manyIncomingState = selectLastPath(createEditorState(nextManyBlocks));
   const manyIncomingChanges = findDocumentChanges(previousBlocks, nextManyBlocks);
   const manyMerge = mergeUnacknowledgedDocumentChanges([], manyIncomingChanges, manyIncomingState);
-  const manyReparsedShiftState = selectFirstRegion(
+  const manyReparsedShiftState = selectFirstPath(
     createEditorState(
       parseDocument(
         [
@@ -157,7 +159,7 @@ function createExternalChangesFixture() {
   const localEditDocument = spliceDocument(nextBlocks, 0, 0, [
     createParagraphTextBlock("Local paragraph before unacknowledged external changes."),
   ]);
-  const localEditState = selectFirstRegion(createEditorState(localEditDocument));
+  const localEditState = selectFirstPath(createEditorState(localEditDocument));
   const previousTable = parseDocument(createBenchmarkTable(48, "old"));
   const nextTable = parseDocument(createBenchmarkTable(48, "new"));
   const duplicateAnchorFixture = createDuplicateAnchorFixture(48);
@@ -200,13 +202,13 @@ function createDuplicateAnchorFixture(count: number) {
   return { anchors, next };
 }
 
-function createLongReconciliationFixture(regionCount: number) {
-  const markdown = createNumberedParagraphMarkdown(regionCount);
+function createLongReconciliationFixture(pathCount: number) {
+  const markdown = createNumberedParagraphMarkdown(pathCount);
   const shiftedMarkdown = `External intro paragraph.\n\n${markdown}`;
   const baseState = createEditorState(parseDocument(markdown));
   const shiftedState = createEditorState(parseDocument(shiftedMarkdown));
-  const selectedState = selectRegion(baseState, Math.floor(regionCount / 2));
-  const transientState = insertTransientEmptyRootParagraph(baseState, regionCount);
+  const selectedState = selectPath(baseState, Math.floor(pathCount / 2));
+  const transientState = insertTransientEmptyRootParagraph(baseState, pathCount);
 
   return {
     selectedState,
@@ -257,25 +259,25 @@ function createBenchmarkTable(rowCount: number, changedPrefix: "new" | "old") {
   return ["| A | B |", "| - | - |", ...rows].join("\n") + "\n";
 }
 
-function selectRegion(state: ReturnType<typeof createEditorState>, regionIndex: number) {
-  const region = state.documentIndex.regions[regionIndex];
+function selectPath(state: ReturnType<typeof createEditorState>, pathIndex: number) {
+  const path = indexedTextEntries(state)[pathIndex];
 
-  if (!region) {
-    throw new Error(`Missing editor region at index ${regionIndex}`);
+  if (!path) {
+    throw new Error(`Missing editor path at index ${pathIndex}`);
   }
 
   return setSelection(state, {
-    offset: Math.floor(region.text.length / 2),
-    regionPath: region.path,
+    offset: Math.floor(path.text.length / 2),
+    path: path.path,
   });
 }
 
-function selectFirstRegion(state: ReturnType<typeof createEditorState>) {
-  return selectRegion(state, 0);
+function selectFirstPath(state: ReturnType<typeof createEditorState>) {
+  return selectPath(state, 0);
 }
 
-function selectLastRegion(state: ReturnType<typeof createEditorState>) {
-  return selectRegion(state, state.documentIndex.regions.length - 1);
+function selectLastPath(state: ReturnType<typeof createEditorState>) {
+  return selectPath(state, indexedTextEntries(state).length - 1);
 }
 
 function insertTransientEmptyRootParagraph(
@@ -286,11 +288,15 @@ function insertTransientEmptyRootParagraph(
     createParagraphTextBlock(""),
   ]);
   const nextState = createEditorState(nextDocument);
-  const region = resolveRootPrimaryRegion(nextState.documentIndex, rootIndex);
-  const selection = region
+  const point = resolveBlockTextPathBoundary(
+    nextState.documentIndex,
+    rootBlockPath(rootIndex),
+    "start",
+  );
+  const selection = point
     ? {
-        anchor: { regionPath: region.path, offset: 0 },
-        focus: { regionPath: region.path, offset: 0 },
+        anchor: { path: point, offset: 0 },
+        focus: { path: point, offset: 0 },
       }
     : null;
 

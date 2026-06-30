@@ -1,10 +1,15 @@
 // Owns editor-level text decoration indexing. Host/component code resolves
 // semantic decoration matches elsewhere; this module reconciles those text
 // ranges against the current editor document index so paint can read ranges by
-// editor region path.
+// editor path.
 
 import { someVisibleDocumentLayoutLine, type EditorLayoutState } from "../layout";
-import { resolveRegion, resolveRootRegions, type EditorState } from "../state";
+import {
+  forEachEditorPathWithText,
+  resolveIndexedBlockContainingPath,
+  type DocumentIndex,
+  type EditorState,
+} from "../state";
 
 export type TextDecoration = {
   backgroundColor?: string;
@@ -30,22 +35,20 @@ export function reconcileTextDecorationIndex(
   if (updates.length === 0) return previous.size === 0 ? null : new Map();
 
   const documentIndex = state.documentIndex;
-  const currentRegionPaths = new Set(documentIndex.regions.map((region) => region.path));
-  const next = new Map([...previous].filter(([path]) => currentRegionPaths.has(path)));
+  const currentPaths = collectEditorPaths(documentIndex);
+  const next = new Map([...previous].filter(([path]) => currentPaths.has(path)));
   let changed = next.size !== previous.size;
 
   for (const update of updates) {
-    const rootRegionPaths = new Set(
-      resolveRootRegions(documentIndex, update.rootIndex).map((region) => region.path),
-    );
-    for (const path of rootRegionPaths) {
+    const rootPaths = collectRootEditorPaths(documentIndex, update.rootIndex);
+    for (const path of rootPaths) {
       next.delete(path);
     }
 
     const grouped = groupDecorationsByPath(
       update.ranges.flatMap((range) => {
-        const region = resolveRegion(documentIndex, range.path);
-        if (!region || region.rootIndex !== update.rootIndex) return [];
+        const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, range.path);
+        if (!indexedBlock || indexedBlock.rootIndex !== update.rootIndex) return [];
         return [
           {
             ...(range.backgroundColor && { backgroundColor: range.backgroundColor }),
@@ -63,7 +66,7 @@ export function reconcileTextDecorationIndex(
       next.set(path, ranges);
     }
 
-    if (!sameRootDecorations(previous, next, rootRegionPaths)) {
+    if (!sameRootDecorations(previous, next, rootPaths)) {
       changed = true;
     }
   }
@@ -154,11 +157,34 @@ export function hasAnimatedDecorationsInViewport(
   }
 
   return someVisibleDocumentLayoutLine(viewport, (line) => {
-    const regionPath = resolveRegion(state.documentIndex, line.regionPath)?.path ?? null;
-    const decorations = regionPath ? index.get(regionPath) : null;
+    const decorations = index.get(line.path) ?? null;
 
     return decorations?.some((decoration) => isAnimatedDecorationOnLine(decoration, line)) ?? false;
   });
+}
+
+function collectEditorPaths(documentIndex: DocumentIndex) {
+  const paths = new Set<string>();
+
+  forEachEditorPathWithText(documentIndex, (path) => {
+    paths.add(path);
+  });
+
+  return paths;
+}
+
+function collectRootEditorPaths(documentIndex: DocumentIndex, rootIndex: number) {
+  const paths = new Set<string>();
+
+  forEachEditorPathWithText(
+    documentIndex,
+    (path) => {
+      paths.add(path);
+    },
+    { rootIndex },
+  );
+
+  return paths;
 }
 
 function isAnimatedDecorationOnLine(

@@ -4,19 +4,19 @@
  * action-dispatch path.
  *
  * Reconciles:
- *   - equivalent selections across stable, moved, or edited text regions
+ *   - equivalent selections across stable, moved, or edited text paths
  *   - cursor/range offsets when text is inserted or deleted around the selection
  *   - transient empty root paragraphs that markdown rebuilds cannot represent
  *
  * Intentionally does not attempt full document rebase. Ambiguous duplicate
- * regions, structural rewrites, nested empty blocks, and deleted selection
+ * paths, structural rewrites, nested empty blocks, and deleted selection
  * endpoints fall back to the caller's reload behavior.
  */
 
 import {
   areSelectionPointsEqual,
   compareEditorPositions,
-  resolveRegion,
+  resolveEditorTextAtPath,
   setSelection,
   type EditorSelection,
   type EditorSelectionPoint,
@@ -27,7 +27,7 @@ import {
   resolveSelectionAnchor,
   type SelectionAnchorAffinity,
 } from "@/editor/anchors";
-import { resolveExternalRegionMatch } from "./region-match";
+import { resolveExternalPathMatch } from "./path-match";
 import { restoreTransientEmptyRootParagraphSelection } from "./empty-paragraph";
 
 export type ExternalSelectionReconciliationResult = {
@@ -43,7 +43,7 @@ export function reconcileExternalContentChange(
     return { didReconcile: false, state: nextState };
   }
 
-  // Prefer semantic region/offset repair. Recreate transient empty paragraphs
+  // Prefer semantic path/offset repair. Recreate transient empty paragraphs
   // only when normal selection reconciliation cannot find an equivalent point.
   const restoredState =
     restoreEquivalentSelection(previousState, nextState) ??
@@ -107,27 +107,29 @@ function resolveEquivalentSelectionPoint(
   point: EditorSelectionPoint,
   affinity: SelectionAnchorAffinity,
 ): EditorSelectionPoint | null {
-  const previousRegion = resolveRegion(previousState.documentIndex, point.regionPath);
+  const previousText = resolveEditorTextAtPath(previousState.documentIndex, point.path);
 
-  if (!previousRegion) {
+  if (previousText === null) {
     return null;
   }
 
-  const selectionAnchor = createSelectionAnchor(previousRegion.text, point.offset, affinity);
-  const nextRegion = resolveExternalRegionMatch(
+  const selectionAnchor = createSelectionAnchor(previousText, point.offset, affinity);
+  const nextPath = resolveExternalPathMatch(
     previousState,
-    previousRegion,
+    point.path,
+    previousText,
     nextState,
     selectionAnchor,
   );
+  const nextText = nextPath ? resolveEditorTextAtPath(nextState.documentIndex, nextPath) : null;
 
-  if (!nextRegion) {
+  if (nextText === null || !nextPath) {
     return null;
   }
 
   return {
-    offset: resolveSelectionAnchor(nextRegion.text, selectionAnchor).offset,
-    regionPath: nextRegion.path,
+    offset: resolveSelectionAnchor(nextText, selectionAnchor).offset,
+    path: nextPath,
   };
 }
 

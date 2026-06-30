@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
 import {
   CODE_BLOCK_BACKGROUND_PADDING_Y,
@@ -36,10 +37,10 @@ test("creates a viewport layout slice smaller than the full long-document layout
   expect(viewportLayout.totalHeight).toBeGreaterThan(720);
 });
 
-test("keeps near pinned regions in the viewport slice", () => {
+test("keeps near pinned paths in the viewport slice", () => {
   const snapshot = parseDocument(createVirtualizationFixture(40));
   const initialState = createEditorState(snapshot);
-  const pinnedContainer = initialState.documentIndex.regions.at(-1);
+  const pinnedContainer = indexedTextEntries(initialState).at(-1);
 
   if (!pinnedContainer) {
     throw new Error("Expected pinned runtime container");
@@ -47,17 +48,17 @@ test("keeps near pinned regions in the viewport slice", () => {
 
   const state = setSelection(initialState, {
     offset: 0,
-    regionPath: pinnedContainer.path,
+    path: pinnedContainer.path,
   });
   const initialViewportLayout = createEditorLayoutState(state, {
     height: 720,
     top: 0,
     width: 420,
   });
-  const pinnedBounds = initialViewportLayout.estimateRegionBounds(pinnedContainer.path);
+  const pinnedBounds = initialViewportLayout.estimatePathBounds(pinnedContainer.path);
 
   if (!pinnedBounds) {
-    throw new Error("Expected pinned region estimate");
+    throw new Error("Expected pinned path estimate");
   }
 
   const viewportLayout = createEditorLayoutState(state, {
@@ -66,14 +67,14 @@ test("keeps near pinned regions in the viewport slice", () => {
     width: 420,
   });
 
-  expect(viewportLayout.layout.regionLineIndices.has(pinnedContainer.path)).toBeTrue();
-  expect(viewportLayout.estimateRegionBounds(pinnedContainer.path)).not.toBeNull();
+  expect(viewportLayout.layout.pathLineIndices.has(pinnedContainer.path)).toBeTrue();
+  expect(viewportLayout.estimatePathBounds(pinnedContainer.path)).not.toBeNull();
 });
 
-test("does not expand virtualized slices to far offscreen pinned regions", () => {
+test("does not expand virtualized slices to far offscreen pinned paths", () => {
   const snapshot = parseDocument(createVirtualizationFixture(40));
   const initialState = createEditorState(snapshot);
-  const pinnedContainer = initialState.documentIndex.regions.at(-1);
+  const pinnedContainer = indexedTextEntries(initialState).at(-1);
 
   if (!pinnedContainer) {
     throw new Error("Expected pinned runtime container");
@@ -81,7 +82,7 @@ test("does not expand virtualized slices to far offscreen pinned regions", () =>
 
   const state = setSelection(initialState, {
     offset: 0,
-    regionPath: pinnedContainer.path,
+    path: pinnedContainer.path,
   });
   const viewportLayout = createEditorLayoutState(state, {
     height: 720,
@@ -89,8 +90,8 @@ test("does not expand virtualized slices to far offscreen pinned regions", () =>
     width: 420,
   });
 
-  expect(viewportLayout.layout.regionLineIndices.has(pinnedContainer.path)).toBeFalse();
-  expect(viewportLayout.estimateRegionBounds(pinnedContainer.path)).not.toBeNull();
+  expect(viewportLayout.layout.pathLineIndices.has(pinnedContainer.path)).toBeFalse();
+  expect(viewportLayout.estimatePathBounds(pinnedContainer.path)).not.toBeNull();
 });
 
 test("uses exact full-document layout for small documents", () => {
@@ -105,7 +106,7 @@ test("uses exact full-document layout for small documents", () => {
     width: 420,
   });
 
-  expect(state.documentIndex.regions.length).toBeLessThanOrEqual(96);
+  expect(indexedTextEntries(state).length).toBeLessThanOrEqual(96);
   expect(viewportLayout.totalHeight).toBe(fullLayout.height);
   expect(viewportLayout.layout.lines.length).toBe(fullLayout.lines.length);
 });
@@ -122,7 +123,7 @@ test("keeps large documents on sliced viewport layout", () => {
     width: 420,
   });
 
-  expect(state.documentIndex.regions.length).toBeGreaterThan(96);
+  expect(indexedTextEntries(state).length).toBeGreaterThan(96);
   expect(viewportLayout.layout.lines.length).toBeLessThan(fullLayout.lines.length);
 });
 
@@ -130,12 +131,12 @@ test("refines virtualized layout estimates after measuring slices", () => {
   const cache = createLayoutCache();
   const snapshot = parseDocument(createMeasurementSkewFixture(220));
   const initialState = createEditorState(snapshot);
-  const targetRegion = initialState.documentIndex.regions.find((region) =>
-    region.text.startsWith("Paragraph 180 "),
+  const targetPath = indexedTextEntries(initialState).find((path) =>
+    path.text.startsWith("Paragraph 180 "),
   );
 
-  if (!targetRegion) {
-    throw new Error("Expected target region");
+  if (!targetPath) {
+    throw new Error("Expected target path");
   }
 
   const viewportOptions = {
@@ -151,7 +152,7 @@ test("refines virtualized layout estimates after measuring slices", () => {
     },
     cache,
   );
-  const initialEstimate = initialLayout.estimateRegionBounds(targetRegion.path);
+  const initialEstimate = initialLayout.estimatePathBounds(targetPath.path);
 
   if (!initialEstimate) {
     throw new Error("Expected initial target estimate");
@@ -161,8 +162,8 @@ test("refines virtualized layout estimates after measuring slices", () => {
   const initialTotalHeight = initialLayout.totalHeight;
 
   const targetState = setSelection(initialState, {
-    offset: Math.floor(targetRegion.text.length / 2),
-    regionPath: targetRegion.path,
+    offset: Math.floor(targetPath.text.length / 2),
+    path: targetPath.path,
   });
   const targetViewportTop = Math.max(0, initialEstimate.top - 120);
   const measuredLayout = createEditorLayoutState(
@@ -173,13 +174,13 @@ test("refines virtualized layout estimates after measuring slices", () => {
     },
     cache,
   );
-  const measuredBounds = measuredLayout.layout.regionBounds.get(targetRegion.path);
+  const measuredBounds = measuredLayout.layout.pathBounds.get(targetPath.path);
 
   if (!measuredBounds) {
-    throw new Error("Expected target region to be measured");
+    throw new Error("Expected target path to be measured");
   }
 
-  const refinedEstimate = measuredLayout.estimateRegionBounds(targetRegion.path);
+  const refinedEstimate = measuredLayout.estimatePathBounds(targetPath.path);
 
   if (!refinedEstimate) {
     throw new Error("Expected refined target estimate");
@@ -209,13 +210,13 @@ test("keeps the initial mixed-block virtualized slice aligned with full layout",
     width: 420,
   });
 
-  expect(state.documentIndex.regions.length).toBeGreaterThan(96);
+  expect(indexedTextEntries(state).length).toBeGreaterThan(96);
   expect(viewportLayout.layout.lines.length).toBeLessThan(fullLayout.lines.length);
 
   for (const viewportLine of viewportLayout.layout.lines) {
     const matchingFullLine = fullLayout.lines.find(
       (line) =>
-        line.regionPath === viewportLine.regionPath &&
+        line.path === viewportLine.path &&
         line.start === viewportLine.start &&
         line.end === viewportLine.end,
     );
@@ -223,6 +224,49 @@ test("keeps the initial mixed-block virtualized slice aligned with full layout",
     expect(matchingFullLine?.top).toBe(viewportLine.top);
     expect(matchingFullLine?.left).toBe(viewportLine.left);
   }
+});
+
+test("keeps virtualized middle-table slices aligned with full layout", () => {
+  const snapshot = parseDocument(createLargeTableFixture(140));
+  const state = createEditorState(snapshot);
+  const cache = createLayoutCache();
+  const options = {
+    height: 220,
+    paddingX: 12,
+    paddingY: 12,
+    top: 0,
+    width: 420,
+  };
+  const fullLayout = measureLayoutSlice(state.documentIndex, options);
+  const initialViewport = createEditorLayoutState(state, options, cache);
+  const target = indexedTextEntries(state).find((entry) => entry.text === "R090A");
+
+  if (!target) {
+    throw new Error("Expected middle table cell path");
+  }
+
+  const targetEstimate = initialViewport.estimatePathBounds(target.path);
+  const targetFullBounds = fullLayout.pathBounds.get(target.path);
+
+  if (!targetEstimate || !targetFullBounds) {
+    throw new Error("Expected target table cell bounds");
+  }
+
+  const middleViewport = createEditorLayoutState(
+    state,
+    {
+      ...options,
+      top: targetEstimate.top,
+    },
+    cache,
+  );
+  const targetViewportBounds = middleViewport.layout.pathBounds.get(target.path);
+  const targetViewportLine = middleViewport.layout.lines.find((line) => line.path === target.path);
+  const targetFullLine = fullLayout.lines.find((line) => line.path === target.path);
+
+  expect(targetViewportBounds?.top).toBe(targetFullBounds.top);
+  expect(targetViewportBounds?.bottom).toBe(targetFullBounds.bottom);
+  expect(targetViewportLine?.top).toBe(targetFullLine?.top);
 });
 
 test("keeps post-table content in the initial viewport after text edits warm table caches", () => {
@@ -247,17 +291,17 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inli
 
 ## Lists
 `);
-  const editedRegion = state.documentIndex.regions.find((region) =>
-    region.text.startsWith("It stays rendered"),
+  const editedPath = indexedTextEntries(state).find((path) =>
+    path.text.startsWith("It stays rendered"),
   );
 
-  if (!editedRegion) {
-    throw new Error("Expected editable paragraph region");
+  if (!editedPath) {
+    throw new Error("Expected editable paragraph path");
   }
 
   state = setSelection(state, {
-    offset: editedRegion.text.length,
-    regionPath: editedRegion.path,
+    offset: editedPath.text.length,
+    path: editedPath.path,
   });
 
   const viewportOptions = {
@@ -353,4 +397,15 @@ const value${index + 1} = ${index + 1};
 `,
     ).join("\n") + "\n"
   );
+}
+
+function createLargeTableFixture(rowCount: number) {
+  return `| A | B |
+| - | - |
+${Array.from(
+  { length: rowCount },
+  (_, index) =>
+    `| R${String(index + 1).padStart(3, "0")}A | R${String(index + 1).padStart(3, "0")}B |`,
+).join("\n")}
+`;
 }

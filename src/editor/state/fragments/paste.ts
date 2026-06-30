@@ -6,25 +6,35 @@ import {
   createParagraphBlock,
   extractPlainTextFromFragment,
   extractPlainTextFromInlineNodes,
+  rootBlockPath,
   type Fragment,
 } from "@/document";
 import { resolveInlineContext, type InlineContext } from "../commands/context";
 import { effect } from "../effects";
-import type { DocumentIndex, EditableRegion } from "../index/types";
+import type { DocumentIndex, IndexedBlock } from "../index/types";
+import {
+  resolveBlockTextPathBoundary,
+  resolveIndexedBlockContainingPath,
+  resolveIndexedText,
+} from "../index/query";
 import {
   normalizeSelection,
-  resolveRegion,
   type EditorSelection,
   type NormalizedEditorSelection,
 } from "../selection";
-import { resolveRootRegions } from "../index/query";
 import type { EditorState, EditorStateAction } from "../types";
 import { insertInlines } from "../commands/actions/inlines";
 
 type FragmentDestinationContext = {
   prefersVerbatimFallback: boolean;
-  sameRegion: boolean;
+  samePath: boolean;
   structuralBlocked: boolean;
+};
+
+type DestinationEndpoint = {
+  indexedBlock: IndexedBlock;
+  path: string;
+  text: string;
 };
 
 type PasteFragmentContext = {
@@ -50,7 +60,7 @@ export function resolvePasteFragmentContext(
   return {
     destination,
     documentIndex: state.documentIndex,
-    inlineContext: destination.sameRegion ? resolveInlineContext(state) : null,
+    inlineContext: destination.samePath ? resolveInlineContext(state) : null,
     selection: state.selection,
   };
 }
@@ -87,9 +97,9 @@ function resolveFragmentApplication(
         return null;
       }
 
-      // Single-region inline paste: splice the inlines directly into the
+      // Single-path inline paste: splice the inlines directly into the
       // destination leaf, so the surrounding container stays intact.
-      if (context.destination.sameRegion) {
+      if (context.destination.samePath) {
         const action = context.inlineContext
           ? insertInlines(context.inlineContext, fragment.inlines)
           : null;
@@ -98,7 +108,7 @@ function resolveFragmentApplication(
         }
       }
 
-      // Cross-region or unsupported destination: synthesize a paragraph and
+      // Cross-path or unsupported destination: synthesize a paragraph and
       // use the structural path. Opaque roots reject the same way `blocks`
       // does.
       if (context.destination.structuralBlocked) {
@@ -145,7 +155,7 @@ function resolveOpaqueFragmentFallback(
 
 // --- Paste effects ----------------------------------------------------------
 
-// The text that paste landed inline in the destination region. For `text` and
+// The text that paste landed inline in the destination path. For `text` and
 // `inlines`, that's the whole payload. For a single-paragraph block fragment,
 // it's the paragraph's text because the seam merge absorbs it into the
 // destination block's inline content. Multi-block fragments report empty text.
@@ -195,36 +205,63 @@ function resolveFragmentDestinationContext(
   selection: EditorSelection,
 ): FragmentDestinationContext | null {
   const normalized = normalizeSelection(documentIndex, selection);
-  const startRegion = resolveRegion(documentIndex, normalized.start.regionPath);
-  const endRegion = resolveRegion(documentIndex, normalized.end.regionPath);
+  const startEndpoint = resolveDestinationEndpoint(documentIndex, normalized.start.path);
+  const endEndpoint = resolveDestinationEndpoint(documentIndex, normalized.end.path);
 
-  if (!startRegion || !endRegion) {
+  if (!startEndpoint || !endEndpoint) {
     return null;
   }
 
   const structuralBlocked =
-    cutsThroughOpaqueRoot(documentIndex, startRegion, normalized.start.offset, "start", normalized) ||
-    cutsThroughOpaqueRoot(documentIndex, endRegion, normalized.end.offset, "end", normalized);
+    cutsThroughOpaqueRoot(
+      documentIndex,
+      startEndpoint,
+      normalized.start.offset,
+      "start",
+      normalized,
+    ) ||
+    cutsThroughOpaqueRoot(
+      documentIndex,
+      endEndpoint,
+      normalized.end.offset,
+      "end",
+      normalized,
+    );
 
   return {
-    prefersVerbatimFallback: startRegion.block.type === "code" || endRegion.block.type === "code",
-    sameRegion: startRegion === endRegion,
+    prefersVerbatimFallback:
+      startEndpoint.indexedBlock.block.type === "code" ||
+      endEndpoint.indexedBlock.block.type === "code",
+    samePath: startEndpoint.path === endEndpoint.path,
     structuralBlocked,
   };
 }
 
-function isOpaqueRegion(region: EditableRegion): boolean {
-  return region.block.type === "table" || region.block.type === "code";
+function resolveDestinationEndpoint(
+  documentIndex: DocumentIndex,
+  path: string,
+): DestinationEndpoint | null {
+  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
+  const indexedText = resolveIndexedText(documentIndex, path);
+
+  return indexedBlock && indexedText ? { indexedBlock, path, text: indexedText.text } : null;
+}
+
+function isOpaqueEndpoint(endpoint: DestinationEndpoint): boolean {
+  return (
+    endpoint.indexedBlock.block.type === "table" ||
+    endpoint.indexedBlock.block.type === "code"
+  );
 }
 
 function cutsThroughOpaqueRoot(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  endpoint: DestinationEndpoint,
   offset: number,
   boundary: "end" | "start",
   selection: NormalizedEditorSelection,
 ): boolean {
-  if (!isOpaqueRegion(region)) {
+  if (!isOpaqueEndpoint(endpoint)) {
     return false;
   }
 
@@ -232,18 +269,24 @@ function cutsThroughOpaqueRoot(
     return true;
   }
 
-  return !isRootBoundary(documentIndex, region, offset, boundary);
+  return !isRootBoundary(documentIndex, endpoint, offset, boundary);
 }
 
 function isRootBoundary(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  endpoint: DestinationEndpoint,
   offset: number,
   boundary: "end" | "start",
 ): boolean {
-  const rootRegions = resolveRootRegions(documentIndex, region.rootIndex);
-  const endpointRegion = boundary === "start" ? rootRegions[0] : rootRegions.at(-1);
-  const endpointOffset = boundary === "start" ? 0 : endpointRegion?.text.length;
+  const rootBoundaryPath = resolveBlockTextPathBoundary(
+    documentIndex,
+    rootBlockPath(endpoint.indexedBlock.rootIndex),
+    boundary,
+  );
+  const boundaryText = rootBoundaryPath
+    ? resolveIndexedText(documentIndex, rootBoundaryPath)?.text
+    : null;
+  const endpointOffset = boundary === "start" ? 0 : boundaryText?.length;
 
-  return endpointRegion?.path === region.path && offset === endpointOffset;
+  return rootBoundaryPath === endpoint.path && offset === endpointOffset;
 }

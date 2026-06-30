@@ -1,10 +1,12 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
 import {
   createLayoutCache,
   createEditorState,
   createEditorLayoutState,
   resolvePresenceViewport,
-  resolveRegion,
+  resolveEditorTextAtPath,
+  resolveIndexedBlockContainingPath,
 } from "@/editor";
 import {
   createAnchorFromContainer,
@@ -29,7 +31,6 @@ import {
   type EditorPresence,
   type EditorPresenceViewport,
 } from "@/editor/anchors";
-import type { EditableRegion } from "@/editor/state";
 import { setup } from "../helpers";
 
 function scrollTopOf(viewport: EditorPresenceViewport | null | undefined) {
@@ -42,7 +43,7 @@ test("resolves unique prefix-only and suffix-only presence cursors", () => {
 
 Markdown is the persistence boundary.
 
-Only the active region reveals source-like editing affordances.
+Only the active path reveals source-like editing affordances.
 `);
   const [afterCursor, beforeCursor] = resolvePresenceTargets(state.documentIndex, [
     {
@@ -54,7 +55,7 @@ Only the active region reveals source-like editing affordances.
     },
     {
       cursor: {
-        suffix: "Only the active region reveals source-like editing affordances.",
+        suffix: "Only the active path reveals source-like editing affordances.",
       },
       id: "agent",
       username: "Agent",
@@ -64,18 +65,18 @@ Only the active region reveals source-like editing affordances.
   expect(afterCursor?.cursorPoint).not.toBeNull();
   expect(beforeCursor?.cursorPoint).not.toBeNull();
 
-  const afterRegion = afterCursor?.cursorPoint
-    ? resolveRegion(state.documentIndex, afterCursor.cursorPoint.regionPath)
+  const afterText = afterCursor?.cursorPoint
+    ? resolveEditorTextAtPath(state.documentIndex, afterCursor.cursorPoint.path)
     : null;
-  const beforeRegion = beforeCursor?.cursorPoint
-    ? resolveRegion(state.documentIndex, beforeCursor.cursorPoint.regionPath)
+  const beforeText = beforeCursor?.cursorPoint
+    ? resolveEditorTextAtPath(state.documentIndex, beforeCursor.cursorPoint.path)
     : null;
 
-  expect(afterRegion?.text.slice(0, afterCursor?.cursorPoint?.offset)).toBe(
+  expect(afterText?.slice(0, afterCursor?.cursorPoint?.offset)).toBe(
     "Markdown is the persistence boundary.",
   );
-  expect(beforeRegion?.text.slice(beforeCursor?.cursorPoint?.offset ?? 0)).toBe(
-    "Only the active region reveals source-like editing affordances.",
+  expect(beforeText?.slice(beforeCursor?.cursorPoint?.offset ?? 0)).toBe(
+    "Only the active path reveals source-like editing affordances.",
   );
 });
 
@@ -97,12 +98,12 @@ alpha beta delta
 
   expect(cursor?.cursorPoint).not.toBeNull();
 
-  const region = cursor?.cursorPoint
-    ? resolveRegion(state.documentIndex, cursor.cursorPoint.regionPath)
+  const text = cursor?.cursorPoint
+    ? resolveEditorTextAtPath(state.documentIndex, cursor.cursorPoint.path)
     : null;
 
-  expect(region?.text).toBe("alpha beta delta");
-  expect(region?.text.slice(0, cursor?.cursorPoint?.offset)).toBe("alpha beta");
+  expect(text).toBe("alpha beta delta");
+  expect(text?.slice(0, cursor?.cursorPoint?.offset)).toBe("alpha beta");
 });
 
 test("treats omitted presence anchor kind as text", () => {
@@ -124,11 +125,11 @@ anchor target
 
   expect(cursor?.cursorPoint).not.toBeNull();
 
-  const region = cursor?.cursorPoint
-    ? resolveRegion(state.documentIndex, cursor.cursorPoint.regionPath)
+  const block = cursor?.cursorPoint
+    ? resolveIndexedBlockContainingPath(state.documentIndex, cursor.cursorPoint.path)
     : null;
 
-  expect(region?.block.type).toBe("paragraph");
+  expect(block?.block.type).toBe("paragraph");
   expect(cursor?.cursorPoint?.offset).toBe("anchor".length);
 });
 
@@ -173,12 +174,12 @@ test("resolves semantic presence anchors through reference-inline runtime offset
       username: "Agent",
     },
   ]);
-  const region = presence?.cursorPoint
-    ? resolveRegion(state.documentIndex, presence.cursorPoint.regionPath)
+  const text = presence?.cursorPoint
+    ? resolveEditorTextAtPath(state.documentIndex, presence.cursorPoint.path)
     : null;
 
-  expect(region?.text).not.toContain("@Jane Doe");
-  expect(region?.text.length).toBe("Hello ".length + 1 + " world".length);
+  expect(text).not.toContain("@Jane Doe");
+  expect(text?.length).toBe("Hello ".length + 1 + " world".length);
   expect(presence?.cursorPoint?.offset).toBe("Hello ".length + 1);
 });
 
@@ -239,9 +240,9 @@ test("resolves image and resource presence anchors through runtime atom offsets"
       username: "Resource Agent",
     },
   ]);
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
 
-  expect(region?.text).toBe("See \uFFFC and \uFFFC now");
+  expect(path?.text).toBe("See \uFFFC and \uFFFC now");
   expect(afterImage?.cursorPoint?.offset).toBe("See \uFFFC".length);
   expect(afterResource?.cursorPoint?.offset).toBe("See \uFFFC and \uFFFC".length);
 });
@@ -271,11 +272,11 @@ test("resolves table-cell reference presence anchors through runtime offsets", (
       username: "Agent",
     },
   ]);
-  const region = presence?.cursorPoint
-    ? resolveRegion(state.documentIndex, presence.cursorPoint.regionPath)
+  const text = presence?.cursorPoint
+    ? resolveEditorTextAtPath(state.documentIndex, presence.cursorPoint.path)
     : null;
 
-  expect(region?.text).toBe("Cell \uFFFC done");
+  expect(text).toBe("Cell \uFFFC done");
   expect(presence?.cursorPoint?.offset).toBe("Cell \uFFFC".length);
 });
 
@@ -376,8 +377,8 @@ repeat
 test("resolves presence viewport state", () => {
   const layoutCache = createLayoutCache();
   const state = setup(createPresenceViewportFixture());
-  const firstRegion = requireRegion(state.documentIndex.regions[0]);
-  const lastRegion = requireRegion(state.documentIndex.regions.at(-1));
+  const firstPath = requirePath(indexedTextEntries(state)[0]);
+  const lastPath = requirePath(indexedTextEntries(state).at(-1));
   const topViewport = createEditorLayoutState(
     state,
     {
@@ -390,7 +391,7 @@ test("resolves presence viewport state", () => {
   const [visiblePresence, belowPresence] = resolvePresenceViewport(
     state,
     topViewport,
-    [createResolvedCursor("visible", firstRegion), createResolvedCursor("below", lastRegion)],
+    [createResolvedCursor("visible", firstPath), createResolvedCursor("below", lastPath)],
     [],
   );
 
@@ -410,7 +411,7 @@ test("resolves presence viewport state", () => {
   const [abovePresence] = resolvePresenceViewport(
     state,
     lowerViewport,
-    [createResolvedCursor("above", firstRegion)],
+    [createResolvedCursor("above", firstPath)],
     [],
   );
 
@@ -569,12 +570,12 @@ function createPresenceViewportFixture() {
   );
 }
 
-function createResolvedCursor(username: string, region: EditableRegion): EditorPresence {
+function createResolvedCursor(username: string, path: { path: string }): EditorPresence {
   return {
     commentThreadIndex: null,
     cursorPoint: {
       offset: 0,
-      regionPath: region.path,
+      path: path.path,
     },
     id: username,
     isOnUnresolvedCommentThread: false,
@@ -583,10 +584,10 @@ function createResolvedCursor(username: string, region: EditableRegion): EditorP
   };
 }
 
-function requireRegion(region: EditableRegion | undefined) {
-  if (!region) {
-    throw new Error("Expected editor region");
+function requirePath<T>(path: T | undefined): T {
+  if (!path) {
+    throw new Error("Expected editor path");
   }
 
-  return region;
+  return path;
 }

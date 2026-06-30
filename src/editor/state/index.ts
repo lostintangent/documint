@@ -7,7 +7,8 @@ export type {
   DocumentIndex,
   IndexedInline,
   IndexedListItem,
-  EditableRegion,
+  IndexedTableCell,
+  IndexedText,
 } from "./index/types";
 
 // Inline selectors
@@ -15,8 +16,10 @@ export {
   findInlinesInRange,
   inlineMarks,
   indexedInlineText,
-  regionInlines,
+  indexedOffsetToPlainTextOffset,
+  plainTextOffsetToIndexedOffset,
 } from "./index/inlines";
+export type { InlineOffsetAffinity } from "./index/inlines";
 
 // Index queries
 export {
@@ -24,47 +27,49 @@ export {
   countRootBlocks,
   resolveBlockByPath,
   resolveIndexedBlock,
-  resolveIndexedBlockForRegion,
-  resolveRegion,
+  resolveIndexedText,
+  resolveIndexedTextInlines,
+  resolveIndexedTextKind,
+  resolveIndexedTableCell,
+  resolveInlinesAtPath,
+  resolveIndexedBlockContainingPath,
   resolveRootBlock,
-  resolveRootRegions,
   resolveSiblingRootBlock,
+  resolveEditorTextAtPath,
 
   // Comment projection
-  resolveCommentThreadIndicesForRegion,
+  resolveCommentThreadIndicesForPath,
 
-  // Block and region extents
+  // Block extents
   blockContainsBlock,
   findAncestorIndexedBlockByPath,
-  firstRegionInBlock,
-  lastRegionInBlock,
   resolveParentIndexedBlock,
-  resolvePrimaryRegionForBlockPath,
-  resolveRootPrimaryRegion,
-  resolveTableCellRegionByTablePath,
+  resolveIndexedTableCellByTablePath,
 
   // Document flow
   compareEditorPositions,
-  firstInFlowRegionOfRoot,
+  compareResolvedEditorPositions,
+  countEditorPathsWithText,
+  findEditorPathWithText,
+  findUniqueEditorPathWithText,
+  forEachEditorPathWithText,
+  resolveAdjacentEditorPathWithTextOutsideBlock,
+  resolveAdjacentEditorPathWithTextInFlow,
   nextBlockInFlow,
-  nextRegionInFlow,
   previousBlockInFlow,
-  previousRegionInFlow,
-  resolveDocumentBoundaryRegion,
-  resolveRegionOutsideRoot,
+  resolveBlockTextPathBoundary,
+  resolveDocumentTextPathBoundary,
+  resolveEditorPosition,
 
   // Shape and classification
-  findUniqueEditableRegion,
-  hasSameEditableRegionShape,
-  hasSameTableCellPosition,
+  hasSameEditorTextPathShape,
   isContainerBlock,
   isInertBlock,
-  isInlineRegion,
   isRootIndexedBlock,
-  isSourceRegion,
 
-  // Active handles
-  resolveActiveBlockKey,
+} from "./index/query";
+export type {
+  ResolvedEditorPosition,
 } from "./index/query";
 
 // Selection
@@ -78,7 +83,7 @@ export {
   normalizeSelection,
   resolveImageAtSelection,
   selectionIntersectsBlockPath,
-  selectionIntersectsRegion,
+  selectionIntersectsPath,
 } from "./selection";
 
 export type {

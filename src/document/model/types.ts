@@ -1,45 +1,23 @@
 import type { CommentThread } from "../comments";
 
+/* Core document types */
+
 export type Document = {
   blocks: Block[];
   comments: CommentThread[];
-  /**
-   * Markdown-only round-trip slot for the leading `---`-fenced front matter,
-   * preserved verbatim. Treat as opaque metadata: the document engine never
-   * reads it. Intentionally an unparsed string until there is a concrete
-   * reason to model YAML/TOML structurally — once we do, this becomes a
-   * `metadata: Record<string, unknown>` slot owned at the document layer.
-   */
+
+  // TODO: Parse this as structured metadata
+  // as opposed to leaking Markdown concepts
   frontMatter?: string;
 };
-
-// A `Fragment` is a clipboard-shaped sub-document. Three shapes capture
-// every clipboard payload at the right altitude:
-//
-//   - `text`: pure characters with no marks or structure. Pastes via the
-//     inline replace fast path — same as typing.
-//   - `inlines`: a sequence of inline nodes (text with marks, links,
-//     images, code spans, breaks). Pastes inside the destination's
-//     leaf without disturbing surrounding block structure — so pasting
-//     `*italic*` mid-list-item stays inline in the item.
-//   - `blocks`: full block-level content. Pastes structurally with
-//     seam-merge.
-//
-// Comments and front matter never travel through any variant. Format
-// conversion (markdown ↔ Fragment) lives in the markdown subsystem; the
-// editor consumes Fragments without knowing how they were produced.
-export type Fragment =
-  | { kind: "text"; text: string }
-  | { kind: "inlines"; inlines: Inline[] }
-  | { kind: "blocks"; blocks: Block[] };
 
 export type Block =
   | ParagraphBlock
   | HeadingBlock
   | ListBlock
   | ListItemBlock
-  | BlockquoteBlock
   | TableBlock
+  | BlockquoteBlock  
   | DividerBlock
   | CodeBlock
   | DirectiveBlock
@@ -47,32 +25,40 @@ export type Block =
 
 export type Inline = Text | Link | Image | Mention | Resource | LineBreak | Raw;
 
-// Document nodes are semantic values. Runtime handles live in editor indexes,
-// while document queries use structural paths and anchors when they need to
-// name where a node sits in a snapshot.
-type BlockNode<K extends string, P = {}> = { plainText: string; type: K } & P;
-type InlineNode<K extends string, P = {}> = { type: K } & P;
+export type Reference = Image | Mention | Resource;
+
+// References are inline nodes whose durable document payload points outside plain
+// editable text: an image URL, a mentioned user, or a host-registered resource
+// URI. Higher layers share this classification instead of repeating per-kind
+// switches for every reference kind.
+export function isReferenceInlineNode(node: Inline): node is Reference {
+  return node.type === "image" || node.type === "mention" || node.type === "resource";
+}
+
+export type Fragment =
+  | { kind: "text"; text: string }
+  | { kind: "inlines"; inlines: Inline[] }
+  | { kind: "blocks"; blocks: Block[] };
+
+/* Block types */
 
 export type ParagraphBlock = BlockNode<"paragraph", { children: Inline[] }>;
 
 export type HeadingBlock = BlockNode<
   "heading",
   {
-    children: Inline[];
     depth: 1 | 2 | 3 | 4 | 5 | 6;
+    children: Inline[];
   }
 >;
 
-// Compactness is tracked at both list levels: `ListBlock.compact` controls
-// spacing between sibling items; `ListItemBlock.compact` controls spacing
-// between multiple child blocks inside one item.
 export type ListBlock = BlockNode<
   "list",
   {
-    compact: boolean;
-    items: ListItemBlock[];
     ordered: boolean;
+    items: ListItemBlock[];
     start: number | null;
+    compact: boolean;
   }
 >;
 
@@ -90,8 +76,8 @@ export type BlockquoteBlock = BlockNode<"blockquote", { children: Block[] }>;
 export type TableBlock = BlockNode<
   "table",
   {
-    align: Array<"center" | "left" | "right" | null>;
     rows: TableRow[];
+    align: Array<"center" | "left" | "right" | null>;
   }
 >;
 
@@ -110,17 +96,17 @@ export type CodeBlock = BlockNode<
   "code",
   {
     language: string | null;
-    meta: string | null;
     source: string;
+    meta: string | null;
   }
 >;
 
 export type DirectiveBlock = BlockNode<
   "directive",
   {
-    attributes: string;
-    body: string;
     name: string;
+    body: string;
+    attributes: string;
   }
 >;
 
@@ -132,7 +118,32 @@ export type RawBlock = BlockNode<
   }
 >;
 
-export type Mark = "code" | "bold" | "italic" | "strikethrough" | "underline" | "superscript";
+export type BlockContentKind = "inlines" | "blocks" | "cells" | "source" | "void";
+export function blockContentKind(block: Block): BlockContentKind {
+  switch (block.type) {
+    case "paragraph":
+    case "heading":
+      return "inlines";
+
+    case "blockquote":
+    case "list":
+    case "listItem":
+      return "blocks";
+
+    case "table":
+      return "cells";
+
+    case "code":
+    case "raw":
+      return "source";
+
+    case "divider":
+    case "directive":
+      return "void";
+  }
+}
+
+/* Inline types */
 
 export type Text = InlineNode<
   "text",
@@ -141,6 +152,8 @@ export type Text = InlineNode<
     text: string;
   }
 >;
+
+export type Mark = "bold" | "italic" | "underline" | "strikethrough" | "code" | "superscript";
 
 export type Link = InlineNode<
   "link",
@@ -189,3 +202,8 @@ export type Raw = InlineNode<
     source: string;
   }
 >;
+
+/* Type definition utilities */
+
+type BlockNode<K extends string, P = {}> = { type: K; plainText: string } & P;
+type InlineNode<K extends string, P = {}> = { type: K } & P;

@@ -1,7 +1,7 @@
 import {
   normalizeSelection,
+  resolveEditorTextAtPath,
   resolveEditorSearchMatches,
-  resolveRegion,
   setSelection,
   type DocumentIndex,
   type EditorSearchMatch,
@@ -30,7 +30,7 @@ type SearchController = {
 };
 
 // Stable enough to keep the active match through edits when it still exists.
-type ActiveMatchKey = { regionPath: string; startOffset: number };
+type ActiveMatchKey = { path: string; startOffset: number };
 
 type SearchState = {
   activeMatchKey: ActiveMatchKey | null;
@@ -110,7 +110,7 @@ export function useSearch(): SearchController {
       const activeMatchKey = searchState.activeMatchKey;
       const found = matches.findIndex(
         (match) =>
-          match.regionPath === activeMatchKey.regionPath &&
+          match.path === activeMatchKey.path &&
           match.startOffset === activeMatchKey.startOffset,
       );
 
@@ -150,7 +150,7 @@ export function useSearch(): SearchController {
     }
   }, [
     activeMatch?.endOffset,
-    activeMatch?.regionPath,
+    activeMatch?.path,
     activeMatch?.startOffset,
     searchState.isOpen,
     selectMatch,
@@ -164,7 +164,7 @@ export function useSearch(): SearchController {
     collapseSearchSelection();
   }, [
     activeMatch?.endOffset,
-    activeMatch?.regionPath,
+    activeMatch?.path,
     activeMatch?.startOffset,
     collapseSearchSelection,
     searchState.isOpen,
@@ -202,7 +202,7 @@ export function useSearch(): SearchController {
 
     setSearchState((current) => ({
       ...current,
-      activeMatchKey: { regionPath: nextMatch.regionPath, startOffset: nextMatch.startOffset },
+      activeMatchKey: { path: nextMatch.path, startOffset: nextMatch.startOffset },
       activeMatchIndex: nextIndex,
     }));
   });
@@ -294,17 +294,17 @@ export function useSearch(): SearchController {
 function selectSearchMatch(state: EditorState, match: EditorSearchMatch): EditorState | null {
   const normalized = normalizeSelection(state);
   if (
-    normalized.start.regionPath === match.regionPath &&
+    normalized.start.path === match.path &&
     normalized.start.offset === match.startOffset &&
-    normalized.end.regionPath === match.regionPath &&
+    normalized.end.path === match.path &&
     normalized.end.offset === match.endOffset
   ) {
     return null;
   }
 
   return setSelection(state, {
-    anchor: { offset: match.startOffset, regionPath: match.regionPath },
-    focus: { offset: match.endOffset, regionPath: match.regionPath },
+    anchor: { offset: match.startOffset, path: match.path },
+    focus: { offset: match.endOffset, path: match.path },
   });
 }
 
@@ -339,7 +339,7 @@ function resolveInitialSearch(
   const matched = matches[matchedIndex]!;
   return {
     activeMatchIndex: matchedIndex,
-    activeMatchKey: { regionPath: matched.regionPath, startOffset: matched.startOffset },
+    activeMatchKey: { path: matched.path, startOffset: matched.startOffset },
     query,
   };
 }
@@ -348,12 +348,15 @@ function resolveQueryFromSelection(
   store: DocumintStore,
   selection: NormalizedEditorSelection,
 ): string | null {
-  if (selection.collapsed || selection.start.regionPath !== selection.end.regionPath) {
+  if (selection.collapsed || selection.start.path !== selection.end.path) {
     return null;
   }
 
-  const region = resolveRegion(store.editor.getState().documentIndex, selection.start.regionPath);
-  const query = region?.text.slice(selection.start.offset, selection.end.offset) ?? "";
+  const text = resolveEditorTextAtPath(
+    store.editor.getState().documentIndex,
+    selection.start.path,
+  );
+  const query = text?.slice(selection.start.offset, selection.end.offset) ?? "";
 
   return query.length > 0 ? query : null;
 }
@@ -362,13 +365,13 @@ function resolveMatchIndexFromSelection(
   selection: NormalizedEditorSelection,
   matches: readonly EditorSearchMatch[],
 ): number | null {
-  if (selection.collapsed || selection.start.regionPath !== selection.end.regionPath) {
+  if (selection.collapsed || selection.start.path !== selection.end.path) {
     return null;
   }
 
   const index = matches.findIndex(
     (match) =>
-      match.regionPath === selection.start.regionPath &&
+      match.path === selection.start.path &&
       match.startOffset === selection.start.offset &&
       match.endOffset === selection.end.offset,
   );

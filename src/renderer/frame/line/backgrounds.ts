@@ -19,7 +19,7 @@ import {
 
 const activeLineVerticalBleed = 2;
 
-type RegionBounds = { bottom: number; left: number; right: number; top: number };
+type PathBounds = { bottom: number; left: number; right: number; top: number };
 
 export type ActiveBlockBackgroundFrame = {
   activeFlash: BlockFlashFrame | null;
@@ -53,7 +53,7 @@ export function resolveDocumentFrameLineBackgrounds({
   blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockPath: string | null;
   block: Block | null;
-  containerBounds: RegionBounds | null;
+  containerBounds: PathBounds | null;
   documentChange: DocumentChangeFrameEntry | null;
   layout: EditorLayoutState["layout"];
   line: EditorLayoutState["layout"]["lines"][number];
@@ -105,7 +105,7 @@ export function resolveDocumentFrameLineBackgrounds({
 function resolveCodeBlockBackgroundFrame(
   layout: EditorLayoutState["layout"],
   line: EditorLayoutState["layout"]["lines"][number],
-  containerBounds: RegionBounds,
+  containerBounds: PathBounds,
 ): LayoutRect {
   const left = Math.max(0, line.left - CODE_BLOCK_CONTENT_PADDING_X);
   const right = Math.max(left, layout.width - layout.options.paddingX);
@@ -128,7 +128,7 @@ function resolveContainerBackgroundFrame({
 }: {
   block: Block | null;
   codeBlockBackgroundRect: LayoutRect | null;
-  containerBounds: RegionBounds | null;
+  containerBounds: PathBounds | null;
   line: EditorLayoutState["layout"]["lines"][number];
   tableCellPosition: { cellIndex: number; rowIndex: number } | null;
 }): ContainerBackgroundFrame | null {
@@ -175,7 +175,7 @@ function resolveActiveBlockBackgroundFrame({
   activeBlockPath: string | null;
   block: Block | null;
   codeBlockBackgroundRect: LayoutRect | null;
-  containerBounds: RegionBounds | null;
+  containerBounds: PathBounds | null;
   line: EditorLayoutState["layout"]["lines"][number];
   runtimeBlockPath: string | null;
   theme: ResolvedEditorTheme;
@@ -209,7 +209,7 @@ function resolveActiveBlockBackgroundFrame({
 function resolveBlockBackgroundRect(
   block: Block | null,
   line: EditorLayoutState["layout"]["lines"][number],
-  containerBounds: RegionBounds | null,
+  containerBounds: PathBounds | null,
   codeBlockBackgroundRect: LayoutRect | null,
   width: number,
 ): LayoutRect | null {
@@ -249,7 +249,7 @@ function resolveDocumentChangeBackgroundFrame({
 }: {
   block: Block | null;
   codeBlockBackgroundRect: LayoutRect | null;
-  containerBounds: RegionBounds | null;
+  containerBounds: PathBounds | null;
   documentChange: DocumentChangeFrameEntry | null;
   line: EditorLayoutState["layout"]["lines"][number];
   theme: ResolvedEditorTheme;

@@ -1,7 +1,14 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import "../../test/setup-canvas";
 import { mkdirSync } from "fs";
 import { createEditorLayoutState, createEditorState, createLayoutCache } from "@/editor";
-import { insertText, normalizeSelection, setSelection, type EditorState } from "@/editor/state";
+import {
+  insertText,
+  normalizeSelection,
+  resolveIndexedBlockContainingPath,
+  setSelection,
+  type EditorState,
+} from "@/editor/state";
 import { parseDocument, serializeDocument } from "@/markdown";
 import { createDocumentFrame, paintDocumentFrame } from "@/renderer";
 import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
@@ -81,7 +88,7 @@ console.log("Documint shape");
 console.table([
   {
     blocks: document.blocks.length,
-    regions: state.documentIndex.regions.length,
+    paths: indexedTextEntries(state).length,
     linesInInitialPaintSlice: initialLayout.layout.lines.length,
     totalHeight: Math.round(initialLayout.totalHeight),
   },
@@ -295,8 +302,8 @@ function createScrollOffsets(totalHeight: number, viewportHeight: number, frameC
 function createPaintOptions(state: EditorState) {
   return {
     activeBlockPath:
-      state.documentIndex.regionIndex.get(state.selection.focus.regionPath)?.blockPath ?? null,
-    activeRegionPath: state.selection.focus.regionPath,
+      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ?? null,
+    activePath: state.selection.focus.path,
     activeThreadIndex: null,
     commentRanges: [],
     devicePixelRatio: 1,
@@ -309,15 +316,15 @@ function createPaintOptions(state: EditorState) {
 }
 
 function createTypingEditFixture(baseState: EditorState) {
-  const region = baseState.documentIndex.regions.find((candidate) => candidate.text.length > 40);
+  const path = indexedTextEntries(baseState).find((candidate) => candidate.text.length > 40);
 
-  if (!region) {
-    throw new Error("Expected an editable text region in Moby-Dick fixture.");
+  if (!path) {
+    throw new Error("Expected an editable text path in Moby-Dick fixture.");
   }
 
   return {
-    offset: Math.floor(region.text.length / 2),
-    regionPath: region.path,
+    offset: Math.floor(path.text.length / 2),
+    path: path.path,
   };
 }
 
@@ -377,7 +384,7 @@ function runTypingBenchmarkSamples(
   return runBenchmarkSamples(name, iterations, () => {
     const previous = setSelection(state, {
       offset: fixture.offset,
-      regionPath: fixture.regionPath,
+      path: fixture.path,
     });
     const next = insertText(previous, " updated");
 

@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   deleteBackward,
@@ -8,23 +9,23 @@ import {
   readEditorEffects,
   setSelection,
 } from "@/editor/state";
-import { getRegion, getRegionByType, placeAt, setup } from "../helpers";
+import { getPath, getPathByType, placeAt, setup } from "../helpers";
 
 describe("Text inserted effects", () => {
   test("emits text-inserted effects for typed text", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = insertText(placeAt(state, region, "end"), "!");
+    const path = getPath(state, "alpha");
+    const result = insertText(placeAt(state, path, "end"), "!");
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          endOffset: region.text.length + 1,
+          endOffset: path.text.length + 1,
           kind: "text-inserted",
-          regionKind: "inlines",
-          regionPath: region.path,
-          startOffset: region.text.length,
+          contentKind: "inlines",
+          path: path.path,
+          startOffset: path.text.length,
           text: "!",
         }),
       ]),
@@ -33,8 +34,8 @@ describe("Text inserted effects", () => {
 
   test("emits text-inserted effects for color emoji inserts", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = insertText(placeAt(state, region, "end"), "🔥");
+    const path = getPath(state, "alpha");
+    const result = insertText(placeAt(state, path, "end"), "🔥");
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -47,20 +48,40 @@ describe("Text inserted effects", () => {
     );
   });
 
-  test("emits source-region text-inserted effects inside code blocks", () => {
+  test("emits source-text text-inserted effects inside code blocks", () => {
     const state = setup("```ts\nconst value = 1;\n```\n");
-    const region = getRegionByType(state, "code");
-    const result = insertText(placeAt(state, region, "end"), "!");
+    const path = getPathByType(state, "code");
+    const result = insertText(placeAt(state, path, "end"), "!");
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          endOffset: region.text.length + 1,
+          endOffset: path.text.length + 1,
           kind: "text-inserted",
-          regionKind: "source",
-          regionPath: region.path,
-          startOffset: region.text.length,
+          contentKind: "source",
+          path: path.path,
+          startOffset: path.text.length,
+          text: "!",
+        }),
+      ]),
+    );
+  });
+
+  test("emits text-inserted effects inside table cells", () => {
+    const state = setup("| A |\n| - |\n| one |\n");
+    const path = getPath(state, "one");
+    const result = insertText(placeAt(state, path, "end"), "!");
+
+    expect(result).not.toBeNull();
+    expect(readEditorEffects(result!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          endOffset: path.text.length + 1,
+          kind: "text-inserted",
+          contentKind: "inlines",
+          path: path.path,
+          startOffset: path.text.length,
           text: "!",
         }),
       ]),
@@ -69,8 +90,8 @@ describe("Text inserted effects", () => {
 
   test("records paired delimiter inserted range", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = insertText(placeAt(state, region, 2), "(");
+    const path = getPath(state, "alpha");
+    const result = insertText(placeAt(state, path, 2), "(");
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -78,8 +99,8 @@ describe("Text inserted effects", () => {
         expect.objectContaining({
           endOffset: 4,
           kind: "text-inserted",
-          regionKind: "inlines",
-          regionPath: region.path,
+          contentKind: "inlines",
+          path: path.path,
           startOffset: 2,
           text: "()",
         }),
@@ -90,15 +111,15 @@ describe("Text inserted effects", () => {
 
   test("period insertion remains semantic text insertion", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = insertText(placeAt(state, region, "end"), ".");
+    const path = getPath(state, "alpha");
+    const result = insertText(placeAt(state, path, "end"), ".");
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           kind: "text-inserted",
-          startOffset: region.text.length,
+          startOffset: path.text.length,
           text: ".",
         }),
       ]),
@@ -109,8 +130,8 @@ describe("Text inserted effects", () => {
 describe("Text deleted effects", () => {
   test("emits text-deleted effects for backward line-end deletes", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = deleteBackward(placeAt(state, region, "end"));
+    const path = getPath(state, "alpha");
+    const result = deleteBackward(placeAt(state, path, "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -119,9 +140,9 @@ describe("Text deleted effects", () => {
           direction: "backward",
           kind: "text-deleted",
           placement: "line-end",
-          regionKind: "inlines",
-          regionPath: region.path,
-          startOffset: region.text.length - 1,
+          contentKind: "inlines",
+          path: path.path,
+          startOffset: path.text.length - 1,
           text: "a",
           textKind: "plain",
         }),
@@ -131,9 +152,9 @@ describe("Text deleted effects", () => {
 
   test("emits forward and middle placement for deletes that default renderer will not animate", () => {
     const state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
-    const forward = deleteForward(placeAt(state, region, 0));
-    const middle = deleteBackward(placeAt(state, region, 2));
+    const path = getPath(state, "alpha");
+    const forward = deleteForward(placeAt(state, path, 0));
+    const middle = deleteBackward(placeAt(state, path, 2));
 
     expect(forward).not.toBeNull();
     expect(middle).not.toBeNull();
@@ -161,8 +182,8 @@ describe("Text deleted effects", () => {
 
   test("marks backward deletes immediately before a soft break", () => {
     const state = setup("foo<br>bar\n");
-    const region = getRegion(state, "foo\nbar");
-    const result = deleteBackward(placeAt(state, region, 3));
+    const path = getPath(state, "foo\nbar");
+    const result = deleteBackward(placeAt(state, path, 3));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -179,8 +200,8 @@ describe("Text deleted effects", () => {
 
   test("emits styled text kind for non-plain deleted text", () => {
     const state = setup("**bold**\n");
-    const region = getRegion(state, "bold");
-    const result = deleteBackward(placeAt(state, region, "end"));
+    const path = getPath(state, "bold");
+    const result = deleteBackward(placeAt(state, path, "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -196,11 +217,11 @@ describe("Text deleted effects", () => {
 
   test("does not emit text-deleted for selection deletes", () => {
     let state = setup("alpha\n");
-    const region = getRegion(state, "alpha");
+    const path = getPath(state, "alpha");
 
     state = setSelection(state, {
-      anchor: { regionPath: region.path, offset: 1 },
-      focus: { regionPath: region.path, offset: 4 },
+      anchor: { path: path.path, offset: 1 },
+      focus: { path: path.path, offset: 4 },
     });
     const result = deleteSelection(state);
 
@@ -208,10 +229,10 @@ describe("Text deleted effects", () => {
     expect(readEditorEffects(result!).some((effect) => effect.kind === "text-deleted")).toBe(false);
   });
 
-  test("emits source-region text-deleted effects inside code blocks", () => {
+  test("emits source-text text-deleted effects inside code blocks", () => {
     const state = setup("```ts\nconst value = 1;\n```\n");
-    const region = getRegionByType(state, "code");
-    const result = deleteBackward(placeAt(state, region, "end"));
+    const path = getPathByType(state, "code");
+    const result = deleteBackward(placeAt(state, path, "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -219,10 +240,31 @@ describe("Text deleted effects", () => {
         expect.objectContaining({
           direction: "backward",
           kind: "text-deleted",
-          regionKind: "source",
-          regionPath: region.path,
-          startOffset: region.text.length - 1,
+          contentKind: "source",
+          path: path.path,
+          startOffset: path.text.length - 1,
           text: ";",
+          textKind: "plain",
+        }),
+      ]),
+    );
+  });
+
+  test("emits text-deleted effects inside table cells", () => {
+    const state = setup("| A |\n| - |\n| one |\n");
+    const path = getPath(state, "one");
+    const result = deleteBackward(placeAt(state, path, "end"));
+
+    expect(result).not.toBeNull();
+    expect(readEditorEffects(result!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          direction: "backward",
+          kind: "text-deleted",
+          contentKind: "inlines",
+          path: path.path,
+          startOffset: path.text.length - 1,
+          text: "e",
           textKind: "plain",
         }),
       ]),
@@ -233,12 +275,12 @@ describe("Text deleted effects", () => {
 describe("Active block changed effects", () => {
   test("emits active-block-changed when selection moves into a different block", () => {
     const state = setup("alpha\n\nbeta\n");
-    const [first, second] = state.documentIndex.regions;
+    const [first, second] = indexedTextEntries(state);
 
-    if (!first || !second) throw new Error("Expected two paragraph regions");
+    if (!first || !second) throw new Error("Expected two paragraph paths");
 
-    const stateAtFirst = setSelection(state, { regionPath: first.path, offset: 0 });
-    const stateAtSecond = setSelection(stateAtFirst, { regionPath: second.path, offset: 0 });
+    const stateAtFirst = setSelection(state, { path: first.path, offset: 0 });
+    const stateAtSecond = setSelection(stateAtFirst, { path: second.path, offset: 0 });
 
     expect(readEditorEffects(stateAtSecond)).toEqual([
       expect.objectContaining({ blockPath: "root.1", kind: "active-block-changed" }),
@@ -247,12 +289,12 @@ describe("Active block changed effects", () => {
 
   test("emits active-block-changed when selection moves into a different table cell", () => {
     const state = setup("| A | B |\n| - | - |\n| one | two |\n");
-    const [first, second] = state.documentIndex.regions;
+    const [first, second] = indexedTextEntries(state);
 
-    if (!first || !second) throw new Error("Expected table cell regions");
+    if (!first || !second) throw new Error("Expected table cell paths");
 
-    const stateAtFirst = setSelection(state, { regionPath: first.path, offset: 0 });
-    const stateAtSecond = setSelection(stateAtFirst, { regionPath: second.path, offset: 0 });
+    const stateAtFirst = setSelection(state, { path: first.path, offset: 0 });
+    const stateAtSecond = setSelection(stateAtFirst, { path: second.path, offset: 0 });
 
     expect(readEditorEffects(stateAtSecond)).toEqual([
       expect.objectContaining({ blockPath: "root.0", kind: "active-block-changed" }),
@@ -263,8 +305,8 @@ describe("Active block changed effects", () => {
 describe("List item inserted effects", () => {
   test("emits list-item-inserted when splitting a list item with insertLineBreak", () => {
     const state = setup("- alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = insertLineBreak(placeAt(state, region, "end"));
+    const path = getPath(state, "alpha");
+    const result = insertLineBreak(placeAt(state, path, "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!)).toEqual(
@@ -274,8 +316,8 @@ describe("List item inserted effects", () => {
 
   test("orders edit effects before derived selection effects", () => {
     const state = setup("- alpha\n");
-    const region = getRegion(state, "alpha");
-    const result = insertLineBreak(placeAt(state, region, "end"));
+    const path = getPath(state, "alpha");
+    const result = insertLineBreak(placeAt(state, path, "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).map((effect) => effect.kind)).toEqual([
@@ -286,7 +328,7 @@ describe("List item inserted effects", () => {
 
   test("does not emit list-item-inserted when typing inside an existing list item", () => {
     const state = setup("- alpha\n");
-    const result = insertText(placeAt(state, getRegion(state, "alpha"), "end"), "b");
+    const result = insertText(placeAt(state, getPath(state, "alpha"), "end"), "b");
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
@@ -296,7 +338,7 @@ describe("List item inserted effects", () => {
 
   test("emits list-item-inserted when splitting a task list item", () => {
     const state = setup("- [ ] task\n");
-    const result = insertLineBreak(placeAt(state, getRegion(state, "task"), "end"));
+    const result = insertLineBreak(placeAt(state, getPath(state, "task"), "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(

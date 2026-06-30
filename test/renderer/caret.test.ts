@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 // Tests for the overlay-canvas caret painter. These exercise
 // `createOverlayFrame` + `paintOverlayFrame` since presence carets only ever
 // land on the overlay layer.
@@ -15,14 +16,14 @@ const resolvedLightTheme = resolveEditorTheme(lightTheme);
 
 test("paints resolved presence cursors on the overlay canvas", () => {
   let state = setup("alpha beta gamma\n");
-  const container = state.documentIndex.regions[0];
+  const container = indexedTextEntries(state)[0];
 
   if (!container) {
     throw new Error("Expected paragraph container");
   }
 
   state = setSelection(state, {
-    regionPath: container.path,
+    path: container.path,
     offset: 1,
   });
 
@@ -36,7 +37,7 @@ test("paints resolved presence cursors on the overlay canvas", () => {
         color: "#0ea5e9",
         commentThreadIndex: null,
         cursorPoint: {
-          regionPath: container.path,
+          path: container.path,
           offset: 5,
         },
         id: "user",

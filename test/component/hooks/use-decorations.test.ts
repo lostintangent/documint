@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   createDocument,
@@ -16,7 +17,7 @@ import {
 } from "@/component/decorations/client/reconciliation";
 
 describe("decoration root result reconciliation", () => {
-  test("maps matching root results to current editor regions and suppresses duplicates", () => {
+  test("maps matching root results to current editor paths and suppresses duplicates", () => {
     const document = createDocument([createParagraphTextBlock("A list item")]);
     const state = createEditorState(document);
     const documentIndex = state.documentIndex;
@@ -28,7 +29,7 @@ describe("decoration root result reconciliation", () => {
           backgroundColor: "gold",
           pulse: true,
           endOffset: 6,
-          path: "root.0.children",
+          path: "root.0",
           startOffset: 2,
         },
       ],
@@ -46,7 +47,7 @@ describe("decoration root result reconciliation", () => {
           pulse: true,
           color: "red",
           endOffset: 6,
-          path: documentIndex.regions[0]!.path,
+          path: indexedTextEntries(documentIndex)[0]!.path,
           startOffset: 2,
         },
       ],
@@ -59,14 +60,14 @@ describe("decoration root result reconciliation", () => {
     const changedDocument = createDocument([createParagraphTextBlock("A different item")]);
     const changedState = createEditorState(changedDocument);
     const previous = new Map([
-      ["root.0.children", [{ color: "blue", endOffset: 4, path: "root.0.children", startOffset: 0 }]],
+      ["root.0", [{ color: "blue", endOffset: 4, path: "root.0", startOffset: 0 }]],
     ]);
     const result = {
       ranges: [
         {
           color: "red",
           endOffset: 6,
-          path: "root.0.children",
+          path: "root.0",
           startOffset: 2,
         },
       ],
@@ -122,9 +123,9 @@ describe("decoration root result reconciliation", () => {
 describe("decoration text edit remapping", () => {
   test("shifts ranges after an insertion and drops the edited range", () => {
     const ranges = [
-      { color: "gray", endOffset: 2, path: "root.0.source", startOffset: 0 },
-      { color: "blue", endOffset: 7, path: "root.0.source", startOffset: 3 },
-      { color: "green", endOffset: 12, path: "root.0.source", startOffset: 9 },
+      { color: "gray", endOffset: 2, path: "root.0", startOffset: 0 },
+      { color: "blue", endOffset: 7, path: "root.0", startOffset: 3 },
+      { color: "green", endOffset: 12, path: "root.0", startOffset: 9 },
     ];
 
     expect(
@@ -135,15 +136,15 @@ describe("decoration text edit remapping", () => {
       }),
     ).toEqual([
       ranges[0],
-      { color: "green", endOffset: 14, path: "root.0.source", startOffset: 11 },
+      { color: "green", endOffset: 14, path: "root.0", startOffset: 11 },
     ]);
   });
 
   test("shifts ranges after a deletion and preserves surviving range fragments", () => {
     const ranges = [
-      { color: "gray", endOffset: 2, path: "root.0.source", startOffset: 0 },
-      { color: "blue", endOffset: 8, path: "root.0.source", startOffset: 4 },
-      { color: "green", endOffset: 14, path: "root.0.source", startOffset: 10 },
+      { color: "gray", endOffset: 2, path: "root.0", startOffset: 0 },
+      { color: "blue", endOffset: 8, path: "root.0", startOffset: 4 },
+      { color: "green", endOffset: 14, path: "root.0", startOffset: 10 },
     ];
 
     expect(
@@ -154,16 +155,16 @@ describe("decoration text edit remapping", () => {
       }),
     ).toEqual([
       ranges[0],
-      { color: "blue", endOffset: 5, path: "root.0.source", startOffset: 4 },
-      { color: "green", endOffset: 11, path: "root.0.source", startOffset: 7 },
+      { color: "blue", endOffset: 5, path: "root.0", startOffset: 4 },
+      { color: "green", endOffset: 11, path: "root.0", startOffset: 7 },
     ]);
   });
 
   test("remaps decoration fragments that span both sides of a deletion", () => {
     const ranges = [
-      { color: "string", endOffset: 12, path: "root.0.source", startOffset: 3 },
-      { color: "comment", endOffset: 10, path: "root.0.source", startOffset: 6 },
-      { color: "keyword", endOffset: 8, path: "root.0.source", startOffset: 5 },
+      { color: "string", endOffset: 12, path: "root.0", startOffset: 3 },
+      { color: "comment", endOffset: 10, path: "root.0", startOffset: 6 },
+      { color: "keyword", endOffset: 8, path: "root.0", startOffset: 5 },
     ];
 
     expect(
@@ -173,42 +174,42 @@ describe("decoration text edit remapping", () => {
         startOffset: 5,
       }),
     ).toEqual([
-      { color: "string", endOffset: 9, path: "root.0.source", startOffset: 3 },
-      { color: "comment", endOffset: 7, path: "root.0.source", startOffset: 5 },
+      { color: "string", endOffset: 9, path: "root.0", startOffset: 3 },
+      { color: "comment", endOffset: 7, path: "root.0", startOffset: 5 },
     ]);
   });
 
-  test("patches only the edited region path in the decoration index", () => {
+  test("patches only the edited path in the decoration index", () => {
     const previous = new Map([
       [
-        "root.0.children",
-        [{ color: "blue", endOffset: 6, path: "root.0.children", startOffset: 3 }],
+        "root.0",
+        [{ color: "blue", endOffset: 6, path: "root.0", startOffset: 3 }],
       ],
-      ["root.1.source", [{ color: "red", endOffset: 4, path: "root.1.source", startOffset: 0 }]],
+      ["root.1", [{ color: "red", endOffset: 4, path: "root.1", startOffset: 0 }]],
     ]);
 
     const next = remapDecorationIndexForTextEdit(previous, {
       deletedLength: 0,
       insertedLength: 2,
-      regionPath: "root.0.children",
+      path: "root.0",
       startOffset: 0,
     });
 
     expect(next).toEqual(
       new Map([
         [
-          "root.0.children",
-          [{ color: "blue", endOffset: 8, path: "root.0.children", startOffset: 5 }],
+          "root.0",
+          [{ color: "blue", endOffset: 8, path: "root.0", startOffset: 5 }],
         ],
-        ["root.1.source", [{ color: "red", endOffset: 4, path: "root.1.source", startOffset: 0 }]],
+        ["root.1", [{ color: "red", endOffset: 4, path: "root.1", startOffset: 0 }]],
       ]),
     );
   });
 
   test("does not color inserted source text before the worker resolves it", () => {
     const ranges = [
-      { color: "keyword", endOffset: 5, path: "root.0.source", startOffset: 0 },
-      { color: "string", endOffset: 12, path: "root.0.source", startOffset: 8 },
+      { color: "keyword", endOffset: 5, path: "root.0", startOffset: 0 },
+      { color: "string", endOffset: 12, path: "root.0", startOffset: 8 },
     ];
 
     expect(
@@ -218,8 +219,8 @@ describe("decoration text edit remapping", () => {
         startOffset: 5,
       }),
     ).toEqual([
-      { color: "keyword", endOffset: 5, path: "root.0.source", startOffset: 0 },
-      { color: "string", endOffset: 15, path: "root.0.source", startOffset: 11 },
+      { color: "keyword", endOffset: 5, path: "root.0", startOffset: 0 },
+      { color: "string", endOffset: 15, path: "root.0", startOffset: 11 },
     ]);
   });
 });

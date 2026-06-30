@@ -1,9 +1,9 @@
-// Owns exact table layout. Tables share row bands across multiple text
-// regions, so they need a dedicated pass instead of single-region flow.
+// Owns exact table layout. Tables share row bands across multiple text paths,
+// so they need a dedicated pass instead of single-path flow.
 
 import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import type { DocumentIndex } from "../../state";
+import type { IndexedBlock, IndexedTableCell } from "../../state";
 import type { DocumentLayoutOptions } from "../lib/options";
 import { mergeLayoutBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { updateBlockExtent, type DocumentLayout, type LayoutLine } from "./index";
@@ -14,14 +14,12 @@ import {
   type BlockTypography,
   type MeasuredTextLine,
 } from "./text";
+import { tableCellLayoutTextInput } from "./text-input";
 import type { LayoutCache } from "../state/cache";
 
-type TableRowCell = {
+type MeasuredTableRowCell = {
   cellIndex: number;
-  container: DocumentIndex["regions"][number];
-};
-
-type MeasuredTableRowCell = TableRowCell & {
+  input: ReturnType<typeof tableCellLayoutTextInput>;
   typography: BlockTypography;
   measuredLines: MeasuredTextLine[];
 };
@@ -61,43 +59,11 @@ export function resolveTableRowHeight(lineHeight: number, cellContentHeights: nu
   );
 }
 
-export function groupTableRegionsByRow<Entry>(
-  regions: readonly DocumentIndex["regions"][number][],
-  startIndex: number,
-  endIndex: number,
-  createEntry: (
-    container: DocumentIndex["regions"][number],
-    index: number,
-    position: NonNullable<DocumentIndex["regions"][number]["tableCellPosition"]>,
-  ) => Entry,
-) {
-  const rows = new Map<number, Entry[]>();
-
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const container = regions[index];
-    if (!container) continue;
-
-    const position = container.tableCellPosition;
-
-    if (!position) {
-      continue;
-    }
-
-    const current = rows.get(position.rowIndex) ?? [];
-    current.push(createEntry(container, index, position));
-    rows.set(position.rowIndex, current);
-  }
-
-  return rows;
-}
-
 export function layoutTable(
   lines: LayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
-  regionBounds: DocumentLayout["regionBounds"],
-  regions: readonly DocumentIndex["regions"][number][],
-  regionStartIndex: number,
-  regionEndIndex: number,
+  pathBounds: DocumentLayout["pathBounds"],
+  indexedBlock: IndexedBlock,
   cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
   blockPath: string,
@@ -107,13 +73,13 @@ export function layoutTable(
   resources: DocumentResources,
 ) {
   const { cellWidth, columnWidth } = resolveTableColumnMetrics(block, left, options);
-  const rowCells = collectTableRowCells(regions, regionStartIndex, regionEndIndex);
+  const tableCellRows = indexedBlock.kind === "cells" ? indexedBlock.tableCellRows : [];
 
   let y = top;
 
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
     const measuredCells = measureTableRowCells(
-      rowCells.get(rowIndex) ?? [],
+      tableCellRows[rowIndex] ?? [],
       cache,
       block,
       cellWidth,
@@ -135,7 +101,7 @@ export function layoutTable(
       for (const line of cell.measuredLines) {
         const layoutLine = {
           blockPath,
-          regionPath: cell.container.path,
+          path: cell.input.path,
           start: line.start,
           end: line.end,
           top: lineTop,
@@ -148,7 +114,7 @@ export function layoutTable(
           inlineReferences: line.inlineReferences,
           boundaries: measureTextLineBoundaries(
             cache,
-            cell.container,
+            cell.input,
             line.start,
             line.end,
             line.text,
@@ -163,7 +129,7 @@ export function layoutTable(
         lineTop += line.height;
       }
 
-      regionBounds.set(cell.container.path, {
+      pathBounds.set(cell.input.path, {
         bottom: y + rowHeight,
         left: cellLeft,
         right: cellLeft + columnWidth,
@@ -178,24 +144,8 @@ export function layoutTable(
   return y;
 }
 
-function collectTableRowCells(
-  regions: readonly DocumentIndex["regions"][number][],
-  regionStartIndex: number,
-  regionEndIndex: number,
-) {
-  return groupTableRegionsByRow<TableRowCell>(
-    regions,
-    regionStartIndex,
-    regionEndIndex,
-    (container, _index, position) => ({
-      cellIndex: position.cellIndex,
-      container,
-    }),
-  );
-}
-
 function measureTableRowCells(
-  cells: readonly TableRowCell[],
+  cells: readonly IndexedTableCell[],
   cache: LayoutCache,
   block: Extract<Block, { type: "table" }>,
   cellWidth: number,
@@ -203,24 +153,24 @@ function measureTableRowCells(
   baseFontSize: number,
   resources: DocumentResources,
 ) {
-  return [...cells]
-    .sort((leftCell, rightCell) => leftCell.cellIndex - rightCell.cellIndex)
-    .map<MeasuredTableRowCell>(({ cellIndex, container }) => {
-      const typography = resolveBlockTypography(block, baseFontSize, fallbackLineHeight);
-      const measuredLines = measureTextContainerLines(
-        cache,
-        container,
-        block,
-        cellWidth,
-        typography,
-        resources,
-      );
+  const typography = resolveBlockTypography(block, baseFontSize, fallbackLineHeight);
 
-      return {
-        cellIndex,
-        container,
-        typography,
-        measuredLines,
-      };
-    });
+  return cells.map<MeasuredTableRowCell>((cell) => {
+    const input = tableCellLayoutTextInput(cell);
+    const measuredLines = measureTextContainerLines(
+      cache,
+      input,
+      block,
+      cellWidth,
+      typography,
+      resources,
+    );
+
+    return {
+      cellIndex: cell.cellIndex,
+      input,
+      typography,
+      measuredLines,
+    };
+  });
 }

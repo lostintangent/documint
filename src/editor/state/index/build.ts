@@ -1,5 +1,5 @@
 // `applyRootDelta`: the universal projection primitive. Every shape of update
-// (cold build, single-region edit, root splice, append, structural replace)
+// (cold build, text edit, root splice, append, structural replace)
 // routes through this one function. Cold build is the degenerate case where
 // `prev` is `null`: clones are empty maps, and every positioned root
 // contributes its indexed records to the inserts.
@@ -22,8 +22,8 @@ import {
 import type {
   IndexedBlock,
   DocumentIndex,
+  IndexedTableCell,
   IndexedListItem,
-  EditableRegion,
   IndexedRoot,
 } from "./types";
 
@@ -43,7 +43,7 @@ export function applyRootDelta(
   }
 
   const blockIndex = new Map(prev?.blockIndex);
-  const regionIndex = new Map(prev?.regionIndex);
+  const tableCellIndex = new Map(prev?.tableCellIndex);
 
   const prevRoots = prev?.roots;
   const sharedLength = prevRoots ? Math.min(prevRoots.length, positionedRoots.length) : 0;
@@ -51,28 +51,27 @@ export function applyRootDelta(
   // For each shared position, compare references:
   //   - same reference → reused, no work
   //   - different reference → remove previous records, then add next records.
-  //     Same rootIndex does not imply stable block/region paths; root replacement
-  //     and root insertion can both put different blocks at the same slot.
+  //     Same rootIndex does not imply stable block or cell paths; root replacement
+  //     and root insertion can both put different content at the same slot.
   if (prevRoots) {
     for (let i = 0; i < sharedLength; i += 1) {
       const prevRoot = prevRoots[i]!;
       const positionedRoot = positionedRoots[i]!;
       if (positionedRoot === prevRoot) continue;
-      removeRootRecords(prevRoot, blockIndex, regionIndex);
-      addRootRecords(positionedRoot, blockIndex, regionIndex);
+      removeRootRecords(prevRoot, blockIndex, tableCellIndex);
+      addRootRecords(positionedRoot, blockIndex, tableCellIndex);
     }
     // Trailing prev roots (deletions at tail) — remove their records.
     for (let i = sharedLength; i < prevRoots.length; i += 1) {
-      removeRootRecords(prevRoots[i]!, blockIndex, regionIndex);
+      removeRootRecords(prevRoots[i]!, blockIndex, tableCellIndex);
     }
   }
   // Trailing positioned roots, including every root on cold build.
   for (let i = sharedLength; i < positionedRoots.length; i += 1) {
-    addRootRecords(positionedRoots[i]!, blockIndex, regionIndex);
+    addRootRecords(positionedRoots[i]!, blockIndex, tableCellIndex);
   }
 
   const blocks = positionedRoots.flatMap((root) => root.blocks);
-  const regions = positionedRoots.flatMap((root) => root.regions);
 
   return {
     blockIndex,
@@ -84,35 +83,43 @@ export function applyRootDelta(
     imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
     resourceUrls: createDocumentResourceUrls(positionedRoots, prev?.resourceUrls),
     listItems: createDocumentListItems(positionedRoots, prev?.listItems),
-    regionIndex,
-    regions,
     roots: positionedRoots,
+    tableCellIndex,
+    pathsWithTextCount: positionedRoots.reduce((count, root) => count + root.pathsWithTextCount, 0),
   };
 }
 
 function removeRootRecords(
   root: IndexedRoot,
   blockIndex: Map<string, IndexedBlock>,
-  regionIndex: Map<string, EditableRegion>,
+  tableCellIndex: Map<string, IndexedTableCell>,
 ) {
   for (const indexedBlock of root.blocks) {
     blockIndex.delete(indexedBlock.path);
-  }
-  for (const region of root.regions) {
-    regionIndex.delete(region.path);
+    if (indexedBlock.kind === "cells") {
+      for (const row of indexedBlock.tableCellRows) {
+        for (const cell of row) {
+          tableCellIndex.delete(cell.path);
+        }
+      }
+    }
   }
 }
 
 function addRootRecords(
   root: IndexedRoot,
   blockIndex: Map<string, IndexedBlock>,
-  regionIndex: Map<string, EditableRegion>,
+  tableCellIndex: Map<string, IndexedTableCell>,
 ) {
   for (const indexedBlock of root.blocks) {
     blockIndex.set(indexedBlock.path, indexedBlock);
-  }
-  for (const region of root.regions) {
-    regionIndex.set(region.path, region);
+    if (indexedBlock.kind === "cells") {
+      for (const row of indexedBlock.tableCellRows) {
+        for (const cell of row) {
+          tableCellIndex.set(cell.path, cell);
+        }
+      }
+    }
   }
 }
 
@@ -289,9 +296,9 @@ function changedRootsMayAffectCommentResolution(
   for (let rootIndex = 0; rootIndex < positionedRoots.length; rootIndex += 1) {
     const rootBlock = nextDocument.blocks[rootIndex];
 
-    // Re-positioning can allocate fresh `IndexedRoot` objects when block or
-    // region coordinates shift, but unchanged document blocks cannot introduce
-    // a new comment-anchor collision.
+    // Re-positioning can allocate fresh `IndexedRoot` objects when block
+    // coordinates shift, but unchanged document blocks cannot introduce a new
+    // comment-anchor collision.
     if (!rootBlock || rootBlock === prev.document.blocks[rootIndex]) {
       continue;
     }
@@ -308,7 +315,7 @@ function rootBlockMayAffectCommentResolution(
   rootBlock: Document["blocks"][number],
   comments: Document["comments"],
 ) {
-  // Match comment resolution's semantic text projection. Editor regions use
+  // Match comment resolution's semantic text projection. Editor path text uses
   // selection-space text for references, but comments anchor against document
   // `plainText` via `listAnchorContainers`.
   for (const container of listAnchorContainers({ blocks: [rootBlock], comments: [] })) {

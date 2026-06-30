@@ -37,7 +37,7 @@ export function resolveRootTextBlockSplit(
   ctx: RootTextBlockContext,
   offset: number,
 ): EditorStateAction {
-  const split = splitRootTextBlock(ctx.block, ctx.region.text, offset);
+  const split = splitRootTextBlock(ctx.block, ctx.text, offset);
 
   return spliceRootBlocks(ctx.rootIndex, split.blocks, { caret: split.caret });
 }
@@ -46,7 +46,7 @@ export function resolveBlockquoteTextBlockSplit(
   ctx: BlockquoteTextBlockContext,
   offset: number,
 ): EditorStateAction {
-  const split = splitQuotedTextBlock(ctx.block, ctx.region.text, offset);
+  const split = splitQuotedTextBlock(ctx.block, ctx.text, offset);
   const quote = replaceBlockquoteChild(ctx.quote, ctx.childIndex, split.blocks);
 
   return spliceRootBlocks(ctx.rootIndex, [quote], { caret: split.caret });
@@ -56,7 +56,7 @@ export function resolveStructuralBlockquoteSplit(
   ctx: BlockquoteTextBlockContext,
   offset: number,
 ): EditorStateAction | null {
-  if (offset !== 0 || ctx.region.text.length !== 0 || ctx.block.type !== "paragraph") {
+  if (offset !== 0 || ctx.text.length !== 0 || ctx.block.type !== "paragraph") {
     return null;
   }
 

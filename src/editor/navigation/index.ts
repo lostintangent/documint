@@ -5,19 +5,17 @@
  *
  * Layout-aware motion (vertical, page, line boundary) takes the prepared
  * `EditorLayoutState` so it has access to both layout geometry and viewport
- * metrics. Region-only motion (horizontal, document boundary) takes just the
+ * metrics. Path-only motion (horizontal, document boundary) takes just the
  * state.
  */
 import { measureCaretTarget, type EditorLayoutState, type EditorPoint } from "../layout";
 import {
-  nextRegionInFlow,
-  previousRegionInFlow,
+  resolveDocumentTextPathBoundary,
+  resolveAdjacentEditorPathWithTextInFlow,
   isSelectionCollapsed,
   setSelection,
   setSelectionPoint,
-  resolveDocumentBoundaryRegion,
-  resolveRegion,
-  type EditableRegion,
+  resolveEditorTextAtPath,
   type EditorSelectionPoint,
   type EditorState,
 } from "../state";
@@ -27,7 +25,7 @@ import {
   moveCaretToCurrentLineBoundary,
   moveCaretVerticallyInFlow,
 } from "./line";
-import { moveCaretVerticallyInTable, resolveVerticalTableRegionTarget } from "./table";
+import { moveCaretVerticallyInTable, resolveVerticalTablePathTarget } from "./table";
 export {
   resolveDragFocus,
   resolveDragFocusPoint,
@@ -35,16 +33,15 @@ export {
   resolveHoverTarget,
   resolveHoverTargetAtPoint,
   resolveLinkHitAtPoint,
-  resolveSelectionHit,
+  resolveSelectionPointAt,
   resolveTargetAtOffset,
   resolveTaskCheckboxHitAtPoint,
   resolveWordSelection,
   resolveWordSelectionAtPoint,
   type EditorHoverTarget,
   type EditorHit,
-  type SelectionHit,
 } from "./hit";
-import { resolveDragFocus, resolveSelectionHit } from "./hit";
+import { resolveDragFocus, resolveSelectionPointAt } from "./hit";
 
 export { resolveEditorSearchMatches, type EditorSearchMatch } from "./search";
 
@@ -63,7 +60,7 @@ export function moveCaretHorizontally(
   const extendSelection = options.extendSelection ?? false;
 
   return options.mode === "block"
-    ? moveCaretToAdjacentRegion(state, delta, extendSelection)
+    ? moveCaretToAdjacentPathWithText(state, delta, extendSelection)
     : moveCaretHorizontallyInFlow(state, delta, extendSelection);
 }
 
@@ -76,7 +73,7 @@ export function moveCaretVertically(
   const extendSelection = options.extendSelection ?? false;
 
   if (options.mode === "block") {
-    return moveCaretVerticallyByRegion(state, direction, extendSelection);
+    return moveCaretVerticallyByBlockMode(state, direction, extendSelection);
   }
 
   const caret = measureSelectionCaret(state, viewport);
@@ -122,7 +119,7 @@ export function moveCaretToLineBoundary(
   const extendSelection = options.extendSelection ?? false;
 
   if (options.mode === "block") {
-    return moveCaretToCurrentRegionBoundary(state, boundary, extendSelection);
+    return moveCaretToCurrentPathBoundary(state, boundary, extendSelection);
   }
 
   return moveCaretToCurrentLineBoundary(state, viewport.layout, boundary, extendSelection);
@@ -133,16 +130,17 @@ export function moveCaretToDocumentBoundary(
   boundary: "start" | "end",
   extendSelection = false,
 ) {
-  const targetRegion = resolveDocumentBoundaryRegion(state.documentIndex, boundary);
+  const targetPath = resolveDocumentTextPathBoundary(state.documentIndex, boundary);
+  const targetText = targetPath ? resolveEditorTextAtPath(state.documentIndex, targetPath) : null;
 
-  if (!targetRegion) {
+  if (!targetPath || targetText === null) {
     return state;
   }
 
   return setSelectionPoint(
     state,
-    targetRegion.path,
-    boundary === "start" ? 0 : targetRegion.text.length,
+    targetPath,
+    boundary === "start" ? 0 : targetText.length,
     extendSelection,
   );
 }
@@ -152,9 +150,9 @@ export function setSelectionAtPoint(
   viewport: EditorLayoutState,
   point: EditorPoint,
 ) {
-  const hit = resolveSelectionHit(state, viewport, point);
+  const hit = resolveSelectionPointAt(state, viewport, point);
 
-  return hit ? setSelection(state, { offset: hit.offset, regionPath: hit.regionPath }) : null;
+  return hit ? setSelection(state, hit) : null;
 }
 
 export function extendSelectionToPoint(
@@ -162,9 +160,9 @@ export function extendSelectionToPoint(
   viewport: EditorLayoutState,
   point: EditorPoint,
 ) {
-  const hit = resolveSelectionHit(state, viewport, point);
+  const hit = resolveSelectionPointAt(state, viewport, point);
 
-  return hit ? setSelectionPoint(state, hit.regionPath, hit.offset, true) : null;
+  return hit ? setSelectionPoint(state, hit.path, hit.offset, true) : null;
 }
 
 export function updateSelectionFromDrag(
@@ -185,92 +183,102 @@ export function updateSelectionFromDrag(
 
 function measureSelectionCaret(state: EditorState, viewport: EditorLayoutState) {
   return measureCaretTarget(viewport.layout, state.documentIndex, {
-    regionPath: state.selection.focus.regionPath,
+    path: state.selection.focus.path,
     offset: state.selection.focus.offset,
   });
 }
 
-function moveCaretVerticallyByRegion(
+function moveCaretVerticallyByBlockMode(
   state: EditorState,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
   return (
-    moveCaretVerticallyByTableRegion(state, direction, extendSelection) ??
-    moveCaretToAdjacentRegion(state, direction, extendSelection)
+    moveCaretVerticallyByTablePath(state, direction, extendSelection) ??
+    moveCaretToAdjacentPathWithText(state, direction, extendSelection)
   );
 }
 
-function moveCaretVerticallyByTableRegion(
+function moveCaretVerticallyByTablePath(
   state: EditorState,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const target = resolveVerticalTableRegionTarget(state, direction);
+  const target = resolveVerticalTablePathTarget(state, direction);
 
   if (!target) {
     return null;
   }
 
-  return target.targetRegion
-    ? setRegionNavigationSelection(
+  return target.targetPath
+    ? setPathNavigationSelection(
         state,
-        target.currentRegion,
-        target.targetRegion,
+        target.currentPath,
+        target.targetPath,
         direction,
         extendSelection,
       )
     : state;
 }
 
-function moveCaretToAdjacentRegion(
+function moveCaretToAdjacentPathWithText(
   state: EditorState,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
+  const currentPath = state.selection.focus.path;
+  const currentText = resolveEditorTextAtPath(state.documentIndex, currentPath);
 
-  if (!currentRegion) {
+  if (currentText === null) {
     return state;
   }
 
-  const targetRegion =
-    direction < 0
-      ? previousRegionInFlow(state.documentIndex, currentRegion.path)
-      : nextRegionInFlow(state.documentIndex, currentRegion.path);
+  const targetPath = resolveAdjacentEditorPathWithTextInFlow(
+    state.documentIndex,
+    currentPath,
+    direction,
+  );
 
-  return targetRegion
-    ? setRegionNavigationSelection(state, currentRegion, targetRegion, direction, extendSelection)
+  return targetPath
+    ? setPathNavigationSelection(state, currentPath, targetPath, direction, extendSelection)
     : state;
 }
 
-function moveCaretToCurrentRegionBoundary(
+function moveCaretToCurrentPathBoundary(
   state: EditorState,
   boundary: "Home" | "End",
   extendSelection: boolean,
 ) {
-  const currentRegion = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
+  const currentPath = state.selection.focus.path;
+  const currentText = resolveEditorTextAtPath(state.documentIndex, currentPath);
 
-  return currentRegion
+  return currentText !== null
     ? setSelectionPoint(
         state,
-        currentRegion.path,
-        boundary === "Home" ? 0 : currentRegion.text.length,
+        currentPath,
+        boundary === "Home" ? 0 : currentText.length,
         extendSelection,
       )
     : state;
 }
 
-function setRegionNavigationSelection(
+function setPathNavigationSelection(
   state: EditorState,
-  currentRegion: EditableRegion,
-  targetRegion: EditableRegion,
+  currentPath: string,
+  targetPath: string,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
+  const currentText = resolveEditorTextAtPath(state.documentIndex, currentPath);
+  const targetText = resolveEditorTextAtPath(state.documentIndex, targetPath);
+
+  if (currentText === null || targetText === null) {
+    return state;
+  }
+
   const focus = {
-    regionPath: targetRegion.path,
-    offset: extendSelection && direction > 0 ? targetRegion.text.length : 0,
+    path: targetPath,
+    offset: extendSelection && direction > 0 ? targetText.length : 0,
   };
 
   if (!extendSelection) {
@@ -280,8 +288,8 @@ function setRegionNavigationSelection(
   return setSelection(state, {
     anchor: isSelectionCollapsed(state.selection)
       ? {
-          regionPath: currentRegion.path,
-          offset: direction > 0 ? 0 : currentRegion.text.length,
+          path: currentPath,
+          offset: direction > 0 ? 0 : currentText.length,
         }
       : state.selection.anchor,
     focus,

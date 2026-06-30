@@ -1,22 +1,28 @@
-import { resolveRegion, type EditorState, type NormalizedEditorSelection } from "@/editor/state";
+import {
+  resolveEditorPosition,
+  type DocumentIndex,
+  type NormalizedEditorSelection,
+  type ResolvedEditorPosition,
+} from "@/editor/state";
 
-export type SelectionRegionOrderRange = {
-  end: number;
-  start: number;
+export type SelectionPathRange = {
+  end: ResolvedEditorPosition;
+  start: ResolvedEditorPosition;
 };
 
-export function resolveSelectionRegionOrderRange(
-  editorState: EditorState,
+export function resolveSelectionPathRange(
+  documentIndex: DocumentIndex,
   normalizedSelection: NormalizedEditorSelection,
-): SelectionRegionOrderRange | null {
-  const start = resolveRegion(
-    editorState.documentIndex,
-    normalizedSelection.start.regionPath,
-  )?.regionArrayIndex;
-  const end = resolveRegion(
-    editorState.documentIndex,
-    normalizedSelection.end.regionPath,
-  )?.regionArrayIndex;
+): SelectionPathRange | null {
+  if (
+    normalizedSelection.start.path === normalizedSelection.end.path &&
+    normalizedSelection.start.offset === normalizedSelection.end.offset
+  ) {
+    return null;
+  }
 
-  return start === undefined || end === undefined ? null : { end, start };
+  return {
+    end: resolveEditorPosition(documentIndex, normalizedSelection.end, { unknown: "before" }),
+    start: resolveEditorPosition(documentIndex, normalizedSelection.start, { unknown: "before" }),
+  };
 }

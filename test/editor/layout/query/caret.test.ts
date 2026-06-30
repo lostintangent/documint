@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
 import { createDocument, createParagraphTextBlock } from "@/document";
 import {
@@ -10,7 +11,7 @@ import {
 import { measureCaretTarget, resolveCaretVisualLeft } from "@/editor/layout";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
-import { getRegionByType, placeAt, setup } from "../../helpers";
+import { getPathByType, placeAt, setup } from "../../helpers";
 
 test("measures caret geometry for a container offset", () => {
   const runtime = createDocumentIndex(
@@ -22,18 +23,18 @@ Paragraph for caret metrics.
   const layout = measureLayoutSlice(runtime, {
     width: 220,
   });
-  const paragraphContainer = runtime.regions[1];
+  const paragraphContainer = indexedTextEntries(runtime)[1];
 
   if (!paragraphContainer) {
     throw new Error("Expected paragraph container");
   }
 
   const caret = measureCaretTarget(layout, runtime, {
-    regionPath: paragraphContainer.path,
+    path: paragraphContainer.path,
     offset: 8,
   });
 
-  expect(caret?.regionPath).toBe(paragraphContainer.path);
+  expect(caret?.path).toBe(paragraphContainer.path);
   expect(caret?.offset).toBe(8);
   expect(caret?.left).toBeGreaterThan(layout.lines[1]!.left);
   expect(caret?.height).toBe(layout.options.lineHeight);
@@ -44,18 +45,18 @@ test("advances the active caret across collapsed trailing spaces", () => {
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const paragraphContainer = state.documentIndex.regions[0];
+  const paragraphContainer = indexedTextEntries(state)[0];
 
   if (!paragraphContainer) {
     throw new Error("Expected paragraph container");
   }
 
   const beforeSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: paragraphContainer.path,
+    path: paragraphContainer.path,
     offset: 5,
   });
   const afterSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: paragraphContainer.path,
+    path: paragraphContainer.path,
     offset: 6,
   });
 
@@ -73,18 +74,18 @@ test("measures caret geometry inside a space-only paragraph", () => {
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const paragraphContainer = state.documentIndex.regions[0];
+  const paragraphContainer = indexedTextEntries(state)[0];
 
   if (!paragraphContainer) {
     throw new Error("Expected paragraph container");
   }
 
   const beforeSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: paragraphContainer.path,
+    path: paragraphContainer.path,
     offset: 0,
   });
   const afterSpace = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: paragraphContainer.path,
+    path: paragraphContainer.path,
     offset: 1,
   });
 
@@ -100,64 +101,76 @@ test("measures caret geometry inside a space-only paragraph", () => {
 
 test("measures the empty-looking paragraph produced by Enter before a trailing space", () => {
   let state = createEditorState(createDocument([createParagraphTextBlock("alpha ")]));
-  const paragraphContainer = state.documentIndex.regions[0];
+  const paragraphContainer = indexedTextEntries(state)[0];
 
   if (!paragraphContainer) {
     throw new Error("Expected paragraph container");
   }
 
-  state = setSelection(state, { regionPath: paragraphContainer.path, offset: "alpha".length });
+  state = setSelection(state, { path: paragraphContainer.path, offset: "alpha".length });
   state = insertLineBreak(state) ?? state;
 
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const active = state.documentIndex.regions.find(
-    (region) => region.path === state.selection.focus.regionPath,
+  const active = indexedTextEntries(state).find(
+    (path) => path.path === state.selection.focus.path,
   );
-  const caret = measureCaretTarget(layout, state.documentIndex, state.selection.focus);
+  const caret = measureCaretTarget(layout, state.documentIndex, {
+    path: state.selection.focus.path,
+    offset: state.selection.focus.offset,
+  });
 
   expect(active?.text).toBe(" ");
-  expect(caret?.regionPath).toBe(active?.path);
+  expect(caret?.path).toBe(active?.path);
   expect(caret?.offset).toBe(0);
 });
 
 test("advances caret geometry after typing inside a code block", () => {
   let state = setup("```ts\nconst value = 1;\n```\n");
-  const region = getRegionByType(state, "code");
+  const path = getPathByType(state, "code");
 
-  state = placeAt(state, region, "const".length);
+  state = placeAt(state, path, "const".length);
 
   const beforeLayout = measureLayoutSlice(state.documentIndex, { width: 320 });
-  const beforeCaret = measureCaretTarget(beforeLayout, state.documentIndex, state.selection.focus);
+  const beforeCaret = measureCaretTarget(beforeLayout, state.documentIndex, {
+    path: state.selection.focus.path,
+    offset: state.selection.focus.offset,
+  });
 
   state = insertText(state, " next") ?? state;
 
-  const nextRegion = getRegionByType(state, "code");
+  const nextPath = getPathByType(state, "code");
   const afterLayout = measureLayoutSlice(state.documentIndex, { width: 320 });
-  const afterCaret = measureCaretTarget(afterLayout, state.documentIndex, state.selection.focus);
+  const afterCaret = measureCaretTarget(afterLayout, state.documentIndex, {
+    path: state.selection.focus.path,
+    offset: state.selection.focus.offset,
+  });
 
   if (!beforeCaret || !afterCaret) {
     throw new Error("Expected code block carets");
   }
 
-  expect(nextRegion.text).toBe("const next value = 1;");
+  expect(nextPath.text).toBe("const next value = 1;");
   expect(state.selection.focus.offset).toBe("const next".length);
   expect(afterCaret.left).toBeGreaterThan(beforeCaret.left);
 });
 
 test("materializes the trailing empty source line in code blocks", () => {
   let state = setup("```ts\nconst value = 1;\n```\n");
-  const region = getRegionByType(state, "code");
+  const path = getPathByType(state, "code");
 
-  state = placeAt(state, region, "end");
+  state = placeAt(state, path, "end");
   state = insertText(state, "\n") ?? state;
 
-  const nextRegion = getRegionByType(state, "code");
+  const nextPath = getPathByType(state, "code");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
-  const regionLines = layout.lines.filter((line) => line.regionPath === nextRegion.path);
-  const caret = measureCaretTarget(layout, state.documentIndex, state.selection.focus);
+  const pathLines = layout.lines.filter((line) => line.path === nextPath.path);
+  const caret = measureCaretTarget(layout, state.documentIndex, {
+    path: state.selection.focus.path,
+    offset: state.selection.focus.offset,
+  });
 
-  expect(regionLines.map((line) => line.text)).toEqual(["const value = 1;", ""]);
-  expect(caret?.top).toBe(regionLines[1]!.top);
+  expect(pathLines.map((line) => line.text)).toEqual(["const value = 1;", ""]);
+  expect(caret?.top).toBe(pathLines[1]!.top);
 });

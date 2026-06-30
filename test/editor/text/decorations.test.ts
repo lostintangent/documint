@@ -5,7 +5,7 @@ import {
   hasAnimatedDecorationsInViewport,
   createEditorLayoutState,
 } from "@/editor";
-import { getRegion, setup } from "../helpers";
+import { getPath, setup } from "../helpers";
 
 test("detects animated text decorations", () => {
   expect(hasAnimatedDecorations(new Map())).toBe(false);
@@ -48,24 +48,24 @@ test("detects animated text decorations", () => {
 
 test("detects animated text decorations in the visible viewport", () => {
   const state = setup("alpha\n\nbeta\n\nsparkle\n\nomega\n");
-  const region = getRegion(state, "sparkle");
+  const path = getPath(state, "sparkle");
   const layoutCache = createLayoutCache();
   const viewport = createEditorLayoutState(state, { height: 400, top: 0, width: 320 }, layoutCache);
-  const targetLine = viewport.layout.lines.find((line) => line.regionPath === region.path);
+  const targetLine = viewport.layout.lines.find((line) => line.path === path.path);
 
   if (!targetLine) {
-    throw new Error("Expected line for decorated region");
+    throw new Error("Expected line for decorated path");
   }
 
   const textDecorations = new Map([
     [
-      region.path,
+      path.path,
       [
         {
           backgroundColor: "gold",
           color: "gold",
-          endOffset: region.text.length,
-          path: region.path,
+          endOffset: path.text.length,
+          path: path.path,
           pulse: true,
           startOffset: 0,
         },

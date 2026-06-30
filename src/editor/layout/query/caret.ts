@@ -1,17 +1,17 @@
 // Owns caret target measurement and the visual-left adjustment that paint
 // and keyboard navigation use to render the caret. Given a prepared
-// `DocumentLayout` plus a (regionPath, offset), resolves where the caret
+// `DocumentLayout` plus a (path, offset), resolves where the caret
 // should land — including any visual offset from list-marker indent or
 // trailing whitespace that the line wrapping collapsed.
 
-import { resolveRegion, type DocumentIndex, type EditorState } from "../../state";
+import { resolveEditorTextAtPath, type DocumentIndex, type EditorState } from "../../state";
 import { measureTextWidth } from "../../text/measure";
 import type { DocumentLayout, LayoutLine } from "../measure";
-import { findDocumentLayoutLineForRegionOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
+import { findDocumentLayoutLineForPathOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
 export type DocumentCaretTarget = {
   blockPath: string;
-  regionPath: string;
+  path: string;
   height: number;
   left: number;
   offset: number;
@@ -21,12 +21,12 @@ export type DocumentCaretTarget = {
 export function measureDocumentCaretTarget(
   layout: DocumentLayout,
   _documentIndex: DocumentIndex,
-  target: { regionPath: string; offset: number },
+  target: { path: string; offset: number },
 ): DocumentCaretTarget | null {
-  // No separate presence check — `findDocumentLayoutLineForRegionOffset`
-  // returns null for any regionPath that isn't in this layout's region/line
-  // index, which is the same condition the old `regionMetrics.get` covered.
-  const line = findDocumentLayoutLineForRegionOffset(layout, target.regionPath, target.offset);
+  // No separate presence check — `findDocumentLayoutLineForPathOffset`
+  // returns null for any path that isn't in this layout's path/line
+  // index.
+  const line = findDocumentLayoutLineForPathOffset(layout, target.path, target.offset);
 
   if (!line) {
     return null;
@@ -34,7 +34,7 @@ export function measureDocumentCaretTarget(
 
   return {
     blockPath: line.blockPath,
-    regionPath: line.regionPath,
+    path: line.path,
     height: line.height,
     left: measureCanvasLineOffsetLeft(line, target.offset - line.start),
     offset: target.offset,
@@ -47,7 +47,7 @@ export function resolveCaretVisualLeft(
   layout: DocumentLayout,
   caret: NonNullable<ReturnType<typeof measureDocumentCaretTarget>>,
 ) {
-  const resolvedLine = findDocumentLayoutLineForRegionOffset(layout, caret.regionPath, caret.offset);
+  const resolvedLine = findDocumentLayoutLineForPathOffset(layout, caret.path, caret.offset);
 
   if (!resolvedLine) {
     return caret.left;
@@ -61,7 +61,7 @@ export function resolveCaretVisualLeft(
 }
 
 // The caret's visual X, nudged one pixel right so hit-testing at this X
-// doesn't land exactly on a region/cell boundary and resolve to the wrong
+// doesn't land exactly on a text/cell boundary and resolve to the wrong
 // side. Used by navigation when hit-testing the caret onto a target line
 // (vertical motion, page motion, table column tracking).
 export function resolveCaretHitTestX(
@@ -77,13 +77,13 @@ function resolveCollapsedTrailingSpaceWidth(state: EditorState, line: LayoutLine
     return 0;
   }
 
-  const container = resolveRegion(state.documentIndex, line.regionPath);
+  const text = resolveEditorTextAtPath(state.documentIndex, line.path);
 
-  if (!container) {
+  if (text === null) {
     return 0;
   }
 
-  const hiddenTrailingText = container.text.slice(line.end, offset);
+  const hiddenTrailingText = text.slice(line.end, offset);
 
   if (!/^[ \t]+$/u.test(hiddenTrailingText)) {
     return 0;

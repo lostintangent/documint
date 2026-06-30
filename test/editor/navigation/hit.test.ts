@@ -1,10 +1,17 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
-import { createLayoutCache, createEditorLayoutState, resolveHoverTarget } from "@/editor";
-import { createDocumentIndex, createEditorState, regionInlines } from "@/editor/state";
+import {
+  createLayoutCache,
+  createEditorLayoutState,
+  getCommentState,
+  resolveHoverTarget,
+} from "@/editor";
+import { addComment, createDocumentIndex, createEditorState } from "@/editor/state";
 import { hitTestDocumentLayout, measureCaretTarget } from "@/editor/layout";
 import {
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
+  resolveHoverTargetAtPoint,
   resolveLinkHitAtPoint,
   resolveWordSelectionAtPoint,
 } from "@/editor/navigation";
@@ -12,14 +19,14 @@ import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import { fixtureOptions } from "../../../playground/src/lib/data";
 import type { DocumentResources } from "@/types";
-import { getRegion, getRegionByType, setup } from "../helpers";
+import { getPath, getPathByType, setup } from "../helpers";
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
   const runtime = createDocumentIndex(parseDocument(`Paragraph with semantic offsets.\n`));
   const layout = measureLayoutSlice(runtime, {
     width: 320,
   });
-  const paragraphContainer = runtime.regions[0];
+  const paragraphContainer = indexedTextEntries(runtime)[0];
 
   if (!paragraphContainer) {
     throw new Error("Expected paragraph container");
@@ -27,13 +34,13 @@ test("hit-tests canvas layout coordinates back to semantic offsets", () => {
 
   const hit = hitTestDocumentLayout(layout, runtime, {
     x: measureCaretTarget(layout, runtime, {
-      regionPath: paragraphContainer.path,
+      path: paragraphContainer.path,
       offset: 10,
     })!.left,
     y: layout.lines[0]!.top + 2,
   });
 
-  expect(hit?.regionPath).toBe(paragraphContainer.path);
+  expect(hit?.path).toBe(paragraphContainer.path);
   expect(hit?.offset).toBe(10);
 });
 
@@ -44,17 +51,17 @@ test("hit-tests the second line of a multi-line wrapped paragraph", () => {
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 200,
   });
-  const container = state.documentIndex.regions[0];
+  const container = indexedTextEntries(state)[0];
 
   if (!container) {
     throw new Error("Expected paragraph container");
   }
 
-  const regionLines = layout.lines.filter((line) => line.regionPath === container.path);
+  const pathLines = layout.lines.filter((line) => line.path === container.path);
 
-  expect(regionLines.length).toBeGreaterThan(1);
+  expect(pathLines.length).toBeGreaterThan(1);
 
-  const secondLine = regionLines[1]!;
+  const secondLine = pathLines[1]!;
 
   // Use resolveEditorHitAtPoint — the same two-phase path the click handler
   // takes — to verify that clicking in the middle of line 2 resolves to an
@@ -64,7 +71,7 @@ test("hit-tests the second line of a multi-line wrapped paragraph", () => {
     y: secondLine.top + secondLine.height / 2,
   });
 
-  expect(hit?.regionPath).toBe(container.path);
+  expect(hit?.path).toBe(container.path);
   expect(hit?.offset).toBeGreaterThanOrEqual(secondLine.start);
   expect(hit?.offset).toBeLessThanOrEqual(secondLine.end);
 });
@@ -73,13 +80,13 @@ test("keeps clicks left of a soft-wrapped line start on that visual line", () =>
   const text =
     "Dialect changes update recognition and emission together. Block readers, inline token readers, inline mark specs, block-start escape predicates, serializer output, preservation policy, and SUPPORT.md status move together so parser and serializer behavior does not drift.";
   const state = setup(`- ${text}\n`);
-  const region = getRegion(state, text);
+  const path = getPath(state, text);
   const layout = measureLayoutSlice(state.documentIndex, { width: 740 });
-  const regionLines = layout.lines.filter((line) => line.regionPath === region.path);
-  const wrappedStarts = regionLines.slice(1, 3);
+  const pathLines = layout.lines.filter((line) => line.path === path.path);
+  const wrappedStarts = pathLines.slice(1, 3);
 
   expect(wrappedStarts).toHaveLength(2);
-  expect(regionLines[0]!.end).toBe(wrappedStarts[0]!.start);
+  expect(pathLines[0]!.end).toBe(wrappedStarts[0]!.start);
   expect(wrappedStarts[0]!.end).toBe(wrappedStarts[1]!.start);
 
   for (const line of wrappedStarts) {
@@ -88,13 +95,13 @@ test("keeps clicks left of a soft-wrapped line start on that visual line", () =>
       y: line.top + line.height / 2,
     });
 
-    expect(hit?.regionPath).toBe(region.path);
+    expect(hit?.path).toBe(path.path);
     expect(hit?.offset).toBe(line.start);
 
     const caret = hit
       ? measureCaretTarget(layout, state.documentIndex, {
           offset: hit.offset,
-          regionPath: hit.regionPath,
+          path: hit.path,
         })
       : null;
 
@@ -121,16 +128,70 @@ test("resolves link hits from document-space coordinates over linked text", () =
   ).toBe("https://example.com");
 });
 
+test("limits link hover targets to the visual line bounds", () => {
+  const state = setup("[alpha](https://example.com) tail\n");
+  const layout = measureLayoutSlice(state.documentIndex, {
+    width: 320,
+  });
+  const line = layout.lines[0];
+
+  if (!line) {
+    throw new Error("Expected first layout line");
+  }
+
+  const x = line.left + 4;
+
+  expect(
+    resolveHoverTargetAtPoint(layout, state, { x, y: line.top + line.height - 0.01 }, []),
+  ).toMatchObject({ kind: "link" });
+  expect(resolveHoverTargetAtPoint(layout, state, { x, y: line.top + line.height }, [])).toBeNull();
+});
+
+test("limits comment hover targets to quoted text at a line end", () => {
+  let state = setup("Prefix quoted\n");
+  const path = getPath(state, "Prefix quoted");
+  state =
+    addComment(
+      state,
+      {
+        endOffset: path.text.length,
+        path: path.path,
+        startOffset: "Prefix ".length,
+      },
+      "Review quote",
+    ) ?? state;
+  const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
+  const line = layout.lines[0];
+  const quoteEnd = measureCaretTarget(layout, state.documentIndex, {
+    path: path.path,
+    offset: path.text.length,
+  });
+
+  if (!line || !quoteEnd) {
+    throw new Error("Expected quoted text geometry");
+  }
+
+  const commentRanges = getCommentState(state.documentIndex).ranges;
+  const y = line.top + line.height / 2;
+
+  expect(
+    resolveHoverTargetAtPoint(layout, state, { x: quoteEnd.left - 1, y }, commentRanges),
+  ).toMatchObject({ commentThreadIndex: 0, kind: "text" });
+  expect(
+    resolveHoverTargetAtPoint(layout, state, { x: quoteEnd.left + 40, y }, commentRanges),
+  ).toEqual({ commentThreadIndex: null, kind: "text" });
+});
+
 test("resolves drag focus to the anchor start above the prepared layout", () => {
   const state = setup("alpha beta\n");
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
   const firstLine = layout.lines[0];
 
-  if (!region || !firstLine) {
-    throw new Error("Expected first region and first layout line");
+  if (!path || !firstLine) {
+    throw new Error("Expected first path and first layout line");
   }
 
   expect(
@@ -142,31 +203,31 @@ test("resolves drag focus to the anchor start above the prepared layout", () => 
         y: firstLine.top - 40,
       },
       {
-        regionPath: region.path,
+        path: path.path,
         offset: 4,
       },
     ),
   ).toEqual({
     offset: 0,
-    regionPath: region.path,
+    path: path.path,
   });
 });
 
-test("resolves drag focus into a different region instead of clamping to the anchor", () => {
+test("resolves drag focus into a different path instead of clamping to the anchor", () => {
   const state = setup("alpha\n\nbeta\n");
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const [firstRegion, secondRegion] = state.documentIndex.regions;
+  const [firstPath, secondPath] = indexedTextEntries(state);
 
-  if (!firstRegion || !secondRegion) {
-    throw new Error("Expected two paragraph regions");
+  if (!firstPath || !secondPath) {
+    throw new Error("Expected two paragraph paths");
   }
 
-  const secondLine = layout.lines.find((line) => line.regionPath === secondRegion.path);
+  const secondLine = layout.lines.find((line) => line.path === secondPath.path);
 
   if (!secondLine) {
-    throw new Error("Expected a layout line for the second region");
+    throw new Error("Expected a layout line for the second path");
   }
 
   expect(
@@ -178,13 +239,13 @@ test("resolves drag focus into a different region instead of clamping to the anc
         y: secondLine.top + secondLine.height / 2,
       },
       {
-        regionPath: firstRegion.path,
+        path: firstPath.path,
         offset: 2,
       },
     ),
   ).toEqual({
     offset: expect.any(Number),
-    regionPath: secondRegion.path,
+    path: secondPath.path,
   });
 });
 
@@ -193,11 +254,11 @@ test("resolves drag focus to the anchor end below the prepared layout", () => {
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const region = state.documentIndex.regions[0];
+  const path = indexedTextEntries(state)[0];
   const lastLine = layout.lines.at(-1);
 
-  if (!region || !lastLine) {
-    throw new Error("Expected first region and last layout line");
+  if (!path || !lastLine) {
+    throw new Error("Expected first path and last layout line");
   }
 
   expect(
@@ -209,13 +270,13 @@ test("resolves drag focus to the anchor end below the prepared layout", () => {
         y: lastLine.top + lastLine.height + 40,
       },
       {
-        regionPath: region.path,
+        path: path.path,
         offset: 4,
       },
     ),
   ).toEqual({
-    offset: region.text.length,
-    regionPath: region.path,
+    offset: path.text.length,
+    path: path.path,
   });
 });
 
@@ -226,10 +287,10 @@ test("resolves a click on the trailing empty line below a soft break to its post
   // line resolves to the offset just past the soft break — anything else
   // would leave the caret unable to follow the user's click.
   const state = setup("foo<br>\n");
-  const region = getRegion(state, "foo\n");
+  const path = getPath(state, "foo\n");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
 
-  const trailingLine = layout.lines.find((line) => line.regionPath === region.path && line.text === "");
+  const trailingLine = layout.lines.find((line) => line.path === path.path && line.text === "");
 
   if (!trailingLine) {
     throw new Error("Expected a trailing empty line for the soft break");
@@ -240,16 +301,16 @@ test("resolves a click on the trailing empty line below a soft break to its post
     y: trailingLine.top + trailingLine.height / 2,
   });
 
-  expect(hit?.regionPath).toBe(region.path);
-  expect(hit?.offset).toBe(region.text.length);
+  expect(hit?.path).toBe(path.path);
+  expect(hit?.offset).toBe(path.text.length);
 });
 
 test("resolves clicks inside code block lines to source offsets", () => {
   const state = setup("```ts\nconst value = 1;\n```\n");
-  const region = getRegionByType(state, "code");
+  const path = getPathByType(state, "code");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
   const caret = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: region.path,
+    path: path.path,
     offset: "const".length,
   });
 
@@ -262,16 +323,16 @@ test("resolves clicks inside code block lines to source offsets", () => {
     y: caret.top + caret.height / 2,
   });
 
-  expect(hit?.regionPath).toBe(region.path);
+  expect(hit?.path).toBe(path.path);
   expect(hit?.offset).toBe("const".length);
 });
 
 test("resolves word selection with shared unicode word boundaries", () => {
   const state = setup("hello 世界\n");
-  const region = getRegion(state, "hello 世界");
+  const path = getPath(state, "hello 世界");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
   const caret = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: region.path,
+    path: path.path,
     offset: 7,
   });
 
@@ -287,11 +348,11 @@ test("resolves word selection with shared unicode word boundaries", () => {
   ).toEqual({
     anchor: {
       offset: 6,
-      regionPath: region.path,
+      path: path.path,
     },
     focus: {
       offset: 8,
-      regionPath: region.path,
+      path: path.path,
     },
   });
 });
@@ -312,7 +373,7 @@ test("hit-tests the correct table column within the same row band", () => {
     throw new Error("Expected wide-host header line");
   }
 
-  const extent = layout.regionBounds.get(headerValue.regionPath);
+  const extent = layout.pathBounds.get(headerValue.path);
 
   if (!extent) {
     throw new Error("Expected table cell bounds");
@@ -323,18 +384,18 @@ test("hit-tests the correct table column within the same row band", () => {
     y: headerValue.top + 4,
   });
 
-  expect(hit?.regionPath).toBe(headerValue.regionPath);
+  expect(hit?.path).toBe(headerValue.path);
 });
 
 test("hit-tests the clicked table cell even below its text content", () => {
   const runtime = createDocumentIndex(
     parseDocument(`| Short | Much wider content that wraps |
 | :---- | :---------------------------- |
-| One | Two three four five six seven |
+| One | Two three four five six seven eight nine ten eleven twelve |
 `),
   );
   const layout = measureLayoutSlice(runtime, {
-    width: 360,
+    width: 220,
   });
   const shortCellLine = layout.lines.find((line) => line.text === "One");
 
@@ -342,18 +403,29 @@ test("hit-tests the clicked table cell even below its text content", () => {
     throw new Error("Expected short cell line");
   }
 
-  const extent = layout.regionBounds.get(shortCellLine.regionPath);
+  const extent = layout.pathBounds.get(shortCellLine.path);
 
   if (!extent) {
     throw new Error("Expected short cell bounds");
   }
 
+  const neighboringLineY = layout.lines.find(
+    (line) =>
+      line.path !== shortCellLine.path &&
+      line.top > shortCellLine.top + shortCellLine.height &&
+      line.top < extent.bottom,
+  )?.top;
+
+  if (neighboringLineY === undefined) {
+    throw new Error("Expected wrapped neighboring cell line inside the short cell bounds");
+  }
+
   const hit = hitTestDocumentLayout(layout, runtime, {
     x: extent.left + 8,
-    y: extent.bottom - 6,
+    y: neighboringLineY + 2,
   });
 
-  expect(hit?.regionPath).toBe(shortCellLine.regionPath);
+  expect(hit?.path).toBe(shortCellLine.path);
   expect(hit?.offset).toBe(0);
 });
 
@@ -377,24 +449,24 @@ test("hit-tests image runs as single reference caret stops", () => {
   };
   const layout = measureLayoutSlice(runtime, { width: 520 }, undefined, resources);
   const line = layout.lines[0];
-  const paragraph = runtime.regions[0];
+  const paragraph = indexedTextEntries(runtime)[0];
 
   if (!line || !paragraph) {
     throw new Error("Expected image paragraph layout");
   }
 
-  const imageRun = regionInlines(paragraph).find((run) => run.node.type === "image");
+  const imageRun = ((paragraph).inlines ?? []).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");
   }
 
   const beforeImage = measureCaretTarget(layout, runtime, {
-    regionPath: paragraph.path,
+    path: paragraph.path,
     offset: imageRun.start,
   });
   const afterImage = measureCaretTarget(layout, runtime, {
-    regionPath: paragraph.path,
+    path: paragraph.path,
     offset: imageRun.end,
   });
 
@@ -435,13 +507,13 @@ test("resolves resource hover targets from registered resource inlines", () => {
     resources,
   );
   const line = viewport.layout.lines[0];
-  const paragraph = state.documentIndex.regions[0];
+  const paragraph = indexedTextEntries(state)[0];
 
   if (!line || !paragraph) {
     throw new Error("Expected resource paragraph layout");
   }
 
-  const inlines = regionInlines(paragraph);
+  const inlines = ((paragraph).inlines ?? []);
   expect(inlines).toHaveLength(1);
   expect(inlines[0]?.node.type).toBe("resource");
   expect(inlines[0]?.link).toBeNull();
@@ -489,15 +561,15 @@ test("indexes playground tutorial demo resources as resource inlines", () => {
   const state = createEditorState(
     parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
   );
-  const resourceRegion = state.documentIndex.regions.find((region) =>
-    region.text.includes("Try the active"),
+  const resourcePath = indexedTextEntries(state).find((path) =>
+    path.text.includes("Try the active"),
   );
 
-  if (!resourceRegion) {
+  if (!resourcePath) {
     throw new Error("Expected playground resource paragraph");
   }
 
-  const inlines = regionInlines(resourceRegion);
+  const inlines = ((resourcePath).inlines ?? []);
   const resources = inlines.filter((inline) => inline.node.type === "resource");
   const links = inlines.filter(
     (inline) =>
@@ -508,7 +580,7 @@ test("indexes playground tutorial demo resources as resource inlines", () => {
     "demo-resource://recording/live",
     "demo-note://note/complete",
   ]);
-  expect(resourceRegion.text).toBe("Try the active ￼ resource and the inactive ￼ resource.");
+  expect(resourcePath.text).toBe("Try the active ￼ resource and the inactive ￼ resource.");
   expect(resources.map((inline) => inline.node.type === "resource" && inline.node.url)).toEqual([
     "demo-resource://recording/live",
     "demo-note://note/complete",
@@ -552,24 +624,24 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
   expect(hover).toEqual({ kind: "task-toggle", listItemPath: listItem.path });
 });
 
-test("clicks on an inert leaf block redirect to the start of the next region in flow", () => {
-  // The divider is an inert leaf — it has no region, so it can't be a
+test("clicks on an inert leaf block redirect to the start of the next path in flow", () => {
+  // The divider is an inert leaf — it has no path, so it can't be a
   // caret target itself. A click anywhere in its geometry slot should
-  // land the caret at the beginning of the next region rather than
+  // land the caret at the beginning of the next path rather than
   // returning null (which would feel like a dead area). Goes through
   // `resolveEditorHitAtPoint` — the editor-level path that the user-
-  // facing pointer handler uses (`usePointer` → `resolveSelectionHit`
-  // → `resolveSelectionHit` → `resolveEditorHitAtPoint`).
+  // facing pointer handler uses (`usePointer` → `resolveSelectionPointAt`
+  // → `resolveSelectionPointAt` → `resolveEditorHitAtPoint`).
   const state = setup("First paragraph.\n\n---\n\nSecond paragraph.\n");
   const layout = measureLayoutSlice(state.documentIndex, { width: 480 });
   const dividerBlock = layout.blocks.find((b) => b.type === "divider");
-  const second = getRegion(state, "Second paragraph.");
+  const second = getPath(state, "Second paragraph.");
 
   if (!dividerBlock) throw new Error("Expected divider block in layout");
 
   const dividerCenterY = (dividerBlock.top + dividerBlock.bottom) / 2;
   const hit = resolveEditorHitAtPoint(layout, state, { x: 200, y: dividerCenterY });
 
-  expect(hit?.regionPath).toBe(second.path);
+  expect(hit?.path).toBe(second.path);
   expect(hit?.offset).toBe(0);
 });

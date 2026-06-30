@@ -11,7 +11,7 @@
 // Tests assert by scenario, not by individual property: when a paste
 // affects both the document and the caret, both go in one test next to
 // each other rather than splitting into two. Helpers at the bottom
-// (`copyWholeRegion`, `copySubstring`, `copyAcross`, `pasteInto`,
+// (`copyWholePath`, `copySubstring`, `copyAcross`, `pasteInto`,
 // `pasteIntoState`) capture the four common shapes so each test body
 // reads like a one-line spec.
 
@@ -22,20 +22,19 @@ import {
   deleteSelection,
   pasteFragment,
   redo,
-  resolveRegion,
+  resolveEditorTextAtPath,
   setSelection,
   undo,
-  type EditableRegion,
   type EditorState,
 } from "@/editor/state";
 import { getCommentState } from "@/editor";
 import { parseFragment, serializeFragment } from "@/markdown";
-import { getRegion, placeAt, selectIn, selectSubstring, setup, toMarkdown } from "../../helpers";
+import { getPath, placeAt, selectIn, selectSubstring, setup, toMarkdown } from "../../helpers";
 
 describe("Paragraphs", () => {
   test("copy: collapsed selection returns null", () => {
     const state = setup("alpha\n");
-    const placed = placeAt(state, getRegion(state, "alpha"), 0);
+    const placed = placeAt(state, getPath(state, "alpha"), 0);
 
     expect(copySelection(placed)).toBeNull();
   });
@@ -44,8 +43,8 @@ describe("Paragraphs", () => {
     expect(copySubstring("Hello world\n", "Hello world", "Hello")).toBe("Hello");
   });
 
-  test("copy: bold mark survives a whole-region selection", () => {
-    expect(copyWholeRegion("**bold** plain\n", "bold plain")).toBe("**bold** plain");
+  test("copy: bold mark survives a whole-path selection", () => {
+    expect(copyWholePath("**bold** plain\n", "bold plain")).toBe("**bold** plain");
   });
 
   test("copy: italic mark survives a substring selection", () => {
@@ -57,49 +56,49 @@ describe("Paragraphs", () => {
   });
 
   test("paste: plain text inserts inline at the caret", () => {
-    expect(pasteInto("Hello\n", { region: "Hello", offset: "end" }, " world")).toBe(
+    expect(pasteInto("Hello\n", { text: "Hello", offset: "end" }, " world")).toBe(
       "Hello world\n",
     );
   });
 
   test("paste: italic markdown round-trips through the structural path", () => {
-    expect(pasteInto("Hello \n", { region: "Hello ", offset: "end" }, "*world*")).toBe(
+    expect(pasteInto("Hello \n", { text: "Hello ", offset: "end" }, "*world*")).toBe(
       "Hello *world*\n",
     );
   });
 
   test("paste: italic markdown mid-text absorbs at the front seam and lands the caret after it", () => {
-    const next = pasteIntoState("Hello world\n", { region: "Hello world", offset: 6 }, "*X*");
+    const next = pasteIntoState("Hello world\n", { text: "Hello world", offset: 6 }, "*X*");
 
     expect(toMarkdown(next)).toBe("Hello *X*world\n");
-    expect(caret(next)).toEqual({ regionText: "Hello Xworld", offset: 7 });
+    expect(caret(next)).toEqual({ focusedText: "Hello Xworld", offset: 7 });
   });
 
   test("paste: empty source is a no-op", () => {
     const state = setup("Hello\n");
-    const placed = placeAt(state, getRegion(state, "Hello"), 0);
+    const placed = placeAt(state, getPath(state, "Hello"), 0);
 
     expect(pasteFragment(placed, parseFragment(""))).toBeNull();
   });
 
   test("paste: two paragraphs into mid-text splits and absorbs at both seams", () => {
     expect(
-      pasteInto("Hello world\n", { region: "Hello world", offset: 6 }, "first\n\nsecond"),
+      pasteInto("Hello world\n", { text: "Hello world", offset: 6 }, "first\n\nsecond"),
     ).toBe("Hello first\n\nsecondworld\n");
   });
 
   test("paste: paragraph + heading + paragraph absorbs around the heading", () => {
     // Front paragraph absorbs into prefix; trailing paragraph absorbs into
     // suffix; the heading remains structural between them.
-    expect(pasteInto("Hello world\n", { region: "Hello world", offset: 6 }, "X\n\n# H\n\nY")).toBe(
+    expect(pasteInto("Hello world\n", { text: "Hello world", offset: 6 }, "X\n\n# H\n\nY")).toBe(
       "Hello X\n\n# H\n\nYworld\n",
     );
   });
 });
 
 describe("Headings", () => {
-  test("copy: whole-region selection carries the marker", () => {
-    expect(copyWholeRegion("# Heading text\n", "Heading text")).toBe("# Heading text");
+  test("copy: whole-path selection carries the marker", () => {
+    expect(copyWholePath("# Heading text\n", "Heading text")).toBe("# Heading text");
   });
 
   test("copy: partial selection drops the marker", () => {
@@ -107,13 +106,13 @@ describe("Headings", () => {
   });
 
   test("paste: into an empty paragraph replaces it", () => {
-    expect(pasteInto("\n", { region: "", offset: "start" }, "## Hello\n")).toBe("## Hello\n");
+    expect(pasteInto("\n", { text: "", offset: "start" }, "## Hello\n")).toBe("## Hello\n");
   });
 
   test("paste: mid-paragraph splits the paragraph cleanly", () => {
     // Trailing whitespace on the prefix paragraph is normalized away by the
     // markdown serializer; the structural break around the heading survives.
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "# H\n")).toBe(
+    expect(pasteInto("alpha beta\n", { text: "alpha beta", offset: 6 }, "# H\n")).toBe(
       "alpha\n\n# H\n\nbeta\n",
     );
   });
@@ -121,7 +120,7 @@ describe("Headings", () => {
 
 describe("Lists", () => {
   test("copy: whole item produces a one-item list with bullet", () => {
-    expect(copyWholeRegion("- one\n- two\n- three\n", "two")).toBe("- two");
+    expect(copyWholePath("- one\n- two\n- three\n", "two")).toBe("- two");
   });
 
   test("copy: partial inside an item drops the bullet", () => {
@@ -132,8 +131,8 @@ describe("Lists", () => {
     expect(
       copyAcross(
         "- one\n- two\n- three\n",
-        { region: "one", offset: "start" },
-        { region: "three", offset: "end" },
+        { text: "one", offset: "start" },
+        { text: "three", offset: "end" },
       ),
     ).toBe("- one\n- two\n- three");
   });
@@ -142,8 +141,8 @@ describe("Lists", () => {
     expect(
       copyAcross(
         "- alpha\n- beta\n- gamma\n",
-        { region: "alpha", offset: 2 },
-        { region: "gamma", offset: 2 },
+        { text: "alpha", offset: 2 },
+        { text: "gamma", offset: 2 },
       ),
     ).toBe("- pha\n- beta\n- ga");
   });
@@ -155,75 +154,75 @@ describe("Lists", () => {
     expect(
       copyAcross(
         "1. one\n2. two\n",
-        { region: "one", offset: "start" },
-        { region: "two", offset: "end" },
+        { text: "one", offset: "start" },
+        { text: "two", offset: "end" },
       ),
     ).toBe("1. one\n1. two");
   });
 
   test("copy: task list preserves checkbox state", () => {
-    expect(copyWholeRegion("- [x] done\n- [ ] todo\n", "done")).toBe("- [x] done");
+    expect(copyWholePath("- [x] done\n- [ ] todo\n", "done")).toBe("- [x] done");
   });
 
   test("copy: nested list preserves all levels of nesting", () => {
     expect(
       copyAcross(
         "- outer\n  - middle\n    - inner\n",
-        { region: "outer", offset: "start" },
-        { region: "inner", offset: "end" },
+        { text: "outer", offset: "start" },
+        { text: "inner", offset: "end" },
       ),
     ).toBe("- outer\n  - middle\n    - inner");
   });
 
   test("paste: deeply nested list into an empty paragraph preserves nesting", () => {
     expect(
-      pasteInto("\n", { region: "", offset: "start" }, "- outer\n  - middle\n    - inner\n"),
+      pasteInto("\n", { text: "", offset: "start" }, "- outer\n  - middle\n    - inner\n"),
     ).toBe("- outer\n  - middle\n    - inner\n");
   });
 
   test("paste: text into an empty item keeps the bullet", () => {
-    expect(pasteInto("- \n", { region: "", offset: "start" }, "hello")).toBe("- hello\n");
+    expect(pasteInto("- \n", { text: "", offset: "start" }, "hello")).toBe("- hello\n");
   });
 
   test("paste: text into the middle of an item paragraph stays inline", () => {
-    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "X")).toBe(
+    expect(pasteInto("- alpha beta\n", { text: "alpha beta", offset: 6 }, "X")).toBe(
       "- alpha Xbeta\n",
     );
   });
 
   test("paste: into an empty paragraph replaces it and lands the caret at end of the last item", () => {
-    const next = pasteIntoState("\n", { region: "", offset: "start" }, "- one\n- two\n- three\n");
+    const next = pasteIntoState("\n", { text: "", offset: "start" }, "- one\n- two\n- three\n");
 
     expect(toMarkdown(next)).toBe("- one\n- two\n- three\n");
-    expect(caret(next)).toEqual({ regionText: "three", offset: 5 });
+    expect(caret(next)).toEqual({ focusedText: "three", offset: 5 });
   });
 
   test("paste: list mid-paragraph splits the paragraph cleanly", () => {
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "- item\n")).toBe(
+    expect(pasteInto("alpha beta\n", { text: "alpha beta", offset: 6 }, "- item\n")).toBe(
       "alpha\n\n- item\n\nbeta\n",
     );
   });
 
   test("paste: single-item list into an empty item does not nest or duplicate", () => {
-    expect(pasteInto("- \n", { region: "", offset: "start" }, "- hello\n")).toBe("- hello\n");
+    expect(pasteInto("- \n", { text: "", offset: "start" }, "- hello\n")).toBe("- hello\n");
   });
 
   test("paste: multi-item list into an empty middle item flattens via container peel", () => {
-    expect(pasteInto("- a\n- \n- b\n", { region: "", offset: "start" }, "- Y\n- Z\n")).toBe(
+    expect(pasteInto("- a\n- \n- b\n", { text: "", offset: "start" }, "- Y\n- Z\n")).toBe(
       "- a\n- Y\n- Z\n- b\n",
     );
   });
 
   test("paste: list at end of an existing list extends it via container peel", () => {
-    const next = pasteIntoState("- a\n- b\n", { region: "b", offset: "end" }, "\n- c\n- d\n");
+    const next = pasteIntoState("- a\n- b\n", { text: "b", offset: "end" }, "\n- c\n- d\n");
 
     expect(toMarkdown(next)).toBe("- a\n- b\n- c\n- d\n");
-    expect(caret(next)).toEqual({ regionText: "d", offset: 1 });
+    expect(caret(next)).toEqual({ focusedText: "d", offset: 1 });
   });
 
   test("paste: heading into an item splits the surrounding list", () => {
     // Heading breaks out of the list; the remaining list item flows after.
-    expect(pasteInto("- alpha\n- beta\n", { region: "alpha", offset: "end" }, "\n# H\n")).toBe(
+    expect(pasteInto("- alpha\n- beta\n", { text: "alpha", offset: "end" }, "\n# H\n")).toBe(
       "- alpha\n\n# H\n\n- beta\n",
     );
   });
@@ -232,21 +231,21 @@ describe("Lists", () => {
     // Inline-kind fragments splice into the destination's leaf without
     // disturbing the surrounding container — the list stays a single item
     // and the marked content lands inline in it.
-    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "*X*")).toBe(
+    expect(pasteInto("- alpha beta\n", { text: "alpha beta", offset: 6 }, "*X*")).toBe(
       "- alpha *X*beta\n",
     );
   });
 
   test("paste: marked inlines into an item preserve all marks", () => {
     expect(
-      pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, "**bold** and *italic*"),
+      pasteInto("- alpha beta\n", { text: "alpha beta", offset: 6 }, "**bold** and *italic*"),
     ).toBe("- alpha **bold** and *italic*beta\n");
   });
 });
 
 describe("Blockquotes", () => {
-  test("copy: whole-region selection carries the marker", () => {
-    expect(copyWholeRegion("> quoted line\n", "quoted line")).toBe("> quoted line");
+  test("copy: whole-path selection carries the marker", () => {
+    expect(copyWholePath("> quoted line\n", "quoted line")).toBe("> quoted line");
   });
 
   test("copy: partial selection drops the marker", () => {
@@ -257,24 +256,24 @@ describe("Blockquotes", () => {
     expect(
       copyAcross(
         "> first\n>\n> second\n",
-        { region: "first", offset: "start" },
-        { region: "second", offset: "end" },
+        { text: "first", offset: "start" },
+        { text: "second", offset: "end" },
       ),
     ).toBe("> first\n>\n> second");
   });
 
   test("paste: into an empty paragraph replaces it", () => {
-    expect(pasteInto("\n", { region: "", offset: "start" }, "> quoted\n")).toBe("> quoted\n");
+    expect(pasteInto("\n", { text: "", offset: "start" }, "> quoted\n")).toBe("> quoted\n");
   });
 
   test("paste: text into a blockquote stays inline within the quote", () => {
-    expect(pasteInto("> quoted\n", { region: "quoted", offset: "end" }, " more")).toBe(
+    expect(pasteInto("> quoted\n", { text: "quoted", offset: "end" }, " more")).toBe(
       "> quoted more\n",
     );
   });
 
   test("paste: marked inlines into a blockquote stay inline within the quote", () => {
-    expect(pasteInto("> quoted\n", { region: "quoted", offset: "end" }, " *more*")).toBe(
+    expect(pasteInto("> quoted\n", { text: "quoted", offset: "end" }, " *more*")).toBe(
       "> quoted *more*\n",
     );
   });
@@ -282,18 +281,18 @@ describe("Blockquotes", () => {
   test("paste: into an existing blockquote merges children via container peel", () => {
     const next = pasteIntoState(
       "> existing\n",
-      { region: "existing", offset: "end" },
+      { text: "existing", offset: "end" },
       "\n> appended\n",
     );
 
     expect(toMarkdown(next)).toBe("> existing\n>\n> appended\n");
-    expect(caret(next)).toEqual({ regionText: "appended", offset: 8 });
+    expect(caret(next)).toEqual({ focusedText: "appended", offset: 8 });
   });
 });
 
 describe("Tables", () => {
   test("copy: whole cell content emits bare text — a single cell isn't markdown-shaped", () => {
-    expect(copyWholeRegion("| A | B |\n| --- | --- |\n| one | two |\n", "one")).toBe("one");
+    expect(copyWholePath("| A | B |\n| --- | --- |\n| one | two |\n", "one")).toBe("one");
   });
 
   test("copy: partial cell content emits the slice", () => {
@@ -306,8 +305,8 @@ describe("Tables", () => {
     expect(
       copyAcross(
         "| A | B |\n| --- | --- |\n| one | two |\n",
-        { region: "A", offset: "start" },
-        { region: "two", offset: "end" },
+        { text: "A", offset: "start" },
+        { text: "two", offset: "end" },
       ),
     ).toBe("| A | B |\n| --- | --- |\n| one | two |");
   });
@@ -316,8 +315,8 @@ describe("Tables", () => {
     expect(
       copyAcross(
         "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n| five | six |\n",
-        { region: "A", offset: "start" },
-        { region: "four", offset: "end" },
+        { text: "A", offset: "start" },
+        { text: "four", offset: "end" },
       ),
     ).toBe("| A | B |\n| --- | --- |\n| one | two |\n| three | four |");
   });
@@ -326,8 +325,8 @@ describe("Tables", () => {
     expect(
       copyAcross(
         "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n",
-        { region: "one", offset: "start" },
-        { region: "four", offset: "end" },
+        { text: "one", offset: "start" },
+        { text: "four", offset: "end" },
       ),
     ).toBeNull();
   });
@@ -338,26 +337,26 @@ describe("Tables", () => {
     expect(
       copyAcross(
         "| A | B |\n| --- | --- |\n| one | two |\n",
-        { region: "A", offset: 1 },
-        { region: "B", offset: "end" },
+        { text: "A", offset: 1 },
+        { text: "B", offset: "end" },
       ),
     ).toBeNull();
   });
 
   test("paste: into an empty paragraph replaces it", () => {
     expect(
-      pasteInto("\n", { region: "", offset: "start" }, "| A | B |\n| --- | --- |\n| 1 | 2 |\n"),
+      pasteInto("\n", { text: "", offset: "start" }, "| A | B |\n| --- | --- |\n| 1 | 2 |\n"),
     ).toBe("| A | B |\n| --- | --- |\n| 1 | 2 |\n");
   });
 
   test("paste: copied header-first row slice inserts as a smaller table", () => {
     const md = copyAcross(
       "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n| five | six |\n",
-      { region: "A", offset: "start" },
-      { region: "four", offset: "end" },
+      { text: "A", offset: "start" },
+      { text: "four", offset: "end" },
     )!;
 
-    expect(pasteInto("\n", { region: "", offset: "start" }, md)).toBe(
+    expect(pasteInto("\n", { text: "", offset: "start" }, md)).toBe(
       "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n",
     );
   });
@@ -366,19 +365,19 @@ describe("Tables", () => {
     expect(
       pasteInto(
         "| A | B |\n| --- | --- |\n| one | two |\n",
-        { region: "one", offset: "end" },
+        { text: "one", offset: "end" },
         " fish",
       ),
     ).toBe("| A | B |\n| --- | --- |\n| one fish | two |\n");
   });
 
   test("paste: marked inlines into a cell stay inline with marks preserved", () => {
-    // Table cells *are* inline regions — `inlines` fragments take the
-    // single-region inline-splice path, not the structural fallback.
+    // Table cells *are* inline paths — `inlines` fragments take the
+    // single-path inline-splice path, not the structural fallback.
     expect(
       pasteInto(
         "| A | B |\n| --- | --- |\n| one | two |\n",
-        { region: "one", offset: "end" },
+        { text: "one", offset: "end" },
         " *fish*",
       ),
     ).toBe("| A | B |\n| --- | --- |\n| one *fish* | two |\n");
@@ -389,7 +388,7 @@ describe("Tables", () => {
     expect(
       pasteInto(
         "| A | B |\n| --- | --- |\n| one | two |\n",
-        { region: "one", offset: "start" },
+        { text: "one", offset: "start" },
         "- item\n",
       ),
     ).toBe("| A | B |\n| --- | --- |\n| itemone | two |\n");
@@ -399,20 +398,20 @@ describe("Tables", () => {
     expect(
       pasteInto(
         "| A | B |\n| --- | --- |\n| one | two |\n",
-        { region: "two", offset: "end" },
+        { text: "two", offset: "end" },
         "\n## sub",
       ),
     ).toBe("| A | B |\n| --- | --- |\n| one | twosub |\n");
   });
 
-  test("paste: cross-region selection touching a table flattens the same way in reverse", () => {
+  test("paste: cross-path selection touching a table flattens the same way in reverse", () => {
     const state = setup("alpha\n\n| A | B |\n| --- | --- |\n| one | two |\n\nomega\n");
-    const paragraph = getRegion(state, "alpha");
-    const cell = getRegion(state, "one");
+    const paragraph = getPath(state, "alpha");
+    const cell = getPath(state, "one");
     const fragment = parseFragment("- x\n- y\n");
     const selected = setSelection(state, {
-      anchor: { regionPath: cell.path, offset: 1 },
-      focus: { regionPath: paragraph.path, offset: 2 },
+      anchor: { path: cell.path, offset: 1 },
+      focus: { path: paragraph.path, offset: 2 },
     });
     const next = pasteFragment(selected, fragment, "- x\n- y\n");
 
@@ -422,11 +421,11 @@ describe("Tables", () => {
 
   test("paste: full table selection applies structural blocks", () => {
     const state = setup("intro\n\n| A | B |\n| --- | --- |\n| one | two |\n\nomega\n");
-    const firstCell = getRegion(state, "A");
-    const lastCell = getRegion(state, "two");
+    const firstCell = getPath(state, "A");
+    const lastCell = getPath(state, "two");
     const selected = setSelection(state, {
-      anchor: { regionPath: firstCell.path, offset: 0 },
-      focus: { regionPath: lastCell.path, offset: lastCell.text.length },
+      anchor: { path: firstCell.path, offset: 0 },
+      focus: { path: lastCell.path, offset: lastCell.text.length },
     });
     const next = pasteFragment(selected, parseFragment("# New\n\npara\n"), "# New\n\npara\n");
 
@@ -438,7 +437,7 @@ describe("Tables", () => {
     expect(
       pasteInto(
         "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n",
-        { region: "four", offset: "end" },
+        { text: "four", offset: "end" },
         "X",
       ),
     ).toBe("| A | B |\n| --- | --- |\n| one | two |\n| three | fourX |\n");
@@ -446,8 +445,8 @@ describe("Tables", () => {
 });
 
 describe("Code blocks", () => {
-  test("copy: whole-region selection preserves the fence", () => {
-    expect(copyWholeRegion("```ts\nconst x = 1;\n```\n", "const x = 1;")).toBe(
+  test("copy: whole-path selection preserves the fence", () => {
+    expect(copyWholePath("```ts\nconst x = 1;\n```\n", "const x = 1;")).toBe(
       "```ts\nconst x = 1;\n```",
     );
   });
@@ -460,7 +459,7 @@ describe("Code blocks", () => {
 
   test("paste: full source selection applies structural blocks", () => {
     const state = setup("intro\n\n```\nold code\n```\n\nomega\n");
-    const code = getRegion(state, "old code");
+    const code = getPath(state, "old code");
     const selected = selectIn(state, code, 0, code.text.length);
     const next = pasteFragment(selected, parseFragment("# New\n\npara\n"), "# New\n\npara\n");
 
@@ -469,13 +468,13 @@ describe("Code blocks", () => {
   });
 
   test("paste: into an empty paragraph replaces it", () => {
-    expect(pasteInto("\n", { region: "", offset: "start" }, "```\nfoo\n```\n")).toBe(
+    expect(pasteInto("\n", { text: "", offset: "start" }, "```\nfoo\n```\n")).toBe(
       "```\nfoo\n```\n",
     );
   });
 
   test("paste: text into the middle of a code block inserts as source", () => {
-    expect(pasteInto("```\nfoo bar\n```\n", { region: "foo bar", offset: 4 }, "X")).toBe(
+    expect(pasteInto("```\nfoo bar\n```\n", { text: "foo bar", offset: 4 }, "X")).toBe(
       "```\nfoo Xbar\n```\n",
     );
   });
@@ -483,25 +482,25 @@ describe("Code blocks", () => {
   test("paste: markdown structure into a code block stays literal source", () => {
     // Inside a code block, markdown markers are just characters — the source
     // stays opaque to structural paste.
-    expect(pasteInto("```\nfoo\n```\n", { region: "foo", offset: "end" }, "\n- item")).toBe(
+    expect(pasteInto("```\nfoo\n```\n", { text: "foo", offset: "end" }, "\n- item")).toBe(
       "```\nfoo\n- item\n```\n",
     );
   });
 
   test("paste: italic markdown into a code block keeps the asterisks literal", () => {
-    expect(pasteInto("```\nx\n```\n", { region: "x", offset: "end" }, "*y*")).toBe(
+    expect(pasteInto("```\nx\n```\n", { text: "x", offset: "end" }, "*y*")).toBe(
       "```\nx*y*\n```\n",
     );
   });
 
-  test("paste: cross-region selection touching a code block stays literal in reverse", () => {
+  test("paste: cross-path selection touching a code block stays literal in reverse", () => {
     const state = setup("alpha\n\n```\ncode\n```\n\nomega\n");
-    const paragraph = getRegion(state, "alpha");
-    const code = getRegion(state, "code");
+    const paragraph = getPath(state, "alpha");
+    const code = getPath(state, "code");
     const fragment = parseFragment("# H\n\npara\n");
     const selected = setSelection(state, {
-      anchor: { regionPath: code.path, offset: 2 },
-      focus: { regionPath: paragraph.path, offset: 2 },
+      anchor: { path: code.path, offset: 2 },
+      focus: { path: paragraph.path, offset: 2 },
     });
     const next = pasteFragment(selected, fragment, "# H\n\npara\n");
 
@@ -515,14 +514,14 @@ describe("Thematic breaks", () => {
     expect(
       copyAcross(
         "alpha\n\n---\n\nbeta\n",
-        { region: "alpha", offset: "start" },
-        { region: "beta", offset: "end" },
+        { text: "alpha", offset: "start" },
+        { text: "beta", offset: "end" },
       ),
     ).toBe("alpha\n\n---\n\nbeta");
   });
 
   test("paste: thematic break splits the paragraph cleanly", () => {
-    expect(pasteInto("alpha beta\n", { region: "alpha beta", offset: 6 }, "---\n")).toBe(
+    expect(pasteInto("alpha beta\n", { text: "alpha beta", offset: 6 }, "---\n")).toBe(
       "alpha\n\n---\n\nbeta\n",
     );
   });
@@ -531,7 +530,7 @@ describe("Thematic breaks", () => {
 describe("Cross-block / multi-root", () => {
   test("copy: cross-paragraph partial selection trims both endpoints", () => {
     expect(
-      copyAcross("alpha\n\nbeta\n", { region: "alpha", offset: 2 }, { region: "beta", offset: 2 }),
+      copyAcross("alpha\n\nbeta\n", { text: "alpha", offset: 2 }, { text: "beta", offset: 2 }),
     ).toBe("pha\n\nbe");
   });
 
@@ -539,8 +538,8 @@ describe("Cross-block / multi-root", () => {
     expect(
       copyAcross(
         "# Heading\n\nParagraph body\n",
-        { region: "Heading", offset: "start" },
-        { region: "Paragraph body", offset: "end" },
+        { text: "Heading", offset: "start" },
+        { text: "Paragraph body", offset: "end" },
       ),
     ).toBe("# Heading\n\nParagraph body");
   });
@@ -549,8 +548,8 @@ describe("Cross-block / multi-root", () => {
     expect(
       copyAcross(
         "Before\n\n- alpha\n- beta\n- gamma\n",
-        { region: "Before", offset: "start" },
-        { region: "beta", offset: "end" },
+        { text: "Before", offset: "start" },
+        { text: "beta", offset: "end" },
       ),
     ).toBe("Before\n\n- alpha\n- beta");
   });
@@ -560,29 +559,29 @@ describe("Round trips", () => {
   test("whole list → empty doc", () => {
     const md = copyAcross(
       "- one\n- two\n- three\n",
-      { region: "one", offset: "start" },
-      { region: "three", offset: "end" },
+      { text: "one", offset: "start" },
+      { text: "three", offset: "end" },
     )!;
 
-    expect(pasteInto("\n", { region: "", offset: "start" }, md)).toBe("- one\n- two\n- three\n");
+    expect(pasteInto("\n", { text: "", offset: "start" }, md)).toBe("- one\n- two\n- three\n");
   });
 
   test("whole heading → empty list item replaces the destination", () => {
     // The empty list-item destination is wholly trimmed away — the heading
     // takes the root slot.
-    const md = copyWholeRegion("# Heading\n", "Heading")!;
+    const md = copyWholePath("# Heading\n", "Heading")!;
 
-    expect(pasteInto("- \n", { region: "", offset: "start" }, md)).toBe("# Heading\n");
+    expect(pasteInto("- \n", { text: "", offset: "start" }, md)).toBe("# Heading\n");
   });
 
   test("whole table → end of a paragraph", () => {
     const md = copyAcross(
       "| A | B |\n| --- | --- |\n| one | two |\n",
-      { region: "A", offset: "start" },
-      { region: "two", offset: "end" },
+      { text: "A", offset: "start" },
+      { text: "two", offset: "end" },
     )!;
 
-    expect(pasteInto("Before\n", { region: "Before", offset: "end" }, md)).toBe(
+    expect(pasteInto("Before\n", { text: "Before", offset: "end" }, md)).toBe(
       "Before\n\n| A | B |\n| --- | --- |\n| one | two |\n",
     );
   });
@@ -590,11 +589,11 @@ describe("Round trips", () => {
   test("whole blockquote → end of a paragraph", () => {
     const md = copyAcross(
       "> first\n>\n> second\n",
-      { region: "first", offset: "start" },
-      { region: "second", offset: "end" },
+      { text: "first", offset: "start" },
+      { text: "second", offset: "end" },
     )!;
 
-    expect(pasteInto("Before\n", { region: "Before", offset: "end" }, md)).toBe(
+    expect(pasteInto("Before\n", { text: "Before", offset: "end" }, md)).toBe(
       "Before\n\n> first\n>\n> second\n",
     );
   });
@@ -602,9 +601,9 @@ describe("Round trips", () => {
   test("whole list item → empty list item collapses the destination", () => {
     // Single-item list pasted into an empty list-item destination collapses
     // — no nested bullet, no duplication.
-    const md = copyWholeRegion("- alpha\n- beta\n", "alpha")!;
+    const md = copyWholePath("- alpha\n- beta\n", "alpha")!;
 
-    expect(pasteInto("- \n", { region: "", offset: "start" }, md)).toBe("- alpha\n");
+    expect(pasteInto("- \n", { text: "", offset: "start" }, md)).toBe("- alpha\n");
   });
 
   test("marked partial slice → mid-list-item preserves the mark inline", () => {
@@ -617,7 +616,7 @@ describe("Round trips", () => {
       "italic world",
     )!;
 
-    expect(pasteInto("- alpha beta\n", { region: "alpha beta", offset: 6 }, md)).toBe(
+    expect(pasteInto("- alpha beta\n", { text: "alpha beta", offset: 6 }, md)).toBe(
       "- alpha *italic world*beta\n",
     );
   });
@@ -626,7 +625,7 @@ describe("Round trips", () => {
 describe("Undo / redo", () => {
   test("structural paste collapses to one history step", () => {
     const initial = setup("Hello\n");
-    const placed = placeAt(initial, getRegion(initial, "Hello"), "end");
+    const placed = placeAt(initial, getPath(initial, "Hello"), "end");
     const pasted = pasteFragment(placed, parseFragment("\n- new\n"))!;
 
     expect(toMarkdown(pasted)).toBe("Hello\n\n- new\n");
@@ -634,11 +633,11 @@ describe("Undo / redo", () => {
     expect(toMarkdown(redo(undo(pasted)!)!)).toBe("Hello\n\n- new\n");
   });
 
-  test("cross-region cut+paste round-trips through history", () => {
+  test("cross-path cut+paste round-trips through history", () => {
     const initial = setup("alpha\n\nbeta\n");
     const selected = setSelection(initial, {
-      anchor: { regionPath: getRegion(initial, "alpha").path, offset: 0 },
-      focus: { regionPath: getRegion(initial, "beta").path, offset: 4 },
+      anchor: { path: getPath(initial, "alpha").path, offset: 0 },
+      focus: { path: getPath(initial, "beta").path, offset: 4 },
     });
     const cut = deleteSelection(selected)!;
 
@@ -652,7 +651,7 @@ describe("Comments — clipboard repair", () => {
     const state = withCommentOn(setup("Hello world\n"), "Hello world", "world");
     const before = resolvedCommentTexts(state);
 
-    copySelection(selectIn(state, getRegion(state, "Hello world"), 0, 5));
+    copySelection(selectIn(state, getPath(state, "Hello world"), 0, 5));
 
     expect(resolvedCommentTexts(state)).toEqual(before);
   });
@@ -672,11 +671,11 @@ describe("Comments — clipboard repair", () => {
     expect(resolvedCommentTexts(next)).toEqual(["world"]);
   });
 
-  test("cross-region delete preserves a thread anchored before the cut range", () => {
+  test("cross-path delete preserves a thread anchored before the cut range", () => {
     const seeded = withCommentOn(setup("alpha beta\n\ngamma delta\n"), "alpha beta", "alpha");
     const selected = setSelection(seeded, {
-      anchor: { regionPath: getRegion(seeded, "alpha beta").path, offset: "alpha ".length },
-      focus: { regionPath: getRegion(seeded, "gamma delta").path, offset: "gamma ".length },
+      anchor: { path: getPath(seeded, "alpha beta").path, offset: "alpha ".length },
+      focus: { path: getPath(seeded, "gamma delta").path, offset: "gamma ".length },
     });
     const cut = deleteSelection(selected)!;
 
@@ -687,8 +686,8 @@ describe("Comments — clipboard repair", () => {
     // Comments are anchored annotations on the document, not part of the
     // copied fragment — pasting elsewhere never restores them.
     const seeded = withCommentOn(setup("Hello world\n"), "Hello world", "world");
-    const region = getRegion(seeded, "Hello world");
-    const md = copyMarkdown(selectIn(seeded, region, 0, region.text.length))!;
+    const path = getPath(seeded, "Hello world");
+    const md = copyMarkdown(selectIn(seeded, path, 0, path.text.length))!;
 
     expect(md).toBe("Hello world");
     expect(md).not.toContain("comment");
@@ -700,30 +699,30 @@ describe("Comments — clipboard repair", () => {
 /* -------------------------------------------------------------------------- */
 
 type CaretPosition = number | "start" | "end";
-type RangeAnchor = { region: string; offset: CaretPosition };
+type RangeAnchor = { offset: CaretPosition; text: string };
 
-// Copy the entire content of a single region, identified by its text.
-function copyWholeRegion(setupMd: string, regionText: string): string | null {
+// Copy the entire content of a single path, identified by its text.
+function copyWholePath(setupMd: string, text: string): string | null {
   const state = setup(setupMd);
-  const region = getRegion(state, regionText);
-  return copyMarkdown(selectIn(state, region, 0, region.text.length));
+  const path = getPath(state, text);
+  return copyMarkdown(selectIn(state, path, 0, path.text.length));
 }
 
-// Copy a literal substring inside a single region.
-function copySubstring(setupMd: string, regionText: string, substring: string): string | null {
+// Copy a literal substring inside a single path.
+function copySubstring(setupMd: string, text: string, substring: string): string | null {
   const state = setup(setupMd);
-  return copyMarkdown(selectSubstring(state, getRegion(state, regionText), substring));
+  return copyMarkdown(selectSubstring(state, getPath(state, text), substring));
 }
 
-// Copy a selection spanning two regions, with offsets that may be a number,
-// "start" (0), or "end" (region.text.length).
+// Copy a selection spanning two paths, with offsets that may be a number,
+// "start" (0), or "end" (path.text.length).
 function copyAcross(setupMd: string, from: RangeAnchor, to: RangeAnchor): string | null {
   const state = setup(setupMd);
-  const fromRegion = getRegion(state, from.region);
-  const toRegion = getRegion(state, to.region);
+  const fromPath = getPath(state, from.text);
+  const toPath = getPath(state, to.text);
   const selected = setSelection(state, {
-    anchor: { regionPath: fromRegion.path, offset: resolveOffset(fromRegion, from.offset) },
-    focus: { regionPath: toRegion.path, offset: resolveOffset(toRegion, to.offset) },
+    anchor: { path: fromPath.path, offset: resolveOffset(fromPath, from.offset) },
+    focus: { path: toPath.path, offset: resolveOffset(toPath, to.offset) },
   });
   return copyMarkdown(selected);
 }
@@ -739,7 +738,7 @@ function pasteInto(setupMd: string, caret: RangeAnchor, source: string): string 
 // need to inspect post-paste selection or comment state.
 function pasteIntoState(setupMd: string, caret: RangeAnchor, source: string): EditorState {
   const state = setup(setupMd);
-  const placed = placeAt(state, getRegion(state, caret.region), caret.offset);
+  const placed = placeAt(state, getPath(state, caret.text), caret.offset);
   const fragment = parseFragment(source);
   const next = pasteFragment(placed, fragment, source);
 
@@ -760,41 +759,41 @@ function copyMarkdown(state: EditorState): string | null {
   return fragment ? serializeFragment(fragment) : null;
 }
 
-// Read the focus selection back as `(regionText, offset)` for caret-placement
+// Read the focus selection back as `(focusedText, offset)` for caret-placement
 // assertions.
-function caret(state: EditorState): { regionText: string | undefined; offset: number } {
-  const region = resolveRegion(state.documentIndex, state.selection.focus.regionPath);
-  return { regionText: region?.text, offset: state.selection.focus.offset };
+function caret(state: EditorState): { focusedText: string | undefined; offset: number } {
+  const text = resolveEditorTextAtPath(state.documentIndex, state.selection.focus.path);
+  return { focusedText: text ?? undefined, offset: state.selection.focus.offset };
 }
 
-// Convenience: place a caret at a region and return the state with selection
+// Convenience: place a caret at a path and return the state with selection
 // applied. Used by comment/cut tests that need the original state to add a
 // comment before manipulating the selection.
-function placeCaret(state: EditorState, regionText: string, position: CaretPosition): EditorState {
-  return placeAt(state, getRegion(state, regionText), position);
+function placeCaret(state: EditorState, text: string, position: CaretPosition): EditorState {
+  return placeAt(state, getPath(state, text), position);
 }
 
-function resolveOffset(region: EditableRegion, position: CaretPosition): number {
+function resolveOffset(path: { text: string }, position: CaretPosition): number {
   if (position === "start") return 0;
-  if (position === "end") return region.text.length;
+  if (position === "end") return path.text.length;
   return position;
 }
 
 // Add a comment thread anchored at the first occurrence of `quote` inside
-// the region with `regionText`. Throws if the quote isn't found.
-function withCommentOn(state: EditorState, regionText: string, quote: string): EditorState {
-  const region = getRegion(state, regionText);
-  const startOffset = region.text.indexOf(quote);
+// the path with `text`. Throws if the quote isn't found.
+function withCommentOn(state: EditorState, text: string, quote: string): EditorState {
+  const path = getPath(state, text);
+  const startOffset = path.text.indexOf(quote);
 
   if (startOffset === -1) {
     throw new Error(
-      `Quote ${JSON.stringify(quote)} not found in region ${JSON.stringify(regionText)}`,
+      `Quote ${JSON.stringify(quote)} not found in path ${JSON.stringify(text)}`,
     );
   }
 
   const next = addComment(
     state,
-    { regionPath: region.path, startOffset, endOffset: startOffset + quote.length },
+    { path: path.path, startOffset, endOffset: startOffset + quote.length },
     `comment-on-${quote}`,
   );
 

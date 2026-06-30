@@ -20,7 +20,7 @@ The semantic runtime model captures *structure*, **marks**, and [links](https://
 | Markdown | parse / normalize / serialize |
 
 ```ts
-export function activeRegion() {
+export function activePath() {
   return "local";
 }
 ```

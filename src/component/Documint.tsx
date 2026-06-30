@@ -360,7 +360,7 @@ function DocumintHost({
     onMentionAccepted: emitUserMentioned,
   });
   const { commentPresence, resolvedPresence } = usePresence({ presence, users });
-  const activeCommentIndex = useSprig(activeCommentIndexSprig);
+  const activeCommentIndex = useSprig(activeCommentIndexSprig, readOnly);
   const readCurrentState = () => store.editor.getState();
   const resolvedGrammars = useMemo(
     () => (grammars === null ? null : { ...builtinGrammars, ...grammars }),
@@ -508,7 +508,7 @@ function DocumintHost({
 
       const frame = createDocumentFrame(editorState, layoutState, {
         activeBlockPath: selectionContext.block?.blockPath ?? null,
-        activeRegionPath: editorState.selection.focus.regionPath,
+        activePath: editorState.selection.focus.path,
         activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
         ambientTime: idle.resolveAnimationTime(now),
         devicePixelRatio,
@@ -563,7 +563,7 @@ function DocumintHost({
       normalizedSelection: normalizedSel,
       presence: resolvedPresence,
       showCaret:
-        normalizedSel.start.regionPath !== normalizedSel.end.regionPath ||
+        normalizedSel.start.path !== normalizedSel.end.path ||
         normalizedSel.start.offset !== normalizedSel.end.offset ||
         cursor.isVisible(),
       theme: preferredTheme,
@@ -686,7 +686,7 @@ function DocumintHost({
 
       if (range) {
         input.focus();
-        setSelectionCommand({ regionPath: range.regionPath, offset: range.startOffset });
+        setSelectionCommand({ path: range.path, offset: range.startOffset });
       }
       return;
     }
@@ -768,9 +768,9 @@ function DocumintHost({
     scheduleFullPaint();
   }, [
     normalizedSel.end.offset,
-    normalizedSel.end.regionPath,
+    normalizedSel.end.path,
     normalizedSel.start.offset,
-    normalizedSel.start.regionPath,
+    normalizedSel.start.path,
     selectionContext.block?.blockPath,
   ]);
 

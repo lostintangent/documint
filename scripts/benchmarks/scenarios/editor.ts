@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import {
   createAnchorFromContainer,
   createCommentThread,
@@ -14,21 +15,25 @@ import {
   deleteBackward,
   insertLineBreak,
   insertText,
+  normalizeSelection,
   pasteFragment,
+  resolveIndexedBlockContainingPath,
   setSelection,
 } from "@/editor/state";
 import { dispatch } from "@/editor/state/reducer/state";
-import { parseFragment, serializeDocument, serializeFragment } from "@/markdown";
+import { parseDocument, parseFragment, serializeDocument, serializeFragment } from "@/markdown";
 import {
   createEditorLayoutState,
-  findLineEntryForRegionOffset,
-  findLineForRegionOffset,
+  findLineEntryForPathOffset,
+  findLineForPathOffset,
   measureCaretTarget,
   resolveCaretVisualLeft,
   type DocumentLayout,
 } from "@/editor/layout";
 import { resolveEditorHitAtPoint } from "@/editor/navigation";
 import { createLayoutCache } from "@/editor";
+import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
+import { createDocumentFrame } from "@/renderer";
 import {
   BENCHMARK_VIEWPORT,
   FULL_DOCUMENT_VIEWPORT_HEIGHT,
@@ -52,7 +57,7 @@ export function createEditorScenarios(fixtures: {
   const mediumState = createEditorState(fixtures.mediumSnapshot);
   const longState = createEditorState(fixtures.longSnapshot);
   const richCodeState = createEditorState(fixtures.richCodeSnapshot);
-  const longEditingState = selectMiddleTextRegion(fixtures.longSnapshot);
+  const longEditingState = selectMiddleTextPath(fixtures.longSnapshot);
   const commentIrrelevantTypingState = selectCanvasText(
     fixtures.commentsSnapshot,
     "Secondary bullet remains unannotated.",
@@ -62,7 +67,7 @@ export function createEditorScenarios(fixtures: {
   const xlargeInteractionFixture = createLongInteractionFixture(fixtures.xlargeSnapshot);
   const hugeInteractionFixture = createLongInteractionFixture(fixtures.hugeSnapshot);
   const longSelectAllState = selectEntireDocument(fixtures.longSnapshot);
-  const longCaretState = selectMiddleTextRegion(fixtures.longSnapshot);
+  const longCaretState = selectMiddleTextPath(fixtures.longSnapshot);
   const denseInlinesSource = buildDenseInlinesSource();
 
   // Full-frame fixtures: a viewport + render cache shared by the
@@ -70,6 +75,24 @@ export function createEditorScenarios(fixtures: {
   // the layout-only benchmarks so the layout slice is comparable.
   const fullFrameLayoutOptions = { ...BENCHMARK_VIEWPORT, top: 0 };
   const fullFrameLayoutCache = createLayoutCache();
+  const frameTheme = resolveEditorTheme(lightTheme);
+  const frameLayoutState = createEditorLayoutState(
+    longCaretState,
+    fullFrameLayoutOptions,
+    createLayoutCache(),
+  );
+  const tableFrameState = selectCanvasText(fixtures.richTablesSnapshot, "scrolls", 0);
+  const tableFrameLayoutState = createEditorLayoutState(
+    tableFrameState,
+    fullFrameLayoutOptions,
+    createLayoutCache(),
+  );
+  const denseTableFrameState = createDenseTableFrameState();
+  const denseTableFrameLayoutState = createEditorLayoutState(
+    denseTableFrameState,
+    fullFrameLayoutOptions,
+    createLayoutCache(),
+  );
 
   return [
     // --- Import / export lifecycle ---
@@ -136,6 +159,58 @@ export function createEditorScenarios(fixtures: {
       if (!nextState) throw new Error("insertText returned null");
       void serializeDocument(nextState.documentIndex.document);
       void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
+    }),
+    createBenchmarkScenario("editor", "editor_create_document_frame_long", 200, () => {
+      void createDocumentFrame(longCaretState, frameLayoutState, {
+        activeBlockPath:
+          resolveIndexedBlockContainingPath(longCaretState.documentIndex, longCaretState.selection.focus.path)
+            ?.path ?? null,
+        activePath: longCaretState.selection.focus.path,
+        activeThreadIndex: null,
+        commentRanges: [],
+        devicePixelRatio: 1,
+        height: BENCHMARK_VIEWPORT.height,
+        normalizedSelection: normalizeSelection(longCaretState),
+        now: 0,
+        theme: frameTheme,
+        width: BENCHMARK_VIEWPORT.width,
+      });
+    }),
+    createBenchmarkScenario("editor", "editor_create_document_frame_table", 200, () => {
+      void createDocumentFrame(tableFrameState, tableFrameLayoutState, {
+        activeBlockPath:
+          resolveIndexedBlockContainingPath(
+            tableFrameState.documentIndex,
+            tableFrameState.selection.focus.path,
+          )?.path ?? null,
+        activePath: tableFrameState.selection.focus.path,
+        activeThreadIndex: null,
+        commentRanges: [],
+        devicePixelRatio: 1,
+        height: BENCHMARK_VIEWPORT.height,
+        normalizedSelection: normalizeSelection(tableFrameState),
+        now: 0,
+        theme: frameTheme,
+        width: BENCHMARK_VIEWPORT.width,
+      });
+    }),
+    createBenchmarkScenario("editor", "editor_create_document_frame_dense_table_selection", 200, () => {
+      void createDocumentFrame(denseTableFrameState, denseTableFrameLayoutState, {
+        activeBlockPath:
+          resolveIndexedBlockContainingPath(
+            denseTableFrameState.documentIndex,
+            denseTableFrameState.selection.focus.path,
+          )?.path ?? null,
+        activePath: denseTableFrameState.selection.focus.path,
+        activeThreadIndex: null,
+        commentRanges: [],
+        devicePixelRatio: 1,
+        height: BENCHMARK_VIEWPORT.height,
+        normalizedSelection: normalizeSelection(denseTableFrameState),
+        now: 0,
+        theme: frameTheme,
+        width: BENCHMARK_VIEWPORT.width,
+      });
     }),
     createBenchmarkScenario("editor", "editor_typing_code", 200, () => {
       const editorState = selectCanvasText(
@@ -359,30 +434,30 @@ function selectCanvasText(
   offset: number,
 ) {
   const state = createEditorState(snapshot);
-  const container = state.documentIndex.regions.find((entry) => entry.text.includes(text));
+  const container = indexedTextEntries(state).find((entry) => entry.text.includes(text));
 
   if (!container) {
     throw new Error(`Could not find canvas text: ${text}`);
   }
 
   return setSelection(state, {
-    regionPath: container.path,
+    path: container.path,
     offset: container.text.indexOf(text) + offset,
   });
 }
 
-function selectMiddleTextRegion(snapshot: Parameters<typeof createEditorState>[0]) {
+function selectMiddleTextPath(snapshot: Parameters<typeof createEditorState>[0]) {
   const state = createEditorState(snapshot);
-  const textRegions = state.documentIndex.regions.filter((region) => region.text.length > 0);
-  const region = textRegions[Math.floor(textRegions.length / 2)];
+  const textPaths = indexedTextEntries(state).filter((path) => path.text.length > 0);
+  const path = textPaths[Math.floor(textPaths.length / 2)];
 
-  if (!region) {
-    throw new Error("Expected non-empty editor region");
+  if (!path) {
+    throw new Error("Expected non-empty editor path");
   }
 
   return setSelection(state, {
-    regionPath: region.path,
-    offset: Math.floor(region.text.length / 2),
+    path: path.path,
+    offset: Math.floor(path.text.length / 2),
   });
 }
 
@@ -399,7 +474,7 @@ function createMiddleRootReplacementAction(state: ReturnType<typeof createEditor
 }
 
 function createLongInteractionFixture(snapshot: Parameters<typeof createEditorState>[0]) {
-  const state = selectMiddleTextRegion(snapshot);
+  const state = selectMiddleTextPath(snapshot);
   const layoutCache = createLayoutCache();
   const layout = createEditorLayoutState(
     state,
@@ -431,7 +506,7 @@ function moveSelectionToNextLine(
   layout: DocumentLayout,
 ) {
   const caret = measureCaretTarget(layout, state.documentIndex, {
-    regionPath: state.selection.focus.regionPath,
+    path: state.selection.focus.path,
     offset: state.selection.focus.offset,
   });
   const currentLine = findCurrentLine(state, layout);
@@ -440,9 +515,9 @@ function moveSelectionToNextLine(
     return null;
   }
 
-  const currentLineEntry = findLineEntryForRegionOffset(
+  const currentLineEntry = findLineEntryForPathOffset(
     layout,
-    currentLine.regionPath,
+    currentLine.path,
     state.selection.focus.offset,
   );
   const targetLine = currentLineEntry ? layout.lines[currentLineEntry.index + 1] : null;
@@ -458,33 +533,61 @@ function moveSelectionToNextLine(
 
   return hit
     ? setSelection(state, {
-        regionPath: hit.regionPath,
+        path: hit.path,
         offset: hit.offset,
       })
     : null;
 }
 
 function findCurrentLine(state: ReturnType<typeof createEditorState>, layout: DocumentLayout) {
-  return findLineForRegionOffset(
+  return findLineForPathOffset(
     layout,
-    state.selection.focus.regionPath,
+    state.selection.focus.path,
     state.selection.focus.offset,
   );
 }
 
 function selectEntireDocument(snapshot: Parameters<typeof createEditorState>[0]) {
   const state = createEditorState(snapshot);
-  const first = state.documentIndex.regions[0];
-  const last = state.documentIndex.regions.at(-1);
+  const first = indexedTextEntries(state)[0];
+  const last = indexedTextEntries(state).at(-1);
 
   if (!first || !last) {
     throw new Error("Expected a non-empty document for select-all benchmark");
   }
 
   return setSelection(state, {
-    anchor: { regionPath: first.path, offset: 0 },
-    focus: { regionPath: last.path, offset: last.text.length },
+    anchor: { path: first.path, offset: 0 },
+    focus: { path: last.path, offset: last.text.length },
   });
+}
+
+function createDenseTableFrameState() {
+  const state = createEditorState(parseDocument(buildDenseTableMarkdown(48, 12)));
+  const cells = indexedTextEntries(state).filter((entry) => entry.tableCell);
+  const firstBodyCell = cells.find((entry) => entry.tableCell?.rowIndex === 1);
+  const lastBodyCell = cells.at(-1);
+
+  if (!firstBodyCell || !lastBodyCell) {
+    throw new Error("Expected dense table cells for frame benchmark");
+  }
+
+  return setSelection(state, {
+    anchor: { path: firstBodyCell.path, offset: 0 },
+    focus: { path: lastBodyCell.path, offset: lastBodyCell.text.length },
+  });
+}
+
+function buildDenseTableMarkdown(rowCount: number, columnCount: number) {
+  const header = Array.from({ length: columnCount }, (_, index) => `H${index}`).join(" | ");
+  const separator = Array.from({ length: columnCount }, () => "-").join(" | ");
+  const body = Array.from({ length: rowCount }, (_, rowIndex) =>
+    Array.from({ length: columnCount }, (_, columnIndex) => `R${rowIndex}C${columnIndex}`).join(
+      " | ",
+    ),
+  );
+
+  return [`| ${header} |`, `| ${separator} |`, ...body.map((row) => `| ${row} |`)].join("\n");
 }
 
 // A single paragraph alternating across every inline kind (text, bold,

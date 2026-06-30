@@ -12,13 +12,14 @@ import {
 import {
   isInertBlock,
   isRootIndexedBlock,
-  nextBlockInFlow,
-  nextRegionInFlow,
   previousBlockInFlow,
-  previousRegionInFlow,
+  nextBlockInFlow,
+  resolveAdjacentEditorPathWithTextInFlow,
+  resolveEditorTextAtPath,
+  resolveIndexedBlockContainingPath,
   resolveRootBlock,
 } from "../../../index/query";
-import type { DocumentIndex, IndexedBlock, EditableRegion } from "../../../index/types";
+import type { DocumentIndex, IndexedBlock } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
 import {
   target,
@@ -27,17 +28,17 @@ import {
 
 // The universal at-boundary delete rule.
 //
-// Backward delete at offset 0 of a region (or forward at the end) folds
-// the region into its in-flow neighbor. Empty regions just collapse —
+// Backward delete at offset 0 of a path (or forward at the end) folds
+// the path into its in-flow neighbor. Paths with empty text just collapse —
 // the empty side disappears, the cursor lands at the seam in the
-// neighbor. Non-empty regions deposit their inline children into a
+// neighbor. Paths with content deposit their inline children into a
 // text-mergeable neighbor and then collapse the same way. The
 // structural side of the collapse — which container loses an entry,
 // what gets lifted — is dispatched by block type inside the tree walk.
 //
 // This rule is the load-bearing contract for caret-driven deletion. It
-// composes the same index-owned in-flow primitives (`previousRegionInFlow` /
-// `nextRegionInFlow`) as arrow-key navigation, so topology changes propagate
+// composes the same index-owned in-flow primitive as arrow-key navigation, so
+// topology changes propagate
 // consistently to both caret movement and deletion.
 //
 // Block-type-specific transforms whose semantics aren't expressible as
@@ -54,118 +55,155 @@ import {
 // `state/reducer/fragments.ts`.
 //
 // Inert blocks (divider today; future image-as-block, embed) contribute
-// no region. The region-flow walk skips them by construction, so the
+// no text path. The path-flow walk skips them by construction, so the
 // dispatcher below first consults the block-flow walk to detect any
-// inert leaf adjacent to the caret region. If found, it's removed as a
+// inert leaf adjacent to the caret path. If found, it's removed as a
 // unit (no merge, caret stays put). The dispatcher then falls through
-// to the existing region-flow merge/empty rules as normal.
+// to the existing path-flow merge/empty rules as normal.
 //
 // Direction-agnostic terminology used throughout:
-//   - "victim"   — the region whose containing block is being removed.
-//                  Always the empty region in the empty case; the
-//                  current region for backward / the neighbor for
+//   - "victim"   — the path whose containing block is being removed.
+//                  Always the path with empty text in the empty case; the
+//                  current path for backward / the neighbor for
 //                  forward in the merge case.
-//   - "absorber" — the region that survives. For non-empty merges it
+//   - "absorber" — the path that survives. For content merges it
 //                  also receives the victim's inline children.
 
 export type DeleteDirection = "backward" | "forward";
 
+type BoundaryPathContext = {
+  block: Block;
+  blockPath: string;
+  path: string;
+  rootIndex: number;
+  text: string;
+};
+
 type BoundaryMerge = {
-  absorber: EditableRegion;
-  victim: EditableRegion;
+  absorber: BoundaryPathContext;
+  victim: BoundaryPathContext;
 };
 
 export function resolveInFlowBoundaryDelete(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  path: string,
   empty: boolean,
   direction: DeleteDirection,
 ): EditorStateAction | null {
-  const inertNeighbor = resolveAdjacentInertBlock(documentIndex, region, direction);
-  if (inertNeighbor) {
-    return resolveInertNeighborCollapse(region, inertNeighbor, direction);
+  const current = resolveBoundaryPathContext(documentIndex, path);
+  if (!current) {
+    return null;
   }
 
-  const neighbor = resolveAdjacentRegion(documentIndex, region, direction);
+  const inertNeighbor = resolveAdjacentInertBlock(documentIndex, current, direction);
+  if (inertNeighbor) {
+    return resolveInertNeighborCollapse(current, inertNeighbor, direction);
+  }
+
+  const neighbor = resolveAdjacentBoundaryPathContext(documentIndex, current.path, direction);
   if (!neighbor) {
     return null;
   }
 
   if (empty) {
-    return resolveEmptyCollapse(documentIndex, region, neighbor, direction);
+    return resolveEmptyCollapse(documentIndex, current, neighbor, direction);
   }
 
-  const merge = resolveBoundaryMerge(region, neighbor, direction);
+  const merge = resolveBoundaryMerge(current, neighbor, direction);
 
   return merge ? resolveMergeCollapse(documentIndex, merge.victim, merge.absorber) : null;
 }
 
-// Adjacent inert leaf wins over text-region neighbor. The block-flow
-// walk includes inert blocks (which the region-flow walk skips), so
-// an inert block between the caret region and the next text region
+// Adjacent inert leaf wins over text-path neighbor. The block-flow
+// walk includes inert blocks (which the path-flow walk skips), so
+// an inert block between the caret path and the next text path
 // is detected here and removed as a unit. A subsequent press
 // resolves against the new adjacent leaf and applies normal merge.
 function resolveAdjacentInertBlock(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  current: BoundaryPathContext,
   direction: DeleteDirection,
 ): IndexedBlock | null {
   const adjacent =
     direction === "backward"
-      ? previousBlockInFlow(documentIndex, region.blockPath)
-      : nextBlockInFlow(documentIndex, region.blockPath);
+      ? previousBlockInFlow(documentIndex, current.blockPath)
+      : nextBlockInFlow(documentIndex, current.blockPath);
 
   return adjacent && isInertBlock(adjacent) ? adjacent : null;
 }
 
-function resolveAdjacentRegion(
+function resolveAdjacentBoundaryPathContext(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  path: string,
   direction: DeleteDirection,
-): EditableRegion | null {
-  return direction === "backward"
-    ? previousRegionInFlow(documentIndex, region.path)
-    : nextRegionInFlow(documentIndex, region.path);
+): BoundaryPathContext | null {
+  const adjacentPath = resolveAdjacentEditorPathWithTextInFlow(
+    documentIndex,
+    path,
+    direction === "backward" ? -1 : 1,
+  );
+
+  return adjacentPath ? resolveBoundaryPathContext(documentIndex, adjacentPath) : null;
 }
 
-// Non-empty boundary collapse: backward folds the current region into
-// the previous region; forward folds the next region into the current
-// region. Both sides must be inline-text blocks. Code regions, table
-// cells, and other opaque regions are excluded because dropping or
+function resolveBoundaryPathContext(
+  documentIndex: DocumentIndex,
+  path: string,
+): BoundaryPathContext | null {
+  const text = resolveEditorTextAtPath(documentIndex, path);
+  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
+
+  if (text === null || !indexedBlock) {
+    return null;
+  }
+
+  return {
+    block: indexedBlock.block,
+    blockPath: indexedBlock.path,
+    path,
+    rootIndex: indexedBlock.rootIndex,
+    text,
+  };
+}
+
+// Non-empty boundary collapse: backward folds the current path into
+// the previous path; forward folds the next path into the current
+// path. Both sides must be inline-text blocks. Code paths, table
+// cells, and other opaque paths are excluded because dropping or
 // flattening their content would be data loss.
 function resolveBoundaryMerge(
-  region: EditableRegion,
-  neighbor: EditableRegion,
+  current: BoundaryPathContext,
+  neighbor: BoundaryPathContext,
   direction: DeleteDirection,
 ): BoundaryMerge | null {
-  const victim = direction === "backward" ? region : neighbor;
-  const absorber = direction === "backward" ? neighbor : region;
+  const victim = direction === "backward" ? current : neighbor;
+  const absorber = direction === "backward" ? neighbor : current;
 
-  return isTextMergeableRegion(absorber) && isTextMergeableRegion(victim)
+  return isTextMergeablePath(absorber) && isTextMergeablePath(victim)
     ? { absorber, victim }
     : null;
 }
 
 // Inert neighbor collapse: remove the inert leaf block as a unit, leave
-// the caret where it was. The inert block contributes no region, so
+// the caret where it was. The inert block contributes no text path, so
 // there's nothing to merge — just a structural splice. Currently supports
 // root-level inert blocks (the form the parser produces in normal use);
 // nested inert blocks would need a path-shift computation when the inert
-// precedes the caret region in a shared parent. Returns null in that case
+// precedes the caret path in a shared parent. Returns null in that case
 // so the caller falls back to the existing merge/empty rules.
 function resolveInertNeighborCollapse(
-  currentRegion: EditableRegion,
+  current: BoundaryPathContext,
   inertBlock: IndexedBlock,
   direction: DeleteDirection,
 ): EditorStateAction | null {
   if (!isRootIndexedBlock(inertBlock)) return null;
 
-  // Backward: inert block sat at a lower rootIndex than currentRegion.
-  // Removing it shifts currentRegion's rootIndex down by one. Forward:
-  // inert sat at a higher rootIndex; currentRegion's rootIndex is
+  // Backward: inert block sat at a lower rootIndex than current path.
+  // Removing it shifts the current path's rootIndex down by one. Forward:
+  // inert sat at a higher rootIndex; the current path's rootIndex is
   // unaffected.
   const newRootIndex =
-    direction === "backward" ? currentRegion.rootIndex - 1 : currentRegion.rootIndex;
+    direction === "backward" ? current.rootIndex - 1 : current.rootIndex;
   const cursorOffset = direction === "backward" ? 0 : ("end" as const);
 
   return {
@@ -173,14 +211,14 @@ function resolveInertNeighborCollapse(
     rootIndex: inertBlock.rootIndex,
     count: 1,
     blocks: [],
-    selection: shiftedRegionBlockTarget(currentRegion, newRootIndex, cursorOffset),
+    selection: shiftedBlockPathTarget(current.blockPath, newRootIndex, cursorOffset),
   };
 }
 
-// True when this region's block exposes inline children that can be
+// True when this path's block exposes inline children that can be
 // appended/prepended without changing block kind.
-function isTextMergeableRegion(region: EditableRegion): boolean {
-  return region.block.type === "paragraph" || region.block.type === "heading";
+function isTextMergeablePath(context: BoundaryPathContext): boolean {
+  return context.block.type === "paragraph" || context.block.type === "heading";
 }
 
 // Empty boundary collapse: rewrite only the victim's root, removing the
@@ -188,14 +226,14 @@ function isTextMergeableRegion(region: EditableRegion): boolean {
 // touched. Cursor lands at the seam in the absorber.
 function resolveEmptyCollapse(
   documentIndex: DocumentIndex,
-  victim: EditableRegion,
-  absorber: EditableRegion,
+  victim: BoundaryPathContext,
+  absorber: BoundaryPathContext,
   direction: DeleteDirection,
 ): EditorStateAction | null {
   const victimRoot = resolveRootBlock(documentIndex, victim.rootIndex);
   if (!victimRoot) return null;
 
-  const rebuilt = applyEditsToBlock(victimRoot, victim, absorber.block, undefined);
+  const rebuilt = applyEditsToBlock(victimRoot, victim.block, absorber.block, undefined);
 
   const cursorOffset = direction === "backward" ? absorber.text.length : 0;
   const sameRoot = victim.rootIndex === absorber.rootIndex;
@@ -232,8 +270,8 @@ function resolveEmptyCollapse(
 // removal reshaped the surrounding tree.
 function resolveMergeCollapse(
   documentIndex: DocumentIndex,
-  victim: EditableRegion,
-  absorber: EditableRegion,
+  victim: BoundaryPathContext,
+  absorber: BoundaryPathContext,
 ): EditorStateAction | null {
   const absorberBlock = absorber.block;
   const victimBlock = victim.block;
@@ -250,7 +288,7 @@ function resolveMergeCollapse(
     const rootBlock = resolveRootBlock(documentIndex, victim.rootIndex);
     if (!rootBlock) return null;
 
-    const rebuilt = applyEditsToBlock(rootBlock, victim, absorber.block, updatedAbsorberBlock);
+    const rebuilt = applyEditsToBlock(rootBlock, victim.block, absorber.block, updatedAbsorberBlock);
 
     return {
       kind: "splice-blocks",
@@ -270,14 +308,14 @@ function resolveMergeCollapse(
 
   const absorberRebuild = applyEditsToBlock(
     absorberRoot,
-    victim,
+    victim.block,
     absorber.block,
     updatedAbsorberBlock,
   );
   if (absorberRebuild.length !== 1) return null;
   const updatedAbsorberRoot = absorberRebuild[0]!;
 
-  const victimRebuild = applyEditsToBlock(victimRoot, victim, absorber.block, undefined);
+  const victimRebuild = applyEditsToBlock(victimRoot, victim.block, absorber.block, undefined);
 
   // Absorber is always at the lower rootIndex (previous-in-flow for
   // backward; current R at i, victim N at i+1 for forward).
@@ -296,26 +334,26 @@ function resolveMergeCollapse(
   };
 }
 
-// Select a region's primary block after a splice that may shift its root index
-// but does not shift indices in the region's ancestor chain.
-export function shiftedRegionBlockTarget(
-  region: EditableRegion,
+// Select a block path after a splice that may shift its root index but does
+// not shift indices in the block's ancestor chain.
+export function shiftedBlockPathTarget(
+  blockPath: string,
   rootIndex: number,
   offset: number | "end" = 0,
 ): SelectionTarget {
-  const blockPath = blockPathWithRootIndex(region.blockPath, rootIndex);
+  const shiftedPath = blockPathWithRootIndex(blockPath, rootIndex);
 
-  if (!blockPath) {
-    throw new Error(`Invalid shifted region block path: ${region.blockPath}`);
+  if (!shiftedPath) {
+    throw new Error(`Invalid shifted block path: ${blockPath}`);
   }
 
-  return target.blockPath(blockPath, offset);
+  return target.blockPath(shiftedPath, offset);
 }
 
 // Build the absorber's post-merge block. We concatenate inline children
 // from absorber and victim (rather than just plain text), so marks,
 // links, and inline code carry through the merge instead of getting
-// flattened. `defragmentTextInlines` collapses adjacent same-style runs
+// flattened. `defragmentTextInlines` collapses adjacent same-style text
 // at the seam.
 function mergedAbsorberBlock(
   absorberBlock: ParagraphBlock | HeadingBlock,
@@ -351,7 +389,7 @@ function rebuiltAbsorberTarget(
 // child indices within that root are stable; only the rootIndex shifts
 // iff the victim's root splice changed the doc length.
 function crossRootAbsorberTarget(
-  absorber: EditableRegion,
+  absorber: BoundaryPathContext,
   victimRootIndex: number,
   victimResidueLength: number,
   offset: number,
@@ -362,7 +400,7 @@ function crossRootAbsorberTarget(
       ? absorber.rootIndex // victim is after absorber; absorber's rootIndex unaffected
       : absorber.rootIndex + lengthDelta;
 
-  return shiftedRegionBlockTarget(absorber, newRootIndex, offset);
+  return shiftedBlockPathTarget(absorber.blockPath, newRootIndex, offset);
 }
 
 // --- Tree walk: structural removal + optional absorber substitution -----
@@ -370,7 +408,7 @@ function crossRootAbsorberTarget(
 // Walks the subtree rooted at `rootBlock` and produces the residue at the root
 // level after applying:
 //   - removal of the smallest containing block whose deletion handles the
-//     victim region (with lift for list items),
+//     victim block (with lift for list items),
 //   - substitution of the absorber's containing paragraph/heading with
 //     `updatedAbsorberBlock` when one is provided.
 //
@@ -386,7 +424,7 @@ function crossRootAbsorberTarget(
 //      children, if any, get lifted at the list level by the parent walk).
 function applyEditsToBlock(
   rootBlock: Block,
-  victim: EditableRegion,
+  victimBlock: Block,
   absorberBlock: Block,
   updatedAbsorberBlock: Block | undefined,
 ): Block[] {
@@ -394,14 +432,14 @@ function applyEditsToBlock(
     // Rule 1: listItem owns its leading paragraph/heading.
     if (block.type === "listItem") {
       const leading = block.children[0];
-      if (leading && leading === victim.block) {
+      if (leading && leading === victimBlock) {
         return liftedReplacementForVictim(block);
       }
     }
 
     // Rule 2: direct removal of the victim, unless our parent is a listItem
     // (in which case rule 1 above handled it on the way down).
-    if (block === victim.block && parent?.type !== "listItem") {
+    if (block === victimBlock && parent?.type !== "listItem") {
       return [];
     }
 

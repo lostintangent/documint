@@ -1,17 +1,18 @@
 import {
   createParagraphBlock,
   createParagraphTextBlock,
+  rootBlockPath,
   type Block,
   type ListItemBlock,
 } from "@/document";
-import type { DocumentIndex, EditableRegion } from "../../../index/types";
-import { firstInFlowRegionOfRoot, resolveRootBlock } from "../../../index/query";
+import type { DocumentIndex } from "../../../index/types";
+import { resolveBlockTextPathBoundary, resolveRootBlock } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import { target } from "../../../selection";
 
 // The block-demotion override for backward delete.
 //
-// Backspace at the first-in-flow region of a root-level wrapper strips
+// Backspace at the first in-flow editor path of a root-level wrapper strips
 // the wrapping in favor of its content as root blocks:
 //
 //   - heading       → paragraph with the heading's inline children.
@@ -28,7 +29,7 @@ import { target } from "../../../selection";
 // returning null from `demoteRootBlock`, and the gesture falls through
 // to the universal in-flow rule.
 //
-// The gesture detection — "is the cursor at the first-in-flow region
+// The gesture detection — "is the cursor at the first in-flow editor path
 // of its root block?" — is one universal check across kinds, which is
 // why this is a single function rather than per-kind override
 // functions. It's also what naturally limits demotion to root-level
@@ -39,13 +40,14 @@ import { target } from "../../../selection";
 
 export function resolveBlockDemotion(
   documentIndex: DocumentIndex,
-  region: EditableRegion,
+  path: string,
+  rootIndex: number,
 ): EditorStateAction | null {
-  if (!isFirstInFlowRootRegion(documentIndex, region)) {
+  if (!isFirstInFlowRootPath(documentIndex, path, rootIndex)) {
     return null;
   }
 
-  const rootBlock = resolveRootBlock(documentIndex, region.rootIndex);
+  const rootBlock = resolveRootBlock(documentIndex, rootIndex);
   if (!rootBlock) {
     return null;
   }
@@ -58,17 +60,25 @@ export function resolveBlockDemotion(
 
   return {
     kind: "splice-blocks",
-    rootIndex: region.rootIndex,
+    rootIndex,
     count: 1,
     blocks,
     selection: target.block(focusBlock),
   };
 }
 
-function isFirstInFlowRootRegion(documentIndex: DocumentIndex, region: EditableRegion): boolean {
-  const firstInFlow = firstInFlowRegionOfRoot(documentIndex, region.rootIndex);
+function isFirstInFlowRootPath(
+  documentIndex: DocumentIndex,
+  path: string,
+  rootIndex: number,
+): boolean {
+  const firstInFlow = resolveBlockTextPathBoundary(
+    documentIndex,
+    rootBlockPath(rootIndex),
+    "start",
+  );
 
-  return Boolean(firstInFlow && firstInFlow.path === region.path);
+  return firstInFlow === path;
 }
 
 // Returns the root-level demoted form of a block, or null when the

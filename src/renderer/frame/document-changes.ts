@@ -1,7 +1,6 @@
 import {
   resolveParentIndexedBlock,
   resolveIndexedBlock,
-  resolveRegion,
   type IndexedBlock,
   type EditorState,
 } from "@/editor/state";
@@ -40,7 +39,7 @@ type DocumentChangeFrameIndex = {
 export type DocumentChangeResolver = (
   editorState: EditorState,
   indexedBlock: IndexedBlock | null,
-  regionPath: string,
+  path: string,
 ) => DocumentChangeFrameEntry | null;
 
 export function createDocumentChangeResolver(
@@ -54,10 +53,9 @@ export function createDocumentChangeResolver(
   const index = createDocumentChangeFrameIndex(changes, fades);
   const blockChangesByPath = new Map<string, DocumentChangeFrameEntry | null>();
 
-  return (editorState, indexedBlock, regionPath) => {
-    const region =
-      index.tableCellChanges.size > 0 ? resolveRegion(editorState.documentIndex, regionPath) : null;
-    const tableCellChange = region ? (index.tableCellChanges.get(region.path) ?? null) : null;
+  return (editorState, indexedBlock, path) => {
+    const tableCellChange =
+      index.tableCellChanges.size > 0 ? (index.tableCellChanges.get(path) ?? null) : null;
 
     if (tableCellChange || index.blockChanges.size === 0 || !indexedBlock) {
       return tableCellChange;
@@ -90,9 +88,9 @@ function createDocumentChangeFrameIndex(
     } satisfies DocumentChangeFrameEntry;
 
     if (target.kind === "block") {
-      blockChanges.set(target.blockPath, entry);
+      blockChanges.set(target.path, entry);
     } else {
-      tableCellChanges.set(target.regionPath, entry);
+      tableCellChanges.set(target.path, entry);
     }
   }
 
@@ -154,17 +152,17 @@ export function resolveTableCellDocumentChanges({
 }): TableCellDocumentChangeFrame[] {
   const { layout } = layoutState;
   const frames: TableCellDocumentChangeFrame[] = [];
-  const visitedRegionPaths = new Set<string>();
+  const visitedPaths = new Set<string>();
 
   for (let index = startLineIndex; index < endLineIndex; index += 1) {
     const line = layout.lines[index]!;
     const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockPath);
 
-    if (indexedBlock?.block.type !== "table" || visitedRegionPaths.has(line.regionPath)) {
+    if (indexedBlock?.block.type !== "table" || visitedPaths.has(line.path)) {
       continue;
     }
 
-    const change = resolveDocumentChange(editorState, indexedBlock, line.regionPath);
+    const change = resolveDocumentChange(editorState, indexedBlock, line.path);
     if (!change) {
       continue;
     }
@@ -172,8 +170,8 @@ export function resolveTableCellDocumentChanges({
     const geometry = resolveTableCellGeometryFrame({
       endLineIndex,
       layout,
-      regionBounds: layout.regionBounds,
-      regionPath: line.regionPath,
+      pathBounds: layout.pathBounds,
+      path: line.path,
       startLineIndex,
     });
 
@@ -181,7 +179,7 @@ export function resolveTableCellDocumentChanges({
       continue;
     }
 
-    visitedRegionPaths.add(line.regionPath);
+    visitedPaths.add(line.path);
     frames.push({
       ...geometry,
       color: resolveDocumentChangeBackgroundColor(change, theme),

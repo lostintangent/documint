@@ -58,7 +58,7 @@ export function normalizeAnchorKind(kind: AnchorKind | undefined): AnchorKind | 
 // Map a block-node `type` to its `AnchorKind`, or `null` when the block
 // can't host anchored content (lists, dividers, directives, etc.). Single
 // source of truth for the closed mapping — used during semantic container
-// discovery and by editor-side adapters that bridge runtime regions back
+// discovery and by editor-side adapters that bridge editor path text back
 // into the algebra.
 export function anchorKindForBlockType(blockType: Block["type"]): AnchorKind | null {
   return anchorKindByBlockType[blockType] ?? null;
@@ -81,7 +81,7 @@ export type TextAnchor = {
   suffix?: string;
 };
 
-// A text region an anchor can attach to. `path` is the structural container
+// A text container an anchor can attach to. `path` is the structural container
 // path in the current snapshot. `containerOrdinal` is the position among
 // containers in document order — used to disambiguate identical-text
 // containers when content alone is tied.

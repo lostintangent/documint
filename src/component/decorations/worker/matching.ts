@@ -1,6 +1,6 @@
 // Worker-side flat-text decoration engine. A caller compiles decorations once,
 // then resolves one text string into compact matches here; the prose and code
-// passes only differ in which text they feed in and how they attach region
+// passes only differ in which text they feed in and how they attach owner
 // paths/base offsets afterward.
 
 import type { DocumintDecoration } from "@/types";
@@ -8,7 +8,7 @@ import type { DocumintDecoration } from "@/types";
 type DecorationPaint = Pick<DocumintDecoration, "backgroundColor" | "color" | "pulse">;
 
 // A match is local to one flat string. Callers turn matches into `TextDecoration`s
-// once they know the owning region path and base offset.
+// once they know the owning path and base offset.
 type DecorationMatch = DecorationPaint & {
   end: number;
   start: number;

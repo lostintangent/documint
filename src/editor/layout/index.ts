@@ -10,8 +10,8 @@ export type { DocumentCaretTarget as CaretTarget, InlineBounds } from "./query";
 
 export {
   // Resolve lines within the prepared layout.
-  findDocumentLayoutLineEntryForRegionOffset as findLineEntryForRegionOffset,
-  findDocumentLayoutLineForRegionOffset as findLineForRegionOffset,
+  findDocumentLayoutLineEntryForPathOffset as findLineEntryForPathOffset,
+  findDocumentLayoutLineForPathOffset as findLineForPathOffset,
   findDocumentLayoutBlockRange as findVisibleBlockRange,
   findDocumentLayoutLineRange as findVisibleLineRange,
   someVisibleDocumentLayoutLine,
@@ -56,7 +56,10 @@ export function measureLayoutCaretTarget(
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ) {
-  return measureDocumentCaretTarget(viewport.layout, state.documentIndex, point);
+  return measureDocumentCaretTarget(viewport.layout, state.documentIndex, {
+    path: point.path,
+    offset: point.offset,
+  });
 }
 
 export function measureLayoutVisualCaretTarget(
@@ -64,7 +67,10 @@ export function measureLayoutVisualCaretTarget(
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ) {
-  const caret = measureDocumentCaretTarget(viewport.layout, state.documentIndex, point);
+  const caret = measureDocumentCaretTarget(viewport.layout, state.documentIndex, {
+    path: point.path,
+    offset: point.offset,
+  });
 
   if (!caret) {
     return null;

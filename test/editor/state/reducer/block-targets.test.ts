@@ -5,11 +5,11 @@ import {
   rebuildListBlock,
   type ListBlock,
 } from "@/document";
-import { readEditorEffects, resolveRegion } from "@/editor/state";
+import { readEditorEffects, resolveEditorTextAtPath } from "@/editor/state";
 import { effect } from "@/editor/state/effects";
 import { dispatch } from "@/editor/state/reducer/state";
 import { resolveSelectionTarget, target } from "@/editor/state/selection";
-import { getRegion, setup } from "../../helpers";
+import { getPath, setup } from "../../helpers";
 import type { EditorState } from "@/editor/state";
 
 // Block-reference targets: actions address "the block I just built" by
@@ -30,9 +30,7 @@ describe("Block-reference targets", () => {
       selection: target.block(insertedItem, "end"),
     });
 
-    const focusRegion = resolveRegion(next.documentIndex, next.selection.focus.regionPath);
-
-    expect(focusRegion?.text).toBe("gamma");
+    expect(resolveEditorTextAtPath(next.documentIndex, next.selection.focus.path)).toBe("gamma");
     expect(next.selection.focus.offset).toBe("gamma".length);
   });
 
@@ -48,7 +46,7 @@ describe("Block-reference targets", () => {
       selection: target.block(insertedParagraph),
     });
 
-    expect(next.selection.focus.regionPath).toBe(getRegion(next, "beta").path);
+    expect(next.selection.focus.path).toBe(getPath(next, "beta").path);
     expect(next.selection.focus.offset).toBe(0);
   });
 
@@ -85,7 +83,7 @@ describe("Block-reference targets", () => {
       selection: target.block(insertedItem),
     });
 
-    expect(next.selection.focus.regionPath).toBe(getRegion(next, "beta").path);
+    expect(next.selection.focus.path).toBe(getPath(next, "beta").path);
   });
 
   test("throws when the referenced block is not in the action payload", () => {
@@ -117,7 +115,7 @@ describe("Block-reference targets", () => {
 });
 
 describe("Block-path targets", () => {
-  test("resolves a root block path to the root primary region", () => {
+  test("resolves a root block path to the root primary path", () => {
     const state = setup("alpha\n\n- beta\n");
     const selection = resolveSelectionTarget(
       state.documentIndex,
@@ -126,11 +124,11 @@ describe("Block-path targets", () => {
 
     expect(selection?.focus).toEqual({
       offset: "alpha".length,
-      regionPath: getRegion(state, "alpha").path,
+      path: getPath(state, "alpha").path,
     });
   });
 
-  test("resolves a nested block path to the descendant primary region", () => {
+  test("resolves a nested block path to the descendant primary path", () => {
     const state = setup("alpha\n\n- beta\n");
     const selection = resolveSelectionTarget(
       state.documentIndex,
@@ -139,7 +137,7 @@ describe("Block-path targets", () => {
 
     expect(selection?.focus).toEqual({
       offset: "beta".length,
-      regionPath: getRegion(state, "beta").path,
+      path: getPath(state, "beta").path,
     });
   });
 
@@ -147,6 +145,23 @@ describe("Block-path targets", () => {
     expect(() => target.blockPath("root.0.rows.0.cells.0")).toThrow(
       "Invalid block path selection target",
     );
+  });
+});
+
+describe("Table-cell targets", () => {
+  test("resolves row and column coordinates to the indexed table cell path", () => {
+    const state = setup("| A | B |\n| - | - |\n| one | two |\n");
+    const two = getPath(state, "two");
+    const tablePath = resolveTablePath(state);
+    const selection = resolveSelectionTarget(
+      state.documentIndex,
+      target.tableCell(tablePath, 1, 1, "end"),
+    );
+
+    expect(selection?.focus).toEqual({
+      offset: two.text.length,
+      path: two.path,
+    });
   });
 });
 
@@ -172,6 +187,18 @@ function getListPath(state: EditorState): string {
   }
 
   return indexedList.path;
+}
+
+function resolveTablePath(state: EditorState): string {
+  const indexedTable = state.documentIndex.blocks.find(
+    (indexedBlock) => indexedBlock.block.type === "table",
+  );
+
+  if (!indexedTable) {
+    throw new Error("Expected a table block");
+  }
+
+  return indexedTable.path;
 }
 
 function createListItem(text: string) {

@@ -32,7 +32,7 @@ export type DocumentChangeFadeFrame = {
 export type TextFadeFrame = EffectFrame<"textDeleted"> & {
   contentKind: "code" | "text";
   progress: number;
-  regionPath: string;
+  path: string;
   startOffset: number;
   text: string;
 };
@@ -41,7 +41,7 @@ type TextInsertionFrame = EffectFrame<"textInserted"> & {
   contentKind: "code" | "text";
   endOffset: number;
   progress: number;
-  regionPath: string;
+  path: string;
   startOffset: number;
   text: string;
 };

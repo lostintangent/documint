@@ -86,7 +86,7 @@ function splitListItem(context: ListItemContext, offset: number): EditorStateAct
     return insertEmptyListItem(context, context.itemIndex);
   }
 
-  if (offset === context.region.text.length) {
+  if (offset === context.text.length) {
     return insertEmptyListItem(context, context.itemIndex + 1);
   }
 
@@ -111,7 +111,7 @@ function splitListItemTextAtOffset(
   context: ListItemContext,
   offset: number,
 ): EditorStateAction | null {
-  const text = context.region.text;
+  const text = context.text;
   const updatedItem = replaceListItemLeadingParagraphText(context.item, text.slice(0, offset));
 
   if (!updatedItem) {
@@ -214,7 +214,7 @@ function createSiblingListItem(item: ListItemBlock, text: string) {
 }
 
 function atStartOfEmptyItem(context: ListItemContext, offset: number) {
-  return offset === 0 && context.region.text.length === 0;
+  return offset === 0 && context.text.length === 0;
 }
 
 function isTaskItem(item: ListItemBlock) {

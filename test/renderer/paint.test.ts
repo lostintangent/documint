@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 // Integration tests for the canvas paint pipeline. Each test drives
 // `createDocumentFrame` + `paintDocumentFrame` with a recording context and asserts against
 // the resulting operation sequence — covering pass ordering, pixel
@@ -21,7 +22,7 @@ import {
   insertText,
   normalizeSelection,
   readEditorEffects,
-  resolveRegion,
+  resolveIndexedBlockContainingPath,
   setSelection,
   type EditorState,
 } from "@/editor/state";
@@ -56,21 +57,21 @@ describe("Block and chrome paint order", () => {
 | --- | --- | --- |
 | one | two | three |
 `);
-    const activeContainer = state.documentIndex.regions.find((entry) => entry.text === "Active");
-    const rightContainer = state.documentIndex.regions.find((entry) => entry.text === "Right");
+    const activeContainer = indexedTextEntries(state).find((entry) => entry.text === "Active");
+    const rightContainer = indexedTextEntries(state).find((entry) => entry.text === "Right");
 
     if (!activeContainer || !rightContainer) {
       throw new Error("Expected table header cells");
     }
 
-    state = setSelection(state, {
-      regionPath: activeContainer.path,
-      offset: 1,
-    });
+  state = setSelection(state, {
+    path: activeContainer.path,
+    offset: 1,
+  });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 480 });
-    const activeBounds = layout.regionBounds.get(activeContainer.path);
-    const rightBounds = layout.regionBounds.get(rightContainer.path);
+    const activeBounds = layout.pathBounds.get(activeContainer.path);
+    const rightBounds = layout.pathBounds.get(rightContainer.path);
 
     if (!activeBounds || !rightBounds) {
       throw new Error("Expected active table cell bounds");
@@ -119,16 +120,16 @@ describe("Block and chrome paint order", () => {
 
   test("keeps non-table active block highlights full width", () => {
     let state = setup("alpha beta gamma\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
       throw new Error("Expected paragraph container");
     }
 
-    state = setSelection(state, {
-      regionPath: container.path,
-      offset: 1,
-    });
+  state = setSelection(state, {
+    path: container.path,
+    offset: 1,
+  });
 
     const { context } = renderPaintOperations(state, { height: 180, width: 240 });
 
@@ -155,7 +156,7 @@ describe("Block and chrome paint order", () => {
 
   test("fades document-change block backgrounds in before text", () => {
     const state = setup("alpha beta\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
       throw new Error("Expected paragraph container");
@@ -166,7 +167,7 @@ describe("Block and chrome paint order", () => {
         {
           changeKey: "change-alpha",
           changeKind: "modified",
-          target: { blockPath: container.blockPath, kind: "block" },
+          target: { kind: "block", path: container.blockPath },
         },
       ],
       effects: [
@@ -175,7 +176,7 @@ describe("Block and chrome paint order", () => {
           changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { blockPath: container.blockPath, kind: "block" },
+          target: { kind: "block", path: container.blockPath },
         },
       ],
       height: 160,
@@ -210,7 +211,7 @@ describe("Block and chrome paint order", () => {
 | - | - |
 | one | two |
 `);
-    const cell = state.documentIndex.regions.find((region) => region.text === "two");
+    const cell = indexedTextEntries(state).find((path) => path.text === "two");
 
     if (!cell) {
       throw new Error("Expected table cell");
@@ -223,7 +224,7 @@ describe("Block and chrome paint order", () => {
           changeKind: "added",
           target: {
             kind: "table-cell",
-            regionPath: cell.path,
+            path: cell.path,
           },
         },
       ],
@@ -231,7 +232,7 @@ describe("Block and chrome paint order", () => {
       now: 110,
       width: 480,
     });
-    const cellBounds = layout.regionBounds.get(cell.path);
+    const cellBounds = layout.pathBounds.get(cell.path);
 
     if (!cellBounds) {
       throw new Error("Expected table cell bounds");
@@ -264,13 +265,13 @@ describe("Block and chrome paint order", () => {
 
   test("can compose custom active-block-changed effects once around a wrapped block", () => {
     let state = setup("alpha\n\nbeta beta beta beta beta beta beta beta beta\n");
-    const second = state.documentIndex.regions.find((entry) => entry.text.startsWith("beta"));
+    const second = indexedTextEntries(state).find((entry) => entry.text.startsWith("beta"));
 
     if (!second) {
-      throw new Error("Expected second paragraph region");
+      throw new Error("Expected second paragraph path");
     }
 
-    state = setSelection(state, { regionPath: second.path, offset: 0 });
+    state = setSelection(state, { path: second.path, offset: 0 });
 
     const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
     const { context } = renderPaintOperations(state, {
@@ -304,13 +305,13 @@ describe("Block and chrome paint order", () => {
 | --- | --- |
 | alpha | beta |
 `);
-    const cell = state.documentIndex.regions.find((entry) => entry.text === "beta");
+    const cell = indexedTextEntries(state).find((entry) => entry.text === "beta");
 
     if (!cell) {
-      throw new Error("Expected table cell region");
+      throw new Error("Expected table cell path");
     }
 
-    state = setSelection(state, { regionPath: cell.path, offset: 0 });
+    state = setSelection(state, { path: cell.path, offset: 0 });
 
     const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
     const { context } = renderPaintOperations(state, {
@@ -534,13 +535,13 @@ describe("Block chrome geometry", () => {
 
   test("centers active code block tint inside the code background padding", () => {
     let state = setup("```ts\nconst value = 1;\n```\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected code region");
+    if (!path) {
+      throw new Error("Expected code path");
     }
 
-    state = setSelection(state, { regionPath: region.path, offset: "const".length });
+    state = setSelection(state, { path: path.path, offset: "const".length });
 
     const { context, layout } = renderPaintOperations(state, { height: 180, width: 240 });
     const line = layout.lines.find((entry) => entry.text === "const value = 1;");
@@ -572,17 +573,17 @@ describe("Block chrome geometry", () => {
 
   test("bleeds active blockquote rules to the quote line-box top", () => {
     let state = setup("> alpha\n>\n> beta\n");
-    const activeRegion = state.documentIndex.regions.find((region) => region.text === "beta");
+    const activePath = indexedTextEntries(state).find((path) => path.text === "beta");
 
-    if (!activeRegion) {
+    if (!activePath) {
       throw new Error("Expected quoted paragraph");
     }
 
-    state = setSelection(state, { regionPath: activeRegion.path, offset: 1 });
+    state = setSelection(state, { path: activePath.path, offset: 1 });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
     const firstLine = layout.lines.find((line) => line.text === "alpha");
-    const activeLine = layout.lines.find((line) => line.regionPath === activeRegion.path);
+    const activeLine = layout.lines.find((line) => line.path === activePath.path);
 
     if (!firstLine || !activeLine) {
       throw new Error("Expected quoted lines");
@@ -610,17 +611,17 @@ describe("Block chrome geometry", () => {
 });
 
 describe("Selections, comments, and text overlays", () => {
-  test("paints selection highlights across every region the selection spans", () => {
+  test("paints selection highlights across every path the selection spans", () => {
     let state = setup("alpha\n\nbeta\n\ngamma\n");
-    const [first, second, third] = state.documentIndex.regions;
+    const [first, second, third] = indexedTextEntries(state);
 
     if (!first || !second || !third) {
-      throw new Error("Expected three paragraph regions");
+      throw new Error("Expected three paragraph paths");
     }
 
     state = setSelection(state, {
-      anchor: { regionPath: first.path, offset: 2 },
-      focus: { regionPath: third.path, offset: 3 },
+      anchor: { path: first.path, offset: 2 },
+      focus: { path: third.path, offset: 3 },
     });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
@@ -633,12 +634,12 @@ describe("Selections, comments, and text overlays", () => {
 
     expect(selectionFills.length).toBe(3);
 
-    const firstLine = layout.lines.find((line) => line.regionPath === first.path);
-    const secondLine = layout.lines.find((line) => line.regionPath === second.path);
-    const thirdLine = layout.lines.find((line) => line.regionPath === third.path);
+    const firstLine = layout.lines.find((line) => line.path === first.path);
+    const secondLine = layout.lines.find((line) => line.path === second.path);
+    const thirdLine = layout.lines.find((line) => line.path === third.path);
 
     if (!firstLine || !secondLine || !thirdLine) {
-      throw new Error("Expected one line per paragraph region");
+      throw new Error("Expected one line per paragraph path");
     }
 
     const fillForLine = (line: typeof firstLine) =>
@@ -651,10 +652,10 @@ describe("Selections, comments, and text overlays", () => {
     const lastFill = fillForLine(thirdLine);
 
     if (!firstFill || !middleFill || !lastFill) {
-      throw new Error("Expected one selection fill per spanned region");
+      throw new Error("Expected one selection fill per spanned path");
     }
 
-    // The middle region paints whole-line; both boundary regions are clipped to
+    // The middle path paints whole-line; both boundary paths are clipped to
     // the selection offsets and therefore cover a strict subset of the middle.
     expect(firstFill.x).toBeGreaterThan(middleFill.x);
     expect(lastFill.x + lastFill.width).toBeLessThan(middleFill.x + middleFill.width);
@@ -662,13 +663,13 @@ describe("Selections, comments, and text overlays", () => {
 
   test("does not paint a selection highlight when the selection is collapsed", () => {
     let state = setup("alpha\n\nbeta\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: 2 });
+    state = setSelection(state, { path: container.path, offset: 2 });
 
     const { context } = renderPaintOperations(state, { height: 180, width: 240 });
 
@@ -684,13 +685,13 @@ describe("Selections, comments, and text overlays", () => {
 
   test("paints insert highlights as a glyph overlay without splitting text runs", () => {
     let state = setup("alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -722,27 +723,27 @@ describe("Selections, comments, and text overlays", () => {
 
   test("passes a baseline-left insertion anchor and visible viewport to custom text-inserted effects", () => {
     let highlightState = setup("alpha\n");
-    const highlightContainer = highlightState.documentIndex.regions[0];
+    const highlightContainer = indexedTextEntries(highlightState)[0];
 
     if (!highlightContainer) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     highlightState = setSelection(highlightState, {
-      regionPath: highlightContainer.path,
+      path: highlightContainer.path,
       offset: highlightContainer.text.length,
     });
     highlightState = insertText(highlightState, "!") ?? highlightState;
 
     let pulseState = setup("alpha\n");
-    const pulseContainer = pulseState.documentIndex.regions[0];
+    const pulseContainer = indexedTextEntries(pulseState)[0];
 
     if (!pulseContainer) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     pulseState = setSelection(pulseState, {
-      regionPath: pulseContainer.path,
+      path: pulseContainer.path,
       offset: pulseContainer.text.length,
     });
     pulseState = insertText(pulseState, ".") ?? pulseState;
@@ -818,13 +819,13 @@ describe("Selections, comments, and text overlays", () => {
 
   test("can compose custom text-inserted effects after the default paint", () => {
     let state = setup("alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -858,15 +859,15 @@ describe("Selections, comments, and text overlays", () => {
     expect(customStrokeIndex).toBeGreaterThan(highlightOverlayIndex);
   });
 
-  test("runs custom source-region text-inserted effects without default insert highlight", () => {
+  test("runs custom source-path text-inserted effects without default insert highlight", () => {
     let state = setup("```ts\nconst value = 1;\n```\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected code region");
+      throw new Error("Expected code path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = insertText(state, "!") ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
@@ -903,13 +904,13 @@ describe("Selections, comments, and text overlays", () => {
 
   test("uses custom text-deleted effects in place of the default fade", () => {
     let state = setup("alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
@@ -930,15 +931,15 @@ describe("Selections, comments, and text overlays", () => {
     expect(findFillTextOperation(context.operations, "a")).toBeNull();
   });
 
-  test("passes code content kind to custom source-region text-deleted effects", () => {
+  test("passes code content kind to custom source-path text-deleted effects", () => {
     let state = setup("```ts\nconst value = 1;\n```\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected code region");
+      throw new Error("Expected code path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
@@ -961,13 +962,13 @@ describe("Selections, comments, and text overlays", () => {
 
   test("supports explicit replace composition for custom effects", () => {
     let state = setup("alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = deleteBackward(state) ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -1003,10 +1004,10 @@ describe("Selections, comments, and text overlays", () => {
 
   test("paints text color decorations as a glyph overlay without splitting text runs", () => {
     const state = setup("alpha beta\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     const { context } = renderPaintOperations(state, {
@@ -1059,10 +1060,10 @@ describe("Selections, comments, and text overlays", () => {
 | --- | --- |
 | Cell target | Other |
 `);
-    const container = state.documentIndex.regions.find((region) => region.text === "Cell target");
+    const container = indexedTextEntries(state).find((path) => path.text === "Cell target");
 
     if (!container) {
-      throw new Error("Expected table cell region");
+      throw new Error("Expected table cell path");
     }
 
     const { context } = renderPaintOperations(state, {
@@ -1096,15 +1097,15 @@ describe("Selections, comments, and text overlays", () => {
 
   test("paints decoration background colors behind text", () => {
     let state = setup("alpha TODO\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     state = setSelection(state, {
-      anchor: { regionPath: container.path, offset: 6 },
-      focus: { regionPath: container.path, offset: 10 },
+      anchor: { path: container.path, offset: 6 },
+      focus: { path: container.path, offset: 10 },
     });
 
     const { context, layout } = renderPaintOperations(state, {
@@ -1163,10 +1164,10 @@ describe("Selections, comments, and text overlays", () => {
 
   test("pulses animated decoration backgrounds with paint-time alpha", () => {
     const state = setup("alpha sparkle\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     const textDecorations = new Map([
@@ -1280,10 +1281,10 @@ describe("Selections, comments, and text overlays", () => {
 
   test("pulses presence-active comment highlights with ambient time", () => {
     const state = setup("alpha comment\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected paragraph region");
+    if (!path) {
+      throw new Error("Expected paragraph path");
     }
 
     const { context } = renderPaintOperations(state, {
@@ -1292,7 +1293,7 @@ describe("Selections, comments, and text overlays", () => {
       commentRanges: [
         {
           endOffset: 13,
-          regionPath: region.path,
+          path: path.path,
           resolution: { match: null, repair: null, status: "stale" },
           resolved: false,
           startOffset: 6,
@@ -1315,10 +1316,10 @@ describe("Selections, comments, and text overlays", () => {
 
   test("falls back to the leaf accent when presence has no color", () => {
     const state = setup("alpha comment\n");
-    const region = state.documentIndex.regions[0];
+    const path = indexedTextEntries(state)[0];
 
-    if (!region) {
-      throw new Error("Expected paragraph region");
+    if (!path) {
+      throw new Error("Expected paragraph path");
     }
 
     const { context } = renderPaintOperations(state, {
@@ -1326,7 +1327,7 @@ describe("Selections, comments, and text overlays", () => {
       commentRanges: [
         {
           endOffset: 13,
-          regionPath: region.path,
+          path: path.path,
           resolution: { match: null, repair: null, status: "stale" },
           resolved: false,
           startOffset: 6,
@@ -1411,10 +1412,10 @@ describe("Text glyph geometry", () => {
 
   test("keeps inline code and decoration background heights visually aligned", () => {
     const state = setup("alpha `TODO` beta\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     const { context } = renderPaintOperations(state, {
@@ -1612,13 +1613,13 @@ describe("List marker painting", () => {
 
   test("can compose custom list-item-inserted effects before the default marker paint", () => {
     let state = setup("- alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected list item region");
+      throw new Error("Expected list item path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = insertLineBreak(state) ?? state;
 
     const receivedMarkers: string[] = [];
@@ -1659,13 +1660,13 @@ describe("List marker painting", () => {
 
   test("passes task markers to custom list-item-inserted effects", () => {
     let state = setup("- [ ] alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected task list item region");
+      throw new Error("Expected task list item path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = insertLineBreak(state) ?? state;
 
     const receivedMarkers: string[] = [];
@@ -1685,13 +1686,13 @@ describe("List marker painting", () => {
 
   test("isolates canvas state between composed custom and default effects", () => {
     let state = setup("- alpha\n");
-    const container = state.documentIndex.regions[0];
+    const container = indexedTextEntries(state)[0];
 
     if (!container) {
-      throw new Error("Expected list item region");
+      throw new Error("Expected list item path");
     }
 
-    state = setSelection(state, { regionPath: container.path, offset: container.text.length });
+    state = setSelection(state, { path: container.path, offset: container.text.length });
     state = insertLineBreak(state) ?? state;
 
     const { context } = renderPaintOperations(state, {
@@ -1765,8 +1766,8 @@ function renderPaintOperations(
 
   const frame = createDocumentFrame(state, layoutState, {
     activeBlockPath:
-      resolveRegion(state.documentIndex, state.selection.focus.regionPath)?.blockPath ?? null,
-    activeRegionPath: state.selection.focus.regionPath,
+      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ?? null,
+    activePath: state.selection.focus.path,
     activeThreadIndex: null,
     ambientTime: options.ambientTime,
     customEffects: options.customEffects,

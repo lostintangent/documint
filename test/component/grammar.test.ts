@@ -32,12 +32,12 @@ describe("normalizeLanguage", () => {
 describe("resolveCodeDecorationRanges", () => {
   const grammars = compileBuiltins();
 
-  test("tokenizes a JavaScript block at its source-region path", () => {
+  test("tokenizes a JavaScript block at its block path", () => {
     const block = createCodeBlock({ language: "js", source: "const x = 1" });
 
     expect(resolveCodeDecorationRanges(block, 0, grammars)).toEqual([
-      { color: "keyword", endOffset: 5, path: "root.0.source", startOffset: 0 },
-      { color: "number", endOffset: 11, path: "root.0.source", startOffset: 10 },
+      { color: "keyword", endOffset: 5, path: "root.0", startOffset: 0 },
+      { color: "number", endOffset: 11, path: "root.0", startOffset: 10 },
     ]);
   });
 
@@ -45,9 +45,9 @@ describe("resolveCodeDecorationRanges", () => {
     const block = createCodeBlock({ language: "typescript", source: "type A = B" });
 
     expect(resolveCodeDecorationRanges(block, 0, grammars)).toEqual([
-      { color: "keyword", endOffset: 4, path: "root.0.source", startOffset: 0 },
-      { color: "type", endOffset: 6, path: "root.0.source", startOffset: 5 },
-      { color: "type", endOffset: 10, path: "root.0.source", startOffset: 9 },
+      { color: "keyword", endOffset: 4, path: "root.0", startOffset: 0 },
+      { color: "type", endOffset: 6, path: "root.0", startOffset: 5 },
+      { color: "type", endOffset: 10, path: "root.0", startOffset: 9 },
     ]);
   });
 
@@ -55,8 +55,8 @@ describe("resolveCodeDecorationRanges", () => {
     const block = createCodeBlock({ language: "js", source: "const x = null" });
 
     expect(resolveCodeDecorationRanges(block, 0, grammars)).toEqual([
-      { color: "keyword", endOffset: 5, path: "root.0.source", startOffset: 0 },
-      { color: "atom", endOffset: 14, path: "root.0.source", startOffset: 10 },
+      { color: "keyword", endOffset: 5, path: "root.0", startOffset: 0 },
+      { color: "atom", endOffset: 14, path: "root.0", startOffset: 10 },
     ]);
   });
 
@@ -67,10 +67,10 @@ describe("resolveCodeDecorationRanges", () => {
     });
 
     expect(resolveCodeDecorationRanges(block, 0, grammars)).toEqual([
-      { color: "heading", endOffset: 7, path: "root.0.source", startOffset: 0 },
-      { color: "punctuation", endOffset: 12, path: "root.0.source", startOffset: 9 },
-      { color: "punctuation", endOffset: 16, path: "root.0.source", startOffset: 14 },
-      { color: "string", endOffset: 24, path: "root.0.source", startOffset: 21 },
+      { color: "heading", endOffset: 7, path: "root.0", startOffset: 0 },
+      { color: "punctuation", endOffset: 12, path: "root.0", startOffset: 9 },
+      { color: "punctuation", endOffset: 16, path: "root.0", startOffset: 14 },
+      { color: "string", endOffset: 24, path: "root.0", startOffset: 21 },
     ]);
   });
 
@@ -78,16 +78,16 @@ describe("resolveCodeDecorationRanges", () => {
     const block = createCodeBlock({ language: "js", source: "// const" });
 
     expect(resolveCodeDecorationRanges(block, 0, grammars)).toEqual([
-      { color: "comment", endOffset: 8, path: "root.0.source", startOffset: 0 },
+      { color: "comment", endOffset: 8, path: "root.0", startOffset: 0 },
     ]);
   });
 
-  test("addresses code nested in a container by its real source path", () => {
+  test("addresses code nested in a container by its real block path", () => {
     const block = createBlockquoteBlock([createCodeBlock({ language: "js", source: "return 1" })]);
 
     expect(resolveCodeDecorationRanges(block, 0, grammars)).toEqual([
-      { color: "keyword", endOffset: 6, path: "root.0.children.0.source", startOffset: 0 },
-      { color: "number", endOffset: 8, path: "root.0.children.0.source", startOffset: 7 },
+      { color: "keyword", endOffset: 6, path: "root.0.children.0", startOffset: 0 },
+      { color: "number", endOffset: 8, path: "root.0.children.0", startOffset: 7 },
     ]);
   });
 

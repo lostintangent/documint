@@ -21,11 +21,12 @@ export function resolveSelectionTextReplacement(
 }
 
 export function resolveTextRangeReplacement(
+  documentIndex: DocumentIndex,
   context: TextRangeContext,
   text: string,
 ): EditorStateAction {
   return {
-    effect: effect.textInsertedAtRegion(context.region, context.startOffset, text),
+    effect: effect.textInsertedAtPath(documentIndex, context.path, context.startOffset, text),
     kind: "splice-text",
     range: context.selection,
     text,

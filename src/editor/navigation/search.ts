@@ -7,11 +7,11 @@
 // the same neighborhood as line/page/document movement, just keyed on a query
 // string instead of a direction.
 //
-import type { DocumentIndex } from "../state";
+import { forEachEditorPathWithText, type DocumentIndex } from "../state";
 
 export type EditorSearchMatch = {
   endOffset: number;
-  regionPath: string;
+  path: string;
   startOffset: number;
 };
 
@@ -38,12 +38,10 @@ export function resolveEditorSearchMatches(
 
   const matches: EditorSearchMatch[] = [];
 
-  // Regions are document-ordered in the index, so iterating them directly
-  // yields matches in document order without a separate sort step.
-  for (const region of documentIndex.regions) {
+  forEachEditorPathWithText(documentIndex, (path, text) => {
     const searchText = options.caseSensitive
-      ? mapTextWithIdentityOffsets(region.text)
-      : foldTextWithOffsets(region.text);
+      ? mapTextWithIdentityOffsets(text)
+      : foldTextWithOffsets(text);
     let matchOffset = searchText.text.indexOf(normalizedQuery);
 
     while (matchOffset !== -1) {
@@ -51,12 +49,12 @@ export function resolveEditorSearchMatches(
 
       matches.push({
         endOffset,
-        regionPath: region.path,
+        path,
         startOffset: searchText.startOffsetAt(matchOffset),
       });
       matchOffset = searchText.text.indexOf(normalizedQuery, matchOffset + normalizedQuery.length);
     }
-  }
+  });
 
   return matches;
 }

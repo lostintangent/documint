@@ -5,7 +5,7 @@ import type { BandedGeometryFrame } from "../banded-geometry";
 const tableCellMinimumPaintWidth = 80;
 const activeTableCellBandVerticalBleed = 2;
 
-type RegionBounds = { bottom: number; left: number; right: number; top: number };
+type PathBounds = { bottom: number; left: number; right: number; top: number };
 
 export type TableCellChromeFrame = {
   isHeaderRow: boolean;
@@ -19,7 +19,7 @@ export type ActiveTableCellGeometryFrame = TableCellGeometryFrame & {
 };
 
 export function resolveTableCellChromeFrame(
-  containerBounds: RegionBounds,
+  containerBounds: PathBounds,
   {
     isHeaderRow,
     lineHeight,
@@ -36,24 +36,24 @@ export function resolveTableCellChromeFrame(
 
 export function resolveActiveTableCellGeometryFrame({
   activeFlash,
-  activeRegionPath,
+  activePath,
   endLineIndex,
   layout,
-  regionBounds,
+  pathBounds,
   startLineIndex,
 }: {
   activeFlash: BlockFlashFrame | null;
-  activeRegionPath: string;
+  activePath: string;
   endLineIndex: number;
   layout: DocumentLayout;
-  regionBounds: Map<string, RegionBounds>;
+  pathBounds: Map<string, PathBounds>;
   startLineIndex: number;
 }): ActiveTableCellGeometryFrame | null {
   const geometry = resolveTableCellGeometryFrame({
     endLineIndex,
     layout,
-    regionBounds,
-    regionPath: activeRegionPath,
+    pathBounds,
+    path: activePath,
     startLineIndex,
   });
 
@@ -63,18 +63,18 @@ export function resolveActiveTableCellGeometryFrame({
 export function resolveTableCellGeometryFrame({
   endLineIndex,
   layout,
-  regionBounds,
-  regionPath,
+  pathBounds,
+  path,
   startLineIndex,
 }: {
   endLineIndex: number;
   layout: DocumentLayout;
-  regionBounds: Map<string, RegionBounds>;
-  regionPath: string;
+  pathBounds: Map<string, PathBounds>;
+  path: string;
   startLineIndex: number;
 }): TableCellGeometryFrame | null {
-  const cellBounds = regionBounds.get(regionPath) ?? null;
-  const cellLineIndices = layout.regionLineIndices.get(regionPath) ?? null;
+  const cellBounds = pathBounds.get(path) ?? null;
+  const cellLineIndices = layout.pathLineIndices.get(path) ?? null;
 
   if (!cellBounds || !cellLineIndices || cellLineIndices.length === 0) {
     return null;
@@ -116,7 +116,7 @@ export function resolveTableCellGeometryFrame({
 }
 
 export function resolveTableCellPaintRect(
-  containerBounds: RegionBounds,
+  containerBounds: PathBounds,
   lineHeight: number,
 ): LayoutRect {
   return {

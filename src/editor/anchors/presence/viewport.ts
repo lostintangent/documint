@@ -109,11 +109,14 @@ function resolveCursorPosition(
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ): { bottom: number; top: number } | null {
-  const exactCaret = measureCaretTarget(viewport.layout, documentIndex, point);
+  const exactCaret = measureCaretTarget(viewport.layout, documentIndex, {
+    path: point.path,
+    offset: point.offset,
+  });
   if (exactCaret) {
     return { bottom: exactCaret.top + exactCaret.height, top: exactCaret.top };
   }
-  return viewport.estimateRegionBounds(point.regionPath);
+  return viewport.estimatePathBounds(point.path);
 }
 
 function resolvePresenceTargetScrollTop(

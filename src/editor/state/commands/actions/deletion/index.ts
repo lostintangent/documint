@@ -6,11 +6,14 @@ import {
   type DeletionContext,
   type RootTextBlockContext,
 } from "../../context";
-import { previousRegionInFlow, resolveSiblingRootBlock } from "../../../index/query";
+import {
+  resolveAdjacentEditorPathWithTextInFlow,
+  resolveSiblingRootBlock,
+} from "../../../index/query";
 import { normalizeSelection, target } from "../../../selection";
 import { resolveSelectionTextReplacement } from "../insertion/replace";
 import { areCompatibleLists } from "../shared";
-import { shiftedRegionBlockTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
+import { shiftedBlockPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
 import { resolveCharacterDelete } from "./character";
 
@@ -24,10 +27,10 @@ type AdjacentLists = {
 // Deletion has three behaviors, each in its own file:
 //
 //   - character delete (`character.ts`) — single-grapheme delete inside
-//     a region. The hot path for typing-style deletion.
+//     a text path. The hot path for typing-style deletion.
 //   - boundary collapse (`boundary-collapse.ts`) — the universal rule
 //     for caret-driven delete at a block boundary: fold the current
-//     region into its in-flow neighbor, deleting the smaller side and
+//     path into its in-flow neighbor, deleting the smaller side and
 //     merging text where appropriate.
 //   - block demote (`block-demote.ts`) — the override for backspace at
 //     the first-in-flow position of a root wrapper: heading →
@@ -69,14 +72,14 @@ export function resolveStructuralDelete(
     }
   }
 
-  return resolveInFlowBoundaryDelete(documentIndex, ctx.region, ctx.empty, ctx.direction);
+  return resolveInFlowBoundaryDelete(documentIndex, ctx.path, ctx.empty, ctx.direction);
 }
 
 function resolveExpandedSelectionDelete(state: EditorState): EditorStateAction | null {
   const normalized = normalizeSelection(state.documentIndex, state.selection);
 
   if (
-    normalized.start.regionPath === normalized.end.regionPath &&
+    normalized.start.path === normalized.end.path &&
     normalized.start.offset === normalized.end.offset
   ) {
     return null;
@@ -89,7 +92,7 @@ function resolveBackwardOverride(
   ctx: DeletionContext,
   documentIndex: DocumentIndex,
 ): EditorStateAction | null {
-  const demoted = resolveBlockDemotion(documentIndex, ctx.region);
+  const demoted = resolveBlockDemotion(documentIndex, ctx.path, ctx.rootIndex);
   if (demoted) return demoted;
 
   if (ctx.kind === "rootTextBlock") {
@@ -102,7 +105,7 @@ function resolveBackwardOverride(
 
 // Backspace on an empty paragraph sandwiched between two compatible
 // lists merges them into a single list, with the cursor landing at
-// the deepest-last region of the now-leading items — wherever the
+// the deepest-last path of the now-leading items — wherever the
 // universal in-flow rule would have left the caret, the override
 // matches. Structurally beyond what the in-flow rule produces (it
 // would just delete the paragraph and leave the two lists side-by-
@@ -148,16 +151,16 @@ function mergeAdjacentLists(
   lists: AdjacentLists,
 ): EditorStateAction {
   // Land the caret where the universal in-flow rule would: at the end
-  // of the previous-in-flow region (the deepest-last leaf of the
+  // of the previous in-flow path (the deepest-last leaf of the
   // previous list, which may be inside a nested item rather than at
   // the top-level item's leading paragraph). The path is stable
   // through this splice — the previous list's items get prepended
   // unchanged into the merged list, and the next list's items get
   // appended after, so nothing shifts indices in the previous list's
   // subtree.
-  const previousInFlow = previousRegionInFlow(documentIndex, ctx.region.path);
+  const previousInFlow = resolveAdjacentEditorPathWithTextInFlow(documentIndex, ctx.path, -1);
   const cursorTarget = previousInFlow
-    ? shiftedRegionBlockTarget(previousInFlow, ctx.rootIndex - 1, "end")
+    ? shiftedBlockPathTarget(previousInFlow, ctx.rootIndex - 1, "end")
     : target.root(ctx.rootIndex - 1, "end");
 
   return {

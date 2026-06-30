@@ -5,7 +5,7 @@ import {
   resolveDocumentCompletionContext,
 } from "@/component/completions/document-completions";
 import type { CompletionSource } from "@/component/completions/completions";
-import { getRegion, placeAt, selectIn, setup } from "@test/editor/helpers";
+import { getPath, placeAt, selectIn, setup } from "@test/editor/helpers";
 
 const mentionSource: CompletionSource = {
   trigger: "@",
@@ -23,11 +23,11 @@ const emojiSource: CompletionSource = {
 describe("resolveDocumentCompletionContext", () => {
   test("detects a completion context at the collapsed document caret", () => {
     const state = setup("Hello @Ja\n");
-    const region = getRegion(state, "Hello @Ja");
-    const active = resolveDocumentCompletionContext(placeAt(state, region, "end"), [mentionSource]);
+    const path = getPath(state, "Hello @Ja");
+    const active = resolveDocumentCompletionContext(placeAt(state, path, "end"), [mentionSource]);
 
     expect(active).toEqual({
-      regionPath: region.path,
+      path: path.path,
       trigger: "@",
       query: "Ja",
       triggerStart: 6,
@@ -38,23 +38,23 @@ describe("resolveDocumentCompletionContext", () => {
 
   test("returns null for expanded selections", () => {
     const state = setup("Hello @Ja\n");
-    const region = getRegion(state, "Hello @Ja");
+    const path = getPath(state, "Hello @Ja");
 
     expect(
-      resolveDocumentCompletionContext(selectIn(state, region, 6, 9), [mentionSource]),
+      resolveDocumentCompletionContext(selectIn(state, path, 6, 9), [mentionSource]),
     ).toBeNull();
   });
 
-  test("uses the focused region text rather than document-global offsets", () => {
+  test("uses the focused path text rather than document-global offsets", () => {
     const state = setup("Before @No\n\nSecond :sp\n");
-    const region = getRegion(state, "Second :sp");
-    const active = resolveDocumentCompletionContext(placeAt(state, region, "end"), [
+    const path = getPath(state, "Second :sp");
+    const active = resolveDocumentCompletionContext(placeAt(state, path, "end"), [
       mentionSource,
       emojiSource,
     ]);
 
     expect(active).toEqual({
-      regionPath: region.path,
+      path: path.path,
       trigger: ":",
       query: "sp",
       triggerStart: 7,
@@ -63,12 +63,12 @@ describe("resolveDocumentCompletionContext", () => {
     });
   });
 
-  test("returns null when no source matches the region-local trigger", () => {
+  test("returns null when no source matches the path-local trigger", () => {
     const state = setup("Hello :sp\n");
-    const region = getRegion(state, "Hello :sp");
+    const path = getPath(state, "Hello :sp");
 
     expect(
-      resolveDocumentCompletionContext(placeAt(state, region, "end"), [mentionSource]),
+      resolveDocumentCompletionContext(placeAt(state, path, "end"), [mentionSource]),
     ).toBeNull();
   });
 });
@@ -76,7 +76,7 @@ describe("resolveDocumentCompletionContext", () => {
 describe("equalDocumentCompletions", () => {
   test("compares completion item insertion metadata", () => {
     const base = {
-      regionPath: "region",
+      path: "path",
       trigger: ":",
       query: "sm",
       triggerStart: 0,
@@ -99,7 +99,7 @@ describe("resolveDocumentCompletionApplication", () => {
       resolveDocumentCompletionApplication(
         { kind: "mention", label: "Jane", id: "u-jane" },
         {
-          regionPath: "region",
+          path: "path",
           trigger: "@",
           query: "Ja",
           triggerStart: 6,
@@ -112,7 +112,7 @@ describe("resolveDocumentCompletionApplication", () => {
       name: "Jane",
       target: {
         endOffset: 9,
-        regionPath: "region",
+        path: "path",
         startOffset: 6,
       },
       trailingText: " ",
@@ -125,7 +125,7 @@ describe("resolveDocumentCompletionApplication", () => {
       resolveDocumentCompletionApplication(
         { label: "Jane", id: "u-jane" },
         {
-          regionPath: "region",
+          path: "path",
           trigger: "@",
           query: "Ja",
           triggerStart: 6,
@@ -141,7 +141,7 @@ describe("resolveDocumentCompletionApplication", () => {
       resolveDocumentCompletionApplication(
         { label: "fire", icon: "🔥", insertText: "🔥" },
         {
-          regionPath: "region",
+          path: "path",
           trigger: ":",
           query: "fi",
           triggerStart: 6,

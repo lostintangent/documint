@@ -1,3 +1,4 @@
+import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   dedent,
@@ -8,7 +9,7 @@ import {
   insertLineBreak,
   insertText,
 } from "@/editor/state";
-import { getRegion, getRegionByType, placeAt, selectIn, setup, toMarkdown } from "../../helpers";
+import { getPath, getPathByType, placeAt, selectIn, setup, toMarkdown } from "../../helpers";
 
 describe("Block commands", () => {
   test("demotes headings and unwraps single-line blockquotes on backspace at start", () => {
@@ -17,7 +18,7 @@ describe("Block commands", () => {
     // favor of the underlying content. Both run before the universal
     // in-flow rule so they preempt any text-merge into the previous root.
     let headingState = setup("# Heading\n");
-    const heading = getRegion(headingState, "Heading");
+    const heading = getPath(headingState, "Heading");
 
     headingState = placeAt(headingState, heading, 0);
     headingState = deleteBackward(headingState) ?? headingState;
@@ -25,7 +26,7 @@ describe("Block commands", () => {
     expect(toMarkdown(headingState)).toBe("Heading\n");
 
     let quoteState = setup("> quoted line\n");
-    const quoted = getRegion(quoteState, "quoted line");
+    const quoted = getPath(quoteState, "quoted line");
 
     quoteState = placeAt(quoteState, quoted, 0);
     quoteState = deleteBackward(quoteState) ?? quoteState;
@@ -38,7 +39,7 @@ describe("Block commands", () => {
     // Every item in the list becomes a root paragraph in document order,
     // matching the block-demotion semantics used by headings and quotes.
     let state = setup("- alpha\n  - nested\n- bravo\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
     state = deleteBackward(state) ?? state;
@@ -49,7 +50,7 @@ describe("Block commands", () => {
 
   test("backspace at start of a top-level list still demotes it when a previous root exists", () => {
     let state = setup("Lead\n\n- alpha\n- bravo\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
     state = deleteBackward(state) ?? state;
@@ -65,7 +66,7 @@ describe("Block commands", () => {
     // jump the cursor up — a different gesture than what users get from
     // the heading/blockquote/list demote family.
     let state = setup("Lead\n\n-\n- alpha\n");
-    const empty = state.documentIndex.regions.find(
+    const empty = indexedTextEntries(state).find(
       (c) => c.block.type === "paragraph" && c.text === "",
     );
 
@@ -82,15 +83,15 @@ describe("Block commands", () => {
 
   test("backspace at start of a single-item top-level list demotes it to a paragraph instead of merging upward", () => {
     let state = setup("Lead\n\n- alpha\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
     state = deleteBackward(state) ?? state;
 
-    const paragraph = state.documentIndex.regions.find((c) => c.text === "alpha");
+    const paragraph = indexedTextEntries(state).find((c) => c.text === "alpha");
 
     expect(toMarkdown(state)).toBe("Lead\n\nalpha\n");
-    expect(state.selection.focus.regionPath).toBe(paragraph!.path);
+    expect(state.selection.focus.path).toBe(paragraph!.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
@@ -100,7 +101,7 @@ describe("Block commands", () => {
     // part of the leading paragraph's plain text, so the resulting
     // paragraph contains only the item's content.
     let state = setup("- [ ] alpha\n");
-    const alpha = getRegion(state, "alpha");
+    const alpha = getPath(state, "alpha");
 
     state = placeAt(state, alpha, 0);
     state = deleteBackward(state) ?? state;
@@ -110,7 +111,7 @@ describe("Block commands", () => {
 
   test("merges or removes blocks when backspacing at the start", () => {
     let paragraphState = setup("First\n\nSecond\n");
-    const second = getRegion(paragraphState, "Second");
+    const second = getPath(paragraphState, "Second");
 
     paragraphState = placeAt(paragraphState, second, 0);
     paragraphState = deleteBackward(paragraphState) ?? paragraphState;
@@ -118,12 +119,12 @@ describe("Block commands", () => {
     expect(toMarkdown(paragraphState)).toBe("FirstSecond\n");
 
     let blankParagraphState = setup("First\n");
-    const first = getRegion(blankParagraphState, "First");
+    const first = getPath(blankParagraphState, "First");
 
     blankParagraphState = placeAt(blankParagraphState, first, first.text.length);
     blankParagraphState = insertLineBreak(blankParagraphState) ?? blankParagraphState;
 
-    const blankParagraph = getRegion(blankParagraphState, "");
+    const blankParagraph = getPath(blankParagraphState, "");
 
     blankParagraphState = placeAt(blankParagraphState, blankParagraph, 0);
     blankParagraphState = deleteBackward(blankParagraphState) ?? blankParagraphState;
@@ -133,7 +134,7 @@ describe("Block commands", () => {
 
   test("splits paragraphs and extends headings through enter", () => {
     let paragraphState = setup("Paragraph body.\n");
-    const paragraph = paragraphState.documentIndex.regions[0];
+    const paragraph = indexedTextEntries(paragraphState)[0];
 
     if (!paragraph) {
       throw new Error("Expected paragraph container");
@@ -145,7 +146,7 @@ describe("Block commands", () => {
     expect(toMarkdown(paragraphState)).toBe("Paragraph\n\n&#x20;body.\n");
 
     let headingState = setup("# Heading\n");
-    const heading = headingState.documentIndex.regions[0];
+    const heading = indexedTextEntries(headingState)[0];
 
     if (!heading) {
       throw new Error("Expected heading container");
@@ -170,10 +171,10 @@ describe("Block commands", () => {
     ["numeric space entity", "&#x20;alpha\n", " alpha"],
   ])("inserts a selected empty paragraph at paragraph end after %s", (_label, source, text) => {
     let state = setup(source);
-    const paragraph = state.documentIndex.regions[0];
+    const paragraph = indexedTextEntries(state)[0];
 
     if (!paragraph) {
-      throw new Error("Expected paragraph region");
+      throw new Error("Expected paragraph path");
     }
 
     expect(paragraph.text).toBe(text);
@@ -181,18 +182,18 @@ describe("Block commands", () => {
     state = placeAt(state, paragraph, "end");
     state = insertLineBreak(state) ?? state;
 
-    const selected = state.documentIndex.regions.find(
-      (region) => region.path === state.selection.focus.regionPath,
+    const selected = indexedTextEntries(state).find(
+      (path) => path.path === state.selection.focus.path,
     );
 
-    expect(state.documentIndex.regions.map((region) => region.text)).toEqual([text, ""]);
+    expect(indexedTextEntries(state).map((path) => path.text)).toEqual([text, ""]);
     expect(selected?.text).toBe("");
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("reopens a paragraph split before leading whitespace without exposing the space entity", () => {
     let state = setup("Paragraph body.\n");
-    const paragraph = getRegion(state, "Paragraph body.");
+    const paragraph = getPath(state, "Paragraph body.");
 
     state = placeAt(state, paragraph, "Paragraph".length);
     state = insertLineBreak(state) ?? state;
@@ -201,59 +202,59 @@ describe("Block commands", () => {
     const reopened = setup(markdown);
 
     expect(markdown).toBe("Paragraph\n\n&#x20;body.\n");
-    expect(reopened.documentIndex.regions.map((region) => region.text)).toEqual([
+    expect(indexedTextEntries(reopened).map((path) => path.text)).toEqual([
       "Paragraph",
       " body.",
     ]);
-    expect(reopened.documentIndex.regions.some((region) => region.text.includes("&#x20;"))).toBe(
+    expect(indexedTextEntries(reopened).some((path) => path.text.includes("&#x20;"))).toBe(
       false,
     );
   });
 
   test("forward delete at end of a non-empty paragraph merges the next paragraph into it", () => {
     // Symmetric to backspace at the start of a non-empty block: the
-    // universal in-flow rule folds the next region into the current
-    // one. Cursor stays at the original end of the current region —
+    // universal in-flow rule folds the next path into the current
+    // one. Cursor stays at the original end of the current path —
     // the merge point.
     let state = setup("First\n\nSecond\n");
-    const first = getRegion(state, "First");
+    const first = getPath(state, "First");
 
     state = placeAt(state, first, first.text.length);
     state = deleteForward(state) ?? state;
 
-    const merged = getRegion(state, "FirstSecond");
+    const merged = getPath(state, "FirstSecond");
 
     expect(toMarkdown(state)).toBe("FirstSecond\n");
-    expect(state.selection.focus.regionPath).toBe(merged.path);
+    expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("First".length);
   });
 
   test("forward delete at end of a paragraph followed by a list absorbs the first list item into the paragraph", () => {
     // Cross-root forward merge: the universal rule keeps the current
-    // region as the absorber and removes the neighbor's containing
+    // path as the absorber and removes the neighbor's containing
     // block. So `Lead` survives as a root paragraph (now carrying the
     // first item's text) and the list loses its first item — symmetric
     // with the paragraph + paragraph forward merge.
     let state = setup("Lead\n\n- alpha\n- bravo\n");
-    const lead = getRegion(state, "Lead");
+    const lead = getPath(state, "Lead");
 
     state = placeAt(state, lead, lead.text.length);
     state = deleteForward(state) ?? state;
 
     expect(toMarkdown(state)).toBe("Leadalpha\n\n- bravo\n");
-    const merged = state.documentIndex.regions.find((c) => c.text === "Leadalpha");
-    expect(state.selection.focus.regionPath).toBe(merged!.path);
+    const merged = indexedTextEntries(state).find((c) => c.text === "Leadalpha");
+    expect(state.selection.focus.path).toBe(merged!.path);
     expect(state.selection.focus.offset).toBe("Lead".length);
   });
 
   test("forward delete removes an empty paragraph and moves the caret to the next block", () => {
     let state = setup("First\n\nSecond\n");
-    const second = getRegion(state, "Second");
+    const second = getPath(state, "Second");
 
     state = placeAt(state, second, 0);
     state = insertLineBreak(state) ?? state;
 
-    const emptyParagraph = state.documentIndex.regions.find(
+    const emptyParagraph = indexedTextEntries(state).find(
       (container) => container.block.type === "paragraph" && container.text === "",
     );
 
@@ -264,24 +265,24 @@ describe("Block commands", () => {
     state = placeAt(state, emptyParagraph, 0);
     state = deleteForward(state) ?? state;
 
-    const nextParagraph = getRegion(state, "Second");
+    const nextParagraph = getPath(state, "Second");
 
     expect(toMarkdown(state)).toBe("First\n\nSecond\n");
-    expect(state.documentIndex.regions.filter((container) => container.text === "")).toHaveLength(
+    expect(indexedTextEntries(state).filter((container) => container.text === "")).toHaveLength(
       0,
     );
-    expect(state.selection.focus.regionPath).toBe(nextParagraph.path);
+    expect(state.selection.focus.path).toBe(nextParagraph.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("forward delete removes an empty heading and moves the caret to the next block", () => {
     let state = setup("# Heading\n\nAfter\n");
-    const heading = getRegion(state, "Heading");
+    const heading = getPath(state, "Heading");
 
     state = selectIn(state, heading, 0, heading.text.length);
     state = deleteSelection(state);
 
-    const emptyHeading = state.documentIndex.regions.find(
+    const emptyHeading = indexedTextEntries(state).find(
       (container) => container.block.type === "heading" && container.text === "",
     );
 
@@ -292,21 +293,21 @@ describe("Block commands", () => {
     state = placeAt(state, emptyHeading, 0);
     state = deleteForward(state) ?? state;
 
-    const after = getRegion(state, "After");
+    const after = getPath(state, "After");
 
     expect(toMarkdown(state)).toBe("After\n");
-    expect(state.selection.focus.regionPath).toBe(after.path);
+    expect(state.selection.focus.path).toBe(after.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("forward delete is a no-op on the last empty paragraph in the document", () => {
     let state = setup("First\n");
-    const first = getRegion(state, "First");
+    const first = getPath(state, "First");
 
     state = placeAt(state, first, first.text.length);
     state = insertLineBreak(state) ?? state;
 
-    const emptyParagraph = state.documentIndex.regions.find(
+    const emptyParagraph = indexedTextEntries(state).find(
       (container) => container.block.type === "paragraph" && container.text === "",
     );
 
@@ -319,9 +320,9 @@ describe("Block commands", () => {
     expect(deleteForward(placed)).toBeNull();
   });
 
-  test("backspacing an empty paragraph after a list lands in the deepest-last region of the list", () => {
+  test("backspacing an empty paragraph after a list lands in the deepest-last path of the list", () => {
     let state = setup("- top\n  - nested\n\nstub\n");
-    const stub = getRegion(state, "stub");
+    const stub = getPath(state, "stub");
 
     // Insert an empty paragraph above "stub" so the document becomes:
     //   - top
@@ -331,7 +332,7 @@ describe("Block commands", () => {
     state = placeAt(state, stub, 0);
     state = insertLineBreak(state) ?? state;
 
-    const emptyParagraph = state.documentIndex.regions.find(
+    const emptyParagraph = indexedTextEntries(state).find(
       (container) => container.block.type === "paragraph" && container.text === "",
     );
 
@@ -342,18 +343,18 @@ describe("Block commands", () => {
     state = placeAt(state, emptyParagraph, 0);
     state = deleteBackward(state) ?? state;
 
-    const nested = getRegion(state, "nested");
+    const nested = getPath(state, "nested");
 
     expect(toMarkdown(state)).toBe("- top\n  - nested\n\nstub\n");
     // The caret should land where the left arrow would take us — at the end
     // of the nested item, not the end of the top-level item.
-    expect(state.selection.focus.regionPath).toBe(nested.path);
+    expect(state.selection.focus.path).toBe(nested.path);
     expect(state.selection.focus.offset).toBe(nested.text.length);
   });
 
   test("forward-deleting an empty paragraph above a list lands at the start of the first item", () => {
     let state = setup("stub\n\n- top\n  - nested\n");
-    const stub = getRegion(state, "stub");
+    const stub = getPath(state, "stub");
 
     // Replace "stub" with an empty paragraph, leaving:
     //   <empty paragraph>
@@ -362,7 +363,7 @@ describe("Block commands", () => {
     state = selectIn(state, stub, 0, stub.text.length);
     state = deleteSelection(state);
 
-    const emptyParagraph = state.documentIndex.regions.find(
+    const emptyParagraph = indexedTextEntries(state).find(
       (container) => container.block.type === "paragraph" && container.text === "",
     );
 
@@ -373,16 +374,16 @@ describe("Block commands", () => {
     state = placeAt(state, emptyParagraph, 0);
     state = deleteForward(state) ?? state;
 
-    const top = getRegion(state, "top");
+    const top = getPath(state, "top");
 
     expect(toMarkdown(state)).toBe("- top\n  - nested\n");
-    expect(state.selection.focus.regionPath).toBe(top.path);
+    expect(state.selection.focus.path).toBe(top.path);
     expect(state.selection.focus.offset).toBe(0);
   });
 
   test("moves the caret into the newly inserted empty paragraph when pressing enter on an empty paragraph", () => {
     let paragraphState = setup("alpha\n");
-    const paragraph = paragraphState.documentIndex.regions[0];
+    const paragraph = indexedTextEntries(paragraphState)[0];
 
     if (!paragraph) {
       throw new Error("Expected paragraph container");
@@ -391,7 +392,7 @@ describe("Block commands", () => {
     paragraphState = placeAt(paragraphState, paragraph, paragraph.text.length);
     paragraphState = insertLineBreak(paragraphState) ?? paragraphState;
 
-    const emptyParagraph = paragraphState.documentIndex.regions.find(
+    const emptyParagraph = indexedTextEntries(paragraphState).find(
       (container) => container.block.type === "paragraph" && container.text === "",
     );
 
@@ -404,7 +405,7 @@ describe("Block commands", () => {
 
     expect(toMarkdown(paragraphState)).toBe("alpha\n\n\n\n");
 
-    const nextParagraphs = paragraphState.documentIndex.regions.filter(
+    const nextParagraphs = indexedTextEntries(paragraphState).filter(
       (container) => container.block.type === "paragraph",
     );
     const insertedParagraph = nextParagraphs[2];
@@ -413,13 +414,13 @@ describe("Block commands", () => {
       throw new Error("Expected inserted empty paragraph");
     }
 
-    expect(paragraphState.selection.focus.regionPath).toBe(insertedParagraph.path);
+    expect(paragraphState.selection.focus.path).toBe(insertedParagraph.path);
     expect(paragraphState.selection.focus.offset).toBe(0);
   });
 
   test("preserves blockquote and code-fence context on enter", () => {
     let quoteState = setup("> quoted text\n");
-    const quoted = getRegion(quoteState, "quoted text");
+    const quoted = getPath(quoteState, "quoted text");
 
     quoteState = placeAt(quoteState, quoted, "quoted".length);
     quoteState = insertLineBreak(quoteState) ?? quoteState;
@@ -427,7 +428,7 @@ describe("Block commands", () => {
     expect(toMarkdown(quoteState)).toBe("> quoted\n>\n> &#x20;text\n");
 
     let codeState = setup("```ts\nconst x = 1;\n```\n");
-    const code = getRegionByType(codeState, "code");
+    const code = getPathByType(codeState, "code");
 
     codeState = placeAt(codeState, code, code.text.length);
     codeState = insertLineBreak(codeState) ?? codeState;
@@ -437,12 +438,12 @@ describe("Block commands", () => {
 
   test("pressing enter on an empty blockquote line exits to a paragraph", () => {
     let quoteState = setup("> alpha\n");
-    const alpha = getRegion(quoteState, "alpha");
+    const alpha = getPath(quoteState, "alpha");
 
     quoteState = placeAt(quoteState, alpha, alpha.text.length);
     quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-    const empty = quoteState.documentIndex.regions.find((container) => container.text === "");
+    const empty = indexedTextEntries(quoteState).find((container) => container.text === "");
 
     if (!empty) {
       throw new Error("Expected empty quoted container");
@@ -456,13 +457,13 @@ describe("Block commands", () => {
 
   test("re-enters the preceding blockquote when backspacing from the empty paragraph after exit", () => {
     let quoteState = setup("> alpha\n");
-    const alpha = getRegion(quoteState, "alpha");
+    const alpha = getPath(quoteState, "alpha");
 
     quoteState = placeAt(quoteState, alpha, alpha.text.length);
     quoteState = insertLineBreak(quoteState) ?? quoteState;
     quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-    const emptyParagraph = quoteState.documentIndex.regions.find(
+    const emptyParagraph = indexedTextEntries(quoteState).find(
       (container) => container.block.type === "paragraph" && container.text === "",
     );
 
@@ -474,18 +475,18 @@ describe("Block commands", () => {
     quoteState = deleteBackward(quoteState) ?? quoteState;
 
     expect(toMarkdown(quoteState)).toBe("> alpha\n");
-    expect(quoteState.selection.focus.regionPath).toBe(alpha.path);
+    expect(quoteState.selection.focus.path).toBe(alpha.path);
     expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
   });
 
   test("backspacing on an empty quoted line removes it without unwrapping the blockquote", () => {
     let quoteState = setup("> alpha\n");
-    const alpha = getRegion(quoteState, "alpha");
+    const alpha = getPath(quoteState, "alpha");
 
     quoteState = placeAt(quoteState, alpha, alpha.text.length);
     quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-    const empty = quoteState.documentIndex.regions.find((container) => container.text === "");
+    const empty = indexedTextEntries(quoteState).find((container) => container.text === "");
 
     if (!empty) {
       throw new Error("Expected empty quoted container");
@@ -495,7 +496,7 @@ describe("Block commands", () => {
     quoteState = deleteBackward(quoteState) ?? quoteState;
 
     expect(toMarkdown(quoteState)).toBe("> alpha\n");
-    expect(quoteState.selection.focus.regionPath).toBe(alpha.path);
+    expect(quoteState.selection.focus.path).toBe(alpha.path);
     expect(quoteState.selection.focus.offset).toBe(alpha.text.length);
   });
 
@@ -505,12 +506,12 @@ describe("Block commands", () => {
     // last empty paragraph at the document boundary. Backward delete
     // (covered by the test above) is what removes it.
     let quoteState = setup("> alpha\n");
-    const alpha = getRegion(quoteState, "alpha");
+    const alpha = getPath(quoteState, "alpha");
 
     quoteState = placeAt(quoteState, alpha, alpha.text.length);
     quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-    const empty = quoteState.documentIndex.regions.find((container) => container.text === "");
+    const empty = indexedTextEntries(quoteState).find((container) => container.text === "");
 
     if (!empty) {
       throw new Error("Expected empty quoted container");
@@ -523,7 +524,7 @@ describe("Block commands", () => {
 
   test("changes heading depth with tab and shift-tab", () => {
     let headingState = setup("## Heading\n");
-    const heading = headingState.documentIndex.regions.find(
+    const heading = indexedTextEntries(headingState).find(
       (container) => container.block.type === "heading",
     );
 
@@ -543,7 +544,7 @@ describe("Block commands", () => {
     expect(headingState.selection.focus.offset).toBe(3);
 
     let h1State = setup("# Heading\n");
-    const h1 = getRegionByType(h1State, "heading");
+    const h1 = getPathByType(h1State, "heading");
 
     h1State = placeAt(h1State, h1, 2);
     h1State = dedent(h1State) ?? h1State;
@@ -551,7 +552,7 @@ describe("Block commands", () => {
     expect(toMarkdown(h1State)).toBe("# Heading\n");
 
     let h6State = setup("###### Heading\n");
-    const h6 = getRegionByType(h6State, "heading");
+    const h6 = getPathByType(h6State, "heading");
 
     h6State = placeAt(h6State, h6, 2);
     h6State = indent(h6State) ?? h6State;
@@ -561,7 +562,7 @@ describe("Block commands", () => {
 
   test("indents a paragraph into a blockquote", () => {
     let state = setup("Alpha\n");
-    const alpha = getRegion(state, "Alpha");
+    const alpha = getPath(state, "Alpha");
 
     state = placeAt(state, alpha, 2);
     state = indent(state) ?? state;
@@ -572,7 +573,7 @@ describe("Block commands", () => {
 
   test("indents only the active paragraph into a blockquote", () => {
     let state = setup("Alpha\n\nBravo\n\nCharlie\n");
-    const bravo = getRegion(state, "Bravo");
+    const bravo = getPath(state, "Bravo");
 
     state = placeAt(state, bravo, "Bravo".length);
     state = indent(state) ?? state;
@@ -583,12 +584,12 @@ describe("Block commands", () => {
 
   test("merges a non-empty quoted line with the previous line when backspacing at its start", () => {
     let quoteState = setup("> alpha\n");
-    const alpha = getRegion(quoteState, "alpha");
+    const alpha = getPath(quoteState, "alpha");
 
     quoteState = placeAt(quoteState, alpha, alpha.text.length);
     quoteState = insertLineBreak(quoteState) ?? quoteState;
 
-    const empty = quoteState.documentIndex.regions.find((container) => container.text === "");
+    const empty = indexedTextEntries(quoteState).find((container) => container.text === "");
 
     if (!empty) {
       throw new Error("Expected empty quoted container");
@@ -597,16 +598,16 @@ describe("Block commands", () => {
     quoteState = placeAt(quoteState, empty, 0);
     quoteState = insertText(quoteState, "beta") ?? quoteState;
 
-    const beta = getRegion(quoteState, "beta");
+    const beta = getPath(quoteState, "beta");
 
     quoteState = placeAt(quoteState, beta, 0);
     quoteState = deleteBackward(quoteState) ?? quoteState;
 
     expect(toMarkdown(quoteState)).toBe("> alphabeta\n");
 
-    const merged = getRegion(quoteState, "alphabeta");
+    const merged = getPath(quoteState, "alphabeta");
 
-    expect(quoteState.selection.focus.regionPath).toBe(merged.path);
+    expect(quoteState.selection.focus.path).toBe(merged.path);
     expect(quoteState.selection.focus.offset).toBe("alpha".length);
   });
 
@@ -614,76 +615,76 @@ describe("Block commands", () => {
     // Same regression as the multi-item-list case in
     // commands/list/structure.test.ts — the merge-cursor target used to
     // walk the rebuilt tree by id and short-circuit on the outer
-    // container, which cascaded primary-region resolution to the first
+    // container, which cascaded primary-path resolution to the first
     // leaf (the wrong line). Now path-based targeting lands the cursor
     // at the seam in the actual merged child, regardless of how many
     // siblings precede it.
     let state = setup("> alpha\n>\n> bravo\n>\n> charlie\n");
-    const charlie = getRegion(state, "charlie");
+    const charlie = getPath(state, "charlie");
 
     state = placeAt(state, charlie, 0);
     state = deleteBackward(state) ?? state;
 
-    const merged = getRegion(state, "bravocharlie");
+    const merged = getPath(state, "bravocharlie");
 
     expect(toMarkdown(state)).toBe("> alpha\n>\n> bravocharlie\n");
-    expect(state.selection.focus.regionPath).toBe(merged.path);
+    expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("bravo".length);
   });
 
   test("places cursor at the merge junction when backspacing at the start of a block", () => {
     let state = setup("First\n\nSecond\n");
-    const second = getRegion(state, "Second");
+    const second = getPath(state, "Second");
 
     state = placeAt(state, second, 0);
     state = deleteBackward(state) ?? state;
 
     expect(toMarkdown(state)).toBe("FirstSecond\n");
 
-    const merged = getRegion(state, "FirstSecond");
+    const merged = getPath(state, "FirstSecond");
 
-    expect(state.selection.focus.regionPath).toBe(merged.path);
+    expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("First".length);
   });
 
   // Inert leaf blocks (divider today; image-as-block / embed /
-  // display-math in the future) contribute no region. The universal
+  // display-math in the future) contribute no path. The universal
   // merge-collapse rule has nothing to merge into for these — the
   // dedicated inert-neighbor branch removes them as a unit and leaves
   // the caret where it was. Without this branch, backspace at the
-  // boundary of a region next to an inert block would either no-op
-  // (the pre-refactor empty-region world) or silently merge through the
-  // inert block (the post-refactor world, since inert isn't a region).
+  // boundary of a path next to an inert block would either no-op
+  // (the pre-refactor empty-path world) or silently merge through the
+  // inert block (the post-refactor world, since inert isn't a path).
   describe("Dividers", () => {
     test("backspace at start of paragraph after a divider removes the divider, caret stays put", () => {
       let state = setup("alpha\n\n---\n\nbeta\n");
-      const beta = getRegion(state, "beta");
+      const beta = getPath(state, "beta");
 
       state = placeAt(state, beta, 0);
       state = deleteBackward(state) ?? state;
 
       expect(toMarkdown(state)).toBe("alpha\n\nbeta\n");
-      const survivor = getRegion(state, "beta");
-      expect(state.selection.focus.regionPath).toBe(survivor.path);
+      const survivor = getPath(state, "beta");
+      expect(state.selection.focus.path).toBe(survivor.path);
       expect(state.selection.focus.offset).toBe(0);
     });
 
     test("forward delete at end of paragraph before a divider removes the divider, caret stays put", () => {
       let state = setup("alpha\n\n---\n\nbeta\n");
-      const alpha = getRegion(state, "alpha");
+      const alpha = getPath(state, "alpha");
 
       state = placeAt(state, alpha, "end");
       state = deleteForward(state) ?? state;
 
       expect(toMarkdown(state)).toBe("alpha\n\nbeta\n");
-      const survivor = getRegion(state, "alpha");
-      expect(state.selection.focus.regionPath).toBe(survivor.path);
+      const survivor = getPath(state, "alpha");
+      expect(state.selection.focus.path).toBe(survivor.path);
       expect(state.selection.focus.offset).toBe("alpha".length);
     });
 
     test("backspace through consecutive dividers removes one at a time", () => {
       let state = setup("alpha\n\n---\n\n---\n\nbeta\n");
-      const beta = getRegion(state, "beta");
+      const beta = getPath(state, "beta");
 
       state = placeAt(state, beta, 0);
       state = deleteBackward(state) ?? state;
