@@ -199,6 +199,13 @@ export function Playground() {
         <h1 className="m-0 text-3xl font-bold">Documint Playground</h1>
 
         <div className="relative flex flex-wrap items-center justify-end gap-3 max-sm:portrait:w-full max-sm:portrait:justify-start">
+          <a
+            className="font-controls rounded-xl border border-border/15 bg-background/90 px-3 py-2 font-semibold text-accent"
+            href="./keybindings.html"
+          >
+            Keybindings
+          </a>
+
           <label className="font-controls grid gap-1.5">
             <select
               aria-label="Select markdown fixture"

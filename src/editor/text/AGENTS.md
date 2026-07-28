@@ -15,7 +15,7 @@ Render caches and pixel placement stay in canvas or layout. Text measurement pri
 ## Subsystem Map
 
 - `graphemes.ts` owns user-visible character boundaries.
-- `words.ts` owns word-boundary expansion after hit testing resolves a text offset.
+- `words.ts` owns locale-aware word ranges and directional movement boundaries in UTF-16 editor offsets.
 - `ranges.ts` owns shared overlap, containment, and clipping helpers.
 - `fonts.ts` owns font-string resolution from marks, inline code, and text policy.
 - `inline-offsets.ts` owns editor runtime inline text, inline lengths, and inline ranges in editor selection-offset space.

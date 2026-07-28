@@ -11,6 +11,7 @@ import {
   createEditorState,
   deleteBackward,
   deleteForward,
+  deleteRange,
   deleteSelection,
   insertText,
   readEditorEffects,
@@ -80,6 +81,21 @@ describe("Text commands", () => {
       path: nextState.selection.focus.path,
       offset: "Hello @Jane ".length,
     });
+  });
+
+  test("deletes an explicit range without replacing the current selection", () => {
+    const state = setup("alpha beta");
+    const path = getPath(state, "alpha beta");
+    const placed = placeAt(state, path, "end");
+    const nextState = deleteRange(placed, {
+      anchor: { path: path.path, offset: 0 },
+      focus: { path: path.path, offset: "alpha".length },
+    });
+
+    expect(nextState).not.toBeNull();
+    expect(resolveEditorTextAtPath(nextState!.documentIndex, nextState!.selection.focus.path)).toBe(
+      " beta",
+    );
   });
 
   test("replacing an explicit text range emits a text inserted effect", () => {
@@ -215,9 +231,7 @@ describe("Text commands", () => {
     const nextState = deleteBackward(state);
 
     if (!nextState) {
-      throw new Error(
-        "Expected deleteBackward to produce a new state for a cross-path selection",
-      );
+      throw new Error("Expected deleteBackward to produce a new state for a cross-path selection");
     }
 
     expect(toMarkdown(nextState)).toBe("alpha delta\n");
@@ -308,9 +322,7 @@ describe("Text commands", () => {
 
   test("drops tables entirely when a cross-path selection enters or exits them", () => {
     let state = setup("alpha\n\n| A | B |\n| --- | --- |\n| one | two |\n\nbeta\n");
-    const paragraphs = indexedTextEntries(state).filter(
-      (path) => path.block.type === "paragraph",
-    );
+    const paragraphs = indexedTextEntries(state).filter((path) => path.block.type === "paragraph");
     const [first, second] = paragraphs;
 
     if (!first || !second) {
@@ -527,7 +539,7 @@ describe("Text commands", () => {
 
     if (!path) throw new Error("Expected paragraph path");
 
-    const imageRun = ((path).inlines ?? []).find((run) => run.node.type === "image");
+    const imageRun = (path.inlines ?? []).find((run) => run.node.type === "image");
 
     if (!imageRun) throw new Error("Expected image run");
 

@@ -35,6 +35,7 @@ import {
   type TextRangeContext,
   type TextRangeTarget,
 } from "./context";
+import type { EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
 import { createCommentThreadForSelection, getCommentState } from "../../anchors";
 import {
@@ -75,10 +76,7 @@ import {
   resolveListItemIndent,
   resolveListItemMove,
 } from "./actions/blocks/list";
-import {
-  resolveHeadingDepthShift,
-  resolveParagraphBlockquoteIndent,
-} from "./actions/blocks";
+import { resolveHeadingDepthShift, resolveParagraphBlockquoteIndent } from "./actions/blocks";
 import { resolveCodeBlockInsertion } from "./actions/blocks/code";
 import { resolveDeletion } from "./actions/deletion";
 import {
@@ -127,15 +125,18 @@ export const replaceTextRange = makeCommand(
     _startOffset: number,
     _endOffset: number,
     text: string,
-  ): EditorStateAction =>
-    resolveTextRangeReplacement(context.documentIndex, context.range, text),
+  ): EditorStateAction => resolveTextRangeReplacement(context.documentIndex, context.range, text),
   (state, startOffset: number, endOffset: number): TextRangeCommandContext | null => {
     const range = resolveTextRangeContext(state, startOffset, endOffset);
     return range ? { documentIndex: state.documentIndex, range } : null;
   },
 );
 
-export const deleteSelection = (state: EditorState) => replaceSelection(state, "");
+export const deleteRange = makeCommand((state, range: EditorSelection) =>
+  resolveSelectionTextReplacement(state.documentIndex, range, ""),
+);
+
+export const deleteSelection = (state: EditorState) => deleteRange(state, state.selection);
 
 export const deleteBackward = makeCommand((state) => resolveDeletion(state, "backward"));
 

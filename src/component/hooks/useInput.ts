@@ -13,6 +13,8 @@ import {
 import {
   deleteBackward,
   deleteForward,
+  deleteWordBackward,
+  deleteWordForward,
   deleteSelection,
   insertLineBreak,
   insertSoftLineBreak,
@@ -20,6 +22,7 @@ import {
   insertText,
   measureVisualCaretTarget,
   moveCaretByViewport,
+  moveCaretByWord,
   moveCaretHorizontally,
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
@@ -132,6 +135,9 @@ type KeyboardCommandHandler = (input: KeyboardCommandHandlerInput) => EditorStat
 const keyboardCommandHandlers = {
   dedent: ({ state }) => dedent(state),
   deleteBackward: ({ state }) => deleteBackward(state),
+  deleteForward: ({ state }) => deleteForward(state),
+  deleteWordBackward: ({ state }) => deleteWordBackward(state),
+  deleteWordForward: ({ state }) => deleteWordForward(state),
   indent: ({ state }) => indent(state),
   insertLineBreak: ({ state }) => insertLineBreak(state),
   insertSoftLineBreak: ({ state }) => insertSoftLineBreak(state),
@@ -151,6 +157,16 @@ const keyboardCommandHandlers = {
       extendSelection: event.shiftKey,
       mode: navigationMode,
     }),
+  moveWordBackward: ({ event, navigationMode, state }) =>
+    moveCaretByWord(state, -1, {
+      extendSelection: event.shiftKey,
+      mode: navigationMode,
+    }),
+  moveWordForward: ({ event, navigationMode, state }) =>
+    moveCaretByWord(state, 1, {
+      extendSelection: event.shiftKey,
+      mode: navigationMode,
+    }),
   redo: ({ state }) => redo(state),
   selectAll: ({ state }) => selectAll(state),
   toggleBold: ({ state }) => toggleMark(state, "bold"),
@@ -167,6 +183,8 @@ const readOnlyInputCommands = new Set<EditorInputCommand>([
   "moveToDocumentStart",
   "moveToLineEnd",
   "moveToLineStart",
+  "moveWordBackward",
+  "moveWordForward",
   "selectAll",
 ]);
 
@@ -226,6 +244,8 @@ export function useInput({
   const insertLineBreakCommand = useEditorCommand(insertLineBreak);
   const deleteBackwardCommand = useEditorCommand(deleteBackward);
   const deleteForwardCommand = useEditorCommand(deleteForward);
+  const deleteWordBackwardCommand = useEditorCommand(deleteWordBackward);
+  const deleteWordForwardCommand = useEditorCommand(deleteWordForward);
   const undoCommand = useEditorCommand(undo);
   const redoCommand = useEditorCommand(redo);
   const applyKeyboardInput = useEditorCommand(applyKeyboardInputCommand);
@@ -390,8 +410,8 @@ export function useInput({
    *   - `insertLineBreak` / `insertParagraph` → `insertLineBreak`
    *     (structural Enter; iOS conflates the two so we can't split them
    *     here — see `isLineBreakInputType`).
-   *   - `delete*` → `deleteBackward` / `deleteForward` (see
-   *     `resolveDeleteDirection`).
+   *   - `delete*` → character or word deletion according to the native
+   *     input type (see `resolveDeleteInputCommand`).
    *   - `historyUndo` / `historyRedo` → editor undo stack, plus iOS
    *     UIUndoManager re-priming so the gesture keeps offering "Undo".
    *
@@ -430,7 +450,7 @@ export function useInput({
     }
 
     const state = readCurrentState();
-    const deleteDirection = resolveDeleteDirection(event.inputType);
+    const deleteCommand = resolveDeleteInputCommand(event.inputType);
 
     if (event.inputType === "insertText") {
       if (!event.data) return;
@@ -486,15 +506,22 @@ export function useInput({
       return;
     }
 
-    if (deleteDirection === "backward") {
+    if (deleteCommand) {
       event.preventDefault();
-      runInputCommand(deleteBackwardCommand);
-      return;
-    }
-
-    if (deleteDirection === "forward") {
-      event.preventDefault();
-      runInputCommand(deleteForwardCommand);
+      switch (deleteCommand) {
+        case "deleteBackward":
+          runInputCommand(deleteBackwardCommand);
+          break;
+        case "deleteForward":
+          runInputCommand(deleteForwardCommand);
+          break;
+        case "deleteWordBackward":
+          runInputCommand(deleteWordBackwardCommand);
+          break;
+        case "deleteWordForward":
+          runInputCommand(deleteWordForwardCommand);
+          break;
+      }
       return;
     }
 
@@ -862,19 +889,21 @@ function detectDictationFlushOverlap(state: EditorState, data: string) {
   return 0;
 }
 
-export function resolveDeleteDirection(inputType: string) {
+export function resolveDeleteInputCommand(inputType: string) {
   switch (inputType) {
     case "deleteContentBackward":
     case "deleteComposedCharacterBackward":
     case "deleteSoftLineBackward":
     case "deleteHardLineBackward":
-    case "deleteWordBackward":
-      return "backward";
+      return "deleteBackward";
     case "deleteContentForward":
     case "deleteSoftLineForward":
     case "deleteHardLineForward":
+      return "deleteForward";
+    case "deleteWordBackward":
+      return "deleteWordBackward";
     case "deleteWordForward":
-      return "forward";
+      return "deleteWordForward";
     default:
       return null;
   }
@@ -992,11 +1021,6 @@ function applyKeyboardInputCommand(
   readOnly = false,
 ): EditorState | null {
   const navigationMode: EditorNavigationMode = readOnly ? "block" : "text";
-
-  if (event.key === "Delete") {
-    if (readOnly) return null;
-    return deleteForward(state);
-  }
 
   const command = resolveEditorInputCommand(event, keybindings);
 

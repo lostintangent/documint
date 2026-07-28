@@ -2,6 +2,7 @@ import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
 import {
   extendSelectionToPoint,
+  moveCaretByWord,
   moveCaretHorizontally,
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
@@ -84,7 +85,7 @@ test("moves horizontally across images as atomic inline objects", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const imageRun = ((container).inlines ?? []).find((run) => run.node.type === "image");
+  const imageRun = (container.inlines ?? []).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");
@@ -122,6 +123,57 @@ test("extends horizontal selections by grapheme clusters", () => {
   expect(next.selection.focus.offset).toBe(emojiStart);
 });
 
+test("moves and extends the caret by word", () => {
+  const state = setup("alpha, beta gamma");
+  const path = getPath(state, "alpha, beta gamma");
+  const placed = placeAt(state, path, "start");
+  const moved = moveCaretByWord(placed, 1);
+  const extended = moveCaretByWord(moved, 1, { extendSelection: true });
+
+  expect(moved.selection.focus.offset).toBe("alpha".length);
+  expect(extended.selection.anchor).toEqual(moved.selection.focus);
+  expect(extended.selection.focus.offset).toBe("alpha, beta".length);
+  expect(extended.documentIndex).toBe(state.documentIndex);
+});
+
+test("collapses existing word selections toward the movement direction", () => {
+  const state = setup("alpha beta gamma");
+  const path = getPath(state, "alpha beta gamma");
+  const selected = setSelection(state, {
+    anchor: { path: path.path, offset: "alpha beta".length },
+    focus: { path: path.path, offset: "alpha".length },
+  });
+
+  expect(moveCaretByWord(selected, -1).selection.focus.offset).toBe("alpha".length);
+  expect(moveCaretByWord(selected, 1).selection.focus.offset).toBe("alpha beta".length);
+});
+
+test("moves by word across paths while skipping empty paths", () => {
+  const state = setup("alpha\n\n\n\nbeta");
+  const entries = indexedTextEntries(state);
+  const alpha = entries.find((entry) => entry.text === "alpha");
+  const beta = entries.find((entry) => entry.text === "beta");
+
+  if (!alpha || !beta) {
+    throw new Error("Expected text paths around empty paragraphs");
+  }
+
+  const forward = moveCaretByWord(placeAt(state, alpha, "end"), 1);
+  const backward = moveCaretByWord(placeAt(state, beta, "start"), -1);
+
+  expect(forward.selection.focus).toEqual({ path: beta.path, offset: beta.text.length });
+  expect(backward.selection.focus).toEqual({ path: alpha.path, offset: 0 });
+});
+
+test("uses path navigation for word gestures in block mode", () => {
+  const state = setup("alpha beta\n\ngamma delta");
+  const first = getPath(state, "alpha beta");
+  const second = getPath(state, "gamma delta");
+  const moved = moveCaretByWord(placeAt(state, first, 2), 1, { mode: "block" });
+
+  expect(moved.selection.focus).toEqual({ path: second.path, offset: 0 });
+});
+
 test("extends the selection to the start of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getPath(state, "alpha beta gamma");
@@ -141,12 +193,9 @@ test("extends the selection to the end of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getPath(state, "alpha beta gamma");
   const layout = layoutAt(state, 90);
-  const nextState = moveCaretToLineBoundary(
-    placeAt(state, container, "start"),
-    layout,
-    "End",
-    { extendSelection: true },
-  );
+  const nextState = moveCaretToLineBoundary(placeAt(state, container, "start"), layout, "End", {
+    extendSelection: true,
+  });
 
   expect(nextState.selection.anchor.path).toBe(container.path);
   expect(nextState.selection.anchor.offset).toBe(0);
@@ -179,7 +228,10 @@ test("moves horizontally across table cells and out of the table", () => {
   const after = requirePathByText(state.documentIndex, "after");
 
   const toPrevious = moveCaretHorizontally(setSelection(state, { offset: 0, path: firstCell }), -1);
-  const toSecondCell = moveCaretHorizontally(setSelection(state, { offset: 1, path: firstCell }), 1);
+  const toSecondCell = moveCaretHorizontally(
+    setSelection(state, { offset: 1, path: firstCell }),
+    1,
+  );
   const outOfTable = moveCaretHorizontally(setSelection(state, { offset: 1, path: lastCell }), 1);
 
   expect(toPrevious.selection.focus).toEqual({ offset: "before".length, path: before });

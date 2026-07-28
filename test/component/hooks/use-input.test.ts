@@ -3,7 +3,7 @@ import {
   INPUT_SEED,
   isReadOnlySafeInputCommand,
   isLineBreakInputType,
-  resolveDeleteDirection,
+  resolveDeleteInputCommand,
   stripInputSeed,
 } from "@/component/hooks/useInput";
 import type { EditorInputCommand } from "@/types";
@@ -20,22 +20,22 @@ test("treats both paragraph and line-break input types as structural Enter", () 
 });
 
 test("normalizes iOS-style backward delete input types", () => {
-  expect(resolveDeleteDirection("deleteContentBackward")).toBe("backward");
-  expect(resolveDeleteDirection("deleteComposedCharacterBackward")).toBe("backward");
-  expect(resolveDeleteDirection("deleteSoftLineBackward")).toBe("backward");
-  expect(resolveDeleteDirection("deleteHardLineBackward")).toBe("backward");
-  expect(resolveDeleteDirection("deleteWordBackward")).toBe("backward");
+  expect(resolveDeleteInputCommand("deleteContentBackward")).toBe("deleteBackward");
+  expect(resolveDeleteInputCommand("deleteComposedCharacterBackward")).toBe("deleteBackward");
+  expect(resolveDeleteInputCommand("deleteSoftLineBackward")).toBe("deleteBackward");
+  expect(resolveDeleteInputCommand("deleteHardLineBackward")).toBe("deleteBackward");
+  expect(resolveDeleteInputCommand("deleteWordBackward")).toBe("deleteWordBackward");
 });
 
 test("normalizes forward delete input types", () => {
-  expect(resolveDeleteDirection("deleteContentForward")).toBe("forward");
-  expect(resolveDeleteDirection("deleteSoftLineForward")).toBe("forward");
-  expect(resolveDeleteDirection("deleteHardLineForward")).toBe("forward");
-  expect(resolveDeleteDirection("deleteWordForward")).toBe("forward");
+  expect(resolveDeleteInputCommand("deleteContentForward")).toBe("deleteForward");
+  expect(resolveDeleteInputCommand("deleteSoftLineForward")).toBe("deleteForward");
+  expect(resolveDeleteInputCommand("deleteHardLineForward")).toBe("deleteForward");
+  expect(resolveDeleteInputCommand("deleteWordForward")).toBe("deleteWordForward");
 });
 
 test("ignores unrelated input types", () => {
-  expect(resolveDeleteDirection("insertText")).toBeNull();
+  expect(resolveDeleteInputCommand("insertText")).toBeNull();
 });
 
 test("strips the hidden input seed from native text", () => {
@@ -49,12 +49,17 @@ test("classifies read-only-safe input commands declaratively", () => {
     "moveToDocumentStart",
     "moveToLineEnd",
     "moveToLineStart",
+    "moveWordBackward",
+    "moveWordForward",
     "selectAll",
   ] satisfies EditorInputCommand[];
 
   const mutatingCommands = [
     "dedent",
     "deleteBackward",
+    "deleteForward",
+    "deleteWordBackward",
+    "deleteWordForward",
     "indent",
     "insertLineBreak",
     "insertSoftLineBreak",

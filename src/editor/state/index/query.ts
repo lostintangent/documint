@@ -39,10 +39,7 @@ export function resolveBlockByPath(documentIndex: DocumentIndex, blockPath: stri
 
 // Resolves the editor-coordinate text exposed by a block or table-cell path.
 // Structural and inert block paths return null.
-export function resolveIndexedText(
-  documentIndex: DocumentIndex,
-  path: string,
-): IndexedText | null {
+export function resolveIndexedText(documentIndex: DocumentIndex, path: string): IndexedText | null {
   const indexedBlock = resolveIndexedBlock(documentIndex, path);
 
   if (indexedBlock) {
@@ -52,11 +49,18 @@ export function resolveIndexedText(
   return resolveIndexedTableCell(documentIndex, path);
 }
 
-export function resolveEditorTextAtPath(
-  documentIndex: DocumentIndex,
-  path: string,
-): string | null {
+export function resolveEditorTextAtPath(documentIndex: DocumentIndex, path: string): string | null {
   return resolveIndexedText(documentIndex, path)?.text ?? null;
+}
+
+export function isEditorTextPathMergeable(documentIndex: DocumentIndex, path: string) {
+  if (resolveIndexedTableCell(documentIndex, path)) {
+    return false;
+  }
+
+  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
+
+  return indexedBlock?.block.type === "paragraph" || indexedBlock?.block.type === "heading";
 }
 
 export function resolveIndexedTextInlines(
@@ -128,8 +132,7 @@ export function resolveCommentThreadIndicesForPath(
 
 export function blockContainsBlock(parent: IndexedBlock, child: IndexedBlock) {
   return (
-    parent.blockArrayIndex <= child.blockArrayIndex &&
-    child.blockRangeEnd <= parent.blockRangeEnd
+    parent.blockArrayIndex <= child.blockArrayIndex && child.blockRangeEnd <= parent.blockRangeEnd
   );
 }
 
@@ -431,8 +434,7 @@ export function hasSameEditorTextPathShape(
   }
 
   return (
-    previousCell.rowIndex === nextCell.rowIndex &&
-    previousCell.cellIndex === nextCell.cellIndex
+    previousCell.rowIndex === nextCell.rowIndex && previousCell.cellIndex === nextCell.cellIndex
   );
 }
 
@@ -448,9 +450,7 @@ export function resolveActiveBlockKey(
     return null;
   }
 
-  return focusedBlock.block.type === "table"
-    ? `cell:${point.path}`
-    : `block:${focusedBlock.path}`;
+  return focusedBlock.block.type === "table" ? `cell:${point.path}` : `block:${focusedBlock.path}`;
 }
 
 function resolvePositionOrder(

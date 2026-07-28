@@ -19,5 +19,6 @@ Navigation sits above state selection primitives and below browser interaction h
 - `index.ts` owns the public navigation API.
 - `hit.ts` owns point-to-selection and point-to-target resolution over prepared layout.
 - `line.ts` owns line-based horizontal, vertical, page, and Home/End movement.
+- `word.ts` owns path-aware word targets built from shared text boundaries and document flow.
 - `table.ts` owns table-specific vertical movement and exit fallback.
 - `search.ts` owns plain-text substring search over the document index.

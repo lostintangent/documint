@@ -64,13 +64,11 @@ export {
   // Shape and classification
   hasSameEditorTextPathShape,
   isContainerBlock,
+  isEditorTextPathMergeable,
   isInertBlock,
   isRootIndexedBlock,
-
 } from "./index/query";
-export type {
-  ResolvedEditorPosition,
-} from "./index/query";
+export type { ResolvedEditorPosition } from "./index/query";
 
 // Selection
 export {

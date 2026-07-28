@@ -1,5 +1,6 @@
 // Shared word-boundary helpers for editor text selection. Offsets are UTF-16
 // string offsets in editor path text.
+import { INLINE_OBJECT_REPLACEMENT_TEXT } from "./inline-offsets";
 
 export type TextRange = {
   end: number;
@@ -59,6 +60,31 @@ export function resolveWordRangeAtOffset(text: string, offset: number): TextRang
   return previousWord && offset === previousWord.end ? previousWord : null;
 }
 
+export function resolveWordBoundaryOffset(text: string, offset: number, direction: -1 | 1) {
+  offset = Math.max(0, Math.min(offset, text.length));
+  const units = resolveWordMovementUnits(text);
+
+  if (direction < 0) {
+    for (let index = units.length - 1; index >= 0; index--) {
+      const unit = units[index]!;
+
+      if (unit.start < offset) {
+        return unit.start;
+      }
+    }
+
+    return 0;
+  }
+
+  for (const unit of units) {
+    if (unit.end > offset) {
+      return unit.end;
+    }
+  }
+
+  return text.length;
+}
+
 function getWordSegmenter(): WordSegmenter {
   if (wordSegmenter !== undefined) {
     return wordSegmenter;
@@ -72,4 +98,19 @@ function getWordSegmenter(): WordSegmenter {
   wordSegmenter = new Segmenter(undefined, { granularity: "word" });
 
   return wordSegmenter;
+}
+
+function resolveWordMovementUnits(text: string): TextRange[] {
+  const units: TextRange[] = [];
+
+  for (const segment of getWordSegmenter().segment(text)) {
+    if (segment.isWordLike || segment.segment === INLINE_OBJECT_REPLACEMENT_TEXT) {
+      units.push({
+        start: segment.index,
+        end: segment.index + segment.segment.length,
+      });
+    }
+  }
+
+  return units;
 }

@@ -4,6 +4,9 @@ import type { LayoutRect } from "@/editor/layout";
 export type EditorInputCommand =
   | "dedent"
   | "deleteBackward"
+  | "deleteForward"
+  | "deleteWordBackward"
+  | "deleteWordForward"
   | "indent"
   | "insertLineBreak"
   | "insertSoftLineBreak"
@@ -13,6 +16,8 @@ export type EditorInputCommand =
   | "moveToDocumentStart"
   | "moveToLineEnd"
   | "moveToLineStart"
+  | "moveWordBackward"
+  | "moveWordForward"
   | "redo"
   | "selectAll"
   | "toggleBold"
