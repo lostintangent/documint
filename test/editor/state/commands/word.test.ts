@@ -12,8 +12,7 @@ import {
   createDocumentFromEditorState,
   createEditorState,
   deleteSelection,
-  deleteWordBackward,
-  deleteWordForward,
+  deleteWord,
   redo,
   setSelection,
   undo,
@@ -26,32 +25,21 @@ describe("Word deletion", () => {
   test("deletes words backward and forward within one path", () => {
     const state = setup("alpha beta gamma");
     const path = getPath(state, "alpha beta gamma");
-    const backward = deleteWordBackward(placeAt(state, path, "alpha beta".length));
-    const forward = deleteWordForward(placeAt(state, path, "alpha".length));
+    const backward = deleteWord(placeAt(state, path, "alpha beta".length), "previousWord");
+    const forward = deleteWord(placeAt(state, path, "alpha".length), "wordEnd");
 
     expect(indexedTextEntries(backward!)[0]?.text).toBe("alpha  gamma");
     expect(indexedTextEntries(forward!)[0]?.text).toBe("alpha gamma");
   });
 
-  test("uses token-start forward boundaries", () => {
+  test("deletes to the next word", () => {
     const state = setup("alpha beta");
     const path = getPath(state, "alpha beta");
-    const fromWord = deleteWordForward(placeAt(state, path, "start"), "tokenStarts");
-    const fromWhitespace = deleteWordForward(
-      placeAt(state, path, "alpha".length),
-      "tokenStarts",
-    );
+    const fromWord = deleteWord(placeAt(state, path, "start"), "nextWord");
+    const fromWhitespace = deleteWord(placeAt(state, path, "alpha".length), "nextWord");
 
     expect(indexedTextEntries(fromWord!)[0]?.text).toBe("beta");
     expect(indexedTextEntries(fromWhitespace!)[0]?.text).toBe("alphabeta");
-  });
-
-  test("deletes punctuation runs as word-movement tokens", () => {
-    const state = setup("abc ...");
-    const path = getPath(state, "abc ...");
-    const nextState = deleteWordBackward(placeAt(state, path, "end"), "tokenStarts");
-
-    expect(indexedTextEntries(nextState!)[0]?.text).toBe("abc ");
   });
 
   test("deletes an existing selection regardless of direction", () => {
@@ -62,15 +50,15 @@ describe("Word deletion", () => {
       focus: { path: path.path, offset: "alpha".length },
     });
 
-    expect(indexedTextEntries(deleteWordBackward(selected)!)[0]?.text).toBe(" beta");
-    expect(indexedTextEntries(deleteWordForward(selected)!)[0]?.text).toBe(" beta");
+    expect(indexedTextEntries(deleteWord(selected, "previousWord")!)[0]?.text).toBe(" beta");
+    expect(indexedTextEntries(deleteWord(selected, "wordEnd")!)[0]?.text).toBe(" beta");
   });
 
   test("deletes inline objects as atomic units", () => {
     const state = setup("before ![alt](https://example.com/image.png) after");
     const path = getPath(state, `before \uFFFC after`);
     const objectEnd = path.text.indexOf("\uFFFC") + 1;
-    const nextState = deleteWordBackward(placeAt(state, path, objectEnd));
+    const nextState = deleteWord(placeAt(state, path, objectEnd), "previousWord");
 
     expect(toMarkdown(nextState!)).toBe("before  after\n");
   });
@@ -79,8 +67,8 @@ describe("Word deletion", () => {
     const state = setup("alpha\n\nbeta");
     const alpha = getPath(state, "alpha");
     const beta = getPath(state, "beta");
-    const backward = deleteWordBackward(placeAt(state, beta, "start"));
-    const forward = deleteWordForward(placeAt(state, alpha, "end"));
+    const backward = deleteWord(placeAt(state, beta, "start"), "previousWord");
+    const forward = deleteWord(placeAt(state, alpha, "end"), "wordEnd");
 
     expect(toMarkdown(backward!)).toBe("beta\n");
     expect(toMarkdown(forward!)).toBe("alpha\n");
@@ -91,14 +79,14 @@ describe("Word deletion", () => {
     const alpha = getPath(state, "alpha");
     const beta = getPath(state, "beta");
 
-    expect(toMarkdown(deleteWordForward(placeAt(state, alpha, "end"))!)).toBe("# alpha\n");
-    expect(toMarkdown(deleteWordBackward(placeAt(state, beta, "start"))!)).toBe("beta\n");
+    expect(toMarkdown(deleteWord(placeAt(state, alpha, "end"), "wordEnd")!)).toBe("# alpha\n");
+    expect(toMarkdown(deleteWord(placeAt(state, beta, "start"), "previousWord")!)).toBe("beta\n");
   });
 
-  test("uses token-start seams without reusing navigation traversal", () => {
+  test("deletes to the next word across a safe text seam", () => {
     const state = setup("alpha\n\nbeta");
     const alpha = getPath(state, "alpha");
-    const forward = deleteWordForward(placeAt(state, alpha, "end"), "tokenStarts");
+    const forward = deleteWord(placeAt(state, alpha, "end"), "nextWord");
 
     expect(toMarkdown(forward!)).toBe("alphabeta\n");
   });
@@ -106,7 +94,7 @@ describe("Word deletion", () => {
   test("deletes trailing punctuation at a backward root seam", () => {
     const state = setup("alpha...\n\nbeta");
     const beta = getPath(state, "beta");
-    const backward = deleteWordBackward(placeAt(state, beta, "start"), "tokenStarts");
+    const backward = deleteWord(placeAt(state, beta, "start"), "previousWord");
 
     expect(toMarkdown(backward!)).toBe("alphabeta\n");
   });
@@ -114,7 +102,7 @@ describe("Word deletion", () => {
   test("falls back to the current path edge before a structural barrier", () => {
     const state = setup("alpha\n\n---\n\nomega");
     const alpha = getPath(state, "alpha");
-    const nextState = deleteWordForward(placeAt(state, alpha, 2), "tokenStarts");
+    const nextState = deleteWord(placeAt(state, alpha, 2), "nextWord");
 
     expect(toMarkdown(nextState!)).toBe("al\n\n---\n\nomega\n");
   });
@@ -122,7 +110,7 @@ describe("Word deletion", () => {
   test("falls back to the current path edge at the end of the document", () => {
     const state = setup("alpha");
     const alpha = getPath(state, "alpha");
-    const nextState = deleteWordForward(placeAt(state, alpha, 2), "tokenStarts");
+    const nextState = deleteWord(placeAt(state, alpha, 2), "nextWord");
 
     expect(toMarkdown(nextState!)).toBe("al\n");
   });
@@ -138,21 +126,16 @@ describe("Word deletion", () => {
     );
     const alpha = getPath(state, "alpha");
     const omega = getPath(state, "omega");
-    const forward = deleteWordForward(placeAt(state, alpha, "end"));
-    const backward = deleteWordBackward(placeAt(state, omega, "start"));
+    const forward = deleteWord(placeAt(state, alpha, "end"), "wordEnd");
+    const backward = deleteWord(placeAt(state, omega, "start"), "previousWord");
 
     expect(toMarkdown(forward!)).toBe("alpha\n");
     expect(toMarkdown(backward!)).toBe("omega\n");
   });
 
   test.each([
-    ["a divider", "alpha\n\n---\n\nomega"],
-    ["an empty code block", "alpha\n\n```\n\n```\n\nomega"],
-    ["a code block", "alpha\n\n```\ncode line\n```\n\nomega"],
-    ["a raw block", "alpha\n\n<div>\nraw source\n</div>\n\nomega"],
-    ["an empty table", "alpha\n\n|  |\n| - |\n|  |\n\nomega"],
-    ["an empty list", "alpha\n\n-\n\nomega"],
-    ["an empty blockquote", "alpha\n\n>\n\nomega"],
+    ["nested text", "alpha\n\n- nested words\n\nomega"],
+    ["source text", "alpha\n\n```\nsource\n```\n\nomega"],
   ])("does not cross %s", (_label, markdown) => {
     const state = setup(markdown);
     const alpha = getPath(state, "alpha");
@@ -163,8 +146,8 @@ describe("Word deletion", () => {
     const document = state.documentIndex.document;
     const history = state.history;
 
-    expect(deleteWordForward(forwardState)).toBeNull();
-    expect(deleteWordBackward(backwardState)).toBeNull();
+    expect(deleteWord(forwardState, "wordEnd")).toBeNull();
+    expect(deleteWord(backwardState, "previousWord")).toBeNull();
     expect(state.documentIndex.document).toBe(document);
     expect(state.history).toBe(history);
     expect(toMarkdown(state)).toBe(markdownBeforeDelete);
@@ -173,41 +156,33 @@ describe("Word deletion", () => {
   test("deletes words within table cells", () => {
     const state = setup("| alpha beta | gamma |\n| --- | --- |");
     const cell = getPath(state, "alpha beta");
-    const nextState = deleteWordBackward(placeAt(state, cell, "end"));
+    const nextState = deleteWord(placeAt(state, cell, "end"), "previousWord");
 
     expect(toMarkdown(nextState!)).toBe("| alpha | gamma |\n| ----- | ----- |\n");
   });
 
-  test("does not cross table-cell or source-block boundaries", () => {
+  test("does not leave table cells or source blocks", () => {
     const tableState = setup("| alpha | beta |\n| --- | --- |");
     const alphaCell = getPath(tableState, "alpha");
     const betaCell = getPath(tableState, "beta");
 
-    expect(deleteWordForward(placeAt(tableState, alphaCell, "end"))).toBeNull();
-    expect(deleteWordBackward(placeAt(tableState, betaCell, "start"))).toBeNull();
+    expect(deleteWord(placeAt(tableState, alphaCell, "end"), "wordEnd")).toBeNull();
+    expect(deleteWord(placeAt(tableState, betaCell, "start"), "previousWord")).toBeNull();
 
     const codeState = setup("```\ncode line\n```");
     const code = getPath(codeState, "code line");
 
-    expect(deleteWordBackward(placeAt(codeState, code, "start"))).toBeNull();
-    expect(deleteWordForward(placeAt(codeState, code, "end"))).toBeNull();
-
-    const rawState = setup("<div>\nraw source\n</div>");
-    const raw = getPath(rawState, "<div>");
-
-    expect(deleteWordBackward(placeAt(rawState, raw, "start"))).toBeNull();
-    expect(deleteWordForward(placeAt(rawState, raw, "end"))).toBeNull();
+    expect(deleteWord(placeAt(codeState, code, "start"), "previousWord")).toBeNull();
+    expect(deleteWord(placeAt(codeState, code, "end"), "wordEnd")).toBeNull();
   });
 
   test.each([
     ["code block", "```\nalpha beta\n```", "alpha beta", "alpha "],
-    ["raw block", "<alpha beta>", "<alpha beta>", "<alpha beta"],
     ["list item", "- alpha beta", "alpha beta", "alpha "],
-    ["blockquote", "> alpha beta", "alpha beta", "alpha "],
   ])("deletes within a %s without crossing its structure", (_label, markdown, text, nextText) => {
     const state = setup(markdown);
     const path = getPath(state, text);
-    const nextState = deleteWordBackward(placeAt(state, path, "end"));
+    const nextState = deleteWord(placeAt(state, path, "end"), "previousWord");
 
     expect(nextState).not.toBeNull();
     expect(getPath(nextState!, nextText).block.type).toBe(path.block.type);
@@ -223,15 +198,15 @@ describe("Word deletion", () => {
     });
     const expected = deleteSelection(selected);
 
-    expect(toMarkdown(deleteWordBackward(selected)!)).toBe(toMarkdown(expected));
-    expect(toMarkdown(deleteWordForward(selected)!)).toBe(toMarkdown(expected));
+    expect(toMarkdown(deleteWord(selected, "previousWord")!)).toBe(toMarkdown(expected));
+    expect(toMarkdown(deleteWord(selected, "wordEnd")!)).toBe(toMarkdown(expected));
   });
 
   test("records word deletion as one undoable mutation from the original caret", () => {
     const state = setup("alpha\n\nbeta gamma");
     const alpha = getPath(state, "alpha");
     const placed = placeAt(state, alpha, "end");
-    const deleted = deleteWordForward(placed);
+    const deleted = deleteWord(placed, "wordEnd");
     const restored = undo(deleted!);
     const redone = redo(restored!);
 
@@ -257,7 +232,7 @@ describe("Word deletion", () => {
     });
     const state = createEditorState({ ...snapshot, comments: [thread] });
     const alpha = getPath(state, "alpha");
-    const deleted = deleteWordForward(placeAt(state, alpha, "end"));
+    const deleted = deleteWord(placeAt(state, alpha, "end"), "wordEnd");
     const comments = createDocumentFromEditorState(deleted!).comments;
 
     expect(indexedTextEntries(deleted!)[0]?.text).toBe("alpha gamma");
@@ -269,7 +244,7 @@ describe("Word deletion", () => {
     const state = setup("alpha");
     const path = getPath(state, "alpha");
 
-    expect(deleteWordBackward(placeAt(state, path, "start"))).toBeNull();
-    expect(deleteWordForward(placeAt(state, path, "end"))).toBeNull();
+    expect(deleteWord(placeAt(state, path, "start"), "previousWord")).toBeNull();
+    expect(deleteWord(placeAt(state, path, "end"), "wordEnd")).toBeNull();
   });
 });

@@ -9,8 +9,8 @@ describe("Word navigation", () => {
     const state = setup("alpha beta gamma");
     const path = getPath(state, "alpha beta gamma");
     const placed = placeAt(state, path, "start");
-    const moved = moveCaretByWord(placed, 1);
-    const extended = moveCaretByWord(moved, 1, { extendSelection: true });
+    const moved = moveCaretByWord(placed, "wordEnd");
+    const extended = moveCaretByWord(moved, "wordEnd", { extendSelection: true });
 
     expect(moved.selection.focus.offset).toBe("alpha".length);
     expect(extended.selection.anchor).toEqual(moved.selection.focus);
@@ -18,61 +18,25 @@ describe("Word navigation", () => {
     expect(extended.documentIndex).toBe(state.documentIndex);
   });
 
-  test("moves forward to token starts", () => {
+  test("moves to the next word", () => {
     const state = setup("alpha beta gamma");
     const path = getPath(state, "alpha beta gamma");
-    const fromStart = moveCaretByWord(placeAt(state, path, 0), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
-    const fromInterior = moveCaretByWord(placeAt(state, path, 2), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
-    const fromLastWord = moveCaretByWord(placeAt(state, path, "alpha beta g".length), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
+    const fromStart = moveCaretByWord(placeAt(state, path, 0), "nextWord");
+    const fromInterior = moveCaretByWord(placeAt(state, path, 2), "nextWord");
+    const fromLastWord = moveCaretByWord(placeAt(state, path, "alpha beta g".length), "nextWord");
 
     expect(fromStart.selection.focus.offset).toBe("alpha ".length);
     expect(fromInterior.selection.focus.offset).toBe("alpha ".length);
     expect(fromLastWord.selection.focus.offset).toBe(path.text.length);
   });
 
-  test.each([
-    ["abc ...", 4],
-    ["abc .more", 4],
-    ["abc.more", 4],
-    ["abc...more", 6],
-  ])("preserves the token-start punctuation boundary in %s", (text, expectedOffset) => {
-    const state = setup(text);
-    const path = getPath(state, text);
-    const moved = moveCaretByWord(placeAt(state, path, 3), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
-
-    expect(moved.selection.focus.offset).toBe(expectedOffset);
-  });
-
-  test("moves backward through whitespace-separated punctuation", () => {
-    const state = setup("abc ...");
-    const path = getPath(state, "abc ...");
-    const toPunctuation = moveCaretByWord(placeAt(state, path, "end"), -1);
-    const toWord = moveCaretByWord(toPunctuation, -1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
-
-    expect(toPunctuation.selection.focus.offset).toBe(4);
-    expect(toWord.selection.focus.offset).toBe(0);
-  });
-
-  test("moves token-start navigation directly into the next path", () => {
+  test("moves to the next word directly in the next path", () => {
     const state = setup("alpha\n\nbeta gamma");
     const alpha = getPath(state, "alpha");
     const beta = getPath(state, "beta gamma");
-    const moved = moveCaretByWord(placeAt(state, alpha, 2), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
-    const extended = moveCaretByWord(placeAt(state, alpha, 2), 1, {
+    const moved = moveCaretByWord(placeAt(state, alpha, 2), "nextWord");
+    const extended = moveCaretByWord(placeAt(state, alpha, 2), "nextWord", {
       extendSelection: true,
-      wordBoundaryStyle: "tokenStarts",
     });
 
     expect(moved.selection.focus).toEqual({ path: beta.path, offset: 0 });
@@ -80,28 +44,22 @@ describe("Word navigation", () => {
     expect(extended.selection.focus).toEqual({ path: beta.path, offset: 0 });
   });
 
-  test("moves token-start navigation through inline objects", () => {
+  test("moves to the next word through inline objects", () => {
     const state = setup("alpha ![alt](https://example.com/image.png) beta");
     const path = getPath(state, `alpha \uFFFC beta`);
     const objectStart = path.text.indexOf("\uFFFC");
     const betaStart = path.text.indexOf("beta");
-    const toObject = moveCaretByWord(placeAt(state, path, 2), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
-    const pastObject = moveCaretByWord(placeAt(state, path, objectStart), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
+    const toObject = moveCaretByWord(placeAt(state, path, 2), "nextWord");
+    const pastObject = moveCaretByWord(placeAt(state, path, objectStart), "nextWord");
 
     expect(toObject.selection.focus.offset).toBe(objectStart);
     expect(pastObject.selection.focus.offset).toBe(betaStart);
   });
 
-  test("uses the path edge when no next token or path exists", () => {
+  test("uses the path edge when no next word or path exists", () => {
     const state = setup("alpha");
     const path = getPath(state, "alpha");
-    const moved = moveCaretByWord(placeAt(state, path, 2), 1, {
-      wordBoundaryStyle: "tokenStarts",
-    });
+    const moved = moveCaretByWord(placeAt(state, path, 2), "nextWord");
 
     expect(moved.selection.focus.offset).toBe(path.text.length);
   });
@@ -114,8 +72,8 @@ describe("Word navigation", () => {
       focus: { path: path.path, offset: "alpha".length },
     });
 
-    expect(moveCaretByWord(selected, -1).selection.focus.offset).toBe("alpha".length);
-    expect(moveCaretByWord(selected, 1).selection.focus.offset).toBe("alpha beta".length);
+    expect(moveCaretByWord(selected, "previousWord").selection.focus.offset).toBe("alpha".length);
+    expect(moveCaretByWord(selected, "wordEnd").selection.focus.offset).toBe("alpha beta".length);
   });
 
   test("moves by word across paths while skipping empty paths", () => {
@@ -128,8 +86,8 @@ describe("Word navigation", () => {
     );
     const alpha = getPath(state, "alpha");
     const beta = getPath(state, "beta");
-    const forward = moveCaretByWord(placeAt(state, alpha, "end"), 1);
-    const backward = moveCaretByWord(placeAt(state, beta, "start"), -1);
+    const forward = moveCaretByWord(placeAt(state, alpha, "end"), "wordEnd");
+    const backward = moveCaretByWord(placeAt(state, beta, "start"), "previousWord");
 
     expect(forward.selection.focus).toEqual({ path: beta.path, offset: beta.text.length });
     expect(backward.selection.focus).toEqual({ path: alpha.path, offset: 0 });
@@ -139,7 +97,7 @@ describe("Word navigation", () => {
     const state = setup("alpha beta\n\ngamma delta");
     const first = getPath(state, "alpha beta");
     const second = getPath(state, "gamma delta");
-    const moved = moveCaretByWord(placeAt(state, first, 2), 1, { mode: "block" });
+    const moved = moveCaretByWord(placeAt(state, first, 2), "wordEnd", { mode: "block" });
 
     expect(moved.selection.focus).toEqual({ path: second.path, offset: 0 });
   });

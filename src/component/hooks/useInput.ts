@@ -13,8 +13,7 @@ import {
 import {
   deleteBackward,
   deleteForward,
-  deleteWordBackward,
-  deleteWordForward,
+  deleteWord,
   deleteSelection,
   insertLineBreak,
   insertSoftLineBreak,
@@ -41,17 +40,14 @@ import {
   type EditorNavigationMode,
   type EditorSelectionPoint,
   type EditorState,
-  type WordBoundaryStyle,
+  type WordMovement,
 } from "@/editor";
 import type { EditorInputCommand } from "@/types";
 import type { MarkdownOptions } from "@/markdown";
 import { copySelectionAsMarkdown, pastePlainText } from "../lib/clipboard";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
-import {
-  resolveEditorHostPlatform,
-  resolveEditorWordBoundaryStyle,
-} from "../lib/platform";
+import { resolveEditorForwardWordMovement, resolveEditorHostPlatform } from "../lib/platform";
 import {
   editorStateSprig,
   useDocumintStore,
@@ -129,11 +125,11 @@ type InputController = {
 };
 
 type KeyboardCommandHandlerInput = {
-  event: KeyboardEvent;
+  extendSelection: boolean;
+  forwardWordMovement: WordMovement;
+  layout: EditorLayoutState;
   navigationMode: EditorNavigationMode;
   state: EditorState;
-  viewport: EditorLayoutState;
-  wordBoundaryStyle: WordBoundaryStyle;
 };
 
 type KeyboardCommandHandler = (input: KeyboardCommandHandlerInput) => EditorState | null;
@@ -142,40 +138,36 @@ const keyboardCommandHandlers = {
   dedent: ({ state }) => dedent(state),
   deleteBackward: ({ state }) => deleteBackward(state),
   deleteForward: ({ state }) => deleteForward(state),
-  deleteWordBackward: ({ state, wordBoundaryStyle }) =>
-    deleteWordBackward(state, wordBoundaryStyle),
-  deleteWordForward: ({ state, wordBoundaryStyle }) =>
-    deleteWordForward(state, wordBoundaryStyle),
+  deleteWordBackward: ({ state }) => deleteWord(state, "previousWord"),
+  deleteWordForward: ({ forwardWordMovement, state }) => deleteWord(state, forwardWordMovement),
   indent: ({ state }) => indent(state),
   insertLineBreak: ({ state }) => insertLineBreak(state),
   insertSoftLineBreak: ({ state }) => insertSoftLineBreak(state),
   moveListItemDown: ({ state }) => moveListItemDown(state),
   moveListItemUp: ({ state }) => moveListItemUp(state),
-  moveToDocumentEnd: ({ event, state }) =>
-    moveCaretToDocumentBoundary(state, "end", event.shiftKey),
-  moveToDocumentStart: ({ event, state }) =>
-    moveCaretToDocumentBoundary(state, "start", event.shiftKey),
-  moveToLineEnd: ({ event, navigationMode, state, viewport }) =>
-    moveCaretToLineBoundary(state, viewport, "End", {
-      extendSelection: event.shiftKey,
+  moveToDocumentEnd: ({ extendSelection, state }) =>
+    moveCaretToDocumentBoundary(state, "end", extendSelection),
+  moveToDocumentStart: ({ extendSelection, state }) =>
+    moveCaretToDocumentBoundary(state, "start", extendSelection),
+  moveToLineEnd: ({ extendSelection, layout, navigationMode, state }) =>
+    moveCaretToLineBoundary(state, layout, "End", {
+      extendSelection,
       mode: navigationMode,
     }),
-  moveToLineStart: ({ event, navigationMode, state, viewport }) =>
-    moveCaretToLineBoundary(state, viewport, "Home", {
-      extendSelection: event.shiftKey,
+  moveToLineStart: ({ extendSelection, layout, navigationMode, state }) =>
+    moveCaretToLineBoundary(state, layout, "Home", {
+      extendSelection,
       mode: navigationMode,
     }),
-  moveWordBackward: ({ event, navigationMode, state, wordBoundaryStyle }) =>
-    moveCaretByWord(state, -1, {
-      extendSelection: event.shiftKey,
+  moveWordBackward: ({ extendSelection, navigationMode, state }) =>
+    moveCaretByWord(state, "previousWord", {
+      extendSelection,
       mode: navigationMode,
-      wordBoundaryStyle,
     }),
-  moveWordForward: ({ event, navigationMode, state, wordBoundaryStyle }) =>
-    moveCaretByWord(state, 1, {
-      extendSelection: event.shiftKey,
+  moveWordForward: ({ extendSelection, forwardWordMovement, navigationMode, state }) =>
+    moveCaretByWord(state, forwardWordMovement, {
+      extendSelection,
       mode: navigationMode,
-      wordBoundaryStyle,
     }),
   redo: ({ state }) => redo(state),
   selectAll: ({ state }) => selectAll(state),
@@ -254,8 +246,7 @@ export function useInput({
   const insertLineBreakCommand = useEditorCommand(insertLineBreak);
   const deleteBackwardCommand = useEditorCommand(deleteBackward);
   const deleteForwardCommand = useEditorCommand(deleteForward);
-  const deleteWordBackwardCommand = useEditorCommand(deleteWordBackward);
-  const deleteWordForwardCommand = useEditorCommand(deleteWordForward);
+  const deleteWordCommand = useEditorCommand(deleteWord);
   const undoCommand = useEditorCommand(undo);
   const redoCommand = useEditorCommand(redo);
   const applyKeyboardInput = useEditorCommand(applyKeyboardInputCommand);
@@ -526,10 +517,10 @@ export function useInput({
           runInputCommand(deleteForwardCommand);
           break;
         case "deleteWordBackward":
-          runInputCommand(deleteWordBackwardCommand, resolveEditorWordBoundaryStyle());
+          runInputCommand(deleteWordCommand, "previousWord");
           break;
         case "deleteWordForward":
-          runInputCommand(deleteWordForwardCommand, resolveEditorWordBoundaryStyle());
+          runInputCommand(deleteWordCommand, resolveEditorForwardWordMovement());
           break;
       }
       return;
@@ -617,7 +608,7 @@ export function useInput({
         store.layout.get(),
         event.nativeEvent,
         command,
-        resolveEditorWordBoundaryStyle(platform),
+        resolveEditorForwardWordMovement(platform),
         readOnly,
       );
 
@@ -1021,10 +1012,10 @@ function replaceNativeTextCommand(
 
 export function applyKeyboardInputCommand(
   state: EditorState,
-  viewport: EditorLayoutState,
+  layout: EditorLayoutState,
   event: KeyboardEvent,
   command: EditorInputCommand | null,
-  wordBoundaryStyle: WordBoundaryStyle,
+  forwardWordMovement: WordMovement,
   readOnly = false,
 ): EditorState | null {
   const navigationMode: EditorNavigationMode = readOnly ? "block" : "text";
@@ -1032,11 +1023,11 @@ export function applyKeyboardInputCommand(
   if (command) {
     if (!canApplyInputCommand(command, readOnly)) return null;
     return keyboardCommandHandlers[command]({
-      event,
+      extendSelection: event.shiftKey,
+      forwardWordMovement,
+      layout,
       navigationMode,
       state,
-      viewport,
-      wordBoundaryStyle,
     });
   }
 
@@ -1050,14 +1041,14 @@ export function applyKeyboardInputCommand(
   }
 
   if (!hasCommandModifier && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-    return moveCaretVertically(state, viewport, event.key === "ArrowUp" ? -1 : 1, {
+    return moveCaretVertically(state, layout, event.key === "ArrowUp" ? -1 : 1, {
       extendSelection: event.shiftKey,
       mode: navigationMode,
     });
   }
 
   if (event.key === "PageUp" || event.key === "PageDown") {
-    return moveCaretByViewport(state, viewport, event.key === "PageUp" ? -1 : 1, event.shiftKey);
+    return moveCaretByViewport(state, layout, event.key === "PageUp" ? -1 : 1, event.shiftKey);
   }
 
   if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {

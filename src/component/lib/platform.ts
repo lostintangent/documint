@@ -1,4 +1,4 @@
-import type { WordBoundaryStyle } from "@/editor";
+import type { WordMovement } from "@/editor";
 
 export type EditorHostPlatform = "mac" | "other" | "windows";
 
@@ -19,8 +19,8 @@ export function resolveEditorHostPlatform(
   return /Win/.test(identity) ? "windows" : "other";
 }
 
-export function resolveEditorWordBoundaryStyle(
+export function resolveEditorForwardWordMovement(
   platform: EditorHostPlatform = resolveEditorHostPlatform(),
-): WordBoundaryStyle {
-  return platform === "windows" ? "tokenStarts" : "wordEdges";
+): WordMovement {
+  return platform === "windows" ? "nextWord" : "wordEnd";
 }

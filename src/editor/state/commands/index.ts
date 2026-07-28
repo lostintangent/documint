@@ -36,7 +36,7 @@ import {
   type TextRangeTarget,
 } from "./context";
 import type { EditorState, EditorStateAction } from "../types";
-import type { WordBoundaryStyle } from "../../text/words";
+import type { WordMovement } from "../../text/words";
 import { createCommentThreadForSelection, getCommentState } from "../../anchors";
 import {
   insertInlineNode,
@@ -76,10 +76,7 @@ import {
   resolveListItemIndent,
   resolveListItemMove,
 } from "./actions/blocks/list";
-import {
-  resolveHeadingDepthShift,
-  resolveParagraphBlockquoteIndent,
-} from "./actions/blocks";
+import { resolveHeadingDepthShift, resolveParagraphBlockquoteIndent } from "./actions/blocks";
 import { resolveCodeBlockInsertion } from "./actions/blocks/code";
 import { resolveDeletion, resolveWordDeletion } from "./actions/deletion";
 import {
@@ -128,8 +125,7 @@ export const replaceTextRange = makeCommand(
     _startOffset: number,
     _endOffset: number,
     text: string,
-  ): EditorStateAction =>
-    resolveTextRangeReplacement(context.documentIndex, context.range, text),
+  ): EditorStateAction => resolveTextRangeReplacement(context.documentIndex, context.range, text),
   (state, startOffset: number, endOffset: number): TextRangeCommandContext | null => {
     const range = resolveTextRangeContext(state, startOffset, endOffset);
     return range ? { documentIndex: state.documentIndex, range } : null;
@@ -142,14 +138,8 @@ export const deleteBackward = makeCommand((state) => resolveDeletion(state, "bac
 
 export const deleteForward = makeCommand((state) => resolveDeletion(state, "forward"));
 
-export const deleteWordBackward = makeCommand(
-  (state, wordBoundaryStyle: WordBoundaryStyle = "wordEdges") =>
-    resolveWordDeletion(state, -1, wordBoundaryStyle),
-);
-
-export const deleteWordForward = makeCommand(
-  (state, wordBoundaryStyle: WordBoundaryStyle = "wordEdges") =>
-    resolveWordDeletion(state, 1, wordBoundaryStyle),
+export const deleteWord = makeCommand((state, movement: WordMovement) =>
+  resolveWordDeletion(state, movement),
 );
 
 // --- Clipboard ---

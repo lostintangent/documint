@@ -1,5 +1,5 @@
-// Shared word-boundary helpers for editor text. Offsets are UTF-16 string
-// offsets in editor path text.
+// Shared word semantics for editor text. Offsets are UTF-16 string offsets in
+// editor path text.
 import { INLINE_OBJECT_REPLACEMENT_TEXT } from "./inline-offsets";
 
 export type TextRange = {
@@ -7,9 +7,7 @@ export type TextRange = {
   start: number;
 };
 
-// `wordEdges` advances to token ends. `tokenStarts` advances to the next
-// token start.
-export type WordBoundaryStyle = "wordEdges" | "tokenStarts";
+export type WordMovement = "nextWord" | "previousWord" | "wordEnd";
 
 type WordSegment = {
   index: number;
@@ -20,9 +18,6 @@ type WordSegment = {
 type WordSegmenter = {
   segment: (text: string) => Iterable<WordSegment>;
 };
-
-const HAS_MOVEMENT_BOUNDARY = /[\p{P}\p{S}]/u;
-const MOVEMENT_BOUNDARY_PATTERN = /[\p{P}\p{S}]/gu;
 
 let wordSegmenter: WordSegmenter | undefined;
 
@@ -70,14 +65,13 @@ export function resolveWordRangeAtOffset(text: string, offset: number): TextRang
 export function moveWordOffset(
   text: string,
   offset: number,
-  direction: -1 | 1,
-  style: WordBoundaryStyle = "wordEdges",
+  movement: WordMovement,
 ): number | null {
   offset = Math.max(0, Math.min(offset, text.length));
   let target: number | null = null;
 
-  visitWordMovementTokens(text, (start, end) => {
-    if (direction < 0) {
+  visitWordUnits(text, (start, end) => {
+    if (movement === "previousWord") {
       if (start >= offset) {
         return false;
       }
@@ -86,7 +80,7 @@ export function moveWordOffset(
       return true;
     }
 
-    const candidate = style === "tokenStarts" ? start : end;
+    const candidate = movement === "nextWord" ? start : end;
     if (candidate > offset) {
       target = candidate;
       return false;
@@ -99,11 +93,11 @@ export function moveWordOffset(
     return target;
   }
 
-  if (direction < 0) {
+  if (movement === "previousWord") {
     return offset > 0 ? 0 : null;
   }
 
-  return style === "wordEdges" && offset < text.length ? text.length : null;
+  return movement === "wordEnd" && offset < text.length ? text.length : null;
 }
 
 function getWordSegmenter(): WordSegmenter {
@@ -121,23 +115,19 @@ function getWordSegmenter(): WordSegmenter {
   return wordSegmenter;
 }
 
-// Intl can keep punctuation-bearing text such as `abc.more` in one
-// word-like segment. Movement refines those segments into punctuation tokens,
-// while range selection continues to use the locale-aware segment intact.
-function visitWordMovementTokens(
-  text: string,
-  visit: (start: number, end: number) => boolean,
-) {
-  let punctuationStart: number | null = null;
-  let punctuationEnd = 0;
+// Preserve locale-aware words, group adjacent punctuation and symbols, and
+// keep inline objects atomic.
+function visitWordUnits(text: string, visit: (start: number, end: number) => boolean) {
+  let nonWordStart: number | null = null;
+  let nonWordEnd = 0;
 
-  const flushPunctuation = () => {
-    if (punctuationStart === null) {
+  const flushNonWord = () => {
+    if (nonWordStart === null) {
       return true;
     }
 
-    const shouldContinue = visit(punctuationStart, punctuationEnd);
-    punctuationStart = null;
+    const shouldContinue = visit(nonWordStart, nonWordEnd);
+    nonWordStart = null;
     return shouldContinue;
   };
 
@@ -146,63 +136,30 @@ function visitWordMovementTokens(
     const end = start + segment.segment.length;
 
     if (segment.segment === INLINE_OBJECT_REPLACEMENT_TEXT) {
-      if (!flushPunctuation() || !visit(start, end)) {
+      if (!flushNonWord() || !visit(start, end)) {
         return;
       }
 
       continue;
     }
 
-    if (!segment.isWordLike) {
-      if (segment.segment.trim().length === 0) {
-        if (!flushPunctuation()) {
-          return;
-        }
-      } else {
-        punctuationStart ??= start;
-        punctuationEnd = end;
-      }
-      continue;
-    }
-
-    if (!HAS_MOVEMENT_BOUNDARY.test(segment.segment)) {
-      if (!flushPunctuation() || !visit(start, end)) {
+    if (segment.isWordLike) {
+      if (!flushNonWord() || !visit(start, end)) {
         return;
       }
       continue;
     }
 
-    let partStart = start;
-
-    for (const match of segment.segment.matchAll(MOVEMENT_BOUNDARY_PATTERN)) {
-      const character = match[0];
-      const characterStart = start + match.index;
-      const characterEnd = characterStart + character.length;
-
-      if (partStart < characterStart) {
-        if (!flushPunctuation() || !visit(partStart, characterStart)) {
-          return;
-        }
-      }
-
-      if (character === INLINE_OBJECT_REPLACEMENT_TEXT) {
-        if (!flushPunctuation() || !visit(characterStart, characterEnd)) {
-          return;
-        }
-      } else {
-        punctuationStart ??= characterStart;
-        punctuationEnd = characterEnd;
-      }
-
-      partStart = characterEnd;
-    }
-
-    if (partStart < end) {
-      if (!flushPunctuation() || !visit(partStart, end)) {
+    if (segment.segment.trim().length === 0) {
+      if (!flushNonWord()) {
         return;
       }
+      continue;
     }
+
+    nonWordStart ??= start;
+    nonWordEnd = end;
   }
 
-  flushPunctuation();
+  flushNonWord();
 }

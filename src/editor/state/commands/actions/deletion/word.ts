@@ -1,21 +1,20 @@
 import { rootBlockPath } from "@/document";
-import { moveWordOffset, type WordBoundaryStyle } from "../../../../text/words";
+import { moveWordOffset, type WordMovement } from "../../../../text/words";
 import { resolveEditorTextAtPath, resolveRootBlock } from "../../../index/query";
 import { isSelectionCollapsed, type EditorSelectionPoint } from "../../../selection";
 import type { EditorState, EditorStateAction } from "../../../types";
-import { resolveBlockContext } from "../../context";
+import { resolveRootTextBlockContextFromSelection } from "../../context";
 import { resolveSelectionTextReplacement } from "../insertion/replace";
 
 export function resolveWordDeletion(
   state: EditorState,
-  direction: -1 | 1,
-  wordBoundaryStyle: WordBoundaryStyle = "wordEdges",
+  movement: WordMovement,
 ): EditorStateAction | null {
   if (!isSelectionCollapsed(state.selection)) {
     return resolveSelectionTextReplacement(state.documentIndex, state.selection, "");
   }
 
-  const target = resolveWordDeletionTarget(state, direction, wordBoundaryStyle);
+  const target = resolveWordDeletionTarget(state, movement);
   if (!target) {
     return null;
   }
@@ -32,9 +31,9 @@ export function resolveWordDeletion(
 
 function resolveWordDeletionTarget(
   state: EditorState,
-  direction: -1 | 1,
-  wordBoundaryStyle: WordBoundaryStyle,
+  movement: WordMovement,
 ): EditorSelectionPoint | null {
+  const direction = movement === "previousWord" ? -1 : 1;
   const focus = state.selection.focus;
   const text = resolveEditorTextAtPath(state.documentIndex, focus.path);
 
@@ -42,17 +41,17 @@ function resolveWordDeletionTarget(
     return null;
   }
 
-  const offset = moveWordOffset(text, focus.offset, direction, wordBoundaryStyle);
+  const offset = moveWordOffset(text, focus.offset, movement);
   if (offset !== null) {
     return { path: focus.path, offset };
   }
 
   const localFallback =
-    direction > 0 && wordBoundaryStyle === "tokenStarts" && focus.offset < text.length
+    movement === "nextWord" && focus.offset < text.length
       ? { path: focus.path, offset: text.length }
       : null;
-  const context = resolveBlockContext(state);
-  if (context?.kind !== "rootTextBlock") {
+  const context = resolveRootTextBlockContextFromSelection(state.documentIndex, state.selection);
+  if (!context) {
     return localFallback;
   }
 
@@ -73,15 +72,14 @@ function resolveWordDeletionTarget(
     }
 
     const targetOffset =
-      direction > 0 && wordBoundaryStyle === "tokenStarts"
+      movement === "nextWord"
         ? adjacentText.length > 0
           ? 0
           : null
         : moveWordOffset(
             adjacentText,
-            direction < 0 ? adjacentText.length : 0,
-            direction,
-            wordBoundaryStyle,
+            movement === "previousWord" ? adjacentText.length : 0,
+            movement,
           );
 
     if (targetOffset !== null) {

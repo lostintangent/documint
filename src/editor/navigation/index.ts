@@ -26,7 +26,7 @@ import {
   moveCaretToCurrentLineBoundary,
   moveCaretVerticallyInFlow,
 } from "./line";
-import type { WordBoundaryStyle } from "../text/words";
+import type { WordMovement } from "../text/words";
 import { moveCaretVerticallyInTable, resolveVerticalTablePathTarget } from "./table";
 import { resolveWordNavigationTarget } from "./word";
 export {
@@ -69,10 +69,11 @@ export function moveCaretHorizontally(
 
 export function moveCaretByWord(
   state: EditorState,
-  direction: -1 | 1,
-  options: EditorNavigationOptions & { wordBoundaryStyle?: WordBoundaryStyle } = {},
+  movement: WordMovement,
+  options: EditorNavigationOptions = {},
 ) {
   const extendSelection = options.extendSelection ?? false;
+  const direction = movement === "previousWord" ? -1 : 1;
 
   if (options.mode === "block") {
     return moveCaretHorizontally(state, direction, {
@@ -86,11 +87,7 @@ export function moveCaretByWord(
     return setSelection(state, direction < 0 ? selection.start : selection.end);
   }
 
-  const target = resolveWordNavigationTarget(
-    state,
-    direction,
-    options.wordBoundaryStyle ?? "wordEdges",
-  );
+  const target = resolveWordNavigationTarget(state, movement);
 
   return target ? setSelectionPoint(state, target.path, target.offset, extendSelection) : state;
 }

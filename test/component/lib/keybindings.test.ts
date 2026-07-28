@@ -101,17 +101,17 @@ describe("Custom keybindings", () => {
     expect(resolve("k", { ctrlKey: true, metaKey: true }, "windows", keybindings)).toBeNull();
   });
 
-  test("supports modKey false and exact modifier escape hatches", () => {
+  test("supports explicit unmodified bindings", () => {
     const unmodified: EditorInputKeybinding[] = [
       { command: "toggleBold", key: "k", modKey: false },
-    ];
-    const exactControl: EditorInputKeybinding[] = [
-      { command: "toggleCode", ctrlKey: true, key: "k" },
     ];
 
     expect(resolve("k", {}, "mac", unmodified)).toBe("toggleBold");
     expect(resolve("k", { metaKey: true }, "mac", unmodified)).toBeNull();
-    expect(resolve("k", { ctrlKey: true }, "mac", exactControl)).toBe("toggleCode");
+    expect(resolve("k", { ctrlKey: true }, "mac", unmodified)).toBeNull();
+    expect(resolve("k", {}, "windows", unmodified)).toBe("toggleBold");
+    expect(resolve("k", { ctrlKey: true }, "windows", unmodified)).toBeNull();
+    expect(resolve("k", { metaKey: true }, "windows", unmodified)).toBeNull();
   });
 
   test("replaces rather than supplements the default keybinding set", () => {

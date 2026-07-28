@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
+  resolveEditorForwardWordMovement,
   resolveEditorHostPlatform,
-  resolveEditorWordBoundaryStyle,
 } from "@/component/lib/platform";
 
 test("detects Mac-like browser platforms", () => {
@@ -11,15 +11,13 @@ test("detects Mac-like browser platforms", () => {
 
 test("distinguishes Windows from other non-Mac hosts", () => {
   expect(resolveEditorHostPlatform({ platform: "Win32", userAgent: "" })).toBe("windows");
-  expect(resolveEditorHostPlatform({ platform: "", userAgent: "Windows NT 10.0" })).toBe(
-    "windows",
-  );
+  expect(resolveEditorHostPlatform({ platform: "", userAgent: "Windows NT 10.0" })).toBe("windows");
   expect(resolveEditorHostPlatform({ platform: "Linux x86_64", userAgent: "" })).toBe("other");
   expect(resolveEditorHostPlatform({ platform: "CrOS x86_64", userAgent: "" })).toBe("other");
 });
 
-test("maps only Windows to token-start word boundaries", () => {
-  expect(resolveEditorWordBoundaryStyle("windows")).toBe("tokenStarts");
-  expect(resolveEditorWordBoundaryStyle("mac")).toBe("wordEdges");
-  expect(resolveEditorWordBoundaryStyle("other")).toBe("wordEdges");
+test("maps only Windows word-forward gestures to the next word", () => {
+  expect(resolveEditorForwardWordMovement("windows")).toBe("nextWord");
+  expect(resolveEditorForwardWordMovement("mac")).toBe("wordEnd");
+  expect(resolveEditorForwardWordMovement("other")).toBe("wordEnd");
 });

@@ -3,28 +3,14 @@ import { resolveEditorHostPlatform, type EditorHostPlatform } from "./platform";
 
 export type EditorKeybindingPlatform = "mac" | "nonMac";
 
-type EditorInputKeybindingBase = {
+export type EditorInputKeybinding = {
   altKey?: boolean;
   command: EditorInputCommand;
   key: string;
+  modKey?: boolean;
   platform?: EditorKeybindingPlatform;
   shiftKey?: boolean | "any";
 };
-
-type ModKeybinding = {
-  ctrlKey?: never;
-  metaKey?: never;
-  modKey?: boolean;
-};
-
-type ExactModifierKeybinding = {
-  ctrlKey?: boolean;
-  metaKey?: boolean;
-  modKey?: never;
-};
-
-export type EditorInputKeybinding = EditorInputKeybindingBase &
-  (ModKeybinding | ExactModifierKeybinding);
 
 export const defaultKeybindings: EditorInputKeybinding[] = [
   { key: "Backspace", command: "deleteBackward" },
@@ -51,56 +37,56 @@ export const defaultKeybindings: EditorInputKeybinding[] = [
   },
   {
     key: "ArrowLeft",
-    metaKey: true,
+    modKey: true,
     platform: "mac",
     shiftKey: "any",
     command: "moveToLineStart",
   },
   {
     key: "ArrowRight",
-    metaKey: true,
+    modKey: true,
     platform: "mac",
     shiftKey: "any",
     command: "moveToLineEnd",
   },
   {
     key: "ArrowUp",
-    metaKey: true,
+    modKey: true,
     platform: "mac",
     shiftKey: "any",
     command: "moveToDocumentStart",
   },
   {
     key: "ArrowDown",
-    metaKey: true,
+    modKey: true,
     platform: "mac",
     shiftKey: "any",
     command: "moveToDocumentEnd",
   },
   {
     key: "ArrowLeft",
-    ctrlKey: true,
+    modKey: true,
     platform: "nonMac",
     shiftKey: "any",
     command: "moveWordBackward",
   },
   {
     key: "ArrowRight",
-    ctrlKey: true,
+    modKey: true,
     platform: "nonMac",
     shiftKey: "any",
     command: "moveWordForward",
   },
   {
     key: "Home",
-    ctrlKey: true,
+    modKey: true,
     platform: "nonMac",
     shiftKey: "any",
     command: "moveToDocumentStart",
   },
   {
     key: "End",
-    ctrlKey: true,
+    modKey: true,
     platform: "nonMac",
     shiftKey: "any",
     command: "moveToDocumentEnd",
@@ -109,8 +95,8 @@ export const defaultKeybindings: EditorInputKeybinding[] = [
   { key: "ArrowDown", altKey: true, shiftKey: true, command: "moveListItemDown" },
   { key: "Backspace", altKey: true, platform: "mac", command: "deleteWordBackward" },
   { key: "Delete", altKey: true, platform: "mac", command: "deleteWordForward" },
-  { key: "Backspace", ctrlKey: true, platform: "nonMac", command: "deleteWordBackward" },
-  { key: "Delete", ctrlKey: true, platform: "nonMac", command: "deleteWordForward" },
+  { key: "Backspace", modKey: true, platform: "nonMac", command: "deleteWordBackward" },
+  { key: "Delete", modKey: true, platform: "nonMac", command: "deleteWordForward" },
   { key: "a", modKey: true, command: "selectAll" },
   { key: "b", modKey: true, command: "toggleBold" },
   { key: "e", modKey: true, command: "toggleCode" },
@@ -153,17 +139,11 @@ function modifiersMatch(
   event: KeyboardEvent,
   platform: EditorHostPlatform,
 ) {
-  if (binding.modKey !== undefined) {
-    const primaryKey = platform === "mac" ? event.metaKey : event.ctrlKey;
-    const secondaryKey = platform === "mac" ? event.ctrlKey : event.metaKey;
+  // `mod` means exactly the platform's primary command key, not a mixed chord.
+  const primaryKey = platform === "mac" ? event.metaKey : event.ctrlKey;
+  const secondaryKey = platform === "mac" ? event.ctrlKey : event.metaKey;
 
-    return binding.modKey === Boolean(primaryKey) && !secondaryKey;
-  }
-
-  return (
-    (binding.ctrlKey ?? false) === (event.ctrlKey ?? false) &&
-    (binding.metaKey ?? false) === (event.metaKey ?? false)
-  );
+  return (binding.modKey ?? false) === Boolean(primaryKey) && !secondaryKey;
 }
 
 function resolveKeybindingPlatform(platform: EditorHostPlatform): EditorKeybindingPlatform {

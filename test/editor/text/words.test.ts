@@ -19,59 +19,75 @@ describe("Word ranges", () => {
 });
 
 describe("Word movement", () => {
-  test("moves to word and punctuation token edges", () => {
-    expect(moveWordOffset("hello, world", 9, -1)).toBe(7);
-    expect(moveWordOffset("hello, world", 9, 1)).toBe(12);
-    expect(moveWordOffset("hello, world", 7, -1)).toBe(5);
-    expect(moveWordOffset("hello, world", 5, 1)).toBe(6);
-    expect(moveWordOffset("alpha beta gamma", 2, 1)).toBe(5);
-    expect(moveWordOffset("alpha beta gamma", 6, 1)).toBe(10);
+  test("moves to word ends and punctuation runs", () => {
+    expect(moveWordOffset("hello, world", 9, "previousWord")).toBe(7);
+    expect(moveWordOffset("hello, world", 9, "wordEnd")).toBe(12);
+    expect(moveWordOffset("hello, world", 7, "previousWord")).toBe(5);
+    expect(moveWordOffset("hello, world", 5, "wordEnd")).toBe(6);
+    expect(moveWordOffset("alpha beta gamma", 2, "wordEnd")).toBe(5);
+    expect(moveWordOffset("alpha beta gamma", 6, "wordEnd")).toBe(10);
   });
 
-  test("moves forward to token starts", () => {
-    expect(moveWordOffset("alpha beta gamma", 0, 1, "tokenStarts")).toBe(6);
-    expect(moveWordOffset("alpha beta gamma", 2, 1, "tokenStarts")).toBe(6);
-    expect(moveWordOffset("alpha beta gamma", 6, 1, "tokenStarts")).toBe(11);
-    expect(moveWordOffset("  alpha", 0, 1, "tokenStarts")).toBe(2);
+  test("moves to the next word", () => {
+    expect(moveWordOffset("alpha beta gamma", 0, "nextWord")).toBe(6);
+    expect(moveWordOffset("alpha beta gamma", 2, "nextWord")).toBe(6);
+    expect(moveWordOffset("alpha beta gamma", 6, "nextWord")).toBe(11);
+    expect(moveWordOffset("  alpha", 0, "nextWord")).toBe(2);
   });
 
   test.each([
     ["abc ...", 4],
     ["abc $$$", 4],
     ["abc .more", 4],
-    ["abc.more", 4],
     ["abc...more", 6],
-  ])("preserves the token-start punctuation boundary in %s", (text, expectedOffset) => {
-    expect(moveWordOffset(text, 3, 1, "tokenStarts")).toBe(expectedOffset);
+  ])("treats standalone punctuation as a word stop in %s", (text, expectedOffset) => {
+    expect(moveWordOffset(text, 3, "nextWord")).toBe(expectedOffset);
   });
 
-  test("moves backward through punctuation runs in both styles", () => {
-    expect(moveWordOffset("abc ...", 7, -1, "tokenStarts")).toBe(4);
-    expect(moveWordOffset("abc ...", 4, -1, "tokenStarts")).toBe(0);
-    expect(moveWordOffset("abc...more", 6, -1, "wordEdges")).toBe(3);
-    expect(moveWordOffset("abc...more", 3, -1, "wordEdges")).toBe(0);
+  test("groups contiguous standalone punctuation", () => {
+    expect(moveWordOffset("abc...more", 0, "wordEnd")).toBe(3);
+    expect(moveWordOffset("abc...more", 3, "wordEnd")).toBe(6);
+    expect(moveWordOffset("abc...more", 6, "wordEnd")).toBe(10);
   });
 
-  test("treats inline object replacement characters as atomic tokens", () => {
-    const text = `before \uFFFC after`;
-    const objectStart = text.indexOf("\uFFFC");
+  test("preserves locale-aware word-like spans", () => {
+    expect(moveWordOffset("don't stop", 0, "wordEnd")).toBe(5);
+    expect(moveWordOffset("don’t stop", 0, "wordEnd")).toBe(5);
+    expect(moveWordOffset("100.00 dollars", 0, "wordEnd")).toBe(6);
+    expect(moveWordOffset("example.com next", 0, "wordEnd")).toBe(11);
+    expect(moveWordOffset("example.com next", 0, "nextWord")).toBe(12);
+  });
 
-    expect(moveWordOffset(text, objectStart, 1)).toBe(objectStart + 1);
-    expect(moveWordOffset(text, objectStart + 1, -1)).toBe(objectStart);
+  test("moves backward through punctuation runs", () => {
+    expect(moveWordOffset("abc ...", 7, "previousWord")).toBe(4);
+    expect(moveWordOffset("abc ...", 4, "previousWord")).toBe(0);
+    expect(moveWordOffset("abc...more", 6, "previousWord")).toBe(3);
+    expect(moveWordOffset("abc...more", 3, "previousWord")).toBe(0);
+  });
+
+  test("treats inline object replacement characters as atomic units", () => {
+    const spacedText = `before \uFFFC after`;
+    const objectStart = spacedText.indexOf("\uFFFC");
+
+    expect(moveWordOffset(spacedText, objectStart, "wordEnd")).toBe(objectStart + 1);
+    expect(moveWordOffset(spacedText, objectStart + 1, "previousWord")).toBe(objectStart);
+    expect(moveWordOffset(`!\uFFFC?`, 0, "wordEnd")).toBe(1);
+    expect(moveWordOffset(`!\uFFFC?`, 1, "wordEnd")).toBe(2);
+    expect(moveWordOffset(`!\uFFFC?`, 2, "wordEnd")).toBe(3);
   });
 
   test("returns path edges before reporting that no local target remains", () => {
-    expect(moveWordOffset("...alpha...", 2, -1)).toBe(0);
-    expect(moveWordOffset("alpha...", 5, 1)).toBe(8);
-    expect(moveWordOffset("alpha", 0, -1)).toBeNull();
-    expect(moveWordOffset("alpha", 5, 1)).toBeNull();
-    expect(moveWordOffset("alpha", 0, 1, "tokenStarts")).toBeNull();
-    expect(moveWordOffset("", 0, -1)).toBeNull();
-    expect(moveWordOffset("", 0, 1)).toBeNull();
+    expect(moveWordOffset("...alpha...", 2, "previousWord")).toBe(0);
+    expect(moveWordOffset("alpha...", 5, "wordEnd")).toBe(8);
+    expect(moveWordOffset("alpha", 0, "previousWord")).toBeNull();
+    expect(moveWordOffset("alpha", 5, "wordEnd")).toBeNull();
+    expect(moveWordOffset("alpha", 0, "nextWord")).toBeNull();
+    expect(moveWordOffset("", 0, "previousWord")).toBeNull();
+    expect(moveWordOffset("", 0, "wordEnd")).toBeNull();
   });
 
   test("clamps offsets to the UTF-16 text range", () => {
-    expect(moveWordOffset("alpha beta", -10, 1)).toBe(5);
-    expect(moveWordOffset("alpha beta", 99, -1)).toBe(6);
+    expect(moveWordOffset("alpha beta", -10, "wordEnd")).toBe(5);
+    expect(moveWordOffset("alpha beta", 99, "previousWord")).toBe(6);
   });
 });

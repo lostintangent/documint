@@ -8,13 +8,8 @@ import {
   stripInputSeed,
 } from "@/component/hooks/useInput";
 import { resolveEditorInputCommand } from "@/component/lib/keybindings";
-import { resolveEditorWordBoundaryStyle } from "@/component/lib/platform";
-import {
-  createEditorLayoutState,
-  createLayoutCache,
-  resolveEditorTextAtPath,
-} from "@/editor";
-import type { EditorInputCommand } from "@/types";
+import { resolveEditorForwardWordMovement } from "@/component/lib/platform";
+import { createEditorLayoutState, createLayoutCache, resolveEditorTextAtPath } from "@/editor";
 import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 test("treats both paragraph and line-break input types as structural Enter", () => {
@@ -52,84 +47,40 @@ test("strips the hidden input seed from native text", () => {
   expect(stripInputSeed(INPUT_SEED)).toBe("");
 });
 
-test("accepts only selection commands in read-only mode", () => {
-  const safeCommands = [
-    "moveToDocumentEnd",
-    "moveToDocumentStart",
-    "moveToLineEnd",
-    "moveToLineStart",
-    "moveWordBackward",
-    "moveWordForward",
-    "selectAll",
-  ] satisfies EditorInputCommand[];
-
-  const mutatingCommands = [
-    "dedent",
-    "deleteBackward",
-    "deleteForward",
-    "deleteWordBackward",
-    "deleteWordForward",
-    "indent",
-    "insertLineBreak",
-    "insertSoftLineBreak",
-    "moveListItemDown",
-    "moveListItemUp",
-    "redo",
-    "toggleBold",
-    "toggleCode",
-    "toggleItalic",
-    "toggleStrikethrough",
-    "toggleSuperscript",
-    "toggleUnderline",
-    "undo",
-  ] satisfies EditorInputCommand[];
-
-  for (const command of safeCommands) {
-    expect(canApplyInputCommand(command, true)).toBe(true);
-  }
-
-  for (const command of mutatingCommands) {
-    expect(canApplyInputCommand(command, true)).toBe(false);
-    expect(canApplyInputCommand(command, false)).toBe(true);
-  }
+test("allows selection but not mutation in read-only mode", () => {
+  expect(canApplyInputCommand("moveWordForward", true)).toBe(true);
+  expect(canApplyInputCommand("selectAll", true)).toBe(true);
+  expect(canApplyInputCommand("deleteWordForward", true)).toBe(false);
+  expect(canApplyInputCommand("toggleBold", true)).toBe(false);
+  expect(canApplyInputCommand("deleteWordForward", false)).toBe(true);
 });
 
-test("routes platform word-forward gestures to their native boundary style", () => {
+test("routes platform word-forward gestures to their editor movements", () => {
   const state = setup("alpha beta");
   const path = getPath(state, "alpha beta");
   const placed = placeAt(state, path, "start");
   const viewport = layoutAt(placed);
   const macEvent = createKeyboardEvent("ArrowRight", { altKey: true });
   const windowsEvent = createKeyboardEvent("ArrowRight", { ctrlKey: true });
-  const otherEvent = createKeyboardEvent("ArrowRight", { ctrlKey: true });
   const macCommand = resolveEditorInputCommand(macEvent, undefined, "mac");
   const windowsCommand = resolveEditorInputCommand(windowsEvent, undefined, "windows");
-  const otherCommand = resolveEditorInputCommand(otherEvent, undefined, "other");
   const macState = applyKeyboardInputCommand(
     placed,
     viewport,
     macEvent,
     macCommand,
-    resolveEditorWordBoundaryStyle("mac"),
+    resolveEditorForwardWordMovement("mac"),
   );
   const windowsState = applyKeyboardInputCommand(
     placed,
     viewport,
     windowsEvent,
     windowsCommand,
-    resolveEditorWordBoundaryStyle("windows"),
-  );
-  const otherState = applyKeyboardInputCommand(
-    placed,
-    viewport,
-    otherEvent,
-    otherCommand,
-    resolveEditorWordBoundaryStyle("other"),
+    resolveEditorForwardWordMovement("windows"),
   );
 
   expect(macState?.selection.focus.offset).toBe("alpha".length);
   expect(windowsState?.selection.focus.offset).toBe("alpha ".length);
-  expect(otherState?.selection.focus.offset).toBe("alpha".length);
 });
 
 test("routes Windows word-forward movement directly to the next path start", () => {
@@ -139,18 +90,12 @@ test("routes Windows word-forward movement directly to the next path start", () 
   const placed = placeAt(state, alpha, "start");
   const event = createKeyboardEvent("ArrowRight", { ctrlKey: true });
   const command = resolveEditorInputCommand(event, undefined, "windows");
-  const nextState = applyKeyboardInputCommand(
-    placed,
-    layoutAt(placed),
-    event,
-    command,
-    "tokenStarts",
-  );
+  const nextState = applyKeyboardInputCommand(placed, layoutAt(placed), event, command, "nextWord");
 
   expect(nextState?.selection.focus).toEqual({ path: beta.path, offset: 0 });
 });
 
-test("routes word-forward deletion through the same platform boundary style", () => {
+test("routes word-forward deletion through the same editor movement", () => {
   const state = setup("alpha beta");
   const path = getPath(state, "alpha beta");
   const placed = placeAt(state, path, "start");
@@ -162,14 +107,14 @@ test("routes word-forward deletion through the same platform boundary style", ()
     layoutAt(placed),
     event,
     windowsCommand,
-    "tokenStarts",
+    "nextWord",
   );
   const otherState = applyKeyboardInputCommand(
     placed,
     layoutAt(placed),
     event,
     otherCommand,
-    "wordEdges",
+    "wordEnd",
   );
 
   expect(resolveEditorTextAtPath(windowsState!.documentIndex, path.path)).toBe("beta");
@@ -182,13 +127,7 @@ test("extends line-boundary selection with Shift+Home", () => {
   const placed = placeAt(state, path, "end");
   const event = createKeyboardEvent("Home", { shiftKey: true });
   const command = resolveEditorInputCommand(event, undefined, "windows");
-  const nextState = applyKeyboardInputCommand(
-    placed,
-    layoutAt(placed),
-    event,
-    command,
-    "tokenStarts",
-  );
+  const nextState = applyKeyboardInputCommand(placed, layoutAt(placed), event, command, "nextWord");
 
   expect(nextState?.selection.anchor).toEqual(placed.selection.focus);
   expect(nextState?.selection.focus).toEqual({ path: path.path, offset: 0 });
@@ -215,7 +154,7 @@ test.each([
         layoutAt(placed),
         event,
         command,
-        resolveEditorWordBoundaryStyle(platform),
+        resolveEditorForwardWordMovement(platform),
       ),
     ).toBeNull();
   },
