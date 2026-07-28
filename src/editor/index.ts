@@ -40,6 +40,7 @@ export type {
   TextDecorationIndex,
   TextDecorationRootUpdate,
 } from "./text/decorations";
+export type { WordBoundaryStyle } from "./text/words";
 export {
   hasAnimatedDecorations,
   hasAnimatedDecorationsInViewport,
@@ -91,16 +92,9 @@ import {
   resolveHoverTarget as resolveNavigationHoverTarget,
   resolveTargetAtOffset,
 } from "./navigation";
-import { resolveWordNavigationTarget } from "./navigation/word";
 import { type EditorLayoutState, type EditorPoint } from "./layout";
 import { getCommentState, type EditorCommentRange } from "./anchors";
-import {
-  isEditorTextPathMergeable,
-  isSelectionCollapsed,
-  type EditorSelectionPoint,
-  type EditorState,
-} from "./state";
-import { deleteRange } from "./state/commands";
+import type { EditorSelectionPoint, EditorState } from "./state";
 
 export function resolveHoverTarget(
   state: EditorState,
@@ -121,40 +115,6 @@ export function resolveTargetAtSelection(state: EditorState, selectionPoint: Edi
     selectionPoint.path,
     selectionPoint.offset,
     getCommentState(state).ranges,
-  );
-}
-
-export function deleteWordBackward(state: EditorState) {
-  return deleteWord(state, -1);
-}
-
-export function deleteWordForward(state: EditorState) {
-  return deleteWord(state, 1);
-}
-
-function deleteWord(state: EditorState, direction: -1 | 1) {
-  if (!isSelectionCollapsed(state.selection)) {
-    return deleteRange(state, state.selection);
-  }
-
-  const target = resolveWordNavigationTarget(state, direction);
-  if (!target || isUnsafeWordDeleteBoundary(state, target)) {
-    return null;
-  }
-
-  return deleteRange(state, {
-    anchor: state.selection.focus,
-    focus: target,
-  });
-}
-
-function isUnsafeWordDeleteBoundary(state: EditorState, target: EditorSelectionPoint) {
-  const currentPath = state.selection.focus.path;
-
-  return (
-    currentPath !== target.path &&
-    (!isEditorTextPathMergeable(state.documentIndex, currentPath) ||
-      !isEditorTextPathMergeable(state.documentIndex, target.path))
   );
 }
 

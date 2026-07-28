@@ -11,7 +11,6 @@ import {
 } from "@/document";
 import {
   isInertBlock,
-  isEditorTextPathMergeable,
   isRootIndexedBlock,
   previousBlockInFlow,
   nextBlockInFlow,
@@ -22,7 +21,10 @@ import {
 } from "../../../index/query";
 import type { DocumentIndex, IndexedBlock } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
-import { target, type SelectionTarget } from "../../../selection";
+import {
+  target,
+  type SelectionTarget,
+} from "../../../selection";
 
 // The universal at-boundary delete rule.
 //
@@ -107,7 +109,7 @@ export function resolveInFlowBoundaryDelete(
     return resolveEmptyCollapse(documentIndex, current, neighbor, direction);
   }
 
-  const merge = resolveBoundaryMerge(documentIndex, current, neighbor, direction);
+  const merge = resolveBoundaryMerge(current, neighbor, direction);
 
   return merge ? resolveMergeCollapse(documentIndex, merge.victim, merge.absorber) : null;
 }
@@ -170,7 +172,6 @@ function resolveBoundaryPathContext(
 // cells, and other opaque paths are excluded because dropping or
 // flattening their content would be data loss.
 function resolveBoundaryMerge(
-  documentIndex: DocumentIndex,
   current: BoundaryPathContext,
   neighbor: BoundaryPathContext,
   direction: DeleteDirection,
@@ -178,8 +179,7 @@ function resolveBoundaryMerge(
   const victim = direction === "backward" ? current : neighbor;
   const absorber = direction === "backward" ? neighbor : current;
 
-  return isEditorTextPathMergeable(documentIndex, absorber.path) &&
-    isEditorTextPathMergeable(documentIndex, victim.path)
+  return isTextMergeablePath(absorber) && isTextMergeablePath(victim)
     ? { absorber, victim }
     : null;
 }
@@ -202,7 +202,8 @@ function resolveInertNeighborCollapse(
   // Removing it shifts the current path's rootIndex down by one. Forward:
   // inert sat at a higher rootIndex; the current path's rootIndex is
   // unaffected.
-  const newRootIndex = direction === "backward" ? current.rootIndex - 1 : current.rootIndex;
+  const newRootIndex =
+    direction === "backward" ? current.rootIndex - 1 : current.rootIndex;
   const cursorOffset = direction === "backward" ? 0 : ("end" as const);
 
   return {
@@ -212,6 +213,12 @@ function resolveInertNeighborCollapse(
     blocks: [],
     selection: shiftedBlockPathTarget(current.blockPath, newRootIndex, cursorOffset),
   };
+}
+
+// True when this path's block exposes inline children that can be
+// appended/prepended without changing block kind.
+function isTextMergeablePath(context: BoundaryPathContext): boolean {
+  return context.block.type === "paragraph" || context.block.type === "heading";
 }
 
 // Empty boundary collapse: rewrite only the victim's root, removing the
@@ -281,12 +288,7 @@ function resolveMergeCollapse(
     const rootBlock = resolveRootBlock(documentIndex, victim.rootIndex);
     if (!rootBlock) return null;
 
-    const rebuilt = applyEditsToBlock(
-      rootBlock,
-      victim.block,
-      absorber.block,
-      updatedAbsorberBlock,
-    );
+    const rebuilt = applyEditsToBlock(rootBlock, victim.block, absorber.block, updatedAbsorberBlock);
 
     return {
       kind: "splice-blocks",

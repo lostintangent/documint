@@ -4,11 +4,12 @@ import {
   type EditorSelectionPoint,
   type EditorState,
 } from "../state";
-import { resolveWordBoundaryOffset } from "../text/words";
+import { moveWordOffset, type WordBoundaryStyle } from "../text/words";
 
 export function resolveWordNavigationTarget(
   state: EditorState,
   direction: -1 | 1,
+  wordBoundaryStyle: WordBoundaryStyle = "wordEdges",
 ): EditorSelectionPoint | null {
   const focus = state.selection.focus;
   const text = resolveEditorTextAtPath(state.documentIndex, focus.path);
@@ -17,8 +18,8 @@ export function resolveWordNavigationTarget(
     return null;
   }
 
-  const offset = resolveWordBoundaryOffset(text, focus.offset, direction);
-  if (offset !== focus.offset) {
+  const offset = moveWordOffset(text, focus.offset, direction, wordBoundaryStyle);
+  if (offset !== null) {
     return { path: focus.path, offset };
   }
 
@@ -32,14 +33,28 @@ export function resolveWordNavigationTarget(
     }
 
     if (adjacentText.length > 0) {
-      const boundary = direction < 0 ? adjacentText.length : 0;
+      const offset =
+        direction < 0
+          ? moveWordOffset(adjacentText, adjacentText.length, direction, wordBoundaryStyle)
+          : wordBoundaryStyle === "tokenStarts"
+            ? 0
+            : moveWordOffset(adjacentText, 0, direction, wordBoundaryStyle);
+
+      if (offset === null) {
+        return null;
+      }
+
       return {
         path,
-        offset: resolveWordBoundaryOffset(adjacentText, boundary, direction),
+        offset,
       };
     }
 
     path = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, direction);
+  }
+
+  if (direction > 0 && wordBoundaryStyle === "tokenStarts" && focus.offset < text.length) {
+    return { path: focus.path, offset: text.length };
   }
 
   return null;

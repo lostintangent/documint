@@ -7,7 +7,7 @@ import { useState } from "react";
 import { LeafButton } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/input/LeafInput";
-import { resolveEditorPlatform } from "../../lib/platform";
+import { resolveEditorHostPlatform } from "../../lib/platform";
 
 type LinkLeafProps = {
   url: string;
@@ -19,7 +19,7 @@ type LinkLeafProps = {
 
 // Detected once at module load — the user's OS won't change while the
 // editor is alive.
-const OPEN_MODIFIER_LABEL = resolveEditorPlatform() === "mac" ? "CMD+" : "CTRL+";
+const OPEN_MODIFIER_LABEL = resolveEditorHostPlatform() === "mac" ? "CMD+" : "CTRL+";
 
 export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProps) {
   const [isEditing, setIsEditing] = useState(false);

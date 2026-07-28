@@ -41,12 +41,17 @@ import {
   type EditorNavigationMode,
   type EditorSelectionPoint,
   type EditorState,
+  type WordBoundaryStyle,
 } from "@/editor";
 import type { EditorInputCommand } from "@/types";
 import type { MarkdownOptions } from "@/markdown";
 import { copySelectionAsMarkdown, pastePlainText } from "../lib/clipboard";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
+import {
+  resolveEditorHostPlatform,
+  resolveEditorWordBoundaryStyle,
+} from "../lib/platform";
 import {
   editorStateSprig,
   useDocumintStore,
@@ -128,6 +133,7 @@ type KeyboardCommandHandlerInput = {
   navigationMode: EditorNavigationMode;
   state: EditorState;
   viewport: EditorLayoutState;
+  wordBoundaryStyle: WordBoundaryStyle;
 };
 
 type KeyboardCommandHandler = (input: KeyboardCommandHandlerInput) => EditorState | null;
@@ -136,8 +142,10 @@ const keyboardCommandHandlers = {
   dedent: ({ state }) => dedent(state),
   deleteBackward: ({ state }) => deleteBackward(state),
   deleteForward: ({ state }) => deleteForward(state),
-  deleteWordBackward: ({ state }) => deleteWordBackward(state),
-  deleteWordForward: ({ state }) => deleteWordForward(state),
+  deleteWordBackward: ({ state, wordBoundaryStyle }) =>
+    deleteWordBackward(state, wordBoundaryStyle),
+  deleteWordForward: ({ state, wordBoundaryStyle }) =>
+    deleteWordForward(state, wordBoundaryStyle),
   indent: ({ state }) => indent(state),
   insertLineBreak: ({ state }) => insertLineBreak(state),
   insertSoftLineBreak: ({ state }) => insertSoftLineBreak(state),
@@ -157,15 +165,17 @@ const keyboardCommandHandlers = {
       extendSelection: event.shiftKey,
       mode: navigationMode,
     }),
-  moveWordBackward: ({ event, navigationMode, state }) =>
+  moveWordBackward: ({ event, navigationMode, state, wordBoundaryStyle }) =>
     moveCaretByWord(state, -1, {
       extendSelection: event.shiftKey,
       mode: navigationMode,
+      wordBoundaryStyle,
     }),
-  moveWordForward: ({ event, navigationMode, state }) =>
+  moveWordForward: ({ event, navigationMode, state, wordBoundaryStyle }) =>
     moveCaretByWord(state, 1, {
       extendSelection: event.shiftKey,
       mode: navigationMode,
+      wordBoundaryStyle,
     }),
   redo: ({ state }) => redo(state),
   selectAll: ({ state }) => selectAll(state),
@@ -188,8 +198,8 @@ const readOnlyInputCommands = new Set<EditorInputCommand>([
   "selectAll",
 ]);
 
-export function isReadOnlySafeInputCommand(command: EditorInputCommand) {
-  return readOnlyInputCommands.has(command);
+export function canApplyInputCommand(command: EditorInputCommand, readOnly: boolean) {
+  return !readOnly || readOnlyInputCommands.has(command);
 }
 
 // Maximum characters kept in the hidden textarea before the caret, providing
@@ -516,10 +526,10 @@ export function useInput({
           runInputCommand(deleteForwardCommand);
           break;
         case "deleteWordBackward":
-          runInputCommand(deleteWordBackwardCommand);
+          runInputCommand(deleteWordBackwardCommand, resolveEditorWordBoundaryStyle());
           break;
         case "deleteWordForward":
-          runInputCommand(deleteWordForwardCommand);
+          runInputCommand(deleteWordForwardCommand, resolveEditorWordBoundaryStyle());
           break;
       }
       return;
@@ -584,25 +594,20 @@ export function useInput({
     runInputCommand(insertNativeText, value);
   });
 
-  // Cross-handler contract: when this handler returns a state change for a
-  // chord that the browser would otherwise also surface through a
-  // `beforeinput` (notably Shift+Enter, which fires `keydown` with
-  // `shiftKey: true` *and* `beforeinput` with `inputType: "insertLineBreak"`),
-  // we MUST `preventDefault` here so the corresponding beforeinput is
-  // suppressed. Otherwise the soft-break-via-keydown would be followed
-  // immediately by a structural-Enter-via-beforeinput and the document
-  // would mutate twice for one user gesture. This contract is also why
-  // the beforeinput handler can safely route both `insertLineBreak` and
-  // `insertParagraph` to structural Enter — the soft-break gesture is
-  // already consumed before beforeinput fires.
+  // Cross-handler contract: consume an eligible keybinding before applying
+  // it, even when the editor transition is a no-op. The browser may otherwise
+  // surface the same gesture through `beforeinput` (notably Shift+Enter),
+  // which would mutate the document twice. Read-only commands that cannot be
+  // applied are deliberately left unconsumed.
   const handleKeyDown = useEffectEvent(
     (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       if (onKeyDown?.(event)) {
         return;
       }
 
-      const command = resolveEditorInputCommand(event.nativeEvent, keybindings);
-      if (command) {
+      const platform = resolveEditorHostPlatform();
+      const command = resolveEditorInputCommand(event.nativeEvent, keybindings, platform);
+      if (command && canApplyInputCommand(command, readOnly)) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -611,7 +616,8 @@ export function useInput({
         applyKeyboardInput,
         store.layout.get(),
         event.nativeEvent,
-        keybindings,
+        command,
+        resolveEditorWordBoundaryStyle(platform),
         readOnly,
       );
 
@@ -1013,30 +1019,37 @@ function replaceNativeTextCommand(
   return replaceTextRange(state, start, end, replacement);
 }
 
-function applyKeyboardInputCommand(
+export function applyKeyboardInputCommand(
   state: EditorState,
   viewport: EditorLayoutState,
   event: KeyboardEvent,
-  keybindings?: EditorInputKeybinding[],
+  command: EditorInputCommand | null,
+  wordBoundaryStyle: WordBoundaryStyle,
   readOnly = false,
 ): EditorState | null {
   const navigationMode: EditorNavigationMode = readOnly ? "block" : "text";
 
-  const command = resolveEditorInputCommand(event, keybindings);
-
   if (command) {
-    if (readOnly && !isReadOnlySafeInputCommand(command)) return null;
-    return keyboardCommandHandlers[command]({ event, navigationMode, state, viewport });
+    if (!canApplyInputCommand(command, readOnly)) return null;
+    return keyboardCommandHandlers[command]({
+      event,
+      navigationMode,
+      state,
+      viewport,
+      wordBoundaryStyle,
+    });
   }
 
-  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+  const hasCommandModifier = event.altKey || event.ctrlKey || event.metaKey;
+
+  if (!hasCommandModifier && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
     return moveCaretHorizontally(state, event.key === "ArrowLeft" ? -1 : 1, {
       extendSelection: event.shiftKey,
       mode: navigationMode,
     });
   }
 
-  if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+  if (!hasCommandModifier && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
     return moveCaretVertically(state, viewport, event.key === "ArrowUp" ? -1 : 1, {
       extendSelection: event.shiftKey,
       mode: navigationMode,

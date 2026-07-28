@@ -1,111 +1,139 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { resolveEditorInputCommand, type EditorInputKeybinding } from "@/component/lib/keybindings";
+import type { EditorHostPlatform } from "@/component/lib/platform";
 
-// --- Modifier shortcuts ---
-// Each row is `[label, key, modifiers, expectedCommand]`. The label is the
-// only thing surfaced in the test name; the modifier object is consumed by
-// `createKeyboardEvent` so the test body stays uniform.
-test.each([
-  ["bold", "b", { metaKey: true }, "toggleBold"],
-  ["italic", "i", { metaKey: true }, "toggleItalic"],
-  ["underline", "u", { metaKey: true }, "toggleUnderline"],
-  ["superscript", ".", { metaKey: true }, "toggleSuperscript"],
-  ["inline code", "e", { metaKey: true }, "toggleCode"],
-  ["strikethrough", "x", { metaKey: true, shiftKey: true }, "toggleStrikethrough"],
-  ["move list item up", "ArrowUp", { altKey: true, shiftKey: true }, "moveListItemUp"],
-  ["move list item down", "ArrowDown", { altKey: true, shiftKey: true }, "moveListItemDown"],
-  ["undo", "z", { metaKey: true }, "undo"],
-  ["redo via meta+shift+z", "z", { metaKey: true, shiftKey: true }, "redo"],
-  ["redo via ctrl+y", "y", { ctrlKey: true }, "redo"],
-  ["select all via meta", "a", { metaKey: true }, "selectAll"],
-  ["select all via ctrl", "a", { ctrlKey: true }, "selectAll"],
-] as const)("resolves the modifier shortcut for %s", (_label, key, modifiers, command) => {
-  expect(resolveEditorInputCommand(createKeyboardEvent(key, modifiers))).toBe(command);
-});
+describe("Default keybindings", () => {
+  test.each([
+    ["Enter", "Enter", {}, "insertLineBreak"],
+    ["Shift+Enter", "Enter", { shiftKey: true }, "insertSoftLineBreak"],
+    ["Backspace", "Backspace", {}, "deleteBackward"],
+    ["Delete", "Delete", {}, "deleteForward"],
+    ["Tab", "Tab", {}, "indent"],
+    ["Shift+Tab", "Tab", { shiftKey: true }, "dedent"],
+    ["Alt+Shift+ArrowUp", "ArrowUp", { altKey: true, shiftKey: true }, "moveListItemUp"],
+    ["Alt+Shift+ArrowDown", "ArrowDown", { altKey: true, shiftKey: true }, "moveListItemDown"],
+  ] as const)("resolves the platform-independent key %s", (_label, key, modifiers, command) => {
+    expect(resolve(key, modifiers, "windows")).toBe(command);
+  });
 
-// --- Structural keys ---
-test.each([
-  ["Enter", "Enter", {}, "insertLineBreak"],
-  ["Backspace", "Backspace", {}, "deleteBackward"],
-  ["Delete", "Delete", {}, "deleteForward"],
-  ["Home", "Home", {}, "moveToLineStart"],
-  ["End", "End", {}, "moveToLineEnd"],
-  ["Tab", "Tab", {}, "indent"],
-  ["Shift+Tab", "Tab", { shiftKey: true }, "dedent"],
-  ["meta+ArrowLeft", "ArrowLeft", { metaKey: true }, "moveToLineStart"],
-  ["meta+ArrowRight", "ArrowRight", { metaKey: true }, "moveToLineEnd"],
-  ["meta+shift+ArrowLeft", "ArrowLeft", { metaKey: true, shiftKey: true }, "moveToLineStart"],
-  ["meta+shift+ArrowRight", "ArrowRight", { metaKey: true, shiftKey: true }, "moveToLineEnd"],
-  ["alt+ArrowLeft", "ArrowLeft", { altKey: true }, "moveWordBackward"],
-  ["alt+shift+ArrowRight", "ArrowRight", { altKey: true, shiftKey: true }, "moveWordForward"],
-  ["meta+Home", "Home", { metaKey: true }, "moveToDocumentStart"],
-  ["ctrl+shift+End", "End", { ctrlKey: true, shiftKey: true }, "moveToDocumentEnd"],
-] as const)("resolves the structural key %s", (_label, key, modifiers, command) => {
-  expect(resolveEditorInputCommand(createKeyboardEvent(key, modifiers))).toBe(command);
-});
+  test.each([
+    ["Option+Left", "ArrowLeft", { altKey: true }, "moveWordBackward"],
+    ["Option+Shift+Right", "ArrowRight", { altKey: true, shiftKey: true }, "moveWordForward"],
+    ["Command+Left", "ArrowLeft", { metaKey: true }, "moveToLineStart"],
+    ["Command+Shift+Right", "ArrowRight", { metaKey: true, shiftKey: true }, "moveToLineEnd"],
+    ["Command+Up", "ArrowUp", { metaKey: true }, "moveToDocumentStart"],
+    ["Command+Shift+Down", "ArrowDown", { metaKey: true, shiftKey: true }, "moveToDocumentEnd"],
+    ["Option+Backspace", "Backspace", { altKey: true }, "deleteWordBackward"],
+    ["Option+Delete", "Delete", { altKey: true }, "deleteWordForward"],
+  ] as const)("resolves the macOS key %s", (_label, key, modifiers, command) => {
+    expect(resolve(key, modifiers, "mac")).toBe(command);
+  });
 
-// --- Unsupported shortcuts return null ---
-test.each([
-  ["meta+x has no mapping", "x", { metaKey: true }],
-  ["plain `b` without a modifier is not toggleBold", "b", {}],
-] as const)("returns null when %s", (_label, key, modifiers) => {
-  expect(resolveEditorInputCommand(createKeyboardEvent(key, modifiers))).toBeNull();
-});
+  test.each([
+    ["Control+Left", "ArrowLeft", { ctrlKey: true }, "moveWordBackward"],
+    ["Control+Shift+Right", "ArrowRight", { ctrlKey: true, shiftKey: true }, "moveWordForward"],
+    ["Home", "Home", {}, "moveToLineStart"],
+    ["End", "End", {}, "moveToLineEnd"],
+    ["Shift+Home", "Home", { shiftKey: true }, "moveToLineStart"],
+    ["Shift+End", "End", { shiftKey: true }, "moveToLineEnd"],
+    ["Control+Home", "Home", { ctrlKey: true }, "moveToDocumentStart"],
+    ["Control+Shift+End", "End", { ctrlKey: true, shiftKey: true }, "moveToDocumentEnd"],
+    ["Control+Backspace", "Backspace", { ctrlKey: true }, "deleteWordBackward"],
+    ["Control+Delete", "Delete", { ctrlKey: true }, "deleteWordForward"],
+  ] as const)("resolves the non-Mac key %s", (_label, key, modifiers, command) => {
+    expect(resolve(key, modifiers, "windows")).toBe(command);
+  });
 
-test("resolves commands against a caller-provided keybinding set", () => {
-  const keybindings: EditorInputKeybinding[] = [
-    {
-      command: "toggleBold",
-      key: "k",
-      modKey: true,
+  test("uses the same non-Mac bindings on other hosts", () => {
+    expect(resolve("ArrowLeft", { ctrlKey: true }, "other")).toBe("moveWordBackward");
+    expect(resolve("Delete", { ctrlKey: true }, "other")).toBe("deleteWordForward");
+    expect(resolve("Home", {}, "other")).toBe("moveToLineStart");
+  });
+
+  test.each([
+    ["macOS Command+B", "b", { metaKey: true }, "mac", "toggleBold"],
+    ["macOS Command+E", "e", { metaKey: true }, "mac", "toggleCode"],
+    ["macOS Command+I", "i", { metaKey: true }, "mac", "toggleItalic"],
+    ["macOS Command+Period", ".", { metaKey: true }, "mac", "toggleSuperscript"],
+    ["macOS Command+U", "u", { metaKey: true }, "mac", "toggleUnderline"],
+    ["macOS Command+Shift+X", "x", { metaKey: true, shiftKey: true }, "mac", "toggleStrikethrough"],
+    ["macOS Command+Z", "z", { metaKey: true }, "mac", "undo"],
+    ["macOS Command+Shift+Z", "z", { metaKey: true, shiftKey: true }, "mac", "redo"],
+    ["non-Mac Control+B", "b", { ctrlKey: true }, "windows", "toggleBold"],
+    ["non-Mac Control+Y", "y", { ctrlKey: true }, "other", "redo"],
+    ["non-Mac Control+Shift+Z", "z", { ctrlKey: true, shiftKey: true }, "other", "redo"],
+    ["non-Mac Control+A", "a", { ctrlKey: true }, "windows", "selectAll"],
+  ] as const)(
+    "resolves the primary-modifier shortcut %s",
+    (_label, key, modifiers, platform, command) => {
+      expect(resolve(key, modifiers, platform)).toBe(command);
     },
-  ];
-
-  expect(resolveEditorInputCommand(createKeyboardEvent("k", { metaKey: true }), keybindings)).toBe(
-    "toggleBold",
   );
-  expect(
-    resolveEditorInputCommand(createKeyboardEvent("b", { metaKey: true }), keybindings),
-  ).toBeNull();
+
+  test.each([
+    ["macOS Control+Left", "ArrowLeft", { ctrlKey: true }, "mac"],
+    ["macOS Home", "Home", {}, "mac"],
+    ["macOS Shift+End", "End", { shiftKey: true }, "mac"],
+    ["macOS Command+Home", "Home", { metaKey: true }, "mac"],
+    ["macOS Control+B", "b", { ctrlKey: true }, "mac"],
+    ["non-Mac Alt+Left", "ArrowLeft", { altKey: true }, "windows"],
+    ["non-Mac Meta+Left", "ArrowLeft", { metaKey: true }, "windows"],
+    ["non-Mac Control+Up", "ArrowUp", { ctrlKey: true }, "other"],
+    ["non-Mac Meta+B", "b", { metaKey: true }, "other"],
+    ["Control+Meta+Backspace", "Backspace", { ctrlKey: true, metaKey: true }, "windows"],
+    ["Shift+Delete", "Delete", { shiftKey: true }, "windows"],
+  ] as const)("does not hijack unsupported shortcut %s", (_label, key, modifiers, platform) => {
+    expect(resolve(key, modifiers, platform)).toBeNull();
+  });
 });
 
-test.each([
-  ["mac backward", "Backspace", { altKey: true }, "mac", "deleteWordBackward"],
-  ["mac forward", "Delete", { altKey: true }, "mac", "deleteWordForward"],
-  ["non-Mac backward", "Backspace", { ctrlKey: true }, "nonMac", "deleteWordBackward"],
-  ["non-Mac forward", "Delete", { ctrlKey: true }, "nonMac", "deleteWordForward"],
-] as const)(
-  "resolves platform word deletion for %s",
-  (_label, key, modifiers, platform, command) => {
-    expect(
-      resolveEditorInputCommand(createKeyboardEvent(key, modifiers), undefined, platform),
-    ).toBe(command);
-  },
-);
+describe("Custom keybindings", () => {
+  test("uses the active platform modifier for modKey", () => {
+    const keybindings: EditorInputKeybinding[] = [
+      { command: "toggleBold", key: "k", modKey: true },
+    ];
 
-test.each([
-  ["Mac Ctrl+Backspace", "Backspace", { ctrlKey: true }, "mac"],
-  ["non-Mac Alt+Backspace", "Backspace", { altKey: true }, "nonMac"],
-  ["Ctrl+Meta+Backspace", "Backspace", { ctrlKey: true, metaKey: true }, "nonMac"],
-  ["Shift+Delete", "Delete", { shiftKey: true }, "nonMac"],
-] as const)(
-  "does not hijack unsupported modified deletion for %s",
-  (_label, key, modifiers, platform) => {
-    expect(
-      resolveEditorInputCommand(createKeyboardEvent(key, modifiers), undefined, platform),
-    ).toBeNull();
-  },
-);
+    expect(resolve("k", { metaKey: true }, "mac", keybindings)).toBe("toggleBold");
+    expect(resolve("k", { ctrlKey: true }, "mac", keybindings)).toBeNull();
+    expect(resolve("k", { ctrlKey: true }, "windows", keybindings)).toBe("toggleBold");
+    expect(resolve("k", { ctrlKey: true }, "other", keybindings)).toBe("toggleBold");
+    expect(resolve("k", { metaKey: true }, "windows", keybindings)).toBeNull();
+    expect(resolve("k", { ctrlKey: true, metaKey: true }, "windows", keybindings)).toBeNull();
+  });
 
-function createKeyboardEvent(
+  test("supports modKey false and exact modifier escape hatches", () => {
+    const unmodified: EditorInputKeybinding[] = [
+      { command: "toggleBold", key: "k", modKey: false },
+    ];
+    const exactControl: EditorInputKeybinding[] = [
+      { command: "toggleCode", ctrlKey: true, key: "k" },
+    ];
+
+    expect(resolve("k", {}, "mac", unmodified)).toBe("toggleBold");
+    expect(resolve("k", { metaKey: true }, "mac", unmodified)).toBeNull();
+    expect(resolve("k", { ctrlKey: true }, "mac", exactControl)).toBe("toggleCode");
+  });
+
+  test("replaces rather than supplements the default keybinding set", () => {
+    const keybindings: EditorInputKeybinding[] = [
+      { command: "toggleBold", key: "k", modKey: true },
+    ];
+
+    expect(resolve("k", { metaKey: true }, "mac", keybindings)).toBe("toggleBold");
+    expect(resolve("b", { metaKey: true }, "mac", keybindings)).toBeNull();
+  });
+});
+
+function resolve(
   key: string,
-  options: {
-    altKey?: boolean;
-    ctrlKey?: boolean;
-    metaKey?: boolean;
-    shiftKey?: boolean;
-  } = {},
+  modifiers: KeyboardEventInit,
+  platform: EditorHostPlatform,
+  keybindings?: EditorInputKeybinding[],
 ) {
+  return resolveEditorInputCommand(createKeyboardEvent(key, modifiers), keybindings, platform);
+}
+
+function createKeyboardEvent(key: string, options: KeyboardEventInit = {}) {
   return {
     altKey: options.altKey ?? false,
     ctrlKey: options.ctrlKey ?? false,

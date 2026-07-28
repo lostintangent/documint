@@ -17,27 +17,27 @@ import { shiftedBlockPathTarget, resolveInFlowBoundaryDelete } from "./boundary-
 import { resolveBlockDemotion } from "./block-demote";
 import { resolveCharacterDelete } from "./character";
 
+export { resolveWordDeletion } from "./word";
+
 type AdjacentLists = {
   next: ListBlock;
   previous: ListBlock;
 };
 
-// Structural delete dispatcher.
+// Caret-driven deletion has three semantic modes:
 //
-// Deletion has three behaviors, each in its own file:
+//   - character (`character.ts`) removes one grapheme inside a text path;
+//   - structural (`boundary-collapse.ts` and `block-demote.ts`) handles
+//     Backspace/Delete at path and wrapper boundaries;
+//   - word (`word.ts`) reuses shared local word offsets, then applies its own
+//     conservative policy before spanning root blocks.
 //
-//   - character delete (`character.ts`) — single-grapheme delete inside
-//     a text path. The hot path for typing-style deletion.
-//   - boundary collapse (`boundary-collapse.ts`) — the universal rule
-//     for caret-driven delete at a block boundary: fold the current
-//     path into its in-flow neighbor, deleting the smaller side and
-//     merging text where appropriate.
-//   - block demote (`block-demote.ts`) — the override for backspace at
-//     the first-in-flow position of a root wrapper: heading →
-//     paragraph, blockquote → its children, list → flattened items.
+// `resolveDeletion` composes character deletion with its structural fallback.
+// Word commands enter through `resolveWordDeletion` because they resolve a
+// larger range before dispatching the same text-replacement action.
 //
-// Plus one small private override below — adjacent-list seam-merge —
-// that doesn't fit the demote shape (it operates on an empty
+// Structural deletion also has one small private adjacent-list seam-merge
+// override below. It doesn't fit the demote shape (it operates on an empty
 // paragraph between two compatible lists rather than at the start of
 // a wrapper) but is delete-only and lives here rather than carving
 // out a fourth peer file for ~30 lines.

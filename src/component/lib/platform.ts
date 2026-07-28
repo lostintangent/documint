@@ -1,18 +1,26 @@
-export type EditorPlatform = "mac" | "nonMac";
+import type { WordBoundaryStyle } from "@/editor";
+
+export type EditorHostPlatform = "mac" | "other" | "windows";
 
 type NavigatorPlatform = {
   platform: string;
   userAgent: string;
 };
 
-export function resolveEditorPlatform(
-  environment: NavigatorPlatform | null = typeof navigator === "undefined" ? null : navigator,
-): EditorPlatform {
-  if (!environment) {
-    return "nonMac";
+export function resolveEditorHostPlatform(
+  environment: NavigatorPlatform = navigator,
+): EditorHostPlatform {
+  const identity = `${environment.platform} ${environment.userAgent}`;
+
+  if (/Mac|iPhone|iPad|iPod/.test(identity)) {
+    return "mac";
   }
 
-  return /Mac|iPhone|iPad|iPod/.test(environment.platform || environment.userAgent)
-    ? "mac"
-    : "nonMac";
+  return /Win/.test(identity) ? "windows" : "other";
+}
+
+export function resolveEditorWordBoundaryStyle(
+  platform: EditorHostPlatform = resolveEditorHostPlatform(),
+): WordBoundaryStyle {
+  return platform === "windows" ? "tokenStarts" : "wordEdges";
 }

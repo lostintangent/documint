@@ -6,7 +6,7 @@ import virtualModulesPlugin from "./virtual-modules";
 // Build modes:
 //
 //   - `dev` — fast verification build for CI. Bundles both the library
-//     (`src/index.ts`) and the playground HTML entrypoints
+//     (`src/index.ts`) and the playground (`playground/index.html`)
 //     without minification, with external sourcemaps. Skips type-
 //     declaration generation, which is slow and only relevant at publish
 //     time. Used by `.github/workflows/ci.yml` to confirm both entry
@@ -119,7 +119,7 @@ if (mode !== "prod") {
   rmSync("dist/playground", { recursive: true, force: true });
 
   const playgroundBuild = await Bun.build({
-    entrypoints: ["playground/index.html", "playground/keybindings.html"],
+    entrypoints: ["playground/index.html"],
     outdir: "dist/playground",
     plugins: [virtualModulesPlugin, tailwindPlugin],
     sourcemap: mode === "dev" ? "external" : "none",
