@@ -51,16 +51,14 @@ import { resolveEditorForwardWordMovement, resolveEditorHostPlatform } from "../
 import {
   editorStateSprig,
   useDocumintStore,
-  useEditorCommand,
   useSprig,
-  type EditorStateTransition,
 } from "../store";
 
 type UseInputOptions = {
   // DOM refs the hook reads from.
   inputRef: RefObject<HTMLTextAreaElement | null>;
 
-  keybindings?: EditorInputKeybinding[];
+  keybindings?: readonly EditorInputKeybinding[];
   markdownOptions?: MarkdownOptions;
   readOnly: boolean;
 
@@ -124,61 +122,63 @@ type InputController = {
   inputHandlers: InputHandlers;
 };
 
-type KeyboardCommandHandlerInput = {
+type KeyboardCommandContext = {
   extendSelection: boolean;
   forwardWordMovement: WordMovement;
   layout: EditorLayoutState;
   navigationMode: EditorNavigationMode;
-  state: EditorState;
 };
 
-type KeyboardCommandHandler = (input: KeyboardCommandHandlerInput) => EditorState | null;
+type KeyboardCommandHandler = (
+  state: EditorState,
+  context: KeyboardCommandContext,
+) => EditorState | null;
 
-const keyboardCommandHandlers = {
-  dedent: ({ state }) => dedent(state),
-  deleteBackward: ({ state }) => deleteBackward(state),
-  deleteForward: ({ state }) => deleteForward(state),
-  deleteWordBackward: ({ state }) => deleteWord(state, "previousWord"),
-  deleteWordForward: ({ forwardWordMovement, state }) => deleteWord(state, forwardWordMovement),
-  indent: ({ state }) => indent(state),
-  insertLineBreak: ({ state }) => insertLineBreak(state),
-  insertSoftLineBreak: ({ state }) => insertSoftLineBreak(state),
-  moveListItemDown: ({ state }) => moveListItemDown(state),
-  moveListItemUp: ({ state }) => moveListItemUp(state),
-  moveToDocumentEnd: ({ extendSelection, state }) =>
+const keyboardCommandHandlers: Record<EditorInputCommand, KeyboardCommandHandler> = {
+  dedent,
+  deleteBackward,
+  deleteForward,
+  deleteWordBackward: (state) => deleteWord(state, "previousWord"),
+  deleteWordForward: (state, { forwardWordMovement }) => deleteWord(state, forwardWordMovement),
+  indent,
+  insertLineBreak,
+  insertSoftLineBreak,
+  moveListItemDown,
+  moveListItemUp,
+  moveToDocumentEnd: (state, { extendSelection }) =>
     moveCaretToDocumentBoundary(state, "end", extendSelection),
-  moveToDocumentStart: ({ extendSelection, state }) =>
+  moveToDocumentStart: (state, { extendSelection }) =>
     moveCaretToDocumentBoundary(state, "start", extendSelection),
-  moveToLineEnd: ({ extendSelection, layout, navigationMode, state }) =>
+  moveToLineEnd: (state, { extendSelection, layout, navigationMode }) =>
     moveCaretToLineBoundary(state, layout, "End", {
       extendSelection,
       mode: navigationMode,
     }),
-  moveToLineStart: ({ extendSelection, layout, navigationMode, state }) =>
+  moveToLineStart: (state, { extendSelection, layout, navigationMode }) =>
     moveCaretToLineBoundary(state, layout, "Home", {
       extendSelection,
       mode: navigationMode,
     }),
-  moveWordBackward: ({ extendSelection, navigationMode, state }) =>
+  moveWordBackward: (state, { extendSelection, navigationMode }) =>
     moveCaretByWord(state, "previousWord", {
       extendSelection,
       mode: navigationMode,
     }),
-  moveWordForward: ({ extendSelection, forwardWordMovement, navigationMode, state }) =>
+  moveWordForward: (state, { extendSelection, forwardWordMovement, navigationMode }) =>
     moveCaretByWord(state, forwardWordMovement, {
       extendSelection,
       mode: navigationMode,
     }),
-  redo: ({ state }) => redo(state),
-  selectAll: ({ state }) => selectAll(state),
-  toggleBold: ({ state }) => toggleMark(state, "bold"),
-  toggleCode: ({ state }) => toggleMark(state, "code"),
-  toggleItalic: ({ state }) => toggleMark(state, "italic"),
-  toggleStrikethrough: ({ state }) => toggleMark(state, "strikethrough"),
-  toggleSuperscript: ({ state }) => toggleMark(state, "superscript"),
-  toggleUnderline: ({ state }) => toggleMark(state, "underline"),
-  undo: ({ state }) => undo(state),
-} satisfies Record<EditorInputCommand, KeyboardCommandHandler>;
+  redo,
+  selectAll,
+  toggleBold: (state) => toggleMark(state, "bold"),
+  toggleCode: (state) => toggleMark(state, "code"),
+  toggleItalic: (state) => toggleMark(state, "italic"),
+  toggleStrikethrough: (state) => toggleMark(state, "strikethrough"),
+  toggleSuperscript: (state) => toggleMark(state, "superscript"),
+  toggleUnderline: (state) => toggleMark(state, "underline"),
+  undo,
+};
 
 const readOnlyInputCommands = new Set<EditorInputCommand>([
   "moveToDocumentEnd",
@@ -241,25 +241,13 @@ export function useInput({
   // our own logic doesn't preventDefault the priming execCommands.
   const isUndoStackPrimingRef = useRef(false);
   const undoStackPrimedRef = useRef(false);
-  const insertNativeText = useEditorCommand(insertNativeTextCommand);
-  const replaceNativeText = useEditorCommand(replaceNativeTextCommand);
-  const insertLineBreakCommand = useEditorCommand(insertLineBreak);
-  const deleteBackwardCommand = useEditorCommand(deleteBackward);
-  const deleteForwardCommand = useEditorCommand(deleteForward);
-  const deleteWordCommand = useEditorCommand(deleteWord);
-  const undoCommand = useEditorCommand(undo);
-  const redoCommand = useEditorCommand(redo);
-  const applyKeyboardInput = useEditorCommand(applyKeyboardInputCommand);
-  const deleteSelectionCommand = useEditorCommand(deleteSelection);
-  const insertImageCommand = useEditorCommand(insertImage);
-  const pastePlainTextCommand = useEditorCommand(pastePlainText);
-
+  
   const runInputCommand = useEffectEvent(
     <Args extends unknown[]>(
-      command: (...args: Args) => EditorStateTransition | null,
+      command: (state: EditorState, ...args: Args) => EditorState | null,
       ...args: Args
     ) => {
-      const transition = command(...args);
+      const transition = store.editor.command(command, ...args);
       if (transition) {
         onActivity();
       }
@@ -461,7 +449,12 @@ export function useInput({
       // textarea selection extended over the range to replace.
       const range = resolveReplacementRange(event.target);
       if (range.charsToReplace > 0) {
-        runInputCommand(replaceNativeText, range.charsToReplace, range.trailingOffset, event.data);
+        runInputCommand(
+          replaceNativeTextCommand,
+          range.charsToReplace,
+          range.trailingOffset,
+          event.data,
+        );
         return;
       }
 
@@ -471,13 +464,13 @@ export function useInput({
       if (overlap > 0) {
         const suffix = event.data.slice(overlap);
         if (suffix.length > 0) {
-          runInputCommand(insertNativeText, suffix);
+          runInputCommand(insertNativeTextCommand, suffix);
         }
         return;
       }
 
       // Plain typing / IME commit / autocomplete.
-      runInputCommand(insertNativeText, event.data);
+      runInputCommand(insertNativeTextCommand, event.data);
       return;
     }
 
@@ -488,7 +481,12 @@ export function useInput({
       if (!event.data) return;
       event.preventDefault();
       const range = resolveReplacementRange(event.target);
-      runInputCommand(replaceNativeText, range.charsToReplace, range.trailingOffset, event.data);
+      runInputCommand(
+        replaceNativeTextCommand,
+        range.charsToReplace,
+        range.trailingOffset,
+        event.data,
+      );
       return;
     }
 
@@ -503,7 +501,7 @@ export function useInput({
       // branch sees it. Touch-primary devices intentionally don't get a
       // soft-break gesture (consistent with Notion, Docs, etc.).
       event.preventDefault();
-      runInputCommand(insertLineBreakCommand);
+      runInputCommand(insertLineBreak);
       return;
     }
 
@@ -511,16 +509,16 @@ export function useInput({
       event.preventDefault();
       switch (deleteCommand) {
         case "deleteBackward":
-          runInputCommand(deleteBackwardCommand);
+          runInputCommand(deleteBackward);
           break;
         case "deleteForward":
-          runInputCommand(deleteForwardCommand);
+          runInputCommand(deleteForward);
           break;
         case "deleteWordBackward":
-          runInputCommand(deleteWordCommand, "previousWord");
+          runInputCommand(deleteWord, "previousWord");
           break;
         case "deleteWordForward":
-          runInputCommand(deleteWordCommand, resolveEditorForwardWordMovement());
+          runInputCommand(deleteWord, resolveEditorForwardWordMovement());
           break;
       }
       return;
@@ -534,7 +532,7 @@ export function useInput({
     if (event.inputType === "historyUndo") {
       event.preventDefault();
       event.stopPropagation();
-      runInputCommand(undoCommand);
+      runInputCommand(undo);
       rePrimeUndoStack();
       return;
     }
@@ -542,7 +540,7 @@ export function useInput({
     if (event.inputType === "historyRedo") {
       event.preventDefault();
       event.stopPropagation();
-      runInputCommand(redoCommand);
+      runInputCommand(redo);
       rePrimeUndoStack();
       return;
     }
@@ -582,7 +580,7 @@ export function useInput({
       return;
     }
 
-    runInputCommand(insertNativeText, value);
+    runInputCommand(insertNativeTextCommand, value);
   });
 
   // Cross-handler contract: consume an eligible keybinding before applying
@@ -604,7 +602,7 @@ export function useInput({
       }
 
       const transition = runInputCommand(
-        applyKeyboardInput,
+        applyKeyboardInputCommand,
         store.layout.get(),
         event.nativeEvent,
         command,
@@ -651,7 +649,7 @@ export function useInput({
 
       event.preventDefault();
       event.clipboardData.setData("text/plain", markdown);
-      runInputCommand(deleteSelectionCommand);
+      runInputCommand(deleteSelection);
     },
   );
 
@@ -671,7 +669,7 @@ export function useInput({
         event.preventDefault();
         const path = await onImagePaste(imageFile);
         if (path) {
-          runInputCommand(insertImageCommand, path);
+          runInputCommand(insertImage, path);
         }
         return;
       }
@@ -683,7 +681,7 @@ export function useInput({
       }
 
       event.preventDefault();
-      runInputCommand(pastePlainTextCommand, pastedText, markdownOptions);
+      runInputCommand(pastePlainText, pastedText, markdownOptions);
     },
   );
 
@@ -1022,12 +1020,11 @@ export function applyKeyboardInputCommand(
 
   if (command) {
     if (!canApplyInputCommand(command, readOnly)) return null;
-    return keyboardCommandHandlers[command]({
+    return keyboardCommandHandlers[command](state, {
       extendSelection: event.shiftKey,
       forwardWordMovement,
       layout,
       navigationMode,
-      state,
     });
   }
 

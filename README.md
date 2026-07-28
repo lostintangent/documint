@@ -46,6 +46,23 @@ export function App() {
 
 `onContentChanged` emits the full next markdown snapshot. Hosts that need minimal text edits can diff their previous content against the snapshot inside their own text model.
 
+## Custom Keybindings
+
+Pass `keybindings` to replace the built-in bindings. To add or override bindings while retaining the defaults, put overrides first and spread `defaultKeybindings` after them; the first matching binding wins.
+
+```tsx
+import { Documint, defaultKeybindings, type EditorInputKeybinding } from "documint";
+
+const keybindings: readonly EditorInputKeybinding[] = [
+  { key: "b", modKey: true, command: "toggleCode" },
+  ...defaultKeybindings,
+];
+
+<Documint content={content} onContentChanged={setContent} keybindings={keybindings} />;
+```
+
+`modKey` means exactly Command on macOS and Control elsewhere. Omitted modifiers mean unmodified; use `shiftKey: "any"` when a binding should match with or without Shift, and `platform: "mac"` or `"nonMac"` for platform-specific bindings. The map covers named editor shortcuts; ordinary typing and unmodified arrow/Page navigation remain built-in input behavior.
+
 ## Read-Only Review Mode
 
 Pass `readOnly` to let users select text, copy, and use review chrome without changing document content. Content-editing affordances such as typing, paste, cut, formatting, link editing, table controls, insertions, and image resize are disabled or not shown. Comments still persist through `onContentChanged`, so keep that callback wired when read-only users should be able to create, reply to, resolve, edit, or delete comments.

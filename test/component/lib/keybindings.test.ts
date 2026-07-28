@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { resolveEditorInputCommand, type EditorInputKeybinding } from "@/component/lib/keybindings";
+import {
+  defaultKeybindings,
+  resolveEditorInputCommand,
+  type EditorInputKeybinding,
+} from "@/component/lib/keybindings";
 import type { EditorHostPlatform } from "@/component/lib/platform";
 
 describe("Default keybindings", () => {
@@ -122,13 +126,22 @@ describe("Custom keybindings", () => {
     expect(resolve("k", { metaKey: true }, "mac", keybindings)).toBe("toggleBold");
     expect(resolve("b", { metaKey: true }, "mac", keybindings)).toBeNull();
   });
+
+  test("uses the first matching binding so callers can override defaults", () => {
+    const keybindings: readonly EditorInputKeybinding[] = [
+      { command: "toggleCode", key: "b", modKey: true },
+      ...defaultKeybindings,
+    ];
+
+    expect(resolve("b", { metaKey: true }, "mac", keybindings)).toBe("toggleCode");
+  });
 });
 
 function resolve(
   key: string,
   modifiers: KeyboardEventInit,
   platform: EditorHostPlatform,
-  keybindings?: EditorInputKeybinding[],
+  keybindings?: readonly EditorInputKeybinding[],
 ) {
   return resolveEditorInputCommand(createKeyboardEvent(key, modifiers), keybindings, platform);
 }

@@ -1,18 +1,16 @@
 import type { EditorInputCommand } from "@/types";
 import { resolveEditorHostPlatform, type EditorHostPlatform } from "./platform";
 
-export type EditorKeybindingPlatform = "mac" | "nonMac";
-
 export type EditorInputKeybinding = {
   altKey?: boolean;
   command: EditorInputCommand;
   key: string;
   modKey?: boolean;
-  platform?: EditorKeybindingPlatform;
+  platform?: "mac" | "nonMac";
   shiftKey?: boolean | "any";
 };
 
-export const defaultKeybindings: EditorInputKeybinding[] = [
+export const defaultKeybindings: readonly EditorInputKeybinding[] = [
   { key: "Backspace", command: "deleteBackward" },
   { key: "Delete", command: "deleteForward" },
   { key: "Enter", shiftKey: true, command: "insertSoftLineBreak" },
@@ -111,10 +109,10 @@ export const defaultKeybindings: EditorInputKeybinding[] = [
 
 export function resolveEditorInputCommand(
   event: KeyboardEvent,
-  keybindings: EditorInputKeybinding[] = defaultKeybindings,
+  keybindings: readonly EditorInputKeybinding[] = defaultKeybindings,
   platform: EditorHostPlatform = resolveEditorHostPlatform(),
 ): EditorInputCommand | null {
-  const keybindingPlatform = resolveKeybindingPlatform(platform);
+  const keybindingPlatform = platform === "mac" ? "mac" : "nonMac";
 
   return (
     keybindings.find((binding) => {
@@ -144,8 +142,4 @@ function modifiersMatch(
   const secondaryKey = platform === "mac" ? event.ctrlKey : event.metaKey;
 
   return (binding.modKey ?? false) === Boolean(primaryKey) && !secondaryKey;
-}
-
-function resolveKeybindingPlatform(platform: EditorHostPlatform): EditorKeybindingPlatform {
-  return platform === "mac" ? "mac" : "nonMac";
 }
