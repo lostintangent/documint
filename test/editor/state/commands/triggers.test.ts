@@ -94,7 +94,7 @@ describe("Markdown transform triggers", () => {
     orderedState = insertText(orderedState, "1.") ?? orderedState;
     orderedState = insertText(orderedState, " ") ?? orderedState;
 
-    expect(toMarkdown(orderedState)).toBe("1. alpha\n1. beta\n");
+    expect(toMarkdown(orderedState)).toBe("1. alpha\n2. beta\n");
   });
 });
 

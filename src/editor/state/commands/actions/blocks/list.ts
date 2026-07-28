@@ -15,7 +15,6 @@ import {
   replaceListItemLeadingParagraphText,
   type ListItemContext,
 } from "../../context";
-import { isCompatibleListBlock } from "../shared";
 import { insertAt, moveItem, removeAt, replaceAt } from "./shared";
 
 // List block actions for Enter, Tab / Shift-Tab, and explicit item moves.
@@ -244,8 +243,8 @@ function appendNestedListItem(
   item: ListItemBlock,
   list: ListBlock,
 ): ListItemBlock {
-  const existingNestedList = previousItem.children.find((child): child is ListBlock =>
-    isCompatibleListBlock(child, list),
+  const existingNestedList = previousItem.children.find(
+    (child): child is ListBlock => child.type === "list" && child.ordered === list.ordered,
   );
 
   if (existingNestedList) {
@@ -265,7 +264,7 @@ function appendNestedListItem(
       compact: list.compact,
       items: [item],
       ordered: list.ordered,
-      start: list.start,
+      start: null,
     }),
   ]);
 }

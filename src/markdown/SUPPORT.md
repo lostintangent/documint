@@ -49,7 +49,7 @@ These are the semantic node families currently representable in `Document` and t
 | Blockquotes | `> quote` | `Supported semantically` | Nested block structure is supported. |
 | Bullet lists | `- item` | `Supported semantically` | Canonical serializer emits `-`. |
 | Alternate bullet markers | `* item`, `+ item` | `Canonicalized` | Parse support exists; serializer normalizes to `-`. |
-| Ordered lists with `.` | `1. item` | `Supported semantically` | Canonical serializer repeats the same marker number. |
+| Ordered lists with `.` | `1. item` | `Supported semantically` | Canonical serializer emits sequential marker numbers. |
 | Ordered lists with `)` | `1) item` | `Gap` | Reasonable imported markdown syntax; still worth considering. |
 | Ordered list authored starts | `3. item` | `Supported semantically` | Preserved only when `preserveOrderedListStart` is enabled; otherwise canonicalized. |
 | Task lists | `- [ ] item` | `Supported semantically` | Blank task items are preserved. |
@@ -100,7 +100,7 @@ These behaviors are intentional even when authored input has multiple valid spel
 | ------ | ------ | ----- |
 | Bullet lists serialize with `-` | `Canonicalized` | We do not preserve `*` or `+`. |
 | Thematic breaks serialize as `***` | `Canonicalized` | Multiple valid forms normalize to one. |
-| Ordered lists repeat the same visible marker number | `Canonicalized` | Matches existing subsystem behavior. |
+| Ordered lists serialize with sequential visible marker numbers | `Canonicalized` | Item markers increment from the list's canonical or preserved start. |
 | Ordered list start preservation is opt-in | `Canonicalized` | Controlled by `preserveOrderedListStart`. |
 | Tables serialize with compact cells by default | `Canonicalized` | Cells emit at their natural width; opt in to column padding via `padTableColumns`. |
 | Underline serializes as `<ins>` | `Canonicalized` | Semantic underline does not require alternate markdown spellings. |

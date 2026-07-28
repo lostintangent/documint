@@ -10,8 +10,8 @@ export type MarkdownOptions = {
   /**
    * Parser knob. When `true`, the authored start number of an ordered list
    * (e.g. `3.` in `3. alpha\n3. beta`) is captured on `ListBlock.start` and
-   * re-emitted verbatim by the serializer. When `false` (default), the list
-   * canonicalizes to a start of `1`.
+   * used as the first sequential marker emitted by the serializer. When
+   * `false` (default), the list canonicalizes to a start of `1`.
    */
   preserveOrderedListStart?: boolean;
   /**

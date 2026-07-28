@@ -4,4 +4,4 @@
   - child two
 
 1. ordered root
-1. ordered next
+2. ordered next

@@ -125,15 +125,21 @@ describe("Lists", () => {
     const list = expectBlockAt(document, 0, "list");
 
     expect(list.start).toBeNull();
-    expect(serializeDocument(document)).toBe("1. alpha\n1. beta\n");
+    expect(serializeDocument(document)).toBe("1. alpha\n2. beta\n");
   });
 
   test("preserves authored ordered list starts when requested", () => {
-    const source = "3. alpha\n3. beta\n";
+    const source = "3. alpha\n4. beta\n";
     const document = parseDocument(source, { preserveOrderedListStart: true });
     const list = expectBlockAt(document, 0, "list");
 
     expect(list.start).toBe(3);
+    expectRoundTrip(source, { preserveOrderedListStart: true });
+  });
+
+  test("increments multi-digit and nested ordered list markers independently", () => {
+    const source = "9. parent\n   1. child\n   2. child two\n10. tail\n";
+
     expectRoundTrip(source, { preserveOrderedListStart: true });
   });
 

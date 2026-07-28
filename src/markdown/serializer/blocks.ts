@@ -171,7 +171,9 @@ function serializeList(block: ListBlock, indent: number, options: MarkdownOption
   const itemSeparator = serializeListSeparator(block.compact);
 
   return block.items
-    .map((item) => serializeListItem(item, indent, block.ordered, markerNumber, options))
+    .map((item, index) =>
+      serializeListItem(item, indent, block.ordered, markerNumber + index, options),
+    )
     .join(itemSeparator);
 }
 

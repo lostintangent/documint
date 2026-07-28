@@ -38,6 +38,17 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n- be\n- ta\n");
   });
 
+  test("continues ordered lists with the next visible number", () => {
+    let state = setup("1. alpha\n");
+    const alpha = getPath(state, "alpha");
+
+    state = placeAt(state, alpha, "end");
+    state = insertLineBreak(state) ?? state;
+    state = insertText(state, "beta") ?? state;
+
+    expect(toMarkdown(state)).toBe("1. alpha\n2. beta\n");
+  });
+
   test("preserves nested children when splitting a list item mid-text", () => {
     let state = setup("- alpha\n  - child\n- beta\n");
     const alpha = getPath(state, "alpha");

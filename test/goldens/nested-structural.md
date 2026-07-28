@@ -9,7 +9,7 @@
 
 1. ordered root
    1. nested ordered
-   1. nested ordered two
+   2. nested ordered two
       - mixed bullet
       - mixed bullet two
-1. ordered tail
+2. ordered tail

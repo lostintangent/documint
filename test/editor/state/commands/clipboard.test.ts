@@ -157,7 +157,7 @@ describe("Lists", () => {
         { text: "one", offset: "start" },
         { text: "two", offset: "end" },
       ),
-    ).toBe("1. one\n1. two");
+    ).toBe("1. one\n2. two");
   });
 
   test("copy: task list preserves checkbox state", () => {
