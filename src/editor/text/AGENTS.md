@@ -4,7 +4,7 @@ The text subsystem owns shared editor text semantics. A helper belongs here only
 
 Render caches and pixel placement stay in canvas or layout. Text measurement primitives live here only because both layout and canvas consume them; they may use browser canvas measurement internally, but the public surface should be font strings, text ranges, widths, and metrics rather than DOM or React concepts.
 
-## Design Principles
+## Design Notes
 
 - **Shared meaning lives here.** Move text logic into this subsystem only when multiple editor subsystems need to agree on it.
 - **Single-owner policy stays put.** Do not move layout measurement policy, paint policy, DOM handling, or anchor resolution here just because the code touches text.
@@ -15,7 +15,7 @@ Render caches and pixel placement stay in canvas or layout. Text measurement pri
 ## Subsystem Map
 
 - `graphemes.ts` owns user-visible character boundaries.
-- `words.ts` owns word-boundary expansion after hit testing resolves a text offset.
+- `words.ts` owns locale-aware word ranges and previous-word, word-end, and next-word movement in UTF-16 editor coordinates.
 - `ranges.ts` owns shared overlap, containment, and clipping helpers.
 - `fonts.ts` owns font-string resolution from marks, inline code, and text policy.
 - `inline-offsets.ts` owns editor runtime inline text, inline lengths, and inline ranges in editor selection-offset space.

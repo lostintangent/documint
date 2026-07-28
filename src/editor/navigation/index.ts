@@ -16,6 +16,7 @@ import {
   setSelection,
   setSelectionPoint,
   resolveEditorTextAtPath,
+  normalizeSelection,
   type EditorSelectionPoint,
   type EditorState,
 } from "../state";
@@ -25,7 +26,9 @@ import {
   moveCaretToCurrentLineBoundary,
   moveCaretVerticallyInFlow,
 } from "./line";
+import type { WordMovement } from "../text/words";
 import { moveCaretVerticallyInTable, resolveVerticalTablePathTarget } from "./table";
+import { resolveWordNavigationTarget } from "./word";
 export {
   resolveDragFocus,
   resolveDragFocusPoint,
@@ -62,6 +65,31 @@ export function moveCaretHorizontally(
   return options.mode === "block"
     ? moveCaretToAdjacentPathWithText(state, delta, extendSelection)
     : moveCaretHorizontallyInFlow(state, delta, extendSelection);
+}
+
+export function moveCaretByWord(
+  state: EditorState,
+  movement: WordMovement,
+  options: EditorNavigationOptions = {},
+) {
+  const extendSelection = options.extendSelection ?? false;
+  const direction = movement === "previousWord" ? -1 : 1;
+
+  if (options.mode === "block") {
+    return moveCaretHorizontally(state, direction, {
+      extendSelection,
+      mode: "block",
+    });
+  }
+
+  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
+    const selection = normalizeSelection(state);
+    return setSelection(state, direction < 0 ? selection.start : selection.end);
+  }
+
+  const target = resolveWordNavigationTarget(state, movement);
+
+  return target ? setSelectionPoint(state, target.path, target.offset, extendSelection) : state;
 }
 
 export function moveCaretVertically(

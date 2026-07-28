@@ -18,6 +18,7 @@ import dynamicIconImports from "lucide-react/dynamicIconImports";
 import { HostEventPanel } from "./components/HostEventPanel";
 import { DiagnosticsPopover } from "./components/popovers/DiagnosticsPopover";
 import { FrameDebugOverlay } from "./components/FrameDebugOverlay";
+import { KeybindingsPopover } from "./components/popovers/KeybindingsPopover";
 import { UsersPopover } from "./components/popovers/UsersPopover";
 import { ThemePopover } from "./components/popovers/ThemePopover";
 import {
@@ -213,6 +214,8 @@ export function Playground() {
               ))}
             </select>
           </label>
+
+          <KeybindingsPopover />
 
           <ThemePopover
             customEffectsEnabled={customEffectsEnabled}

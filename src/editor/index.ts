@@ -1,6 +1,7 @@
 // Navigation
 export {
   moveCaretByViewport,
+  moveCaretByWord,
   moveCaretHorizontally,
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
@@ -39,6 +40,7 @@ export type {
   TextDecorationIndex,
   TextDecorationRootUpdate,
 } from "./text/decorations";
+export type { WordMovement } from "./text/words";
 export {
   hasAnimatedDecorations,
   hasAnimatedDecorationsInViewport,

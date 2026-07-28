@@ -16,6 +16,7 @@ export function resolveSelectionTextReplacement(
   return {
     effect: effect.textInsertedAtSelection(documentIndex, selection, text),
     kind: "splice-text",
+    range: selection,
     text,
   };
 }
