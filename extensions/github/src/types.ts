@@ -1,4 +1,4 @@
-import type { Anchor, DocumentUser } from "documint";
+import type { Anchor, DocumentUser } from "@lostintangent/documint";
 
 export type CopilotJob = {
   id: string;

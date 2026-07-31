@@ -13,8 +13,8 @@ The decorations subsystem renders prose styling and code syntax highlighting wit
 
 ## Subsystem Map
 
-- `worker/` owns off-thread classification: regex compilation, prose matching, code-source tokenization, and the worker runtime entrypoint.
-- `client/` owns UI-thread configuration, worker communication, root snapshots, result reconciliation, and provisional edit remapping.
+- `worker/` owns off-thread classification and its runtime entrypoint.
+- `client/` owns UI-thread configuration, worker construction and communication, root snapshots, result reconciliation, and provisional edit remapping.
 - `useDecorations.ts` owns the React entrypoint: it observes editor transitions, chooses refresh vs. affected-root updates, and publishes the cached `TextDecoration` index back to `Documint`.
 - `grammars/` owns built-in grammar definitions, language normalization, and token-to-decoration configuration.
 - `shared.ts` owns types shared by the UI client, worker, and reconciliation path.

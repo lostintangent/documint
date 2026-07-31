@@ -8,5 +8,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "../../src/component/style-imports.d.ts"]
+  "include": ["src/**/*"]
 }

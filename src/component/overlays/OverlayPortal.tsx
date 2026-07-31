@@ -7,8 +7,7 @@
 // around the portaled content, so the editor's visual identity travels
 // with the overlay even though it no longer descends from the host element.
 
-// oxlint-disable-next-line typescript/triple-slash-reference
-/// <reference path="../style-imports.d.ts" />
+import { compileOverlayStyles } from "@macros/overlay-styles" with { type: "macro" };
 import {
   createContext,
   useContext,
@@ -18,7 +17,8 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import overlayCss from "./generated.css" with { type: "text" };
+
+const overlayCss = process.env.NODE_ENV === "test" ? "" : compileOverlayStyles();
 
 type OverlayPortalContextValue = {
   shadowRoot: ShadowRoot | null;

@@ -1,3 +1,7 @@
+## 🗓️ v0.0.34 (06-26-26)
+
+- Introduced keybindings/support for navigating and deleting by word
+
 ## 🗓️ v0.0.33 (06-26-26)
 
 - Added a `readOnly` prop to the `Documint` component to allow hosts to put the editor in a comment-only mode

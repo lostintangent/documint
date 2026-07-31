@@ -1,7 +1,7 @@
-/* Tailwind v4 surface for Documint's overlay portal. Compiled to
-   `generated.css` and injected into the shadow root mounted under
-   `document.body` by `OverlayPortal`. Preflight is intentionally
-   excluded so global resets don't clobber the editor host's typography.
+/* Tailwind v4 surface for Documint's overlay portal. Compiled into the
+   string injected into `OverlayPortal`'s shadow root under `document.body`.
+   Preflight is intentionally excluded so global resets don't clobber the
+   editor host's typography.
 
    This file is the single source of CSS for the overlay portal:
      - Tailwind theme tokens (`@theme inline`)

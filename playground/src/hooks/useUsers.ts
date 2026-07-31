@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DocumentPresence, DocumentUser } from "documint";
+import type { DocumentPresence, DocumentUser } from "@lostintangent/documint";
 import { createRandomAutoPresence } from "../lib/auto-presence";
 
 type ManualEntry = {

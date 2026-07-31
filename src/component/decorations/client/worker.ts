@@ -1,6 +1,6 @@
+import { bundleDecorationWorker } from "@macros/decoration-worker" with { type: "macro" };
 import { serializeDecorations } from "./config";
 import type { DocumintDecoration } from "@/types";
-import workerSource from "../worker/source";
 import type {
   DecorationRootResult,
   DecorationRootSnapshot,
@@ -9,6 +9,7 @@ import type {
   SerializedDecoration,
 } from "../shared";
 
+const workerSource = process.env.NODE_ENV === "test" ? "" : bundleDecorationWorker();
 const decorationJobTimeoutMs = 2000;
 
 type DecorationWorkerHandle = {

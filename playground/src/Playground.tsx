@@ -1,18 +1,15 @@
 import { useMemo, useState } from "react";
 import {
   Documint,
-  darkTheme,
-  lightTheme,
   type CommentChange,
   type DocumentPresence,
   type DocumentUser,
   type DocumintActions,
   type DocumintDecoration,
   type DocumintStorage,
-  type DocumintTheme,
   type UserMentionEvent,
   lucideResourceIcon,
-} from "documint";
+} from "@lostintangent/documint";
 import { Hand } from "lucide-react";
 import dynamicIconImports from "lucide-react/dynamicIconImports";
 import { HostEventPanel } from "./components/HostEventPanel";
@@ -32,7 +29,6 @@ import {
   grammars,
   slowSampleImagePath,
   slowSampleImageSource,
-  themeOptions,
 } from "./lib/data";
 import { effects } from "./lib/effects";
 
@@ -128,7 +124,9 @@ export function Playground() {
   const [sourceContent, setSourceContent] = useState<string>(fixtureOptions[0].markdown);
   const [fixtureId, setFixtureId] = useState<string>(fixtureOptions[0].id);
 
-  const [themeId, setThemeId] = useState<string>(themeOptions[0].id);
+  const [themeId, setThemeId] = useState<string>(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+  );
   const [themePopoverOpen, setThemePopoverOpen] = useState(false);
   const [fontSize, setFontSize] = useState<number>(16);
   const [customEffectsEnabled, setCustomEffectsEnabled] = useState(false);
@@ -144,21 +142,7 @@ export function Playground() {
   const [frameDebugEnabled, setFrameDebugEnabled] = useState(false);
 
   const { theme: activeTheme } = getThemeOption(themeId);
-
-  // Merge the playground's `fontSize` knob into whichever theme is selected.
-  // For "system theme" (activeTheme = null), pass a light/dark pair sourced
-  // from the bundled themes so the embedder layer still does its own system
-  // color-scheme matching while honoring our fontSize choice. Memoize so
-  // Documint sees a stable theme object across renders that don't change
-  // either input.
-  const documintTheme = useMemo<DocumintTheme>(() => {
-    if (!activeTheme) {
-      return {
-        dark: { ...darkTheme, fontSize },
-        light: { ...lightTheme, fontSize },
-      };
-    }
-
+  const documintTheme = useMemo(() => {
     return { ...activeTheme, fontSize };
   }, [activeTheme, fontSize]);
 
@@ -197,7 +181,10 @@ export function Playground() {
   return (
     <main className="grid h-screen grid-rows-[auto_max-content_minmax(0,1fr)] page-padding">
       <header className="mb-4 flex items-start justify-between gap-4 max-sm:portrait:flex-wrap">
-        <h1 className="m-0 text-3xl font-bold">Documint Playground</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="m-0 text-3xl font-bold">Documint Playground</h1>
+          <KeybindingsPopover />
+        </div>
 
         <div className="relative flex flex-wrap items-center justify-end gap-3 max-sm:portrait:w-full max-sm:portrait:justify-start">
           <label className="font-controls grid gap-1.5">
@@ -214,8 +201,6 @@ export function Playground() {
               ))}
             </select>
           </label>
-
-          <KeybindingsPopover />
 
           <ThemePopover
             customEffectsEnabled={customEffectsEnabled}

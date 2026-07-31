@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Activity, Trash2 } from "lucide-react";
 // Imported directly from the library's internal diagnostics module rather
-// than from `documint`'s public API — diagnostics are dev-only tooling for
+// than from `@lostintangent/documint`'s public API — diagnostics are dev-only tooling for
 // the playground, not a stable public surface.
 import { DIAGNOSTIC_EVENT, type Diagnostic } from "@/component/lib/diagnostics";
 import {

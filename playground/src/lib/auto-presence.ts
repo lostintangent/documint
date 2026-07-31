@@ -2,7 +2,7 @@
 // snippet out of the current markdown content and turns it into a cursor
 // anchor (prefix or suffix). Lives here — outside `useUsers.ts` — because the
 // markdown scanning has nothing to do with the hook's React state.
-import type { DocumentPresence } from "documint";
+import type { DocumentPresence } from "@lostintangent/documint";
 
 const minSnippetLength = 18;
 const maxSnippetLength = 90;

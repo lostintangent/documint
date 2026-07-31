@@ -1,6 +1,6 @@
 {
-  "name": "documint",
-  "version": "0.0.33",
+  "name": "@lostintangent/documint",
+  "version": "0.0.34",
   "files": [
     "dist/index.js",
     "dist/index.d.ts"

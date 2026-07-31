@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Documint } from "documint";
+import { Documint } from "@lostintangent/documint";
 import type { HostMessage } from "../types";
 
 import { useStorage } from "./hooks/useStorage";

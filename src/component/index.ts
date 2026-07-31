@@ -5,7 +5,6 @@ export {
   type DocumintActions,
   type DocumintDecoration,
   type DocumintProps,
-  type DocumintTheme,
   type ActiveResourceSet,
   type ResourceProtocolRecord,
   type UserMentionEvent,

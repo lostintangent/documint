@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { DocumintStorage } from "documint";
+import type { DocumintStorage } from "@lostintangent/documint";
 
 export function useStorage(instanceId: string | null): DocumintStorage {
   return useMemo(() => createWorkspaceStorage(instanceId), [instanceId]);

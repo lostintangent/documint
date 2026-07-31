@@ -1,91 +1,48 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useSyncExternalStore, type CSSProperties } from "react";
 import type { EditorTheme, ResolvedEditorTheme } from "@/types";
-import type { DocumintTheme } from "../Documint";
 import { darkTheme, lightTheme, resolveEditorTheme } from "../lib/themes";
 
-type DocumintThemePair = {
-  dark: ResolvedEditorTheme;
-  light: ResolvedEditorTheme;
-};
+const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-type InputDocumintThemePair = {
-  dark: EditorTheme;
-  light: EditorTheme;
-};
-
-export function useTheme(theme: DocumintTheme | undefined) {
-  /* Theme resolution */
-
-  const themePair = useMemo(() => resolveThemePair(theme), [theme]);
-  const [preferredTheme, setPreferredTheme] = useState<ResolvedEditorTheme>(() =>
-    resolvePreferredTheme(themePair),
+export function useTheme(theme?: EditorTheme) {
+  const defaultTheme = useDefaultTheme(theme === undefined);
+  const resolvedTheme = useMemo(
+    () => resolveEditorTheme(theme ?? defaultTheme),
+    [defaultTheme, theme],
   );
-  const themeStyles = useMemo(() => createThemeStyles(preferredTheme), [preferredTheme]);
-
-  /* System color-scheme subscription */
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const updateTheme = () => {
-      setPreferredTheme(mediaQuery.matches ? themePair.dark : themePair.light);
-    };
-
-    updateTheme();
-
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", updateTheme);
-
-      return () => {
-        mediaQuery.removeEventListener("change", updateTheme);
-      };
-    }
-
-    mediaQuery.addListener(updateTheme);
-
-    return () => {
-      mediaQuery.removeListener(updateTheme);
-    };
-  }, [themePair]);
-
-  /* Public API */
+  const themeStyles = useMemo(() => createThemeStyles(resolvedTheme), [resolvedTheme]);
 
   return {
-    theme: preferredTheme,
+    theme: resolvedTheme,
     themeStyles,
   };
 }
 
-function resolvePreferredTheme(themePair: DocumintThemePair) {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? themePair.dark
-    : themePair.light;
+function useDefaultTheme(enabled: boolean): EditorTheme {
+  const dark = useSyncExternalStore(
+    enabled ? subscribeToColorScheme : ignoreColorScheme,
+    enabled ? prefersDark : preferLight,
+    preferLight,
+  );
+  return dark ? darkTheme : lightTheme;
 }
 
-function isThemePair(theme: DocumintTheme): theme is InputDocumintThemePair {
-  return "light" in theme && "dark" in theme;
+function subscribeToColorScheme(onChange: () => void): () => void {
+  const media = window.matchMedia(DARK_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
 }
 
-function resolveThemePair(theme: DocumintTheme | undefined): DocumintThemePair {
-  if (!theme) {
-    return {
-      dark: resolveEditorTheme(darkTheme),
-      light: resolveEditorTheme(lightTheme),
-    };
-  }
+function ignoreColorScheme(): () => void {
+  return () => {};
+}
 
-  if (isThemePair(theme)) {
-    return {
-      dark: resolveEditorTheme(theme.dark),
-      light: resolveEditorTheme(theme.light),
-    };
-  }
+function prefersDark(): boolean {
+  return window.matchMedia(DARK_QUERY).matches;
+}
 
-  const resolvedTheme = resolveEditorTheme(theme);
-
-  return {
-    dark: resolvedTheme,
-    light: resolvedTheme,
-  };
+function preferLight(): boolean {
+  return false;
 }
 
 function createThemeStyles(theme: ResolvedEditorTheme): CSSProperties {

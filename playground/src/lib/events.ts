@@ -1,4 +1,4 @@
-import type { CommentChange, UserMentionEvent } from "documint";
+import type { CommentChange, UserMentionEvent } from "@lostintangent/documint";
 
 export type PlaygroundHostEvent = {
   detail: string;

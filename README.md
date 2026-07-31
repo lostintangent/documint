@@ -24,13 +24,13 @@ A canvas-based, batteries-included Markdown editor for React. Documint is built 
 
 ## Getting Started
 
-1. Install the package: `npm install documint` (or `bun add documint`)
+1. Install the package: `npm install @lostintangent/documint` (or `bun add @lostintangent/documint`)
 1. Import the `Documint` component from the package
 1. Pass your markdown content to it and listen for changes
 
 ```tsx
 import { useState } from "react";
-import { Documint } from "documint";
+import { Documint } from "@lostintangent/documint";
 
 const initialMarkdown = `# Hello Documint
 
@@ -51,7 +51,11 @@ export function App() {
 Pass `keybindings` to replace the built-in bindings. To add or override bindings while retaining the defaults, put overrides first and spread `defaultKeybindings` after them; the first matching binding wins.
 
 ```tsx
-import { Documint, defaultKeybindings, type EditorInputKeybinding } from "documint";
+import {
+  Documint,
+  defaultKeybindings,
+  type EditorInputKeybinding,
+} from "@lostintangent/documint";
 
 const keybindings: readonly EditorInputKeybinding[] = [
   { key: "b", modKey: true, command: "toggleCode" },
@@ -77,7 +81,7 @@ Use the `actions` prop to add custom buttons to contextual leaf menus. The first
 
 ```tsx
 import { useState } from "react";
-import { Documint } from "documint";
+import { Documint } from "@lostintangent/documint";
 
 export function App() {
   const [content, setContent] = useState("Select this text");
@@ -102,11 +106,11 @@ export function App() {
 
 ## Custom Themes
 
-By default, Documint will detect the end-user's system theme and apply either the built-in light or dark theme. You can also specify a theme explicitly by passing `"light"` or `"dark"` to the `theme` prop, or provide a custom theme object with your own colors and styles.
+By default, Documint follows the end-user's system preference and applies its built-in light or dark theme. Pass `lightTheme`, `darkTheme`, or a custom `EditorTheme` to select one concrete theme explicitly. When a host supplies a theme, the host owns switching it as the app's color mode changes.
 
 ```tsx
 import { useState } from "react";
-import { Documint, lightTheme } from "documint";
+import { Documint, lightTheme } from "@lostintangent/documint";
 
 const customTheme = {
   ...lightTheme,
@@ -128,7 +132,7 @@ If the document includes http-based images, then the editor will automatically l
 
 ```tsx
 import { useState } from "react";
-import { Documint, DocumintStorage } from "documint";
+import { Documint, DocumintStorage } from "@lostintangent/documint";
 
 const storage = createInMemoryStorage();
 
@@ -159,7 +163,7 @@ Use the `decorations` prop to style text that matches host-provided regular expr
 
 ```tsx
 import { useState } from "react";
-import { Documint, type DocumintDecoration } from "documint";
+import { Documint, type DocumintDecoration } from "@lostintangent/documint";
 
 const decorations: readonly DocumintDecoration[] = [
   { pattern: /\blist\b/gi, color: "red", backgroundColor: "rgba(255, 0, 0, 0.12)" },

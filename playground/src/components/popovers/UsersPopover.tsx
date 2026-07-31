@@ -1,6 +1,6 @@
 import { useEffect, type CSSProperties } from "react";
 import { Trash2, Users } from "lucide-react";
-import type { DocumentPresence, DocumentUser } from "documint";
+import type { DocumentPresence, DocumentUser } from "@lostintangent/documint";
 import { describeEntry, useUsers, type UsersMode } from "../../hooks/useUsers";
 import {
   PlaygroundPopover,

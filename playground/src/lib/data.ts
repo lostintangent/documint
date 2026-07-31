@@ -1,4 +1,4 @@
-import { darkTheme, lightTheme, type CodeGrammarRule, type EditorTheme } from "documint";
+import { darkTheme, lightTheme, type CodeGrammarRule, type EditorTheme } from "@lostintangent/documint";
 
 export const slowSampleImagePath = "playground-slow-editor-shell.png";
 export const slowSampleImageSource =
@@ -419,11 +419,6 @@ const midnightTheme: EditorTheme = {
 };
 
 export const themeOptions = [
-  {
-    id: "system",
-    label: "System theme",
-    theme: null,
-  },
   {
     id: "light",
     label: "Light theme",

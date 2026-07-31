@@ -8,5 +8,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["src/webview/**/*", "src/types.ts", "../../src/component/style-imports.d.ts"]
+  "include": ["src/webview/**/*", "src/types.ts"]
 }

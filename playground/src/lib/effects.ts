@@ -4,7 +4,7 @@ import type {
   ListItemInsertedEffectContext,
   TextDeletedEffectContext,
   TextInsertedEffectContext,
-} from "documint";
+} from "@lostintangent/documint";
 
 const activeBlockRuleWidth = 8;
 const deletedTextFlyAwayX = 8;

@@ -2,8 +2,7 @@
  * Public React host for the canvas editor. The component owns content-format
  * bridging, DOM lifecycle, viewport coordination, and hidden-input plumbing.
  */
-// oxlint-disable-next-line typescript/triple-slash-reference
-/// <reference path="./style-imports.d.ts" />
+import { readEditorStyles } from "@macros/editor-styles" with { type: "macro" };
 import {
   useEffect,
   useEffectEvent,
@@ -115,7 +114,8 @@ import {
   useEditorCommand,
   useSprig,
 } from "./store";
-import editorCss from "./styles.css" with { type: "text" };
+
+const editorCss = process.env.NODE_ENV === "test" ? "" : readEditorStyles();
 
 export type { DocumintDecoration } from "@/types";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
@@ -139,7 +139,7 @@ export type DocumintProps = {
   className?: string;
 
   actions?: DocumintActions;
-  theme?: DocumintTheme;
+  theme?: EditorTheme;
   keybindings?: EditorInputKeybinding[];
   decorations?: readonly DocumintDecoration[];
   // Extra/override code grammars, merged over the built-ins (markdown, JS/TS);
@@ -201,8 +201,6 @@ export type CommentChange =
       thread: CommentThread;
       threadId: string;
     };
-
-export type DocumintTheme = EditorTheme | { dark: EditorTheme; light: EditorTheme };
 
 export function Documint({ content, ...props }: DocumintProps) {
   const storeRef = useRef<DocumintStore | null>(null);
@@ -267,7 +265,7 @@ function DocumintHost({
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
 
-  const { theme: preferredTheme, themeStyles } = useTheme(theme);
+  const { theme: resolvedTheme, themeStyles } = useTheme(theme);
   const hasContentChangeHandler = Boolean(onContentChanged);
   const readOnly = readOnlyProp || !hasContentChangeHandler;
   const canMutateComments = hasContentChangeHandler;
@@ -299,7 +297,7 @@ function DocumintHost({
 
   const viewport = useViewport({
     renderResources,
-    theme: preferredTheme,
+    theme: resolvedTheme,
   });
 
   const {
@@ -370,7 +368,7 @@ function DocumintHost({
     decorations,
     grammars: resolvedGrammars,
     store,
-    theme: preferredTheme,
+    theme: resolvedTheme,
   });
   const search = useSearch();
   const selectionActions = normalizeDocumintActions(actions?.selection);
@@ -522,7 +520,7 @@ function DocumintHost({
         now,
         resources: renderResources,
         textDecorations,
-        theme: preferredTheme,
+        theme: resolvedTheme,
         width,
       });
 
@@ -566,7 +564,7 @@ function DocumintHost({
         normalizedSel.start.path !== normalizedSel.end.path ||
         normalizedSel.start.offset !== normalizedSel.end.offset ||
         cursor.isVisible(),
-      theme: preferredTheme,
+      theme: resolvedTheme,
       width,
     });
     paintOverlayFrame(context, frame);
@@ -747,7 +745,7 @@ function DocumintHost({
   }, [
     editorState.documentIndex,
     images,
-    preferredTheme,
+    resolvedTheme,
     resourceProtocols.layoutKey,
     viewportWidth,
     viewportHeight,
@@ -1058,8 +1056,8 @@ function DocumintHost({
             open={search.leaf !== null}
             presence={resolvedPresence}
             onPresenceSelect={scrollToPresence}
-            paddingX={preferredTheme.paddingX}
-            paddingY={preferredTheme.paddingY}
+            paddingX={resolvedTheme.paddingX}
+            paddingY={resolvedTheme.paddingY}
           >
             {search.leaf ? <SearchLeaf {...search.leaf} /> : null}
           </ViewportAnchor>

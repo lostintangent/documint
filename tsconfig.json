@@ -11,7 +11,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "paths": {
-      "documint": ["./src/index.ts"],
+      "@lostintangent/documint": ["./src/index.ts"],
+      "@macros/*": ["./scripts/build/macros/*"],
       "@/*": ["./src/*"],
       "@test/*": ["./test/*"]
     }

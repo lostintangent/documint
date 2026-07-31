@@ -1,6 +1,6 @@
 # 🌿 Documint (VS Code)
 
-Documint is a WYSIWYG editor for Markdown. This extension integrates the [documint editor](https://npmjs.com/documint) into VS Code so that `*.md` files can be opened and edited.
+Documint is a WYSIWYG editor for Markdown. This extension integrates the [Documint editor](https://www.npmjs.com/package/@lostintangent/documint) into VS Code so that `*.md` files can be opened and edited.
 
 <img width="1000px" src="https://github.com/user-attachments/assets/67618adb-9e17-4529-aa5e-9c0888bb38bf" />
 

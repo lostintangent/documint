@@ -7,7 +7,7 @@ import {
   type DocumentPresence,
   type DocumentUser,
   type UserMentionEvent,
-} from "documint";
+} from "@lostintangent/documint";
 import type { Dispatch, SetStateAction } from "react";
 import { useServerEvents } from "./hooks/useServerEvents";
 import { useStorage } from "./hooks/useStorage";

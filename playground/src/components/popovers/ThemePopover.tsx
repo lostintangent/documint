@@ -44,7 +44,6 @@ export function ThemePopover({
   themeId,
 }: ThemePopoverProps) {
   const activeThemeOption = getThemeOption(themeId);
-  const showSwatch = activeThemeOption.id !== "system";
 
   const decrement = () => {
     if (fontSize > MIN_FONT_SIZE) onFontSizeChange(fontSize - 1);
@@ -57,11 +56,11 @@ export function ThemePopover({
     <PlaygroundPopover
       ariaLabel="Select editor theme"
       icon={<Palette size={16} strokeWidth={2.1} />}
-      iconStyle={showSwatch ? getThemeSwatchStyle(activeThemeOption) : undefined}
+      iconStyle={getThemeSwatchStyle(activeThemeOption)}
       onOpenChange={onOpenChange}
       open={open}
       size="sm"
-      showSwatch={showSwatch}
+      showSwatch
     >
       {({ close }) => (
         <div className="grid gap-3">
@@ -161,19 +160,14 @@ function getThemeOptionLabelStyle(option: (typeof themeOptions)[number]): CSSPro
         ? "#111827"
         : option.id === "midnight"
           ? "#6d28d9"
-          : (option.theme?.paragraphText ??
-            option.theme?.leafText ??
-            option.theme?.text ??
-            "#1f2937"),
+          : (option.theme.paragraphText ?? option.theme.leafText ?? option.theme.text),
   };
 }
 
 function getThemeSwatchStyle(option: (typeof themeOptions)[number]): CSSProperties {
   return {
-    background:
-      option.theme?.background ??
-      "linear-gradient(135deg, rgba(15, 23, 42, 0.16), rgba(148, 163, 184, 0.32))",
-    borderColor: option.theme?.tableBorder ?? "rgba(15, 23, 42, 0.16)",
-    color: option.theme?.caret ?? "rgba(15, 23, 42, 0.68)",
+    background: option.theme.background,
+    borderColor: option.theme.tableBorder ?? "rgba(15, 23, 42, 0.16)",
+    color: option.theme.caret ?? "rgba(15, 23, 42, 0.68)",
   };
 }

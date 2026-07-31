@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { DocumintStorage } from "documint";
+import type { DocumintStorage } from "@lostintangent/documint";
 import type { HostMessage, WebviewMessage } from "../../types";
 import { vscode } from "../vscode";
 

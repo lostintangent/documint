@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { darkTheme, lightTheme, type EditorTheme } from "documint";
+import { darkTheme, lightTheme, type EditorTheme } from "@lostintangent/documint";
 
 export function useTheme(): EditorTheme {
   const [theme, setTheme] = useState(createVsCodeDocumintTheme);

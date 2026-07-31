@@ -16,6 +16,7 @@ The component subsystem provides Documint's public React editor surface. The emb
 
 - `Documint.tsx` owns the public React component, prop/callback boundary, canvas layers, DOM entry points, frame construction inputs, and leaf arbitration.
 - `index.ts` owns the public component export surface.
+- `styles.css` owns the editor-host CSS injected by `Documint`.
 - [`hooks/`](hooks/AGENTS.md) owns browser lifetimes and interaction translation.
 - [`store/`](store/AGENTS.md) owns component-internal reactive state, sprigs, layout publication, and derived view models.
 - [`sync/`](sync/AGENTS.md) owns embedder synchronization helpers: local markdown snapshot emission, external snapshot reconciliation, and mention-event payloads.

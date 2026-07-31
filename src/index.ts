@@ -10,7 +10,6 @@ export {
   type DocumintActions,
   type EditorInputKeybinding,
   type DocumintProps,
-  type DocumintTheme,
   type ResourceProtocolRecord,
   type ActiveResourceSet,
   type UserMentionEvent,

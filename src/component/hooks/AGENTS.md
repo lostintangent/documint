@@ -20,7 +20,7 @@ The hooks folder collects Documint's React/browser lifetimes for input, pointer,
 - `useRender.ts` owns coalesced rAF render intents, paint dispatch, timed semantic-effect retention, and active-effect continuation.
 - `useInput.ts` owns the hidden textarea bridge: native text/IME input, keyboard shortcuts, clipboard, focus, textarea positioning, and iOS undo priming.
 - `usePointer.ts`, `useSelection.ts`, and `useCursor.ts` own pointer targeting, selection handles, cursor reveal, cursor-anchored leaves, and caret blink state.
-- `useTheme.ts` owns theme resolution, CSS variable projection, and system color-scheme subscription.
+- `useTheme.ts` resolves concrete host themes, projects CSS variables, and follows the system color scheme only when the host omits `theme`.
 - `useResources.ts` owns resource protocol normalization, active-resource registry construction, and discovered-resource requests.
 - `useImages.ts` owns referenced image loading/eviction, pasted-image persistence, decode failure state, and selected-image resize handles.
 - `usePresence.ts` owns host user/presence joining and presence view-model subscriptions.

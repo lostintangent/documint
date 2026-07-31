@@ -18,4 +18,4 @@ The overlays subsystem renders Documint's floating editor UI so users get contex
 - `anchors/` owns the document-anchor and viewport-anchor placement shells plus the viewport fitting helpers they share.
 - `OverlayPortal.tsx` owns the shadow-root portal, overlay stylesheet injection, and theme-variable bridge for all portaled overlay UI.
 - `PresenceIndicator.tsx` owns the compact presence pills rendered by `ViewportAnchor`.
-- `styles.css` and `generated.css` own the portal CSS source and generated fallback injected into the shadow root.
+- `styles.css` owns the Tailwind source compiled and injected by `OverlayPortal`.
