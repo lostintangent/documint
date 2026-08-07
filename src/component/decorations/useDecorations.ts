@@ -7,10 +7,7 @@ import {
   reconcileDecorationRootResults,
   resolveDecorationRootSnapshots,
 } from "./client/reconciliation";
-import {
-  isValidDecoration,
-  resolveDecorationsKey,
-} from "./client/config";
+import { isValidDecoration, resolveDecorationsKey } from "./client/config";
 import { resolveCodeGrammars } from "./grammars";
 import type { DocumintStore, EditorStateTransition } from "../store";
 import {
@@ -31,12 +28,7 @@ type UseDecorationsOptions = {
   theme: ResolvedEditorTheme;
 };
 
-export function useDecorations({
-  decorations,
-  grammars,
-  store,
-  theme,
-}: UseDecorationsOptions) {
+export function useDecorations({ decorations, grammars, store, theme }: UseDecorationsOptions) {
   /* Resolve inputs */
 
   const decorationRules = useMemo(() => {
@@ -126,10 +118,7 @@ export function useDecorations({
 
   const updateDecorations = useEffectEvent((rootIndexes?: readonly number[]) => {
     const currentState = store.editor.getState();
-    const roots = resolveDecorationRootSnapshots(
-      currentState.documentIndex.document,
-      rootIndexes,
-    );
+    const roots = resolveDecorationRootSnapshots(currentState.documentIndex.document, rootIndexes);
 
     if (roots.length === 0) {
       return false;

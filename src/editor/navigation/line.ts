@@ -45,12 +45,7 @@ export function moveCaretHorizontallyInFlow(
       return state;
     }
 
-    return setSelectionPoint(
-      state,
-      previousPath,
-      previousText.length,
-      extendSelection,
-    );
+    return setSelectionPoint(state, previousPath, previousText.length, extendSelection);
   }
 
   const nextPath = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, delta);
@@ -166,9 +161,5 @@ export function placeCaretAtLineY(
 }
 
 function findCurrentLine(state: EditorState, layout: DocumentLayout) {
-  return findLineForPathOffset(
-    layout,
-    state.selection.focus.path,
-    state.selection.focus.offset,
-  );
+  return findLineForPathOffset(layout, state.selection.focus.path, state.selection.focus.offset);
 }

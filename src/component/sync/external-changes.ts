@@ -50,10 +50,7 @@ export function acknowledgeUnacknowledgedDocumentChanges(
 
   for (const [index, change] of current.entries()) {
     const anchorMatch = anchorMatches[index] ?? { status: "unmatched" };
-    const currentTarget = verifyStoredEditorChangeTarget(
-      change.change,
-      anchorMatch,
-    );
+    const currentTarget = verifyStoredEditorChangeTarget(change.change, anchorMatch);
     const retained =
       currentTarget && !isSelectionOnDocumentChangeTarget(state, currentTarget)
         ? { ...change, editorTarget: currentTarget }
@@ -98,9 +95,7 @@ export function acknowledgeUnacknowledgedDocumentChanges(
 
   const compactedChanges = changes.filter((change) => change !== null);
 
-  return !didChange && compactedChanges.length === current.length
-    ? current
-    : compactedChanges;
+  return !didChange && compactedChanges.length === current.length ? current : compactedChanges;
 }
 
 export function mergeUnacknowledgedDocumentChanges(
@@ -111,32 +106,18 @@ export function mergeUnacknowledgedDocumentChanges(
   const byKey = new Map<string, UnacknowledgedDocumentChange>();
   const consumedIncoming = new Set<number>();
   const resolvedIncoming = resolveIncomingDocumentChanges(changes, state);
-  const resolvedCurrent = retargetUnacknowledgedDocumentChanges(
-    current,
-    state,
-  );
+  const resolvedCurrent = retargetUnacknowledgedDocumentChanges(current, state);
   const newChanges: UnacknowledgedDocumentChange[] = [];
 
   for (const [index, active] of current.entries()) {
     const retargeted = resolvedCurrent[index] ?? null;
     if (retargeted) {
-      consumeIncomingForExistingTarget(
-        retargeted,
-        resolvedIncoming,
-        consumedIncoming,
-      );
-      byKey.set(
-        documentNodeAnchorLocationKey(retargeted.change.anchor),
-        retargeted,
-      );
+      consumeIncomingForExistingTarget(retargeted, resolvedIncoming, consumedIncoming);
+      byKey.set(documentNodeAnchorLocationKey(retargeted.change.anchor), retargeted);
       continue;
     }
 
-    const refreshed = refreshExistingDocumentChange(
-      active,
-      resolvedIncoming,
-      consumedIncoming,
-    );
+    const refreshed = refreshExistingDocumentChange(active, resolvedIncoming, consumedIncoming);
     if (refreshed) {
       byKey.set(documentNodeAnchorLocationKey(refreshed.change.anchor), refreshed);
     }
@@ -194,17 +175,10 @@ function resolveVisibleDocumentChanges(
   const anchorMatches = resolveChangeAnchorMatches(state, changes);
 
   return changes.map((change, index) =>
-    resolveVisibleDocumentChange(
-      change,
-      state,
-      anchorMatches[index] ?? { status: "unmatched" },
-      {
-        changeKey:
-          options.changeKeys?.[index] ??
-          documentNodeAnchorKey(change.anchor),
-        retarget: options.retarget,
-      },
-    ),
+    resolveVisibleDocumentChange(change, state, anchorMatches[index] ?? { status: "unmatched" }, {
+      changeKey: options.changeKeys?.[index] ?? documentNodeAnchorKey(change.anchor),
+      retarget: options.retarget,
+    }),
   );
 }
 
@@ -225,9 +199,7 @@ function resolveVisibleDocumentChange(
   }
 
   return {
-    change: options.retarget
-      ? retargetDocumentChange(change, anchorMatch)
-      : change,
+    change: options.retarget ? retargetDocumentChange(change, anchorMatch) : change,
     changeKey: options.changeKey,
     editorTarget: target,
   };
@@ -242,10 +214,7 @@ function consumeIncomingForExistingTarget(
     if (
       !candidate ||
       consumedIncoming.has(index) ||
-      !hasSameResolvedDocumentChangeTarget(
-        active.editorTarget,
-        candidate.editorTarget,
-      )
+      !hasSameResolvedDocumentChangeTarget(active.editorTarget, candidate.editorTarget)
     ) {
       continue;
     }
@@ -334,10 +303,7 @@ function resolveMatchedEditorChangeTarget(
   change: DocumentChange,
   anchorMatch: EditorNodeAnchor,
 ): ResolvedDocumentChangeTarget | null {
-  if (
-    anchorMatch.status !== "matched" ||
-    anchorMatch.anchor.kind !== change.anchor.kind
-  ) {
+  if (anchorMatch.status !== "matched" || anchorMatch.anchor.kind !== change.anchor.kind) {
     return null;
   }
 

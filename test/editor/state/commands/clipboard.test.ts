@@ -56,9 +56,7 @@ describe("Paragraphs", () => {
   });
 
   test("paste: plain text inserts inline at the caret", () => {
-    expect(pasteInto("Hello\n", { text: "Hello", offset: "end" }, " world")).toBe(
-      "Hello world\n",
-    );
+    expect(pasteInto("Hello\n", { text: "Hello", offset: "end" }, " world")).toBe("Hello world\n");
   });
 
   test("paste: italic markdown round-trips through the structural path", () => {
@@ -82,9 +80,9 @@ describe("Paragraphs", () => {
   });
 
   test("paste: two paragraphs into mid-text splits and absorbs at both seams", () => {
-    expect(
-      pasteInto("Hello world\n", { text: "Hello world", offset: 6 }, "first\n\nsecond"),
-    ).toBe("Hello first\n\nsecondworld\n");
+    expect(pasteInto("Hello world\n", { text: "Hello world", offset: 6 }, "first\n\nsecond")).toBe(
+      "Hello first\n\nsecondworld\n",
+    );
   });
 
   test("paste: paragraph + heading + paragraph absorbs around the heading", () => {
@@ -786,9 +784,7 @@ function withCommentOn(state: EditorState, text: string, quote: string): EditorS
   const startOffset = path.text.indexOf(quote);
 
   if (startOffset === -1) {
-    throw new Error(
-      `Quote ${JSON.stringify(quote)} not found in path ${JSON.stringify(text)}`,
-    );
+    throw new Error(`Quote ${JSON.stringify(quote)} not found in path ${JSON.stringify(text)}`);
   }
 
   const next = addComment(

@@ -163,8 +163,10 @@ export function createEditorScenarios(fixtures: {
     createBenchmarkScenario("editor", "editor_create_document_frame_long", 200, () => {
       void createDocumentFrame(longCaretState, frameLayoutState, {
         activeBlockPath:
-          resolveIndexedBlockContainingPath(longCaretState.documentIndex, longCaretState.selection.focus.path)
-            ?.path ?? null,
+          resolveIndexedBlockContainingPath(
+            longCaretState.documentIndex,
+            longCaretState.selection.focus.path,
+          )?.path ?? null,
         activePath: longCaretState.selection.focus.path,
         activeThreadIndex: null,
         commentRanges: [],
@@ -194,24 +196,29 @@ export function createEditorScenarios(fixtures: {
         width: BENCHMARK_VIEWPORT.width,
       });
     }),
-    createBenchmarkScenario("editor", "editor_create_document_frame_dense_table_selection", 200, () => {
-      void createDocumentFrame(denseTableFrameState, denseTableFrameLayoutState, {
-        activeBlockPath:
-          resolveIndexedBlockContainingPath(
-            denseTableFrameState.documentIndex,
-            denseTableFrameState.selection.focus.path,
-          )?.path ?? null,
-        activePath: denseTableFrameState.selection.focus.path,
-        activeThreadIndex: null,
-        commentRanges: [],
-        devicePixelRatio: 1,
-        height: BENCHMARK_VIEWPORT.height,
-        normalizedSelection: normalizeSelection(denseTableFrameState),
-        now: 0,
-        theme: frameTheme,
-        width: BENCHMARK_VIEWPORT.width,
-      });
-    }),
+    createBenchmarkScenario(
+      "editor",
+      "editor_create_document_frame_dense_table_selection",
+      200,
+      () => {
+        void createDocumentFrame(denseTableFrameState, denseTableFrameLayoutState, {
+          activeBlockPath:
+            resolveIndexedBlockContainingPath(
+              denseTableFrameState.documentIndex,
+              denseTableFrameState.selection.focus.path,
+            )?.path ?? null,
+          activePath: denseTableFrameState.selection.focus.path,
+          activeThreadIndex: null,
+          commentRanges: [],
+          devicePixelRatio: 1,
+          height: BENCHMARK_VIEWPORT.height,
+          normalizedSelection: normalizeSelection(denseTableFrameState),
+          now: 0,
+          theme: frameTheme,
+          width: BENCHMARK_VIEWPORT.width,
+        });
+      },
+    ),
     createBenchmarkScenario("editor", "editor_typing_code", 200, () => {
       const editorState = selectCanvasText(
         fixtures.richCodeSnapshot,
@@ -309,63 +316,48 @@ export function createEditorScenarios(fixtures: {
 
     // --- Cursor navigation ---
 
-    createBenchmarkScenario(
-      "editor",
-      "editor_cursor_move",
-      100,
-      () => {
-        const { layout } = longInteractionFixture;
-        let state = longInteractionFixture.state;
+    createBenchmarkScenario("editor", "editor_cursor_move", 100, () => {
+      const { layout } = longInteractionFixture;
+      let state = longInteractionFixture.state;
 
-        for (let step = 0; step < 25; step += 1) {
-          const nextState = moveSelectionToNextLine(state, layout);
+      for (let step = 0; step < 25; step += 1) {
+        const nextState = moveSelectionToNextLine(state, layout);
 
-          if (!nextState) {
-            break;
-          }
-
-          state = nextState;
+        if (!nextState) {
+          break;
         }
-      },
-    ),
-    createBenchmarkScenario(
-      "editor",
-      "editor_cursor_move_xlarge",
-      50,
-      () => {
-        const { layout } = xlargeInteractionFixture;
-        let state = xlargeInteractionFixture.state;
 
-        for (let step = 0; step < 25; step += 1) {
-          const nextState = moveSelectionToNextLine(state, layout);
+        state = nextState;
+      }
+    }),
+    createBenchmarkScenario("editor", "editor_cursor_move_xlarge", 50, () => {
+      const { layout } = xlargeInteractionFixture;
+      let state = xlargeInteractionFixture.state;
 
-          if (!nextState) {
-            break;
-          }
+      for (let step = 0; step < 25; step += 1) {
+        const nextState = moveSelectionToNextLine(state, layout);
 
-          state = nextState;
+        if (!nextState) {
+          break;
         }
-      },
-    ),
-    createBenchmarkScenario(
-      "editor",
-      "editor_cursor_move_huge",
-      200,
-      () => {
-        const { layout } = hugeInteractionFixture;
-        let state = hugeInteractionFixture.state;
 
-        for (let step = 0; step < 25; step += 1) {
-          const nextState = moveSelectionToNextLine(state, layout);
+        state = nextState;
+      }
+    }),
+    createBenchmarkScenario("editor", "editor_cursor_move_huge", 200, () => {
+      const { layout } = hugeInteractionFixture;
+      let state = hugeInteractionFixture.state;
 
-          if (!nextState) {
-            break;
-          }
+      for (let step = 0; step < 25; step += 1) {
+        const nextState = moveSelectionToNextLine(state, layout);
 
-          state = nextState;
+        if (!nextState) {
+          break;
         }
-      },
-    ),
+
+        state = nextState;
+      }
+    }),
 
     // --- Clipboard ---
 
@@ -540,11 +532,7 @@ function moveSelectionToNextLine(
 }
 
 function findCurrentLine(state: ReturnType<typeof createEditorState>, layout: DocumentLayout) {
-  return findLineForPathOffset(
-    layout,
-    state.selection.focus.path,
-    state.selection.focus.offset,
-  );
+  return findLineForPathOffset(layout, state.selection.focus.path, state.selection.focus.offset);
 }
 
 function selectEntireDocument(snapshot: Parameters<typeof createEditorState>[0]) {

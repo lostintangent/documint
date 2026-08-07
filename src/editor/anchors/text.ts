@@ -40,10 +40,7 @@ type EditorAnchorRange = {
 export type EditorTextAnchorResolver = {
   listContainers(containerKind?: AnchorContainer["containerKind"]): AnchorContainer[];
   resolveEditorRange(
-    match: Pick<
-      AnchorMatch,
-      "containerOrdinal" | "containerPath" | "endOffset" | "startOffset"
-    >,
+    match: Pick<AnchorMatch, "containerOrdinal" | "containerPath" | "endOffset" | "startOffset">,
     options?: { collapsedAffinity?: InlineOffsetAffinity },
   ): EditorAnchorRange | null;
 };
@@ -169,15 +166,11 @@ function resolveAnchorContainerForPath(
   if (indexedCell) {
     const cell = indexedCell.cell;
 
-    return cell
-      ? { containerKind: "tableCell", text: cell.plainText }
-      : null;
+    return cell ? { containerKind: "tableCell", text: cell.plainText } : null;
   }
 
   const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
-  const containerKind = indexedBlock
-    ? anchorKindForBlockType(indexedBlock.block.type)
-    : null;
+  const containerKind = indexedBlock ? anchorKindForBlockType(indexedBlock.block.type) : null;
 
   return containerKind && indexedBlock
     ? { containerKind, text: indexedBlock.block.plainText }

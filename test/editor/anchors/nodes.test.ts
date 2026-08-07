@@ -86,10 +86,7 @@ function createIndex(markdown: string) {
   return createDocumentIndex(parseDocument(markdown));
 }
 
-function requireDocumentNodeAnchor(
-  documentIndex: ReturnType<typeof createIndex>,
-  path: string,
-) {
+function requireDocumentNodeAnchor(documentIndex: ReturnType<typeof createIndex>, path: string) {
   const anchor = createDocumentNodeAnchor(documentIndex.document, path);
 
   if (!anchor) {

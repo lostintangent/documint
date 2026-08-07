@@ -113,9 +113,7 @@ test("measures the empty-looking paragraph produced by Enter before a trailing s
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const active = indexedTextEntries(state).find(
-    (path) => path.path === state.selection.focus.path,
-  );
+  const active = indexedTextEntries(state).find((path) => path.path === state.selection.focus.path);
   const caret = measureCaretTarget(layout, state.documentIndex, {
     path: state.selection.focus.path,
     offset: state.selection.focus.offset,

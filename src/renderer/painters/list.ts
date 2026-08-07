@@ -43,13 +43,9 @@ export function paintListMarker(
   if (pop) {
     const effectMarker = resolveListMarkerEffectFrame(marker, context);
 
-    paintEffect(
-      pop,
-      { marker: effectMarker, progress: pop.progress },
-      ({ progress, theme }) => {
-        paintListMarkerDefault(context, marker, theme, { progress });
-      },
-    );
+    paintEffect(pop, { marker: effectMarker, progress: pop.progress }, ({ progress, theme }) => {
+      paintListMarkerDefault(context, marker, theme, { progress });
+    });
     return;
   }
 

@@ -44,9 +44,7 @@ describe("Selection anchors", () => {
   test("matches unchanged text as text continuity", () => {
     const anchor = createSelectionAnchor("alpha target", 6, "neutral");
 
-    expect(hasSelectionAnchorTextContinuity("alpha target", "alpha target", anchor)).toBe(
-      true,
-    );
+    expect(hasSelectionAnchorTextContinuity("alpha target", "alpha target", anchor)).toBe(true);
   });
 
   test("matches text continuity when strong shared text resolves the selection anchor", () => {

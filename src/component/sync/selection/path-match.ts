@@ -27,9 +27,15 @@ export function resolveExternalPathMatch(
   nextState: EditorState,
   pointAnchor: SelectionAnchor,
 ) {
-  const previousBlock = resolveIndexedBlockContainingPath(previousState.documentIndex, previousPath);
+  const previousBlock = resolveIndexedBlockContainingPath(
+    previousState.documentIndex,
+    previousPath,
+  );
 
-  if (!previousBlock || (previousText.length === 0 && isRootParagraphWithEmptyText(previousBlock))) {
+  if (
+    !previousBlock ||
+    (previousText.length === 0 && isRootParagraphWithEmptyText(previousBlock))
+  ) {
     return null;
   }
 
@@ -183,7 +189,7 @@ function resolveNodeAnchorPath(
   previousState: EditorState,
   previousPath: string,
   nextState: EditorState,
-): string | "ambiguous" | null {
+): string | null {
   const anchorMatch = resolveNodeAnchorForPath(
     previousState.documentIndex,
     previousPath,

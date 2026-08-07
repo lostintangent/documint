@@ -99,8 +99,6 @@ describe("Pair completion", () => {
     state = insertText(state, " ") ?? state;
 
     expect(toMarkdown(state)).toBe("- [ ] \n");
-    expect(indexedTextEntries(state).some((r) => r.path === state.selection.focus.path)).toBe(
-      true,
-    );
+    expect(indexedTextEntries(state).some((r) => r.path === state.selection.focus.path)).toBe(true);
   });
 });

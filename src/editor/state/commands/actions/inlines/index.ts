@@ -43,11 +43,6 @@ export const insertInlineNode = (context: InlineContext, node: Inline): EditorSt
 // Splices a sequence of inline nodes over a resolved inline range.
 export function insertInlines(context: InlineContext, inlines: Inline[]): EditorStateAction {
   return createInlineReplacementAction(
-    spliceInlineContainer(
-      context.inlineContainer,
-      context.startOffset,
-      context.endOffset,
-      inlines,
-    ),
+    spliceInlineContainer(context.inlineContainer, context.startOffset, context.endOffset, inlines),
   );
 }

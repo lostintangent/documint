@@ -22,14 +22,8 @@ const clientId = createClientId();
 
 function App() {
   const documentState = useDocumentState(instanceId);
-  const {
-    content,
-    copilotUser,
-    flushLocalEdits,
-    handleContentChanged,
-    jobs,
-    loadError,
-  } = documentState;
+  const { content, copilotUser, flushLocalEdits, handleContentChanged, jobs, loadError } =
+    documentState;
   const { handleCommentChanged, handleUserMentioned } = useCopilotTriggers({
     copilotUser,
     flushLocalEdits,
@@ -39,7 +33,10 @@ function App() {
   });
   const users = useMemo(() => [copilotUser], [copilotUser]);
   const storage = useStorage(instanceId);
-  const presence = useMemo(() => createCopilotPresence(jobs, copilotUser.id), [copilotUser.id, jobs]);
+  const presence = useMemo(
+    () => createCopilotPresence(jobs, copilotUser.id),
+    [copilotUser.id, jobs],
+  );
   const theme = useTheme();
   useViewportResizeNotifier();
 
@@ -200,10 +197,13 @@ function useCopilotTriggers({
   const startCopilotJob = useCallback(
     async (path: string, body: unknown) => {
       await flushLocalEdits();
-      const nextJob = await fetchJson<CopilotJob>(`${path}?instanceId=${encodeInstanceId(instanceId)}`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      const nextJob = await fetchJson<CopilotJob>(
+        `${path}?instanceId=${encodeInstanceId(instanceId)}`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      );
       upsertRunningJob(nextJob);
       setLoadError(null);
     },
@@ -270,7 +270,10 @@ function useViewportResizeNotifier() {
   }, []);
 }
 
-function resolveCopilotTrigger(change: CommentChange, copilotUserId: string): CopilotTrigger | null {
+function resolveCopilotTrigger(
+  change: CommentChange,
+  copilotUserId: string,
+): CopilotTrigger | null {
   if (change.kind !== "added") {
     return null;
   }
@@ -282,7 +285,7 @@ function resolveCopilotTrigger(change: CommentChange, copilotUserId: string): Co
     return "direct-mention";
   }
 
-  const previousComments = Array.isArray(change.thread?.comments) ? change.thread.comments.slice(0, -1) : [];
+  const previousComments = change.thread.comments.slice(0, -1);
   return previousComments.some((comment) => mentionsCopilot(comment.body)) ? "thread-reply" : null;
 }
 
@@ -301,9 +304,17 @@ function createCopilotPresence(jobs: CopilotJob[], copilotUserId: string): Docum
       return [];
     }
 
-    const cursor = candidate.cursor ?? (candidate.threadId ? { threadId: candidate.threadId } : undefined);
+    const cursor =
+      candidate.cursor ?? (candidate.threadId ? { threadId: candidate.threadId } : undefined);
     const status = candidate.message?.trim();
-    return [{ userId: copilotUserId, color: "#8b5cf6", ...(cursor ? { cursor } : {}), ...(status ? { status } : {}) }];
+    return [
+      {
+        userId: copilotUserId,
+        color: "#8b5cf6",
+        ...(cursor ? { cursor } : {}),
+        ...(status ? { status } : {}),
+      },
+    ];
   });
 }
 
@@ -327,7 +338,10 @@ function createCursorAnchorForMentionLine(lineMarkdown: string | null | undefine
 }
 
 function createClientId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `documint-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `documint-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
 }
 
 function encodeInstanceId(instanceId: string | null): string {
@@ -335,13 +349,19 @@ function encodeInstanceId(instanceId: string | null): string {
 }
 
 async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const response = await fetch(url, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers,
   });
   const payload = (await response.json()) as { error?: string; state?: ServerState };
   if (!response.ok) {
-    const error = new Error(payload.error ?? `Request failed with ${response.status}`) as FetchJsonError;
+    const error = new Error(
+      payload.error ?? `Request failed with ${response.status}`,
+    ) as FetchJsonError;
     error.status = response.status;
     error.payload = payload;
     throw error;

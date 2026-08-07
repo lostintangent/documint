@@ -175,7 +175,9 @@ describe("document node anchors", () => {
 
     test("resolves duplicate table-cell content with row and cell context", () => {
       const previous = parseDocument("| A | B | C |\n| - | - | - |\n| one | two | three |\n");
-      const next = parseDocument("| A | B | C |\n| - | - | - |\n| one | two | three |\n| x | two | y |\n");
+      const next = parseDocument(
+        "| A | B | C |\n| - | - | - |\n| one | two | three |\n| x | two | y |\n",
+      );
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
 
       expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
@@ -287,9 +289,7 @@ describe("document node anchors", () => {
     });
 
     test("keeps collapsed duplicate table-cell content ambiguous when original context no longer matches", () => {
-      const previous = parseDocument(
-        "| A | B |\n| - | - |\n| left | same |\n| other | same |\n",
-      );
+      const previous = parseDocument("| A | B |\n| - | - |\n| left | same |\n| other | same |\n");
       const next = parseDocument("| A | B |\n| - | - |\n| left | same |\n");
       const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
 

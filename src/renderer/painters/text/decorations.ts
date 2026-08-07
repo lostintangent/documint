@@ -67,11 +67,7 @@ export function paintTextDecorationOverlays(
     }
 
     paintClippedTextOverlay(context, {
-      color: resolveDecorationTextColor(
-        decoration,
-        clocks.ambientTime,
-        segment.textColor,
-      ),
+      color: resolveDecorationTextColor(decoration, clocks.ambientTime, segment.textColor),
       eraseExistingGlyphs: true,
       height: lineFrame.layoutLine.height,
       left: segment.left,

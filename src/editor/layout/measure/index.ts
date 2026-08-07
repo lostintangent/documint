@@ -336,10 +336,7 @@ function createPathLineIndices(lines: LayoutLine[]) {
 // Folds a single line's geometry into its path's running bounds. Called once
 // per line as it is appended, replacing the prior pattern of a per-path
 // `lines.filter(...)` (O(N) inside an N-path loop) plus a final full re-walk.
-function updatePathBoundsFromLine(
-  pathBounds: DocumentLayout["pathBounds"],
-  line: LayoutLine,
-) {
+function updatePathBoundsFromLine(pathBounds: DocumentLayout["pathBounds"], line: LayoutLine) {
   const current = pathBounds.get(line.path);
   const right = line.left + line.width;
   const bottom = line.top + line.height;

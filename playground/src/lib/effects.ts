@@ -113,8 +113,7 @@ function paintInsertedTextGlow({
 }: TextInsertedEffectContext) {
   const flash = 1 - easeOutCubic(progress);
   const inset = insertedTextGlowLineWidth / 2;
-  const color =
-    contentKind === "code" ? theme.commentHighlightResolved : theme.insertHighlightText;
+  const color = contentKind === "code" ? theme.commentHighlightResolved : theme.insertHighlightText;
 
   context.save();
   context.globalAlpha *= Math.min(1, flash * 1.35);

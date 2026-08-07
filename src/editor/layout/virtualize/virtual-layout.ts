@@ -15,10 +15,7 @@ import {
 import { walkLayoutBlocks } from "../lib/block-walk";
 import { resolveBlockContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
-import {
-  resolveTableColumnMetrics,
-  resolveTableRowHeight,
-} from "../measure/table";
+import { resolveTableColumnMetrics, resolveTableRowHeight } from "../measure/table";
 import { resolveTextBlockLineHeight } from "../measure/text";
 import { resolveBlockLayoutTextInput, tableCellLayoutTextInput } from "../measure/text-input";
 import { estimateContainerHeight, estimateTableCellHeight } from "./height-estimate";
@@ -45,11 +42,9 @@ export function getOrCreateVirtualLayout(
   const entries: VirtualLayout["entries"] = [];
   const pathIndices = new Map<string, number>();
 
-  for (const {
-    gapBefore,
-    indexedBlock,
-    isInert,
-  } of walkLayoutBlocks(documentIndex, { blockGap: options.blockGap })) {
+  for (const { gapBefore, indexedBlock, isInert } of walkLayoutBlocks(documentIndex, {
+    blockGap: options.blockGap,
+  })) {
     const block = indexedBlock.block;
 
     totalHeight += gapBefore;

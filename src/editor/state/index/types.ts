@@ -56,9 +56,7 @@ export type IndexedBlock =
       tableCellRows: readonly (readonly IndexedTableCell[])[];
     });
 
-export type IndexedText =
-  | Extract<IndexedBlock, { kind: "inlines" | "source" }>
-  | IndexedTableCell;
+export type IndexedText = Extract<IndexedBlock, { kind: "inlines" | "source" }> | IndexedTableCell;
 
 // A block projected into the editor index. Carries a direct reference to the
 // source document `Block` (so `block.type` and the block's children are

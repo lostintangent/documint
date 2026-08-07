@@ -42,11 +42,7 @@ export function resolveVerticalTablePathTarget(
       currentCell.rowIndex + direction,
       currentCell.cellIndex,
     )?.path ??
-    resolveAdjacentEditorPathWithTextOutsideBlock(
-      state.documentIndex,
-      tableBlock.path,
-      direction,
-    );
+    resolveAdjacentEditorPathWithTextOutsideBlock(state.documentIndex, tableBlock.path, direction);
 
   return { currentPath, targetPath };
 }

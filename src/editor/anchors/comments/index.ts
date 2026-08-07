@@ -211,10 +211,8 @@ export function resolveActiveCommentIndex(
   }
 
   const { anchor, focus } = state.selection;
-  const cmp = (
-    left: { offset: number; path: string },
-    right: { offset: number; path: string },
-  ) => compareEditorPositions(state.documentIndex, left, right, { unknown: "before" });
+  const cmp = (left: { offset: number; path: string }, right: { offset: number; path: string }) =>
+    compareEditorPositions(state.documentIndex, left, right, { unknown: "before" });
 
   const orientation = cmp(anchor, focus);
   const isCollapsed = orientation === 0;
@@ -336,10 +334,7 @@ export function updateCommentThreadsForPathEdit(
       continue;
     }
 
-    const repairedMatch = resolveCommentThreadInContainers(
-      currentThread,
-      [currentContainer],
-    ).match;
+    const repairedMatch = resolveCommentThreadInContainers(currentThread, [currentContainer]).match;
 
     if (!repairedMatch || repairedMatch.containerPath !== path) {
       continue;

@@ -44,39 +44,32 @@ export function createComponentScenarios(fixtures: {
   const externalChangesFixture = createExternalChangesFixture();
 
   return [
-    createBenchmarkScenario(
-      "component",
-      "component_decorations_medium",
-      100,
-      () =>
-        void fixtures.mediumSnapshot.blocks.forEach((block, rootIndex) =>
-          resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
-        ),
+    createBenchmarkScenario("component", "component_decorations_medium", 100, () =>
+      fixtures.mediumSnapshot.blocks.forEach((block, rootIndex) =>
+        resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
+      ),
     ),
-    createBenchmarkScenario(
-      "component",
-      "component_decorations_long",
-      50,
-      () =>
-        void fixtures.longSnapshot.blocks.forEach((block, rootIndex) =>
-          resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
-        ),
+    createBenchmarkScenario("component", "component_decorations_long", 50, () =>
+      fixtures.longSnapshot.blocks.forEach((block, rootIndex) =>
+        resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
+      ),
     ),
-    createBenchmarkScenario(
-      "component",
-      "component_grammar_tokenize_code_heavy",
-      150,
-      () =>
-        void codeHeavySnapshot.blocks.forEach((block, rootIndex) =>
-          resolveCodeDecorationRanges(block, rootIndex, compiledGrammars),
-        ),
+    createBenchmarkScenario("component", "component_grammar_tokenize_code_heavy", 150, () =>
+      codeHeavySnapshot.blocks.forEach((block, rootIndex) =>
+        resolveCodeDecorationRanges(block, rootIndex, compiledGrammars),
+      ),
     ),
     createBenchmarkScenario("component", "component_reconcile_selection_long", 200, () => {
       void reconcileExternalContentChange(fixture.selectedState, fixture.shiftedState);
     }),
-    createBenchmarkScenario("component", "component_reconcile_transient_empty_paragraph_long", 100, () => {
-      void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);
-    }),
+    createBenchmarkScenario(
+      "component",
+      "component_reconcile_transient_empty_paragraph_long",
+      100,
+      () => {
+        void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);
+      },
+    ),
     createBenchmarkScenario("component", "component_diff_external_blocks", 100, () => {
       void findDocumentChanges(
         externalChangesFixture.previousBlocks,
@@ -96,13 +89,18 @@ export function createComponentScenarios(fixtures: {
         externalChangesFixture.incomingState,
       );
     }),
-    createBenchmarkScenario("component", "component_acknowledge_external_changes_local_edit", 200, () => {
-      void acknowledgeUnacknowledgedDocumentChanges(
-        externalChangesFixture.unacknowledgedChanges,
-        externalChangesFixture.localEditState,
-        { retarget: true },
-      );
-    }),
+    createBenchmarkScenario(
+      "component",
+      "component_acknowledge_external_changes_local_edit",
+      200,
+      () => {
+        void acknowledgeUnacknowledgedDocumentChanges(
+          externalChangesFixture.unacknowledgedChanges,
+          externalChangesFixture.localEditState,
+          { retarget: true },
+        );
+      },
+    ),
     createBenchmarkScenario(
       "component",
       "component_retarget_many_external_changes_reparsed_shift",

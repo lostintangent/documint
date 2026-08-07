@@ -455,7 +455,7 @@ test("hit-tests image runs as single reference caret stops", () => {
     throw new Error("Expected image paragraph layout");
   }
 
-  const imageRun = ((paragraph).inlines ?? []).find((run) => run.node.type === "image");
+  const imageRun = (paragraph.inlines ?? []).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");
@@ -513,7 +513,7 @@ test("resolves resource hover targets from registered resource inlines", () => {
     throw new Error("Expected resource paragraph layout");
   }
 
-  const inlines = ((paragraph).inlines ?? []);
+  const inlines = paragraph.inlines ?? [];
   expect(inlines).toHaveLength(1);
   expect(inlines[0]?.node.type).toBe("resource");
   expect(inlines[0]?.link).toBeNull();
@@ -569,7 +569,7 @@ test("indexes playground tutorial demo resources as resource inlines", () => {
     throw new Error("Expected playground resource paragraph");
   }
 
-  const inlines = ((resourcePath).inlines ?? []);
+  const inlines = resourcePath.inlines ?? [];
   const resources = inlines.filter((inline) => inline.node.type === "resource");
   const links = inlines.filter(
     (inline) =>

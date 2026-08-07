@@ -6,12 +6,12 @@
   "categories": [
     "Other"
   ],
-  "publisher": "lostintangent",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/lostintangent/documint"
   },
-  "license": "MIT",
+  "publisher": "lostintangent",
   "main": "./dist/extension.js",
   "scripts": {
     "build:prod": "node esbuild.js --production",
@@ -26,8 +26,8 @@
   },
   "devDependencies": {
     "@types/node": "22.x",
-    "@vscode/vsce": "^3.9.1",
     "@types/vscode": "^1.120.0",
+    "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.27.3"
   },
   "contributes": {

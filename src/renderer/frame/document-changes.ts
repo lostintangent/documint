@@ -8,10 +8,7 @@ import type { EditorLayoutState } from "@/editor/layout";
 import type { DocumentChangeKind } from "@/document";
 import { type ResolvedDocumentChangeTarget, type ResolvedEditorTheme } from "@/types";
 import { type DocumentChangeFadeFrame } from "../effects";
-import {
-  resolveTableCellGeometryFrame,
-  type TableCellGeometryFrame,
-} from "./chrome/table";
+import { resolveTableCellGeometryFrame, type TableCellGeometryFrame } from "./chrome/table";
 
 export type DocumentChangeFrameEntry = {
   changeKind: DocumentChangeKind;
@@ -129,9 +126,7 @@ export function resolveDocumentChangeBackgroundColor(
     : theme.externalChangeModificationBackground;
 }
 
-export function resolveDocumentChangeOpacity(
-  change: DocumentChangeFrameEntry,
-) {
+export function resolveDocumentChangeOpacity(change: DocumentChangeFrameEntry) {
   return change.fade ? change.fade.progress : undefined;
 }
 

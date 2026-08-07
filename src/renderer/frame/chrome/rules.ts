@@ -51,10 +51,7 @@ export function resolveHeadingRules(
   return rules;
 }
 
-function mergeHeadingRuleRects(
-  current: LayoutRect,
-  next: LayoutRect,
-): LayoutRect {
+function mergeHeadingRuleRects(current: LayoutRect, next: LayoutRect): LayoutRect {
   const bottom = Math.max(current.top + current.height, next.top + next.height);
 
   return {
@@ -114,10 +111,7 @@ export function resolveBlockquoteRuleFrames(
   return rules;
 }
 
-function mergeBlockquoteRuleRects(
-  current: LayoutRect,
-  next: LayoutRect,
-): LayoutRect {
+function mergeBlockquoteRuleRects(current: LayoutRect, next: LayoutRect): LayoutRect {
   const top = Math.min(current.top, next.top);
   const bottom = Math.max(current.top + current.height, next.top + next.height);
 

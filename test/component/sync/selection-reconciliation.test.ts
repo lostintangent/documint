@@ -275,32 +275,21 @@ describe("selection reconciliation", () => {
     const previousState = selectPathByText("- \n\nOther\n", "", 0, 0);
     const nextState = createState("- \n\nOther edited\n");
 
-    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(
-      previousState.selection,
-    );
+    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(previousState.selection);
   });
 
   test("preserves a caret in a still-empty table cell path", () => {
-    const previousState = selectPathByText(
-      "| A | B |\n| - | - |\n| | Stable |\n",
-      "",
-      0,
-      0,
-    );
+    const previousState = selectPathByText("| A | B |\n| - | - |\n| | Stable |\n", "", 0, 0);
     const nextState = createState("| A | B |\n| - | - |\n| | Stable edited |\n");
 
-    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(
-      previousState.selection,
-    );
+    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(previousState.selection);
   });
 
   test("preserves a caret in a still-empty code path", () => {
     const previousState = selectPathByText("```ts\n\n```\n\nOther\n", "", 0, 0);
     const nextState = createState("```ts\n\n```\n\nOther edited\n");
 
-    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(
-      previousState.selection,
-    );
+    expect(resolveEquivalentSelection(previousState, nextState)).toEqual(previousState.selection);
   });
 
   test("does not repair through inserted-empty-root fallback when shifted content is unrelated", () => {
@@ -530,7 +519,10 @@ describe("external content reconciliation", () => {
       anchor: previousState.selection.anchor,
       focus: { offset: 5, path: alphaEntry.path },
     });
-    const reconciliation = reconcileExternalContentChange(rangeState, createState("Alpha paragraph\n"));
+    const reconciliation = reconcileExternalContentChange(
+      rangeState,
+      createState("Alpha paragraph\n"),
+    );
 
     expect(reconciliation.didReconcile).toBe(false);
     expectTextEntries(reconciliation.state, ["Alpha paragraph"]);
@@ -656,9 +648,7 @@ describe("external content reconciliation", () => {
     );
     const previousState = selectPathText(
       createEditorState(
-        spliceDocument(initialState.documentIndex.document, 1, 0, [
-          createParagraphTextBlock(""),
-        ]),
+        spliceDocument(initialState.documentIndex.document, 1, 0, [createParagraphTextBlock("")]),
       ),
       1,
       0,
@@ -885,12 +875,7 @@ function selectPathRange(
   });
 }
 
-function selectPathByText(
-  markdown: string,
-  text: string,
-  startOffset: number,
-  endOffset: number,
-) {
+function selectPathByText(markdown: string, text: string, startOffset: number, endOffset: number) {
   const state = createState(markdown);
   const path = indexedTextEntries(state).find((candidate) => candidate.text === text);
 

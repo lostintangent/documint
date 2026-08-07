@@ -58,7 +58,9 @@ export function findDocumentLayoutLineAtPoint(
 
   const containingPath = findContainingPath(layout, point);
 
-  return containingPath ? findNearestDocumentLayoutLineForPath(layout, containingPath, point.y) : null;
+  return containingPath
+    ? findNearestDocumentLayoutLineForPath(layout, containingPath, point.y)
+    : null;
 }
 
 export function findDocumentLayoutLineForPathOffset(

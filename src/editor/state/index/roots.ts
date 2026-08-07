@@ -226,13 +226,7 @@ export function positionIndexedRoots(
     const previousRoot = previousRoots?.[rootIndex];
 
     positionedRoots.push(
-      canReuseIndexedRoot(
-        previousRoot,
-        root,
-        nextBlockStart,
-        nextBlockEnd,
-        nextEditorOrderStart,
-      )
+      canReuseIndexedRoot(previousRoot, root, nextBlockStart, nextBlockEnd, nextEditorOrderStart)
         ? previousRoot
         : positionIndexedRoot(root, nextBlockStart, nextEditorOrderStart),
     );

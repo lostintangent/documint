@@ -26,32 +26,25 @@ describe("local content notifications", () => {
     expect(pathTexts(reparsedEchoState)).toEqual(["Alpha"]);
   });
 
-  test.each([
-    [">"],
-    ["#"],
-    ["-"],
-    ["*"],
-    ["+"],
-    ["1."],
-    ["---"],
-    ["x"],
-    ["  "],
-  ])("keeps enter-type-delete stable before hidden suffix spaces after typing %p", (typedPrefix) => {
-    const store = createStore(parseDocument("Alpha \n", {}));
-    placeCaret(store, 0, 5);
-    const emissions = [runCommandAndEmit(store, insertLineBreak)];
+  test.each([[">"], ["#"], ["-"], ["*"], ["+"], ["1."], ["---"], ["x"], ["  "]])(
+    "keeps enter-type-delete stable before hidden suffix spaces after typing %p",
+    (typedPrefix) => {
+      const store = createStore(parseDocument("Alpha \n", {}));
+      placeCaret(store, 0, 5);
+      const emissions = [runCommandAndEmit(store, insertLineBreak)];
 
-    emissions.push(runCommandAndEmit(store, insertText, typedPrefix));
-    expect(pathTexts(store.editor.getState())).toEqual(["Alpha", `${typedPrefix} `]);
+      emissions.push(runCommandAndEmit(store, insertText, typedPrefix));
+      expect(pathTexts(store.editor.getState())).toEqual(["Alpha", `${typedPrefix} `]);
 
-    for (const _ of typedPrefix) {
-      emissions.push(runCommandAndEmit(store, deleteBackward));
-    }
+      for (const _ of typedPrefix) {
+        emissions.push(runCommandAndEmit(store, deleteBackward));
+      }
 
-    expect(emissions.some((content) => content.includes("&#x20;"))).toBe(true);
-    expect(pathTexts(store.editor.getState())).toEqual(["Alpha", " "]);
-    expect(selectionOffset(store.editor.getState())).toBe(0);
-  });
+      expect(emissions.some((content) => content.includes("&#x20;"))).toBe(true);
+      expect(pathTexts(store.editor.getState())).toEqual(["Alpha", " "]);
+      expect(selectionOffset(store.editor.getState())).toBe(0);
+    },
+  );
 });
 
 function runCommandAndEmit<A extends unknown[]>(

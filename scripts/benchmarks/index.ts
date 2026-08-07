@@ -7,10 +7,7 @@ import {
   collectUnusedBenchmarkBudgets,
   type RepeatedBudgetFailure,
 } from "./gate";
-import {
-  formatBenchmarkJson,
-  formatBenchmarkTableScenarioRuns,
-} from "./output";
+import { formatBenchmarkJson, formatBenchmarkTableScenarioRuns } from "./output";
 import { createComponentScenarios } from "./scenarios/component";
 import { createEditorScenarios } from "./scenarios/editor";
 import { createLayoutScenarios } from "./scenarios/layout";

@@ -5,11 +5,7 @@ import {
   mergeUnacknowledgedDocumentChanges,
   type UnacknowledgedDocumentChange,
 } from "@/component/sync/external-changes";
-import {
-  documentNodeAnchorKey,
-  findDocumentChanges,
-  type DocumentChange,
-} from "@/document";
+import { documentNodeAnchorKey, findDocumentChanges, type DocumentChange } from "@/document";
 import { createEditorState, setSelection } from "@/editor/state";
 import { parseDocument } from "@/markdown";
 
@@ -206,10 +202,7 @@ describe("unacknowledged document changes", () => {
       state,
     );
 
-    expect(next.changes.map((change) => change.change.kind)).toEqual([
-      "modified",
-      "modified",
-    ]);
+    expect(next.changes.map((change) => change.change.kind)).toEqual(["modified", "modified"]);
     expect(next.newChanges).toEqual([next.changes[1]]);
   });
 
@@ -550,9 +543,7 @@ describe("unacknowledged document changes", () => {
         "",
       ].join("\n"),
     );
-    const droppedPath = indexedTextEntries(next).find(
-      (path) => path.text === "Drop",
-    );
+    const droppedPath = indexedTextEntries(next).find((path) => path.text === "Drop");
 
     if (!droppedPath) {
       throw new Error("Expected dropped path");
@@ -565,10 +556,7 @@ describe("unacknowledged document changes", () => {
 
     const dropped = resolveChangeForState(
       initial,
-      changeAt(
-        diff(initialMarkdown.replace("Drop", "Old drop"), initialMarkdown),
-        "root.0",
-      ),
+      changeAt(diff(initialMarkdown.replace("Drop", "Old drop"), initialMarkdown), "root.0"),
     );
     const retargeted = resolveChangeForState(
       initial,
@@ -579,10 +567,7 @@ describe("unacknowledged document changes", () => {
     );
     const retained = resolveChangeForState(
       initial,
-      changeAt(
-        diff(initialMarkdown.replace("Keep", "Old keep"), initialMarkdown),
-        "root.2",
-      ),
+      changeAt(diff(initialMarkdown.replace("Keep", "Old keep"), initialMarkdown), "root.2"),
     );
     const acknowledged = acknowledgeUnacknowledgedDocumentChanges(
       [dropped, retargeted, retained],
@@ -712,11 +697,7 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(3);
-    expect(next.changes.map((change) => change.change.kind)).toEqual([
-      "added",
-      "added",
-      "added",
-    ]);
+    expect(next.changes.map((change) => change.change.kind)).toEqual(["added", "added", "added"]);
     expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0",
       "root.1",
@@ -765,11 +746,7 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(3);
-    expect(next.changes.map((change) => change.change.kind)).toEqual([
-      "added",
-      "added",
-      "added",
-    ]);
+    expect(next.changes.map((change) => change.change.kind)).toEqual(["added", "added", "added"]);
     expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
       "root.0.rows.1.cells.0",
       "root.0.rows.1.cells.1",
@@ -844,9 +821,7 @@ function resolveChangeForState(
     };
   }
 
-  const path = indexedTextEntries(state).find(
-    (candidate) => candidate.path === change.anchor.path,
-  );
+  const path = indexedTextEntries(state).find((candidate) => candidate.path === change.anchor.path);
   if (!path) {
     throw new Error(`Expected path at ${change.anchor.path}`);
   }

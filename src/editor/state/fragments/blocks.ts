@@ -79,15 +79,14 @@ function trimLeafBlockToPrefix(block: Block, target: LeafTrimTarget, offset: num
 
   switch (block.type) {
     case "heading":
-    case "paragraph":
-      {
-        return target.inlines
-          ? rebuildTextBlock(
-              block,
-              editIndexedInlines(target.inlines, offset, target.text.length, ""),
-            )
-          : null;
-      }
+    case "paragraph": {
+      return target.inlines
+        ? rebuildTextBlock(
+            block,
+            editIndexedInlines(target.inlines, offset, target.text.length, ""),
+          )
+        : null;
+    }
     case "code":
       return rebuildCodeBlock(block, target.text.slice(0, offset));
     case "raw":
@@ -104,12 +103,11 @@ function trimLeafBlockToSuffix(block: Block, target: LeafTrimTarget, offset: num
 
   switch (block.type) {
     case "heading":
-    case "paragraph":
-      {
-        return target.inlines
-          ? rebuildTextBlock(block, editIndexedInlines(target.inlines, 0, offset, ""))
-          : null;
-      }
+    case "paragraph": {
+      return target.inlines
+        ? rebuildTextBlock(block, editIndexedInlines(target.inlines, 0, offset, ""))
+        : null;
+    }
     case "code":
       return rebuildCodeBlock(block, target.text.slice(offset));
     case "raw":

@@ -42,7 +42,6 @@ export const blockquoteMarker = ">";
 export const fencedCodeMarker = "```";
 export const containerDirectiveClosingMarker = ":::";
 
-
 // --- Inline mark spec ---
 //
 // Single source of truth for Documint markdown's mark syntax. One row per

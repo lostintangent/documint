@@ -57,9 +57,10 @@ export function expandViewportSliceToBlockBoundaries(
   return {
     blockEndIndex: Number.isFinite(blockEndIndex) ? blockEndIndex : 0,
     blockStartIndex: Number.isFinite(blockStartIndex) ? blockStartIndex : 0,
-    top: Number.isFinite(blockStartIndex) && Number.isFinite(blockEndIndex)
-      ? resolveExpandedSliceTop(virtualLayout, blockStartIndex, blockEndIndex) ?? top
-      : top,
+    top:
+      Number.isFinite(blockStartIndex) && Number.isFinite(blockEndIndex)
+        ? (resolveExpandedSliceTop(virtualLayout, blockStartIndex, blockEndIndex) ?? top)
+        : top,
   };
 }
 
@@ -91,7 +92,11 @@ export function updateMeasuredContainerHeights(
     // Mirror the metrics applied when estimating this path —
     // otherwise the cache key for the measured height won't match the
     // cache key the next estimate pass looks up, defeating the cache.
-    const contentMetrics = resolveBlockContentMetrics(documentIndex, resolved.indexedBlock, options);
+    const contentMetrics = resolveBlockContentMetrics(
+      documentIndex,
+      resolved.indexedBlock,
+      options,
+    );
 
     cacheMeasuredContainerHeight(
       cache,

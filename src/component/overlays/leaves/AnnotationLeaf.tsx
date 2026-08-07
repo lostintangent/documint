@@ -107,8 +107,9 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const readOnly = props.readOnly;
   const thread = threadProps?.thread ?? null;
   const threadId = thread?.id ?? null;
-  const comments = thread?.comments ?? [];
-  const rootComment = comments[0] ?? null;
+  const threadComments = thread?.comments;
+  const commentCount = threadComments?.length ?? 0;
+  const rootComment = threadComments?.[0] ?? null;
   const isResolved = thread ? isResolvedCommentThread(thread) : false;
   const animateInitialComment = threadProps?.animateInitialComment ?? false;
   const [editingCommentIndex, setEditingCommentIndex] = useState<number | null>(null);
@@ -214,12 +215,12 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   useEffect(() => {
     if (
       editingCommentIndex !== null &&
-      (editingCommentIndex < 0 || editingCommentIndex >= comments.length)
+      (editingCommentIndex < 0 || editingCommentIndex >= commentCount)
     ) {
       setEditingCommentIndex(null);
       setEditDraft("");
     }
-  }, [comments.length, editingCommentIndex]);
+  }, [commentCount, editingCommentIndex]);
 
   useEffect(() => {
     if (!showRootComment || !animateInitialComment) {
@@ -268,7 +269,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   }, [canMutateComments, createMode, isExpanded]);
 
   useLayoutEffect(() => {
-    if (!threadId || comments.length === 0) {
+    if (!threadId || !threadComments?.length) {
       hasScrolledThreadRef.current = false;
       scrolledThreadIdRef.current = null;
       return;
@@ -289,7 +290,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       top: commentsList.scrollHeight,
     });
     hasScrolledThreadRef.current = true;
-  }, [comments, threadId]);
+  }, [threadComments, threadId]);
 
   const cancelEditing = () => {
     setEditingCommentIndex(null);
@@ -347,7 +348,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       canMutateComments={canMutateComments}
       canReply={canReply}
       canSaveEditedComment={canSaveEditedComment}
-      comments={comments}
+      comments={threadComments}
       commentsListRef={commentsListRef}
       composerRef={composerRef}
       editDraft={editDraft}
@@ -398,12 +399,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
                 onSelect={selectClipboardAction}
               >
                 <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
-                <LeafToolbar.MenuItem
-                  disabled={readOnly}
-                  icon={Scissors}
-                  text="Cut"
-                  value="cut"
-                />
+                <LeafToolbar.MenuItem disabled={readOnly} icon={Scissors} text="Cut" value="cut" />
                 <LeafToolbar.MenuDivider />
                 <LeafToolbar.MenuItem
                   disabled={readOnly}
@@ -497,7 +493,7 @@ function AnnotationLeafBody({
   canMutateComments: boolean;
   canReply: boolean;
   canSaveEditedComment: boolean;
-  comments: CommentThread["comments"];
+  comments: CommentThread["comments"] | undefined;
   commentsListRef: RefObject<HTMLDivElement | null>;
   composerRef: RefObject<HTMLTextAreaElement | null>;
   editDraft: string;
@@ -565,10 +561,7 @@ function AnnotationLeafBody({
           <LeafDivider />
         </>
       ) : null}
-      <div
-        className={`comment-thread${showRootComment ? "" : " is-empty"}`}
-        ref={commentsListRef}
-      >
+      <div className={`comment-thread${showRootComment ? "" : " is-empty"}`} ref={commentsListRef}>
         <article
           className={
             showRootComment
@@ -584,15 +577,12 @@ function AnnotationLeafBody({
             />
           ) : null}
         </article>
-        {comments.slice(1).map((comment, commentIndex) => {
+        {comments?.slice(1).map((comment, commentIndex) => {
           const actualIndex = commentIndex + 1;
           const isEditing = editingCommentIndex === actualIndex;
 
           return (
-            <article
-              className="comment-message"
-              key={`${comment.updatedAt}:${actualIndex}`}
-            >
+            <article className="comment-message" key={`${comment.updatedAt}:${actualIndex}`}>
               {!isEditing ? (
                 <div className="comment-message-meta">
                   <span>{formatRelativeTime(comment.updatedAt)}</span>

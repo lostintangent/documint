@@ -1,37 +1,21 @@
 import type { Mark } from "./types";
 
-export type MarkSpec = {
-  // Canonical semantic order for document text nodes. The order is
-  // inner-to-outer for markdown serialization because serializers reduce
-  // marks in stored order. Keep typographic emphasis before decorative marks
-  // so the document shape stays stable independent of edit order.
-  order: number;
-};
+// Canonical semantic order for document text nodes. The order is
+// inner-to-outer for markdown serialization because serializers reduce
+// marks in stored order. Keep typographic emphasis before decorative marks
+// so the document shape stays stable independent of edit order.
+const markRank = {
+  code: 0,
+  bold: 1,
+  italic: 2,
+  strikethrough: 3,
+  underline: 4,
+  superscript: 5,
+} satisfies Record<Mark, number>;
 
-export const markSpecByMark = {
-  code: { order: 0 },
-  bold: { order: 1 },
-  italic: { order: 2 },
-  strikethrough: { order: 3 },
-  underline: { order: 4 },
-  superscript: { order: 5 },
-} satisfies Record<Mark, MarkSpec>;
-
-export const markOrder = defineMarkOrder(markSpecByMark);
-
-const markRank = defineMarkRank(markSpecByMark);
-
-function defineMarkOrder(specs: Record<Mark, MarkSpec>): Mark[] {
-  return (Object.keys(specs) as Mark[]).sort(
-    (left, right) => specs[left].order - specs[right].order,
-  );
-}
-
-function defineMarkRank(specs: Record<Mark, MarkSpec>): Record<Mark, number> {
-  return Object.fromEntries(
-    (Object.keys(specs) as Mark[]).map((mark) => [mark, specs[mark].order]),
-  ) as Record<Mark, number>;
-}
+export const markOrder = (Object.keys(markRank) as Mark[]).sort(
+  (left, right) => markRank[left] - markRank[right],
+);
 
 export function canonicalizeMarks(marks: readonly Mark[]): Mark[] {
   if (marks.length === 0) {

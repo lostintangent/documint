@@ -13,11 +13,7 @@ import {
 } from "@chenglou/pretext/rich-inline";
 import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/types";
-import {
-  findInlinesInRange,
-  inlineMarks,
-  type IndexedInline,
-} from "../../state";
+import { findInlinesInRange, inlineMarks, type IndexedInline } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import {
   resolveCodeFont,

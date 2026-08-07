@@ -1,7 +1,0 @@
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "types": ["react", "react-dom"]
-  },
-  "files": ["src/env.d.ts", "src/index.ts"]
-}

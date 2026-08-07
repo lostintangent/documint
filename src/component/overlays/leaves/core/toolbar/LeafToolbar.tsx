@@ -310,8 +310,13 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
   if (child.type === LeafToolbarMenuDivider) return <LeafDivider />;
   if (child.type !== LeafToolbarMenuItem) return null;
 
-  const { active = false, disabled = false, icon: Icon, text, value } =
-    child.props as LeafToolbarMenuItemProps;
+  const {
+    active = false,
+    disabled = false,
+    icon: Icon,
+    text,
+    value,
+  } = child.props as LeafToolbarMenuItemProps;
 
   return (
     <LeafButton

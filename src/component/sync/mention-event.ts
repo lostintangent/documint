@@ -50,8 +50,7 @@ export function resolveMentionLineChange(
 
   return {
     lineMarkdown: changedLine.lineMarkdown,
-    lineNumber:
-      resolveRootStartLine(nextDocument, nextBlock.rootIndex) + changedLine.lineIndex + 1,
+    lineNumber: resolveRootStartLine(nextDocument, nextBlock.rootIndex) + changedLine.lineIndex + 1,
   };
 }
 

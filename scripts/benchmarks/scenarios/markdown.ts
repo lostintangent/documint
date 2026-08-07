@@ -24,12 +24,7 @@ export function createMarkdownScenarios(fixtures: BenchmarkFixtures): BenchmarkS
       createBenchmarkScenario("markdown", id, iterations, () => void parseDocument(markdown)),
     ),
     ...serializeScenarios.map(({ id, iterations, snapshot }) =>
-      createBenchmarkScenario(
-        "markdown",
-        id,
-        iterations,
-        () => void serializeDocument(snapshot),
-      ),
+      createBenchmarkScenario("markdown", id, iterations, () => void serializeDocument(snapshot)),
     ),
   ];
 }

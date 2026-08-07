@@ -6,10 +6,7 @@ import {
   measureCanvasLineOffsetLeft,
   resolveBoundaryOffset,
 } from "../layout/query/line-lookup";
-import {
-  resolveListMarkerTarget,
-  resolveTaskCheckboxBounds,
-} from "../layout/query/line-visuals";
+import { resolveListMarkerTarget, resolveTaskCheckboxBounds } from "../layout/query/line-visuals";
 import type { DocumentLayout, LayoutLine } from "../layout/measure";
 import {
   isInertBlock,

@@ -41,7 +41,9 @@ export function paintActiveBlockBackground(
     return;
   }
 
-  paintHighlight(context, createRectBandedGeometryFrame(background.rect), { fill: background.color });
+  paintHighlight(context, createRectBandedGeometryFrame(background.rect), {
+    fill: background.color,
+  });
 }
 
 export function paintDocumentChangeBackground(
@@ -55,14 +57,10 @@ export function paintDocumentChangeBackground(
     return;
   }
 
-  paintHighlight(
-    context,
-    createRectBandedGeometryFrame(background.rect),
-    {
-      fill: background.color,
-      opacity: background.opacity,
-    },
-  );
+  paintHighlight(context, createRectBandedGeometryFrame(background.rect), {
+    fill: background.color,
+    opacity: background.opacity,
+  });
 }
 
 export function paintActiveBlockChangedEffect(
@@ -81,14 +79,10 @@ export function paintActiveBlockChangedEffect(
       rect: effect.geometry.rect,
     },
     ({ progress, theme }) => {
-      paintHighlight(
-        context,
-        effect.geometry,
-        {
-          borderColor: effect.geometry.borderRect ? theme.tableBorder : undefined,
-          fill: resolveActiveBlockFlashColor(theme.activeBlockFlash, { progress }),
-        },
-      );
+      paintHighlight(context, effect.geometry, {
+        borderColor: effect.geometry.borderRect ? theme.tableBorder : undefined,
+        fill: resolveActiveBlockFlashColor(theme.activeBlockFlash, { progress }),
+      });
     },
   );
 }

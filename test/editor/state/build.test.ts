@@ -19,10 +19,7 @@ import {
   type DocumentIndex,
   type IndexedBlock,
 } from "@/editor/state";
-import {
-  createIndexedRoot,
-  positionIndexedRoots,
-} from "@/editor/state/index/roots";
+import { createIndexedRoot, positionIndexedRoots } from "@/editor/state/index/roots";
 import {
   commitDocument,
   replaceDocumentMetadata,
@@ -300,11 +297,7 @@ gamma
     expect(next.blocks[0]).toBe(index.blocks[0]);
     expect(next.blocks[1]).not.toBe(index.blocks[1]);
     expect(next.blocks[2]).toBe(index.blocks[2]);
-    expect(indexedTextEntries(next).map((entry) => entry.text)).toEqual([
-      "alpha",
-      "zeta",
-      "gamma",
-    ]);
+    expect(indexedTextEntries(next).map((entry) => entry.text)).toEqual(["alpha", "zeta", "gamma"]);
     expectDocumentIndexMaps(next);
   });
 
@@ -672,9 +665,7 @@ commented target
         expect(cell?.inlines ?? null).toBe(entry.inlines);
       } else {
         const block = index.blockIndex.get(entry.path);
-        const text = block?.kind === "inlines" || block?.kind === "source"
-          ? block.text
-          : null;
+        const text = block?.kind === "inlines" || block?.kind === "source" ? block.text : null;
         const inlines = block?.kind === "inlines" ? block.inlines : null;
         expect(text).toBe(entry.text);
         expect(inlines).toBe(entry.inlines);

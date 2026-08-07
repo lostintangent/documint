@@ -17,7 +17,7 @@ export type Block =
   | ListBlock
   | ListItemBlock
   | TableBlock
-  | BlockquoteBlock  
+  | BlockquoteBlock
   | DividerBlock
   | CodeBlock
   | DirectiveBlock

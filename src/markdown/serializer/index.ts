@@ -52,7 +52,7 @@ export function serializeFragment(fragment: Fragment): string {
 
     case "inlines":
       return serializeInlines(fragment.inlines);
-      
+
     case "blocks":
       return serializeBlocks(fragment.blocks);
   }

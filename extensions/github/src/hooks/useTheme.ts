@@ -15,11 +15,7 @@ const githubThemeFallbacks = {
   dark: { accent: "#4493f8", background: "#0d1117", text: "#f0f6fc" },
   light: { accent: "#0969da", background: "#ffffff", text: "#1f2328" },
 };
-const accentColorVariables = [
-  "--fgColor-accent",
-  "--color-accent-fg",
-  "--color-accent-emphasis",
-];
+const accentColorVariables = ["--fgColor-accent", "--color-accent-fg", "--color-accent-emphasis"];
 const backgroundColorVariables = [
   "--bgColor-default",
   "--color-canvas-default",
@@ -86,7 +82,10 @@ export function useTheme(): EditorTheme {
 
   useEffect(() => {
     document.documentElement.style.setProperty("--documint-agent-accent", themeState.accent);
-    document.documentElement.style.setProperty("--documint-agent-background", themeState.background);
+    document.documentElement.style.setProperty(
+      "--documint-agent-background",
+      themeState.background,
+    );
     document.documentElement.style.setProperty("--documint-agent-text", themeState.text);
     document.documentElement.style.colorScheme = themeState.colorMode;
   }, [themeState]);
@@ -94,7 +93,9 @@ export function useTheme(): EditorTheme {
   return themeState.theme;
 }
 
-function createGitHubDocumintTheme(media = window.matchMedia("(prefers-color-scheme: dark)")): GitHubDocumintTheme {
+function createGitHubDocumintTheme(
+  media = window.matchMedia("(prefers-color-scheme: dark)"),
+): GitHubDocumintTheme {
   const colorMode = resolveAppColorMode(media);
   const colors = resolveGitHubAppColors(colorMode);
   const baseTheme = colorMode === "dark" ? darkTheme : lightTheme;
@@ -153,9 +154,11 @@ function resolveAppColorMode(media: MediaQueryList): ColorMode {
   return media.matches ? "dark" : "light";
 }
 
-function resolveGitHubAppColors(
-  colorMode: ColorMode,
-): { accent: string; background: string; text: string } {
+function resolveGitHubAppColors(colorMode: ColorMode): {
+  accent: string;
+  background: string;
+  text: string;
+} {
   const styles = getComputedStyle(document.documentElement);
   const fallback = githubThemeFallbacks[colorMode];
   return {

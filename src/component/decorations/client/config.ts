@@ -7,9 +7,7 @@ export function isValidDecoration(decoration: DecorationPaint) {
   return Boolean(decoration.backgroundColor || decoration.color);
 }
 
-export function serializeDecorations(
-  rules: readonly DocumintDecoration[],
-): SerializedDecoration[] {
+export function serializeDecorations(rules: readonly DocumintDecoration[]): SerializedDecoration[] {
   return rules.filter(isValidDecoration).map(({ backgroundColor, pulse, color, pattern }) => ({
     backgroundColor,
     ...(backgroundColor && pulse && { pulse: true }),

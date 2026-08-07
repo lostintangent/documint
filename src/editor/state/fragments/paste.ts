@@ -220,13 +220,7 @@ function resolveFragmentDestinationContext(
       "start",
       normalized,
     ) ||
-    cutsThroughOpaqueRoot(
-      documentIndex,
-      endEndpoint,
-      normalized.end.offset,
-      "end",
-      normalized,
-    );
+    cutsThroughOpaqueRoot(documentIndex, endEndpoint, normalized.end.offset, "end", normalized);
 
   return {
     prefersVerbatimFallback:
@@ -249,8 +243,7 @@ function resolveDestinationEndpoint(
 
 function isOpaqueEndpoint(endpoint: DestinationEndpoint): boolean {
   return (
-    endpoint.indexedBlock.block.type === "table" ||
-    endpoint.indexedBlock.block.type === "code"
+    endpoint.indexedBlock.block.type === "table" || endpoint.indexedBlock.block.type === "code"
   );
 }
 

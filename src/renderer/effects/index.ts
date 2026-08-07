@@ -136,7 +136,10 @@ function resolveEffectProgress(
   return Math.max(0, Math.min(1, elapsed / durationMs));
 }
 
-function getCustomEffectDuration(effect: RendererEffect, customEffects: DocumintEffects | undefined) {
+function getCustomEffectDuration(
+  effect: RendererEffect,
+  customEffects: DocumintEffects | undefined,
+) {
   const descriptor = descriptorFor(effect);
   return descriptor.customHandlerKey && customEffects?.[descriptor.customHandlerKey]
     ? descriptor.duration(effect)

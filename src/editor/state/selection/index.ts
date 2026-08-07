@@ -33,10 +33,7 @@ export function isSelectionCollapsed(selection: EditorSelection): boolean {
   return areSelectionPointsEqual(selection.anchor, selection.focus);
 }
 
-export function areSelectionPointsEqual(
-  left: EditorSelectionPoint,
-  right: EditorSelectionPoint,
-) {
+export function areSelectionPointsEqual(left: EditorSelectionPoint, right: EditorSelectionPoint) {
   return left.path === right.path && left.offset === right.offset;
 }
 

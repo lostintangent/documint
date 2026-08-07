@@ -10,6 +10,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
+    "types": [],
     "paths": {
       "@lostintangent/documint": ["./src/index.ts"],
       "@macros/*": ["./scripts/build/macros/*"],
@@ -17,5 +18,13 @@
       "@test/*": ["./test/*"]
     }
   },
-  "include": ["playground", "src", "scripts", "test"]
+  "include": [
+    "extensions/github/src",
+    "extensions/vscode/src/webview",
+    "playground",
+    "src",
+    "scripts",
+    "test",
+    "vite.config.ts"
+  ]
 }

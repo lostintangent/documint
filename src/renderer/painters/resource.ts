@@ -56,11 +56,7 @@ export function paintResourceSegment(
   context.fillText(resource.label, resource.labelLeft, pill.textBaseline);
 }
 
-function resolveResourceColors(
-  isActive: boolean,
-  theme: ResolvedEditorTheme,
-  ambientTime: number,
-) {
+function resolveResourceColors(isActive: boolean, theme: ResolvedEditorTheme, ambientTime: number) {
   if (!isActive) {
     return {
       iconBackground: theme.text,

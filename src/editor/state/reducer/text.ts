@@ -119,9 +119,7 @@ export function replaceWithBlocks(
   // — the full content-addressable resolver in `getCommentState` will
   // re-anchor the threads on the next read.
   const startPathEditEnd =
-    startEndpoint.path === endEndpoint.path
-      ? normalized.end.offset
-      : startEndpoint.text.length;
+    startEndpoint.path === endEndpoint.path ? normalized.end.offset : startEndpoint.text.length;
   const finalizedDocumentIndex = merged.startPathPreservedAtRoot0
     ? finalizeCommentsAfterEdit(
         documentIndex,
@@ -240,17 +238,16 @@ function replaceBlockPathText(
         replacePathText(currentText, startOffset, endOffset, replacementText),
       );
     case "heading":
-    case "paragraph":
-      {
-        if (!currentInlines) {
-          throw new Error(`Inline text replacement is not supported for block type: ${block.type}`);
-        }
-
-        return rebuildTextBlock(
-          block,
-          editPathInlines(currentInlines, startOffset, endOffset, replacementText, path),
-        );
+    case "paragraph": {
+      if (!currentInlines) {
+        throw new Error(`Inline text replacement is not supported for block type: ${block.type}`);
       }
+
+      return rebuildTextBlock(
+        block,
+        editPathInlines(currentInlines, startOffset, endOffset, replacementText, path),
+      );
+    }
     case "table":
       return replaceTableCellText(
         documentIndex,
@@ -279,7 +276,12 @@ function replaceTableCellText(
   const rowIndex = indexedCell?.rowIndex;
   const cellIndex = indexedCell?.cellIndex;
 
-  if (indexedBlock.kind !== "cells" || rowIndex === undefined || cellIndex === undefined || !indexedCell) {
+  if (
+    indexedBlock.kind !== "cells" ||
+    rowIndex === undefined ||
+    cellIndex === undefined ||
+    !indexedCell
+  ) {
     throw new Error(`Unable to resolve table cell position for editor path: ${path}`);
   }
 

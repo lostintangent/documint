@@ -134,11 +134,7 @@ export function descriptorFor<TEffect extends RendererEffect>(effect: TEffect) {
   return effectKinds[effect.kind] as EffectKindDescriptor<TEffect["kind"]>;
 }
 
-function collectMany<TEffect>(
-  result: Map<string, TEffect[]>,
-  key: string,
-  item: TEffect,
-) {
+function collectMany<TEffect>(result: Map<string, TEffect[]>, key: string, item: TEffect) {
   const existing = result.get(key);
 
   if (existing) {
@@ -166,6 +162,8 @@ function isPunctuationInsertion(effect: TextInsertedEffect) {
   return effect.text === ".";
 }
 
-function resolveTextEffectContentKind(effect: TextDeletedEffect | TextInsertedEffect): "code" | "text" {
+function resolveTextEffectContentKind(
+  effect: TextDeletedEffect | TextInsertedEffect,
+): "code" | "text" {
   return effect.contentKind === "source" ? "code" : "text";
 }

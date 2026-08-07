@@ -8,10 +8,7 @@ import {
   type BlockquoteRuleFrame,
 } from "./rules";
 import { resolveListMarkerPlans, type ListMarkerPlan } from "./list-markers";
-import {
-  resolveActiveTableCellGeometryFrame,
-  type ActiveTableCellGeometryFrame,
-} from "./table";
+import { resolveActiveTableCellGeometryFrame, type ActiveTableCellGeometryFrame } from "./table";
 
 type ActiveTableCellGeometryTarget = {
   activeFlash: BlockFlashFrame | null;
@@ -81,20 +78,9 @@ export function resolveDocumentFrameChrome({
         endLineIndex,
       ),
       dividerRules: resolveDividerRules(layout, startBlockIndex, endBlockIndex, width),
-      headingRules: resolveHeadingRules(
-        layout,
-        editorState,
-        startLineIndex,
-        endLineIndex,
-        width,
-      ),
+      headingRules: resolveHeadingRules(layout, editorState, startLineIndex, endLineIndex, width),
     },
-    listMarkerPlans: resolveListMarkerPlans(
-      layout,
-      editorState,
-      startLineIndex,
-      endLineIndex,
-    ),
+    listMarkerPlans: resolveListMarkerPlans(layout, editorState, startLineIndex, endLineIndex),
   };
 }
 

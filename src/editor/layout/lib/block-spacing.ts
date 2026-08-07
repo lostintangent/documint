@@ -30,7 +30,11 @@ export function resolveBlockGap(
   nextBlockPath: string,
   blockGap: number,
 ) {
-  const sharedAncestorGap = resolveSharedAncestorGap(indexedBlocks, currentBlockPath, nextBlockPath);
+  const sharedAncestorGap = resolveSharedAncestorGap(
+    indexedBlocks,
+    currentBlockPath,
+    nextBlockPath,
+  );
   if (sharedAncestorGap !== null) {
     return sharedAncestorGap;
   }

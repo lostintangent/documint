@@ -1,12 +1,12 @@
 {
   "name": "@lostintangent/documint",
   "version": "0.0.34",
+  "workspaces": [
+    "extensions/*"
+  ],
   "files": [
     "dist/index.js",
     "dist/index.d.ts"
-  ],
-  "workspaces": [
-    "extensions/*"
   ],
   "type": "module",
   "main": "./dist/index.js",
@@ -23,19 +23,17 @@
   "scripts": {
     "dev": "bun --hot playground/index.html --hostname=0.0.0.0 --port=3003",
     "build:dev": "bun run scripts/build/build.ts",
-    "build:prod": "bun run scripts/build/build.ts --prod",
+    "build:prod": "vp pack && bun run scripts/build/build.ts --prod",
     "build:playground": "bun run scripts/build/build.ts --playground",
-    "vscode:package": "bun typecheck && cd extensions/vscode && bun package",
+    "vscode:package": "bun check && cd extensions/vscode && bun package",
     "vscode:install": "code-insiders --install-extension extensions/vscode/documint-*.vsix --force",
     "github:install": "root=\"$PWD\" && cd \"$root/extensions/github\" && bun run build && target=\"$HOME/.copilot/extensions/documint\" && mkdir -p \"$(dirname \"$target\")\" && rm -rf \"$target\" && cp -R \"$root/extensions/github\" \"$target\"",
     "prepublishOnly": "bun run build:prod",
     "test": "bun test",
-    "lint": "oxlint .",
-    "format": "oxfmt . '!test/goldens/**/*.md'",
-    "typecheck": "tsc --noEmit",
-    "typecheck:all": "bun typecheck && tsc --noEmit -p extensions/vscode/tsconfig.json && tsc --noEmit -p extensions/vscode/tsconfig.webview.json && tsc --noEmit -p extensions/github/tsconfig.json",
+    "check": "vp check",
     "benchmark": "bun run scripts/benchmarks/index.ts",
-    "benchmark:moby-dick": "bun run scripts/benchmarks/moby-dick.ts"
+    "benchmark:moby-dick": "bun run scripts/benchmarks/moby-dick.ts",
+    "prepare": "vp config --no-agent"
   },
   "devDependencies": {
     "@chenglou/pretext": "0.0.8",
@@ -43,18 +41,24 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "bun-plugin-tailwind": "^0.1.2",
-    "dts-bundle-generator": "^9.5.1",
     "lucide-react": "^1.21.0",
-    "oxfmt": "^0.55.0",
-    "oxlint": "^1.70.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwindcss": "^4.3.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
-  "packageManager": "bun@1.3.11"
+  "overrides": {
+    "vite": "catalog:"
+  },
+  "packageManager": "bun@1.3.11",
+  "catalog": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.8",
+    "vite-plus": "0.2.8"
+  }
 }

@@ -9,14 +9,7 @@
 
 import { getBlockChildren, rebuildBlockChildren } from "../model/containers";
 import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../model/paths";
-import type {
-  Block,
-  Document,
-  Inline,
-  TableBlock,
-  TableCell,
-  TableRow,
-} from "../model/types";
+import type { Block, Document, Inline, TableBlock, TableCell, TableRow } from "../model/types";
 
 export type VisitControl = "skip" | "stop" | void;
 

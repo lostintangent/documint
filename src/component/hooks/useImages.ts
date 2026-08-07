@@ -246,7 +246,7 @@ export function useImages(
         top: bounds.top + bounds.height,
       },
     };
-  }, [readOnly, imageAtCursor]);
+  }, [endHandleProps, imageAtCursor, readOnly, startHandleProps]);
 
   /* Public API */
 

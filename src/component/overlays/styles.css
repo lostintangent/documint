@@ -127,8 +127,7 @@
    supply `--documint-leaf-shadow`. */
 .overlay {
   --tw-border-style: solid;
-  --leaf-shadow-fallback: 0 14px 40px
-    color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
+  --leaf-shadow-fallback: 0 14px 40px color-mix(in srgb, var(--documint-leaf-text) 16%, transparent);
 }
 
 /* === Leaf anchor + shell infrastructure ===
@@ -220,9 +219,7 @@
 }
 
 .leaf-bridge {
-  width: calc(
-    100% + var(--leaf-bridge-expand-left, 0px) + var(--leaf-bridge-expand-right, 0px)
-  );
+  width: calc(100% + var(--leaf-bridge-expand-left, 0px) + var(--leaf-bridge-expand-right, 0px));
   height: calc(var(--leaf-bridge-height) + var(--leaf-padding-y, 0px));
   margin-left: calc(var(--leaf-bridge-expand-left, 0px) * -1);
 }

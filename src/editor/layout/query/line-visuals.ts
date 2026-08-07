@@ -38,10 +38,7 @@ export type ListMarkerTarget = {
   marker: IndexedListItem;
 };
 
-export function resolveLineVisualLeft(
-  line: DocumentLayout["lines"][number],
-  offset: number,
-) {
+export function resolveLineVisualLeft(line: DocumentLayout["lines"][number], offset: number) {
   return measureCanvasLineOffsetLeft(line, offset) + line.contentInset;
 }
 

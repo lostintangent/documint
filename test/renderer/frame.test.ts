@@ -253,9 +253,7 @@ describe("DocumentFrame chrome and block rows", () => {
       color: resolvedLightTheme.externalChangeModificationBackground,
       opacity: 10 / 420,
     });
-    expect(frame.effects).toEqual([
-      expect.objectContaining({ kind: "document-change" }),
-    ]);
+    expect(frame.effects).toEqual([expect.objectContaining({ kind: "document-change" })]);
   });
 
   test("document-change backgrounds keep steady color after the fade effect expires", () => {

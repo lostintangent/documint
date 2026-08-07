@@ -17,6 +17,8 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VP_GIT_HOOKS: "0"
 
     environment:
       name: github-pages

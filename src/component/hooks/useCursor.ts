@@ -96,6 +96,20 @@ export function useCursor({
   const requestCaretPaint = useEffectEvent(() => {
     onVisibilityChange();
   });
+  const revealCursorTarget = useEffectEvent((target: CursorRevealTarget) => {
+    const currentTop = getScrollTop();
+    const visibleTop = currentTop + CURSOR_REVEAL_PADDING;
+    const visibleBottom = currentTop + viewportHeight - CURSOR_REVEAL_PADDING;
+
+    if (target.top < visibleTop) {
+      scrollTo(Math.max(0, target.top - CURSOR_REVEAL_PADDING));
+      return;
+    }
+
+    if (target.bottom > visibleBottom) {
+      scrollTo(Math.max(0, target.bottom - viewportHeight + CURSOR_REVEAL_PADDING));
+    }
+  });
 
   /* Cursor reveal effect */
 
@@ -128,20 +142,7 @@ export function useCursor({
     }
 
     lastRevealIntentRef.current = revealIntent;
-
-    const currentTop = getScrollTop();
-    const visibleTop = currentTop + CURSOR_REVEAL_PADDING;
-    const visibleBottom = currentTop + viewportHeight - CURSOR_REVEAL_PADDING;
-
-    if (revealTarget.top < visibleTop) {
-      scrollTo(Math.max(0, revealTarget.top - CURSOR_REVEAL_PADDING));
-      return;
-    }
-
-    if (revealTarget.bottom > visibleBottom) {
-      scrollTo(Math.max(0, revealTarget.bottom - viewportHeight + CURSOR_REVEAL_PADDING));
-      return;
-    }
+    revealCursorTarget(revealTarget);
   }, [
     caretTarget,
     normalizedSelection,

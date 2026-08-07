@@ -302,7 +302,8 @@ function createScrollOffsets(totalHeight: number, viewportHeight: number, frameC
 function createPaintOptions(state: EditorState) {
   return {
     activeBlockPath:
-      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ?? null,
+      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ??
+      null,
     activePath: state.selection.focus.path,
     activeThreadIndex: null,
     commentRanges: [],

@@ -70,13 +70,7 @@ export function resolveTableCellPathMatch(
     return null;
   }
 
-  return createTableCellPathMatch(
-    table,
-    row,
-    cell,
-    position.rowIndex,
-    position.cellIndex,
-  );
+  return createTableCellPathMatch(table, row, cell, position.rowIndex, position.cellIndex);
 }
 
 export function createTableCellPathMatch(

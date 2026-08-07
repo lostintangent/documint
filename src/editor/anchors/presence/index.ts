@@ -100,11 +100,7 @@ function resolvePresenceTarget(
 
   return {
     commentThreadIndex: null,
-    cursorPoint: resolvePresenceCursorPoint(
-      presence.cursor,
-      anchorContainers,
-      textAnchorResolver,
-    ),
+    cursorPoint: resolvePresenceCursorPoint(presence.cursor, anchorContainers, textAnchorResolver),
     isOnUnresolvedCommentThread: false,
   };
 }

@@ -47,6 +47,7 @@ import {
   paintDocumentFrame,
   paintOverlayFrame,
   type RendererEffect,
+  type RendererEffectInput,
 } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
 import type {
@@ -207,6 +208,9 @@ export function Documint({ content, ...props }: DocumintProps) {
   const resourceProtocols = useResourceProtocols(props.protocols);
   const markdownOptions = useMemo<MarkdownOptions>(
     () => ({ resourceProtocols: [...resourceProtocols.protocols.keys()] }),
+    // The canonical key is the semantic parser input. Depending on the map
+    // would reparse content when a host recreates an equivalent registry.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [resourceProtocols.key],
   );
   const contentDocument = useMemo(
@@ -604,6 +608,20 @@ function DocumintHost({
       },
     });
 
+  // The scheduler and viewport actions are Effect Events returned by custom
+  // hooks. Bridge them locally so exhaustive-deps can preserve that contract
+  // without treating their stable identities as reactive inputs.
+  const requestLayoutRender = useEffectEvent(() => {
+    invalidateLayout();
+    scheduleFullRender();
+  });
+  const requestFullPaint = useEffectEvent(() => scheduleFullPaint());
+  const requestContentPaint = useEffectEvent(() => scheduleContentPaint());
+  const requestContentPaintWithEffects = useEffectEvent((effects: readonly RendererEffectInput[]) =>
+    scheduleContentPaint({ effects }),
+  );
+  const requestOverlayPaint = useEffectEvent(() => scheduleOverlayPaint());
+
   // Sync `useViewport`'s scroll metrics and schedule a render after any
   // scroll position change — whether driven by the user (native scroll event)
   // or programmatically (e.g. offscreen presence navigation). Stable identity
@@ -740,8 +758,7 @@ function DocumintHost({
   // paint. Active resource changes are paint-only; protocol metadata affects
   // resource pill measurement, but active state only affects color/effects.
   useEffect(() => {
-    invalidateLayout();
-    scheduleFullRender();
+    requestLayoutRender();
   }, [
     editorState.documentIndex,
     images,
@@ -763,7 +780,7 @@ function DocumintHost({
   // requires reworking the painters to keep selection backgrounds visually
   // under text.
   useEffect(() => {
-    scheduleFullPaint();
+    requestFullPaint();
   }, [
     normalizedSel.end.offset,
     normalizedSel.end.path,
@@ -775,7 +792,7 @@ function DocumintHost({
   // Decorations and comment-highlight changes — content layer only, no overlay impact.
   // (See note on the selection effect above for the future overlay move.)
   useEffect(() => {
-    scheduleContentPaint();
+    requestContentPaint();
   }, [
     activeCommentIndex,
     commentRanges,
@@ -785,16 +802,14 @@ function DocumintHost({
   ]);
 
   useEffect(() => {
-    scheduleContentPaint({
-      effects: syncEffects,
-    });
+    requestContentPaintWithEffects(syncEffects);
   }, [documentChanges, syncEffects]);
 
   // Resolved presence affects the overlay canvas and DOM overlay. Comment-thread
   // presence is also handled by the content-layer effect above because it paints
   // comment rules.
   useEffect(() => {
-    scheduleOverlayPaint();
+    requestOverlayPaint();
   }, [resolvedPresence]);
 
   useEffect(() => {
@@ -803,7 +818,7 @@ function DocumintHost({
     }
 
     lastPaintedActiveResourceKeyRef.current = activeResourceKey;
-    scheduleContentPaint();
+    requestContentPaint();
   }, [activeResourceKey]);
 
   /* Leaf presentation */

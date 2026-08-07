@@ -31,8 +31,7 @@ const swatchStyleByMode: Record<UsersMode, CSSProperties | undefined> = {
 
 const fieldLabelClassName = "font-controls grid gap-1.5";
 const fieldCaptionClassName = "text-xs text-muted";
-const fieldInputClassName =
-  "w-full rounded-xl border border-border/15 bg-background/90 px-3 py-2";
+const fieldInputClassName = "w-full rounded-xl border border-border/15 bg-background/90 px-3 py-2";
 
 export function UsersPopover({ content, onUsersChange, onPresenceChange }: UsersPopoverProps) {
   const { auto, manualEntries, manualForm, mode, presence, users } = useUsers(content);
@@ -151,7 +150,7 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
           <button
             className={`${popoverControlClassName} justify-self-end rounded-xl px-3 py-2`}
             disabled={auto.enabled || !manualForm.canAddEntry}
-            onClick={manualForm.addEntry}
+            onClick={() => manualForm.addEntry()}
             type="button"
           >
             Add

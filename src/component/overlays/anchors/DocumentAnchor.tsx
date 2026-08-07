@@ -74,10 +74,10 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
     }
 
     setPlacement((current) => {
-      const next = resolvePlacement(anchor, shellSize);
+      const next = resolvePlacement(latestAnchorRef.current, shellSize);
       return current && equalShallowObject(current, next) ? current : next;
     });
-  }, [anchor.left, anchor.top]);
+  }, [anchor.left, anchor.paddingY, anchor.top]);
 
   useLayoutEffect(() => {
     const shell = shellRef.current;

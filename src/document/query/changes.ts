@@ -189,12 +189,7 @@ function estimateRootWindowMatchStats({
     window.previousEnd,
     context,
   );
-  const nextHashes = countBlockContentHashes(
-    nextBlocks,
-    window.nextStart,
-    window.nextEnd,
-    context,
-  );
+  const nextHashes = countBlockContentHashes(nextBlocks, window.nextStart, window.nextEnd, context);
   const rootWindow = Math.max(
     window.previousEnd - window.previousStart,
     window.nextEnd - window.nextStart,
@@ -221,8 +216,7 @@ function countBlockContentHashes(
 
   for (let index = start; index < end && !shouldStopDiffing(context); index += 1) {
     const block = blocks[index]!;
-    addDiffCost(context, estimateDocumentNodeContentHashCost(block));
-    if (shouldStopDiffing(context)) {
+    if (chargeDiffCost(context, estimateDocumentNodeContentHashCost(block))) {
       break;
     }
 
@@ -373,9 +367,8 @@ function diffBlocks(
   nextPath: string,
   context: DiffContext,
 ) {
-  addDiffCost(context);
   if (
-    shouldStopDiffing(context) ||
+    chargeDiffCost(context) ||
     haveSameDocumentNodeContentHash(context, previousBlock, nextBlock)
   ) {
     return;
@@ -500,8 +493,7 @@ function blockContentHashAppearsInRange(
 ) {
   for (let index = start; index < end && !shouldStopDiffing(context); index += 1) {
     const block = blocks[index]!;
-    addDiffCost(context, estimateDocumentNodeContentHashCost(block));
-    if (shouldStopDiffing(context)) {
+    if (chargeDiffCost(context, estimateDocumentNodeContentHashCost(block))) {
       return false;
     }
 
@@ -517,11 +509,12 @@ function haveSameDocumentNodeContentHash(context: DiffContext, left: Block, righ
     return true;
   }
 
-  addDiffCost(
-    context,
-    estimateDocumentNodeContentHashCost(left) + estimateDocumentNodeContentHashCost(right),
-  );
-  if (shouldStopDiffing(context)) {
+  if (
+    chargeDiffCost(
+      context,
+      estimateDocumentNodeContentHashCost(left) + estimateDocumentNodeContentHashCost(right),
+    )
+  ) {
     return false;
   }
 
@@ -533,11 +526,12 @@ function haveSameTableRowContentHash(context: DiffContext, left: TableRow, right
     return false;
   }
 
-  addDiffCost(
-    context,
-    estimateTableRowContentHashCost(left) + estimateTableRowContentHashCost(right),
-  );
-  if (shouldStopDiffing(context)) {
+  if (
+    chargeDiffCost(
+      context,
+      estimateTableRowContentHashCost(left) + estimateTableRowContentHashCost(right),
+    )
+  ) {
     return false;
   }
 
@@ -567,10 +561,7 @@ function diffTableRowCells(
     const nextCell = nextRow.cells[nextCellIndex]!;
 
     if (!previousCell) {
-      recordAdded(
-        tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex),
-        context,
-      );
+      recordAdded(tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex), context);
       nextCellIndex += 1;
       continue;
     }
@@ -582,10 +573,7 @@ function diffTableRowCells(
       tableCellSimilarity(context, previousCell, followingNextCell) >
         tableCellSimilarity(context, previousCell, nextCell)
     ) {
-      recordAdded(
-        tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex),
-        context,
-      );
+      recordAdded(tableCellPath(tableRowPath(nextTablePath, nextRowIndex), nextCellIndex), context);
       nextCellIndex += 1;
       continue;
     }
@@ -612,12 +600,13 @@ function tableRowSimilarity(context: DiffContext, previousRow: TableRow, nextRow
 }
 
 function blockSimilarity(context: DiffContext, previousBlock: Block, nextBlock: Block) {
-  addDiffCost(
-    context,
-    estimateDocumentNodeContentHashCost(previousBlock) +
-      estimateDocumentNodeContentHashCost(nextBlock),
-  );
-  if (shouldStopDiffing(context)) {
+  if (
+    chargeDiffCost(
+      context,
+      estimateDocumentNodeContentHashCost(previousBlock) +
+        estimateDocumentNodeContentHashCost(nextBlock),
+    )
+  ) {
     return 0;
   }
 
@@ -625,20 +614,13 @@ function blockSimilarity(context: DiffContext, previousBlock: Block, nextBlock: 
     return 2;
   }
 
-  const previousText =
-    "plainText" in previousBlock && typeof previousBlock.plainText === "string"
-      ? previousBlock.plainText.trim()
-      : "";
-  const nextText =
-    "plainText" in nextBlock && typeof nextBlock.plainText === "string"
-      ? nextBlock.plainText.trim()
-      : "";
+  const previousText = previousBlock.plainText.trim();
+  const nextText = nextBlock.plainText.trim();
   if (previousText.length === 0 || nextText.length === 0) {
     return 0;
   }
 
-  addDiffCost(context, estimateTextComparisonCost(previousText, nextText));
-  if (shouldStopDiffing(context)) {
+  if (chargeDiffCost(context, estimateTextComparisonCost(previousText, nextText))) {
     return 0;
   }
 
@@ -666,11 +648,12 @@ function hasBetterFollowingBlockMatch(
 }
 
 function tableCellSimilarity(context: DiffContext, previousCell: TableCell, nextCell: TableCell) {
-  addDiffCost(
-    context,
-    estimateTableCellContentHashCost(previousCell) + estimateTableCellContentHashCost(nextCell),
-  );
-  if (shouldStopDiffing(context)) {
+  if (
+    chargeDiffCost(
+      context,
+      estimateTableCellContentHashCost(previousCell) + estimateTableCellContentHashCost(nextCell),
+    )
+  ) {
     return 0;
   }
 
@@ -684,8 +667,7 @@ function tableCellSimilarity(context: DiffContext, previousCell: TableCell, next
     return 0;
   }
 
-  addDiffCost(context, estimateTextComparisonCost(previousText, nextText));
-  if (shouldStopDiffing(context)) {
+  if (chargeDiffCost(context, estimateTextComparisonCost(previousText, nextText))) {
     return 0;
   }
 
@@ -743,10 +725,7 @@ function recordAddedTableRow(
     cellIndex < row.cells.length && !shouldStopDiffing(context);
     cellIndex += 1
   ) {
-    recordAdded(
-      tableCellPath(tableRowPath(tablePath, rowIndex), cellIndex),
-      context,
-    );
+    recordAdded(tableCellPath(tableRowPath(tablePath, rowIndex), cellIndex), context);
   }
 }
 
@@ -773,10 +752,7 @@ function recordModifiedTableRow(
     cellIndex < nextRow.cells.length && !shouldStopDiffing(context);
     cellIndex += 1
   ) {
-    recordAdded(
-      tableCellPath(tableRowPath(nextTablePath, nextRowIndex), cellIndex),
-      context,
-    );
+    recordAdded(tableCellPath(tableRowPath(nextTablePath, nextRowIndex), cellIndex), context);
   }
 }
 
@@ -789,11 +765,12 @@ function haveSameTableCellContentHash(
     return true;
   }
 
-  addDiffCost(
-    context,
-    estimateTableCellContentHashCost(left) + estimateTableCellContentHashCost(right),
-  );
-  if (shouldStopDiffing(context)) {
+  if (
+    chargeDiffCost(
+      context,
+      estimateTableCellContentHashCost(left) + estimateTableCellContentHashCost(right),
+    )
+  ) {
     return false;
   }
 
@@ -872,8 +849,9 @@ function pushChange(target: DocumentChange, context: DiffContext) {
   }
 }
 
-function addDiffCost(context: DiffContext, cost = 1) {
+function chargeDiffCost(context: DiffContext, cost = 1) {
   context.visitedNodes += cost;
+  return shouldStopDiffing(context);
 }
 
 function estimateTextComparisonCost(left: string, right: string) {

@@ -1,6 +1,4 @@
-import {
-  compileDecorations,
-} from "./matching";
+import { compileDecorations } from "./matching";
 import { deserializeDecorations } from "./config";
 import type { DocumintDecoration } from "@/types";
 import { compileCodeGrammars, resolveCodeDecorationRanges } from "./code";

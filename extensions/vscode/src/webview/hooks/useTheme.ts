@@ -104,8 +104,7 @@ function createVsCodeDocumintTheme(): EditorTheme {
   // Windows/Linux pass through unchanged — their 14 default is already in
   // prose-acceptable territory.
   const editorFontSize = parseFontSize(rootStyle, bodyStyle);
-  const fontSize =
-    editorFontSize !== undefined && isMacOs() ? editorFontSize + 2 : editorFontSize;
+  const fontSize = editorFontSize !== undefined && isMacOs() ? editorFontSize + 2 : editorFontSize;
 
   return {
     accent,

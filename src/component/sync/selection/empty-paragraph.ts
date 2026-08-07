@@ -17,10 +17,7 @@ import {
   spliceDocumentIndex,
   type EditorState,
 } from "@/editor/state";
-import {
-  createSelectionAnchor,
-  hasSelectionAnchorTextContinuity,
-} from "@/editor/anchors";
+import { createSelectionAnchor, hasSelectionAnchorTextContinuity } from "@/editor/anchors";
 import { createParagraphTextBlock, rootBlockPath, spliceDocument } from "@/document";
 import { resolveExternalPathMatch } from "./path-match";
 
@@ -65,11 +62,7 @@ function resolveSelectedEmptyRootParagraph(state: EditorState) {
     return null;
   }
 
-  if (
-    block.block.type !== "paragraph" ||
-    text !== "" ||
-    !isRootIndexedBlock(block)
-  ) {
+  if (block.block.type !== "paragraph" || text !== "" || !isRootIndexedBlock(block)) {
     return null;
   }
 
@@ -85,7 +78,10 @@ function resolveRecreatedEmptyParagraphRootIndex(
   nextState: EditorState,
   previousPath: string,
 ) {
-  const previousBlock = resolveIndexedBlockContainingPath(previousState.documentIndex, previousPath);
+  const previousBlock = resolveIndexedBlockContainingPath(
+    previousState.documentIndex,
+    previousPath,
+  );
 
   if (!previousBlock) {
     return null;
@@ -160,7 +156,10 @@ function resolveEmptyParagraphNeighborRootIndex(
   nextState: EditorState,
 ) {
   const previousText = resolveEditorTextAtPath(previousState.documentIndex, previousPath);
-  const previousBlock = resolveIndexedBlockContainingPath(previousState.documentIndex, previousPath);
+  const previousBlock = resolveIndexedBlockContainingPath(
+    previousState.documentIndex,
+    previousPath,
+  );
 
   if (!previousBlock || previousText === null) {
     return null;
@@ -316,11 +315,10 @@ function findFirstNonEmptyPathInRoot(
   rootIndex: number,
   direction: RootScanDirection,
 ) {
-  return findEditorPathWithText(
-    state.documentIndex,
-    (_path, text) => text.length > 0,
-    { rootIndex, direction: direction === "before" ? -1 : 1 },
-  );
+  return findEditorPathWithText(state.documentIndex, (_path, text) => text.length > 0, {
+    rootIndex,
+    direction: direction === "before" ? -1 : 1,
+  });
 }
 
 function resolveRootIndexForPath(state: EditorState, path: string) {

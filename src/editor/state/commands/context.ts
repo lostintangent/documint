@@ -22,11 +22,7 @@ import {
   resolveSiblingRootBlock,
 } from "../index/query";
 import type { DocumentIndex, IndexedBlock, IndexedTableCell } from "../index/types";
-import {
-  isSelectionCollapsed,
-  normalizeSelection,
-  type EditorSelection,
-} from "../selection";
+import { isSelectionCollapsed, normalizeSelection, type EditorSelection } from "../selection";
 import type { EditorState } from "../types";
 
 // Semantic command context resolution. This module answers "what structural
@@ -225,7 +221,8 @@ function resolveInlineContainer(
     return null;
   }
 
-  const indexedCell = path === indexedBlock.path ? null : resolveIndexedTableCell(documentIndex, path);
+  const indexedCell =
+    path === indexedBlock.path ? null : resolveIndexedTableCell(documentIndex, path);
 
   if (indexedCell) {
     const table = indexedBlock.block;
@@ -409,7 +406,13 @@ export function resolveRootTextBlockContextFromSelection(
   const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
 
   return indexedBlock && text !== null
-    ? resolveRootTextBlockContextFromIndexedBlock(documentIndex, selection, indexedBlock, path, text)
+    ? resolveRootTextBlockContextFromIndexedBlock(
+        documentIndex,
+        selection,
+        indexedBlock,
+        path,
+        text,
+      )
     : null;
 }
 
@@ -564,11 +567,7 @@ function resolveListItemContextFromIndexedBlock(
     indexedParagraph.path,
     "listItem",
   );
-  const indexedList = findAncestorIndexedBlockByPath(
-    documentIndex,
-    indexedParagraph.path,
-    "list",
-  );
+  const indexedList = findAncestorIndexedBlockByPath(documentIndex, indexedParagraph.path, "list");
 
   if (!indexedItem || !indexedList) {
     return null;
@@ -594,9 +593,7 @@ function resolveListItemContextFromIndexedBlock(
   const parentItem = indexedParentItem?.block.type === "listItem" ? indexedParentItem.block : null;
   const parentList = indexedParentList?.block.type === "list" ? indexedParentList.block : null;
   const parentItemIndex =
-    parentList && parentItem
-      ? parentList.items.findIndex((child) => child === parentItem)
-      : -1;
+    parentList && parentItem ? parentList.items.findIndex((child) => child === parentItem) : -1;
   const parent =
     parentItem && parentList && indexedParentList && parentItemIndex >= 0
       ? {

@@ -394,10 +394,7 @@ function createListDocument(options: Parameters<typeof createListBlock>[0]) {
   return createDocument([createListBlock(options)]);
 }
 
-function createParagraphListItem(
-  text: string,
-  options: ListItemOptions = {},
-): ListItemBlock {
+function createParagraphListItem(text: string, options: ListItemOptions = {}): ListItemBlock {
   return createListItemBlock({
     ...options,
     children: [createParagraph(text)],

@@ -135,11 +135,7 @@ function indentItemUnderPreviousSibling(
   context: ListItemContext,
   previousItem: ListItemBlock,
 ): ListItemBlock[] {
-  const previousItemWithNestedItem = appendNestedListItem(
-    previousItem,
-    context.item,
-    context.list,
-  );
+  const previousItemWithNestedItem = appendNestedListItem(previousItem, context.item, context.list);
   const itemsWithNestedItem = replaceAt(
     context.list.items,
     context.itemIndex - 1,

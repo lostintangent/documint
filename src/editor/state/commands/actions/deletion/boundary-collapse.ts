@@ -21,10 +21,7 @@ import {
 } from "../../../index/query";
 import type { DocumentIndex, IndexedBlock } from "../../../index/types";
 import type { EditorStateAction } from "../../../types";
-import {
-  target,
-  type SelectionTarget,
-} from "../../../selection";
+import { target, type SelectionTarget } from "../../../selection";
 
 // The universal at-boundary delete rule.
 //
@@ -179,9 +176,7 @@ function resolveBoundaryMerge(
   const victim = direction === "backward" ? current : neighbor;
   const absorber = direction === "backward" ? neighbor : current;
 
-  return isTextMergeablePath(absorber) && isTextMergeablePath(victim)
-    ? { absorber, victim }
-    : null;
+  return isTextMergeablePath(absorber) && isTextMergeablePath(victim) ? { absorber, victim } : null;
 }
 
 // Inert neighbor collapse: remove the inert leaf block as a unit, leave
@@ -202,8 +197,7 @@ function resolveInertNeighborCollapse(
   // Removing it shifts the current path's rootIndex down by one. Forward:
   // inert sat at a higher rootIndex; the current path's rootIndex is
   // unaffected.
-  const newRootIndex =
-    direction === "backward" ? current.rootIndex - 1 : current.rootIndex;
+  const newRootIndex = direction === "backward" ? current.rootIndex - 1 : current.rootIndex;
   const cursorOffset = direction === "backward" ? 0 : ("end" as const);
 
   return {
@@ -288,7 +282,12 @@ function resolveMergeCollapse(
     const rootBlock = resolveRootBlock(documentIndex, victim.rootIndex);
     if (!rootBlock) return null;
 
-    const rebuilt = applyEditsToBlock(rootBlock, victim.block, absorber.block, updatedAbsorberBlock);
+    const rebuilt = applyEditsToBlock(
+      rootBlock,
+      victim.block,
+      absorber.block,
+      updatedAbsorberBlock,
+    );
 
     return {
       kind: "splice-blocks",

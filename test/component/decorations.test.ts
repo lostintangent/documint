@@ -176,9 +176,7 @@ describe("resolveBlockDecorationRanges", () => {
       createText(" target"),
     ]);
 
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /Jane/ }])).toEqual(
-      [],
-    );
+    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /Jane/ }])).toEqual([]);
     expect(
       resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /preview|Recording/ }]),
     ).toEqual([]);

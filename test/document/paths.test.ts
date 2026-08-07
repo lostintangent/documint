@@ -43,12 +43,8 @@ outside
   test("derives block parents and sibling indexes from paths", () => {
     expect(parentBlockPath("root.2")).toBeNull();
     expect(parentBlockPath("root.2.children.3")).toBe("root.2");
-    expect(parentBlockPath("root.2.children.3.children.1")).toBe(
-      "root.2.children.3",
-    );
-    expect(parentBlockPath("root.2.children.1.rows.3.cells.4")).toBe(
-      "root.2.children.1",
-    );
+    expect(parentBlockPath("root.2.children.3.children.1")).toBe("root.2.children.3");
+    expect(parentBlockPath("root.2.children.1.rows.3.cells.4")).toBe("root.2.children.1");
 
     expect(blockPathSiblingIndex("root.2")).toBe(2);
     expect(blockPathSiblingIndex("root.2.children.3")).toBe(3);
@@ -123,21 +119,13 @@ outside
   test("checks strict block-path containment", () => {
     expect(blockPathContainsPath("root.2", "root.2")).toBeTrue();
     expect(blockPathContainsPath("root.2", "root.2.children.3")).toBeTrue();
-    expect(
-      blockPathContainsPath(
-        "root.2.children.3",
-        "root.2.children.3.children.1",
-      ),
-    ).toBeTrue();
+    expect(blockPathContainsPath("root.2.children.3", "root.2.children.3.children.1")).toBeTrue();
     expect(blockPathContainsPath("root.2", "root.2.children.1.children")).toBeTrue();
     expect(blockPathContainsPath("root.2", "root.2.children.1.source")).toBeTrue();
     expect(blockPathContainsPath("root.2", "root.2.children.1.rows.3")).toBeTrue();
     expect(blockPathContainsPath("root.2", "root.2.children.1.rows.3.cells.4")).toBeTrue();
     expect(
-      blockPathContainsPath(
-        "root.2.children.1",
-        "root.2.children.1.rows.3.cells.4",
-      ),
+      blockPathContainsPath("root.2.children.1", "root.2.children.1.rows.3.cells.4"),
     ).toBeTrue();
 
     expect(blockPathContainsPath("root.1", "root.2")).toBeFalse();
@@ -146,10 +134,7 @@ outside
     expect(blockPathContainsPath("root.2.children.4", "root.2.children.3")).toBeFalse();
     expect(blockPathContainsPath("root.1", "root.2.rows.3.cells.4")).toBeFalse();
     expect(
-      blockPathContainsPath(
-        "root.2.children.4",
-        "root.2.children.1.rows.3.cells.4",
-      ),
+      blockPathContainsPath("root.2.children.4", "root.2.children.1.rows.3.cells.4"),
     ).toBeFalse();
   });
 

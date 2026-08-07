@@ -48,11 +48,7 @@ import { copySelectionAsMarkdown, pastePlainText } from "../lib/clipboard";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
 import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
 import { resolveEditorForwardWordMovement, resolveEditorHostPlatform } from "../lib/platform";
-import {
-  editorStateSprig,
-  useDocumintStore,
-  useSprig,
-} from "../store";
+import { editorStateSprig, useDocumintStore, useSprig } from "../store";
 
 type UseInputOptions = {
   // DOM refs the hook reads from.
@@ -241,7 +237,7 @@ export function useInput({
   // our own logic doesn't preventDefault the priming execCommands.
   const isUndoStackPrimingRef = useRef(false);
   const undoStackPrimedRef = useRef(false);
-  
+
   const runInputCommand = useEffectEvent(
     <Args extends unknown[]>(
       command: (state: EditorState, ...args: Args) => EditorState | null,

@@ -260,7 +260,7 @@ describe("Images", () => {
   test("resizes an image by replacing it with a new width attribute", () => {
     const state = setup("before ![alt](https://example.com/img.png) after\n");
     const path = getPath(state, "before ￼ after");
-    const imageRun = ((path).inlines ?? []).find((r) => r.node.type === "image");
+    const imageRun = (path.inlines ?? []).find((r) => r.node.type === "image");
 
     if (!imageRun || imageRun.node.type !== "image") {
       throw new Error("Expected image run");
@@ -338,7 +338,7 @@ describe("Mentions", () => {
   test("replaces an image atom with a user mention", () => {
     const base = setup("Hello ![alt](https://example.com/image.png)!\n");
     const path = getPath(base, "Hello ￼!");
-    const imageRun = ((path).inlines ?? []).find((run) => run.node.type === "image");
+    const imageRun = (path.inlines ?? []).find((run) => run.node.type === "image");
 
     if (!imageRun) {
       throw new Error("Expected image run");

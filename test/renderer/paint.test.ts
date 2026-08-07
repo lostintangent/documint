@@ -6,11 +6,7 @@ import { indexedTextEntries } from "@test/editor/helpers";
 // isolation.
 
 import { describe, expect, test } from "bun:test";
-import {
-  createDocumentFrame,
-  paintDocumentFrame,
-  type RendererEffect,
-} from "@/renderer";
+import { createDocumentFrame, paintDocumentFrame, type RendererEffect } from "@/renderer";
 import type { DocumintEffects } from "@/types";
 import { createEditorLayoutState } from "@/editor/layout";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
@@ -64,10 +60,10 @@ describe("Block and chrome paint order", () => {
       throw new Error("Expected table header cells");
     }
 
-  state = setSelection(state, {
-    path: activeContainer.path,
-    offset: 1,
-  });
+    state = setSelection(state, {
+      path: activeContainer.path,
+      offset: 1,
+    });
 
     const { context, layout } = renderPaintOperations(state, { height: 240, width: 480 });
     const activeBounds = layout.pathBounds.get(activeContainer.path);
@@ -126,10 +122,10 @@ describe("Block and chrome paint order", () => {
       throw new Error("Expected paragraph container");
     }
 
-  state = setSelection(state, {
-    path: container.path,
-    offset: 1,
-  });
+    state = setSelection(state, {
+      path: container.path,
+      offset: 1,
+    });
 
     const { context } = renderPaintOperations(state, { height: 180, width: 240 });
 
@@ -1648,9 +1644,7 @@ describe("List marker painting", () => {
       (operation) => operation.kind === "fillRect" && operation.fillStyle === "#123abc",
     );
     const defaultMarkerIndex = context.operations.findIndex(
-      (operation, index) =>
-        index > customFlashIndex &&
-        operation.kind === "fillPath",
+      (operation, index) => index > customFlashIndex && operation.kind === "fillPath",
     );
 
     expect(receivedMarkers).toEqual(["unordered"]);
@@ -1673,7 +1667,9 @@ describe("List marker painting", () => {
     renderPaintOperations(state, {
       customEffects: {
         listItemInserted: ({ marker }) => {
-          receivedMarkers.push(marker.kind === "task" ? `${marker.kind}:${marker.checked}` : marker.kind);
+          receivedMarkers.push(
+            marker.kind === "task" ? `${marker.kind}:${marker.checked}` : marker.kind,
+          );
         },
       },
       effects: readEditorEffects(state),
@@ -1717,8 +1713,7 @@ describe("List marker painting", () => {
     });
     const defaultMarker = context.operations.find(
       (operation) =>
-        operation.kind === "fillPath" &&
-        operation.fillStyle === resolvedLightTheme.listMarkerText,
+        operation.kind === "fillPath" && operation.fillStyle === resolvedLightTheme.listMarkerText,
     );
 
     if (!defaultMarker || defaultMarker.kind !== "fillPath") {
@@ -1760,13 +1755,15 @@ function renderPaintOperations(
   const context = new RecordingCanvasContext();
 
   const now = options.now ?? 0;
-  const effects = options.effects?.map((effect): RendererEffect =>
-    "startedAt" in effect ? effect : ({ ...effect, startedAt: now } as RendererEffect),
+  const effects = options.effects?.map(
+    (effect): RendererEffect =>
+      "startedAt" in effect ? effect : ({ ...effect, startedAt: now } as RendererEffect),
   );
 
   const frame = createDocumentFrame(state, layoutState, {
     activeBlockPath:
-      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ?? null,
+      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ??
+      null,
     activePath: state.selection.focus.path,
     activeThreadIndex: null,
     ambientTime: options.ambientTime,

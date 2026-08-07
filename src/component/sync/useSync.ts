@@ -98,7 +98,10 @@ export function useSync({
   /* Document change lifecycle */
 
   const applyExternalDocumentChanges = useEffectEvent(
-    (previousState: EditorStateTransition["previous"], nextState: EditorStateTransition["next"]) => {
+    (
+      previousState: EditorStateTransition["previous"],
+      nextState: EditorStateTransition["next"],
+    ) => {
       const changes = findDocumentChanges(
         previousState.documentIndex.document,
         nextState.documentIndex.document,
@@ -113,28 +116,24 @@ export function useSync({
     },
   );
 
-  const reconcileDocumentChanges = useEffectEvent(
-    (transition: EditorStateTransition) => {
-      setDocumentChangeState((current) => {
-        if (current.changes.length === 0) {
-          return current;
-        }
+  const reconcileDocumentChanges = useEffectEvent((transition: EditorStateTransition) => {
+    setDocumentChangeState((current) => {
+      if (current.changes.length === 0) {
+        return current;
+      }
 
-        const changes = acknowledgeUnacknowledgedDocumentChanges(
-          current.changes,
-          transition.next,
-          { retarget: transition.documentChanged },
-        );
-
-        return changes === current.changes
-          ? current
-          : {
-              newChanges: [],
-              changes,
-            };
+      const changes = acknowledgeUnacknowledgedDocumentChanges(current.changes, transition.next, {
+        retarget: transition.documentChanged,
       });
-    },
-  );
+
+      return changes === current.changes
+        ? current
+        : {
+            newChanges: [],
+            changes,
+          };
+    });
+  });
 
   /* External content diffing */
 
@@ -211,9 +210,7 @@ function createDocumentChangeFrameInput(change: UnacknowledgedDocumentChange) {
   };
 }
 
-function createDocumentChangeEffect(
-  change: UnacknowledgedDocumentChange,
-): DocumentChangeEffect {
+function createDocumentChangeEffect(change: UnacknowledgedDocumentChange): DocumentChangeEffect {
   return {
     changeKey: change.changeKey,
     changeKind: change.change.kind,

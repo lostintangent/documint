@@ -10,8 +10,7 @@ export const TASK_CHECKBOX_SIZE = 14;
 const TASK_CHECKBOX_BASE_FONT_SIZE = 16;
 // Gap between the task checkbox and the start of its text.
 export const TASK_CHECKBOX_TEXT_GAP = 8;
-export const TASK_MARKER_TEXT_INSET =
-  TASK_CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
+export const TASK_MARKER_TEXT_INSET = TASK_CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
 export const UNORDERED_LIST_MARKER_GUTTER_INSET = 2;
 export const UNORDERED_LIST_MARKER_SIZE = 6;
 
@@ -63,10 +62,7 @@ export function resolveTaskCheckboxSizeFromFont(font: string) {
 }
 
 function resolveTaskCheckboxSizeFromFontSize(fontSize: number) {
-  return Math.max(
-    1,
-    Math.round(fontSize * (TASK_CHECKBOX_SIZE / TASK_CHECKBOX_BASE_FONT_SIZE)),
-  );
+  return Math.max(1, Math.round(fontSize * (TASK_CHECKBOX_SIZE / TASK_CHECKBOX_BASE_FONT_SIZE)));
 }
 
 function resolveTaskMarkerTextInsetFromFontSize(fontSize: number) {

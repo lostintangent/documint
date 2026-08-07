@@ -72,8 +72,7 @@ export function resolveFragmentSourceContext(
       normalized,
       root: startRoot,
       wholePath:
-        normalized.start.offset === 0 &&
-        normalized.end.offset === startEndpoint.text.length,
+        normalized.start.offset === 0 && normalized.end.offset === startEndpoint.text.length,
     };
   }
 

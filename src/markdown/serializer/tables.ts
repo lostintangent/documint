@@ -32,9 +32,7 @@ export function serializeTable(block: TableBlock, indent: number, options: Markd
     .slice(1)
     .map((row) => serializeTableRow(row, columnWidths, block.align, indent, options));
 
-  return [header ?? serializeEmptyTableRow(columnWidths, indent), separator, ...body].join(
-    lineFeed,
-  );
+  return [header, separator, ...body].join(lineFeed);
 }
 
 function serializeTableRow(
@@ -61,10 +59,6 @@ function serializeTableAlignment(widths: number[], align: TableBlock["align"], i
   const cells = widths.map((width, columnIndex) => alignmentCell(align[columnIndex], width));
 
   return `${" ".repeat(indent)}| ${cells.join(" | ")} |`;
-}
-
-function serializeEmptyTableRow(widths: number[], indent: number) {
-  return `${" ".repeat(indent)}| ${widths.map((width) => "".padEnd(width, " ")).join(" | ")} |`;
 }
 
 function alignmentCell(align: TableBlock["align"][number], width: number) {

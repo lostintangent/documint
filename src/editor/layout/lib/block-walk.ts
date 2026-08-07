@@ -1,10 +1,6 @@
 // Owns the leaf-block walk shared by exact layout and virtual height estimation.
 
-import {
-  isContainerBlock,
-  isInertBlock,
-  type DocumentIndex,
-} from "../../state";
+import { isContainerBlock, isInertBlock, type DocumentIndex } from "../../state";
 import { resolveBlockGap } from "./block-spacing";
 
 export type LayoutBlockWalkEntry = {

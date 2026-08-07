@@ -1,8 +1,8 @@
 # 🌿 Documint
 
-A canvas-based, batteries-included Markdown editor for React. Documint is built for usability and performance, using a fully bespoke Markdown parser, layout/renderer, component system ("leaves"), and reactive store ("sprigs"). This gives you a really nice WYSIWYG editor, without any of the dependency bloat 💪  
+A canvas-based, batteries-included Markdown editor for React. Documint is built for usability and performance, using a fully bespoke Markdown parser, layout/renderer, component system ("leaves"), and reactive store ("sprigs"). This gives you a really nice WYSIWYG editor, without any of the dependency bloat 💪
 
-> *Try it out:* [web playground](https://lostintangent.github.io/documint) and [VS Code extension](https://marketplace.visualstudio.com/items?itemName=lostintangent.documint-vscode).
+> _Try it out:_ [web playground](https://lostintangent.github.io/documint) and [VS Code extension](https://marketplace.visualstudio.com/items?itemName=lostintangent.documint-vscode).
 
 ## Features
 
@@ -51,11 +51,7 @@ export function App() {
 Pass `keybindings` to replace the built-in bindings. To add or override bindings while retaining the defaults, put overrides first and spread `defaultKeybindings` after them; the first matching binding wins.
 
 ```tsx
-import {
-  Documint,
-  defaultKeybindings,
-  type EditorInputKeybinding,
-} from "@lostintangent/documint";
+import { Documint, defaultKeybindings, type EditorInputKeybinding } from "@lostintangent/documint";
 
 const keybindings: readonly EditorInputKeybinding[] = [
   { key: "b", modKey: true, command: "toggleCode" },

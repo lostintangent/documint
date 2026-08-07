@@ -9,10 +9,7 @@ import {
 } from "@/document";
 import { target } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
-import type {
-  BlockquoteTextBlockContext,
-  RootTextBlockContext,
-} from "../../context";
+import type { BlockquoteTextBlockContext, RootTextBlockContext } from "../../context";
 import { spliceAt } from "./shared";
 
 // Block-level action resolvers that aren't specific to lists, tables, or code
@@ -123,10 +120,7 @@ function splitQuotedTextBlock(
   };
 }
 
-function splitBlockquoteAtEmptyParagraph(
-  quote: BlockquoteBlock,
-  childIndex: number,
-): BlockSplit {
+function splitBlockquoteAtEmptyParagraph(quote: BlockquoteBlock, childIndex: number): BlockSplit {
   const beforeBlocks = quote.children.slice(0, childIndex);
   const afterBlocks = quote.children.slice(childIndex + 1);
   const paragraph = createParagraphTextBlock("");

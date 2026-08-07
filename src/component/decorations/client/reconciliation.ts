@@ -132,10 +132,7 @@ export function resolveDecorationRootSourceKey(block: Block): string {
   return key;
 }
 
-function sameDecorationRanges(
-  a: readonly TextDecoration[],
-  b: readonly TextDecoration[],
-): boolean {
+function sameDecorationRanges(a: readonly TextDecoration[], b: readonly TextDecoration[]): boolean {
   if (a.length !== b.length) return false;
 
   for (let index = 0; index < a.length; index += 1) {

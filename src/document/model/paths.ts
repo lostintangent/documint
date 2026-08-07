@@ -57,10 +57,7 @@ export function blockPathCoordinates(path: string): BlockPathCoordinates | null 
   return readBlockPath(path);
 }
 
-export function blockPathFromCoordinates(
-  rootIndex: number,
-  childIndices: readonly number[] = [],
-) {
+export function blockPathFromCoordinates(rootIndex: number, childIndices: readonly number[] = []) {
   if (!isValidPathIndex(rootIndex) || childIndices.some((index) => !isValidPathIndex(index))) {
     return null;
   }
@@ -107,17 +104,14 @@ export function blockPathContainsPath(ancestorBlockPath: string, descendantPath:
 export function tableCellPositionFromPath(path: string): TableCellPathPosition | null {
   const cellPath = readTableCellPath(path);
 
-  return cellPath
-    ? { cellIndex: cellPath.cellIndex, rowIndex: cellPath.rowIndex }
-    : null;
+  return cellPath ? { cellIndex: cellPath.cellIndex, rowIndex: cellPath.rowIndex } : null;
 }
 
 export function tableCellPathContextFromPath(path: string): TableCellPathContext | null {
   return readTableCellPath(path);
 }
 
-const tableCellPathPattern =
-  /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)\.cells\.(\d+)$/;
+const tableCellPathPattern = /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)\.cells\.(\d+)$/;
 const tableRowPathPattern = /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)$/;
 
 function readRootIndex(path: string) {

@@ -41,15 +41,7 @@ export function indexedTextEntries(stateOrIndex: EditorState | DocumentIndex): I
 
   for (const block of documentIndex.blocks) {
     if (block.kind === "inlines") {
-      paths.push(
-        pathHandle(
-          block,
-          block.path,
-          block.text,
-          block.inlines,
-          null,
-        ),
-      );
+      paths.push(pathHandle(block, block.path, block.text, block.inlines, null));
       continue;
     }
 
@@ -64,9 +56,7 @@ export function indexedTextEntries(stateOrIndex: EditorState | DocumentIndex): I
 
     for (const row of block.tableCellRows) {
       for (const cell of row) {
-        paths.push(
-          pathHandle(block, cell.path, cell.text, cell.inlines, cell),
-        );
+        paths.push(pathHandle(block, cell.path, cell.text, cell.inlines, cell));
       }
     }
   }

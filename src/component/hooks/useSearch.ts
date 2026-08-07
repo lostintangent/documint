@@ -110,8 +110,7 @@ export function useSearch(): SearchController {
       const activeMatchKey = searchState.activeMatchKey;
       const found = matches.findIndex(
         (match) =>
-          match.path === activeMatchKey.path &&
-          match.startOffset === activeMatchKey.startOffset,
+          match.path === activeMatchKey.path && match.startOffset === activeMatchKey.startOffset,
       );
 
       if (found !== -1) {
@@ -148,13 +147,7 @@ export function useSearch(): SearchController {
     } finally {
       isApplyingSearchSelectionRef.current = false;
     }
-  }, [
-    activeMatch?.endOffset,
-    activeMatch?.path,
-    activeMatch?.startOffset,
-    searchState.isOpen,
-    selectMatch,
-  ]);
+  }, [activeMatch, searchState.isOpen, selectMatch]);
 
   useEffect(() => {
     if (!searchState.isOpen || activeMatch) {
@@ -162,13 +155,7 @@ export function useSearch(): SearchController {
     }
 
     collapseSearchSelection();
-  }, [
-    activeMatch?.endOffset,
-    activeMatch?.path,
-    activeMatch?.startOffset,
-    collapseSearchSelection,
-    searchState.isOpen,
-  ]);
+  }, [activeMatch, searchState.isOpen]);
 
   /* Search actions */
 
@@ -352,10 +339,7 @@ function resolveQueryFromSelection(
     return null;
   }
 
-  const text = resolveEditorTextAtPath(
-    store.editor.getState().documentIndex,
-    selection.start.path,
-  );
+  const text = resolveEditorTextAtPath(store.editor.getState().documentIndex, selection.start.path);
   const query = text?.slice(selection.start.offset, selection.end.offset) ?? "";
 
   return query.length > 0 ? query : null;

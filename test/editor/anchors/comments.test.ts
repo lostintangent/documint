@@ -208,9 +208,7 @@ test("resolves table-cell reference comment anchors to runtime offsets", () => {
     comments: [thread],
   });
   const range = getCommentState(state.documentIndex).ranges[0];
-  const path = indexedTextEntries(state).find(
-    (candidate) => candidate.text === "Cell \uFFFC done",
-  );
+  const path = indexedTextEntries(state).find((candidate) => candidate.text === "Cell \uFFFC done");
 
   if (!path) {
     throw new Error("Expected table-cell path");

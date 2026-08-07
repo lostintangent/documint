@@ -153,11 +153,7 @@ export function resolveSelectionTarget(
   }
 
   if (selection.kind === "block-path") {
-    const path = resolveBlockTextPathBoundary(
-      documentIndex,
-      selection.blockPath,
-      "start",
-    );
+    const path = resolveBlockTextPathBoundary(documentIndex, selection.blockPath, "start");
 
     return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
   }

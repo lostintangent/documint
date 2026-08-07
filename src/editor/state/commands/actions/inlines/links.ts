@@ -1,9 +1,5 @@
 // Link mutations within an InlineContainer: wrap, update URL, remove.
-import {
-  createLink as createDocumentLinkNode,
-  type Inline,
-  type Link,
-} from "@/document";
+import { createLink as createDocumentLinkNode, type Inline, type Link } from "@/document";
 import { inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
 import {
   sliceInlineChildren,

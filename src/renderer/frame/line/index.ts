@@ -93,9 +93,7 @@ export function resolveDocumentFrameLine({
   const indexedText = resolveIndexedText(editorState.documentIndex, line.path);
   const indexedCell = indexedText && "rowIndex" in indexedText ? indexedText : null;
   const documentChange =
-    block?.type === "table"
-      ? null
-      : resolveDocumentChange(editorState, indexedBlock, line.path);
+    block?.type === "table" ? null : resolveDocumentChange(editorState, indexedBlock, line.path);
   const containerBounds = layoutState.layout.pathBounds.get(line.path) ?? null;
   const text = resolveDocumentFrameLineText({
     textFades,

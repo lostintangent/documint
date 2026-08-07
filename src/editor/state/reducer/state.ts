@@ -273,7 +273,10 @@ function locateBlockInPayload(
   };
 }
 
-function blockPathForLocatedBlock(location: { childIndices: readonly number[]; rootIndex: number }) {
+function blockPathForLocatedBlock(location: {
+  childIndices: readonly number[];
+  rootIndex: number;
+}) {
   const blockPath = blockPathFromCoordinates(location.rootIndex, location.childIndices);
   if (!blockPath) {
     throw new Error("Block-reference target resolved to an invalid block path.");
@@ -332,7 +335,10 @@ export function setSelection(
     return nextState;
   }
 
-  const focusedBlock = resolveIndexedBlockContainingPath(nextState.documentIndex, nextState.selection.focus.path);
+  const focusedBlock = resolveIndexedBlockContainingPath(
+    nextState.documentIndex,
+    nextState.selection.focus.path,
+  );
   const blockPath = focusedBlock?.path ?? null;
 
   return recordEditorEffects(
@@ -420,8 +426,7 @@ function restoreHistoryEntry(
 
 function resolveDefaultSelectionPoint(documentIndex: DocumentIndex): EditorSelectionPoint {
   const path =
-    resolveDocumentTextPathBoundary(documentIndex, "start") ??
-    documentIndex.blocks[0]?.path;
+    resolveDocumentTextPathBoundary(documentIndex, "start") ?? documentIndex.blocks[0]?.path;
 
   if (!path) {
     throw new Error("Document index must contain at least one selectable block.");

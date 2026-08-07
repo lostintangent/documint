@@ -13,4 +13,9 @@ export { commentDirectiveName, lineFeed, type MarkdownOptions } from "./shared";
 
 export { parseDocument, parseFragment } from "./parser";
 
-export { serializeCommentAppendix, serializeBlocks, serializeDocument, serializeFragment } from "./serializer";
+export {
+  serializeCommentAppendix,
+  serializeBlocks,
+  serializeDocument,
+  serializeFragment,
+} from "./serializer";

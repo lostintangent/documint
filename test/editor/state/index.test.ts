@@ -84,10 +84,10 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       throw new Error("Expected paragraph container");
     }
 
-    const italicInline = ((paragraph).inlines ?? []).find(
+    const italicInline = (paragraph.inlines ?? []).find(
       (inline) => indexedInlineText(inline) === "italic",
     );
-    const boldInline = ((paragraph).inlines ?? []).find(
+    const boldInline = (paragraph.inlines ?? []).find(
       (inline) => indexedInlineText(inline) === "bold",
     );
 
@@ -103,7 +103,7 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
       throw new Error("Expected paragraph container");
     }
 
-    const underlineInline = ((paragraph).inlines ?? []).find(
+    const underlineInline = (paragraph.inlines ?? []).find(
       (inline) => indexedInlineText(inline) === "underlined",
     );
 
@@ -134,16 +134,11 @@ Paragraph with [link](https://example.com), \`code\`, @[Jane Doe](user-123), and
     expect(indexedOffsetToPlainTextOffset(path.text, path.inlines, "Hello ".length + 1)).toBe(
       "Hello @Jane Doe".length,
     );
+    expect(plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello ".length, "before")).toBe(
+      "Hello ".length,
+    );
     expect(
-      plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello ".length, "before"),
-    ).toBe("Hello ".length);
-    expect(
-      plainTextOffsetToIndexedOffset(
-        path.text,
-        path.inlines,
-        "Hello @Jane Doe".length,
-        "after",
-      ),
+      plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello @Jane Doe".length, "after"),
     ).toBe("Hello ".length + 1);
     expect(
       plainTextOffsetToIndexedOffset(path.text, path.inlines, "Hello @Jane".length, "before"),
@@ -188,8 +183,9 @@ beta
       tablePath: two.blockPath,
     });
     expect(indexedTextEntries(runtime).filter((entry) => entry.text === "beta")).toEqual([beta]);
-    expect(indexedTextEntries(runtime).filter((entry) => entry.block.type === "paragraph"))
-      .toHaveLength(2);
+    expect(
+      indexedTextEntries(runtime).filter((entry) => entry.block.type === "paragraph"),
+    ).toHaveLength(2);
   });
 
   test("uses canonical block and table-cell paths for editor text", () => {
@@ -251,7 +247,9 @@ const x = 1
       ),
     ).toBe(true);
     expect(hasSameEditorTextPathShape(runtime, "root.2", runtime, "root.2")).toBe(false);
-    expect(resolveIndexedBlockContainingPath(runtime, "root.2.rows.1.cells.1")?.path).toBe("root.2");
+    expect(resolveIndexedBlockContainingPath(runtime, "root.2.rows.1.cells.1")?.path).toBe(
+      "root.2",
+    );
     expect(resolveIndexedTableCell(runtime, "root.2.rows.1.cells.1")).toMatchObject({
       cellIndex: 1,
       rowIndex: 1,
@@ -293,9 +291,7 @@ omega
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, firstCell, -1)).toBe(nested);
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, firstCell, 1)).toBe(secondCell);
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, lastCell, 1)).toBe(omega);
-    expect(
-      resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, -1),
-    ).toBe(nested);
+    expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, -1)).toBe(nested);
     expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, 1)).toBe(omega);
   });
 
@@ -515,7 +511,7 @@ beta
       throw new Error("Expected paragraph container");
     }
 
-    const imageInline = ((paragraph).inlines ?? []).find((inline) => inline.node.type === "image");
+    const imageInline = (paragraph.inlines ?? []).find((inline) => inline.node.type === "image");
 
     if (!imageInline) {
       throw new Error("Expected image inline");

@@ -165,12 +165,7 @@ function slicePathInlines(
   // Drop the trailing portion first so the leading-drop offsets remain
   // anchored to the original path. Two passes through the existing
   // inline-edit primitive keep marks/links/images intact at the boundaries.
-  const beforeEnd = replaceEditorInlines(
-    endpoint.inlines,
-    endOffset,
-    endpoint.text.length,
-    "",
-  );
+  const beforeEnd = replaceEditorInlines(endpoint.inlines, endOffset, endpoint.text.length, "");
   const sliced = replaceEditorInlines(beforeEnd, 0, startOffset, "");
 
   return editorInlinesToDocumentInlines(sliced);
@@ -191,13 +186,7 @@ function extractWithinRoot(
   // (no markdown shape — drop). Within-cell selections are routed to the
   // inline path upstream.
   if (root.type === "table") {
-    return extractTableRowSlice(
-      root,
-      startEndpoint,
-      startOffset,
-      endEndpoint,
-      endOffset,
-    );
+    return extractTableRowSlice(root, startEndpoint, startOffset, endEndpoint, endOffset);
   }
 
   const narrowed = narrowToRange(root, startEndpoint, startOffset, endEndpoint, endOffset);

@@ -101,9 +101,7 @@ describe("Renderer effect policy", () => {
     test("can disable default handling for an effect", () => {
       const effect = insertedText("x");
       const policy = withDurationOverride((currentEffect) =>
-        currentEffect.kind === "text-inserted"
-          ? null
-          : defaultEffectPolicy.duration(currentEffect),
+        currentEffect.kind === "text-inserted" ? null : defaultEffectPolicy.duration(currentEffect),
       );
 
       const resolvedEffects = resolveRendererEffects([effect], now, policy);
@@ -116,14 +114,10 @@ describe("Renderer effect policy", () => {
       const effect = insertedText("x");
       const afterDefaultExpiration = startedAt + 1200;
       const policy = withDurationOverride((currentEffect) =>
-        currentEffect.kind === "text-inserted"
-          ? 1500
-          : defaultEffectPolicy.duration(currentEffect),
+        currentEffect.kind === "text-inserted" ? 1500 : defaultEffectPolicy.duration(currentEffect),
       );
 
-      expect(resolveRendererEffects([effect], afterDefaultExpiration).rendererEffects).toEqual(
-        [],
-      );
+      expect(resolveRendererEffects([effect], afterDefaultExpiration).rendererEffects).toEqual([]);
       expect(
         resolveRendererEffects([effect], afterDefaultExpiration, policy).rendererEffects,
       ).toEqual([effect]);
@@ -135,9 +129,7 @@ describe("Renderer effect policy", () => {
     test("can opt into default visual mapping for effects the default policy skips", () => {
       const effect = insertedText("🔥");
       const policy = withDurationOverride((currentEffect) =>
-        currentEffect.kind === "text-inserted"
-          ? 1000
-          : defaultEffectPolicy.duration(currentEffect),
+        currentEffect.kind === "text-inserted" ? 1000 : defaultEffectPolicy.duration(currentEffect),
       );
 
       expect(resolveRendererEffects([effect], now).textHighlights.size).toBe(0);
@@ -154,15 +146,10 @@ describe("Renderer effect policy", () => {
         [],
       );
       expect(
-        resolveRendererEffects(
-          [insertedEmoji, forwardDelete],
-          now,
-          defaultEffectPolicy,
-          {
-            textDeleted: () => {},
-            textInserted: () => {},
-          },
-        ).rendererEffects,
+        resolveRendererEffects([insertedEmoji, forwardDelete], now, defaultEffectPolicy, {
+          textDeleted: () => {},
+          textInserted: () => {},
+        }).rendererEffects,
       ).toEqual([insertedEmoji, forwardDelete]);
     });
   });

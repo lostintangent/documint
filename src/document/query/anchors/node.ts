@@ -70,10 +70,7 @@ type DocumentNodeAnchorCandidate = {
 
 export type DocumentNodeAnchorResolution =
   | {
-      readonly basis:
-        | "exact-content"
-        | "exact-content-context"
-        | "exact-content-location";
+      readonly basis: "exact-content" | "exact-content-context" | "exact-content-location";
       readonly anchor: DocumentNodeAnchor;
       readonly node: Block | TableCell;
       readonly path: string;
@@ -90,9 +87,7 @@ export type DocumentNodeAnchorResolution =
       readonly status: "exhausted";
     };
 
-export type DocumentNodeAnchorResolveMode =
-  | "contextual-content"
-  | "exact-content";
+export type DocumentNodeAnchorResolveMode = "contextual-content" | "exact-content";
 
 export type DocumentNodeAnchorResolveOptions = {
   readonly maxVisitedNodes?: number;
@@ -111,9 +106,7 @@ export function createDocumentNodeAnchor(
   }
 
   const cellMatch = resolveTableCellPathMatch(document, path);
-  return cellMatch
-    ? createTableCellAnchor(cellMatch.cell, path, cellMatch)
-    : null;
+  return cellMatch ? createTableCellAnchor(cellMatch.cell, path, cellMatch) : null;
 }
 
 export function resolveDocumentNodeAnchor(
@@ -122,9 +115,7 @@ export function resolveDocumentNodeAnchor(
   options: DocumentNodeAnchorResolveOptions = {},
 ): DocumentNodeAnchorResolution {
   return (
-    resolveDocumentNodeAnchors(document, [anchor], options).get(
-      documentNodeAnchorKey(anchor),
-    ) ?? {
+    resolveDocumentNodeAnchors(document, [anchor], options).get(documentNodeAnchorKey(anchor)) ?? {
       status: "absent",
     }
   );
@@ -160,8 +151,7 @@ export function resolveDocumentNodeAnchors(
   }
 
   for (const [key, anchor] of uniqueAnchors) {
-    const candidates =
-      collected.candidates.get(documentNodeAnchorContentKey(anchor)) ?? [];
+    const candidates = collected.candidates.get(documentNodeAnchorContentKey(anchor)) ?? [];
     matches.set(key, resolveAnchorFromCandidates(anchor, candidates, options));
   }
 
@@ -203,11 +193,7 @@ export function documentNodeAnchorKey(anchor: DocumentNodeAnchor) {
   ].join(":");
 }
 
-function createBlockAnchor(
-  document: Document,
-  block: Block,
-  path: string,
-): DocumentBlockAnchor {
+function createBlockAnchor(document: Document, block: Block, path: string): DocumentBlockAnchor {
   const siblingContext = resolveBlockSiblingContext(document, path);
 
   return {
@@ -223,9 +209,7 @@ function createBlockAnchor(
     },
     path,
     siblings: {
-      nextHash: siblingContext.next
-        ? resolveBlockContentHash(siblingContext.next)
-        : undefined,
+      nextHash: siblingContext.next ? resolveBlockContentHash(siblingContext.next) : undefined,
       previousHash: siblingContext.previous
         ? resolveBlockContentHash(siblingContext.previous)
         : undefined,
@@ -240,9 +224,7 @@ function createTableCellAnchor(
 ): DocumentTableCellAnchor {
   return {
     cells: {
-      nextHash: context.nextCell
-        ? resolveTableCellContentHash(context.nextCell)
-        : undefined,
+      nextHash: context.nextCell ? resolveTableCellContentHash(context.nextCell) : undefined,
       previousHash: context.previousCell
         ? resolveTableCellContentHash(context.previousCell)
         : undefined,
@@ -255,9 +237,7 @@ function createTableCellAnchor(
     path,
     rowIndex: context.rowIndex,
     rows: {
-      nextHash: context.nextRow
-        ? resolveTableRowContentHash(context.nextRow)
-        : undefined,
+      nextHash: context.nextRow ? resolveTableRowContentHash(context.nextRow) : undefined,
       previousHash: context.previousRow
         ? resolveTableRowContentHash(context.previousRow)
         : undefined,
@@ -414,10 +394,7 @@ function resolveSingleAnchorCandidate(
 
 function anchorRequiresContextualMatch(anchor: DocumentNodeAnchor) {
   if (anchor.kind === "block") {
-    return (
-      anchor.siblings.previousHash !== undefined ||
-      anchor.siblings.nextHash !== undefined
-    );
+    return anchor.siblings.previousHash !== undefined || anchor.siblings.nextHash !== undefined;
   }
 
   return (
@@ -455,21 +432,13 @@ function resolveTableCellAnchorContext(
   });
   const rowContextMatches = candidates.filter((candidate) => {
     return (
-      candidate.anchor.kind === "table-cell" &&
-      matchesTableCellRowContext(anchor, candidate.anchor)
+      candidate.anchor.kind === "table-cell" && matchesTableCellRowContext(anchor, candidate.anchor)
     );
   });
-  const matched = selectTableCellContextCandidate(
-    cellContextMatches,
-    rowContextMatches,
-  );
+  const matched = selectTableCellContextCandidate(cellContextMatches, rowContextMatches);
 
   return matched
-    ? createMatchedAnchorResolution(
-        anchor,
-        matched,
-        resolveContextualMatchBasis(anchor, matched),
-      )
+    ? createMatchedAnchorResolution(anchor, matched, resolveContextualMatchBasis(anchor, matched))
     : null;
 }
 
@@ -581,9 +550,7 @@ function resolveContextualMatchBasis(
   anchor: DocumentNodeAnchor,
   candidate: DocumentNodeAnchorCandidate,
 ) {
-  return candidate.path === anchor.path
-    ? "exact-content-location"
-    : "exact-content-context";
+  return candidate.path === anchor.path ? "exact-content-location" : "exact-content-context";
 }
 
 function documentNodeAnchorContentKey(anchor: DocumentNodeAnchor) {

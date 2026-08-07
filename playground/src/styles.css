@@ -28,7 +28,11 @@
     font-family: var(--font-prose);
     background-color: var(--color-sky-100);
     background-image:
-      radial-gradient(circle at top left, color-mix(in oklab, var(--color-blue-200) 85%, transparent), transparent 38%),
+      radial-gradient(
+        circle at top left,
+        color-mix(in oklab, var(--color-blue-200) 85%, transparent),
+        transparent 38%
+      ),
       linear-gradient(180deg, var(--color-slate-50) 0%, var(--color-sky-100) 100%);
     background-attachment: fixed;
   }

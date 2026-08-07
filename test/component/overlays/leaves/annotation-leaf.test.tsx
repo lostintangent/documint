@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  createCommentThread,
-  markCommentThreadAsResolved,
-  type CommentThread,
-} from "@/document";
+import { createCommentThread, markCommentThreadAsResolved, type CommentThread } from "@/document";
 import type { EditorPresence } from "@/editor";
 import { AnnotationLeaf } from "@/component/overlays/leaves/AnnotationLeaf";
 import { createStore, DocumintStoreProvider } from "@/component/store";
@@ -92,9 +88,7 @@ function createThread(resolved: boolean): CommentThread {
     quote: "alpha",
   });
 
-  return resolved
-    ? markCommentThreadAsResolved(thread, true, "2026-01-01T00:01:00.000Z")
-    : thread;
+  return resolved ? markCommentThreadAsResolved(thread, true, "2026-01-01T00:01:00.000Z") : thread;
 }
 
 function createPresence(thread: CommentThread): EditorPresence {

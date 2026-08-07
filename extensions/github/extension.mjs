@@ -33,13 +33,15 @@ const activeCopilotJobs = new Map();
 const markdownCanvas = createCanvas({
   id: "documint-markdown-agent",
   displayName: canvasTitle,
-  description: "Edit a markdown file with Documint and let Copilot respond to @Copilot comment mentions.",
+  description:
+    "Edit a markdown file with Documint and let Copilot respond to @Copilot comment mentions.",
   inputSchema: {
     type: "object",
     properties: {
       path: {
         type: "string",
-        description: "Markdown file path to edit. Relative paths resolve from the session working directory.",
+        description:
+          "Markdown file path to edit. Relative paths resolve from the session working directory.",
       },
       content: {
         type: "string",
@@ -74,11 +76,15 @@ const markdownCanvas = createCanvas({
     },
     {
       name: "run_copilot",
-      description: "Ask Copilot to edit the markdown file for this canvas using the supplied instructions.",
+      description:
+        "Ask Copilot to edit the markdown file for this canvas using the supplied instructions.",
       inputSchema: {
         type: "object",
         properties: {
-          instructions: { type: "string", description: "What Copilot should change in the markdown file." },
+          instructions: {
+            type: "string",
+            description: "What Copilot should change in the markdown file.",
+          },
         },
         required: ["instructions"],
         additionalProperties: false,
@@ -100,7 +106,7 @@ const httpRouteHandlers = new Map([
 
   ["GET /api/storage", handleGetStorageRequest],
   ["POST /api/storage", handlePostStorageRequest],
-  
+
   ["POST /api/copilot-comment", handlePostCopilotCommentRequest],
   ["POST /api/copilot-user-mention", handlePostCopilotUserMentionRequest],
 
@@ -242,7 +248,10 @@ function resolveMarkdownPath(inputPath) {
 
   const extension = extname(filePath).toLowerCase();
   if (extension !== ".md" && extension !== ".markdown") {
-    throw new CanvasError("not_markdown", "The Documint canvas can only edit .md or .markdown files.");
+    throw new CanvasError(
+      "not_markdown",
+      "The Documint canvas can only edit .md or .markdown files.",
+    );
   }
   return filePath;
 }
@@ -258,11 +267,17 @@ function defaultMarkdownPath() {
 function getDocumentForInstance(instanceId) {
   const key = canvasInstances.get(instanceId);
   if (!key) {
-    throw new CanvasError("unknown_instance", `No markdown document is open for instance ${instanceId}.`);
+    throw new CanvasError(
+      "unknown_instance",
+      `No markdown document is open for instance ${instanceId}.`,
+    );
   }
   const document = documents.get(key);
   if (!document) {
-    throw new CanvasError("unknown_document", `No markdown document is loaded for instance ${instanceId}.`);
+    throw new CanvasError(
+      "unknown_document",
+      `No markdown document is loaded for instance ${instanceId}.`,
+    );
   }
   return document;
 }
@@ -283,7 +298,13 @@ async function refreshDocumentFromDisk(document, source = "disk") {
   return document;
 }
 
-async function writeDocumentContent(document, content, source, metadata = {}, broadcastOptions = {}) {
+async function writeDocumentContent(
+  document,
+  content,
+  source,
+  metadata = {},
+  broadcastOptions = {},
+) {
   await mkdir(dirname(document.filePath), { recursive: true });
   await writeFile(document.filePath, content, "utf8");
   const stats = await stat(document.filePath);
@@ -305,7 +326,10 @@ function ensureWatcher(document) {
       document.key,
       setTimeout(async () => {
         try {
-          await refreshDocumentFromDisk(document, activeJobsForDocument(document.key).length > 0 ? "copilot" : "disk");
+          await refreshDocumentFromDisk(
+            document,
+            activeJobsForDocument(document.key).length > 0 ? "copilot" : "disk",
+          );
         } catch (error) {
           broadcast(document.key, {
             type: "error",
@@ -345,7 +369,10 @@ async function ensureServer() {
 
   const address = server.address();
   if (!address || typeof address === "string") {
-    throw new CanvasError("server_unavailable", "Unable to resolve the loopback canvas server port.");
+    throw new CanvasError(
+      "server_unavailable",
+      "Unable to resolve the loopback canvas server port.",
+    );
   }
   serverOrigin = `http://127.0.0.1:${address.port}`;
   return serverOrigin;
@@ -355,7 +382,7 @@ async function handleRequest(request, response) {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   const handler = httpRouteHandlers.get(`${request.method ?? ""} ${url.pathname}`);
   if (handler) {
-    await handler({ request, response, url });
+    await Promise.resolve(handler({ request, response, url }));
     return;
   }
 
@@ -568,7 +595,9 @@ async function runCopilotJob(document, job, request) {
     await workerSession.sendAndWait(
       {
         prompt,
-        attachments: [{ type: "file", path: document.filePath, displayName: basename(document.filePath) }],
+        attachments: [
+          { type: "file", path: document.filePath, displayName: basename(document.filePath) },
+        ],
       },
       300000,
     );
@@ -753,9 +782,9 @@ function commandReferencesFile(command, filePath) {
 function commandWritesFile(command, filePath) {
   const escapedPath = escapeRegExp(filePath);
   const escapedRelativePath = escapeRegExp(shellRelativePath(filePath));
-  return new RegExp(`(>|>>|tee\\s+(?:-a\\s+)?|mv\\s+\\S+\\s+|cp\\s+\\S+\\s+)["']?(?:${escapedPath}|${escapedRelativePath})["']?(\\s|$)`).test(
-    command,
-  );
+  return new RegExp(
+    `(>|>>|tee\\s+(?:-a\\s+)?|mv\\s+\\S+\\s+|cp\\s+\\S+\\s+)["']?(?:${escapedPath}|${escapedRelativePath})["']?(\\s|$)`,
+  ).test(command);
 }
 
 function commandReadsFile(command) {
@@ -768,7 +797,9 @@ function pathsEqual(left, right) {
 
 function shellRelativePath(filePath) {
   const relativePath = relative(parentWorkingDirectory(), filePath);
-  return relativePath && !relativePath.startsWith("..") && !relativePath.startsWith(`..${sep}`) ? relativePath : filePath;
+  return relativePath && !relativePath.startsWith("..") && !relativePath.startsWith(`..${sep}`)
+    ? relativePath
+    : filePath;
 }
 
 function escapeRegExp(value) {
@@ -1052,7 +1083,10 @@ async function sendStorageFile(response, document, storagePath) {
 async function writeStorageFile(document, request) {
   const bytes = await readBody(request, requestBodyLimitBytes);
   const directory = join(dirname(document.filePath), "assets");
-  const fileName = uniqueStorageFileName(readFileNameHeader(request), readContentTypeHeader(request));
+  const fileName = uniqueStorageFileName(
+    readFileNameHeader(request),
+    readContentTypeHeader(request),
+  );
   const filePath = join(directory, fileName);
 
   await mkdir(directory, { recursive: true });
@@ -1077,7 +1111,10 @@ function readFileNameHeader(request) {
 }
 
 function readContentTypeHeader(request) {
-  return readHeader(request, "content-type").split(";")[0].trim().toLowerCase() || "application/octet-stream";
+  return (
+    readHeader(request, "content-type").split(";")[0].trim().toLowerCase() ||
+    "application/octet-stream"
+  );
 }
 
 function readHeader(request, name) {
@@ -1097,12 +1134,15 @@ function resolveStoragePath(document, storagePath) {
   const filePath = storagePath.startsWith("file:")
     ? fileURLToPath(new URL(storagePath))
     : isAbsolute(storagePath)
-    ? resolve(storagePath)
-    : resolve(documentDirectory, storagePath);
+      ? resolve(storagePath)
+      : resolve(documentDirectory, storagePath);
   const relativePath = relative(documentDirectory, filePath);
 
   if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new CanvasError("storage_path_outside_document", "Storage files must live beside the markdown document.");
+    throw new CanvasError(
+      "storage_path_outside_document",
+      "Storage files must live beside the markdown document.",
+    );
   }
 
   return filePath;

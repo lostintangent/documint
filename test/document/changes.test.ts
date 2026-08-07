@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { findDocumentChanges } from "@/document";
+import {
+  createDocument,
+  createTableBlock,
+  createTableCell,
+  createTableRow,
+  createText,
+  findDocumentChanges,
+} from "@/document";
 import { parseDocument } from "@/markdown";
 
 describe("document changes", () => {
@@ -200,17 +207,57 @@ describe("document changes", () => {
     );
   });
 
+  test("retains a terminal 64 changes but aborts when another target remains", () => {
+    expect(findTableAlignmentChanges(64)).toHaveLength(64);
+    expect(findTableAlignmentChanges(65)).toEqual([]);
+  });
+
+  test("returns changes below the work budget and none at the exact limit", () => {
+    const belowBudget = findDocumentChanges(
+      parse(`${"a".repeat(16_896)}\n`),
+      parse(`${"b".repeat(16_897)}\n`),
+    );
+    const atBudget = findDocumentChanges(
+      parse(`Stable\n\n${"a".repeat(16_641)}\n`),
+      parse(`Stable\n\n${"b".repeat(16_897)}\n`),
+    );
+
+    expect(belowBudget).toHaveLength(1);
+    expect(atBudget).toEqual([]);
+  });
+
   test("returns no targetable changes when diff work exceeds the budget", () => {
     const previous = `Alpha ${"a".repeat(140_000)}\n`;
     const next = `Alpine ${"b".repeat(140_000)}\n`;
 
     expect(findDocumentChanges(parse(previous), parse(next))).toEqual([]);
   });
-
 });
 
 function parse(markdown: string) {
   return parseDocument(markdown);
+}
+
+function findTableAlignmentChanges(cellCount: number) {
+  const row = createTableRow(
+    Array.from({ length: cellCount }, (_, index) =>
+      createTableCell([createText(`Cell ${index + 1}`)]),
+    ),
+  );
+  const previous = createDocument([
+    createTableBlock({
+      align: Array.from({ length: cellCount }, () => null),
+      rows: [row],
+    }),
+  ]);
+  const next = createDocument([
+    createTableBlock({
+      align: Array.from({ length: cellCount }, (_, index) => (index === 0 ? "left" : null)),
+      rows: [row],
+    }),
+  ]);
+
+  return findDocumentChanges(previous, next);
 }
 
 function createParagraphDocument(

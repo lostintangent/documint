@@ -144,7 +144,9 @@ function collectContainerContextCandidates(thread: CommentThread, container: Anc
   for (const range of collectTextAnchorCandidates([container], thread.anchor, {
     estimatedLength: originalLength,
   })) {
-    if (!isAcceptableContextRepairCandidate(thread, container, range.startOffset, range.endOffset)) {
+    if (
+      !isAcceptableContextRepairCandidate(thread, container, range.startOffset, range.endOffset)
+    ) {
       continue;
     }
 

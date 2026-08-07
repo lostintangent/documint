@@ -258,10 +258,7 @@ describe("computed sprigs", () => {
     ]);
 
     expect(
-      resolvedPresence?.map((presence) => [
-        presence.id,
-        presence.isOnUnresolvedCommentThread,
-      ]),
+      resolvedPresence?.map((presence) => [presence.id, presence.isOnUnresolvedCommentThread]),
     ).toEqual([
       ["unresolved-user", true],
       ["resolved-user", false],

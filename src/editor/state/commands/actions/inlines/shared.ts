@@ -11,10 +11,7 @@ import {
   type Block,
   type Inline,
 } from "@/document";
-import {
-  editorInlineTextLength,
-  inlineNodesWithEditorRanges,
-} from "@/editor/text/inline-offsets";
+import { editorInlineTextLength, inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
 import { target, type PathSelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import type { InlineContainer } from "../../context";

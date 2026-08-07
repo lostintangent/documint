@@ -14,9 +14,7 @@ describe("Inert leaf blocks", () => {
     }
 
     expect(isInertBlock(divider)).toBe(true);
-    expect(previousBlockInFlow(state.documentIndex, divider.path)?.block.type).toBe(
-      "paragraph",
-    );
+    expect(previousBlockInFlow(state.documentIndex, divider.path)?.block.type).toBe("paragraph");
     expect(nextBlockInFlow(state.documentIndex, divider.path)?.block.type).toBe("paragraph");
   });
 

@@ -134,10 +134,7 @@ describe("decoration text edit remapping", () => {
         insertedLength: 2,
         startOffset: 5,
       }),
-    ).toEqual([
-      ranges[0],
-      { color: "green", endOffset: 14, path: "root.0", startOffset: 11 },
-    ]);
+    ).toEqual([ranges[0], { color: "green", endOffset: 14, path: "root.0", startOffset: 11 }]);
   });
 
   test("shifts ranges after a deletion and preserves surviving range fragments", () => {
@@ -181,10 +178,7 @@ describe("decoration text edit remapping", () => {
 
   test("patches only the edited path in the decoration index", () => {
     const previous = new Map([
-      [
-        "root.0",
-        [{ color: "blue", endOffset: 6, path: "root.0", startOffset: 3 }],
-      ],
+      ["root.0", [{ color: "blue", endOffset: 6, path: "root.0", startOffset: 3 }]],
       ["root.1", [{ color: "red", endOffset: 4, path: "root.1", startOffset: 0 }]],
     ]);
 
@@ -197,10 +191,7 @@ describe("decoration text edit remapping", () => {
 
     expect(next).toEqual(
       new Map([
-        [
-          "root.0",
-          [{ color: "blue", endOffset: 8, path: "root.0", startOffset: 5 }],
-        ],
+        ["root.0", [{ color: "blue", endOffset: 8, path: "root.0", startOffset: 5 }]],
         ["root.1", [{ color: "red", endOffset: 4, path: "root.1", startOffset: 0 }]],
       ]),
     );

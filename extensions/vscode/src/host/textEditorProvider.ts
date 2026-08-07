@@ -172,7 +172,7 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
 </head>
 <body>
 	<div id="root"></div>
-	<script nonce="${nonce}" type="module" src="${scriptUri}"></script>
+	<script nonce="${nonce}" type="module" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
   }

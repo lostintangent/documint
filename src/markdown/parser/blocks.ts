@@ -190,7 +190,7 @@ const blockReaders: BlockReader[] = [
 //     the subsystem boundary).
 // Order isn't significant — every consumer uses `.includes(char)`.
 export const blockTriggerLeadChars = [
-  ...new Set(blockReaders.flatMap((reader) => [...reader.leadChars])),
+  ...new Set(blockReaders.flatMap((reader) => Array.from(reader.leadChars))),
 ].join("");
 
 const defaultContext: MarkdownParseContext = {
@@ -595,7 +595,9 @@ function interruptsParagraph(line: string, content: string, context: MarkdownPar
   // for readers that interpret paragraph-interrupt differently than their
   // dispatcher entry (today: tables).
   return blockReaders.some((reader) =>
-    (reader.interruptsParagraph ?? reader.canStart)(line, content, context),
+    reader.interruptsParagraph
+      ? reader.interruptsParagraph(line, content, context)
+      : reader.canStart(line, content, context),
   );
 }
 

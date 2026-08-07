@@ -36,7 +36,10 @@ export type DocumentAnchorTarget = {
 
 // Reference-stable comparison hooks use to skip leaf re-renders when the
 // underlying anchor target hasn't moved.
-export function areDocumentAnchorTargetsEqual(previous: DocumentAnchorTarget, next: DocumentAnchorTarget) {
+export function areDocumentAnchorTargetsEqual(
+  previous: DocumentAnchorTarget,
+  next: DocumentAnchorTarget,
+) {
   return (
     previous.anchor.path === next.anchor.path &&
     previous.anchor.offset === next.anchor.offset &&

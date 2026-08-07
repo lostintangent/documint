@@ -41,7 +41,11 @@ describe("editor inline offsets", () => {
       createText(" tail"),
     ];
 
-    expect([image, mention, resource].map(editorInlineText)).toEqual(["\uFFFC", "\uFFFC", "\uFFFC"]);
+    expect([image, mention, resource].map(editorInlineText)).toEqual([
+      "\uFFFC",
+      "\uFFFC",
+      "\uFFFC",
+    ]);
     expect(editorInlineText(createLineBreak())).toBe("\n");
     expect(editorInlineText(raw)).toBe("<x>");
     expect(editorInlineTextLength(link)).toBe(3);
@@ -67,9 +71,7 @@ describe("editor inline offsets", () => {
 
     const unmarkedTextRuns = [...inlineNodesWithEditorRanges(nodes)].flatMap(
       ({ node, start, end }) =>
-        node.type === "text" && node.marks.length === 0
-          ? [{ end, start, text: node.text }]
-          : [],
+        node.type === "text" && node.marks.length === 0 ? [{ end, start, text: node.text }] : [],
     );
 
     expect(unmarkedTextRuns).toEqual([

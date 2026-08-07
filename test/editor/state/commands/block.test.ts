@@ -202,13 +202,8 @@ describe("Block commands", () => {
     const reopened = setup(markdown);
 
     expect(markdown).toBe("Paragraph\n\n&#x20;body.\n");
-    expect(indexedTextEntries(reopened).map((path) => path.text)).toEqual([
-      "Paragraph",
-      " body.",
-    ]);
-    expect(indexedTextEntries(reopened).some((path) => path.text.includes("&#x20;"))).toBe(
-      false,
-    );
+    expect(indexedTextEntries(reopened).map((path) => path.text)).toEqual(["Paragraph", " body."]);
+    expect(indexedTextEntries(reopened).some((path) => path.text.includes("&#x20;"))).toBe(false);
   });
 
   test("forward delete at end of a non-empty paragraph merges the next paragraph into it", () => {
@@ -268,9 +263,7 @@ describe("Block commands", () => {
     const nextParagraph = getPath(state, "Second");
 
     expect(toMarkdown(state)).toBe("First\n\nSecond\n");
-    expect(indexedTextEntries(state).filter((container) => container.text === "")).toHaveLength(
-      0,
-    );
+    expect(indexedTextEntries(state).filter((container) => container.text === "")).toHaveLength(0);
     expect(state.selection.focus.path).toBe(nextParagraph.path);
     expect(state.selection.focus.offset).toBe(0);
   });

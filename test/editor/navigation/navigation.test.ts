@@ -84,7 +84,7 @@ test("moves horizontally across images as atomic inline objects", () => {
     throw new Error("Expected paragraph container");
   }
 
-  const imageRun = ((container).inlines ?? []).find((run) => run.node.type === "image");
+  const imageRun = (container.inlines ?? []).find((run) => run.node.type === "image");
 
   if (!imageRun) {
     throw new Error("Expected image run");
@@ -141,12 +141,9 @@ test("extends the selection to the end of the current line", () => {
   const state = setup("alpha beta gamma");
   const container = getPath(state, "alpha beta gamma");
   const layout = layoutAt(state, 90);
-  const nextState = moveCaretToLineBoundary(
-    placeAt(state, container, "start"),
-    layout,
-    "End",
-    { extendSelection: true },
-  );
+  const nextState = moveCaretToLineBoundary(placeAt(state, container, "start"), layout, "End", {
+    extendSelection: true,
+  });
 
   expect(nextState.selection.anchor.path).toBe(container.path);
   expect(nextState.selection.anchor.offset).toBe(0);
@@ -179,7 +176,10 @@ test("moves horizontally across table cells and out of the table", () => {
   const after = requirePathByText(state.documentIndex, "after");
 
   const toPrevious = moveCaretHorizontally(setSelection(state, { offset: 0, path: firstCell }), -1);
-  const toSecondCell = moveCaretHorizontally(setSelection(state, { offset: 1, path: firstCell }), 1);
+  const toSecondCell = moveCaretHorizontally(
+    setSelection(state, { offset: 1, path: firstCell }),
+    1,
+  );
   const outOfTable = moveCaretHorizontally(setSelection(state, { offset: 1, path: lastCell }), 1);
 
   expect(toPrevious.selection.focus).toEqual({ offset: "before".length, path: before });

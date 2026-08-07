@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import tailwindPlugin from "bun-plugin-tailwind";
 
 const projectRoot = join(import.meta.dir, "../../..");
 const stylesheet = join(projectRoot, "src/component/overlays/styles.css");
@@ -17,6 +16,8 @@ export function compileOverlayStyles(): string {
 }
 
 async function emitOverlayStyles(): Promise<void> {
+  // Loading Tailwind only in the child keeps Bun's macro sandbox from initializing the plugin.
+  const { default: tailwindPlugin } = await import("bun-plugin-tailwind");
   const build = await Bun.build({
     entrypoints: [stylesheet],
     plugins: [tailwindPlugin],

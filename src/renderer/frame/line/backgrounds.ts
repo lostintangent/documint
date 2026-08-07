@@ -7,10 +7,7 @@ import {
 } from "@/editor/layout";
 import type { BlockFlashFrame } from "../../effects";
 import type { ResolvedEditorTheme } from "@/types";
-import {
-  resolveTableCellChromeFrame,
-  type TableCellChromeFrame,
-} from "../chrome/table";
+import { resolveTableCellChromeFrame, type TableCellChromeFrame } from "../chrome/table";
 import {
   resolveDocumentChangeBackgroundColor,
   resolveDocumentChangeOpacity,
@@ -111,8 +108,7 @@ function resolveCodeBlockBackgroundFrame(
   const right = Math.max(left, layout.width - layout.options.paddingX);
 
   return {
-    height:
-      containerBounds.bottom - containerBounds.top + CODE_BLOCK_BACKGROUND_PADDING_Y * 2,
+    height: containerBounds.bottom - containerBounds.top + CODE_BLOCK_BACKGROUND_PADDING_Y * 2,
     left,
     top: containerBounds.top - CODE_BLOCK_BACKGROUND_PADDING_Y,
     width: right - left,

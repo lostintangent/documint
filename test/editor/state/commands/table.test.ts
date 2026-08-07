@@ -104,7 +104,11 @@ function inFirstCell(state: ReturnType<typeof stateWithTable>) {
   return placeAt(state, path, "start");
 }
 
-function requireTableCellPath(state: ReturnType<typeof setup>, rowIndex: number, cellIndex: number) {
+function requireTableCellPath(
+  state: ReturnType<typeof setup>,
+  rowIndex: number,
+  cellIndex: number,
+) {
   const table = state.documentIndex.blocks.find((entry) => entry.kind === "cells");
   const cell = table?.tableCellRows[rowIndex]?.[cellIndex];
 
@@ -120,8 +124,9 @@ describe("Table insertion", () => {
     const state = stateWithTable();
 
     expect(toMarkdown(state)).toContain("|");
-    expect(indexedTextEntries(state).filter((entry) => entry.tableCell != null).length)
-      .toBeGreaterThanOrEqual(2);
+    expect(
+      indexedTextEntries(state).filter((entry) => entry.tableCell != null).length,
+    ).toBeGreaterThanOrEqual(2);
     expect(state.selection.focus.path).toBe(requireTableCellPath(state, 0, 0));
   });
 });

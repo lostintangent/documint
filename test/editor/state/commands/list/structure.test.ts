@@ -466,9 +466,7 @@ describe("List structure", () => {
     expect(toMarkdown(listState)).toBe("- onetwo\n");
 
     let blankListState = setup("- one\n-\n- two\n");
-    const emptyItem = indexedTextEntries(blankListState).find(
-      (container) => container.text === "",
-    );
+    const emptyItem = indexedTextEntries(blankListState).find((container) => container.text === "");
 
     if (!emptyItem) {
       throw new Error("Expected blank list item");
@@ -508,9 +506,7 @@ describe("List structure", () => {
       throw new Error("Expected task list item");
     }
 
-    const listItemPath = state.documentIndex.blocks.find(
-      (entry) => entry.block === listItem,
-    )?.path;
+    const listItemPath = state.documentIndex.blocks.find((entry) => entry.block === listItem)?.path;
     const toggled = listItemPath ? toggleTask(state, listItemPath) : null;
 
     if (!toggled) {

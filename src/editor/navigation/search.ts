@@ -64,7 +64,7 @@ function foldTextWithOffsets(text: string): SearchText {
   const startOffsets: number[] = [];
   const endOffsets: number[] = [];
 
-  for (let offset = 0; offset < text.length; ) {
+  for (let offset = 0; offset < text.length;) {
     const char = text.codePointAt(offset);
     if (char === undefined) break;
 

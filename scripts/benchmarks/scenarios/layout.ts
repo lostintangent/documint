@@ -22,10 +22,7 @@ export function createLayoutScenarios(fixtures: {
   } satisfies Record<LayoutFixtureSize, typeof longState>;
   const scrollViewport = { height: BENCHMARK_VIEWPORT.height };
   const scrollStepTop = BENCHMARK_VIEWPORT.height;
-  const scrollOffsets = Array.from(
-    { length: 6 },
-    (_, index) => index * BENCHMARK_VIEWPORT.height,
-  );
+  const scrollOffsets = Array.from({ length: 6 }, (_, index) => index * BENCHMARK_VIEWPORT.height);
   const canvasScenarios = [
     { id: "layout_canvas", iterations: 100, size: "long" },
     { id: "layout_canvas_xlarge", iterations: 50, size: "xlarge" },
@@ -61,24 +58,19 @@ export function createLayoutScenarios(fixtures: {
       ),
     ),
     ...scrollScenarios.map(({ id, iterations, size }) =>
-      createBenchmarkScenario(
-        "layout",
-        id,
-        iterations,
-        () => {
-          for (const top of scrollOffsets) {
-            void createEditorLayoutState(
-              statesBySize[size],
-              {
-                ...scrollViewport,
-                top,
-                width: BENCHMARK_VIEWPORT.width,
-              },
-              layoutCache,
-            );
-          }
-        },
-      ),
+      createBenchmarkScenario("layout", id, iterations, () => {
+        for (const top of scrollOffsets) {
+          void createEditorLayoutState(
+            statesBySize[size],
+            {
+              ...scrollViewport,
+              top,
+              width: BENCHMARK_VIEWPORT.width,
+            },
+            layoutCache,
+          );
+        }
+      }),
     ),
     ...scrollStepScenarios.map(({ id, iterations, size }) =>
       createBenchmarkScenario(
@@ -94,7 +86,7 @@ export function createLayoutScenarios(fixtures: {
               width: BENCHMARK_VIEWPORT.width,
             },
             layoutCache,
-        ),
+          ),
       ),
     ),
   ];

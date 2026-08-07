@@ -247,6 +247,6 @@ function formatValue(value: unknown) {
   try {
     return JSON.stringify(value);
   } catch {
-    return String(value);
+    return Object.prototype.toString.call(value);
   }
 }

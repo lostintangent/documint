@@ -98,12 +98,7 @@ export function runBenchmarkScenario(
     );
   }
 
-  return runBudgetedBenchmark(
-    budgets,
-    scenario.id,
-    scenario.iterations,
-    scenario.run,
-  );
+  return runBudgetedBenchmark(budgets, scenario.id, scenario.iterations, scenario.run);
 }
 
 export function runBenchmarkScenarios(

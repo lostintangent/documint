@@ -162,8 +162,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     accent,
     activeBlockBackground:
       theme.activeBlockBackground ?? `color-mix(in srgb, ${accent} 12%, transparent)`,
-    activeBlockFlash:
-      theme.activeBlockFlash ?? `color-mix(in srgb, ${accent} 22%, transparent)`,
+    activeBlockFlash: theme.activeBlockFlash ?? `color-mix(in srgb, ${accent} 22%, transparent)`,
     // Blockquote rules tint with accent. Dark themes need higher alpha because
     // alpha'd colors composite weaker over dark backgrounds — a 22% accent
     // would barely register on a near-black bg. The active variant bumps
@@ -252,8 +251,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     // mentionText is consumed via direct `fillStyle`, never JS-blended, so
     // a color-mix() string is safe here.
     mentionText:
-      theme.mentionText ??
-      (isLight ? linkText : `color-mix(in srgb, ${linkText} 80%, ${text})`),
+      theme.mentionText ?? (isLight ? linkText : `color-mix(in srgb, ${linkText} 80%, ${text})`),
     paddingX: theme.paddingX ?? DEFAULT_THEME_PADDING_X,
     paddingY: theme.paddingY ?? DEFAULT_THEME_PADDING_Y,
     paragraphText: theme.paragraphText ?? text,

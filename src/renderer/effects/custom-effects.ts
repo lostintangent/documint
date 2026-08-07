@@ -1,8 +1,4 @@
-import type {
-  DocumintEffectHandler,
-  DocumintEffects,
-  EffectEnvironment,
-} from "@/types";
+import type { DocumintEffectHandler, DocumintEffects, EffectEnvironment } from "@/types";
 import type { EffectFrame } from "./types";
 
 type EffectArgs<TKind extends keyof DocumintEffects> = Omit<
@@ -24,7 +20,9 @@ export function createPaintEffect(
     const handler = effects?.[frame.customEffectName] as
       | DocumintEffectHandler<EffectContextFor<typeof frame.customEffectName>>
       | undefined;
-    const effectContext = { ...environment, ...args } as EffectContextFor<typeof frame.customEffectName>;
+    const effectContext = { ...environment, ...args } as EffectContextFor<
+      typeof frame.customEffectName
+    >;
 
     const paintDefaultVisual = () => {
       if (frame.defaultEnabled) {

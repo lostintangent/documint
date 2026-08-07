@@ -85,15 +85,13 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
             {status}
           </span>
         )}
-        {status && showDirection && (
-          // `!h-3` overrides `LeafDivider`'s default `h-5`; the
-          // `presence-divider` class (in `overlays/styles.css`) handles the opacity
-          // reveal that runs alongside the status text's slide-out.
-          <LeafDivider
-            className="presence-divider self-center !h-3"
-            orientation="vertical"
-          />
-        )}
+        {status &&
+          showDirection && (
+            // `!h-3` overrides `LeafDivider`'s default `h-5`; the
+            // `presence-divider` class (in `overlays/styles.css`) handles the opacity
+            // reveal that runs alongside the status text's slide-out.
+            <LeafDivider className="presence-divider self-center !h-3" orientation="vertical" />
+          )}
         {showDirection && (
           <span className="inline-flex items-center h-full px-1.5 text-leaf-text">
             <DirectionIcon size={14} strokeWidth={2.3} />

@@ -98,9 +98,7 @@ test("resolves mode-aware inline code defaults based on background luminance", (
     background: "#ffffff",
     text: "#1f2937",
   });
-  expect(lightResolved.inlineCodeBackground).toBe(
-    "color-mix(in srgb, #1f2937 8%, transparent)",
-  );
+  expect(lightResolved.inlineCodeBackground).toBe("color-mix(in srgb, #1f2937 8%, transparent)");
   expect(lightResolved.inlineCodeText).toBe("#7c2d12");
 
   const darkResolved = resolveEditorTheme({

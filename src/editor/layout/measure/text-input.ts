@@ -38,9 +38,7 @@ export function resolveLayoutTextInputAtPath(documentIndex: DocumentIndex, path:
     : null;
 }
 
-export function tableCellLayoutTextInput(
-  cell: IndexedTableCell,
-): LayoutTextInput {
+export function tableCellLayoutTextInput(cell: IndexedTableCell): LayoutTextInput {
   return {
     inlines: cell.inlines,
     kind: "inlines",

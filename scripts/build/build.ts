@@ -11,8 +11,8 @@ import tailwindPlugin from "bun-plugin-tailwind";
 //     time. Used by `.github/workflows/ci.yml` to confirm both entry
 //     points still bundle on every push / PR.
 //
-//   - `prod` — publishable library artifact. Minified library bundle
-//     plus `dist/index.d.ts` from `dts-bundle-generator`. Used by
+//   - `prod` — publishable minified library bundle. `vp pack` generates
+//     `dist/index.d.ts` before this script runs. Used by
 //     `.github/workflows/publish.yml` (and the `build:prod` script
 //     locally for inspection of the prod-shaped bundle).
 //
@@ -69,50 +69,7 @@ if (libraryBuild) {
   }
 }
 
-// Step 2 (prod): Bundle type declarations into a single dist/index.d.ts
-if (mode === "prod" && libraryBuild) {
-  // Remove stale artifacts from prior builds before writing the declaration bundle.
-  const staleArtifacts = [
-    "dist/comments",
-    "dist/component",
-    "dist/document",
-    "dist/editor",
-    "dist/index.d.ts",
-    "dist/index.js.map",
-    "dist/markdown",
-  ];
-  for (const path of staleArtifacts) {
-    rmSync(path, { recursive: true, force: true });
-  }
-
-  console.log("\nGenerating type declarations...");
-
-  const dts = Bun.spawnSync(
-    [
-      "dts-bundle-generator",
-      "--project",
-      "tsconfig.declarations.json",
-      "--out-file",
-      "dist/index.d.ts",
-      "--no-banner",
-      "--no-check",
-      "--export-referenced-types",
-      "false",
-      "src/index.ts",
-    ],
-    {
-      stdio: ["inherit", "inherit", "inherit"],
-    },
-  );
-
-  if (dts.exitCode !== 0) {
-    throw new Error("Type declaration generation failed.");
-  }
-
-  console.log("Package build complete. Ready to publish.");
-}
-
-// Step 3 (dev + playground): Build the playground app.
+// Step 2 (dev + playground): Build the playground app.
 if (mode !== "prod") {
   rmSync("dist/playground", { recursive: true, force: true });
 
