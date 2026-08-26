@@ -44,6 +44,15 @@ test("resolves mode-aware semantic comment defaults based on background luminanc
   expect(darkResolved.commentHighlightResolvedActive).toBe("#4ade80");
 });
 
+test("classifies OKLCH backgrounds like equivalent hex colors", () => {
+  expect(resolveModeAwareCommentColor("oklch(1 0 0)")).toBe(
+    resolveModeAwareCommentColor("#ffffff"),
+  );
+  expect(resolveModeAwareCommentColor("oklch(0.145 0 0)")).toBe(
+    resolveModeAwareCommentColor("#000000"),
+  );
+});
+
 test("derives external change colors from semantic diff tokens", () => {
   const lightResolved = resolveEditorTheme({
     ...lightTheme,
@@ -128,3 +137,12 @@ test("mentionBackground falls back to resolved inline code background when both 
   });
   expect(darkResolved.mentionBackground).toBe("rgba(251, 191, 36, 0.16)");
 });
+
+function resolveModeAwareCommentColor(background: string) {
+  return resolveEditorTheme({
+    accent: "#c2185b",
+    background,
+    muted: "#737373",
+    text: "#111111",
+  }).commentHighlightResolved;
+}

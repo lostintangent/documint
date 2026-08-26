@@ -1,3 +1,8 @@
+## 🗓️ v0.0.35 (08-26-26)
+
+- Syntax triggers can now be used on non-empty lines
+- Theme colors now support `oklch` values
+
 ## 🗓️ v0.0.34 (06-26-26)
 
 - Introduced keybindings/support for navigating and deleting by word

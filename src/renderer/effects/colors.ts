@@ -6,9 +6,18 @@ export const transparentCanvasColor = "rgba(0, 0, 0, 0)";
 
 export type CanvasColor = [number, number, number, number];
 
+// Preserve Documint's established straight-alpha interpolation for colors we
+// can resolve numerically. CSS color-mix premultiplies alpha, which would
+// visibly change existing fades; use it only as the native fallback for modern
+// CSS color formats such as OKLCH.
 export function blendCanvasColors(fromColor: string, toColor: string, progress: number) {
-  const from = resolveCanvasColor(fromColor);
-  const to = resolveCanvasColor(toColor);
+  const from = resolveOptionalCanvasColor(fromColor);
+  const to = resolveOptionalCanvasColor(toColor);
+
+  if (!from || !to) {
+    const toPercentage = progress * 100;
+    return `color-mix(in srgb, ${fromColor} ${100 - toPercentage}%, ${toColor} ${toPercentage}%)`;
+  }
 
   return `rgba(${roundColorChannel(mixColorChannel(from[0], to[0], progress))}, ${roundColorChannel(
     mixColorChannel(from[1], to[1], progress),

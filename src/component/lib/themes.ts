@@ -105,11 +105,6 @@ export const darkTheme: EditorTheme = {
   blockquoteText: "#cbd5e1",
   caret: "#f8fafc",
   codeText: "#dbeafe",
-  // Explicit rgba override of the resolver's color-mix default. The resource
-  // icon background pulse JS-blends commentHighlight via `blendCanvasColors`,
-  // whose parser doesn't understand color-mix() — leaving this unset would
-  // resolve to transparent in that one paint effect. Other consumers don't care,
-  // but it's cheap to pin the value here.
   commentHighlight: "rgba(77, 147, 248, 0.32)",
   leafShadow: "0 18px 44px rgba(2, 6, 23, 0.42), 0 0 0 1px rgba(148, 163, 184, 0.06)",
   muted: "#64748b",
@@ -271,12 +266,16 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
 // Classifies a theme as light or dark by the background's perceived
 // brightness, driving mode-aware semantic defaults (pastel vs alpha'd
 // comments, warm-orange inline code text, dark vs slightly-lifted code
-// blocks, etc.). Recognizes hex and rgb()/rgba(); any other format (CSS
-// keyword, hsl(), color-mix(), ...) falls back to "dark", whose alpha'd
-// defaults composite acceptably over any background if the heuristic
-// misclassifies.
+// blocks, etc.). Recognizes hex, rgb()/rgba(), and OKLCH; other formats
+// fall back to dark defaults.
 function isLightThemeBackground(background: string): boolean {
   const trimmed = background.trim();
+  const oklchLightness = resolveOklchLightness(trimmed);
+  if (oklchLightness !== null) {
+    // Neutral OKLCH L=0.6 is approximately the sRGB midpoint used below.
+    return oklchLightness > 0.6;
+  }
+
   let r: number;
   let g: number;
   let b: number;
@@ -299,6 +298,13 @@ function isLightThemeBackground(background: string): boolean {
 
   // Rec. 601 luma weights; threshold at the midpoint of [0, 255].
   return r * 0.299 + g * 0.587 + b * 0.114 > 128;
+}
+
+function resolveOklchLightness(color: string): number | null {
+  const match = /^oklch\(\s*([+-]?(?:\d+\.?\d*|\.\d+))(%?)(?:\s|$)/i.exec(color);
+  if (!match) return null;
+  const lightness = Number(match[1]);
+  return Number.isFinite(lightness) ? lightness / (match[2] ? 100 : 1) : null;
 }
 
 function backgroundTint(color: string, alphaPercent: number): string {

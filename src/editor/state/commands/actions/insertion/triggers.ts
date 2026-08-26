@@ -1,32 +1,34 @@
 import {
   createBlockquoteBlock,
   createDividerBlock,
-  createHeadingTextBlock,
+  createHeadingBlock,
   createListBlock,
   createListItemBlock,
-  createParagraphTextBlock,
   rebuildListBlock,
+  rebuildListItemBlock,
+  rebuildTextBlock,
   type Block,
   type HeadingBlock,
+  type ParagraphBlock,
 } from "@/document";
 import type { DocumentIndex } from "../../../index/types";
 import { resolveEditorTextAtPath, resolveIndexedBlockContainingPath } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import { normalizeSelection, target, type EditorSelection } from "../../../selection";
 import {
-  replaceListItemLeadingParagraphText,
   resolveListItemContextFromSelection,
   resolveRootTextBlockContextFromSelection,
   type ListItemContext,
 } from "../../context";
+import { spliceInlineNodes } from "../inlines/shared";
 
 // Markdown-shortcut trigger system.
 //
 // Most insertions splice the typed characters into the current
 // selection. A small set of *trigger syntaxes* upgrade an insertion
-// into a structural edit instead — typing `# ` in an empty paragraph
-// creates a heading; typing `1. ` in a bullet item rewrites the list
-// as ordered; etc.
+// into a structural edit instead — typing `# ` at the start of a
+// paragraph creates a heading while preserving any suffix content;
+// typing `1. ` in a bullet item rewrites the list as ordered; etc.
 //
 // Triggers are grouped by the cursor context they fire in. The entry
 // point resolves that context once, then walks only the relevant
@@ -37,16 +39,19 @@ import {
 //   - heading         → TRANSFORM heading depth.
 //   - list-item       → TRANSFORM list shape (bullet / ordered / task).
 //
-// All trigger patterns are precompiled at module load. The hot path
-// on a typical keystroke is: a path text lookup, a block-type field
-// check, a single context resolution, and (for root-paragraph) a
-// single-character whitespace precheck before any regex walk.
+// All patterns are precompiled. Non-whitespace insertions return before index
+// lookups, and source inline content is only rebuilt after a pattern matches.
 
 export function resolveInsertionTrigger(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   text: string,
 ): EditorStateAction | null {
+  // The current insertion must supply the whitespace that completes a trigger.
+  if (!/\s$/.test(text)) {
+    return null;
+  }
+
   // Cross-path selections have no sensible trigger interpretation:
   // the post-replacement text would only contain the inserted
   // characters, dropping anything from the spanned paths.
@@ -92,10 +97,23 @@ function resolveInsertionRange(
 
 type RootIndexContext = { rootIndex: number };
 
+type RootParagraphContext = RootIndexContext & {
+  paragraph: ParagraphBlock;
+};
+
+type HeadingTriggerContext = RootIndexContext & {
+  heading: HeadingBlock;
+};
+
+type ListItemTriggerContext = {
+  itemContext: ListItemContext;
+  paragraph: ParagraphBlock;
+};
+
 type TriggerContext =
-  | ({ kind: "root-paragraph" } & RootIndexContext)
-  | ({ kind: "heading" } & RootIndexContext)
-  | { kind: "list-item"; item: ListItemContext };
+  | ({ kind: "root-paragraph" } & RootParagraphContext)
+  | ({ kind: "heading" } & HeadingTriggerContext)
+  | ({ kind: "list-item" } & ListItemTriggerContext);
 
 function resolveTriggerContext(
   documentIndex: DocumentIndex,
@@ -112,7 +130,11 @@ function resolveTriggerContext(
       // a non-root heading has no sensible depth-change transform.
       const rootBlock = resolveRootTextBlockContextFromSelection(documentIndex, selection);
       return rootBlock?.block.type === "heading"
-        ? { kind: "heading", rootIndex: rootBlock.rootIndex }
+        ? {
+            heading: rootBlock.block,
+            kind: "heading",
+            rootIndex: rootBlock.rootIndex,
+          }
         : null;
     }
     case "paragraph": {
@@ -120,11 +142,21 @@ function resolveTriggerContext(
       // wouldn't surface via the root-text-block resolver anyway.
       const listItem = resolveListItemContextFromSelection(documentIndex, selection);
       if (listItem) {
-        return { kind: "list-item", item: listItem };
+        return listItem.item.children[0] === block
+          ? {
+              itemContext: listItem,
+              kind: "list-item",
+              paragraph: block,
+            }
+          : null;
       }
       const rootBlock = resolveRootTextBlockContextFromSelection(documentIndex, selection);
       return rootBlock?.block.type === "paragraph"
-        ? { kind: "root-paragraph", rootIndex: rootBlock.rootIndex }
+        ? {
+            kind: "root-paragraph",
+            paragraph: rootBlock.block,
+            rootIndex: rootBlock.rootIndex,
+          }
         : null;
     }
     default:
@@ -141,22 +173,24 @@ function matchTriggerForContext(
   end: number,
   context: TriggerContext,
 ): EditorStateAction | null {
-  // Markdown shortcuts fire when the inserted text supplies the completing
-  // whitespace. A pre-existing suffix space must not turn a typed marker into
-  // a structural trigger after Enter splits before hidden whitespace.
-  if (text.length === 0 || !/\s/.test(text[text.length - 1]!)) {
-    return null;
-  }
-
-  const prospectiveText = textAtPath.slice(0, start) + text + textAtPath.slice(end);
+  const textThroughInsertion = textAtPath.slice(0, start) + text;
 
   switch (context.kind) {
     case "root-paragraph":
-      return matchAndApply(ROOT_PARAGRAPH_TRIGGERS, prospectiveText, context);
+      return matchAndApply(ROOT_PARAGRAPH_TRIGGERS, textThroughInsertion, () => ({
+        paragraph: trimTextBlockPrefix(context.paragraph, end),
+        rootIndex: context.rootIndex,
+      }));
     case "heading":
-      return matchAndApply(HEADING_TRIGGERS, prospectiveText, context);
+      return matchAndApply(HEADING_TRIGGERS, textThroughInsertion, () => ({
+        heading: trimTextBlockPrefix(context.heading, end),
+        rootIndex: context.rootIndex,
+      }));
     case "list-item":
-      return matchAndApply(LIST_ITEM_TRIGGERS, prospectiveText, context.item);
+      return matchAndApply(LIST_ITEM_TRIGGERS, textThroughInsertion, () => ({
+        itemContext: context.itemContext,
+        paragraph: trimTextBlockPrefix(context.paragraph, end),
+      }));
   }
 }
 
@@ -167,13 +201,13 @@ type Trigger<C> = {
 
 function matchAndApply<C>(
   triggers: readonly Trigger<C>[],
-  prospectiveText: string,
-  context: C,
+  textThroughInsertion: string,
+  resolveContext: () => C,
 ): EditorStateAction | null {
   for (const { pattern, apply } of triggers) {
-    const match = pattern.exec(prospectiveText);
+    const match = pattern.exec(textThroughInsertion);
     if (match) {
-      return apply(match, context);
+      return apply(match, resolveContext());
     }
   }
   return null;
@@ -194,13 +228,18 @@ function matchAndApply<C>(
 // Thematic break only triggers on `---` (the canonical form the
 // serializer emits) even though the parser also accepts `***` and
 // `___` for interop. New documents should converge on one syntax.
-const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
+//
+// Every pattern sees only text through the current insertion. Source inline
+// content is trimmed only after a pattern matches.
+const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootParagraphContext>[] = [
   {
     // Task list: `[ ] ` / `[x] ` / `[]` or `- [ ] ` / `- [x] ` / `- []`
     // (with optional leading indent).
-    pattern: compileCreatePattern(/(?:[-+*]\s+)?\[[ xX]?\]/, { allowIndent: true }),
-    apply: (match, { rootIndex }) =>
-      createListAction(rootIndex, {
+    pattern: compileTriggerPattern(/(?:[-+*]\s+)?\[[ xX]?\]/, {
+      allowIndent: true,
+    }),
+    apply: (match, { paragraph, rootIndex }) =>
+      createListAction(rootIndex, paragraph, {
         checked: match[1]!.toLowerCase().includes("x"),
         ordered: false,
         start: null,
@@ -208,15 +247,19 @@ const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
   },
   {
     // Bullet list: `- ` / `+ ` / `* ` (with optional leading indent).
-    pattern: compileCreatePattern(/[-+*]/, { allowIndent: true }),
-    apply: (_, { rootIndex }) =>
-      createListAction(rootIndex, { checked: null, ordered: false, start: null }),
+    pattern: compileTriggerPattern(/[-+*]/, { allowIndent: true }),
+    apply: (_, { paragraph, rootIndex }) =>
+      createListAction(rootIndex, paragraph, {
+        checked: null,
+        ordered: false,
+        start: null,
+      }),
   },
   {
     // Ordered list: `1. ` / `42. ` (with optional leading indent).
-    pattern: compileCreatePattern(/\d+\./, { allowIndent: true }),
-    apply: (match, { rootIndex }) =>
-      createListAction(rootIndex, {
+    pattern: compileTriggerPattern(/\d+\./, { allowIndent: true }),
+    apply: (match, { paragraph, rootIndex }) =>
+      createListAction(rootIndex, paragraph, {
         checked: null,
         ordered: true,
         start: Number(match[1]!.slice(0, -1)),
@@ -224,28 +267,40 @@ const ROOT_PARAGRAPH_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
   },
   {
     // Heading: `# ` through `###### `.
-    pattern: compileCreatePattern(/#{1,6}/, { allowIndent: false }),
-    apply: (match, { rootIndex }) =>
-      createHeadingAction(rootIndex, match[1]!.length as HeadingBlock["depth"], ""),
+    pattern: compileTriggerPattern(/#{1,6}/, { allowIndent: false }),
+    apply: (match, { paragraph, rootIndex }) =>
+      createHeadingAction(
+        rootIndex,
+        createHeadingBlock({
+          children: paragraph.children,
+          depth: match[1]!.length as HeadingBlock["depth"],
+        }),
+      ),
   },
   {
     // Blockquote: `> `.
-    pattern: compileCreatePattern(/>/, { allowIndent: false }),
-    apply: (_, { rootIndex }) => createBlockquoteAction(rootIndex),
+    pattern: compileTriggerPattern(/>/, { allowIndent: false }),
+    apply: (_, { paragraph, rootIndex }) => createBlockquoteAction(rootIndex, paragraph),
   },
   {
     // Thematic break: `--- `.
-    pattern: compileCreatePattern(/---/, { allowIndent: false }),
-    apply: (_, { rootIndex }) => createDividerAction(rootIndex),
+    pattern: compileTriggerPattern(/---/, { allowIndent: false }),
+    apply: (_, { paragraph, rootIndex }) => createDividerAction(rootIndex, paragraph),
   },
 ];
 
-const HEADING_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
+const HEADING_TRIGGERS: readonly Trigger<HeadingTriggerContext>[] = [
   {
     // Change heading depth by typing `#`s in front of existing heading text.
-    pattern: compileTransformPattern(/#{1,6}/),
-    apply: (match, { rootIndex }) =>
-      createHeadingAction(rootIndex, match[1]!.length as HeadingBlock["depth"], match[2]!),
+    pattern: compileTriggerPattern(/#{1,6}/, { allowIndent: true }),
+    apply: (match, { heading, rootIndex }) =>
+      createHeadingAction(
+        rootIndex,
+        createHeadingBlock({
+          children: heading.children,
+          depth: match[1]!.length as HeadingBlock["depth"],
+        }),
+      ),
   },
 ];
 
@@ -253,22 +308,22 @@ const HEADING_TRIGGERS: readonly Trigger<RootIndexContext>[] = [
 // so they're mutually exclusive and the order within this list is just
 // for readability. See the task-list note in `ROOT_PARAGRAPH_TRIGGERS`
 // for why task triggers off `[` rather than `[-+*]`.
-const LIST_ITEM_TRIGGERS: readonly Trigger<ListItemContext>[] = [
+const LIST_ITEM_TRIGGERS: readonly Trigger<ListItemTriggerContext>[] = [
   {
     // Convert to ordered list, preserving existing checked state.
-    pattern: compileTransformPattern(/\d+\./),
+    pattern: compileTriggerPattern(/\d+\./, { allowIndent: true }),
     apply: (match, ctx) =>
-      transformListAction(match, ctx, {
+      transformListAction(ctx, {
         ordered: true,
         start: 1,
-        checked: ctx.item.checked,
+        checked: ctx.itemContext.item.checked,
       }),
   },
   {
     // Convert to task list, reading the checkbox state from the typed marker.
-    pattern: compileTransformPattern(/\[[ xX]?\]/),
+    pattern: compileTriggerPattern(/\[[ xX]?\]/, { allowIndent: true }),
     apply: (match, ctx) =>
-      transformListAction(match, ctx, {
+      transformListAction(ctx, {
         ordered: false,
         start: null,
         checked: match[1]!.toLowerCase().includes("x"),
@@ -276,57 +331,48 @@ const LIST_ITEM_TRIGGERS: readonly Trigger<ListItemContext>[] = [
   },
   {
     // Convert to bullet list, clearing checked state.
-    pattern: compileTransformPattern(/[-+*]/),
-    apply: (match, ctx) =>
-      transformListAction(match, ctx, { ordered: false, start: null, checked: null }),
+    pattern: compileTriggerPattern(/[-+*]/, { allowIndent: true }),
+    apply: (_, ctx) => transformListAction(ctx, { ordered: false, start: null, checked: null }),
   },
 ];
 
 // ---- Pattern compilation (computed once, at module load) -------------------
 
-function compileCreatePattern(body: RegExp, options: { allowIndent: boolean }): RegExp {
-  // Entire path text (modulo optional indent) must be the trigger followed by
-  // a single terminating whitespace; nothing else.
+function compileTriggerPattern(body: RegExp, options: { allowIndent: boolean }): RegExp {
   const leading = options.allowIndent ? "\\s*" : "";
   return new RegExp(`^${leading}(${body.source})\\s$`);
 }
 
-function compileTransformPattern(body: RegExp): RegExp {
-  // Path text begins with the trigger plus whitespace; everything after the
-  // whitespace is preserved as the new block's text content.
-  return new RegExp(`^\\s*(${body.source})\\s(.+)$`);
-}
-
 // ---- Trigger action factories ----------------------------------------------
 
-function createHeadingAction(
-  rootIndex: number,
-  depth: HeadingBlock["depth"],
-  text: string,
-): EditorStateAction {
-  const heading = createHeadingTextBlock({ depth, text });
+function trimTextBlockPrefix(block: ParagraphBlock, suffixStart: number): ParagraphBlock;
+function trimTextBlockPrefix(block: HeadingBlock, suffixStart: number): HeadingBlock;
+function trimTextBlockPrefix(
+  block: HeadingBlock | ParagraphBlock,
+  suffixStart: number,
+): HeadingBlock | ParagraphBlock {
+  return suffixStart === 0
+    ? block
+    : rebuildTextBlock(block, spliceInlineNodes(block.children, 0, suffixStart, []));
+}
 
+function createHeadingAction(rootIndex: number, heading: HeadingBlock): EditorStateAction {
   return replaceRootWithBlocks(rootIndex, [heading], heading);
 }
 
-function createBlockquoteAction(rootIndex: number): EditorStateAction {
-  const paragraph = createParagraphTextBlock("");
-
+function createBlockquoteAction(rootIndex: number, paragraph: ParagraphBlock): EditorStateAction {
   return replaceRootWithBlocks(rootIndex, [createBlockquoteBlock([paragraph])], paragraph);
 }
 
-function createDividerAction(rootIndex: number): EditorStateAction {
-  const paragraph = createParagraphTextBlock("");
-
+function createDividerAction(rootIndex: number, paragraph: ParagraphBlock): EditorStateAction {
   return replaceRootWithBlocks(rootIndex, [createDividerBlock(), paragraph], paragraph);
 }
 
 function createListAction(
   rootIndex: number,
+  paragraph: ParagraphBlock,
   options: { checked: boolean | null; ordered: boolean; start: number | null },
 ): EditorStateAction {
-  const paragraph = createParagraphTextBlock("");
-
   return replaceRootWithBlocks(
     rootIndex,
     [
@@ -345,31 +391,27 @@ function createListAction(
   );
 }
 
-// Returns null when the list item's leading paragraph can't be rewritten
-// (e.g. its first child is a nested list rather than a paragraph). Callers
-// fall through to a plain splice in that case.
 function transformListAction(
-  match: RegExpExecArray,
-  context: ListItemContext,
+  context: ListItemTriggerContext,
   options: { ordered: boolean; start: number | null; checked: boolean | null },
-): EditorStateAction | null {
-  const updatedItem = replaceListItemLeadingParagraphText(context.item, match[2]!);
-  if (!updatedItem) {
-    return null;
-  }
-
+): EditorStateAction {
+  const itemContext = context.itemContext;
+  const updatedItem = rebuildListItemBlock(itemContext.item, [
+    context.paragraph,
+    ...itemContext.item.children.slice(1),
+  ]);
   const transformedItem = { ...updatedItem, checked: options.checked };
 
   return {
     kind: "replace-block",
     block: rebuildListBlock(
-      context.list,
-      context.list.items.map((item, index) =>
-        index === context.itemIndex ? transformedItem : item,
+      itemContext.list,
+      itemContext.list.items.map((item, index) =>
+        index === itemContext.itemIndex ? transformedItem : item,
       ),
       { ordered: options.ordered, start: options.start },
     ),
-    blockPath: context.listPath,
+    blockPath: itemContext.listPath,
     selection: target.block(transformedItem),
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "@lostintangent/documint",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "workspaces": [
     "extensions/*"
   ],
@@ -22,17 +22,17 @@
   },
   "scripts": {
     "dev": "bun --hot playground/index.html --hostname=0.0.0.0 --port=3003",
-    "build:dev": "bun run scripts/build/build.ts",
-    "build:prod": "vp pack && bun run scripts/build/build.ts --prod",
-    "build:playground": "bun run scripts/build/build.ts --playground",
+    "build:dev": "bun scripts/build/build.ts",
+    "build:prod": "vp pack && bun scripts/build/build.ts --prod",
+    "build:playground": "bun scripts/build/build.ts --playground",
     "vscode:package": "bun check && cd extensions/vscode && bun package",
     "vscode:install": "code-insiders --install-extension extensions/vscode/documint-*.vsix --force",
     "github:install": "root=\"$PWD\" && cd \"$root/extensions/github\" && bun run build && target=\"$HOME/.copilot/extensions/documint\" && mkdir -p \"$(dirname \"$target\")\" && rm -rf \"$target\" && cp -R \"$root/extensions/github\" \"$target\"",
-    "prepublishOnly": "bun run build:prod",
+    "prepublishOnly": "bun build:prod",
     "test": "bun test",
     "check": "vp check",
-    "benchmark": "bun run scripts/benchmarks/index.ts",
-    "benchmark:moby-dick": "bun run scripts/benchmarks/moby-dick.ts",
+    "benchmark": "bun scripts/benchmarks/index.ts",
+    "benchmark:moby-dick": "bun scripts/benchmarks/moby-dick.ts",
     "prepare": "vp config --no-agent"
   },
   "devDependencies": {
