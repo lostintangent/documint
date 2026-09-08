@@ -29,6 +29,9 @@ export function resolveHeadingRules(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
+    if (line.blockPath === null) {
+      continue;
+    }
     const block = resolveBlockByPath(editorState.documentIndex, line.blockPath);
 
     if (block?.type !== "heading" || (block.depth !== 1 && block.depth !== 2)) {
@@ -73,6 +76,9 @@ export function resolveBlockquoteRuleFrames(
 
   for (let index = startIndex; index < endIndex; index += 1) {
     const line = layout.lines[index]!;
+    if (line.blockPath === null) {
+      continue;
+    }
     const blockquoteEntry = findAncestorIndexedBlockByPath(
       editorState.documentIndex,
       line.blockPath,

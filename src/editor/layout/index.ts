@@ -5,6 +5,7 @@
 import type { EditorSelectionPoint, EditorState } from "../state";
 
 export type { DocumentLayout, DocumentLayoutOptions, LayoutRect } from "./measure";
+export type { MetadataLayout } from "./measure/metadata";
 export type { EditorLayoutState } from "./state";
 export type { DocumentCaretTarget as CaretTarget, InlineBounds } from "./query";
 

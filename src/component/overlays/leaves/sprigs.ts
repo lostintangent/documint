@@ -9,6 +9,8 @@
 
 import { isResolvedCommentThread } from "@/document";
 import {
+  isCanvasDirectActivationTarget,
+  isMetadataPath,
   isRootIndexedBlock,
   resolveEditorTextAtPath,
   resolveIndexedBlock,
@@ -150,6 +152,12 @@ export const selectionLeafSprig = createParameterizedSprig(
     handles,
     threads,
   ): SelectionLeaf | null => {
+    const state = _store.editor.getState();
+
+    if (isMetadataPath(state.selection.anchor.path) || isMetadataPath(state.selection.focus.path)) {
+      return null;
+    }
+
     return resolveSelectionLeaf({
       formatting,
       handles,
@@ -211,7 +219,7 @@ export const pointerViewSprig = createParameterizedSprig(
         : hoverTarget;
     const leaf = resolveContextualLeaf(target, threads, ranges);
     const cursor =
-      hoverTarget?.kind === "task-toggle" ||
+      isCanvasDirectActivationTarget(hoverTarget) ||
       hoverTarget?.kind === "resource" ||
       leaf?.kind === "link"
         ? "pointer"

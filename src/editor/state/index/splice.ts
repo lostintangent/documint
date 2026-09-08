@@ -33,7 +33,7 @@ export function commitDocument(documentIndex: DocumentIndex): Document {
   return createDocument(
     collapseRuntimeEditableDocument(documentIndex.document).blocks,
     commentState.threads,
-    documentIndex.document.frontMatter,
+    documentIndex.document.metadata,
   );
 }
 
@@ -66,12 +66,12 @@ export function spliceDocumentIndex(
   return applyRootDelta(model, positionedRoots, nextDocument);
 }
 
-// Replace the index's document where only comments or front matter changed;
+// Replace the index's document where only comments or metadata changed;
 // every root keeps reference identity. Throws if blocks differ — that's a
-// splice, not a metadata replace.
-export function replaceDocumentMetadata(model: DocumentIndex, document: Document): DocumentIndex {
+// splice, not a document-only replace.
+export function replaceIndexedDocument(model: DocumentIndex, document: Document): DocumentIndex {
   if (document.blocks !== model.document.blocks) {
-    throw new Error("Editor model metadata replacement requires preserving root blocks.");
+    throw new Error("Indexed document replacement requires preserving root blocks.");
   }
 
   return applyRootDelta(model, model.roots, document);
@@ -136,7 +136,7 @@ function createRuntimeEditableDocument(document: Document): Document {
     return document;
   }
 
-  return createDocument([createParagraphTextBlock("")], document.comments, document.frontMatter);
+  return createDocument([createParagraphTextBlock("")], document.comments, document.metadata);
 }
 
 function collapseRuntimeEditableDocument(document: Document): Document {
@@ -151,5 +151,5 @@ function collapseRuntimeEditableDocument(document: Document): Document {
     return document;
   }
 
-  return createDocument([], document.comments, document.frontMatter);
+  return createDocument([], document.comments, document.metadata);
 }

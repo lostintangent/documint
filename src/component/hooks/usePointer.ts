@@ -2,10 +2,12 @@ import {
   dedent,
   extendSelectionToPoint,
   indent,
+  isCanvasDirectActivationTarget,
   resolveHoverTarget as resolveEditorHoverTarget,
   resolveWordSelection,
   setSelectionAtPoint,
   setSelection,
+  toggleMetadataBoolean,
   toggleTask,
   updateSelectionFromDrag,
   type EditorHoverTarget,
@@ -30,6 +32,7 @@ import {
   useEditorCommand,
   useSprig,
 } from "../store";
+import { equalShallowObject } from "../store/core/equality";
 import { pointerViewSprig, type PointerLeaf } from "../overlays/leaves/sprigs";
 
 type UsePointerOptions = {
@@ -45,6 +48,7 @@ type UsePointerOptions = {
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
   focusInput: FocusInput;
   onActivity: () => void;
+  onMetadataToggle: () => void;
   onResourceOpened?: (resource: DocumentResourceReference) => void;
   readOnly: boolean;
   storage: DocumentStorage;
@@ -132,6 +136,7 @@ export function usePointer({
   canvasRef,
   focusInput,
   onActivity,
+  onMetadataToggle,
   onResourceOpened,
   readOnly,
   resolvePoint,
@@ -147,6 +152,7 @@ export function usePointer({
   const extendEditorSelectionToPoint = useEditorCommand(extendSelectionToPoint);
   const indentCommand = useEditorCommand(indent);
   const dedentCommand = useEditorCommand(dedent);
+  const toggleMetadataValue = useEditorCommand(toggleMetadataBoolean);
   const toggleTaskItem = useEditorCommand(toggleTask);
   const dragEditorSelection = useEditorCommand(updateSelectionFromDrag);
 
@@ -176,7 +182,7 @@ export function usePointer({
   useEffect(() => {
     if (
       hoverTarget &&
-      hoverTarget.kind !== "task-toggle" &&
+      !isCanvasDirectActivationTarget(hoverTarget) &&
       hoverTarget.kind !== "resource" &&
       !leaf
     ) {
@@ -225,17 +231,15 @@ export function usePointer({
       return;
     }
 
-    if (target.kind === "task-toggle") {
-      if (readOnly) {
+    if (isCanvasDirectActivationTarget(target)) {
+      if (target.kind !== "metadata-toggle" && readOnly) {
         clearLeafIfPointerIsOutsideLeaf();
         return;
       }
 
       cancelHide();
       setHoverTarget((previous) =>
-        previous?.kind === "task-toggle" && previous.listItemPath === target.listItemPath
-          ? previous
-          : target,
+        previous && equalShallowObject(previous, target) ? previous : target,
       );
       return;
     }
@@ -244,7 +248,7 @@ export function usePointer({
       cancelHide();
       const threadIndex = target.commentThreadIndex;
       setHoverTarget((previous) =>
-        previous?.kind !== "task-toggle" && previous?.commentThreadIndex === threadIndex
+        !isCanvasDirectActivationTarget(previous) && previous?.commentThreadIndex === threadIndex
           ? previous
           : target,
       );
@@ -363,10 +367,10 @@ export function usePointer({
 
     const target = resolveHoverTarget(event);
 
-    // Task toggles are handled in `click` for both mouse and touch — early
-    // return here so we don't drop a caret next to the checkbox before the
-    // toggle fires.
-    if (target?.kind === "task-toggle") {
+    // Canvas toggles are handled in `click` for both mouse and touch — early
+    // return here so we don't drop a caret into header or checkbox
+    // geometry before the toggle fires.
+    if (isCanvasDirectActivationTarget(target)) {
       return;
     }
 
@@ -497,17 +501,28 @@ export function usePointer({
     const wasTouchTap = lastPointerTypeRef.current === "touch";
     lastPointerTypeRef.current = null;
 
-    // Task toggles fire from `click` for all input types — `click` is the
+    // Canvas toggles fire from `click` for all input types. `click` is the
     // browser's already-disambiguated activation event, so we don't need to
     // hand-roll tap-vs-drag detection.
     const target = resolveHoverTarget(event);
 
-    if (target?.kind === "task-toggle") {
+    if (target?.kind === "metadata-toggle") {
+      event.preventDefault();
+      event.stopPropagation();
+      onMetadataToggle();
+      onActivity();
+      return;
+    }
+
+    if (target?.kind === "task-toggle" || target?.kind === "metadata-boolean-toggle") {
       if (readOnly) {
         return;
       }
 
-      const transition = toggleTaskItem(target.listItemPath);
+      const transition =
+        target.kind === "task-toggle"
+          ? toggleTaskItem(target.listItemPath)
+          : toggleMetadataValue(target.path);
       if (transition) {
         event.preventDefault();
         event.stopPropagation();
@@ -567,7 +582,7 @@ export function usePointer({
     const point = resolvePoint(event);
     const target = resolveHoverTarget(event);
 
-    if (!point || target?.kind === "task-toggle") return;
+    if (!point || isCanvasDirectActivationTarget(target)) return;
 
     const wordSel = resolveWordSelection(currentState, store.layout.get(), point);
     if (!wordSel) return;

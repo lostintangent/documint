@@ -151,6 +151,9 @@ export function resolveTableCellDocumentChanges({
 
   for (let index = startLineIndex; index < endLineIndex; index += 1) {
     const line = layout.lines[index]!;
+    if (line.blockPath === null) {
+      continue;
+    }
     const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockPath);
 
     if (indexedBlock?.block.type !== "table" || visitedPaths.has(line.path)) {

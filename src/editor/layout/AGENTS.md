@@ -8,6 +8,7 @@ Small/common documents use exact full-document layout. Large documents use whole
 
 - **Visible geometry is exact.** Estimation is only a large-document optimization. Anything visible, selected, or hit-testable must have exact measured geometry, even when pinned outside the ordinary viewport slice.
 - **Document space is the shared coordinate system.** Line/block Y values are positions in the full document, even when measured from a virtualized slice.
+- **Structured metadata prefixes compose without entering body flow.** Structured metadata owns header, row, cell, text, and checkbox geometry in `DocumentLayout.metadata`; raw compatibility metadata remains a Markdown-only value. Body measurement and virtual estimates stay body-relative, then composition applies one prefix offset so exact layout, viewport slices, path bounds, and scroll height agree.
 - **Virtual slices keep the index whole.** Exact slice measurement receives the canonical `DocumentIndex` plus slice boundaries expressed over measured block/path bounds. Do not pass a shallow index with sliced records, because index block ranges are global coordinates.
 - **Exact and estimated paths must agree.** Both paths must walk blocks the same way and use the same gap, inset, image, and table policies. If one policy changes, update the other.
 - **Cache keys are correctness.** Prepared text, measured lines, boundaries, heights, grapheme widths, and virtual layouts all depend on text, resources, and layout options.
@@ -31,6 +32,6 @@ Small/common documents use exact full-document layout. Large documents use whole
 - `index.ts` exposes the layout API and editor-facing adapters.
 - `lib/` owns shared layout policy: options, block spacing, and list/task marker metrics.
 - `state/` owns `createEditorLayoutState` and the per-editor `LayoutCache`.
-- `measure/` owns exact layout composition for text, inline objects, tables, lines, text paths, and blocks.
+- `measure/` owns exact layout composition for metadata, text, inline objects, tables, lines, text paths, and blocks.
 - `virtualize/` owns large-document estimates, virtual layout construction, visible slice selection, exact slice measurement, and refinement.
 - [`query/`](query/AGENTS.md) owns reads over prepared geometry: visible ranges, caret measurement, point-to-line hit testing, and visual bounds.

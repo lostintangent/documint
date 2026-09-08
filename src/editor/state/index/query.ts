@@ -9,6 +9,7 @@ import type {
   IndexedInline,
   IndexedTableCell,
   IndexedText,
+  ResolvedMetadataField,
 } from "./types";
 
 export type EditorIndexPosition = {
@@ -37,8 +38,50 @@ export function resolveBlockByPath(documentIndex: DocumentIndex, blockPath: stri
   return resolveIndexedBlock(documentIndex, blockPath)?.block ?? null;
 }
 
-// Resolves the editor-coordinate text exposed by a block or table-cell path.
-// Structural and inert block paths return null.
+const metadataPathPattern = /^metadata\.(\d+)\.(key|value)$/;
+
+export function metadataKeyPath(fieldIndex: number) {
+  return `metadata.${fieldIndex}.key`;
+}
+
+export function metadataValuePath(fieldIndex: number) {
+  return `metadata.${fieldIndex}.value`;
+}
+
+export function resolveMetadataField(
+  documentIndex: DocumentIndex,
+  path: string,
+): ResolvedMetadataField | null {
+  const match = metadataPathPattern.exec(path);
+  const metadata = documentIndex.document.metadata;
+
+  if (!match || !metadata || "raw" in metadata) {
+    return null;
+  }
+
+  const fieldIndex = Number(match[1]);
+  const entry = [...metadata][fieldIndex];
+
+  if (!entry) {
+    return null;
+  }
+
+  const [key, value] = entry;
+  if (match[2] === "key") {
+    return { fieldIndex, text: key, type: "key" };
+  }
+
+  return typeof value === "boolean"
+    ? { fieldIndex, key, type: "boolean", value }
+    : { fieldIndex, text: value, type: "value" };
+}
+
+export function isMetadataPath(path: string) {
+  return path.startsWith("metadata.");
+}
+
+// Resolves editor-coordinate text exposed by a body or metadata path.
+// Structural, inert, and metadata-boolean paths return null.
 export function resolveIndexedText(documentIndex: DocumentIndex, path: string): IndexedText | null {
   const indexedBlock = resolveIndexedBlock(documentIndex, path);
 
@@ -46,7 +89,13 @@ export function resolveIndexedText(documentIndex: DocumentIndex, path: string): 
     return isTextBlock(indexedBlock) ? indexedBlock : null;
   }
 
-  return resolveIndexedTableCell(documentIndex, path);
+  const tableCell = resolveIndexedTableCell(documentIndex, path);
+  if (tableCell) {
+    return tableCell;
+  }
+
+  const metadata = resolveMetadataField(documentIndex, path);
+  return metadata && "text" in metadata ? metadata : null;
 }
 
 export function resolveEditorTextAtPath(documentIndex: DocumentIndex, path: string): string | null {
@@ -59,7 +108,13 @@ export function resolveIndexedTextInlines(
   return "inlines" in indexedText ? indexedText.inlines : null;
 }
 
-export function resolveIndexedTextKind(indexedText: IndexedText): "inlines" | "source" {
+export function resolveIndexedTextKind(
+  indexedText: IndexedText,
+): "inlines" | "metadata" | "source" {
+  if ("fieldIndex" in indexedText) {
+    return "metadata";
+  }
+
   return "inlines" in indexedText ? "inlines" : "source";
 }
 
@@ -463,6 +518,11 @@ function resolvePositionOrder(
     return cell.editorOrder;
   }
 
+  const metadata = resolveMetadataField(documentIndex, point.path);
+  if (metadata) {
+    return metadataPositionOrder(documentIndex, metadata);
+  }
+
   return resolveUnknownPositionOrder(point.path, unknown);
 }
 
@@ -471,10 +531,17 @@ function resolveUnknownPositionOrder(
   unknown: "before" | "throw",
 ): EditorPositionOrder {
   if (unknown === "before") {
-    return -1;
+    return Number.NEGATIVE_INFINITY;
   }
 
   throw new Error(`Unknown editor path: ${path}`);
+}
+
+function metadataPositionOrder(documentIndex: DocumentIndex, metadata: ResolvedMetadataField) {
+  const typeOffset = metadata.type === "key" ? 0 : 1;
+  const source = documentIndex.document.metadata;
+  const fieldCount = source && !("raw" in source) ? source.size : 0;
+  return metadata.fieldIndex * 2 + typeOffset - fieldCount * 2;
 }
 
 function isTextBlock(

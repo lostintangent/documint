@@ -1,26 +1,14 @@
 import type { LayoutRect } from "@/editor/layout";
 import type { ResolvedEditorTheme } from "@/types";
-import type { TableCellChromeFrame } from "../frame/chrome/table";
 
-export function paintTableCellChrome(
+export function paintGridCellChrome(
   context: CanvasRenderingContext2D,
-  frame: TableCellChromeFrame,
+  rect: LayoutRect,
+  isHeader: boolean,
   theme: ResolvedEditorTheme,
 ) {
-  context.fillStyle = frame.isHeaderRow ? theme.tableHeaderBackground : theme.tableBodyBackground;
-  paintRect(context, frame.rect);
-  paintTableCellBorder(context, frame.rect, theme);
-}
-
-export function paintTableCellBorder(
-  context: CanvasRenderingContext2D,
-  cellRect: LayoutRect,
-  theme: ResolvedEditorTheme,
-) {
-  context.strokeStyle = theme.tableBorder;
-  context.strokeRect(cellRect.left, cellRect.top, cellRect.width, cellRect.height);
-}
-
-function paintRect(context: CanvasRenderingContext2D, rect: LayoutRect) {
+  context.fillStyle = isHeader ? theme.tableHeaderBackground : theme.tableBodyBackground;
   context.fillRect(rect.left, rect.top, rect.width, rect.height);
+  context.strokeStyle = theme.tableBorder;
+  context.strokeRect(rect.left, rect.top, rect.width, rect.height);
 }

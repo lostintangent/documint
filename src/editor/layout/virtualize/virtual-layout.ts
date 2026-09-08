@@ -194,10 +194,10 @@ function resolveImageResourceSignature(documentIndex: DocumentIndex, resources: 
     return "";
   }
 
-  // The virtual-layout cache is scoped by `DocumentIndex`, so authored image
-  // dimensions are already captured by the weak-map key. The cache key only
-  // needs the mutable resource facts that can change while the document index
-  // stays the same.
+  // The virtual-layout cache is scoped by the body block array, so authored
+  // image dimensions are already captured by the weak-map key. The cache key
+  // only needs mutable resource facts that can change while the body stays the
+  // same.
   let signature = "";
 
   for (const url of documentIndex.imageUrls) {

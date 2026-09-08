@@ -16,6 +16,7 @@ import {
   deleteBackward,
   insertLineBreak,
   insertText,
+  metadataValuePath,
   normalizeSelection,
   readEditorEffects,
   resolveIndexedBlockContainingPath,
@@ -334,6 +335,153 @@ describe("Block and chrome paint order", () => {
     expect(receivedRects[0]?.width).toBeGreaterThanOrEqual(80);
     expect(receivedRects[0]?.width).toBeLessThan(360);
     expect(customStrokeIndex).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("Metadata prefix painting", () => {
+  test("paints header and grid chrome before text and shared checkbox chrome", () => {
+    const state = setup(`---
+title: Draft
+draft: true
+---
+Body
+`);
+    const { context, layout } = renderPaintOperations(state, {
+      height: 320,
+      metadataExpanded: true,
+      width: 520,
+    });
+    const metadata = layout.metadata;
+    const titleRow = metadata?.rows[0];
+
+    if (!metadata || !titleRow) {
+      throw new Error("Expected structured metadata paint geometry");
+    }
+
+    const headerFillIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillRect" &&
+        operation.fillStyle === resolvedLightTheme.tableHeaderBackground &&
+        approximately(operation.x, metadata.header.left) &&
+        approximately(operation.y, metadata.header.top),
+    );
+    const titleValueFillIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillRect" &&
+        operation.fillStyle === resolvedLightTheme.tableBodyBackground &&
+        approximately(operation.x, titleRow.valueRect.left) &&
+        approximately(operation.y, titleRow.valueRect.top),
+    );
+    const checkboxFillIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillRect" &&
+        operation.fillStyle === resolvedLightTheme.checkboxCheckedFill,
+    );
+    const checkmarkIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "strokePath" &&
+        operation.strokeStyle === resolvedLightTheme.checkboxCheckmark &&
+        operation.path.length === 3,
+    );
+    const chevronIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "strokePath" &&
+        operation.strokeStyle === resolvedLightTheme.headingText &&
+        operation.path.length === 3,
+    );
+
+    const lastBackgroundIndex = Math.max(headerFillIndex, titleValueFillIndex);
+    const foregroundIndices = [
+      findOperationIndex(
+        context.operations,
+        (operation) => operation.kind === "fillText" && operation.text === "Draft",
+      ),
+      checkboxFillIndex,
+      chevronIndex,
+    ];
+
+    expect(lastBackgroundIndex).toBeGreaterThanOrEqual(0);
+    for (const index of foregroundIndices) {
+      expect(index).toBeGreaterThan(lastBackgroundIndex);
+    }
+    expect(checkmarkIndex).toBeGreaterThan(checkboxFillIndex);
+
+    const label = findFillTextOperation(context.operations, "Document metadata");
+    const chevron = context.operations[chevronIndex];
+
+    if (!label || chevron?.kind !== "strokePath") {
+      throw new Error("Expected metadata header foreground");
+    }
+
+    context.font = label.font;
+    const metrics = context.measureText(label.text);
+    const visibleCenter =
+      label.y - (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
+
+    expect(label.font).not.toContain("700");
+    expect(context.operations.indexOf(label)).toBeGreaterThan(lastBackgroundIndex);
+    expect(approximately(visibleCenter, metadata.header.top + metadata.header.height / 2)).toBe(
+      true,
+    );
+    expect(findFillTextOperation(context.operations, "2 fields")).toBeNull();
+    expect(findFillTextOperation(context.operations, "Draft")?.fillStyle).toBe(
+      resolvedLightTheme.headingText,
+    );
+    expect(chevron.path[0]?.x).toBeGreaterThan(metadata.header.left + metadata.header.width / 2);
+    expect(chevron.path[1]?.y).toBeLessThan(chevron.path[0]?.y ?? 0);
+
+    const collapsed = renderPaintOperations(state, {
+      height: 320,
+      metadataExpanded: false,
+      width: 520,
+    });
+    const collapsedChevron = collapsed.context.operations.find(
+      (operation) =>
+        operation.kind === "strokePath" &&
+        operation.strokeStyle === resolvedLightTheme.headingText &&
+        operation.path.length === 3,
+    );
+
+    if (collapsedChevron?.kind !== "strokePath") {
+      throw new Error("Expected collapsed metadata chevron");
+    }
+
+    expect(collapsedChevron.path[1]?.y).toBeGreaterThan(collapsedChevron.path[0]?.y ?? 0);
+  });
+
+  test("paints metadata text effects through the shared text effect path", () => {
+    let state = setup(`---
+title: Draft
+---
+Body
+`);
+    state = setSelection(state, {
+      path: metadataValuePath(0),
+      offset: "Draft".length,
+    });
+    state = insertText(state, "!") ?? state;
+
+    const { context } = renderPaintOperations(state, {
+      effects: readEditorEffects(state),
+      height: 320,
+      metadataExpanded: true,
+      now: 100,
+      width: 520,
+    });
+
+    expect(
+      context.operations.some(
+        (operation) =>
+          operation.kind === "fillText" &&
+          operation.text === "Draft!" &&
+          operation.fillStyle === resolvedLightTheme.insertHighlightText,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -1733,6 +1881,7 @@ function renderPaintOperations(
     customEffects?: DocumintEffects;
     effects?: readonly ScheduledTestEffect[];
     documentChanges?: Parameters<typeof createDocumentFrame>[2]["documentChanges"];
+    metadataExpanded?: boolean;
     now?: number;
     commentPresence?: ReadonlyMap<number, EditorPresence>;
     resources?: DocumentResources;
@@ -1746,6 +1895,7 @@ function renderPaintOperations(
     {
       height: options.height,
       fontSize: (options.theme ?? resolvedLightTheme).fontSize,
+      metadataExpanded: options.metadataExpanded ?? false,
       top: 0,
       width: options.width,
     },

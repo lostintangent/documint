@@ -70,7 +70,7 @@ export function moveCaretVerticallyInFlow(
     return state;
   }
 
-  const targetLine = layout.lines[currentLine.index + direction];
+  const targetLine = resolveVerticalTargetLine(layout, currentLine.index, direction, 1);
 
   if (!targetLine) {
     return state;
@@ -123,7 +123,12 @@ export function moveCaretByViewportInFlow(
   // the user can still see the line they were on before the jump. Mirrors
   // VS Code / browser contenteditable PageUp/PageDown behavior.
   const linesPerViewport = Math.max(1, Math.floor(viewportHeight / layout.options.lineHeight) - 1);
-  const targetLine = layout.lines[currentLineEntry.index + direction * linesPerViewport];
+  const targetLine = resolveVerticalTargetLine(
+    layout,
+    currentLineEntry.index,
+    direction,
+    linesPerViewport,
+  );
 
   if (!targetLine) {
     return state;
@@ -162,4 +167,41 @@ export function placeCaretAtLineY(
 
 function findCurrentLine(state: EditorState, layout: DocumentLayout) {
   return findLineForPathOffset(layout, state.selection.focus.path, state.selection.focus.offset);
+}
+
+function resolveVerticalTargetLine(
+  layout: DocumentLayout,
+  currentLineIndex: number,
+  direction: -1 | 1,
+  distance: number,
+) {
+  const currentLine = layout.lines[currentLineIndex];
+
+  if (!currentLine) {
+    return null;
+  }
+
+  let remaining = distance;
+
+  for (
+    let index = currentLineIndex + direction;
+    index >= 0 && index < layout.lines.length;
+    index += direction
+  ) {
+    const candidate = layout.lines[index]!;
+    const sharesNavigationFlow =
+      currentLine.blockPath === null
+        ? candidate.blockPath === null && candidate.path === currentLine.path
+        : candidate.blockPath !== null;
+
+    if (!sharesNavigationFlow) {
+      continue;
+    }
+
+    if (--remaining === 0) {
+      return candidate;
+    }
+  }
+
+  return null;
 }

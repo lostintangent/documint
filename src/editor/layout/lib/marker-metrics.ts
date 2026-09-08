@@ -2,15 +2,20 @@
 // visual queries.
 
 import { findAncestorIndexedBlockByPath, type DocumentIndex } from "../../state";
-import { resolveFontSize } from "../../text/measure";
+import {
+  resolveCenteredTextBaseline,
+  resolveFontMetrics,
+  resolveFontSize,
+} from "../../text/measure";
 
 export const LIST_MARKER_TEXT_INSET = 18;
 export const ORDERED_LIST_MARKER_GAP = 8;
-export const TASK_CHECKBOX_SIZE = 14;
-const TASK_CHECKBOX_BASE_FONT_SIZE = 16;
+export const CHECKBOX_SIZE = 14;
+export const CHECKBOX_HIT_PADDING = 4;
+const CHECKBOX_BASE_FONT_SIZE = 16;
 // Gap between the task checkbox and the start of its text.
 export const TASK_CHECKBOX_TEXT_GAP = 8;
-export const TASK_MARKER_TEXT_INSET = TASK_CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
+export const TASK_MARKER_TEXT_INSET = CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
 export const UNORDERED_LIST_MARKER_GUTTER_INSET = 2;
 export const UNORDERED_LIST_MARKER_SIZE = 6;
 
@@ -31,6 +36,13 @@ export function mergeLayoutBlockExtent(
     bottom: current ? Math.max(current.bottom, bottom) : bottom,
     top: current ? Math.min(current.top, top) : top,
   });
+}
+
+export function updateBlockExtent(
+  blockExtents: Map<string, LayoutBlockExtent>,
+  line: { blockPath: string; height: number; top: number },
+) {
+  mergeLayoutBlockExtent(blockExtents, line.blockPath, line.top, line.top + line.height);
 }
 
 // List item content is rendered shifted right by the marker inset (bullet
@@ -57,14 +69,33 @@ export function resolveListMarkerInset(
     : LIST_MARKER_TEXT_INSET;
 }
 
-export function resolveTaskCheckboxSizeFromFont(font: string) {
-  return resolveTaskCheckboxSizeFromFontSize(resolveFontSize(font));
+export function resolveCheckboxRect(anchor: {
+  font: string;
+  height: number;
+  left: number;
+  top: number;
+}) {
+  const size = resolveCheckboxSizeFromFontSize(resolveFontSize(anchor.font));
+  const centerY = resolveTextOpticalCenter(anchor);
+
+  return {
+    height: size,
+    left: anchor.left,
+    top: centerY - size / 2,
+    width: size,
+  };
 }
 
-function resolveTaskCheckboxSizeFromFontSize(fontSize: number) {
-  return Math.max(1, Math.round(fontSize * (TASK_CHECKBOX_SIZE / TASK_CHECKBOX_BASE_FONT_SIZE)));
+export function resolveTextOpticalCenter(anchor: { font: string; height: number; top: number }) {
+  const baseline = anchor.top + resolveCenteredTextBaseline(anchor.height, anchor.font);
+  const { ascent, descent } = resolveFontMetrics(anchor.font);
+  return baseline - (ascent - descent) / 2 - 1;
+}
+
+function resolveCheckboxSizeFromFontSize(fontSize: number) {
+  return Math.max(1, Math.round(fontSize * (CHECKBOX_SIZE / CHECKBOX_BASE_FONT_SIZE)));
 }
 
 function resolveTaskMarkerTextInsetFromFontSize(fontSize: number) {
-  return resolveTaskCheckboxSizeFromFontSize(fontSize) + TASK_CHECKBOX_TEXT_GAP;
+  return resolveCheckboxSizeFromFontSize(fontSize) + TASK_CHECKBOX_TEXT_GAP;
 }

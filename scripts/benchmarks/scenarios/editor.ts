@@ -15,6 +15,7 @@ import {
   deleteBackward,
   insertLineBreak,
   insertText,
+  metadataValuePath,
   normalizeSelection,
   pasteFragment,
   resolveIndexedBlockContainingPath,
@@ -48,6 +49,7 @@ export function createEditorScenarios(fixtures: {
   longSnapshot: Parameters<typeof createEditorState>[0];
   mediumMarkdown: string;
   mediumSnapshot: Parameters<typeof createEditorState>[0];
+  metadataSnapshot: Parameters<typeof createEditorState>[0];
   nestedStructuralSnapshot: Parameters<typeof createEditorState>[0];
   richCodeSnapshot: Parameters<typeof createEditorState>[0];
   richTablesSnapshot: Parameters<typeof createEditorState>[0];
@@ -75,6 +77,7 @@ export function createEditorScenarios(fixtures: {
   // the layout-only benchmarks so the layout slice is comparable.
   const fullFrameLayoutOptions = { ...BENCHMARK_VIEWPORT, top: 0 };
   const fullFrameLayoutCache = createLayoutCache();
+  const metadataFullFrameLayoutCache = createLayoutCache();
   const frameTheme = resolveEditorTheme(lightTheme);
   const frameLayoutState = createEditorLayoutState(
     longCaretState,
@@ -93,6 +96,10 @@ export function createEditorScenarios(fixtures: {
     fullFrameLayoutOptions,
     createLayoutCache(),
   );
+  const metadataTypingState = setSelection(createEditorState(fixtures.metadataSnapshot), {
+    anchor: { path: metadataValuePath(0), offset: 0 },
+    focus: { path: metadataValuePath(0), offset: "Benchmark".length },
+  });
 
   return [
     // --- Import / export lifecycle ---
@@ -230,6 +237,31 @@ export function createEditorScenarios(fixtures: {
     createBenchmarkScenario("editor", "editor_typing_table", 200, () => {
       const editorState = selectCanvasText(fixtures.richTablesSnapshot, "scrolls", 0);
       void insertText(editorState, "host-");
+    }),
+    createBenchmarkScenario("editor", "editor_typing_metadata_full_frame", 200, () => {
+      const nextState = insertText(metadataTypingState, "Updated");
+      if (!nextState) throw new Error("insertText returned null");
+      void serializeDocument(nextState.documentIndex.document);
+      const layoutState = createEditorLayoutState(
+        nextState,
+        {
+          ...fullFrameLayoutOptions,
+          metadataExpanded: true,
+        },
+        metadataFullFrameLayoutCache,
+      );
+      void createDocumentFrame(nextState, layoutState, {
+        activeBlockPath: null,
+        activePath: nextState.selection.focus.path,
+        activeThreadIndex: null,
+        commentRanges: [],
+        devicePixelRatio: 1,
+        height: BENCHMARK_VIEWPORT.height,
+        normalizedSelection: normalizeSelection(nextState),
+        now: 0,
+        theme: frameTheme,
+        width: BENCHMARK_VIEWPORT.width,
+      });
     }),
     createBenchmarkScenario("editor", "editor_typing_comments_elsewhere", 200, () => {
       void insertText(commentIrrelevantTypingState, " updated");

@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type HTMLAttributes,
   type UIEvent,
 } from "react";
@@ -33,7 +34,9 @@ import {
   hasAnimatedDecorationsInViewport,
   insertTableColumn,
   insertTableRow,
+  isMetadataPath,
   measureVisualCaretTarget,
+  moveCaretToDocumentBoundary,
   removeLink,
   replyToThread,
   resolveThread,
@@ -91,6 +94,7 @@ import { useInput } from "./hooks/useInput";
 import { useRender } from "./hooks/useRender";
 import { useSelection } from "./hooks/useSelection";
 import { useSearch } from "./hooks/useSearch";
+import { useScrollbar } from "./hooks/useScrollbar";
 import { useTheme } from "./hooks/useTheme";
 import { useViewport } from "./hooks/useViewport";
 import { prepareCanvasLayer } from "./lib/canvas";
@@ -266,6 +270,7 @@ function DocumintHost({
   const contentCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [metadataExpanded, setMetadataExpanded] = useState(false);
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
 
@@ -300,6 +305,7 @@ function DocumintHost({
   );
 
   const viewport = useViewport({
+    metadataExpanded,
     renderResources,
     theme: resolvedTheme,
   });
@@ -426,6 +432,16 @@ function DocumintHost({
   const replyToThreadCommand = useEditorCommand(replyToThread);
   const resolveThreadCommand = useEditorCommand(resolveThread);
   const setSelectionCommand = useEditorCommand(setSelection);
+  const moveCaretToDocumentBoundaryCommand = useEditorCommand(moveCaretToDocumentBoundary);
+  const toggleMetadata = useEffectEvent(() => {
+    const state = store.editor.getState();
+
+    if (metadataExpanded && isMetadataPath(state.selection.focus.path)) {
+      moveCaretToDocumentBoundaryCommand("start");
+    }
+
+    setMetadataExpanded((expanded) => !expanded);
+  });
 
   // Comment-changed emitters. Adds and edits read the freshly-applied state
   // for their thread/comment payload; deletes are passed pre-state snapshots
@@ -475,6 +491,7 @@ function DocumintHost({
   const idle = useIdle({
     onIdle: () => scheduleContentPaint(),
   });
+  const scrollbar = useScrollbar();
 
   /* Paint callbacks */
   //
@@ -627,6 +644,7 @@ function DocumintHost({
   // or programmatically (e.g. offscreen presence navigation). Stable identity
   // via `useEffectEvent` so the listener doesn't re-attach on every render.
   const handleViewportScroll = useEffectEvent((scrollContainer: HTMLDivElement) => {
+    scrollbar.sync(scrollContainer);
     syncScrollContainer(scrollContainer);
     scheduleFullRender();
   });
@@ -678,6 +696,7 @@ function DocumintHost({
     canvasRef: contentCanvasRef,
     focusInput: input.focus,
     onActivity: idle.markActive,
+    onMetadataToggle: toggleMetadata,
     onResourceOpened,
     readOnly,
     resolvePoint,
@@ -762,6 +781,7 @@ function DocumintHost({
   }, [
     editorState.documentIndex,
     images,
+    metadataExpanded,
     resolvedTheme,
     resourceProtocols.layoutKey,
     viewportWidth,
@@ -1092,7 +1112,7 @@ function DocumintHost({
               tabIndex={0}
             />
 
-            {/* Overlay canvas (urrently used for rendering the blinking cursor) */}
+            {/* Overlay canvas (currently used for rendering the blinking cursor) */}
             <canvas aria-hidden="true" className="documint-overlay-canvas" ref={overlayCanvasRef} />
 
             {/* Resize handles — selection and image handles via a unified declarative system */}
@@ -1126,6 +1146,7 @@ function DocumintHost({
             ) : null}
           </div>
         </div>
+        <div {...scrollbar.props} />
       </section>
     </OverlayPortalProvider>
   );

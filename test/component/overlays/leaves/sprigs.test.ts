@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createStore } from "@/component/store";
-import { cursorLeafSprig, pointerViewSprig } from "@/component/overlays/leaves/sprigs";
-import { createLayoutCache, getDocument, createEditorLayoutState } from "@/editor";
+import {
+  cursorLeafSprig,
+  pointerViewSprig,
+  selectionLeafSprig,
+} from "@/component/overlays/leaves/sprigs";
+import { createLayoutCache, getDocument, createEditorLayoutState, setSelection } from "@/editor";
 import { addComment } from "@/editor/state";
-import { getPath, placeAt, setup } from "@test/editor/helpers";
+import { getMetadataEntry, getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("overlay leaf sprigs", () => {
   test("emits insertion leaves only when content editing is available", () => {
@@ -63,11 +67,7 @@ describe("overlay leaf sprigs", () => {
         "note",
       ) ?? state;
     state = placeAt(state, getPath(state, "Review target"), 2);
-    const store = createStore(getDocument(state));
-
-    store.editor.replace(state);
-    store.layout.setLayoutResolver(() => createLayout(state));
-    store.layout.commit();
+    const store = createLaidOutStore(state);
 
     expect(cursorLeafSprig.read(store, true)).toBeNull();
     expect(
@@ -77,30 +77,75 @@ describe("overlay leaf sprigs", () => {
       }).leaf?.kind,
     ).toBe("thread");
   });
+
+  test("uses a pointer cursor without a leaf for the metadata header", () => {
+    const state = setup(`---
+title: Draft
+---
+Body
+`);
+    const store = createStore(getDocument(state));
+
+    expect(
+      pointerViewSprig.read(store, {
+        kind: "metadata-toggle",
+      }),
+    ).toEqual({
+      cursor: "pointer",
+      leaf: null,
+    });
+  });
+
+  test("suppresses metadata annotation leaves even when selection handles exist", () => {
+    const state = setup(`---
+title: Draft
+---
+Body
+`);
+    const value = getMetadataEntry(state, 0, "value");
+    const selected = setSelection(
+      state,
+      {
+        anchor: { path: value.path, offset: 0 },
+        focus: { path: value.path, offset: 5 },
+      },
+      false,
+    );
+    const store = createLaidOutStore(selected, {
+      height: 240,
+      metadataExpanded: true,
+      width: 420,
+    });
+
+    expect(selectionLeafSprig.read(store, null)).toBeNull();
+  });
 });
 
 function readCursorLeaf(state: ReturnType<typeof setup>, readOnly: boolean) {
-  const store = createStore(getDocument(state));
-  const layout = createLayout(state);
-
-  store.editor.replace(state);
-  store.layout.setLayoutResolver(() => layout);
-  store.layout.commit();
-
-  return cursorLeafSprig.read(store, readOnly);
+  return cursorLeafSprig.read(createLaidOutStore(state), readOnly);
 }
 
-function createLayout(state: ReturnType<typeof setup>) {
-  return createEditorLayoutState(
-    state,
-    {
-      height: 320,
-      paddingX: 0,
-      paddingY: 0,
-      top: 0,
-      width: 640,
-    },
-    createLayoutCache(),
-    null,
+function createLaidOutStore(
+  state: ReturnType<typeof setup>,
+  options: Partial<Parameters<typeof createEditorLayoutState>[1]> = {},
+) {
+  const store = createStore(getDocument(state));
+  store.editor.replace(state);
+  store.layout.setLayoutResolver(() =>
+    createEditorLayoutState(
+      state,
+      {
+        height: 320,
+        paddingX: 0,
+        paddingY: 0,
+        top: 0,
+        width: 640,
+        ...options,
+      },
+      createLayoutCache(),
+      null,
+    ),
   );
+  store.layout.commit();
+  return store;
 }

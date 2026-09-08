@@ -1,6 +1,7 @@
 /* Base Documint host styles. */
 
 .documint {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -13,10 +14,48 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: none;
   /* Match the canvas's paint color so the iOS overscroll bounce (and any
      other reveal of the scroll container beyond the canvas's painted area)
      shows the themed background instead of browser white. */
   background: var(--documint-background);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.documint-scrollbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  width: 14px;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  cursor: grab;
+  transition: opacity 150ms linear;
+
+  &::before {
+    position: absolute;
+    inset-block: 0;
+    right: 2px;
+    width: 7px;
+    border-radius: 999px;
+    background: var(--documint-scrollbar);
+    content: "";
+  }
+
+  &[data-scrolling] {
+    opacity: 1;
+    pointer-events: auto;
+    transition-duration: 0s;
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
 }
 
 .documint-input {

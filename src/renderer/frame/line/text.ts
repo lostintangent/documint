@@ -49,7 +49,8 @@ export function resolveDocumentFrameLineText({
   const textDecorationsForLine = text !== null ? (textDecorations?.get(line.path) ?? null) : null;
   const textLeft = line.left + line.contentInset;
   const textBaseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
-  const defaultTextColor = block?.type === "code" ? theme.codeText : resolveTextColor(block, theme);
+  const defaultTextColor =
+    block?.type === "code" ? theme.codeText : resolveTextColor(block, line, theme);
   const segments = resolveLineTextSegments({
     baseFontSize: layout.options.fontSize,
     defaultTextColor,
@@ -74,7 +75,15 @@ export function resolveDocumentFrameLineText({
   };
 }
 
-function resolveTextColor(block: Block | null, theme: ResolvedEditorTheme) {
+function resolveTextColor(
+  block: Block | null,
+  line: EditorLayoutState["layout"]["lines"][number],
+  theme: ResolvedEditorTheme,
+) {
+  if (line.blockPath === null) {
+    return theme.headingText;
+  }
+
   switch (block?.type) {
     case "heading":
       return theme.headingText;

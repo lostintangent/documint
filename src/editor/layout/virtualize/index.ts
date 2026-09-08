@@ -6,7 +6,7 @@ import type { DocumentResources } from "@/types";
 import { type DocumentIndex, type EditorState } from "../../state";
 import { type LayoutCache } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
-import { measureLayoutSlice, type DocumentLayout } from "../measure";
+import { measureBodyLayoutSlice, type DocumentLayout } from "../measure";
 import { refineVirtualLayoutWithMeasuredSlice } from "./refinement";
 import {
   expandViewportSliceToBlockBoundaries,
@@ -87,7 +87,7 @@ export function createVirtualizedLayoutSlice({
   let layout: DocumentLayout;
 
   if (!Number.isFinite(sliceStartIndex) || !Number.isFinite(sliceEndIndex)) {
-    layout = measureLayoutSlice(documentIndex, options, cache, resources, undefined, 0, 0);
+    layout = measureBodyLayoutSlice(documentIndex, options, cache, resources, undefined, 0, 0);
   } else {
     const expandedSlice = expandViewportSliceToBlockBoundaries(
       documentIndex,
@@ -101,7 +101,7 @@ export function createVirtualizedLayoutSlice({
     // Override `height` with the full-document estimate so consumers that
     // read `layout.height` (scrollbars, paint extents) see the doc height,
     // not the slice height.
-    const sliceLayout = measureLayoutSlice(
+    const sliceLayout = measureBodyLayoutSlice(
       documentIndex,
       options,
       cache,

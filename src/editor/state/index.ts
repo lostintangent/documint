@@ -1,6 +1,5 @@
 // Build
 export { commitDocument, createDocumentIndex, spliceDocumentIndex } from "./index/splice";
-
 // Types
 export type {
   IndexedBlock,
@@ -25,8 +24,11 @@ export type { InlineOffsetAffinity } from "./index/inlines";
 export {
   // Lookups
   countRootBlocks,
+  metadataKeyPath,
+  metadataValuePath,
   resolveBlockByPath,
   resolveIndexedBlock,
+  resolveMetadataField,
   resolveIndexedText,
   resolveIndexedTextInlines,
   resolveIndexedTextKind,
@@ -65,6 +67,7 @@ export {
   hasSameEditorTextPathShape,
   isContainerBlock,
   isInertBlock,
+  isMetadataPath,
   isRootIndexedBlock,
 } from "./index/query";
 export type { ResolvedEditorPosition } from "./index/query";

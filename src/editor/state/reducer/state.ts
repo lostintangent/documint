@@ -25,13 +25,13 @@ import { recordEditorEffects, takeEditorEffects, type EditorEffect } from "../ef
 import {
   resolveActiveBlockKey,
   resolveDocumentTextPathBoundary,
+  resolveEditorTextAtPath,
   resolveIndexedBlock,
   resolveIndexedBlockContainingPath,
-  resolveEditorTextAtPath,
 } from "../index/query";
 import {
   createDocumentIndex,
-  replaceDocumentMetadata,
+  replaceIndexedDocument,
   replaceEditorBlock,
   spliceDocumentIndex,
 } from "../index/splice";
@@ -69,7 +69,7 @@ export function createDocumentFromEditorState(state: EditorState) {
   return createDocument(
     trimTrailingWhitespace(state.documentIndex.document.blocks),
     commentState.threads,
-    state.documentIndex.document.frontMatter,
+    state.documentIndex.document.metadata,
   );
 }
 
@@ -88,7 +88,7 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
   const materialized = materializeBlockReferences(state.documentIndex, action);
 
   const nextState = reduceEditorStateAction(state, materialized);
-  if (!nextState || !materialized.effect) {
+  if (!nextState || nextState === state || !materialized.effect) {
     return nextState;
   }
 
@@ -153,6 +153,31 @@ function reduceEditorStateAction(
       return applyDocumentMutation(state, result.documentIndex, result.selection);
     }
 
+    case "splice-metadata": {
+      const metadata = state.documentIndex.document.metadata;
+      if (!metadata || "raw" in metadata) {
+        return state;
+      }
+
+      const entries = [...metadata];
+      if (action.index < 0 || action.count < 0 || action.index + action.count > entries.length) {
+        return state;
+      }
+
+      entries.splice(action.index, action.count, ...action.entries);
+      const nextMetadata = new Map(entries);
+      if (nextMetadata.size !== entries.length) {
+        return state;
+      }
+
+      const document = { ...state.documentIndex.document, metadata: nextMetadata };
+      return applyDocumentMutation(
+        state,
+        replaceIndexedDocument(state.documentIndex, document),
+        null,
+      );
+    }
+
     case "splice-comments": {
       const document = spliceCommentThreads(
         state.documentIndex.document,
@@ -162,7 +187,7 @@ function reduceEditorStateAction(
       );
       return applyDocumentMutation(
         state,
-        replaceDocumentMetadata(state.documentIndex, document),
+        replaceIndexedDocument(state.documentIndex, document),
         null,
       );
     }
@@ -384,7 +409,7 @@ export function undoEditorState(state: EditorState): EditorState {
     return state;
   }
 
-  return restoreHistoryEntry(previous, {
+  return restoreHistoryEntry(state, previous, {
     future: [snapshotState(state), ...state.future],
     history: state.history.slice(0, -1),
   });
@@ -397,7 +422,7 @@ export function redoEditorState(state: EditorState): EditorState {
     return state;
   }
 
-  return restoreHistoryEntry(next, {
+  return restoreHistoryEntry(state, next, {
     future: state.future.slice(1),
     history: [...state.history, snapshotState(state)],
   });
@@ -411,11 +436,17 @@ function snapshotState(state: EditorState): HistoryEntry {
 }
 
 function restoreHistoryEntry(
+  state: EditorState,
   entry: HistoryEntry,
   stacks: { future: HistoryEntry[]; history: HistoryEntry[] },
 ): EditorState {
+  const documentIndex =
+    entry.document.blocks === state.documentIndex.document.blocks
+      ? replaceIndexedDocument(state.documentIndex, entry.document)
+      : createDocumentIndex(entry.document);
+
   return {
-    documentIndex: createDocumentIndex(entry.document),
+    documentIndex,
     future: stacks.future,
     history: stacks.history,
     selection: entry.selection,
@@ -463,7 +494,6 @@ function canPreserveSelectionPoint(
   point: EditorSelectionPoint,
 ): boolean {
   const text = resolveEditorTextAtPath(documentIndex, point.path);
-
   return text !== null && point.offset >= 0 && point.offset <= text.length;
 }
 

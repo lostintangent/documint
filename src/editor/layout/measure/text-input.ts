@@ -13,7 +13,7 @@ export function resolveBlockLayoutTextInput(indexedBlock: IndexedBlock): LayoutT
       };
     case "source":
       return {
-        kind: "source",
+        kind: indexedBlock.block.type === "code" ? "preformatted" : "plain",
         path: indexedBlock.path,
         text: indexedBlock.text,
       };

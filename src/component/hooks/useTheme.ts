@@ -63,5 +63,6 @@ function createThemeStyles(theme: ResolvedEditorTheme): CSSProperties {
     "--documint-mention-text": theme.mentionText,
     "--documint-selection-handle-bg": theme.selectionHandleBackground,
     "--documint-selection-handle-border": theme.selectionHandleBorder,
+    "--documint-scrollbar": theme.scrollbar,
   } as CSSProperties;
 }

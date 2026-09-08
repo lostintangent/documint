@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { getSelectionFormatting } from "@/editor/state";
-import { getPath, selectIn, selectSubstring, setup } from "../../helpers";
+import { getSelectionFormatting, setSelection } from "@/editor/state";
+import { getMetadataEntry, getPath, selectIn, selectSubstring, setup } from "../../helpers";
 
 describe("Selection formatting", () => {
   test("detects code as a standard selected mark", () => {
@@ -36,6 +36,21 @@ describe("Selection formatting", () => {
     const path = getPath(state, "const value = 1;");
 
     expect(getSelectionFormatting(selectSubstring(state, path, "value"))).toEqual({
+      marks: [],
+      supported: false,
+    });
+  });
+
+  test("disables inline formatting for metadata text", () => {
+    const state = setup(`---
+title: Draft
+---
+Body
+`);
+    const value = getMetadataEntry(state, 0, "value");
+    const collapsed = setSelection(state, { path: value.path, offset: 2 });
+
+    expect(getSelectionFormatting(collapsed)).toEqual({
       marks: [],
       supported: false,
     });

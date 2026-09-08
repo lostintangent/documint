@@ -7,7 +7,7 @@ import {
   insertText,
   setSelection,
 } from "@/editor";
-import { createEditorState } from "@/editor/state";
+import { createEditorState, metadataValuePath } from "@/editor/state";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import { setup } from "../helpers";
@@ -356,6 +356,85 @@ test("keeps visual block gaps consistent after code block backgrounds", () => {
   expect(codeGap).toBe(paragraphGap);
 });
 
+test("keeps exact and virtualized body geometry aligned with an expanded metadata prefix", () => {
+  const state = setup(createMetadataVirtualizationFixture(140));
+  const options = {
+    height: 240,
+    metadataExpanded: true,
+    paddingX: 12,
+    paddingY: 12,
+    width: 640,
+  };
+  const exact = measureLayoutSlice(state.documentIndex, options);
+  const virtualized = createEditorLayoutState(state, { ...options, top: 0 }, createLayoutCache());
+  const target = indexedTextEntries(state).find((entry) => entry.text === "Paragraph 110");
+
+  if (!target) {
+    throw new Error("Expected off-screen body target");
+  }
+
+  const estimatedTarget = virtualized.estimatePathBounds(target.path);
+  const exactTarget = exact.pathBounds.get(target.path);
+  const metadataBounds = exact.pathBounds.get(metadataValuePath(0));
+
+  if (!estimatedTarget || !exactTarget || !metadataBounds) {
+    throw new Error("Expected exact and estimated bounds");
+  }
+
+  expect(virtualized.totalHeight).toBe(exact.height);
+  expect(estimatedTarget).toEqual({
+    bottom: exactTarget.bottom,
+    top: exactTarget.top,
+  });
+  expect(virtualized.estimatePathBounds(metadataValuePath(0))).toEqual({
+    bottom: metadataBounds.bottom,
+    top: metadataBounds.top,
+  });
+});
+
+test("reuses the body virtual layout when metadata height changes", () => {
+  let state = setup(createMetadataVirtualizationFixture(140));
+  const cache = createLayoutCache();
+  const options = {
+    height: 240,
+    metadataExpanded: true,
+    top: 0,
+    width: 420,
+  };
+  const before = createEditorLayoutState(state, options, cache);
+  const cachedBefore = cache.virtualLayouts.get(state.documentIndex.blocks)?.values().next().value;
+  const target = indexedTextEntries(state).find((entry) => entry.text === "Paragraph 110");
+
+  if (!cachedBefore || !target || !before.layout.metadata) {
+    throw new Error("Expected cached body layout and metadata prefix");
+  }
+
+  state = setSelection(state, {
+    path: metadataValuePath(1),
+    offset: "First line\nSecond line".length,
+  });
+  const edited = insertText(state, ` ${"wrapping metadata ".repeat(20)}`);
+
+  if (!edited) {
+    throw new Error("Expected metadata edit");
+  }
+
+  const after = createEditorLayoutState(edited, options, cache);
+  const cachedAfter = cache.virtualLayouts.get(edited.documentIndex.blocks)?.values().next().value;
+  const beforeTarget = before.estimatePathBounds(target.path);
+  const afterTarget = after.estimatePathBounds(target.path);
+
+  if (!after.layout.metadata || !beforeTarget || !afterTarget) {
+    throw new Error("Expected composed metadata and body bounds");
+  }
+
+  const offsetDelta = after.layout.metadata.bodyOffset - before.layout.metadata.bodyOffset;
+
+  expect(cachedAfter).toBe(cachedBefore);
+  expect(afterTarget.top - beforeTarget.top).toBe(offsetDelta);
+  expect(afterTarget.bottom - beforeTarget.bottom).toBe(offsetDelta);
+});
+
 function createMeasurementSkewFixture(paragraphCount: number) {
   return (
     Array.from(
@@ -407,5 +486,17 @@ ${Array.from(
   (_, index) =>
     `| R${String(index + 1).padStart(3, "0")}A | R${String(index + 1).padStart(3, "0")}B |`,
 ).join("\n")}
+`;
+}
+
+function createMetadataVirtualizationFixture(paragraphCount: number) {
+  return `---
+title: Virtual
+description: |-
+  First line
+  Second line
+draft: true
+---
+${Array.from({ length: paragraphCount }, (_, index) => `Paragraph ${index + 1}`).join("\n\n")}
 `;
 }

@@ -15,11 +15,11 @@ import {
 } from "../../state";
 import {
   ORDERED_LIST_MARKER_GAP,
-  resolveTaskCheckboxSizeFromFont,
+  resolveCheckboxRect,
+  resolveTextOpticalCenter,
   UNORDERED_LIST_MARKER_GUTTER_INSET,
   UNORDERED_LIST_MARKER_SIZE,
 } from "../lib/marker-metrics";
-import { resolveCenteredTextBaseline, resolveFontMetrics } from "../../text/measure";
 import type { EditorLayoutState } from "../state";
 import { resolveInlineImageDimensions } from "../measure/inline-image";
 import type { DocumentLayout, LayoutLine } from "../measure";
@@ -47,14 +47,7 @@ export function resolveOrderedListMarkerAnchor(textLeft: number) {
 }
 
 export function resolveTaskCheckboxBounds(line: LayoutLine) {
-  const size = resolveTaskCheckboxSizeFromFont(line.font);
-  const centerY = resolveTextOpticalCenter(line);
-
-  return {
-    left: line.left,
-    size,
-    top: centerY - size / 2,
-  };
+  return resolveCheckboxRect(line);
 }
 
 export function resolveUnorderedListMarkerBounds(line: LayoutLine) {
@@ -80,7 +73,7 @@ export function resolveListMarkerTarget(
   state: EditorState,
   line: DocumentLayout["lines"][number],
 ): ListMarkerTarget | null {
-  if (line.start !== 0) {
+  if (line.blockPath === null || line.start !== 0) {
     return null;
   }
 
@@ -107,14 +100,6 @@ export function resolveListMarkerTarget(
         marker,
       }
     : null;
-}
-
-function resolveTextOpticalCenter(line: LayoutLine) {
-  const baseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
-  const { ascent, descent } = resolveFontMetrics(line.font);
-
-  // Small canvas-drawn markers look optically low when centered on font metrics.
-  return baseline - (ascent - descent) / 2 - 1;
 }
 
 export function measureInlineImageBounds(

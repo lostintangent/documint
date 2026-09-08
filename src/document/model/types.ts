@@ -5,11 +5,18 @@ import type { CommentThread } from "../comments";
 export type Document = {
   blocks: Block[];
   comments: CommentThread[];
-
-  // TODO: Parse this as structured metadata
-  // as opposed to leaking Markdown concepts
-  frontMatter?: string;
+  metadata: DocumentMetadata | null;
 };
+
+export type MetadataValue = string | boolean;
+
+// Supported YAML values are semantic strings or booleans. Unsupported syntax
+// stays lossless in the raw compatibility arm.
+export type DocumentMetadata =
+  | ReadonlyMap<string, MetadataValue>
+  | {
+      readonly raw: string;
+    };
 
 export type Block =
   | ParagraphBlock

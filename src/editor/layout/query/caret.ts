@@ -10,7 +10,7 @@ import type { DocumentLayout, LayoutLine } from "../measure";
 import { findDocumentLayoutLineForPathOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
 export type DocumentCaretTarget = {
-  blockPath: string;
+  blockPath: string | null;
   path: string;
   height: number;
   left: number;

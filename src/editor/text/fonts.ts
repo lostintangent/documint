@@ -2,6 +2,16 @@ import type { Mark } from "@/document";
 import { resolveFontSize } from "./measure";
 
 const MONOSPACE_STACK = "ui-monospace, SFMono-Regular, Menlo, monospace";
+const SANS_SERIF_STACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+export function resolvePlainTextFont(fontSize: number) {
+  return `${fontSize}px ${SANS_SERIF_STACK}`;
+}
+
+export function resolveStrongTextFont(fontSize: number) {
+  return `700 ${fontSize}px ${SANS_SERIF_STACK}`;
+}
 
 // Inline code (and block code) render one px smaller than the document's
 // base font, the convention typesetters use to keep monospace glyphs from

@@ -49,11 +49,11 @@ export function findDocumentLayoutLineAtPoint(
     }
 
     const containingPath = findContainingPath(layout, point);
-    const containingPathLine = containingPath
-      ? findNearestDocumentLayoutLineForPath(layout, containingPath, point.y)
-      : null;
+    if (containingPath) {
+      return findNearestDocumentLayoutLineForPath(layout, containingPath, point.y);
+    }
 
-    return containingPathLine ?? findNearestHorizontalCandidate(layout, candidates, point.x);
+    return findNearestHorizontalCandidate(layout, candidates, point.x);
   }
 
   const containingPath = findContainingPath(layout, point);

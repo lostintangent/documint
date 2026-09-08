@@ -25,7 +25,7 @@ export type LayoutCache = {
   measuredContainerHeights: Map<string, number>;
   measuredLines: Map<string, MeasuredTextLine[]>;
   preparedText: Map<string, PreparedTextWithSegments>;
-  virtualLayouts: WeakMap<DocumentIndex, Map<string, VirtualLayout>>;
+  virtualLayouts: WeakMap<DocumentIndex["blocks"], Map<string, VirtualLayout>>;
 };
 
 const MAX_PREPARED_TEXT_ENTRIES = 256;
@@ -84,7 +84,7 @@ export function getOrCreateGraphemeWidthCache(cache: LayoutCache, font: string) 
 }
 
 export function getVirtualLayout(cache: LayoutCache, documentIndex: DocumentIndex, key: string) {
-  return cache.virtualLayouts.get(documentIndex)?.get(key) ?? null;
+  return cache.virtualLayouts.get(documentIndex.blocks)?.get(key) ?? null;
 }
 
 export function setVirtualLayout(
@@ -93,10 +93,11 @@ export function setVirtualLayout(
   key: string,
   value: VirtualLayout,
 ) {
-  const current = cache.virtualLayouts.get(documentIndex) ?? new Map<string, VirtualLayout>();
+  const current =
+    cache.virtualLayouts.get(documentIndex.blocks) ?? new Map<string, VirtualLayout>();
 
   current.set(key, value);
-  cache.virtualLayouts.set(documentIndex, current);
+  cache.virtualLayouts.set(documentIndex.blocks, current);
 
   return value;
 }

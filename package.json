@@ -1,6 +1,6 @@
 {
   "name": "@lostintangent/documint",
-  "version": "0.0.35",
+  "version": "0.0.36",
   "workspaces": [
     "extensions/*"
   ],
@@ -21,7 +21,7 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "bun --hot playground/index.html --hostname=0.0.0.0 --port=3003",
+    "dev": "bun --hot playground/index.html --hostname=${DOCUMINT_DEV_HOST:-0.0.0.0} --port=3003",
     "build:dev": "bun scripts/build/build.ts",
     "build:prod": "vp pack && bun scripts/build/build.ts --prod",
     "build:playground": "bun scripts/build/build.ts --playground",

@@ -2,7 +2,7 @@
 // stability is covered by `roundtrip.test.ts`.
 
 import { describe, expect, test } from "bun:test";
-import type { Inline, Mark } from "@/document";
+import type { Inline, Mark, MetadataValue } from "@/document";
 import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
 import { fixtureOptions } from "../../playground/src/lib/data";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
@@ -386,30 +386,105 @@ Body
   });
 });
 
-describe("Front matter", () => {
-  test("captures leading yaml front matter on the document", () => {
+describe("Document metadata", () => {
+  test("parses the structured scalar subset in source order and emits it canonically", () => {
     const document = parseDocument(`---
-title: Hello
+title: Docs
+"release channel": stable
 draft: false
+published: true
+quotedFalse: "false"
+url: https://example.com/docs
 ---
 
 # Body
 `);
 
-    expect(document.frontMatter).toBe("---\ntitle: Hello\ndraft: false\n---");
+    expect(document.metadata).toEqual(
+      new Map<string, MetadataValue>([
+        ["title", "Docs"],
+        ["release channel", "stable"],
+        ["draft", false],
+        ["published", true],
+        ["quotedFalse", "false"],
+        ["url", "https://example.com/docs"],
+      ]),
+    );
+    expect(serializeDocument(document)).toBe(`---
+title: "Docs"
+"release channel": "stable"
+draft: false
+published: true
+quotedFalse: "false"
+url: "https://example.com/docs"
+---
+
+# Body
+`);
     expect(document.blocks[0]?.type).toBe("heading");
   });
 
-  test("captures front matter on a document with no body blocks", () => {
+  test("parses and emits canonical literal strings for each chomping mode", () => {
+    const source = [
+      "---",
+      "withoutTrailing: |-",
+      "  alpha",
+      "  beta",
+      "withOneTrailing: |",
+      "  gamma",
+      "  delta",
+      "withManyTrailing: |+",
+      "  epsilon",
+      "  zeta",
+      "",
+      "---",
+      "",
+    ].join("\n");
+    const document = parseDocument(source);
+
+    expect(document.metadata).toEqual(
+      new Map([
+        ["withoutTrailing", "alpha\nbeta"],
+        ["withOneTrailing", "gamma\ndelta\n"],
+        ["withManyTrailing", "epsilon\nzeta\n\n"],
+      ]),
+    );
+    expect(document.blocks).toHaveLength(0);
+    expect(serializeDocument(document)).toBe(source);
+  });
+
+  test("parses metadata on a document with no body blocks", () => {
     const document = parseDocument("---\ntitle: Stub\n---\n");
 
-    expect(document.frontMatter).toBe("---\ntitle: Stub\n---");
+    expect(document.metadata).toEqual(new Map([["title", "Stub"]]));
     expect(document.blocks).toHaveLength(0);
+  });
+
+  test.each([
+    ["duplicate source keys", ["title: First", "title: Second"]],
+    ["duplicate decoded keys", ["title: First", '"title": Second']],
+    ["folded scalars", ["summary: >-", "  folded text"]],
+    ["indented mappings", ["settings: ", "  theme: dark"]],
+    ["indented sequences", ["tags: ", "  - docs"]],
+    ["empty values", ["title:"]],
+    ["flow collections", ["tags: [docs, sample]"]],
+    ["numeric values", ["priority: 1"]],
+    ["blank formatting", ["title: First", "", "draft: false"]],
+    ["comment-only lines", ["title: First", "# preserved comment"]],
+    ["unsupported indentation indicators", ["summary: |4", "    text"]],
+  ])("preserves %s as exact raw metadata", (_label, interiorLines) => {
+    const source = ["---", ...interiorLines, "---", "", "# Body", ""].join("\n");
+    const document = parseDocument(source);
+
+    expect(document.metadata).toEqual({ raw: interiorLines.join("\n") });
+    expect(document.blocks[0]?.type).toBe("heading");
+    expect(serializeDocument(document)).toBe(source);
   });
 
   test("treats an unterminated leading fence as a thematic break", () => {
     const document = parseDocument("---\n\nBody\n");
 
+    expect(document.metadata).toBeNull();
     expect(document.blocks[0]?.type).toBe("divider");
     expect(document.blocks[1]?.type).toBe("paragraph");
   });
@@ -417,6 +492,7 @@ draft: false
   test("ignores mid-document yaml fences", () => {
     const document = parseDocument("# Title\n\n---\nkey: value\n---\n");
 
+    expect(document.metadata).toBeNull();
     expect(document.blocks[0]?.type).toBe("heading");
     expect(document.blocks.some((block) => block.type === "raw")).toBe(false);
   });

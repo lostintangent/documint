@@ -1,8 +1,12 @@
 ---
-title: Sample Document
-author: Documint
+title: "Sample Document"
+author: "Documint"
+"release channel": "stable"
 draft: false
-tags: [docs, sample]
+tags: "docs, sample"
+description: |-
+  First metadata line
+  Second metadata line
 ---
 
 # Sample Document

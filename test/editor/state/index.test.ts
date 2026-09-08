@@ -1,10 +1,13 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
+  compareEditorPositions,
   commitDocument,
   createDocumentIndex,
   hasSameEditorTextPathShape,
   indexedInlineText,
+  metadataKeyPath,
+  metadataValuePath,
   normalizeSelection,
   resolveAdjacentEditorPathWithTextInFlow,
   resolveAdjacentEditorPathWithTextOutsideBlock,
@@ -12,6 +15,7 @@ import {
   resolveDocumentTextPathBoundary,
   resolveInlinesAtPath,
   resolveIndexedBlockContainingPath,
+  resolveMetadataField,
   resolveIndexedText,
   resolveIndexedTableCell,
   resolveEditorTextAtPath,
@@ -257,6 +261,57 @@ const x = 1
     });
   });
 
+  test("resolves structured metadata in deterministic field order", () => {
+    const runtime = createDocumentIndex(
+      parseDocument(`---
+title: Draft
+draft: true
+---
+Body
+`),
+    );
+
+    for (const [path, expected] of [
+      [metadataKeyPath(0), { text: "title", type: "key" }],
+      [metadataValuePath(0), { text: "Draft", type: "value" }],
+      [metadataValuePath(1), { type: "boolean", value: true }],
+    ] as const) {
+      expect(resolveMetadataField(runtime, path)).toMatchObject(expected);
+    }
+    expect(resolveEditorTextAtPath(runtime, metadataValuePath(1))).toBeNull();
+    expect(
+      compareEditorPositions(
+        runtime,
+        { path: metadataKeyPath(0), offset: 0 },
+        { path: metadataValuePath(0), offset: 0 },
+      ),
+    ).toBeLessThan(0);
+    expect(
+      compareEditorPositions(
+        runtime,
+        { path: metadataValuePath(1), offset: 0 },
+        { path: "root.0", offset: 0 },
+      ),
+    ).toBeLessThan(0);
+    expect(
+      compareEditorPositions(
+        runtime,
+        { path: "missing", offset: 5 },
+        { path: metadataValuePath(1), offset: 0 },
+        { unknown: "before" },
+      ),
+    ).toBeLessThan(0);
+  });
+
+  test("does not resolve raw or absent metadata paths", () => {
+    const body = createParagraphBlock([createText("Body")]);
+    const absent = createDocumentIndex(createDocument([body]));
+    const raw = createDocumentIndex(createDocument([body], [], { raw: "nested:\n  value: true" }));
+
+    expect(resolveMetadataField(absent, metadataKeyPath(0))).toBeNull();
+    expect(resolveMetadataField(raw, metadataKeyPath(0))).toBeNull();
+  });
+
   test("resolves editor path flow from blocks and table-local cells", () => {
     const runtime = createDocumentIndex(
       parseDocument(`- top
@@ -317,6 +372,20 @@ omega
     expect(indexedTextEntries(runtime)[0]?.text).toBe("");
     expect(runtime.document.blocks[0]?.type).toBe("paragraph");
     expect(serializeDocument(commitDocument(runtime))).toBe("");
+  });
+
+  test("preserves metadata through the runtime empty-document paragraph", () => {
+    const markdown = '---\ntitle: "Stub"\n---\n';
+    const snapshot = parseDocument(markdown);
+    const runtime = createDocumentIndex(snapshot);
+    const committed = commitDocument(runtime);
+
+    expect(snapshot.blocks).toHaveLength(0);
+    expect(runtime.document.blocks[0]?.type).toBe("paragraph");
+    expect(runtime.document.metadata).toBe(snapshot.metadata);
+    expect(committed.blocks).toHaveLength(0);
+    expect(committed.metadata).toBe(snapshot.metadata);
+    expect(serializeDocument(committed)).toBe(markdown);
   });
 
   test("stores positioned block order on the unified editor model", () => {

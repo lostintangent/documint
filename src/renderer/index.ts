@@ -13,6 +13,7 @@ import {
 import { paintCaretOverlay } from "./painters/caret";
 import { paintCommentHighlights } from "./painters/comments";
 import { paintListMarker } from "./painters/list";
+import { paintMetadataBackgrounds, paintMetadataForeground } from "./painters/metadata";
 import { paintSelectionHighlight } from "./painters/selection";
 import { paintHighlight } from "./painters/highlights";
 import {
@@ -52,12 +53,17 @@ export function paintDocumentFrame(context: CanvasRenderingContext2D, frame: Doc
 type DocumentPaintPass = (context: CanvasRenderingContext2D, frame: DocumentFrame) => void;
 
 const documentPaintPasses: DocumentPaintPass[] = [
+  paintMetadataBackgroundPass,
   paintContainerBackgroundPass,
   paintInertBlockChromePass,
   paintDocumentHighlightPass,
   paintLineForegroundPass,
   paintRulePass,
 ];
+
+function paintMetadataBackgroundPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+  paintMetadataBackgrounds(context, frame.metadata, frame.theme);
+}
 
 function paintContainerBackgroundPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
   for (const lineFrame of frame.lines) {
@@ -116,6 +122,7 @@ function paintLineForegroundPass(context: CanvasRenderingContext2D, frame: Docum
   }
 
   paintActiveBlockChangedEffect(frame.activeBlockChangedEffect, environment);
+  paintMetadataForeground(context, frame.metadata, frame.theme);
 
   for (const lineFrame of frame.lines) {
     paintContentLine(context, lineFrame, environment);

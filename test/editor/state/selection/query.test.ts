@@ -4,6 +4,7 @@ import {
   getCaretTextContext,
   getSelectionContext,
   getSelectionRange,
+  metadataValuePath,
   selectionIntersectsBlockPath,
   selectionIntersectsPath,
   setSelection,
@@ -96,6 +97,15 @@ describe("Selection queries", () => {
     state = setSelection(state, {
       anchor: { path: first.path, offset: 0 },
       focus: { path: second.path, offset: 1 },
+    });
+
+    expect(getCaretTextContext(state)).toBeNull();
+  });
+
+  test("does not expose metadata as completion text context", () => {
+    const state = setSelection(setup("---\ntitle: Draft\n---\nBody\n"), {
+      path: metadataValuePath(0),
+      offset: 2,
     });
 
     expect(getCaretTextContext(state)).toBeNull();

@@ -24,6 +24,21 @@ test("resolves missing leaf background from global background", () => {
   expect(theme.leafBackground).toBe("#101010");
 });
 
+test("resolves scrollbar color from leaf border unless explicitly overridden", () => {
+  const fallback = resolveEditorTheme({
+    ...lightTheme,
+    leafBorder: "#94a3b8",
+  });
+  const overridden = resolveEditorTheme({
+    ...lightTheme,
+    leafBorder: "#94a3b8",
+    scrollbar: "#475569",
+  });
+
+  expect(fallback.scrollbar).toBe("#94a3b8");
+  expect(overridden.scrollbar).toBe("#475569");
+});
+
 test("resolves mode-aware semantic comment defaults based on background luminance", () => {
   const lightResolved = resolveEditorTheme({
     ...lightTheme,

@@ -26,6 +26,7 @@ export async function createBenchmarkFixtures(manifest: BenchmarkManifest) {
   const longMarkdown = buildSyntheticLongFixture(mediumMarkdown, 90);
   const xlargeMarkdown = buildSyntheticLongFixture(mediumMarkdown, 180);
   const hugeMarkdown = buildSyntheticLongFixture(mediumMarkdown, 360);
+  const metadataSnapshot = parseDocument(buildMetadataFixture(longMarkdown));
 
   return {
     blockquoteTransitionSnapshot: parseDocument(blockquoteTransitionMarkdown),
@@ -37,6 +38,7 @@ export async function createBenchmarkFixtures(manifest: BenchmarkManifest) {
     longSnapshot: parseDocument(longMarkdown),
     mediumMarkdown,
     mediumSnapshot: parseDocument(mediumMarkdown),
+    metadataSnapshot,
     nestedStructuralSnapshot: parseDocument(nestedStructuralMarkdown),
     richCodeSnapshot: parseDocument(richCodeMarkdown),
     richMixedMarkdown,
@@ -61,4 +63,21 @@ async function readBenchmarkFixtureMarkdown(manifest: BenchmarkManifest, id: str
 
 function buildSyntheticLongFixture(seed: string, repetitions: number) {
   return Array.from({ length: repetitions }, () => seed.trimEnd()).join("\n\n") + "\n";
+}
+
+function buildMetadataFixture(body: string) {
+  const fields = Array.from(
+    { length: 16 },
+    (_, index) => `field_${index + 1}: value ${index + 1}`,
+  ).join("\n");
+
+  return `---
+title: Benchmark
+draft: true
+description: |-
+  Metadata benchmark
+  exercises multiline measurement
+${fields}
+---
+${body}`;
 }

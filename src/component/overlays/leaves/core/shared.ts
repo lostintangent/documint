@@ -12,11 +12,12 @@
 //      the leaf-specific React component (LinkLeaf, AnnotationLeaf, …).
 
 import { isResolvedCommentThread } from "@/document";
-import type {
-  EditorCommentState,
-  EditorHoverTarget,
-  EditorSelectionPoint,
-  SelectionFormatting,
+import {
+  isCanvasDirectActivationTarget,
+  type EditorCommentState,
+  type EditorHoverTarget,
+  type EditorSelectionPoint,
+  type SelectionFormatting,
 } from "@/editor";
 import type { CompletionItem } from "../../../completions/completions";
 
@@ -166,7 +167,7 @@ export function resolveContextualLeaf(
   threads: EditorCommentState["threads"],
   ranges: EditorCommentState["ranges"],
 ): ThreadLeaf | LinkLeaf | null {
-  if (!target || target.kind === "task-toggle") {
+  if (!target || isCanvasDirectActivationTarget(target)) {
     return null;
   }
 

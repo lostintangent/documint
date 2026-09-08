@@ -18,6 +18,8 @@ import { splitGraphemes } from "../../text/graphemes";
 import {
   resolveCodeFont,
   inlineTextHasCustomMetrics,
+  resolvePlainTextFont,
+  resolveStrongTextFont,
   resolveInlineTextStyle,
 } from "../../text/fonts";
 import {
@@ -44,18 +46,16 @@ export type TextLineBoundary = {
 
 export type TextInlineReference = InlineReferenceLayoutMetric;
 
-export type LayoutTextInput =
+export type LayoutTextInput = {
+  path: string;
+  text: string;
+} & (
   | {
       inlines: readonly IndexedInline[];
       kind: "inlines";
-      path: string;
-      text: string;
     }
-  | {
-      kind: "source";
-      path: string;
-      text: string;
-    };
+  | { kind: "plain" | "preformatted" }
+);
 
 export type MeasuredTextLine = {
   end: number;
@@ -122,8 +122,6 @@ const HEADING_TYPOGRAPHY = [
 // visually paired with inline code at any scale.
 const CODE_BLOCK_LINE_HEIGHT_RATIO = 22 / 15;
 
-const SANS_SERIF_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const exactPrefixBoundaryGraphemeLimit = 32;
 
 let textMeasurementContext:
@@ -159,14 +157,14 @@ export function resolveTextBlockFont(block: Block | null, baseFontSize: number) 
   if (block?.type === "heading") {
     const { fontSize } = resolveHeadingTypography(block.depth, baseFontSize);
 
-    return `700 ${fontSize}px ${SANS_SERIF_STACK}`;
+    return resolveStrongTextFont(fontSize);
   }
 
   switch (block?.type) {
     case "code":
       return resolveCodeFont(baseFontSize);
     default:
-      return `${baseFontSize}px ${SANS_SERIF_STACK}`;
+      return resolvePlainTextFont(baseFontSize);
   }
 }
 
@@ -219,7 +217,6 @@ function isAsciiText(text: string) {
 export function measureTextContainerLines(
   cache: LayoutCache,
   container: LayoutTextInput,
-  block: Block | null,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
@@ -234,7 +231,6 @@ export function measureTextContainerLines(
   const measuredLines = createMeasuredTextLines(
     cache,
     container,
-    block,
     availableWidth,
     typography,
     resources,
@@ -273,7 +269,7 @@ export function measureTextLineBoundaries(
   ];
   let width = 0;
 
-  if (isSourceContainer(container)) {
+  if (isPlainTextContainer(container)) {
     let offset = 0;
     context.font = typography.font;
 
@@ -352,7 +348,6 @@ function prepareTextSegments(
 function createMeasuredTextLines(
   cache: LayoutCache,
   container: LayoutTextInput,
-  block: Block | null,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
@@ -376,7 +371,7 @@ function createMeasuredTextLines(
     cache,
     text,
     typography.font,
-    resolveWhitespace(block, inlineProfile),
+    resolveWhitespace(container, inlineProfile),
   );
   const resolveOffset = createCursorOffsetResolver(prepared.segments);
   const lines: MeasuredTextLine[] = [];
@@ -406,7 +401,7 @@ function createMeasuredTextLines(
   // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
   // visual row after a trailing source newline. Materialize it so code-block
   // carets can land immediately after pressing Enter at end-of-source.
-  return isSourceContainer(container) && text.endsWith("\n")
+  return isPlainTextContainer(container) && text.endsWith("\n")
     ? materializeTrailingSourceTextLine(lines, text.length, typography.lineHeight)
     : lines;
 }
@@ -878,7 +873,7 @@ function resolveInlineMeasurementProfile(container: LayoutTextInput): InlineMeas
   let hasImage = false;
   let hasRichInline = false;
 
-  if (isSourceContainer(container)) {
+  if (isPlainTextContainer(container)) {
     return {
       hasHardBreak,
       hasImage,
@@ -929,7 +924,7 @@ export function resolveTextMeasurementCacheIdentity(
   container: LayoutTextInput,
   resources: DocumentResources,
 ) {
-  if (isSourceContainer(container)) {
+  if (isPlainTextContainer(container)) {
     return [container.path, hashMeasurementText(container.text), ""].join(":");
   }
 
@@ -969,7 +964,7 @@ function resolveContainerMeasurementSignature(
   let hasResourceDependency = false;
   let signature = "";
 
-  if (isSourceContainer(container)) {
+  if (isPlainTextContainer(container)) {
     return { hasResourceDependency, signature };
   }
 
@@ -989,10 +984,10 @@ function resolveContainerMeasurementSignature(
   return { hasResourceDependency, signature };
 }
 
-function isSourceContainer(
+function isPlainTextContainer(
   container: LayoutTextInput,
-): container is Extract<LayoutTextInput, { kind: "source" }> {
-  return container.kind === "source";
+): container is Extract<LayoutTextInput, { kind: "plain" | "preformatted" }> {
+  return container.kind !== "inlines";
 }
 
 function containerInlines(container: Extract<LayoutTextInput, { kind: "inlines" }>) {
@@ -1119,8 +1114,8 @@ function measureTextPrefixWidth(
 }
 
 function resolveWhitespace(
-  block: Block | null,
+  container: LayoutTextInput,
   profile: InlineMeasurementProfile,
 ): NonNullable<PrepareOptions["whiteSpace"]> {
-  return block?.type === "code" || profile.hasHardBreak ? "pre-wrap" : "normal";
+  return container.kind === "preformatted" || profile.hasHardBreak ? "pre-wrap" : "normal";
 }

@@ -34,8 +34,8 @@ export function applyRootDelta(
   positionedRoots: IndexedRoot[],
   nextDocument: Document,
 ): DocumentIndex {
-  // Fast path: roots are reference-identical (metadata-only change such as
-  // `replaceDocumentMetadata`). Every map and flat array is byte-for-byte
+  // Fast path: roots are reference-identical (document-only change such as
+  // `replaceIndexedDocument`). Every map and flat array is byte-for-byte
   // identical to `prev`; only document-derived projections may need to
   // refresh.
   if (prev && positionedRoots === prev.roots) {
@@ -123,8 +123,8 @@ function addRootRecords(
   }
 }
 
-// Roots unchanged but the document reference may have been swapped (comments,
-// front matter). Reuse everything except the document-derived projections,
+// Roots unchanged but the document reference may have been swapped (comments
+// or metadata). Reuse everything except the document-derived projections,
 // which still gate on their own input identity.
 function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document): DocumentIndex {
   if (nextDocument === prev.document) {
@@ -318,7 +318,11 @@ function rootBlockMayAffectCommentResolution(
   // Match comment resolution's semantic text projection. Editor path text uses
   // selection-space text for references, but comments anchor against document
   // `plainText` via `listAnchorContainers`.
-  for (const container of listAnchorContainers({ blocks: [rootBlock], comments: [] })) {
+  for (const container of listAnchorContainers({
+    blocks: [rootBlock],
+    comments: [],
+    metadata: null,
+  })) {
     for (const thread of comments) {
       if (textMayAffectCommentResolution(container.text, thread)) {
         return true;

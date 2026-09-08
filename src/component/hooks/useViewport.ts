@@ -33,6 +33,7 @@ const DRAG_AUTO_SCROLL_EDGE_THRESHOLD = 28;
 const DRAG_AUTO_SCROLL_INCREMENT = 18;
 
 type UseViewportOptions = {
+  metadataExpanded: boolean;
   renderResources: DocumentResources | null;
   theme: ResolvedEditorTheme;
 };
@@ -84,7 +85,11 @@ export type ViewportController = {
   };
 };
 
-export function useViewport({ renderResources, theme }: UseViewportOptions): ViewportController {
+export function useViewport({
+  metadataExpanded,
+  renderResources,
+  theme,
+}: UseViewportOptions): ViewportController {
   /* Store, refs, and viewport state */
 
   const store = useDocumintStore();
@@ -120,6 +125,7 @@ export function useViewport({ renderResources, theme }: UseViewportOptions): Vie
       {
         fontSize: theme.fontSize,
         height: metrics.height,
+        metadataExpanded,
         paddingX: theme.paddingX,
         paddingY: theme.paddingY,
         top: metrics.top,

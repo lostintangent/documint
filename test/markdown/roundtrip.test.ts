@@ -24,6 +24,7 @@ const stableFixtures: string[] = [
   "test/goldens/rich-mixed.md",
   "test/goldens/comments-review.md",
   "test/goldens/frontmatter.md",
+  "test/goldens/frontmatter-raw.md",
   "test/goldens/line-breaks.md",
 ];
 

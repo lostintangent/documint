@@ -6,13 +6,15 @@ import type { Mark } from "@/document";
 import {
   blockContainsBlock,
   compareEditorPositions,
+  isMetadataPath,
+  resolveMetadataField,
   resolveBlockTextPathBoundary,
   resolveIndexedBlock,
   resolveInlinesAtPath,
   resolveIndexedBlockContainingPath,
   resolveEditorTextAtPath,
 } from "../index/query";
-import type { IndexedBlock, IndexedInline } from "../index/types";
+import type { IndexedBlock, IndexedInline, ResolvedMetadataText } from "../index/types";
 import type { EditorState } from "../types";
 import {
   isSelectionCollapsed,
@@ -44,8 +46,35 @@ export type CaretTextContext = {
   text: string;
 };
 
+// `undefined` leaves body-only editing alone. `null` rejects a selection that
+// touches metadata without staying inside one editable text field.
+export function resolveMetadataSelectionContext(
+  documentIndex: EditorState["documentIndex"],
+  selection: EditorState["selection"],
+): { field: ResolvedMetadataText; normalized: NormalizedEditorSelection } | null | undefined {
+  const anchorField = resolveMetadataField(documentIndex, selection.anchor.path);
+
+  if (selection.anchor.path === selection.focus.path) {
+    return anchorField && "text" in anchorField
+      ? {
+          field: anchorField,
+          normalized: normalizeSelection(documentIndex, selection),
+        }
+      : anchorField
+        ? null
+        : undefined;
+  }
+
+  const focusField = resolveMetadataField(documentIndex, selection.focus.path);
+  return anchorField || focusField ? null : undefined;
+}
+
 export function getCaretTextContext(state: EditorState): CaretTextContext | null {
   if (!isSelectionCollapsed(state.selection)) {
+    return null;
+  }
+
+  if (isMetadataPath(state.selection.focus.path)) {
     return null;
   }
 

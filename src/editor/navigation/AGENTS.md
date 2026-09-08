@@ -11,7 +11,7 @@ Navigation sits above state selection primitives and below browser interaction h
 - **Targets are positions.** Whether produced by motion, hit testing, or search, the navigation surface emits path-and-offset addresses (or `EditorState` updates) the host can pass to `setSelection`. Higher-level UX (search leaf, jump-to commands) stays at the component layer.
 - **Filtered navigation flow finds destinations without authorizing edits.** Navigation may skip empty paths and textless blocks when finding a useful caret target. State commands can reuse local text boundaries and index facts, but they must inspect mutation-specific topology before turning positions into deletion ranges.
 - **Layout is an input.** Vertical movement, point placement, and drag selection may use prepared layout and hit testing, but navigation does not create layout. Search is index-only and does not touch layout.
-- **Hit testing resolves editor intent.** `hit.ts` composes layout geometry with editor semantics such as inert-leaf redirects, below-document fallback, drag focus clamping, word selection, link hits, and task-toggle hits.
+- **Hit testing resolves editor intent.** `hit.ts` composes layout geometry with editor semantics such as inert-leaf redirects, below-document fallback, drag focus clamping, word selection, link hits, task-toggle hits, and metadata targets. The full metadata header resolves first as a toggle target; checkbox targets then win before text placement.
 - **Table movement overrides ordinary flow first.** Vertical table moves should prefer same-column cell targets before falling back to line/document flow.
 
 ## Subsystem Map

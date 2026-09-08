@@ -13,6 +13,7 @@ import {
   resolveDocumentTextPathBoundary,
   resolveAdjacentEditorPathWithTextInFlow,
   isSelectionCollapsed,
+  isMetadataPath,
   setSelection,
   setSelectionPoint,
   resolveEditorTextAtPath,
@@ -30,6 +31,7 @@ import type { WordMovement } from "../text/words";
 import { moveCaretVerticallyInTable, resolveVerticalTablePathTarget } from "./table";
 import { resolveWordNavigationTarget } from "./word";
 export {
+  isCanvasDirectActivationTarget,
   resolveDragFocus,
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
@@ -44,7 +46,7 @@ export {
   type EditorHoverTarget,
   type EditorHit,
 } from "./hit";
-import { resolveDragFocus, resolveSelectionPointAt } from "./hit";
+import { canExtendSelectionBetweenPaths, resolveDragFocus, resolveSelectionPointAt } from "./hit";
 
 export { resolveEditorSearchMatches, type EditorSearchMatch } from "./search";
 
@@ -158,17 +160,25 @@ export function moveCaretToDocumentBoundary(
   boundary: "start" | "end",
   extendSelection = false,
 ) {
-  const targetPath = resolveDocumentTextPathBoundary(state.documentIndex, boundary);
-  const targetText = targetPath ? resolveEditorTextAtPath(state.documentIndex, targetPath) : null;
-
-  if (!targetPath || targetText === null) {
+  if (extendSelection && isMetadataPath(state.selection.focus.path)) {
     return state;
   }
 
+  const targetPath =
+    resolveDocumentTextPathBoundary(state.documentIndex, boundary) ??
+    (boundary === "start"
+      ? state.documentIndex.blocks[0]?.path
+      : state.documentIndex.blocks.at(-1)?.path);
+
+  if (!targetPath) {
+    return state;
+  }
+
+  const targetText = resolveEditorTextAtPath(state.documentIndex, targetPath);
   return setSelectionPoint(
     state,
     targetPath,
-    boundary === "start" ? 0 : targetText.length,
+    boundary === "end" ? (targetText?.length ?? 0) : 0,
     extendSelection,
   );
 }
@@ -190,7 +200,17 @@ export function extendSelectionToPoint(
 ) {
   const hit = resolveSelectionPointAt(state, viewport, point);
 
-  return hit ? setSelectionPoint(state, hit.path, hit.offset, true) : null;
+  if (!hit) {
+    return null;
+  }
+
+  const canExtend = canExtendSelectionBetweenPaths(state.selection.anchor.path, hit.path);
+
+  if (!canExtend) {
+    return null;
+  }
+
+  return setSelectionPoint(state, hit.path, hit.offset, true);
 }
 
 export function updateSelectionFromDrag(

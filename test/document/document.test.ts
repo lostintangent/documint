@@ -53,6 +53,7 @@ describe("Document construction", () => {
     ]);
 
     expect(document.comments).toEqual([]);
+    expect(document.metadata).toBeNull();
   });
 
   test("canonicalizes text mark order and duplicates", () => {
@@ -216,7 +217,8 @@ describe("Document canonicalization", () => {
 
 describe("Document splicing", () => {
   test("splices one root without renormalizing unaffected siblings", () => {
-    const document = createTestDocument(createSampleBlocks());
+    const metadata = new Map([["title", "Sample"]]);
+    const document = createDocument(createSampleBlocks(), [], metadata);
     const leadingBlock = document.blocks[0];
     const trailingBlock = document.blocks[1];
     const nextDocument = spliceDocument(document, 1, 1, [createParagraphTextBlock("beta")]);
@@ -224,6 +226,8 @@ describe("Document splicing", () => {
     expect(nextDocument.blocks[0]).toBe(leadingBlock);
     expect(nextDocument.blocks[1]?.plainText).toBe("beta");
     expect(nextDocument.blocks[1]).not.toBe(trailingBlock);
+    expect(nextDocument.comments).toBe(document.comments);
+    expect(nextDocument.metadata).toBe(metadata);
   });
 
   test("preserves shifted suffix roots when inserting new top-level blocks", () => {
@@ -257,6 +261,7 @@ describe("Document splicing", () => {
 
   test("splices comment threads without rebuilding semantic blocks", () => {
     const document = createTestDocument(createSampleBlocks());
+    const metadata = new Map([["title", "Sample"]]);
     const container = listAnchorContainers(document)[0];
 
     if (!container) {
@@ -279,6 +284,7 @@ describe("Document splicing", () => {
       {
         ...document,
         comments: [firstThread],
+        metadata,
       },
       0,
       1,
@@ -287,6 +293,7 @@ describe("Document splicing", () => {
 
     expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
     expect(nextDocument.comments).toEqual([secondThread]);
+    expect(nextDocument.metadata).toBe(metadata);
   });
 
   test("deduplicates comment thread ids across spliced comment threads", () => {

@@ -7,26 +7,15 @@ import {
   type EffectEnvironment,
   type PaintEffect,
 } from "../effects";
-import { TASK_CHECKBOX_SIZE } from "@/editor/layout/lib/marker-metrics";
 import type { DocumentFrameLine } from "../frame";
 import type { ListMarkerFrame } from "../frame/chrome/list-markers";
 import type { DocumintListMarkerPaintFrame, ResolvedEditorTheme } from "@/types";
+import { paintCheckbox } from "./checkbox";
 
 const unorderedMarkerRadius = 3;
 const unorderedMarkerStrokeWidth = 1.5;
 
-const taskCheckboxCornerRadius = 3;
-const taskCheckboxStrokeWidth = 1.5;
-const taskCheckmarkStrokeWidth = 2;
-
 type MarkerPulse = { progress: number };
-
-// Checkmark polyline within the 14×14 checkbox bounds: start → elbow → end.
-const taskCheckmarkPath = {
-  elbow: { x: 6.5, y: 10.5 },
-  end: { x: 11.5, y: 3.5 },
-  start: { x: 3.5, y: 7.5 },
-};
 
 export function paintListMarker(
   lineFrame: DocumentFrameLine,
@@ -69,7 +58,7 @@ function paintListMarkerDefault(
   }
 
   if (marker.kind === "task") {
-    paintTaskCheckbox(context, marker, theme, pop);
+    paintCheckbox(context, marker, theme, pop);
   } else {
     const markerTextColor = theme.listMarkerText;
 
@@ -85,82 +74,6 @@ function paintListMarkerDefault(
   if (pop) {
     context.restore();
   }
-}
-
-function paintTaskCheckbox(
-  context: CanvasRenderingContext2D,
-  marker: Extract<ListMarkerFrame, { kind: "task" }>,
-  theme: ResolvedEditorTheme,
-  pop: MarkerPulse | null = null,
-) {
-  paintTaskCheckboxFrame(context, marker.rect, marker.checked, theme, pop);
-
-  if (!marker.checked) {
-    return;
-  }
-
-  paintTaskCheckboxCheckmark(context, marker.rect, theme, pop);
-}
-
-function paintTaskCheckboxFrame(
-  context: CanvasRenderingContext2D,
-  checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
-  checked: boolean,
-  theme: ResolvedEditorTheme,
-  pop: MarkerPulse | null = null,
-) {
-  const fillColor = checked ? theme.checkboxCheckedFill : theme.checkboxUncheckedFill;
-  // Checked state has no separate stroke token — the stroke matches the
-  // fill so the visible outline stays the same dimensions as an unchecked
-  // checkbox without exposing a redundant theme property.
-  const strokeColor = checked ? fillColor : theme.checkboxUncheckedStroke;
-
-  context.fillStyle = pop ? resolveBlockPulseColor(fillColor, pop, theme) : fillColor;
-  context.strokeStyle = pop ? resolveBlockPulseColor(strokeColor, pop, theme) : strokeColor;
-  context.beginPath();
-  context.lineWidth = scaleTaskCheckboxValue(checkboxBounds, taskCheckboxStrokeWidth);
-  context.roundRect(
-    checkboxBounds.left,
-    checkboxBounds.top,
-    checkboxBounds.width,
-    checkboxBounds.height,
-    scaleTaskCheckboxValue(checkboxBounds, taskCheckboxCornerRadius),
-  );
-  context.fill();
-  context.stroke();
-}
-
-function paintTaskCheckboxCheckmark(
-  context: CanvasRenderingContext2D,
-  checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
-  theme: ResolvedEditorTheme,
-  pop: MarkerPulse | null = null,
-) {
-  context.strokeStyle = pop
-    ? resolveBlockPulseColor(theme.checkboxCheckmark, pop, theme)
-    : theme.checkboxCheckmark;
-  context.lineWidth = scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkStrokeWidth);
-  context.beginPath();
-  context.moveTo(
-    checkboxBounds.left + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.start.x),
-    checkboxBounds.top + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.start.y),
-  );
-  context.lineTo(
-    checkboxBounds.left + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.elbow.x),
-    checkboxBounds.top + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.elbow.y),
-  );
-  context.lineTo(
-    checkboxBounds.left + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.end.x),
-    checkboxBounds.top + scaleTaskCheckboxValue(checkboxBounds, taskCheckmarkPath.end.y),
-  );
-  context.stroke();
-}
-
-function scaleTaskCheckboxValue(
-  checkboxBounds: Extract<ListMarkerFrame, { kind: "task" }>["rect"],
-  value: number,
-) {
-  return value * (checkboxBounds.width / TASK_CHECKBOX_SIZE);
 }
 
 function paintOrderedListMarker(

@@ -1,6 +1,6 @@
 // Editor state action contract: the union of all actions accepted by
 // `dispatch`, plus the selection shape they may carry.
-import type { Block, CommentThread, Document } from "@/document";
+import type { Block, CommentThread, Document, MetadataValue } from "@/document";
 import type { BlockReferencedListItemInsertedEffect, EditorEffect } from "./effects";
 import type { DocumentIndex } from "./index/types";
 import type { EditorSelection, SelectionTarget } from "./selection";
@@ -51,6 +51,12 @@ export type EditorStateAction =
   | ({
       kind: "splice-fragment";
       blocks: Block[];
+    } & ActionEffectFields)
+  | ({
+      count: number;
+      entries: Array<[string, MetadataValue]>;
+      index: number;
+      kind: "splice-metadata";
     } & ActionEffectFields)
   | ({
       kind: "splice-comments";

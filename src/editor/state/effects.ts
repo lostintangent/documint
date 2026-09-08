@@ -12,7 +12,7 @@ import {
 import { normalizeSelection, type EditorSelection } from "./selection";
 import type { EditorState } from "./types";
 
-export type TextEffectContentKind = "inlines" | "source";
+export type TextEffectContentKind = "inlines" | "metadata" | "source";
 
 export type TextInsertedEffect = {
   kind: "text-inserted";

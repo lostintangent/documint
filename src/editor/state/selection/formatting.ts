@@ -10,7 +10,7 @@
 
 import type { Mark } from "@/document";
 import { findInlinesInRange } from "../index/inlines";
-import { resolveEditorTextAtPath, resolveInlinesAtPath } from "../index/query";
+import { isMetadataPath, resolveEditorTextAtPath, resolveInlinesAtPath } from "../index/query";
 import type { IndexedInline } from "../index/types";
 import type { EditorState } from "../types";
 import { getSelectionRange } from "./query";
@@ -21,6 +21,10 @@ export type SelectionFormatting = {
 };
 
 export function getSelectionFormatting(state: EditorState): SelectionFormatting {
+  if (isMetadataPath(state.selection.anchor.path) || isMetadataPath(state.selection.focus.path)) {
+    return unsupportedSelectionFormatting();
+  }
+
   const selectionRange = getSelectionRange(state);
 
   if (!selectionRange) {
@@ -36,10 +40,7 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
   const inlines = resolveInlinesAtPath(state.documentIndex, selectionRange.path);
 
   if (!inlines) {
-    return {
-      marks: [],
-      supported: false,
-    };
+    return unsupportedSelectionFormatting();
   }
 
   if (inlines.length === 0) {
@@ -83,6 +84,13 @@ function resolveSelectionMarks(selectedInlines: readonly IndexedInline[]): Mark[
   }
 
   return commonMarks ? [...commonMarks] : [];
+}
+
+function unsupportedSelectionFormatting(): SelectionFormatting {
+  return {
+    marks: [],
+    supported: false,
+  };
 }
 
 function emptySelectionFormatting(): SelectionFormatting {

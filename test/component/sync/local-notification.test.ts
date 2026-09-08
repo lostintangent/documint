@@ -6,12 +6,26 @@ import {
   deleteBackward,
   insertLineBreak,
   insertText,
+  metadataValuePath,
   setSelection,
   type EditorState,
 } from "@/editor/state";
 import { parseDocument, serializeDocument } from "@/markdown";
 
 describe("local content notifications", () => {
+  test("does not emit the runtime caret host for metadata-only edits", () => {
+    const store = createStore(parseDocument("---\ntitle: Stub\n---\n"));
+    const state = setSelection(
+      store.editor.getState(),
+      { path: metadataValuePath(0), offset: "Stub".length },
+      false,
+    );
+
+    store.editor.replace(state);
+
+    expect(runCommandAndEmit(store, insertText, "!")).toBe('---\ntitle: "Stub!"\n---\n');
+  });
+
   test("keep live-only trailing empty paragraphs out of external snapshot reconciliation", () => {
     const store = createStore(parseDocument("Alpha\n", {}));
     placeCaret(store, 0, "end");

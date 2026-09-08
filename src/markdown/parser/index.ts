@@ -1,5 +1,5 @@
 /**
- * Owns document-level parsing orchestration: front matter, then blocks, then
+ * Owns document-level parsing orchestration: metadata preamble, then blocks, then
  * trailing comment-directive extraction, assembled into a normalized
  * `Document`. The fragment-altitude entry (`parseFragmentBlocks`) bypasses
  * the persistence-only concerns so clipboard payloads don't silently lose a
@@ -12,9 +12,10 @@
  * here because every parser module consumes them.
  */
 
-import type { Document, Fragment } from "@/document";
+import type { Document, DocumentMetadata, Fragment } from "@/document";
 import { createDocument, isPlainTextBlocks } from "@/document";
 import { lineFeed, type MarkdownOptions } from "../shared";
+import { metadataFence, parseMetadataPreambleLines } from "../front-matter";
 import { parseBlocks } from "./blocks";
 import { extractCommentDirective } from "./comments";
 import { createMarkdownParseContext } from "./context";
@@ -23,11 +24,11 @@ export function parseDocument(source: string, options: MarkdownOptions = {}): Do
   const cursor = createCursor(source);
   const context = createMarkdownParseContext(options);
 
-  const frontMatter = readFrontMatter(cursor);
+  const metadata = readMetadata(cursor);
   const blocks = parseBlocks(cursor, context);
   const { comments, blocks: contentBlocks } = extractCommentDirective(blocks);
 
-  return createDocument(contentBlocks, comments, frontMatter);
+  return createDocument(contentBlocks, comments, metadata);
 }
 
 /**
@@ -61,21 +62,20 @@ export function parseFragment(source: string, options: MarkdownOptions = {}): Fr
   return { kind: "blocks", blocks };
 }
 
-const frontMatterFence = "---";
-function readFrontMatter(cursor: MarkdownLineCursor): string | undefined {
-  if (cursor.lines[0] !== frontMatterFence) {
-    return;
+function readMetadata(cursor: MarkdownLineCursor): DocumentMetadata | null {
+  if (cursor.lines[0] !== metadataFence) {
+    return null;
   }
 
   for (let close = 1; close < cursor.lines.length; close += 1) {
-    if (cursor.lines[close] === frontMatterFence) {
-      const source = cursor.lines.slice(0, close + 1).join(lineFeed);
+    if (cursor.lines[close] === metadataFence) {
+      const metadata = parseMetadataPreambleLines(cursor.lines.slice(1, close));
       cursor.index = close + 1;
-      return source;
+      return metadata;
     }
   }
 
-  return undefined;
+  return null;
 }
 
 // --- Shared cursor and line helpers ---

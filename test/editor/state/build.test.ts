@@ -22,7 +22,7 @@ import {
 import { createIndexedRoot, positionIndexedRoots } from "@/editor/state/index/roots";
 import {
   commitDocument,
-  replaceDocumentMetadata,
+  replaceIndexedDocument,
   replaceEditorBlock,
 } from "@/editor/state/index/splice";
 import { parseDocument, serializeDocument } from "@/markdown";
@@ -497,9 +497,12 @@ alpha
 beta
 `);
     const index = createDocumentIndex(snapshot);
-    // Metadata-only mutation: blocks identical, front matter added.
-    const nextDocument = { ...index.document, frontMatter: "title: example\n" };
-    const next = replaceDocumentMetadata(index, nextDocument);
+    // Metadata-only mutation: body blocks stay identical.
+    const nextDocument = {
+      ...index.document,
+      metadata: new Map([["title", "example"]]),
+    };
+    const next = replaceIndexedDocument(index, nextDocument);
 
     expect(next.document).toBe(nextDocument);
     // Roots, blocks, and lookup maps all keep reference identity —

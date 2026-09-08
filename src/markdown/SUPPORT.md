@@ -41,30 +41,31 @@ These are the semantic node families currently representable in `Document` and t
 
 ## Block Features
 
-| Feature                            | Example                                    | Status                         | Notes                                                                                   |
-| ---------------------------------- | ------------------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------- |
-| ATX headings                       | `## Heading`                               | `Supported semantically`       | Maps directly to heading depth 1-6.                                                     |
-| Setext headings                    | `Heading` + `---` / `===`                  | `Intentional non-goal`         | Valid markdown, but not part of the canonical Documint authoring dialect.               |
-| Paragraphs                         | plain text blocks                          | `Supported semantically`       | Canonical serialization preserves blank-line-separated block structure.                 |
-| Blockquotes                        | `> quote`                                  | `Supported semantically`       | Nested block structure is supported.                                                    |
-| Bullet lists                       | `- item`                                   | `Supported semantically`       | Canonical serializer emits `-`.                                                         |
-| Alternate bullet markers           | `* item`, `+ item`                         | `Canonicalized`                | Parse support exists; serializer normalizes to `-`.                                     |
-| Ordered lists with `.`             | `1. item`                                  | `Supported semantically`       | Canonical serializer repeats the same marker number.                                    |
-| Ordered lists with `)`             | `1) item`                                  | `Gap`                          | Reasonable imported markdown syntax; still worth considering.                           |
-| Ordered list authored starts       | `3. item`                                  | `Supported semantically`       | Preserved only when `preserveOrderedListStart` is enabled; otherwise canonicalized.     |
-| Task lists                         | `- [ ] item`                               | `Supported semantically`       | Blank task items are preserved.                                                         |
-| Nested task lists                  | nested checkbox items                      | `Supported semantically`       | Covered by tests and editor behavior.                                                   |
-| Tight vs loose lists               | blank lines between items                  | `Supported semantically`       | Represented through list/list-item `compact`.                                           |
-| Fenced code blocks with backticks  | ` `\``ts `                                 | `Supported semantically`       | Language/meta round-trip.                                                               |
-| Fenced code blocks with tildes     | `~~~`                                      | `Intentional non-goal`         | Valid markdown, but backtick fences are the canonical Documint syntax.                  |
-| Indented code blocks               | 4-space indented code                      | `Intentional non-goal`         | Valid markdown, but not part of the canonical Documint authoring dialect.               |
-| Thematic breaks                    | `***`, `---`, `___`                        | `Supported semantically`       | Serializer canonicalizes to `***`.                                                      |
-| GFM tables                         | pipe tables                                | `Supported semantically`       | Alignment and escaped cell pipes are supported; serializer emits canonical pipe tables. |
-| Flexible table forms               | edge-valid GFM table syntax                | `Gap`                          | Current parser handles the canonical table shape, not the full GFM acceptance surface.  |
-| HTML blocks, simple single-line    | `<aside>...</aside>`                       | `Preserved as unsupported/raw` | Preserved as unsupported semantic blocks.                                               |
-| HTML blocks, full CommonMark forms | multi-line HTML block start/end conditions | `Gap`                          | Spec coverage is broader than current implementation.                                   |
-| Container directives               | `:::callout`                               | `Supported semantically`       | Modeled as `DirectiveBlock` with name, attributes, and raw body.                        |
-| Comment appendix directive         | `:::documint-comments`                     | `Supported semantically`       | Special markdown-only translation into `Document.comments`.                             |
+| Feature                            | Example                                    | Status                         | Notes                                                                                                               |
+| ---------------------------------- | ------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| ATX headings                       | `## Heading`                               | `Supported semantically`       | Maps directly to heading depth 1-6.                                                                                 |
+| Setext headings                    | `Heading` + `---` / `===`                  | `Intentional non-goal`         | Valid markdown, but not part of the canonical Documint authoring dialect.                                           |
+| Paragraphs                         | plain text blocks                          | `Supported semantically`       | Canonical serialization preserves blank-line-separated block structure.                                             |
+| Blockquotes                        | `> quote`                                  | `Supported semantically`       | Nested block structure is supported.                                                                                |
+| Bullet lists                       | `- item`                                   | `Supported semantically`       | Canonical serializer emits `-`.                                                                                     |
+| Alternate bullet markers           | `* item`, `+ item`                         | `Canonicalized`                | Parse support exists; serializer normalizes to `-`.                                                                 |
+| Ordered lists with `.`             | `1. item`                                  | `Supported semantically`       | Canonical serializer repeats the same marker number.                                                                |
+| Ordered lists with `)`             | `1) item`                                  | `Gap`                          | Reasonable imported markdown syntax; still worth considering.                                                       |
+| Ordered list authored starts       | `3. item`                                  | `Supported semantically`       | Preserved only when `preserveOrderedListStart` is enabled; otherwise canonicalized.                                 |
+| Task lists                         | `- [ ] item`                               | `Supported semantically`       | Blank task items are preserved.                                                                                     |
+| Nested task lists                  | nested checkbox items                      | `Supported semantically`       | Covered by tests and editor behavior.                                                                               |
+| Tight vs loose lists               | blank lines between items                  | `Supported semantically`       | Represented through list/list-item `compact`.                                                                       |
+| Fenced code blocks with backticks  | ` `\``ts `                                 | `Supported semantically`       | Language/meta round-trip.                                                                                           |
+| Fenced code blocks with tildes     | `~~~`                                      | `Intentional non-goal`         | Valid markdown, but backtick fences are the canonical Documint syntax.                                              |
+| Indented code blocks               | 4-space indented code                      | `Intentional non-goal`         | Valid markdown, but not part of the canonical Documint authoring dialect.                                           |
+| Thematic breaks                    | `***`, `---`, `___`                        | `Supported semantically`       | Serializer canonicalizes to `***`.                                                                                  |
+| GFM tables                         | pipe tables                                | `Supported semantically`       | Alignment and escaped cell pipes are supported; serializer emits canonical pipe tables.                             |
+| YAML front matter                  | leading `---` preamble                     | `Supported semantically`       | Flat semantic strings/booleans; strings emit as quoted scalars or literal blocks, while unsupported YAML stays raw. |
+| Flexible table forms               | edge-valid GFM table syntax                | `Gap`                          | Current parser handles the canonical table shape, not the full GFM acceptance surface.                              |
+| HTML blocks, simple single-line    | `<aside>...</aside>`                       | `Preserved as unsupported/raw` | Preserved as unsupported semantic blocks.                                                                           |
+| HTML blocks, full CommonMark forms | multi-line HTML block start/end conditions | `Gap`                          | Spec coverage is broader than current implementation.                                                               |
+| Container directives               | `:::callout`                               | `Supported semantically`       | Modeled as `DirectiveBlock` with name, attributes, and raw body.                                                    |
+| Comment appendix directive         | `:::documint-comments`                     | `Supported semantically`       | Special markdown-only translation into `Document.comments`.                                                         |
 
 ## Inline Features
 
@@ -103,6 +104,7 @@ These behaviors are intentional even when authored input has multiple valid spel
 | Ordered lists repeat the same visible marker number          | `Canonicalized`                | Matches existing subsystem behavior.                                               |
 | Ordered list start preservation is opt-in                    | `Canonicalized`                | Controlled by `preserveOrderedListStart`.                                          |
 | Tables serialize with compact cells by default               | `Canonicalized`                | Cells emit at their natural width; opt in to column padding via `padTableColumns`. |
+| Front matter uses one canonical YAML subset                  | `Canonicalized`                | Ambiguous or multiline strings use literal blocks; unsupported source stays raw.   |
 | Underline serializes as `<ins>`                              | `Canonicalized`                | Semantic underline does not require alternate markdown spellings.                  |
 | Superscript serializes as `<sup>`                            | `Canonicalized`                | Semantic superscript does not require alternate markdown spellings.                |
 | Unsupported directives/raw content preserve authored payload | `Preserved as unsupported/raw` | Avoids destructive loss.                                                           |

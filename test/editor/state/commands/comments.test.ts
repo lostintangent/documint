@@ -7,7 +7,7 @@ import {
   replyToThread,
   resolveThread,
 } from "@/editor/state";
-import { setup, getPath, placeAt } from "../../helpers";
+import { getMetadataEntry, setup, getPath, placeAt } from "../../helpers";
 
 function stateWithThread() {
   const state = setup("Hello world\n");
@@ -85,5 +85,26 @@ describe("Comment thread commands", () => {
     expect(replyToThread(state, 99, "ghost reply")).toBeNull();
     expect(deleteThread(state, 99)).toBeNull();
     expect(resolveThread(state, 99, true)).toBeNull();
+  });
+
+  test("rejects comment creation on metadata text", () => {
+    const state = setup(`---
+title: Draft
+---
+Body
+`);
+    const value = getMetadataEntry(state, 0, "value");
+
+    expect(
+      addComment(
+        state,
+        {
+          endOffset: 5,
+          path: value.path,
+          startOffset: 0,
+        },
+        "Metadata note",
+      ),
+    ).toBeNull();
   });
 });

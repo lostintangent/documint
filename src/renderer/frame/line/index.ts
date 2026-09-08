@@ -87,7 +87,8 @@ export function resolveDocumentFrameLine({
   listMarkerPlans,
   width,
 }: ResolveDocumentFrameLineOptions): DocumentFrameLine {
-  const indexedBlock = resolveIndexedBlock(editorState.documentIndex, line.blockPath);
+  const indexedBlock =
+    line.blockPath === null ? null : resolveIndexedBlock(editorState.documentIndex, line.blockPath);
   const block = indexedBlock?.block ?? null;
   const runtimeBlockPath = indexedBlock?.path ?? null;
   const indexedText = resolveIndexedText(editorState.documentIndex, line.path);

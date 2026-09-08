@@ -1,5 +1,5 @@
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
-import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
+import type { EditorLayoutState, LayoutRect, MetadataLayout } from "@/editor/layout";
 import { findVisibleBlockRange, findVisibleLineRange } from "@/editor/layout";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
@@ -124,6 +124,7 @@ export function createDocumentFrame(
       width: options.width,
     },
     lines,
+    metadata: layout.metadata,
     resources,
     theme: options.theme,
     viewport: {
@@ -182,6 +183,7 @@ export type DocumentFrame = {
   readonly tableCellDocumentChanges: readonly TableCellDocumentChangeFrame[];
   readonly layer: PaintLayerFrame;
   readonly lines: readonly DocumentFrameLine[];
+  readonly metadata: MetadataLayout | null;
   readonly resources: DocumentResources;
   readonly theme: ResolvedEditorTheme;
   readonly viewport: LayoutRect;

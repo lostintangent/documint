@@ -99,8 +99,8 @@ test("scales task checkbox bounds with paragraph font size", () => {
 
     expect(line.height).toBe(expectation.lineHeight);
     expect(line.contentInset).toBe(expectation.size + 8);
-    expect(bounds.size).toBe(expectation.size);
-    expect(line.contentInset - bounds.size).toBe(8);
+    expect(bounds.width).toBe(expectation.size);
+    expect(line.contentInset - bounds.width).toBe(8);
     expect(bounds.top - line.top).toBe(expectation.topOffset);
   }
 });

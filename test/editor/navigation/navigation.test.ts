@@ -13,7 +13,7 @@ import {
   resolveSelectionPointAt,
   type EditorState,
 } from "@/editor";
-import { setSelection, type DocumentIndex } from "@/editor/state";
+import { metadataValuePath, setSelection, type DocumentIndex } from "@/editor/state";
 import { getPath, placeAt, setup } from "../helpers";
 
 // Tall enough that the full layout is in view for every test fixture, so
@@ -324,6 +324,22 @@ test("jumps to the end of the document when moveCaretToDocumentBoundary is invok
     offset: third.text.length,
     path: third.path,
   });
+});
+
+test("moves metadata selection to an inert document boundary", () => {
+  const state = setup("---\ntitle: Draft\n---\n\n***\n");
+  const divider = state.documentIndex.blocks.find((entry) => entry.block.type === "divider");
+
+  if (!divider) {
+    throw new Error("Expected divider");
+  }
+
+  const nextState = moveCaretToDocumentBoundary(
+    setSelection(state, { path: metadataValuePath(0), offset: 2 }),
+    "start",
+  );
+
+  expect(nextState.selection.focus).toEqual({ path: divider.path, offset: 0 });
 });
 
 test("extends the selection to the end of the document while keeping the anchor", () => {

@@ -14,14 +14,15 @@ import {
   type DocumentLayoutOptions,
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
-import { mergeLayoutBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
+import { updateBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { layoutTable } from "./table";
+import { measureMetadataPrefix, type MetadataLayout } from "./metadata";
 import {
   measureTextContainerLines,
   measureTextLineBoundaries,
   resolveBlockTypography,
-  type TextLineBoundary,
   type TextInlineReference,
+  type TextLineBoundary,
 } from "./text";
 import { resolveBlockLayoutTextInput } from "./text-input";
 
@@ -32,19 +33,15 @@ export type LineBoundary = TextLineBoundary;
 export type LayoutInlineReference = TextInlineReference;
 
 export type LayoutLine = {
-  // Identity: connects this visual row back to indexed editor content.
-  blockPath: string;
+  blockPath: string | null;
   path: string;
-  // Model span: offsets and text slice from the owning editor path.
   start: number;
   end: number;
-  // Geometry: document-space rectangle occupied by this visual row.
   top: number;
   left: number;
   width: number;
   height: number;
   contentInset: number;
-  // Rendering and caret data.
   text: string;
   font: string;
   boundaries: LineBoundary[];
@@ -72,6 +69,7 @@ export type DocumentLayout = {
   pathLineIndices: Map<string, number[]>;
   height: number;
   lines: LayoutLine[];
+  metadata: MetadataLayout | null;
   options: DocumentLayoutOptions;
   width: number;
 };
@@ -81,10 +79,38 @@ export function measureLayoutSlice(
   options: PartialDocumentLayoutOptions,
   cache = createLayoutCache(),
   resources: DocumentResources | null = null,
-  // Seed for the running Y cursor. Defaults to `options.paddingY` (slice-
-  // local coordinates). The virtualizer passes the document-space top of
-  // the slice so geometry emerges directly in document space and no
-  // post-measurement shift is needed.
+  // Seed for the body-relative running Y cursor. Defaults to
+  // `options.paddingY`; metadata composition applies its document prefix
+  // offset after body measurement.
+  startY?: number,
+  blockStartIndex = 0,
+  blockEndIndex = documentIndex.blocks.length,
+): DocumentLayout {
+  const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
+  const bodyLayout = measureBodyLayoutSlice(
+    documentIndex,
+    options,
+    cache,
+    resolvedResources,
+    startY,
+    blockStartIndex,
+    blockEndIndex,
+  );
+  const metadata = measureMetadataPrefix(
+    documentIndex.document.metadata,
+    bodyLayout.options,
+    cache,
+    resolvedResources,
+  );
+
+  return composeMetadataPrefix(bodyLayout, metadata);
+}
+
+export function measureBodyLayoutSlice(
+  documentIndex: DocumentIndex,
+  options: PartialDocumentLayoutOptions,
+  cache = createLayoutCache(),
+  resources: DocumentResources | null = null,
   startY?: number,
   blockStartIndex = 0,
   blockEndIndex = documentIndex.blocks.length,
@@ -212,8 +238,51 @@ export function measureLayoutSlice(
     pathLineIndices: createPathLineIndices(lines),
     height: Math.max(y, seedY),
     lines,
+    metadata: null,
     options: resolvedOptions,
     width: resolvedOptions.width,
+  };
+}
+
+export function composeMetadataPrefix(
+  bodyLayout: DocumentLayout,
+  metadata: MetadataLayout | null,
+): DocumentLayout {
+  if (!metadata) {
+    return bodyLayout;
+  }
+
+  const bodyOffset = metadata.bodyOffset;
+  const lines: LayoutLine[] = [
+    ...metadata.lines,
+    ...bodyLayout.lines.map((line) => ({
+      ...line,
+      top: line.top + bodyOffset,
+    })),
+  ];
+  const pathBounds = new Map(metadata.pathBounds);
+
+  for (const [path, bounds] of bodyLayout.pathBounds) {
+    pathBounds.set(path, {
+      bottom: bounds.bottom + bodyOffset,
+      left: bounds.left,
+      right: bounds.right,
+      top: bounds.top + bodyOffset,
+    });
+  }
+
+  return {
+    ...bodyLayout,
+    blocks: bodyLayout.blocks.map((block) => ({
+      ...block,
+      bottom: block.bottom + bodyOffset,
+      top: block.top + bodyOffset,
+    })),
+    height: bodyLayout.height + bodyOffset,
+    lines,
+    metadata,
+    pathBounds,
+    pathLineIndices: createPathLineIndices(lines),
   };
 }
 
@@ -261,26 +330,15 @@ function layoutSingleContainer(
   const measuredLines = measureTextContainerLines(
     cache,
     container,
-    block,
     availableWidth,
     typography,
     resources,
   );
   let y = top + blockPaddingY;
+
   for (const line of measuredLines) {
     const layoutLine = {
       blockPath,
-      path: container.path,
-      start: line.start,
-      end: line.end,
-      top: y,
-      left,
-      width: line.width,
-      height: line.height,
-      contentInset,
-      text: line.text,
-      font: typography.font,
-      inlineReferences: line.inlineReferences,
       boundaries: measureTextLineBoundaries(
         cache,
         container,
@@ -291,6 +349,17 @@ function layoutSingleContainer(
         typography,
         resources,
       ),
+      contentInset,
+      end: line.end,
+      font: typography.font,
+      height: line.height,
+      inlineReferences: line.inlineReferences,
+      left,
+      path: container.path,
+      start: line.start,
+      text: line.text,
+      top: y,
+      width: line.width,
     } satisfies LayoutLine;
 
     lines.push(layoutLine);
@@ -357,11 +426,4 @@ function updatePathBoundsFromLine(pathBounds: DocumentLayout["pathBounds"], line
           top: line.top,
         },
   );
-}
-
-export function updateBlockExtent(
-  blockExtents: Map<string, LayoutBlockExtent>,
-  line: Pick<LayoutLine, "blockPath" | "height" | "top">,
-) {
-  mergeLayoutBlockExtent(blockExtents, line.blockPath, line.top, line.top + line.height);
 }

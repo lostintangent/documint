@@ -48,6 +48,7 @@ describe("parseFragment persistence-boundary isolation", () => {
     expect(fragment.kind).toBe("blocks");
     if (fragment.kind === "blocks") {
       expect(fragment.blocks[0]?.type).toBe("divider");
+      expect(serializeFragment(fragment)).toBe("---\n\nfoo: 1\n\n---\n\nBody.");
     }
   });
 

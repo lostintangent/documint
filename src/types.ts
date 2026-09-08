@@ -131,6 +131,7 @@ export type EditorTheme = {
   selectionBackground?: string;
   selectionHandleBackground?: string;
   selectionHandleBorder?: string;
+  scrollbar?: string;
   tableBodyBackground?: string;
   tableBorder?: string;
   tableHeaderBackground?: string;

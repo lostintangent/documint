@@ -41,7 +41,6 @@ export function estimateContainerHeight(
     return measureTextContainerLines(
       cache,
       container,
-      block,
       contentMetrics.availableWidth,
       typography,
       resources,

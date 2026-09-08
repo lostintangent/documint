@@ -14,8 +14,14 @@ import {
   createText,
   type Inline,
   type ListItemBlock,
+  type MetadataValue,
 } from "@/document";
-import { parseDocument, serializeCommentAppendix, serializeDocument } from "@/markdown";
+import {
+  parseDocument,
+  serializeCommentAppendix,
+  serializeDocument,
+  serializeMetadataPreamble,
+} from "@/markdown";
 import { expectBlockAt } from "../document/helpers";
 import { expectRoundTrip, expectStableRoundTrip } from "./helpers";
 
@@ -321,9 +327,56 @@ describe("Comments", () => {
   });
 });
 
-describe("Front matter", () => {
-  test("emits front matter cleanly when the document has no body blocks", () => {
-    expectRoundTrip("---\ntitle: Stub\n---\n");
+describe("Document metadata", () => {
+  test("serializes absent, structured, and raw metadata preambles independently", () => {
+    const structured = new Map<string, MetadataValue>([
+      ["title", "Sample"],
+      ["release channel", "stable"],
+      ["draft", false],
+      ["tags", "docs, sample"],
+    ]);
+
+    expect(serializeMetadataPreamble(null)).toBe("");
+    expect(serializeMetadataPreamble(structured)).toBe(`---
+title: "Sample"
+"release channel": "stable"
+draft: false
+tags: "docs, sample"
+---`);
+    expect(
+      serializeMetadataPreamble({
+        raw: "title: First\ntitle: Second",
+      }),
+    ).toBe(`---
+title: First
+title: Second
+---`);
+  });
+
+  test.each([
+    "|",
+    "> quote",
+    "# comment",
+    "a: b",
+    " leading",
+    "trailing ",
+    "a # comment",
+    "- item",
+    "true",
+    "false",
+    "\n",
+    "\n\n",
+  ])("keeps edited string value %p structured across serialization", (value) => {
+    const metadata = new Map<string, MetadataValue>([["title", value]]);
+    const markdown = serializeDocument(createDocument([], [], metadata));
+
+    expect(parseDocument(markdown).metadata).toEqual(metadata);
+  });
+
+  test("emits metadata cleanly when the document has no body blocks", () => {
+    expect(serializeDocument(parseDocument("---\ntitle: Stub\n---\n"))).toBe(
+      '---\ntitle: "Stub"\n---\n',
+    );
   });
 });
 

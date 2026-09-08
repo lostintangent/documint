@@ -6,7 +6,8 @@ import { emptyDocumentResources } from "@/editor/resources";
 import { countEditorPathsWithText, type EditorState } from "../../state";
 import { createLayoutCache, type LayoutCache } from "./cache";
 import { resolveDocumentLayoutOptions, type DocumentLayoutOptions } from "../lib/options";
-import { measureLayoutSlice, type DocumentLayout } from "../measure";
+import { composeMetadataPrefix, measureLayoutSlice, type DocumentLayout } from "../measure";
+import { measureMetadataPrefix } from "../measure/metadata";
 import { createVirtualizedLayoutSlice } from "../virtualize";
 
 const FULL_LAYOUT_PATH_THRESHOLD = 96;
@@ -62,18 +63,41 @@ export function createEditorLayoutState(
       return bounds ? { bottom: bounds.bottom, top: bounds.top } : null;
     };
   } else {
+    const metadata = measureMetadataPrefix(
+      documentIndex.document.metadata,
+      resolvedOptions,
+      cache,
+      resolvedResources,
+    );
+    const bodyOffset = metadata?.bodyOffset ?? 0;
     const virtualized = createVirtualizedLayoutSlice({
       cache,
       documentIndex,
       options: resolvedOptions,
       resources: resolvedResources,
       state,
-      viewport,
+      viewport: {
+        ...viewport,
+        top: Math.max(0, viewport.top - bodyOffset),
+      },
     });
 
-    estimatePathBounds = virtualized.estimatePathBounds;
-    layout = virtualized.layout;
-    totalHeight = virtualized.totalHeight;
+    estimatePathBounds = (path) => {
+      const metadataBounds = metadata?.pathBounds.get(path);
+      if (metadataBounds) {
+        return { bottom: metadataBounds.bottom, top: metadataBounds.top };
+      }
+
+      const bodyBounds = virtualized.estimatePathBounds(path);
+      return bodyBounds
+        ? {
+            bottom: bodyBounds.bottom + bodyOffset,
+            top: bodyBounds.top + bodyOffset,
+          }
+        : null;
+    };
+    layout = composeMetadataPrefix(virtualized.layout, metadata);
+    totalHeight = virtualized.totalHeight + bodyOffset;
   }
 
   return {

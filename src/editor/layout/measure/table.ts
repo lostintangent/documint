@@ -5,8 +5,12 @@ import type { Block } from "@/document";
 import type { DocumentResources } from "@/types";
 import type { IndexedBlock, IndexedTableCell } from "../../state";
 import type { DocumentLayoutOptions } from "../lib/options";
-import { mergeLayoutBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
-import { updateBlockExtent, type DocumentLayout, type LayoutLine } from "./index";
+import {
+  mergeLayoutBlockExtent,
+  updateBlockExtent,
+  type LayoutBlockExtent,
+} from "../lib/marker-metrics";
+import type { DocumentLayout, LayoutLine } from "./index";
 import {
   measureTextContainerLines,
   measureTextLineBoundaries,
@@ -53,10 +57,7 @@ export function resolveTableColumnMetrics(
 }
 
 export function resolveTableRowHeight(lineHeight: number, cellContentHeights: number[]) {
-  return Math.max(
-    lineHeight + TABLE_CELL_PADDING_Y * 2,
-    ...cellContentHeights.map((height) => height + TABLE_CELL_PADDING_Y * 2),
-  );
+  return Math.max(lineHeight, ...cellContentHeights) + TABLE_CELL_PADDING_Y * 2;
 }
 
 export function layoutTable(
@@ -101,17 +102,6 @@ export function layoutTable(
       for (const line of cell.measuredLines) {
         const layoutLine = {
           blockPath,
-          path: cell.input.path,
-          start: line.start,
-          end: line.end,
-          top: lineTop,
-          left: cellLeft + TABLE_CELL_PADDING_X,
-          width: line.width,
-          height: line.height,
-          contentInset: 0,
-          text: line.text,
-          font: cell.typography.font,
-          inlineReferences: line.inlineReferences,
           boundaries: measureTextLineBoundaries(
             cache,
             cell.input,
@@ -122,6 +112,17 @@ export function layoutTable(
             cell.typography,
             resources,
           ),
+          contentInset: 0,
+          end: line.end,
+          font: cell.typography.font,
+          height: line.height,
+          inlineReferences: line.inlineReferences,
+          left: cellLeft + TABLE_CELL_PADDING_X,
+          path: cell.input.path,
+          start: line.start,
+          text: line.text,
+          top: lineTop,
+          width: line.width,
         } satisfies LayoutLine;
 
         lines.push(layoutLine);
@@ -157,14 +158,7 @@ function measureTableRowCells(
 
   return cells.map<MeasuredTableRowCell>((cell) => {
     const input = tableCellLayoutTextInput(cell);
-    const measuredLines = measureTextContainerLines(
-      cache,
-      input,
-      block,
-      cellWidth,
-      typography,
-      resources,
-    );
+    const measuredLines = measureTextContainerLines(cache, input, cellWidth, typography, resources);
 
     return {
       cellIndex: cell.cellIndex,

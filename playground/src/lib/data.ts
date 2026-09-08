@@ -9,7 +9,16 @@ export const slowSampleImagePath = "playground-slow-editor-shell.png";
 export const slowSampleImageSource =
   "https://dummyimage.com/960x540/0f172a/f8fafc.png&text=Editor+Shell";
 
-const sampleMarkdown = `# 🎓 Tutorial Document
+const sampleMarkdown = `---
+title: "Documint Tutorial"
+draft: false
+description: |-
+  Explore formatting, tables, comments, and canvas-native metadata.
+  Edit these values directly after expanding the Metadata section.
+tags: "tutorial, playground"
+---
+
+# 🎓 Tutorial Document
 
 Welcome to Documint 👋, a canvas-based markdown editor for rich documents with formatting, tables, images, comments, mentions, and custom decorations.
 

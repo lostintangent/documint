@@ -254,6 +254,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
       theme.selectionBackground ?? `color-mix(in srgb, ${accent} 28%, transparent)`,
     selectionHandleBackground: theme.selectionHandleBackground ?? background,
     selectionHandleBorder: theme.selectionHandleBorder ?? accent,
+    scrollbar: theme.scrollbar ?? leafBorder,
     tableBodyBackground:
       theme.tableBodyBackground ?? `color-mix(in srgb, ${text} 3%, ${background})`,
     tableBorder: theme.tableBorder ?? leafBorder,

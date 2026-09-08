@@ -7,6 +7,7 @@ export type DocumentLayoutOptions = {
   fontSize: number;
   indentWidth: number;
   lineHeight: number;
+  metadataExpanded: boolean;
   paddingX: number;
   paddingY: number;
   width: number;
@@ -43,6 +44,7 @@ export const defaultDocumentLayoutOptions: Omit<DocumentLayoutOptions, "width"> 
   fontSize: DEFAULT_BASE_FONT_SIZE,
   indentWidth: 12,
   lineHeight: deriveLineHeight(DEFAULT_BASE_FONT_SIZE),
+  metadataExpanded: false,
   paddingX: 16,
   paddingY: 12,
 };

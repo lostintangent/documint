@@ -104,6 +104,7 @@
       "document_to_markdown_rich": 0.03
     },
     "layout": {
+      "layout_metadata_prefix": 6.2,
       "layout_canvas": 1,
       "layout_canvas_xlarge": 1,
       "layout_canvas_huge": 1.5,
@@ -139,6 +140,7 @@
       "editor_create_document_frame_dense_table_selection": 2,
       "editor_typing_code": 0.05,
       "editor_typing_table": 0.15,
+      "editor_typing_metadata_full_frame": 1.1,
       "editor_typing_comments_elsewhere": 0.06,
       "editor_backspace_medium": 0.2,
       "editor_backspace_long": 3,

@@ -1,22 +1,22 @@
 // Canonical document construction and incremental edits. Builders own semantic
 // node canonicalization (`plainText`, mark order, and default values), so this
-// layer preserves block object identity and only seals comment-thread IDs.
+// layer preserves block and metadata identity while sealing comment-thread IDs.
 // The public surface is intentionally tiny: three operations cover every
 // document-altering edit the editor, markdown layer, and host can express.
 
 import type { CommentThread } from "../comments";
 import { createCommentThreadId } from "../comments/threads";
-import type { Block, Document } from "../model/types";
+import type { Block, Document, DocumentMetadata } from "../model/types";
 
 export function createDocument(
   blocks: Block[],
   comments: CommentThread[] = [],
-  frontMatter?: string,
+  metadata: DocumentMetadata | null = null,
 ): Document {
   return {
     blocks: [...blocks],
     comments: sealCommentThreadIds(comments),
-    frontMatter,
+    metadata,
   };
 }
 
@@ -37,7 +37,7 @@ export function spliceDocument(
       ...document.blocks.slice(rootIndex + count),
     ],
     comments: document.comments,
-    frontMatter: document.frontMatter,
+    metadata: document.metadata,
   };
 }
 
@@ -56,7 +56,7 @@ export function spliceCommentThreads(
   return {
     blocks: document.blocks,
     comments: sealCommentThreadIds(comments),
-    frontMatter: document.frontMatter,
+    metadata: document.metadata,
   };
 }
 

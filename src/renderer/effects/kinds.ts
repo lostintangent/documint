@@ -146,7 +146,7 @@ function collectMany<TEffect>(result: Map<string, TEffect[]>, key: string, item:
 
 function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
   return (
-    effect.contentKind === "inlines" &&
+    effect.contentKind !== "source" &&
     effect.direction === "backward" &&
     effect.textKind === "plain" &&
     effect.placement !== "line-middle" &&
@@ -155,7 +155,7 @@ function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
 }
 
 function shouldAnimateTextInsertedEffect(effect: TextInsertedEffect) {
-  return effect.contentKind === "inlines" && !containsColorEmoji(effect.text);
+  return effect.contentKind !== "source" && !containsColorEmoji(effect.text);
 }
 
 function isPunctuationInsertion(effect: TextInsertedEffect) {

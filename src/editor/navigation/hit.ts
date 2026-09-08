@@ -7,12 +7,15 @@ import {
   resolveBoundaryOffset,
 } from "../layout/query/line-lookup";
 import { resolveListMarkerTarget, resolveTaskCheckboxBounds } from "../layout/query/line-visuals";
+import { CHECKBOX_HIT_PADDING } from "../layout/lib/marker-metrics";
 import type { DocumentLayout, LayoutLine } from "../layout/measure";
 import {
+  isMetadataPath,
   isInertBlock,
   nextBlockInFlow,
   resolveEditorTextAtPath,
   resolveIndexedBlock,
+  resolveMetadataField,
   resolveIndexedText,
   resolveIndexedTextInlines,
   type EditorSelectionPoint,
@@ -49,6 +52,9 @@ export type CanvasResourceHit = {
 
 export type EditorHoverTarget =
   | {
+      kind: "metadata-toggle";
+    }
+  | {
       endOffset: number;
       kind: "link";
       commentThreadIndex: number | null;
@@ -70,9 +76,32 @@ export type EditorHoverTarget =
       listItemPath: string;
     }
   | {
+      kind: "metadata-boolean-toggle";
+      path: string;
+    }
+  | {
       kind: "text";
       commentThreadIndex: number | null;
     };
+
+export function isCanvasDirectActivationTarget(
+  target: EditorHoverTarget | null,
+): target is Extract<
+  EditorHoverTarget,
+  { kind: "metadata-boolean-toggle" | "metadata-toggle" | "task-toggle" }
+> {
+  return (
+    target?.kind === "metadata-toggle" ||
+    target?.kind === "metadata-boolean-toggle" ||
+    target?.kind === "task-toggle"
+  );
+}
+
+export function canExtendSelectionBetweenPaths(anchorPath: string, targetPath: string) {
+  const anchorIsMetadata = isMetadataPath(anchorPath);
+  const targetIsMetadata = isMetadataPath(targetPath);
+  return anchorIsMetadata ? targetPath === anchorPath : !targetIsMetadata;
+}
 
 export function resolveEditorHitAtPoint(
   layout: DocumentLayout,
@@ -136,6 +165,10 @@ export function resolveDragFocusPoint(
   const hit = resolveEditorHitAtPoint(layout, state, point);
 
   if (hit) {
+    if (!canExtendSelectionBetweenPaths(anchor.path, hit.path)) {
+      return anchor;
+    }
+
     return {
       path: hit.path,
       offset: hit.offset,
@@ -220,12 +253,7 @@ export function resolveTaskCheckboxHitAtPoint(
   }
 
   const bounds = resolveTaskCheckboxBounds(line);
-  const left = bounds.left - 4;
-  const right = bounds.left + bounds.size + 4;
-  const top = bounds.top - 4;
-  const bottom = bounds.top + bounds.size + 4;
-
-  return point.x >= left && point.x <= right && point.y >= top && point.y <= bottom
+  return pointInRect(point, bounds, CHECKBOX_HIT_PADDING)
     ? {
         listItemPath: target.listItemPath,
       }
@@ -316,6 +344,28 @@ export function resolveHoverTargetAtPoint(
   point: { x: number; y: number },
   commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
+  const header = layout.metadata?.header;
+  if (header && pointInRect(point, header)) {
+    return {
+      kind: "metadata-toggle",
+    };
+  }
+
+  const metadataCheckbox = layout.metadata?.rows.find(
+    (row) => row.checkbox && pointInRect(point, row.checkbox.rect, CHECKBOX_HIT_PADDING),
+  )?.checkbox;
+
+  if (metadataCheckbox) {
+    const metadataField = resolveMetadataField(state.documentIndex, metadataCheckbox.path);
+
+    if (metadataField?.type === "boolean" && metadataField.value === metadataCheckbox.checked) {
+      return {
+        kind: "metadata-boolean-toggle",
+        path: metadataCheckbox.path,
+      };
+    }
+  }
+
   const checkboxHit = resolveTaskCheckboxHitAtPoint(layout, state, point);
 
   if (checkboxHit) {
@@ -556,7 +606,9 @@ function resolveInteractiveLineAtPoint(
 ): LayoutLine | null {
   return (
     layout.lines.find(
-      (entry) => point.y >= entry.top - 4 && point.y <= entry.top + entry.height + 4,
+      (entry) =>
+        point.y >= entry.top - CHECKBOX_HIT_PADDING &&
+        point.y <= entry.top + entry.height + CHECKBOX_HIT_PADDING,
     ) ??
     layout.lines
       .filter((entry) => Math.abs(point.y - (entry.top + entry.height / 2)) <= 10)
@@ -571,4 +623,17 @@ function resolveInteractiveLineAtPoint(
 
 function resolveViewportTop(layout: DocumentLayout) {
   return layout.lines[0]?.top ?? 0;
+}
+
+function pointInRect(
+  point: { x: number; y: number },
+  rect: { height: number; left: number; top: number; width: number },
+  padding = 0,
+) {
+  return (
+    point.x >= rect.left - padding &&
+    point.x <= rect.left + rect.width + padding &&
+    point.y >= rect.top - padding &&
+    point.y <= rect.top + rect.height + padding
+  );
 }

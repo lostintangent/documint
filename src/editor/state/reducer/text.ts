@@ -35,10 +35,16 @@ import {
   resolveIndexedTextInlines,
   resolveIndexedTableCell,
 } from "../index/query";
-import { replaceDocumentMetadata, replaceEditorBlock, spliceDocumentIndex } from "../index/splice";
-import type { DocumentIndex, IndexedBlock, IndexedInline } from "../index/types";
+import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/splice";
+import type {
+  DocumentIndex,
+  IndexedBlock,
+  IndexedInline,
+  ResolvedMetadataText,
+} from "../index/types";
 import {
   normalizeSelection,
+  resolveMetadataSelectionContext,
   target,
   type EditorSelection,
   type NormalizedEditorSelection,
@@ -59,6 +65,14 @@ export function spliceText(
   selection: EditorSelection,
   text: string,
 ): TextEditResult | null {
+  const metadataContext = resolveMetadataSelectionContext(documentIndex, selection);
+
+  if (metadataContext !== undefined) {
+    return metadataContext
+      ? replaceMetadataText(documentIndex, metadataContext.normalized, metadataContext.field, text)
+      : null;
+  }
+
   const normalized = normalizeSelection(documentIndex, selection);
 
   if (normalized.start.path === normalized.end.path) {
@@ -73,6 +87,64 @@ export function spliceText(
   const fragment = text.length > 0 ? [createParagraphTextBlock(text)] : [];
 
   return replaceWithBlocks(documentIndex, selection, fragment);
+}
+
+function replaceMetadataText(
+  documentIndex: DocumentIndex,
+  normalized: NormalizedEditorSelection,
+  metadataField: ResolvedMetadataText,
+  replacementText: string,
+): TextEditResult | null {
+  const metadata = documentIndex.document.metadata;
+  if (!metadata || "raw" in metadata) {
+    return null;
+  }
+
+  if (replacementText.includes("\r")) {
+    return null;
+  }
+
+  const entries = [...metadata];
+  const [currentKey, currentValue] = entries[metadataField.fieldIndex]!;
+  const nextText = replacePathText(
+    metadataField.text,
+    normalized.start.offset,
+    normalized.end.offset,
+    replacementText,
+  );
+
+  if (nextText === metadataField.text) {
+    return null;
+  }
+
+  let nextEntry: [string, string | boolean];
+  if (metadataField.type === "key") {
+    if (/[\r\n]/.test(nextText)) {
+      return null;
+    }
+
+    const collides = entries.some(
+      ([key], fieldIndex) => fieldIndex !== metadataField.fieldIndex && key === nextText,
+    );
+    if (collides) {
+      return null;
+    }
+
+    nextEntry = [nextText, currentValue];
+  } else {
+    nextEntry = [currentKey, nextText];
+  }
+
+  entries[metadataField.fieldIndex] = nextEntry;
+  const nextDocumentIndex = replaceIndexedDocument(documentIndex, {
+    ...documentIndex.document,
+    metadata: new Map(entries),
+  });
+
+  return {
+    documentIndex: nextDocumentIndex,
+    selection: target.path(normalized.start.path, normalized.start.offset + replacementText.length),
+  };
 }
 
 // Replaces the selection with a structural fragment. The merge result
@@ -357,7 +429,7 @@ function finalizeCommentsAfterEdit(
 
   return nextComments === nextDocumentIndex.document.comments
     ? nextDocumentIndex
-    : replaceDocumentMetadata(nextDocumentIndex, {
+    : replaceIndexedDocument(nextDocumentIndex, {
         ...nextDocumentIndex.document,
         comments: nextComments,
       });

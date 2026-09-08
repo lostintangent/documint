@@ -4,6 +4,9 @@
 import {
   createDocumentFromEditorState,
   createEditorState,
+  metadataKeyPath,
+  metadataValuePath,
+  resolveMetadataField,
   setSelection,
   type DocumentIndex,
   type IndexedBlock,
@@ -33,6 +36,21 @@ export type IndexedTextEntry = {
   tableCell: IndexedTableCell | null;
   text: string;
 };
+
+export function getMetadataEntry(
+  state: EditorState,
+  fieldIndex: number,
+  type: "boolean" | "key" | "value",
+): { path: string; record: NonNullable<ReturnType<typeof resolveMetadataField>> } {
+  const path = type === "key" ? metadataKeyPath(fieldIndex) : metadataValuePath(fieldIndex);
+  const record = resolveMetadataField(state.documentIndex, path);
+
+  if (!record || record.type !== type) {
+    throw new Error(`Expected metadata field ${fieldIndex} ${type} entry`);
+  }
+
+  return { path, record };
+}
 
 /** Project the editor's selectable text paths from the block index. */
 export function indexedTextEntries(stateOrIndex: EditorState | DocumentIndex): IndexedTextEntry[] {

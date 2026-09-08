@@ -3,7 +3,7 @@
 import type { Block, Document } from "@/document";
 import type { TextRangeTarget } from "@/editor";
 import { resolveIndexedBlockContainingPath } from "@/editor/state";
-import { serializeBlocks } from "@/markdown";
+import { serializeBlocks, serializeMetadataPreamble } from "@/markdown";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 
 export type MentionLineChange = {
@@ -76,9 +76,10 @@ function resolveFirstChangedMarkdownLine(previousMarkdown: string, nextMarkdown:
 
 function resolveRootStartLine(document: Document, rootIndex: number) {
   let lineNumber = 0;
+  const metadataPreamble = serializeMetadataPreamble(document.metadata);
 
-  if (document.frontMatter !== undefined) {
-    lineNumber += countLineFeeds(document.frontMatter, document.frontMatter.length) + 2;
+  if (metadataPreamble.length > 0) {
+    lineNumber += countMarkdownLines(metadataPreamble) + 1;
   }
 
   for (let index = 0; index < rootIndex; index += 1) {

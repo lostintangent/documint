@@ -3,16 +3,24 @@ import { expect, test } from "bun:test";
 import {
   createLayoutCache,
   createEditorLayoutState,
+  extendSelectionToPoint,
   getCommentState,
   resolveHoverTarget,
+  setSelection,
 } from "@/editor";
-import { addComment, createDocumentIndex, createEditorState } from "@/editor/state";
+import {
+  addComment,
+  createDocumentIndex,
+  createEditorState,
+  metadataValuePath,
+} from "@/editor/state";
 import { hitTestDocumentLayout, measureCaretTarget } from "@/editor/layout";
 import {
   resolveDragFocusPoint,
   resolveEditorHitAtPoint,
   resolveHoverTargetAtPoint,
   resolveLinkHitAtPoint,
+  resolveSelectionPointAt,
   resolveWordSelectionAtPoint,
 } from "@/editor/navigation";
 import { measureLayoutSlice } from "@/editor/layout/measure";
@@ -622,6 +630,117 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
   });
 
   expect(hover).toEqual({ kind: "task-toggle", listItemPath: listItem.path });
+});
+
+const metadataHitFixture = `---
+title: Draft
+draft: true
+slug: sample
+---
+Body
+`;
+
+test("resolves metadata header, checkbox, and text hit precedence", () => {
+  const state = setup(metadataHitFixture);
+  const layout = measureLayoutSlice(state.documentIndex, {
+    metadataExpanded: true,
+    width: 520,
+  });
+  const metadata = layout.metadata;
+  const checkbox = metadata?.rows[1]?.checkbox;
+
+  if (!metadata || !checkbox) {
+    throw new Error("Expected metadata interaction geometry");
+  }
+
+  const header = metadata.header;
+  const centerY = header.top + header.height / 2;
+  const headerPoint = {
+    x: header.left + header.width - 1,
+    y: centerY,
+  };
+
+  expect(resolveHoverTargetAtPoint(layout, state, headerPoint, [])).toEqual({
+    kind: "metadata-toggle",
+  });
+  expect(resolveSelectionPointAt(state, { layout }, headerPoint)).toBeNull();
+  expect(
+    resolveHoverTargetAtPoint(
+      layout,
+      state,
+      {
+        x: header.left + header.width + 1,
+        y: centerY,
+      },
+      [],
+    ),
+  ).toBeNull();
+  const checkboxPoint = {
+    x: checkbox.rect.left - 3,
+    y: checkbox.rect.top + checkbox.rect.height / 2,
+  };
+
+  expect(resolveHoverTargetAtPoint(layout, state, checkboxPoint, [])).toEqual({
+    kind: "metadata-boolean-toggle",
+    path: metadataValuePath(1),
+  });
+  expect(resolveSelectionPointAt(state, { layout }, checkboxPoint)).toBeNull();
+
+  const path = metadataValuePath(0);
+  const caret = measureCaretTarget(layout, state.documentIndex, {
+    path,
+    offset: 3,
+  });
+
+  if (!caret) {
+    throw new Error("Expected metadata text caret");
+  }
+
+  expect(
+    resolveSelectionPointAt(
+      state,
+      { layout },
+      {
+        x: caret.left,
+        y: caret.top + caret.height / 2,
+      },
+    ),
+  ).toEqual({
+    offset: 3,
+    path,
+  });
+});
+
+test("keeps metadata selection extension within one text field", () => {
+  let state = setup(metadataHitFixture);
+  state = setSelection(state, {
+    path: metadataValuePath(0),
+    offset: 1,
+  });
+  const viewport = createEditorLayoutState(state, {
+    height: 320,
+    metadataExpanded: true,
+    top: 0,
+    width: 520,
+  });
+  const slugCaret = measureCaretTarget(viewport.layout, state.documentIndex, {
+    path: metadataValuePath(2),
+    offset: 2,
+  });
+  const bodyLine = viewport.layout.lines.find((line) => line.text === "Body");
+
+  if (!slugCaret || !bodyLine) {
+    throw new Error("Expected metadata and body geometry");
+  }
+
+  for (const target of [slugCaret, bodyLine]) {
+    expect(
+      extendSelectionToPoint(state, viewport, {
+        x: target.left,
+        y: target.top + target.height / 2,
+      }),
+    ).toBeNull();
+  }
 });
 
 test("clicks on an inert leaf block redirect to the start of the next path in flow", () => {

@@ -8,7 +8,7 @@ import {
 import type { ActiveBlockChangedEffectFrame, DocumentFrameLine } from "../../frame";
 import { createRectBandedGeometryFrame } from "../../frame/banded-geometry";
 import { paintHighlight } from "../highlights";
-import { paintTableCellChrome } from "../table";
+import { paintGridCellChrome } from "../table";
 
 export function paintLineContainerBackground(
   context: CanvasRenderingContext2D,
@@ -27,7 +27,7 @@ export function paintLineContainerBackground(
     return;
   }
 
-  paintTableCellChrome(context, background, theme);
+  paintGridCellChrome(context, background.rect, background.isHeaderRow, theme);
 }
 
 export function paintActiveBlockBackground(

@@ -277,9 +277,9 @@ function isRootBoundary(
     boundary,
   );
   const boundaryText = rootBoundaryPath
-    ? resolveIndexedText(documentIndex, rootBoundaryPath)?.text
+    ? resolveIndexedText(documentIndex, rootBoundaryPath)
     : null;
-  const endpointOffset = boundary === "start" ? 0 : boundaryText?.length;
+  const endpointOffset = boundary === "start" ? 0 : boundaryText?.text.length;
 
   return rootBoundaryPath === endpoint.path && offset === endpointOffset;
 }

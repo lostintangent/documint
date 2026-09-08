@@ -1,4 +1,5 @@
 import {
+  isMetadataPath,
   normalizeSelection,
   resolveEditorTextAtPath,
   resolveEditorSearchMatches,
@@ -336,6 +337,10 @@ function resolveQueryFromSelection(
   selection: NormalizedEditorSelection,
 ): string | null {
   if (selection.collapsed || selection.start.path !== selection.end.path) {
+    return null;
+  }
+
+  if (isMetadataPath(selection.start.path)) {
     return null;
   }
 

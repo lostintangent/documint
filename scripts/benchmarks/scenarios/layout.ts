@@ -9,11 +9,13 @@ export function createLayoutScenarios(fixtures: {
   hugeMarkdown: string;
   longMarkdown: string;
   mediumMarkdown: string;
+  metadataSnapshot: Parameters<typeof createEditorState>[0];
   xlargeMarkdown: string;
 }): BenchmarkScenario[] {
   const longState = createEditorState(parseDocument(fixtures.longMarkdown));
   const xlargeState = createEditorState(parseDocument(fixtures.xlargeMarkdown));
   const hugeState = createEditorState(parseDocument(fixtures.hugeMarkdown));
+  const metadataState = createEditorState(fixtures.metadataSnapshot);
   const layoutCache = createLayoutCache();
   const statesBySize = {
     huge: hugeState,
@@ -40,6 +42,18 @@ export function createLayoutScenarios(fixtures: {
   ] as const satisfies Array<{ id: string; iterations: number; size: LayoutFixtureSize }>;
 
   return [
+    createBenchmarkScenario("layout", "layout_metadata_prefix", 100, () => {
+      void createEditorLayoutState(
+        metadataState,
+        {
+          height: BENCHMARK_VIEWPORT.height,
+          metadataExpanded: true,
+          top: 0,
+          width: BENCHMARK_VIEWPORT.width,
+        },
+        createLayoutCache(),
+      );
+    }),
     ...canvasScenarios.map(({ id, iterations, size }) =>
       createBenchmarkScenario(
         "layout",

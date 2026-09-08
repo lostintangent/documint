@@ -6,7 +6,7 @@ import type { TextRangeTarget } from "@/editor";
 import { getPath, setup } from "@test/editor/helpers";
 
 describe("resolveMentionLineChange", () => {
-  test("returns the changed canonical markdown line", () => {
+  test("returns the changed canonical markdown line without metadata", () => {
     expect(
       resolveMentionLineChange(...createMentionTransition("Hello @Ja\n", "Hello @Ja")),
     ).toEqual({
@@ -53,7 +53,7 @@ describe("resolveMentionLineChange", () => {
     });
   });
 
-  test("accounts for front matter before document blocks", () => {
+  test("accounts for structured metadata before document blocks", () => {
     expect(
       resolveMentionLineChange(
         ...createMentionTransition("---\ntitle: Test\n---\n\nHello @Ja\n", "Hello @Ja"),
@@ -61,6 +61,20 @@ describe("resolveMentionLineChange", () => {
     ).toEqual({
       lineMarkdown: "Hello @[Jane](u-jane) ",
       lineNumber: 5,
+    });
+  });
+
+  test("accounts for lossless raw metadata before document blocks", () => {
+    expect(
+      resolveMentionLineChange(
+        ...createMentionTransition(
+          "---\ntitle: Test\n# preserved comment\n---\n\nHello @Ja\n",
+          "Hello @Ja",
+        ),
+      ),
+    ).toEqual({
+      lineMarkdown: "Hello @[Jane](u-jane) ",
+      lineNumber: 6,
     });
   });
 

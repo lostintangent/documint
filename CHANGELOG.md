@@ -1,3 +1,8 @@
+## 🗓️ v0.0.36 (09-03-26)
+
+- Basic frontmatter support allows reading and editing document metadata
+- New virtual scrollbar makes navigating docs easier
+
 ## 🗓️ v0.0.35 (08-26-26)
 
 - Syntax triggers can now be used on non-empty lines

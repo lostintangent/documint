@@ -177,7 +177,7 @@ function resolveActiveBlockBackgroundFrame({
   theme: ResolvedEditorTheme;
   width: number;
 }): ActiveBlockBackgroundFrame | null {
-  const isActiveBlock = line.blockPath === activeBlockPath;
+  const isActiveBlock = line.blockPath !== null && line.blockPath === activeBlockPath;
 
   if (!isActiveBlock) {
     return null;

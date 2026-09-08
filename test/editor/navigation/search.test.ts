@@ -59,6 +59,16 @@ describe("editor search", () => {
 
     expect(matches.map(resolveMatchText(state))).toEqual(["a"]);
   });
+
+  test("does not search metadata fields", () => {
+    const state = setup(`---
+title: Metadata-only target
+---
+Body text
+`);
+
+    expect(resolveEditorSearchMatches(state.documentIndex, "Metadata-only")).toEqual([]);
+  });
 });
 
 function resolveMatchText(state: ReturnType<typeof setup>) {

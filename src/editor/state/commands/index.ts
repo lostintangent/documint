@@ -21,6 +21,7 @@ import {
   resolveDocumentTextPathBoundary,
   resolveEditorTextAtPath,
   resolveIndexedBlock,
+  resolveMetadataField,
 } from "../index/query";
 import {
   resolveBlockContext,
@@ -36,6 +37,7 @@ import {
   type TextRangeTarget,
 } from "./context";
 import type { EditorState, EditorStateAction } from "../types";
+import { resolveMetadataSelectionContext } from "../selection";
 import type { WordMovement } from "../../text/words";
 import { createCommentThreadForSelection, getCommentState } from "../../anchors";
 import {
@@ -95,7 +97,21 @@ export const insertText = makeCommand((state, text: string) =>
   resolveTextInsertion(state.documentIndex, state.selection, text),
 );
 
-export const insertLineBreak = makeCommand(resolveLineBreakAction, resolveBlockContext);
+export const insertLineBreak = makeCommand((state) => {
+  const metadata = resolveMetadataSelectionContext(state.documentIndex, state.selection);
+
+  if (metadata !== undefined) {
+    return metadata?.field.type === "value"
+      ? {
+          kind: "splice-text",
+          text: "\n",
+        }
+      : null;
+  }
+
+  const context = resolveBlockContext(state);
+  return context ? resolveLineBreakAction(context) : null;
+});
 
 // Inserts an inline LineBreak at the caret (the Shift+Enter gesture). This
 // mirrors `insertImage` — both are single-inline inserts at the selection —
@@ -176,12 +192,33 @@ export function pasteFragment(
   fragment: Fragment,
   verbatimFallback?: string,
 ): EditorState | null {
+  const metadata = resolveMetadataSelectionContext(state.documentIndex, state.selection);
+
+  if (metadata !== undefined) {
+    return metadata && fragment.kind === "text" && fragment.text.length > 0
+      ? insertText(state, fragment.text)
+      : null;
+  }
+
   return pasteFragmentCommand(state, fragment, verbatimFallback);
 }
 
 // --- Selection ---
 
 export function selectAll(state: EditorState): EditorState {
+  const metadata = resolveMetadataField(state.documentIndex, state.selection.focus.path);
+
+  if (metadata) {
+    if (!("text" in metadata)) {
+      return state;
+    }
+
+    return setSelection(state, {
+      anchor: { path: state.selection.focus.path, offset: 0 },
+      focus: { path: state.selection.focus.path, offset: metadata.text.length },
+    });
+  }
+
   const first = resolveDocumentTextPathBoundary(state.documentIndex, "start");
   const last = resolveDocumentTextPathBoundary(state.documentIndex, "end");
 
@@ -321,6 +358,19 @@ export const toggleTask = makeCommand((state, listItemPath: string) => {
     block: { ...block, checked: !block.checked },
     blockPath: listItemPath,
   };
+});
+
+export const toggleMetadataBoolean = makeCommand((state, path: string) => {
+  const metadataField = resolveMetadataField(state.documentIndex, path);
+
+  return metadataField?.type === "boolean"
+    ? {
+        count: 1,
+        entries: [[metadataField.key, !metadataField.value]],
+        index: metadataField.fieldIndex,
+        kind: "splice-metadata",
+      }
+    : null;
 });
 
 // --- Block insertion & tables ---

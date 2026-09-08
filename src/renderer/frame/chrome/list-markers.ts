@@ -76,12 +76,7 @@ export function resolveListMarkerFrame(
     return {
       checked: marker.checked,
       kind: "task",
-      rect: {
-        height: rect.size,
-        left: rect.left,
-        top: rect.top,
-        width: rect.size,
-      },
+      rect,
     };
   }
 

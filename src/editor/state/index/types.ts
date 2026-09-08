@@ -56,7 +56,25 @@ export type IndexedBlock =
       tableCellRows: readonly (readonly IndexedTableCell[])[];
     });
 
-export type IndexedText = Extract<IndexedBlock, { kind: "inlines" | "source" }> | IndexedTableCell;
+export type ResolvedMetadataField = ResolvedMetadataBoolean | ResolvedMetadataText;
+
+export type ResolvedMetadataText = {
+  fieldIndex: number;
+  text: string;
+  type: "key" | "value";
+};
+
+export type ResolvedMetadataBoolean = {
+  fieldIndex: number;
+  key: string;
+  type: "boolean";
+  value: boolean;
+};
+
+export type IndexedText =
+  | Extract<IndexedBlock, { kind: "inlines" | "source" }>
+  | ResolvedMetadataText
+  | IndexedTableCell;
 
 // A block projected into the editor index. Carries a direct reference to the
 // source document `Block` (so `block.type` and the block's children are

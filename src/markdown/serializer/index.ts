@@ -1,11 +1,12 @@
 /**
- * Owns document-level serialization orchestration: front matter, then blocks,
+ * Owns document-level serialization orchestration: metadata preamble, then blocks,
  * then the trailing comment-directive appendix, joined with the canonical
  * block separator and terminated with a trailing newline. Block, inline, and
  * table serialization live in sibling modules.
  */
 
 import type { Document, Fragment } from "@/document";
+import { serializeMetadataPreamble } from "../front-matter";
 import { commentDirectiveName, lineFeed, type MarkdownOptions } from "../shared";
 import { blockSeparator, renderDirective, serializeBlocks } from "./blocks";
 import { serializeInlines } from "./inlines";
@@ -14,7 +15,7 @@ export { serializeBlocks } from "./blocks";
 export { serializeInlines } from "./inlines";
 
 /**
- * Serializes a full document, including front matter and trailing comment
+ * Serializes a full document, including metadata and trailing comment
  * directive, into canonical markdown source. Always terminates with a
  * trailing newline unless the document is entirely empty.
  */
@@ -22,19 +23,26 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
   if (
     document.blocks.length === 0 &&
     document.comments.length === 0 &&
-    document.frontMatter === undefined
+    document.metadata === null
   ) {
     return "";
   }
 
   const chunks: string[] = [];
 
-  if (document.frontMatter !== undefined) {
-    chunks.push(document.frontMatter);
+  const metadataPreamble = serializeMetadataPreamble(document.metadata);
+
+  if (metadataPreamble.length > 0) {
+    chunks.push(metadataPreamble);
   }
 
   if (document.blocks.length > 0) {
-    chunks.push(serializeBlocks(document.blocks, options));
+    const body = serializeBlocks(document.blocks, options);
+
+    // Metadata-only documents do not need an empty serialized body.
+    if (body.length > 0 || document.metadata === null) {
+      chunks.push(body);
+    }
   }
 
   if (document.comments.length > 0) {
