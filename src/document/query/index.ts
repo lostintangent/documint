@@ -1,6 +1,6 @@
 // Public surface of the query/ folder: traversal, projection, the anchor
-// algebra, and bounded change detection. Everything here reads from an existing
-// Document tree — no construction, no canonicalization.
+// algebra, and document comparison. Queries do not mutate their inputs;
+// comparison may return a derived Document that reinserts deleted content.
 
 export * from "./anchors/text";
 export * from "./anchors/node";

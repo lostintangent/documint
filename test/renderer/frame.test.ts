@@ -3,6 +3,7 @@ import { indexedTextEntries } from "@test/editor/helpers";
 // `createDocumentFrame` / `createOverlayFrame` before any canvas operations run.
 
 import { describe, expect, test } from "bun:test";
+import { compareDocuments } from "@/document";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import { createEditorLayoutState } from "@/editor/layout";
 import {
@@ -25,6 +26,7 @@ import type { EffectPolicy } from "@/renderer/effects";
 import type { DocumentFrameLine } from "@/renderer/frame";
 import { emptyDocumentResources } from "@/editor/resources";
 import { setup } from "../editor/helpers";
+import { liveDocumentChangeAt } from "./helpers";
 
 const resolvedLightTheme = resolveEditorTheme(lightTheme);
 
@@ -224,21 +226,14 @@ describe("DocumentFrame chrome and block rows", () => {
     }
 
     state = setSelection(state, { path: first.path, offset: 0 });
+    const change = liveDocumentChangeAt(state, "old\n\nbeta\n", first.blockPath, "change-alpha");
     const frame = createTestDocumentFrame(state, {
-      documentChanges: [
-        {
-          changeKey: "change-alpha",
-          changeKind: "modified",
-          target: { kind: "block", path: first.blockPath },
-        },
-      ],
+      documentChanges: [change],
       effects: [
         {
           changeKey: "change-alpha",
-          changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { kind: "block", path: "root.old" },
         },
       ],
       now: 110,
@@ -264,21 +259,14 @@ describe("DocumentFrame chrome and block rows", () => {
       throw new Error("Expected first path");
     }
 
+    const change = liveDocumentChangeAt(state, "old\n\nbeta\n", first.blockPath, "change-alpha");
     const frame = createTestDocumentFrame(state, {
-      documentChanges: [
-        {
-          changeKey: "change-alpha",
-          changeKind: "modified",
-          target: { kind: "block", path: first.blockPath },
-        },
-      ],
+      documentChanges: [change],
       effects: [
         {
           changeKey: "change-alpha",
-          changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { kind: "block", path: "root.old" },
         },
       ],
       now: 600,
@@ -303,27 +291,14 @@ describe("DocumentFrame chrome and block rows", () => {
       throw new Error("Expected table cell path");
     }
 
+    const change = liveDocumentChangeAt(state, "| A | B |\n| - | - |\n", cell.path, "change-cell");
     const frame = createTestDocumentFrame(state, {
-      documentChanges: [
-        {
-          changeKey: "change-cell",
-          changeKind: "added",
-          target: {
-            kind: "table-cell",
-            path: cell.path,
-          },
-        },
-      ],
+      documentChanges: [change],
       effects: [
         {
           changeKey: "change-cell",
-          changeKind: "added",
           kind: "document-change",
           startedAt: 100,
-          target: {
-            kind: "table-cell",
-            path: "root.0.rows.9.cells.9",
-          },
         },
       ],
       now: 110,
@@ -336,6 +311,28 @@ describe("DocumentFrame chrome and block rows", () => {
       opacity: 10 / 420,
     });
     expect(tableCellChange?.borderRect.width).toBeGreaterThanOrEqual(80);
+  });
+
+  test("renders deleted blocks through the existing document-change background", () => {
+    const comparison = compareDocuments(
+      parseDocument("before\n\nremoved\n\nafter\n"),
+      parseDocument("before\n\nafter\n"),
+    );
+    const state = createEditorState(comparison.document);
+    const removed = indexedTextEntries(state).find((path) => path.text === "removed");
+
+    if (!removed) {
+      throw new Error("Expected deleted block");
+    }
+
+    const frame = createTestDocumentFrame(state, {
+      documentChanges: comparison.changes,
+    });
+
+    expect(lineFrameForPath(frame, removed.path).documentChangeBackground).toMatchObject({
+      color: resolvedLightTheme.externalChangeDeletionBackground,
+      opacity: undefined,
+    });
   });
 
   test("renders list markers only on the primary line for mixed list-item children", () => {

@@ -3,7 +3,7 @@ import { reconcileExternalContentChange } from "@/component/sync";
 import {
   acknowledgeUnacknowledgedDocumentChanges,
   mergeUnacknowledgedDocumentChanges,
-} from "@/component/sync/external-changes";
+} from "@/component/sync/live-changes";
 import { compileDecorations } from "@/component/decorations/worker/matching";
 import { resolveCompiledBlockDecorationRanges } from "@/component/decorations/worker/prose";
 import { builtinGrammars, resolveCodeGrammars } from "@/component/decorations/grammars";

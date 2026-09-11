@@ -33,6 +33,7 @@ import {
   findFillTextOperation,
   findLastOperationIndex,
   findOperationIndex,
+  liveDocumentChangeAt,
   RecordingCanvasContext,
   type RecordingOperation,
 } from "./helpers";
@@ -159,21 +160,14 @@ describe("Block and chrome paint order", () => {
       throw new Error("Expected paragraph container");
     }
 
+    const change = liveDocumentChangeAt(state, "old\n", container.blockPath, "change-alpha");
     const { context } = renderPaintOperations(state, {
-      documentChanges: [
-        {
-          changeKey: "change-alpha",
-          changeKind: "modified",
-          target: { kind: "block", path: container.blockPath },
-        },
-      ],
+      documentChanges: [change],
       effects: [
         {
           changeKey: "change-alpha",
-          changeKind: "modified",
           kind: "document-change",
           startedAt: 100,
-          target: { kind: "block", path: container.blockPath },
         },
       ],
       height: 160,
@@ -214,17 +208,9 @@ describe("Block and chrome paint order", () => {
       throw new Error("Expected table cell");
     }
 
+    const change = liveDocumentChangeAt(state, "| A | B |\n| - | - |\n", cell.path, "change-cell");
     const { context, layout } = renderPaintOperations(state, {
-      documentChanges: [
-        {
-          changeKey: "change-cell",
-          changeKind: "added",
-          target: {
-            kind: "table-cell",
-            path: cell.path,
-          },
-        },
-      ],
+      documentChanges: [change],
       height: 240,
       now: 110,
       width: 480,

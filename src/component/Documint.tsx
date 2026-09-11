@@ -13,12 +13,7 @@ import {
   type HTMLAttributes,
   type UIEvent,
 } from "react";
-import {
-  extractPlainTextFromFragment,
-  type Comment,
-  type CommentThread,
-  type Document,
-} from "@/document";
+import { extractPlainTextFromFragment, type Comment, type CommentThread } from "@/document";
 import {
   addComment,
   copySelection,
@@ -63,7 +58,7 @@ import type {
   DocumintStorage,
   EditorTheme,
 } from "@/types";
-import { parseDocument, type MarkdownOptions } from "@/markdown";
+import type { MarkdownOptions } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
 import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
@@ -104,7 +99,7 @@ import { extractMentionedUserIds } from "./lib/mentions";
 import { DocumentStorage } from "./lib/storage";
 import { useDecorations } from "./decorations/useDecorations";
 import { builtinGrammars } from "./decorations/grammars";
-import { useSync, type UserMentionEvent } from "./sync";
+import { useDocumentSync, useDocumentView, type DocumentView, type UserMentionEvent } from "./sync";
 import {
   activeCommentIndexSprig,
   commentRangesSprig,
@@ -121,7 +116,6 @@ import {
 } from "./store";
 
 const editorCss = process.env.NODE_ENV === "test" ? "" : readEditorStyles();
-
 export type { DocumintDecoration } from "@/types";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
 export type { UserMentionEvent } from "./sync";
@@ -141,6 +135,7 @@ export type ResizeHandle = {
 
 export type DocumintProps = {
   content: string;
+  previousContent?: string;
   className?: string;
 
   actions?: DocumintActions;
@@ -207,7 +202,7 @@ export type CommentChange =
       threadId: string;
     };
 
-export function Documint({ content, ...props }: DocumintProps) {
+export function Documint({ content, previousContent, ...props }: DocumintProps) {
   const storeRef = useRef<DocumintStore | null>(null);
   const resourceProtocols = useResourceProtocols(props.protocols);
   const markdownOptions = useMemo<MarkdownOptions>(
@@ -217,13 +212,17 @@ export function Documint({ content, ...props }: DocumintProps) {
     // oxlint-disable-next-line react-hooks/exhaustive-deps
     [resourceProtocols.key],
   );
-  const contentDocument = useMemo(
-    () => parseDocument(content, markdownOptions),
-    [content, markdownOptions],
-  );
+  const documentView = useDocumentView({
+    canChangeContent: Boolean(props.onContentChanged),
+    content,
+    markdownOptions,
+    previousContent,
+    readOnly: props.readOnly ?? false,
+    showDiffs: props.showDiffs ?? true,
+  });
 
   if (!storeRef.current) {
-    storeRef.current = createStore(contentDocument);
+    storeRef.current = createStore(documentView.document);
   }
 
   return (
@@ -231,7 +230,7 @@ export function Documint({ content, ...props }: DocumintProps) {
       <DocumintHost
         content={content}
         {...props}
-        contentDocument={contentDocument}
+        documentView={documentView}
         markdownOptions={markdownOptions}
         resourceProtocols={resourceProtocols}
       />
@@ -253,17 +252,15 @@ function DocumintHost({
   onResourcesRequested,
   onUserMentioned,
   presence,
-  readOnly: readOnlyProp = false,
   resources,
-  showDiffs = true,
   storage,
   theme,
   users,
-  contentDocument,
+  documentView,
   markdownOptions,
   resourceProtocols,
 }: DocumintProps & {
-  contentDocument: Document;
+  documentView: DocumentView;
   markdownOptions: MarkdownOptions;
   resourceProtocols: ResolvedResourceProtocols;
 }) {
@@ -275,10 +272,7 @@ function DocumintHost({
   const editorState = useSprig(editorStateSprig);
 
   const { theme: resolvedTheme, themeStyles } = useTheme(theme);
-  const hasContentChangeHandler = Boolean(onContentChanged);
-  const readOnly = readOnlyProp || !hasContentChangeHandler;
-  const canMutateComments = hasContentChangeHandler;
-  const showReviewChrome = hasContentChangeHandler || readOnlyProp;
+  const { canMutateComments, readOnly, showActiveBlockHighlight, showReviewChrome } = documentView;
 
   const documentStorage = useMemo(() => new DocumentStorage(storage, window), [storage]);
   const resourceRegistry = useResources({
@@ -352,14 +346,13 @@ function DocumintHost({
     emitUserMentioned,
     documentChanges,
     effects: syncEffects,
-  } = useSync({
+  } = useDocumentSync({
     content,
-    contentDocument,
+    documentView,
+    editorDocument: editorState.documentIndex.document,
     markdownOptions,
     onContentChanged,
     onUserMentioned,
-    resourceProtocolKey: resourceProtocols.key,
-    showDiffs,
     store,
   });
   const documentCompletions = useDocumentCompletions({
@@ -526,7 +519,9 @@ function DocumintHost({
       const now = performance.now();
 
       const frame = createDocumentFrame(editorState, layoutState, {
-        activeBlockPath: selectionContext.block?.blockPath ?? null,
+        activeBlockPath: showActiveBlockHighlight
+          ? (selectionContext.block?.blockPath ?? null)
+          : null,
         activePath: editorState.selection.focus.path,
         activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
         ambientTime: idle.resolveAnimationTime(now),

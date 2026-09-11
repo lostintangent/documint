@@ -4,12 +4,12 @@ import {
   acknowledgeUnacknowledgedDocumentChanges,
   mergeUnacknowledgedDocumentChanges,
   type UnacknowledgedDocumentChange,
-} from "@/component/sync/external-changes";
+} from "@/component/sync/live-changes";
 import { documentNodeAnchorKey, findDocumentChanges, type DocumentChange } from "@/document";
 import { createEditorState, setSelection } from "@/editor/state";
 import { parseDocument } from "@/markdown";
 
-describe("external change targets", () => {
+describe("live external change targets", () => {
   test("detects modified text roots", () => {
     const targets = diff("Alpha\n", "Alpine\n");
 
@@ -188,8 +188,7 @@ describe("unacknowledged document changes", () => {
 
     state = setSelection(state, { path: third.path, offset: 0 });
     const current = [
-      resolveChangeForState(
-        state,
+      unacknowledgedChange(
         changeAt(diff("Old\n\nBeta\n\nGamma\n", "Alpha\n\nBeta\n\nGamma\n"), "root.0"),
       ),
     ];
@@ -202,12 +201,11 @@ describe("unacknowledged document changes", () => {
       state,
     );
 
-    expect(next.changes.map((change) => change.change.kind)).toEqual(["modified", "modified"]);
+    expect(next.changes.map((change) => change.kind)).toEqual(["modified", "modified"]);
     expect(next.newChanges).toEqual([next.changes[1]]);
   });
 
   test("keeps unacknowledged added blocks added when later external snapshots modify them", () => {
-    const initialState = createState("Alpha\n\nOther\n");
     let state = createState("Alpha updated\n\nOther\n");
     const otherPath = indexedTextEntries(state)[1];
 
@@ -217,15 +215,12 @@ describe("unacknowledged document changes", () => {
 
     state = setSelection(state, { path: otherPath.path, offset: 0 });
 
-    const current = resolveChangeForState(
-      initialState,
-      changeAt(diff("Other\n", "Alpha\n\nOther\n"), "root.0"),
-    );
+    const current = unacknowledgedChange(changeAt(diff("Other\n", "Alpha\n\nOther\n"), "root.0"));
     const incoming = changeAt(diff("Alpha\n\nOther\n", "Alpha updated\n\nOther\n"), "root.0");
     const next = mergeUnacknowledgedDocumentChanges([current], [incoming], state);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change).toMatchObject({
+    expect(next.changes[0]).toMatchObject({
       kind: "added",
       anchor: incoming.anchor,
     });
@@ -233,11 +228,9 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps unacknowledged added table cells added when later external snapshots modify them", () => {
-    const initialState = createState("| A | B |\n| - | - |\n| one | new |\n");
     const state = createState("| A | B |\n| - | - |\n| one | changed |\n");
 
-    const current = resolveChangeForState(
-      initialState,
+    const current = unacknowledgedChange(
       changeAt(
         diff("| A |\n| - |\n| one |\n", "| A | B |\n| - | - |\n| one | new |\n"),
         "root.0.rows.1.cells.1",
@@ -250,7 +243,7 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([current], [incoming], state);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change).toMatchObject({
+    expect(next.changes[0]).toMatchObject({
       kind: "added",
       anchor: incoming.anchor,
     });
@@ -258,7 +251,6 @@ describe("unacknowledged document changes", () => {
   });
 
   test("refreshes unacknowledged modified blocks without reporting a new fade target", () => {
-    const initialState = createState("Alpha\n\nOther\n");
     let state = createState("Alpine\n\nOther\n");
     const otherPath = indexedTextEntries(state)[1];
 
@@ -268,20 +260,19 @@ describe("unacknowledged document changes", () => {
 
     state = setSelection(state, { path: otherPath.path, offset: 0 });
 
-    const current = resolveChangeForState(
-      initialState,
+    const current = unacknowledgedChange(
       changeAt(diff("Old\n\nOther\n", "Alpha\n\nOther\n"), "root.0"),
     );
-    if (current.change.kind !== "modified") {
+    if (current.kind !== "modified") {
       throw new Error("Expected current modified change");
     }
     const incoming = changeAt(diff("Alpha\n\nOther\n", "Alpine\n\nOther\n"), "root.0");
     const next = mergeUnacknowledgedDocumentChanges([current], [incoming], state);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change).toMatchObject({
+    expect(next.changes[0]).toMatchObject({
       kind: "modified",
-      previousAnchor: current.change.previousAnchor,
+      previousAnchor: current.previousAnchor,
       anchor: incoming.anchor,
     });
     expect(next.newChanges).toEqual([]);
@@ -313,7 +304,7 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([], [incoming], state);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change).toBe(incoming);
+    expect(next.changes[0]).toMatchObject(incoming);
     expect(next.newChanges).toEqual(next.changes);
   });
 
@@ -335,7 +326,7 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([], [incoming], state);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change).toBe(incoming);
+    expect(next.changes[0]).toMatchObject(incoming);
     expect(next.newChanges).toEqual(next.changes);
   });
 
@@ -349,8 +340,7 @@ describe("unacknowledged document changes", () => {
       throw new Error("Expected beta paths");
     }
 
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(diff("Alpha\n\nOld\n", "Alpha\n\nBeta\n"), "root.1"),
     );
 
@@ -358,16 +348,10 @@ describe("unacknowledged document changes", () => {
       newChanges: [],
       changes: [
         expect.objectContaining({
-          change: expect.objectContaining({
-            kind: "modified",
-            anchor: expect.objectContaining({
-              kind: "block",
-              path: "root.2",
-            }),
-          }),
-          editorTarget: expect.objectContaining({
-            path: "root.2",
+          kind: "modified",
+          anchor: expect.objectContaining({
             kind: "block",
+            path: "root.2",
           }),
           changeKey: active.changeKey,
         }),
@@ -385,8 +369,7 @@ describe("unacknowledged document changes", () => {
       throw new Error("Expected beta paths");
     }
 
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(diff("Alpha\n\nOld\n", "Alpha\n\nBeta\n"), "root.1"),
     );
 
@@ -394,16 +377,10 @@ describe("unacknowledged document changes", () => {
       newChanges: [],
       changes: [
         expect.objectContaining({
-          change: expect.objectContaining({
-            kind: "modified",
-            anchor: expect.objectContaining({
-              kind: "block",
-              path: "root.2",
-            }),
-          }),
-          editorTarget: expect.objectContaining({
-            path: "root.2",
+          kind: "modified",
+          anchor: expect.objectContaining({
             kind: "block",
+            path: "root.2",
           }),
           changeKey: active.changeKey,
         }),
@@ -412,7 +389,6 @@ describe("unacknowledged document changes", () => {
   });
 
   test("acknowledges after retargeting instead of dismissing selected stale block paths", () => {
-    const initial = createState("Alpha\n\nBeta\n");
     let next = createState("Stale occupant\n\nAlpha\n\nBeta\n");
     const stalePath = indexedTextEntries(next).find((path) => path.text === "Alpha");
 
@@ -421,14 +397,13 @@ describe("unacknowledged document changes", () => {
     }
 
     next = setSelection(next, { path: stalePath.path, offset: 0 });
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(diff("Alpha\n\nOld\n", "Alpha\n\nBeta\n"), "root.1"),
     );
 
     expect(acknowledgeUnacknowledgedDocumentChanges([active], next, { retarget: true })).toEqual([
       expect.objectContaining({
-        editorTarget: expect.objectContaining({
+        anchor: expect.objectContaining({
           path: "root.2",
           kind: "block",
         }),
@@ -437,10 +412,8 @@ describe("unacknowledged document changes", () => {
   });
 
   test("drops active changes when the anchor is absent even if the stale block path exists", () => {
-    const initial = createState("Alpha\n\nBeta\n");
     const next = createState("Alpha\n\nStale occupant\n");
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(diff("Alpha\n\nOld\n", "Alpha\n\nBeta\n"), "root.1"),
     );
 
@@ -459,8 +432,7 @@ describe("unacknowledged document changes", () => {
       throw new Error("Expected table cell paths");
     }
 
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(
         diff("| A | B |\n| - | - |\n| one | old |\n", "| A | B |\n| - | - |\n| one | two |\n"),
         "root.0.rows.1.cells.1",
@@ -471,14 +443,8 @@ describe("unacknowledged document changes", () => {
       newChanges: [],
       changes: [
         expect.objectContaining({
-          change: expect.objectContaining({
-            kind: "modified",
-            anchor: expect.objectContaining({
-              kind: "table-cell",
-              path: "root.0.rows.2.cells.1",
-            }),
-          }),
-          editorTarget: expect.objectContaining({
+          kind: "modified",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.2.cells.1",
           }),
@@ -489,7 +455,6 @@ describe("unacknowledged document changes", () => {
   });
 
   test("acknowledges after retargeting instead of dismissing selected stale table-cell paths", () => {
-    const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
     let next = createState("| A | B |\n| - | - |\n| stale | occupant |\n| one | two |\n");
     const staleCell = indexedTextEntries(next).find(
       (path) => path.path === "root.0.rows.1.cells.1",
@@ -500,8 +465,7 @@ describe("unacknowledged document changes", () => {
     }
 
     next = setSelection(next, { path: staleCell.path, offset: 0 });
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(
         diff("| A | B |\n| - | - |\n| one | old |\n", "| A | B |\n| - | - |\n| one | two |\n"),
         "root.0.rows.1.cells.1",
@@ -510,7 +474,7 @@ describe("unacknowledged document changes", () => {
 
     expect(acknowledgeUnacknowledgedDocumentChanges([active], next, { retarget: true })).toEqual([
       expect.objectContaining({
-        editorTarget: expect.objectContaining({
+        anchor: expect.objectContaining({
           kind: "table-cell",
           path: "root.0.rows.2.cells.1",
         }),
@@ -529,7 +493,6 @@ describe("unacknowledged document changes", () => {
       "Keep",
       "",
     ].join("\n");
-    const initial = createState(initialMarkdown);
     let next = createState(
       [
         "Drop",
@@ -554,19 +517,16 @@ describe("unacknowledged document changes", () => {
       offset: 0,
     });
 
-    const dropped = resolveChangeForState(
-      initial,
+    const dropped = unacknowledgedChange(
       changeAt(diff(initialMarkdown.replace("Drop", "Old drop"), initialMarkdown), "root.0"),
     );
-    const retargeted = resolveChangeForState(
-      initial,
+    const retargeted = unacknowledgedChange(
       changeAt(
         diff(initialMarkdown.replace("two", "old"), initialMarkdown),
         "root.1.rows.1.cells.1",
       ),
     );
-    const retained = resolveChangeForState(
-      initial,
+    const retained = unacknowledgedChange(
       changeAt(diff(initialMarkdown.replace("Keep", "Old keep"), initialMarkdown), "root.2"),
     );
     const acknowledged = acknowledgeUnacknowledgedDocumentChanges(
@@ -579,17 +539,15 @@ describe("unacknowledged document changes", () => {
       retargeted.changeKey,
       retained.changeKey,
     ]);
-    expect(acknowledged.map((change) => change.change.anchor.path)).toEqual([
+    expect(acknowledged.map((change) => change.anchor.path)).toEqual([
       "root.1.rows.2.cells.1",
       "root.2",
     ]);
   });
 
   test("drops active table-cell changes when the anchor is absent even if stale path exists", () => {
-    const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
     const next = createState("| A | B |\n| - | - |\n| stale | occupant |\n");
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(
         diff("| A | B |\n| - | - |\n| one | old |\n", "| A | B |\n| - | - |\n| one | two |\n"),
         "root.0.rows.1.cells.1",
@@ -611,8 +569,7 @@ describe("unacknowledged document changes", () => {
       throw new Error("Expected table cell paths");
     }
 
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(
         diff("| A | B |\n| - | - |\n| one | old |\n", "| A | B |\n| - | - |\n| one | two |\n"),
         "root.0.rows.1.cells.1",
@@ -623,14 +580,8 @@ describe("unacknowledged document changes", () => {
       newChanges: [],
       changes: [
         expect.objectContaining({
-          change: expect.objectContaining({
-            kind: "modified",
-            anchor: expect.objectContaining({
-              kind: "table-cell",
-              path: "root.0.rows.2.cells.1",
-            }),
-          }),
-          editorTarget: expect.objectContaining({
+          kind: "modified",
+          anchor: expect.objectContaining({
             kind: "table-cell",
             path: "root.0.rows.2.cells.1",
           }),
@@ -641,7 +592,6 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps added block changes added when the same external snapshot shifts and edits them", () => {
-    const initial = createState("Alpha\n");
     let nextState = createState("Intro\n\nAlpha updated\n\nOther\n");
     const otherPath = indexedTextEntries(nextState)[2];
     if (!otherPath) {
@@ -651,38 +601,30 @@ describe("unacknowledged document changes", () => {
       path: otherPath.path,
       offset: 0,
     });
-    const active = resolveChangeForState(initial, changeAt(diff("", "Alpha\n"), "root.0"));
+    const active = unacknowledgedChange(changeAt(diff("", "Alpha\n"), "root.0"));
     const incoming = diff("Alpha\n", "Intro\n\nAlpha updated\n\nOther\n");
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(2);
-    expect(next.changes.map((change) => change.change.kind)).toEqual(["added", "added"]);
-    expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
-      "root.0",
-      "root.1",
-    ]);
-    expect(next.changes.find((change) => change.change.anchor.path === "root.1")).toMatchObject({
-      change: {
-        kind: "added",
-        anchor: expect.objectContaining({
-          kind: "block",
-          path: "root.1",
-        }),
-      },
+    expect(next.changes.map((change) => change.kind)).toEqual(["added", "added"]);
+    expect(next.changes.map((change) => change.anchor.path).sort()).toEqual(["root.0", "root.1"]);
+    expect(next.changes.find((change) => change.anchor.path === "root.1")).toMatchObject({
+      kind: "added",
+      anchor: expect.objectContaining({
+        kind: "block",
+        path: "root.1",
+      }),
     });
     expect(next.newChanges).toEqual([
       expect.objectContaining({
-        change: expect.objectContaining({
-          anchor: expect.objectContaining({
-            path: "root.0",
-          }),
+        anchor: expect.objectContaining({
+          path: "root.0",
         }),
       }),
     ]);
   });
 
   test("keeps added block changes added after multiple inserted blocks before the edit", () => {
-    const initial = createState("Alpha\n");
     let nextState = createState("Intro 1\n\nIntro 2\n\nAlpha updated\n\nOther\n");
     const otherPath = indexedTextEntries(nextState)[3];
     if (!otherPath) {
@@ -692,34 +634,31 @@ describe("unacknowledged document changes", () => {
       path: otherPath.path,
       offset: 0,
     });
-    const active = resolveChangeForState(initial, changeAt(diff("", "Alpha\n"), "root.0"));
+    const active = unacknowledgedChange(changeAt(diff("", "Alpha\n"), "root.0"));
     const incoming = diff("Alpha\n", "Intro 1\n\nIntro 2\n\nAlpha updated\n\nOther\n");
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(3);
-    expect(next.changes.map((change) => change.change.kind)).toEqual(["added", "added", "added"]);
-    expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
+    expect(next.changes.map((change) => change.kind)).toEqual(["added", "added", "added"]);
+    expect(next.changes.map((change) => change.anchor.path).sort()).toEqual([
       "root.0",
       "root.1",
       "root.2",
     ]);
-    expect(next.changes.find((change) => change.change.anchor.path === "root.2")).toMatchObject({
-      change: {
-        kind: "added",
-        anchor: expect.objectContaining({
-          kind: "block",
-          path: "root.2",
-        }),
-      },
+    expect(next.changes.find((change) => change.anchor.path === "root.2")).toMatchObject({
+      kind: "added",
+      anchor: expect.objectContaining({
+        kind: "block",
+        path: "root.2",
+      }),
     });
-    expect(next.newChanges.map((change) => change.change.anchor.path).sort()).toEqual([
+    expect(next.newChanges.map((change) => change.anchor.path).sort()).toEqual([
       "root.0",
       "root.1",
     ]);
   });
 
   test("keeps added table-cell changes added when the same external snapshot shifts and edits them", () => {
-    const initial = createState("| A | B |\n| - | - |\n| one | new |\n");
     let nextState = createState(
       "| A | B |\n| - | - |\n| inserted | row |\n| one | changed |\n\nOther\n",
     );
@@ -732,8 +671,7 @@ describe("unacknowledged document changes", () => {
       offset: 0,
     });
 
-    const active = resolveChangeForState(
-      initial,
+    const active = unacknowledgedChange(
       changeAt(
         diff("| A |\n| - |\n| one |\n", "| A | B |\n| - | - |\n| one | new |\n"),
         "root.0.rows.1.cells.1",
@@ -746,31 +684,28 @@ describe("unacknowledged document changes", () => {
     const next = mergeUnacknowledgedDocumentChanges([active], incoming, nextState);
 
     expect(next.changes).toHaveLength(3);
-    expect(next.changes.map((change) => change.change.kind)).toEqual(["added", "added", "added"]);
-    expect(next.changes.map((change) => change.change.anchor.path).sort()).toEqual([
+    expect(next.changes.map((change) => change.kind)).toEqual(["added", "added", "added"]);
+    expect(next.changes.map((change) => change.anchor.path).sort()).toEqual([
       "root.0.rows.1.cells.0",
       "root.0.rows.1.cells.1",
       "root.0.rows.2.cells.1",
     ]);
     expect(
-      next.changes.find((change) => change.change.anchor.path === "root.0.rows.2.cells.1"),
+      next.changes.find((change) => change.anchor.path === "root.0.rows.2.cells.1"),
     ).toMatchObject({
-      change: {
-        kind: "added",
-        anchor: expect.objectContaining({
-          kind: "table-cell",
-          path: "root.0.rows.2.cells.1",
-        }),
-      },
+      kind: "added",
+      anchor: expect.objectContaining({
+        kind: "table-cell",
+        path: "root.0.rows.2.cells.1",
+      }),
     });
-    expect(next.newChanges.map((change) => change.change.anchor.path).sort()).toEqual([
+    expect(next.newChanges.map((change) => change.anchor.path).sort()).toEqual([
       "root.0.rows.1.cells.0",
       "root.0.rows.1.cells.1",
     ]);
   });
 
   test("does not preserve added when only the path matches", () => {
-    const activeState = createState("Alpha\n");
     let nextState = createState("Gamma\n\nOther\n");
     const otherPath = indexedTextEntries(nextState)[1];
     if (!otherPath) {
@@ -780,12 +715,12 @@ describe("unacknowledged document changes", () => {
       path: otherPath.path,
       offset: 0,
     });
-    const active = resolveChangeForState(activeState, changeAt(diff("", "Alpha\n"), "root.0"));
+    const active = unacknowledgedChange(changeAt(diff("", "Alpha\n"), "root.0"));
     const incoming = changeAt(diff("Beta\n\nOther\n", "Gamma\n\nOther\n"), "root.0");
     const next = mergeUnacknowledgedDocumentChanges([active], [incoming], nextState);
 
     expect(next.changes).toHaveLength(1);
-    expect(next.changes[0]!.change.kind).toBe("modified");
+    expect(next.changes[0]!.kind).toBe("modified");
     expect(next.newChanges).toEqual(next.changes);
   });
 });
@@ -804,34 +739,10 @@ function changeAt(changes: readonly DocumentChange[], path: string) {
   return change;
 }
 
-function resolveChangeForState(
-  state: ReturnType<typeof createState>,
-  change: DocumentChange,
-): UnacknowledgedDocumentChange {
-  const changeKey = documentNodeAnchorKey(change.anchor);
-
-  if (change.anchor.kind === "block") {
-    return {
-      change,
-      editorTarget: {
-        path: change.anchor.path,
-        kind: "block",
-      },
-      changeKey,
-    };
-  }
-
-  const path = indexedTextEntries(state).find((candidate) => candidate.path === change.anchor.path);
-  if (!path) {
-    throw new Error(`Expected path at ${change.anchor.path}`);
-  }
+function unacknowledgedChange(change: DocumentChange): UnacknowledgedDocumentChange {
   return {
-    change,
-    editorTarget: {
-      kind: "table-cell",
-      path: path.path,
-    },
-    changeKey,
+    ...change,
+    changeKey: documentNodeAnchorKey(change.anchor),
   };
 }
 

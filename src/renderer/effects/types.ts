@@ -1,12 +1,9 @@
 import type { EditorEffect } from "@/editor/state";
-import type { DocumentChangeKind } from "@/document";
-import type { DocumintEffects, ResolvedDocumentChangeTarget } from "@/types";
+import type { DocumintEffects } from "@/types";
 
 export type DocumentChangeEffect = {
   changeKey: string;
-  changeKind: DocumentChangeKind;
   kind: "document-change";
-  target: ResolvedDocumentChangeTarget;
 };
 
 export type RendererEffectInput = EditorEffect | DocumentChangeEffect;

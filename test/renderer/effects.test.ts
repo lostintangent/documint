@@ -195,9 +195,7 @@ function deletedText(
 function documentChangeEffect(): RendererEffect {
   return {
     changeKey: "change-1",
-    changeKind: "modified",
     kind: "document-change",
     startedAt,
-    target: { kind: "block", path: "root.0" },
   };
 }

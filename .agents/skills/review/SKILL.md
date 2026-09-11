@@ -1,6 +1,6 @@
 ---
-name: review
-description: Use when reviewing implemented code changes after the fact, especially to assess correctness, architecture, subsystem ownership, performance, naming, test quality, and remaining design debt with help from the review team in .agents/team.md.
+name: "review"
+description: "Use when reviewing implemented code changes after the fact, especially to assess correctness, architecture, subsystem ownership, performance, naming, test quality, and remaining design debt with help from the review team in .agents/team.md."
 ---
 
 # Review Workflow

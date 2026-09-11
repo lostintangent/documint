@@ -178,7 +178,7 @@ Markdown can be shown literally inside a code fence:
 :::
 `;
 
-const sampleSpecMarkdown = `# Spec: Syntax Highlighting as Code-Targeted Decorations
+const versionedSampleMarkdown = `# Spec: Syntax Highlighting as Code-Targeted Decorations
 
 A working specification for fenced code block syntax highlighting in Documint, modeled as a code-specific form of the existing decoration system.
 
@@ -231,11 +231,21 @@ Markdown and JavaScript/TypeScript ship enabled by default. The \`grammars\` pro
 <Documint grammars={{ rust: rustGrammar }} />
 \`\`\`
 
-Passing no \`grammars\` uses the built-ins; an object merges over them; \`null\` disables code highlighting entirely.
-
 ## Theme Extension
 
 The theme gains an optional \`codeTokens\` map of token kind to color. The resolver derives the code background first, selects a light or dark token palette from it, then merges any host overrides on top. Every built-in and playground theme inherits token colors automatically; a host sets \`codeTokens\` only to override.
+
+## Review Matrix
+
+| Area | Owner | Status |
+| :--- | :---- | :----- |
+| Parsing | Markdown | Stable |
+| Anchors | Document | Stable |
+| Current adapter | Component | Added in this version |
+| Selection | Editor | Stable |
+| Layout | Editor | Stable |
+| Painting | Renderer | Uses semantic diff colors |
+| Serialization | Markdown | Stable |
 
 ## Rendering
 
@@ -245,12 +255,6 @@ Highlights flow as colored decoration ranges through the existing overlay painte
 
 - **New.** The shared range primitive, the grammar types and built-in grammars, and the code range pass.
 - **Changed.** The decoration ranges module, the worker protocol and entry, the decoration hook, the theme types and resolver, and the editor component.
-
-## Phasing
-
-1. **Vertical slice.** Shared primitive, theme tokens, the JavaScript grammar, hook resolution, and the worker code pass — a code block highlighting in the playground.
-2. **Breadth.** The markdown grammar, language aliases, and built-in wiring.
-3. **Polish.** A code-heavy paint benchmark, a per-rule step guard on the worker, and more languages.
 
 ## Testing
 
@@ -273,23 +277,81 @@ export const fixtureOptions = [
     id: "sample",
     label: "Tutorial document",
     markdown: sampleMarkdown,
+    previousContent: undefined,
   },
   {
-    id: "spec",
-    label: "Sample spec",
-    markdown: sampleSpecMarkdown,
+    id: "versioned",
+    label: "Versioned sample",
+    markdown: versionedSampleMarkdown,
+    previousContent: createPreviousVersion(versionedSampleMarkdown),
   },
   {
     id: "blank",
     label: "Blank document",
     markdown: "",
+    previousContent: undefined,
   },
   {
     id: "scrolling",
     label: "Scrolling test",
     markdown: scrollingTestMarkdown,
+    previousContent: undefined,
   },
 ] as const;
+
+function createPreviousVersion(markdown: string) {
+  const blocks = markdown.trimEnd().split("\n\n");
+  const headingIndex = blocks.findIndex((block) => block.startsWith("# "));
+  blocks[headingIndex] = `${blocks[headingIndex]} — previous version`;
+  blocks.splice(headingIndex + 1, 1);
+  blocks.splice(
+    headingIndex + 2,
+    0,
+    "This paragraph exists only in the previous version and should render as deleted.",
+  );
+  blocks.splice(
+    blocks.indexOf("## Theme Extension"),
+    0,
+    "Passing no `grammars` uses the built-ins; an object merges over them; `null` disables code highlighting entirely.",
+  );
+  blocks.splice(
+    blocks.indexOf("## Testing"),
+    0,
+    "## Phasing",
+    "1. **Vertical slice.** Shared primitive, theme tokens, the JavaScript grammar, hook resolution, and the worker code pass — a code block highlighting in the playground.\n2. **Breadth.** The markdown grammar, language aliases, and built-in wiring.\n3. **Polish.** A code-heavy paint benchmark, a per-rule step guard on the worker, and more languages.",
+  );
+  return `${blocks.join("\n\n")}\n`
+    .replace(
+      "- **Segments.**",
+      "- **Removed behavior.** This list item exists only in the previous version.\n- **Segments.**",
+    )
+    .replace(
+      "\n- **Names.** The decoration hook, worker, and client keep their decoration-based names.",
+      "",
+    )
+    .replace(
+      "| Parsing | Markdown | Stable |",
+      "| Removed adapter | Component | Deleted after review |\n| Parsing | Markdown | Stable |",
+    )
+    .replace("| Current adapter | Component | Added in this version |\n", "")
+    .replace(
+      "| Painting | Renderer | Uses semantic diff colors |",
+      "| Painting | Renderer | Uses generic highlight colors |",
+    )
+    .replace(
+      "3. The worker is configured atomically — a single message carries both buckets under one key, so no request can observe a mixed configuration.",
+      "3. The worker receives prose and code configuration in separate messages.",
+    )
+    .replace(
+      "- **Changed.** The decoration ranges module, the worker protocol and entry, the decoration hook, the theme types and resolver, and the editor component.",
+      "- **Changed.** The worker, theme resolver, and editor component receive targeted updates.",
+    )
+    .replace("\n- Markdown round-trip stability and a code-heavy paint benchmark.", "")
+    .replace(
+      "- Whether to keep the term *grammar* or rename to *lexer* for mechanism accuracy.",
+      "- Whether snapshot comparisons should retain review acknowledgments.\n- Whether to keep the term *grammar* or rename to *lexer* for mechanism accuracy.",
+    );
+}
 
 // A host-provided grammar for the tutorial's ```tree block, demonstrating that
 // custom languages merge over the built-ins (markdown, JS/TS). Ampersands use

@@ -5,9 +5,8 @@
 //   build/        — producing canonical Documents. Per-node builders,
 //                   high-level operations, save-time canonicalization.
 //                   Non-node structural IDs stay internal.
-//   query/        — reading from existing Documents. Traversal, projection,
-//                   anchor algebra, and bounded change detection across
-//                   immutable Document snapshots.
+//   query/        — reading and comparing immutable Documents. Traversal,
+//                   projection, anchor algebra, and change detection.
 //   comments/     — anchored-annotation domain.
 //
 // Each subfolder has its own `index.ts` that is the single source of truth

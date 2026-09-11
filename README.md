@@ -63,6 +63,16 @@ const keybindings: readonly EditorInputKeybinding[] = [
 
 `modKey` means exactly Command on macOS and Control elsewhere. Omitted modifiers mean unmodified; use `shiftKey: "any"` when a binding should match with or without Shift, and `platform: "mac"` or `"nonMac"` for platform-specific bindings. The map covers named editor shortcuts; ordinary typing and unmodified arrow/Page navigation remain built-in input behavior.
 
+## Snapshot Comparison
+
+Pass `previousContent` to show a persistent comparison between two host-provided markdown snapshots. Added and modified blocks are highlighted in the current content, while deleted blocks remain visible with a red background. Snapshot comparisons are read-only but still allow selection and copying.
+
+```tsx
+<Documint content={currentMarkdown} previousContent={previousMarkdown} />
+```
+
+Omit `previousContent` to retain the normal live external-change highlights. `showDiffs={false}` hides either kind of diff; supplying `previousContent` still keeps the document read-only.
+
 ## Read-Only Review Mode
 
 Pass `readOnly` to let users select text, copy, and use review chrome without changing document content. Content-editing affordances such as typing, paste, cut, formatting, link editing, table controls, insertions, and image resize are disabled or not shown. Comments still persist through `onContentChanged`, so keep that callback wired when read-only users should be able to create, reply to, resolve, edit, or delete comments.

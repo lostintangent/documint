@@ -1,3 +1,7 @@
+## 🗓️ v0.1.0 (09-10-26)
+
+- Introduced the `<Documint previousContent>` prop, which allows rendering a diff between two specific versions
+
 ## 🗓️ v0.0.36 (09-03-26)
 
 - Basic frontmatter support allows reading and editing document metadata

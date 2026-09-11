@@ -5,4 +5,5 @@ export {
   type ExternalSelectionReconciliationResult,
 } from "./selection";
 export { resolveMentionLineChange, type MentionLineChange } from "./mention-event";
-export { useSync, type UserMentionEvent } from "./useSync";
+export { useDocumentSync, type UserMentionEvent } from "./useDocumentSync";
+export { useDocumentView, type DocumentView } from "./useDocumentView";

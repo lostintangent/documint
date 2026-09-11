@@ -142,6 +142,8 @@ export function Playground() {
   const [frameDebugEnabled, setFrameDebugEnabled] = useState(false);
 
   const { theme: activeTheme } = getThemeOption(themeId);
+  const activeFixture =
+    fixtureOptions.find((candidate) => candidate.id === fixtureId) ?? fixtureOptions[0];
   const documintTheme = useMemo(() => {
     return { ...activeTheme, fontSize };
   }, [activeTheme, fontSize]);
@@ -247,6 +249,7 @@ export function Playground() {
           <div className={fixtureSurfaceClassName}>
             <Documint
               content={content}
+              previousContent={activeFixture.previousContent}
               effects={customEffectsEnabled ? effects : undefined}
               theme={documintTheme}
               users={mentionUsers}

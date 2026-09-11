@@ -35,13 +35,20 @@ const SEMANTIC_INLINE_CODE_DEFAULTS = {
   dark: { background: "rgba(251, 191, 36, 0.16)", text: "#fdba74" },
 } as const;
 
-// External document changes follow git-diff semantics rather than adapting to
-// each theme's comment palette: added is always green, modified is always in
-// the warm yellow/tan family. Themes can still override the final tokens.
+// External document changes use the green / blue / red convention from VS Code
+// source-control chrome. Dark-mode hues are brighter so their translucent
+// backgrounds retain the same visual weight after compositing.
 const SEMANTIC_EXTERNAL_CHANGE_DEFAULTS = {
-  addition: "#4ade80",
-  modificationDark: "#f4d35e",
-  modificationLight: "#ea580c",
+  light: {
+    addition: "#2ea043",
+    deletion: "#f85149",
+    modification: "#005fb8",
+  },
+  dark: {
+    addition: "#3fb950",
+    deletion: "#ff5370",
+    modification: "#58a6ff",
+  },
 } as const;
 
 // Code token colors, split by the brightness of the resolved code surface (not
@@ -151,6 +158,10 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
   const commentHighlightResolved = theme.commentHighlightResolved ?? commentDefaults.resolved;
   const commentHighlightResolvedActive =
     theme.commentHighlightResolvedActive ?? commentDefaults.resolvedActive;
+  const externalChangeDefaults = isLight
+    ? SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.light
+    : SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.dark;
+  const externalChangeTint = isLight ? 18 : 30;
 
   return {
     ...theme,
@@ -191,15 +202,13 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     dividerRule: theme.dividerRule ?? headingRule,
     externalChangeAdditionBackground:
       theme.externalChangeAdditionBackground ??
-      backgroundTint(SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.addition, isLight ? 30 : 22),
+      backgroundTint(externalChangeDefaults.addition, externalChangeTint),
+    externalChangeDeletionBackground:
+      theme.externalChangeDeletionBackground ??
+      backgroundTint(externalChangeDefaults.deletion, externalChangeTint),
     externalChangeModificationBackground:
       theme.externalChangeModificationBackground ??
-      backgroundTint(
-        isLight
-          ? SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.modificationLight
-          : SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.modificationDark,
-        isLight ? 36 : 34,
-      ),
+      backgroundTint(externalChangeDefaults.modification, externalChangeTint),
     fontSize: resolvedFontSize,
     headingRule,
     headingText: theme.headingText ?? text,

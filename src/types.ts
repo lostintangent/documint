@@ -65,13 +65,6 @@ export type DocumintDecoration = {
   pattern: RegExp;
 };
 
-// Current runtime location for a document-change highlight. The lifecycle key
-// that keeps animations stable across retargeting travels beside this target.
-export type ResolvedDocumentChangeTarget = {
-  kind: "block" | "table-cell";
-  path: string;
-};
-
 export type EditorTheme = {
   // Tier-1 required tokens that
   // everything else is derived from
@@ -101,6 +94,7 @@ export type EditorTheme = {
   commentHighlightResolvedActive?: string;
   dividerRule?: string;
   externalChangeAdditionBackground?: string;
+  externalChangeDeletionBackground?: string;
   externalChangeModificationBackground?: string;
   fontSize?: number;
   headingRule?: string;

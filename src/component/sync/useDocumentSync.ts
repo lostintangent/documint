@@ -1,16 +1,17 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createEditorState, type TextRangeTarget } from "@/editor";
-import { findDocumentChanges, type Document } from "@/document";
+import { findDocumentChanges, type Document, type DocumentChange } from "@/document";
 import { serializeDocument, type MarkdownOptions } from "@/markdown";
 import type { DocumentChangeEffect } from "@/renderer";
 import { emitDiagnostic } from "../lib/diagnostics";
 import {
   acknowledgeUnacknowledgedDocumentChanges,
   mergeUnacknowledgedDocumentChanges,
-} from "./external-changes";
-import type { UnacknowledgedDocumentChange } from "./external-changes";
-import { reconcileExternalContentChange } from "./selection";
+  type UnacknowledgedDocumentChange,
+} from "./live-changes";
+import { reconcileExternalContentChange, restoreEquivalentSelection } from "./selection";
 import { resolveMentionLineChange } from "./mention-event";
+import type { DocumentView } from "./useDocumentView";
 import type { DocumintStore, EditorStateTransition } from "../store";
 
 export type UserMentionEvent = {
@@ -19,41 +20,42 @@ export type UserMentionEvent = {
   userId: string;
 };
 
-type DocumentChangeState = {
+type LiveChangeState = {
   newChanges: readonly UnacknowledgedDocumentChange[];
   changes: readonly UnacknowledgedDocumentChange[];
 };
 
-const emptyDocumentChangeState: DocumentChangeState = {
+const emptyLiveChangeState: LiveChangeState = {
   newChanges: [],
   changes: [],
 };
 
-export function useSync({
+export function useDocumentSync({
   content,
-  contentDocument,
+  documentView,
+  editorDocument,
   markdownOptions,
   onContentChanged,
   onUserMentioned,
-  resourceProtocolKey,
-  showDiffs,
   store,
 }: {
   content: string;
-  contentDocument: Document;
+  documentView: DocumentView;
+  editorDocument: Document;
   markdownOptions: MarkdownOptions;
   onContentChanged?: (content: string) => void;
   onUserMentioned?: (event: UserMentionEvent) => void;
-  resourceProtocolKey: string;
-  showDiffs: boolean;
   store: DocumintStore;
 }) {
   /* Reconciliation bookkeeping */
 
-  const lastReconciledContentRef = useRef(content);
-  const lastReconciledMarkdownOptionsRef = useRef(markdownOptions);
-  const lastReconciledResourceProtocolKeyRef = useRef(resourceProtocolKey);
-  const [documentChangeState, setDocumentChangeState] = useState(emptyDocumentChangeState);
+  const lastReconciledRef = useRef({
+    content,
+    document: documentView.document,
+    kind: documentView.kind,
+  });
+  const [liveChangeState, setLiveChangeState] = useState(emptyLiveChangeState);
+  const showLiveDiffs = documentView.kind === "live" && documentView.showDiffs;
 
   /* Local event emission */
 
@@ -95,9 +97,9 @@ export function useSync({
     },
   );
 
-  /* Document change lifecycle */
+  /* Live change lifecycle */
 
-  const applyExternalDocumentChanges = useEffectEvent(
+  const recordLiveDocumentChanges = useEffectEvent(
     (
       previousState: EditorStateTransition["previous"],
       nextState: EditorStateTransition["next"],
@@ -106,7 +108,7 @@ export function useSync({
         previousState.documentIndex.document,
         nextState.documentIndex.document,
       );
-      setDocumentChangeState((current) => {
+      setLiveChangeState((current) => {
         const merge = mergeUnacknowledgedDocumentChanges(current.changes, changes, nextState);
         return {
           newChanges: merge.newChanges,
@@ -116,8 +118,8 @@ export function useSync({
     },
   );
 
-  const reconcileDocumentChanges = useEffectEvent((transition: EditorStateTransition) => {
-    setDocumentChangeState((current) => {
+  const reconcileLiveDocumentChanges = useEffectEvent((transition: EditorStateTransition) => {
+    setLiveChangeState((current) => {
       if (current.changes.length === 0) {
         return current;
       }
@@ -135,62 +137,73 @@ export function useSync({
     });
   });
 
-  /* External content diffing */
-
   useEffect(() => {
     return store.editor.subscribe((transition) => {
-      if (showDiffs && transition.source === "local") {
+      if (showLiveDiffs && transition.source === "local") {
         // Local transitions can dismiss touched diff markers and retarget
         // surviving markers, but only while diff display is active.
-        reconcileDocumentChanges(transition);
+        reconcileLiveDocumentChanges(transition);
       }
     });
-  }, [showDiffs, store]);
+  }, [showLiveDiffs, store]);
 
   useEffect(() => {
-    if (showDiffs) return;
+    if (showLiveDiffs) return;
 
     // Turning diffs off is a host display policy, so drop any already-visible
     // diff lifecycle state instead of letting old markers linger.
-    setDocumentChangeState((current) =>
+    setLiveChangeState((current) =>
       current.newChanges.length === 0 && current.changes.length === 0
         ? current
-        : emptyDocumentChangeState,
+        : emptyLiveChangeState,
     );
-  }, [showDiffs]);
+  }, [showLiveDiffs]);
 
-  /* External content reconciliation */
+  /* Document view reconciliation */
 
   useLayoutEffect(() => {
-    const contentChanged = content !== lastReconciledContentRef.current;
-    const markdownOptionsChanged = markdownOptions !== lastReconciledMarkdownOptionsRef.current;
-    const resourceProtocolsChanged =
-      resourceProtocolKey !== lastReconciledResourceProtocolKeyRef.current;
+    const lastReconciled = lastReconciledRef.current;
+    const contentChanged = content !== lastReconciled.content;
+    const shouldReconcile =
+      contentChanged ||
+      documentView.document !== lastReconciled.document ||
+      documentView.kind !== lastReconciled.kind;
 
-    if (!contentChanged && !markdownOptionsChanged && !resourceProtocolsChanged) {
+    if (!shouldReconcile) {
       return;
     }
 
     const previousState = store.editor.getState();
-    const nextState = createEditorState(contentDocument);
-    const reconciliation = reconcileExternalContentChange(previousState, nextState);
-    store.editor.replace(reconciliation.state);
-    if (showDiffs && contentChanged) {
-      applyExternalDocumentChanges(previousState, reconciliation.state);
+    const nextState = createEditorState(documentView.document);
+    const reconciledState =
+      documentView.kind === "snapshot"
+        ? (restoreEquivalentSelection(previousState, nextState) ?? nextState)
+        : reconcileExternalContentChange(previousState, nextState).state;
+    store.editor.replace(reconciledState);
+
+    if (showLiveDiffs && contentChanged) {
+      recordLiveDocumentChanges(previousState, reconciledState);
     }
-    lastReconciledContentRef.current = content;
-    lastReconciledMarkdownOptionsRef.current = markdownOptions;
-    lastReconciledResourceProtocolKeyRef.current = resourceProtocolKey;
-  }, [content, contentDocument, markdownOptions, resourceProtocolKey, showDiffs, store]);
+
+    lastReconciledRef.current = {
+      content,
+      document: documentView.document,
+      kind: documentView.kind,
+    };
+  }, [content, documentView.document, documentView.kind, showLiveDiffs, store]);
 
   const effects = useMemo(
-    () => (showDiffs ? documentChangeState.newChanges.map(createDocumentChangeEffect) : []),
-    [documentChangeState.newChanges, showDiffs],
+    () => (showLiveDiffs ? liveChangeState.newChanges.map(createDocumentChangeEffect) : []),
+    [liveChangeState.newChanges, showLiveDiffs],
   );
-  const documentChanges = useMemo(
-    () => (showDiffs ? documentChangeState.changes.map(createDocumentChangeFrameInput) : []),
-    [documentChangeState.changes, showDiffs],
-  );
+  let documentChanges: readonly DocumentChange[] = emptyLiveChangeState.changes;
+  if (documentView.kind === "snapshot") {
+    if (editorDocument.blocks === documentView.document.blocks) {
+      documentChanges = documentView.changes;
+    }
+  } else if (showLiveDiffs) {
+    documentChanges = liveChangeState.changes;
+  }
 
   /* Public API */
 
@@ -202,19 +215,9 @@ export function useSync({
   };
 }
 
-function createDocumentChangeFrameInput(change: UnacknowledgedDocumentChange) {
-  return {
-    changeKey: change.changeKey,
-    changeKind: change.change.kind,
-    target: change.editorTarget,
-  };
-}
-
 function createDocumentChangeEffect(change: UnacknowledgedDocumentChange): DocumentChangeEffect {
   return {
     changeKey: change.changeKey,
-    changeKind: change.change.kind,
     kind: "document-change",
-    target: change.editorTarget,
   };
 }

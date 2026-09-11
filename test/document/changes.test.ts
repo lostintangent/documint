@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  compareDocuments,
   createDocument,
   createTableBlock,
   createTableCell,
@@ -117,11 +118,13 @@ describe("document changes", () => {
     );
   });
 
-  test("returns no targetable changes for broad rewrites", () => {
+  test("compares broad rewrites exhaustively", () => {
     const previous = Array.from({ length: 12 }, (_, index) => `Old ${index}`).join("\n\n");
     const next = Array.from({ length: 12 }, (_, index) => `New ${index}`).join("\n\n");
 
     expect(findDocumentChanges(parse(previous), parse(next))).toEqual([]);
+    expect(compareDocuments(parse(previous), parse(next)).changes).toHaveLength(12);
+    expect(compareDocuments(parse(""), parse(next)).changes).toHaveLength(12);
   });
 
   test("finds sparse root changes across broad spans", () => {
@@ -178,6 +181,110 @@ describe("document changes", () => {
     ]);
   });
 
+  test("keeps deleted roots in document order only in complete comparisons", () => {
+    const previous = parse(
+      "Removed leading\n\nBefore\n\nRemoved one\n\nRemoved two\n\nRetained\n\nRemoved trailing\n",
+    );
+    const next = parse("Before\n\nRetained\n");
+    const comparison = compareDocuments(previous, next);
+
+    expect(findDocumentChanges(previous, next)).toEqual([]);
+    expect(comparison.document.blocks.map((block) => block.plainText)).toEqual([
+      "Removed leading",
+      "Before",
+      "Removed one",
+      "Removed two",
+      "Retained",
+      "Removed trailing",
+    ]);
+    expect(comparison.changes.map(changeSummary)).toEqual([
+      ["deleted", "root.0"],
+      ["deleted", "root.2"],
+      ["deleted", "root.3"],
+      ["deleted", "root.5"],
+    ]);
+  });
+
+  test("keeps deleted list items in their original container", () => {
+    const comparison = compareDocuments(
+      parse("- Before\n- Removed\n- After\n"),
+      parse("- Before\n- After\n"),
+    );
+    const list = comparison.document.blocks[0];
+
+    expect(list?.type).toBe("list");
+    expect(list?.type === "list" ? list.items.map((item) => item.plainText) : []).toEqual([
+      "Before",
+      "Removed",
+      "After",
+    ]);
+    expect(comparison.changes).toEqual([
+      expect.objectContaining({
+        anchor: expect.objectContaining({ path: "root.0.children.1" }),
+        kind: "deleted",
+      }),
+    ]);
+  });
+
+  test("keeps deleted table rows while aligning later additions and modifications", () => {
+    const previous = parse(`| Area | Status |
+| - | - |
+| Removed | Previous only |
+| Stable A | Same |
+| Stable B | Same |
+| Stable C | Same |
+| Stable D | Same |
+| Changed | Before |
+| Stable E | Same |
+`);
+    const next = parse(`| Area | Status |
+| - | - |
+| Stable A | Same |
+| Stable B | Same |
+| Added | Current only |
+| Stable C | Same |
+| Stable D | Same |
+| Changed | After |
+| Stable E | Same |
+`);
+    const comparison = compareDocuments(previous, next);
+    const table = comparison.document.blocks[0];
+
+    expect(table?.type === "table" ? table.rows.map((row) => row.cells[0]?.plainText) : []).toEqual(
+      [
+        "Area",
+        "Removed",
+        "Stable A",
+        "Stable B",
+        "Added",
+        "Stable C",
+        "Stable D",
+        "Changed",
+        "Stable E",
+      ],
+    );
+    expect(comparison.changes.map(changeSummary)).toEqual([
+      ["added", "root.0.rows.4.cells.0"],
+      ["added", "root.0.rows.4.cells.1"],
+      ["modified", "root.0.rows.7.cells.1"],
+      ["deleted", "root.0.rows.1.cells.0"],
+      ["deleted", "root.0.rows.1.cells.1"],
+    ]);
+  });
+
+  test("keeps an all-content deletion without the broad-window bailout", () => {
+    const previous = parse(
+      Array.from({ length: 12 }, (_, index) => `Removed ${index + 1}`).join("\n\n"),
+    );
+    const comparison = compareDocuments(previous, parse(""));
+
+    expect(comparison.document.blocks.map((block) => block.plainText)).toEqual(
+      previous.blocks.map((block) => block.plainText),
+    );
+    expect(comparison.changes).toHaveLength(12);
+    expect(comparison.changes.every((change) => change.kind === "deleted")).toBe(true);
+  });
+
   test("finds heading changes across every section in a broad document", () => {
     const previous = createSectionDocument(10, (index) => `Section ${index + 1}`);
     const next = createSectionDocument(10, (index) => `Updated ${index + 1}`);
@@ -208,8 +315,11 @@ describe("document changes", () => {
   });
 
   test("retains a terminal 64 changes but aborts when another target remains", () => {
+    const { next, previous } = createTableAlignmentDocuments(65);
+
     expect(findTableAlignmentChanges(64)).toHaveLength(64);
     expect(findTableAlignmentChanges(65)).toEqual([]);
+    expect(compareDocuments(previous, next).changes).toHaveLength(65);
   });
 
   test("returns changes below the work budget and none at the exact limit", () => {
@@ -238,7 +348,14 @@ function parse(markdown: string) {
   return parseDocument(markdown);
 }
 
-function findTableAlignmentChanges(cellCount: number) {
+function changeSummary(change: {
+  readonly anchor: { readonly path: string };
+  readonly kind: string;
+}) {
+  return [change.kind, change.anchor.path];
+}
+
+function createTableAlignmentDocuments(cellCount: number) {
   const row = createTableRow(
     Array.from({ length: cellCount }, (_, index) =>
       createTableCell([createText(`Cell ${index + 1}`)]),
@@ -257,6 +374,11 @@ function findTableAlignmentChanges(cellCount: number) {
     }),
   ]);
 
+  return { next, previous };
+}
+
+function findTableAlignmentChanges(cellCount: number) {
+  const { next, previous } = createTableAlignmentDocuments(cellCount);
   return findDocumentChanges(previous, next);
 }
 

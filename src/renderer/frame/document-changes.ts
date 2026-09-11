@@ -5,22 +5,19 @@ import {
   type EditorState,
 } from "@/editor/state";
 import type { EditorLayoutState } from "@/editor/layout";
-import type { DocumentChangeKind } from "@/document";
-import { type ResolvedDocumentChangeTarget, type ResolvedEditorTheme } from "@/types";
-import { type DocumentChangeFadeFrame } from "../effects";
+import type { DocumentChange } from "@/document";
+import type { ResolvedEditorTheme } from "@/types";
+import type { DocumentChangeFadeFrame } from "../effects";
 import { resolveTableCellGeometryFrame, type TableCellGeometryFrame } from "./chrome/table";
 
 export type DocumentChangeFrameEntry = {
-  changeKind: DocumentChangeKind;
+  kind: DocumentChange["kind"];
   fade: DocumentChangeFadeFrame | null;
 };
 
-export type DocumentChangeFrameInput = {
-  // Stable lifecycle identity for the change fade. The target below is the
-  // current location projection and may move when sync retargets the change.
-  changeKey: string;
-  changeKind: DocumentChangeKind;
-  target: ResolvedDocumentChangeTarget;
+export type DocumentChangeFrameInput = DocumentChange & {
+  // Present only for live changes, whose introduction fades once.
+  readonly changeKey?: string;
 };
 
 export type TableCellDocumentChangeFrame = TableCellGeometryFrame & {
@@ -71,23 +68,22 @@ export function createDocumentChangeResolver(
 const emptyDocumentChangeResolver: DocumentChangeResolver = () => null;
 
 function createDocumentChangeFrameIndex(
-  changes: readonly DocumentChangeFrameInput[] = [],
+  changes: readonly DocumentChangeFrameInput[],
   fades: ReadonlyMap<string, DocumentChangeFadeFrame>,
 ): DocumentChangeFrameIndex {
   const blockChanges = new Map<string, DocumentChangeFrameEntry>();
   const tableCellChanges = new Map<string, DocumentChangeFrameEntry>();
 
   for (const change of changes) {
-    const target = change.target;
     const entry = {
-      changeKind: change.changeKind,
-      fade: fades.get(change.changeKey) ?? null,
+      fade: change.changeKey ? (fades.get(change.changeKey) ?? null) : null,
+      kind: change.kind,
     } satisfies DocumentChangeFrameEntry;
 
-    if (target.kind === "block") {
-      blockChanges.set(target.path, entry);
+    if (change.anchor.kind === "block") {
+      blockChanges.set(change.anchor.path, entry);
     } else {
-      tableCellChanges.set(target.path, entry);
+      tableCellChanges.set(change.anchor.path, entry);
     }
   }
 
@@ -121,9 +117,14 @@ export function resolveDocumentChangeBackgroundColor(
   change: DocumentChangeFrameEntry,
   theme: ResolvedEditorTheme,
 ) {
-  return change.changeKind === "added"
-    ? theme.externalChangeAdditionBackground
-    : theme.externalChangeModificationBackground;
+  switch (change.kind) {
+    case "added":
+      return theme.externalChangeAdditionBackground;
+    case "deleted":
+      return theme.externalChangeDeletionBackground;
+    case "modified":
+      return theme.externalChangeModificationBackground;
+  }
 }
 
 export function resolveDocumentChangeOpacity(change: DocumentChangeFrameEntry) {

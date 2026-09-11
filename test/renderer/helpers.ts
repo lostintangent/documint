@@ -1,4 +1,8 @@
-// Shared test harness for canvas paint tests. Painters draw into a
+import { findDocumentChanges } from "@/document";
+import type { EditorState } from "@/editor/state";
+import { parseDocument } from "@/markdown";
+
+// Shared test harness for renderer tests. Painters draw into a
 // CanvasRenderingContext2D; rather than rendering to a real canvas, the tests
 // stub one out that records every fill/stroke/text call as a typed operation
 // and then assert against the recorded sequence.
@@ -268,4 +272,22 @@ export function findFillTextOperation(operations: RecordingOperation[], text: st
   });
 
   return operation?.kind === "fillText" ? operation : null;
+}
+
+export function liveDocumentChangeAt(
+  state: EditorState,
+  previousMarkdown: string,
+  path: string,
+  changeKey: string,
+) {
+  const change = findDocumentChanges(
+    parseDocument(previousMarkdown),
+    state.documentIndex.document,
+  ).find((candidate) => candidate.anchor.path === path);
+
+  if (!change) {
+    throw new Error(`Expected live document change at ${path}`);
+  }
+
+  return { ...change, changeKey };
 }

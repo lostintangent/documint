@@ -1,23 +1,24 @@
-// Document change detection is bounded anchor matching, not a complete edit script.
+// Document change detection is anchor matching, not a complete edit script.
 // Algorithm:
 // - Trim unchanged edges with semantic content hashes.
-// - Skip empty, oversized, or low-context broad root windows instead of guessing.
+// - By default, skip empty, oversized, or low-context broad root windows instead of guessing.
 // - Walk remaining block and table arrays left-to-right with small lookahead.
 // - Recurse into nested blocks and table cells, emitting anchored block/cell changes.
-// - Track work and target budgets; if either is exhausted, return no changes.
+// - By default, track work and target budgets; if either is exhausted, return no changes.
+// - Exhaustive mode disables those bailouts and records deleted content for comparison building.
 import {
   childBlockPath,
   getBlockChildren,
   rootBlockPath,
   tableCellPath,
   tableRowPath,
-} from "../model";
-import type { Block, Document, TableBlock, TableCell, TableRow } from "../model";
+} from "../../model";
+import type { Block, Document, TableBlock, TableCell, TableRow } from "../../model";
 import {
   createDocumentNodeAnchor,
   documentNodeAnchorKey,
   type DocumentNodeAnchor,
-} from "./anchors/node";
+} from "../anchors/node";
 import {
   type DocumentNodeContentHash,
   estimateDocumentNodeContentHashCost,
@@ -26,27 +27,26 @@ import {
   resolveBlockContentHash,
   resolveTableCellContentHash,
   resolveTableRowContentHash,
-} from "./content-hash";
+} from "../content-hash";
 
-export type DocumentChangeKind = "added" | "modified";
-
-// A node that changed between two snapshots, identified by its content-addressable
-// `DocumentNodeAnchor` — which already carries the snapshot path and the block vs
-// table-cell kind, so there is no separate change "target".
-export type DocumentChange =
-  | { readonly anchor: DocumentNodeAnchor; readonly kind: "added" }
+export type DocumentChange = { readonly anchor: DocumentNodeAnchor } & (
+  | { readonly kind: "added" }
   | {
-      readonly anchor: DocumentNodeAnchor;
       readonly kind: "modified";
       readonly previousAnchor: DocumentNodeAnchor;
-    };
+    }
+  | { readonly kind: "deleted" }
+);
 
-type DiffContext = {
+export type DetectionState = {
+  exhaustive: boolean;
   nextDocument: Document;
   overBudget: boolean;
   previousDocument: Document;
   changeKeys: Set<string>;
   changes: DocumentChange[];
+  deletedBlocksByPath?: Map<string, Block[]>;
+  deletedRowsByPath?: Map<string, TableRow[]>;
   visitedNodes: number;
 };
 
@@ -68,7 +68,17 @@ export function findDocumentChanges(
   previousDocument: Document,
   nextDocument: Document,
 ): readonly DocumentChange[] {
-  const context: DiffContext = {
+  const context = detectDocumentChanges(previousDocument, nextDocument);
+  return context.overBudget ? [] : context.changes;
+}
+
+export function detectDocumentChanges(
+  previousDocument: Document,
+  nextDocument: Document,
+  exhaustive = false,
+) {
+  const context: DetectionState = {
+    exhaustive,
     nextDocument,
     overBudget: false,
     previousDocument,
@@ -78,13 +88,13 @@ export function findDocumentChanges(
   };
 
   collectRootBlockChanges(previousDocument, nextDocument, context);
-  return context.overBudget ? [] : context.changes;
+  return context;
 }
 
 function collectRootBlockChanges(
   previousDocument: Document,
   nextDocument: Document,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   const previousBlocks = previousDocument.blocks;
   const nextBlocks = nextDocument.blocks;
@@ -133,14 +143,22 @@ function shouldSkipRootWindow({
   rootWindow,
   window,
 }: {
-  context: DiffContext;
+  context: DetectionState;
   nextBlocks: readonly Block[];
   totalRoots: number;
   previousBlocks: readonly Block[];
   rootWindow: number;
   window: TrimmedWindow;
 }) {
-  if (rootWindow === 0 || rootWindow > maxRootWindow) {
+  if (rootWindow === 0) {
+    return true;
+  }
+
+  if (context.exhaustive) {
+    return false;
+  }
+
+  if (rootWindow > maxRootWindow) {
     return true;
   }
 
@@ -178,7 +196,7 @@ function estimateRootWindowMatchStats({
   previousBlocks,
   window,
 }: {
-  context: DiffContext;
+  context: DetectionState;
   nextBlocks: readonly Block[];
   previousBlocks: readonly Block[];
   window: TrimmedWindow;
@@ -210,7 +228,7 @@ function countBlockContentHashes(
   blocks: readonly Block[],
   start: number,
   end: number,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   const hashes = new Map<DocumentNodeContentHash, number>();
 
@@ -233,7 +251,7 @@ function hasOnlyHeadingRootChanges({
   previousBlocks,
   window,
 }: {
-  context: DiffContext;
+  context: DetectionState;
   nextBlocks: readonly Block[];
   previousBlocks: readonly Block[];
   window: TrimmedWindow;
@@ -274,7 +292,7 @@ function diffBlockArray({
   previousEnd,
   previousStart,
 }: {
-  context: DiffContext;
+  context: DetectionState;
   nextBlocks: readonly Block[];
   nextEnd: number;
   nextStart: number;
@@ -340,6 +358,9 @@ function diffBlockArray({
     }
 
     if (nextContentHashAppearsLater && !previousContentHashAppearsLater) {
+      if (context.exhaustive) {
+        recordDeletion(previousBlock, pathForIndex(nextIndex), context);
+      }
       previousIndex += 1;
       continue;
     }
@@ -358,6 +379,12 @@ function diffBlockArray({
   for (; nextIndex < nextEnd && !shouldStopDiffing(context); nextIndex += 1) {
     recordAdded(pathForIndex(nextIndex), context);
   }
+
+  if (context.exhaustive && previousIndex < previousEnd) {
+    for (; previousIndex < previousEnd; previousIndex += 1) {
+      recordDeletion(previousBlocks[previousIndex]!, pathForIndex(nextIndex), context);
+    }
+  }
 }
 
 function diffBlocks(
@@ -365,7 +392,7 @@ function diffBlocks(
   nextBlock: Block,
   previousPath: string,
   nextPath: string,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   if (
     chargeDiffCost(context) ||
@@ -414,7 +441,7 @@ function diffTableRowsAndCells(
   nextTable: TableBlock,
   previousPath: string,
   nextPath: string,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   const metadataChanged =
     previousTable.align.length !== nextTable.align.length ||
@@ -450,6 +477,35 @@ function diffTableRowsAndCells(
       continue;
     }
 
+    const previousContentHashAppearsLater = tableRowContentHashAppearsInRange(
+      nextTable.rows,
+      nextIndex + 1,
+      window.nextEnd,
+      resolveTableRowContentHash(previousRow),
+      context,
+    );
+    const nextContentHashAppearsLater = tableRowContentHashAppearsInRange(
+      previousTable.rows,
+      previousIndex + 1,
+      window.previousEnd,
+      resolveTableRowContentHash(nextRow),
+      context,
+    );
+
+    if (previousContentHashAppearsLater && !nextContentHashAppearsLater) {
+      recordAddedTableRow(nextPath, nextIndex, nextRow, context);
+      nextIndex += 1;
+      continue;
+    }
+
+    if (nextContentHashAppearsLater && !previousContentHashAppearsLater) {
+      if (context.exhaustive) {
+        recordTableRowDeletion(previousRow, nextPath, nextIndex, context);
+      }
+      previousIndex += 1;
+      continue;
+    }
+
     diffTableRowCells(
       previousRow,
       nextRow,
@@ -461,6 +517,12 @@ function diffTableRowsAndCells(
     );
     previousIndex += 1;
     nextIndex += 1;
+  }
+
+  if (context.exhaustive && previousIndex < window.previousEnd) {
+    for (; previousIndex < window.previousEnd; previousIndex += 1) {
+      recordTableRowDeletion(previousTable.rows[previousIndex]!, nextPath, nextIndex, context);
+    }
   }
 }
 
@@ -489,7 +551,7 @@ function blockContentHashAppearsInRange(
   start: number,
   end: number,
   contentHash: DocumentNodeContentHash,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   for (let index = start; index < end && !shouldStopDiffing(context); index += 1) {
     const block = blocks[index]!;
@@ -504,7 +566,7 @@ function blockContentHashAppearsInRange(
   return false;
 }
 
-function haveSameDocumentNodeContentHash(context: DiffContext, left: Block, right: Block) {
+function haveSameDocumentNodeContentHash(context: DetectionState, left: Block, right: Block) {
   if (left === right) {
     return true;
   }
@@ -521,7 +583,7 @@ function haveSameDocumentNodeContentHash(context: DiffContext, left: Block, righ
   return resolveBlockContentHash(left) === resolveBlockContentHash(right);
 }
 
-function haveSameTableRowContentHash(context: DiffContext, left: TableRow, right: TableRow) {
+function haveSameTableRowContentHash(context: DetectionState, left: TableRow, right: TableRow) {
   if (left.cells.length !== right.cells.length) {
     return false;
   }
@@ -538,6 +600,27 @@ function haveSameTableRowContentHash(context: DiffContext, left: TableRow, right
   return resolveTableRowContentHash(left) === resolveTableRowContentHash(right);
 }
 
+function tableRowContentHashAppearsInRange(
+  rows: readonly TableRow[],
+  start: number,
+  end: number,
+  contentHash: DocumentNodeContentHash,
+  context: DetectionState,
+) {
+  for (let index = start; index < end && !shouldStopDiffing(context); index += 1) {
+    const row = rows[index]!;
+    if (chargeDiffCost(context, estimateTableRowContentHashCost(row))) {
+      return false;
+    }
+
+    if (resolveTableRowContentHash(row) === contentHash) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function diffTableRowCells(
   previousRow: TableRow,
   nextRow: TableRow,
@@ -545,7 +628,7 @@ function diffTableRowCells(
   nextTablePath: string,
   previousRowIndex: number,
   nextRowIndex: number,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   const window = trimMatchingEdges(previousRow.cells, nextRow.cells, context, {
     same: (previousCell, nextCell) => haveSameTableCellContentHash(context, previousCell, nextCell),
@@ -588,7 +671,7 @@ function diffTableRowCells(
   }
 }
 
-function tableRowSimilarity(context: DiffContext, previousRow: TableRow, nextRow: TableRow) {
+function tableRowSimilarity(context: DetectionState, previousRow: TableRow, nextRow: TableRow) {
   const width = Math.min(previousRow.cells.length, nextRow.cells.length);
   let score = 0;
 
@@ -599,7 +682,7 @@ function tableRowSimilarity(context: DiffContext, previousRow: TableRow, nextRow
   return score;
 }
 
-function blockSimilarity(context: DiffContext, previousBlock: Block, nextBlock: Block) {
+function blockSimilarity(context: DetectionState, previousBlock: Block, nextBlock: Block) {
   if (
     chargeDiffCost(
       context,
@@ -628,7 +711,7 @@ function blockSimilarity(context: DiffContext, previousBlock: Block, nextBlock: 
 }
 
 function hasBetterFollowingBlockMatch(
-  context: DiffContext,
+  context: DetectionState,
   previousBlock: Block,
   nextBlock: Block,
   nextBlocks: readonly Block[],
@@ -647,7 +730,11 @@ function hasBetterFollowingBlockMatch(
   return false;
 }
 
-function tableCellSimilarity(context: DiffContext, previousCell: TableCell, nextCell: TableCell) {
+function tableCellSimilarity(
+  context: DetectionState,
+  previousCell: TableCell,
+  nextCell: TableCell,
+) {
   if (
     chargeDiffCost(
       context,
@@ -680,7 +767,7 @@ function addTrimmedTableRowChanges(
   previousTablePath: string,
   nextTablePath: string,
   window: TrimmedWindow,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   for (
     let rowIndex = 0;
@@ -718,7 +805,7 @@ function recordAddedTableRow(
   tablePath: string,
   rowIndex: number,
   row: TableRow,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   for (
     let cellIndex = 0;
@@ -736,7 +823,7 @@ function recordModifiedTableRow(
   nextRowIndex: number,
   previousRow: TableRow,
   nextRow: TableRow,
-  context: DiffContext,
+  context: DetectionState,
 ) {
   const width = Math.min(previousRow.cells.length, nextRow.cells.length);
   for (let cellIndex = 0; cellIndex < width && !shouldStopDiffing(context); cellIndex += 1) {
@@ -757,7 +844,7 @@ function recordModifiedTableRow(
 }
 
 function haveSameTableCellContentHash(
-  context: DiffContext,
+  context: DetectionState,
   left: TableRow["cells"][number],
   right: TableRow["cells"][number],
 ) {
@@ -780,7 +867,7 @@ function haveSameTableCellContentHash(
 function trimMatchingEdges<T>(
   previousItems: readonly T[],
   nextItems: readonly T[],
-  context: DiffContext,
+  context: DetectionState,
   options: {
     same: (previousItem: T, nextItem: T) => boolean;
   },
@@ -813,22 +900,45 @@ function trimMatchingEdges<T>(
   return { nextEnd, nextStart, previousEnd, previousStart };
 }
 
-function recordAdded(path: string, context: DiffContext) {
-  pushChange({ anchor: requireAnchor(context.nextDocument, path), kind: "added" }, context);
+function recordAdded(path: string, context: DetectionState) {
+  pushChange(
+    { anchor: requireDocumentNodeAnchor(context.nextDocument, path), kind: "added" },
+    context,
+  );
 }
 
-function recordModified(previousPath: string, nextPath: string, context: DiffContext) {
+function recordModified(previousPath: string, nextPath: string, context: DetectionState) {
   pushChange(
     {
-      anchor: requireAnchor(context.nextDocument, nextPath),
+      anchor: requireDocumentNodeAnchor(context.nextDocument, nextPath),
       kind: "modified",
-      previousAnchor: requireAnchor(context.previousDocument, previousPath),
+      previousAnchor: requireDocumentNodeAnchor(context.previousDocument, previousPath),
     },
     context,
   );
 }
 
-function requireAnchor(document: Document, path: string): DocumentNodeAnchor {
+function recordDeletion(block: Block, path: string, context: DetectionState) {
+  const deletedBlocksByPath = (context.deletedBlocksByPath ??= new Map());
+  const blocks = deletedBlocksByPath.get(path) ?? [];
+  blocks.push(block);
+  deletedBlocksByPath.set(path, blocks);
+}
+
+function recordTableRowDeletion(
+  row: TableRow,
+  tablePath: string,
+  rowIndex: number,
+  context: DetectionState,
+) {
+  const path = tableRowPath(tablePath, rowIndex);
+  const deletedRowsByPath = (context.deletedRowsByPath ??= new Map());
+  const rows = deletedRowsByPath.get(path) ?? [];
+  rows.push(row);
+  deletedRowsByPath.set(path, rows);
+}
+
+export function requireDocumentNodeAnchor(document: Document, path: string): DocumentNodeAnchor {
   const anchor = createDocumentNodeAnchor(document, path);
   if (!anchor) {
     throw new Error(`Unable to anchor document change at ${path}`);
@@ -836,8 +946,8 @@ function requireAnchor(document: Document, path: string): DocumentNodeAnchor {
   return anchor;
 }
 
-function pushChange(target: DocumentChange, context: DiffContext) {
-  if (context.changes.length >= maxChanges) {
+function pushChange(target: DocumentChange, context: DetectionState) {
+  if (!context.exhaustive && context.changes.length >= maxChanges) {
     context.overBudget = true;
     return;
   }
@@ -849,7 +959,11 @@ function pushChange(target: DocumentChange, context: DiffContext) {
   }
 }
 
-function chargeDiffCost(context: DiffContext, cost = 1) {
+function chargeDiffCost(context: DetectionState, cost = 1) {
+  if (context.exhaustive) {
+    return false;
+  }
+
   context.visitedNodes += cost;
   return shouldStopDiffing(context);
 }
@@ -858,7 +972,11 @@ function estimateTextComparisonCost(left: string, right: string) {
   return Math.max(1, Math.ceil((left.length + right.length) / 256));
 }
 
-function shouldStopDiffing(context: DiffContext) {
+function shouldStopDiffing(context: DetectionState) {
+  if (context.exhaustive) {
+    return false;
+  }
+
   if (context.overBudget) {
     return true;
   }
