@@ -27,9 +27,6 @@ import type { DocumentFrame } from "@/renderer";
  *     emitDiagnostic("kind", { ...detail });
  *   }
  *   if (process.env.NODE_ENV !== "production") {
- *     useDiagnostics(inputRef);
- *   }
- *   if (process.env.NODE_ENV !== "production") {
  *     recordFpsFrame(durationMs);
  *   }
  *
@@ -240,12 +237,10 @@ function snapFrameBudgetFps(fps: number) {
  *     cases where the editor caret appears to move but no React
  *     re-render follows.
  *
- * Wrap the call to this hook in
- * `if (process.env.NODE_ENV !== "production")` like every other
- * diagnostic — in production the entire wrapping block (this hook call
- * and the two `useEffect` registrations it would make) is stripped.
+ * Production builds swap in a no-op at module scope (see
+ * {@link useDiagnostics}), so no listeners are installed.
  */
-export function useDiagnostics(inputRef: RefObject<HTMLTextAreaElement | null>) {
+function useDevDiagnostics(inputRef: RefObject<HTMLTextAreaElement | null>) {
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
@@ -285,3 +280,12 @@ export function useDiagnostics(inputRef: RefObject<HTMLTextAreaElement | null>) 
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, [inputRef]);
 }
+
+const noopDiagnostics = () => {};
+
+/**
+ * Selected at module scope so production builds substitute a no-op and
+ * never call an effect-bearing hook. Call sites invoke it unconditionally.
+ */
+export const useDiagnostics: (inputRef: RefObject<HTMLTextAreaElement | null>) => void =
+  process.env.NODE_ENV === "production" ? noopDiagnostics : useDevDiagnostics;

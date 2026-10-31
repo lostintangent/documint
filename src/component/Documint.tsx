@@ -23,14 +23,13 @@ import {
   deleteTableRow,
   deleteThread,
   editComment,
-  getDocument,
+  getCommentState,
   hasActiveCommentHighlightsInViewport,
   hasActiveResourcesInViewport,
   hasAnimatedDecorationsInViewport,
   insertTableColumn,
   insertTableRow,
   isMetadataPath,
-  measureVisualCaretTarget,
   moveCaretToDocumentBoundary,
   removeLink,
   replyToThread,
@@ -38,6 +37,9 @@ import {
   setSelection,
   updateLink,
   type EditorPresence,
+  type DocumentPresence,
+  type DocumentResourceReference,
+  type DocumentUser,
 } from "@/editor";
 import {
   createDocumentFrame,
@@ -46,18 +48,12 @@ import {
   paintOverlayFrame,
   type RendererEffect,
   type RendererEffectInput,
+  type DocumintEffects,
+  type EditorTheme,
 } from "@/renderer";
 import type { LucideIcon } from "lucide-react";
-import type {
-  DocumentPresence,
-  DocumentResourceReference,
-  DocumentUser,
-  CodeGrammarRule,
-  DocumintDecoration,
-  DocumintEffects,
-  DocumintStorage,
-  EditorTheme,
-} from "@/types";
+import type { CodeGrammarRule } from "./decorations/grammars";
+import type { DocumintDecoration } from "./decorations/shared";
 import type { MarkdownOptions } from "@/markdown";
 import { OverlayPortalProvider } from "./overlays/OverlayPortal";
 import { AnnotationLeaf } from "./overlays/leaves/AnnotationLeaf";
@@ -65,9 +61,8 @@ import { CompletionLeaf } from "./overlays/leaves/CompletionLeaf";
 import type { CompletionSource } from "./completions/completions";
 import { createMentionCompletionSource, emojiCompletionSource } from "./completions/sources";
 import { InsertionLeaf } from "./overlays/leaves/InsertionLeaf";
-import { DocumentAnchor } from "./overlays/anchors/DocumentAnchor";
+import { DocumentLeafAnchor } from "./overlays/anchors/DocumentLeafAnchor";
 import { ViewportAnchor } from "./overlays/anchors/ViewportAnchor";
-import type { DocumentAnchorResolution } from "./overlays/leaves/core/shared";
 import { LinkLeaf } from "./overlays/leaves/LinkLeaf";
 import { SearchLeaf } from "./overlays/leaves/SearchLeaf";
 import { TableLeaf } from "./overlays/leaves/TableLeaf";
@@ -81,6 +76,7 @@ import {
   useResourceProtocols,
   useResources,
   createActiveResourceKey,
+  resourceProtocolNamesFromKey,
   type ActiveResourceSet,
   type ResolvedResourceProtocols,
   type ResourceProtocolRecord,
@@ -96,7 +92,7 @@ import { prepareCanvasLayer } from "./lib/canvas";
 import { emitDiagnostic, emitRenderFrame } from "./lib/diagnostics";
 import { type EditorInputKeybinding } from "./lib/keybindings";
 import { extractMentionedUserIds } from "./lib/mentions";
-import { DocumentStorage } from "./lib/storage";
+import { DocumentStorage, type DocumintStorage } from "./lib/storage";
 import { useDecorations } from "./decorations/useDecorations";
 import { builtinGrammars } from "./decorations/grammars";
 import { useDocumentSync, useDocumentView, type DocumentView, type UserMentionEvent } from "./sync";
@@ -108,7 +104,6 @@ import {
   editorStateSprig,
   normalizedSelectionSprig,
   selectionContextSprig,
-  type DocumintStore,
   type EditorStateTransition,
   useDocumintStore,
   useEditorCommand,
@@ -116,7 +111,6 @@ import {
 } from "./store";
 
 const editorCss = process.env.NODE_ENV === "test" ? "" : readEditorStyles();
-export type { DocumintDecoration } from "@/types";
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
 export type { UserMentionEvent } from "./sync";
 
@@ -174,11 +168,12 @@ export type DocumintActions = {
 };
 
 // Describes a single comment add, edit, or delete. Adds and edits carry the
-// resulting comment plus the IDs of any users it mentions (resolved against
-// the `users` roster). Deletes carry the comment as it existed just before
-// removal, and the thread it was attached to — useful when the deletion was
-// the last comment in the thread (the thread itself is gone from the
-// post-delete document).
+// resulting comment plus the IDs of the users it visibly mentions: bare
+// `@Name` text resolved against the `users` roster or explicit `@[Name](id)`
+// mentions, never text inside code. Deletes carry the comment as it existed
+// just before removal, and the thread it was attached to — useful when the
+// deletion was the last comment in the thread (the thread itself is gone from
+// the post-delete document).
 export type CommentChange =
   | {
       kind: "added";
@@ -203,13 +198,11 @@ export type CommentChange =
     };
 
 export function Documint({ content, previousContent, ...props }: DocumintProps) {
-  const storeRef = useRef<DocumintStore | null>(null);
   const resourceProtocols = useResourceProtocols(props.protocols);
   const markdownOptions = useMemo<MarkdownOptions>(
-    () => ({ resourceProtocols: [...resourceProtocols.protocols.keys()] }),
+    () => ({ resourceProtocols: resourceProtocolNamesFromKey(resourceProtocols.key) }),
     // The canonical key is the semantic parser input. Depending on the map
     // would reparse content when a host recreates an equivalent registry.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [resourceProtocols.key],
   );
   const documentView = useDocumentView({
@@ -221,12 +214,10 @@ export function Documint({ content, previousContent, ...props }: DocumintProps) 
     showDiffs: props.showDiffs ?? true,
   });
 
-  if (!storeRef.current) {
-    storeRef.current = createStore(documentView.document);
-  }
+  const [store] = useState(() => createStore(documentView.document));
 
   return (
-    <DocumintStoreProvider store={storeRef.current}>
+    <DocumintStoreProvider store={store}>
       <DocumintHost
         content={content}
         {...props}
@@ -280,51 +271,32 @@ function DocumintHost({
     resourceProtocols,
     resources,
   });
-  const { hasLoadingImages, imageHandle, images, persistImage } = useImages(
+  const { hasLoadingImages, imageHandle, persistImage, renderResources } = useImages(
     readOnly,
     documentStorage,
     resourceRegistry,
   );
-  const activeResourceKey = useMemo(
-    () => createActiveResourceKey(resourceRegistry.active),
-    [resourceRegistry.active],
-  );
-  const lastPaintedActiveResourceKeyRef = useRef(activeResourceKey);
-  const renderResources = useMemo(
-    () => ({
-      images,
-      resourceRegistry,
-    }),
-    [images, resourceRegistry],
-  );
-
-  const viewport = useViewport({
-    metadataExpanded,
-    renderResources,
-    theme: resolvedTheme,
-  });
-
-  const {
-    actions: viewportActions,
-    props: viewportProps,
-    refs: viewportRefs,
-    state: viewportState,
-  } = viewport;
+  const activeResourceKey = createActiveResourceKey(resourceRegistry.active);
 
   const {
     autoScrollDuringDrag,
     commitLayout,
     getScrollTop,
     invalidateLayout,
-    reconcileEditorState,
+    layout,
     resolvePoint,
+    scrollContainerRef,
+    scrollContentHeight,
     scrollTo,
     syncScrollContainer,
-  } = viewportActions;
-
-  const { layout, viewportWidth, viewportHeight, viewportTop } = viewportState;
-
-  const { scrollContainer: scrollContainerRef } = viewportRefs;
+    viewportHeight,
+    viewportTop,
+    viewportWidth,
+  } = useViewport({
+    metadataExpanded,
+    renderResources,
+    theme: resolvedTheme,
+  });
 
   const selectionContext = useSprig(selectionContextSprig);
   const commentRanges = useSprig(commentRangesSprig);
@@ -338,9 +310,6 @@ function DocumintHost({
     const mentionSource = createMentionCompletionSource(users);
     return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
   }, [users]);
-  const documentCompletionSources = useMemo<CompletionSource[] | undefined>(() => {
-    return readOnly ? undefined : completionSources;
-  }, [completionSources, readOnly]);
   const {
     emitContentChanged,
     emitUserMentioned,
@@ -356,17 +325,14 @@ function DocumintHost({
     store,
   });
   const documentCompletions = useDocumentCompletions({
-    completionSources: documentCompletionSources,
+    completionSources,
     enabled: !readOnly,
     onMentionAccepted: emitUserMentioned,
   });
   const { commentPresence, resolvedPresence } = usePresence({ presence, users });
   const activeCommentIndex = useSprig(activeCommentIndexSprig, readOnly);
   const readCurrentState = () => store.editor.getState();
-  const resolvedGrammars = useMemo(
-    () => (grammars === null ? null : { ...builtinGrammars, ...grammars }),
-    [grammars],
-  );
+  const resolvedGrammars = grammars === null ? null : { ...builtinGrammars, ...grammars };
   const { textDecorations } = useDecorations({
     decorations,
     grammars: resolvedGrammars,
@@ -380,36 +346,6 @@ function DocumintHost({
 
     return fragment ? extractPlainTextFromFragment(fragment) : "";
   };
-
-  const commitEditorCommandTransition = useEffectEvent(
-    (transition: EditorStateTransition | null) => {
-      if (!transition) {
-        return;
-      }
-
-      if (transition.source === "external") {
-        return;
-      }
-
-      reconcileEditorState(transition.previous, transition.next);
-
-      if (transition.hasNewEffects) {
-        // All default editor effects are content-layer effects. None affect
-        // layout or overlay, so a content paint is sufficient.
-        scheduleContentPaint({ effects: transition.effects });
-      }
-
-      if (!transition.documentChanged) {
-        return;
-      }
-
-      emitContentChanged(transition);
-    },
-  );
-
-  useLayoutEffect(() => {
-    return store.editor.subscribe(commitEditorCommandTransition);
-  }, [store]);
 
   const deleteTableColumnCommand = useEditorCommand(deleteTableColumn);
   const deleteTableRowCommand = useEditorCommand(deleteTableRow);
@@ -451,7 +387,7 @@ function DocumintHost({
   };
 
   const emitCommentAdded = (threadIndex: number) => {
-    const thread = getDocument(readCurrentState()).comments[threadIndex];
+    const thread = getCommentState(readCurrentState().documentIndex).threads[threadIndex];
     const comment = thread?.comments.at(-1);
     if (!thread || !comment) return;
     emitCommentChanged({
@@ -464,7 +400,7 @@ function DocumintHost({
   };
 
   const emitCommentEdited = (threadIndex: number, commentIndex: number, previousBody: string) => {
-    const thread = getDocument(readCurrentState()).comments[threadIndex];
+    const thread = getCommentState(readCurrentState().documentIndex).threads[threadIndex];
     const comment = thread?.comments[commentIndex];
     if (!thread || !comment) return;
     emitCommentChanged({
@@ -481,177 +417,12 @@ function DocumintHost({
     emitCommentChanged({ kind: "deleted", comment, thread, threadId: thread.id });
   };
 
-  const idle = useIdle({
-    onIdle: () => scheduleContentPaint(),
-  });
+  const idle = useIdle();
   const scrollbar = useScrollbar();
-
-  /* Paint callbacks */
-  //
-  // The render scheduler dispatches into one of these per mode:
-  //   - `renderContent` / `renderOverlay` read the latest layout via
-  //     `layout.peekLatest()` — they paint with whatever is currently
-  //     latest, no recompute. If nothing's latest (just invalidated),
-  //     they skip and wait for a full render.
-  //   - `renderViewport` calls `commitLayout()`, which resolves the latest
-  //     layout (recomputing if invalidated), commits it as the rendered
-  //     frame, and fires reactive subscribers. The layout cost is paid
-  //     here, not on the lighter paint paths.
-
-  const renderContent = useEffectEvent(
-    (rendererEffects: readonly RendererEffect[], layoutState = layout.peekLatest()) => {
-      if (!layoutState) {
-        return { rendererEffects };
-      }
-
-      const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, {
-        paintHeight: layoutState.paintHeight,
-        paintTop: layoutState.paintTop,
-        width: viewportWidth,
-      });
-
-      if (!preparedLayer) {
-        return { rendererEffects };
-      }
-
-      const { context, devicePixelRatio, height, width } = preparedLayer;
-
-      const now = performance.now();
-
-      const frame = createDocumentFrame(editorState, layoutState, {
-        activeBlockPath: showActiveBlockHighlight
-          ? (selectionContext.block?.blockPath ?? null)
-          : null,
-        activePath: editorState.selection.focus.path,
-        activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
-        ambientTime: idle.resolveAnimationTime(now),
-        devicePixelRatio,
-        effects: rendererEffects,
-        documentChanges,
-        height,
-        commentRanges,
-        normalizedSelection: normalizedSel,
-        commentPresence,
-        customEffects: effects,
-        now,
-        resources: renderResources,
-        textDecorations,
-        theme: resolvedTheme,
-        width,
-      });
-
-      paintDocumentFrame(context, frame);
-      if (process.env.NODE_ENV !== "production" && contentCanvasRef.current) {
-        emitRenderFrame({
-          canvas: contentCanvasRef.current,
-          frame,
-        });
-      }
-
-      return {
-        rendererEffects: frame.effects,
-      };
-    },
-  );
-
-  const renderOverlay = useEffectEvent((layoutState = layout.peekLatest()) => {
-    if (!layoutState) {
-      return;
-    }
-
-    const preparedLayer = prepareCanvasLayer(overlayCanvasRef.current, {
-      paintHeight: layoutState.paintHeight,
-      paintTop: layoutState.paintTop,
-      width: viewportWidth,
-    });
-
-    if (!preparedLayer) {
-      return;
-    }
-
-    const { context, devicePixelRatio, height, width } = preparedLayer;
-
-    const frame = createOverlayFrame(editorState, layoutState, {
-      devicePixelRatio,
-      height,
-      normalizedSelection: normalizedSel,
-      presence: resolvedPresence,
-      showCaret:
-        normalizedSel.start.path !== normalizedSel.end.path ||
-        normalizedSel.start.offset !== normalizedSel.end.offset ||
-        cursor.isVisible(),
-      theme: resolvedTheme,
-      width,
-    });
-    paintOverlayFrame(context, frame);
-  });
-
-  const renderViewport = useEffectEvent((rendererEffects: readonly RendererEffect[]) => {
-    const layoutState = commitLayout();
-    const contentPaint = renderContent(rendererEffects, layoutState);
-
-    renderOverlay(layoutState);
-    return contentPaint;
-  });
-
-  const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
-    useRender({
-      isActive: idle.isActive,
-      renderContent,
-      renderOverlay,
-      renderViewport,
-      hasAmbientAnimationsInViewport: () => {
-        // Loading-image shimmer is content-only: keep the shared scheduler
-        // ticking, but let resource changes below own layout invalidation.
-        if (hasLoadingImages) {
-          return true;
-        }
-
-        const layoutState = layout.peekLatest();
-        if (!layoutState) {
-          return false;
-        }
-
-        return (
-          hasActiveResourcesInViewport(editorState, layoutState, resourceRegistry) ||
-          hasAnimatedDecorationsInViewport(editorState, layoutState, textDecorations) ||
-          hasActiveCommentHighlightsInViewport(layoutState, commentRanges, commentPresence)
-        );
-      },
-    });
-
-  // The scheduler and viewport actions are Effect Events returned by custom
-  // hooks. Bridge them locally so exhaustive-deps can preserve that contract
-  // without treating their stable identities as reactive inputs.
-  const requestLayoutRender = useEffectEvent(() => {
-    invalidateLayout();
-    scheduleFullRender();
-  });
-  const requestFullPaint = useEffectEvent(() => scheduleFullPaint());
-  const requestContentPaint = useEffectEvent(() => scheduleContentPaint());
-  const requestContentPaintWithEffects = useEffectEvent((effects: readonly RendererEffectInput[]) =>
-    scheduleContentPaint({ effects }),
-  );
-  const requestOverlayPaint = useEffectEvent(() => scheduleOverlayPaint());
-
-  // Sync `useViewport`'s scroll metrics and schedule a render after any
-  // scroll position change — whether driven by the user (native scroll event)
-  // or programmatically (e.g. offscreen presence navigation). Stable identity
-  // via `useEffectEvent` so the listener doesn't re-attach on every render.
-  const handleViewportScroll = useEffectEvent((scrollContainer: HTMLDivElement) => {
-    scrollbar.sync(scrollContainer);
-    syncScrollContainer(scrollContainer);
-    scheduleFullRender();
-  });
-
-  const handleScrollEvent = useEffectEvent((event: UIEvent<HTMLDivElement>) => {
-    handleViewportScroll(event.currentTarget);
-  });
 
   const cursor = useCursor({
     activeAt: idle.activeAt,
     getScrollTop,
-    onVisibilityChange: scheduleOverlayPaint,
     readOnly,
     scrollTo,
     viewportWidth,
@@ -700,6 +471,186 @@ function DocumintHost({
 
   const hoveredCommentThreadIndex =
     pointer.leaf?.kind === "thread" ? pointer.leaf.threadIndex : null;
+
+  /* Paint callbacks */
+  //
+  // The render scheduler calls `commitLayout()` first on a full render, which
+  // resolves the latest layout (recomputing if invalidated), commits it as the
+  // rendered frame, and fires reactive subscribers. The layout cost is paid
+  // there, not on the lighter paint paths. Both painters read the latest layout
+  // via `layout.peekLatest()` without recomputing. If nothing's latest (just
+  // invalidated), they skip and wait for a full render.
+
+  const renderContent = useEffectEvent((rendererEffects: readonly RendererEffect[]) => {
+    const layoutState = layout.peekLatest();
+    if (!layoutState) {
+      return rendererEffects;
+    }
+
+    const preparedLayer = prepareCanvasLayer(contentCanvasRef.current, layoutState, viewportWidth);
+
+    if (!preparedLayer) {
+      return rendererEffects;
+    }
+
+    const { context, devicePixelRatio, height, width } = preparedLayer;
+
+    const now = performance.now();
+
+    const frame = createDocumentFrame(editorState, layoutState, {
+      activeBlockPath: showActiveBlockHighlight
+        ? (selectionContext.block?.blockPath ?? null)
+        : null,
+      activePath: editorState.selection.focus.path,
+      activeThreadIndex: hoveredCommentThreadIndex ?? activeCommentIndex,
+      ambientTime: idle.resolveAnimationTime(now),
+      devicePixelRatio,
+      effects: rendererEffects,
+      documentChanges,
+      height,
+      commentRanges,
+      normalizedSelection: normalizedSel,
+      commentPresence,
+      customEffects: effects,
+      now,
+      resources: renderResources,
+      textDecorations,
+      theme: resolvedTheme,
+      width,
+    });
+
+    paintDocumentFrame(context, frame);
+    if (process.env.NODE_ENV !== "production" && contentCanvasRef.current) {
+      emitRenderFrame({
+        canvas: contentCanvasRef.current,
+        frame,
+      });
+    }
+
+    return frame.effects;
+  });
+
+  const renderOverlay = useEffectEvent(() => {
+    const layoutState = layout.peekLatest();
+    if (!layoutState) {
+      return;
+    }
+
+    const preparedLayer = prepareCanvasLayer(overlayCanvasRef.current, layoutState, viewportWidth);
+
+    if (!preparedLayer) {
+      return;
+    }
+
+    const { context, devicePixelRatio, height, width } = preparedLayer;
+
+    const frame = createOverlayFrame(editorState, layoutState, {
+      devicePixelRatio,
+      height,
+      normalizedSelection: normalizedSel,
+      presence: resolvedPresence,
+      showCaret: cursor.isVisible(),
+      theme: resolvedTheme,
+      width,
+    });
+    paintOverlayFrame(context, frame);
+  });
+
+  const { scheduleContentPaint, scheduleFullPaint, scheduleFullRender, scheduleOverlayPaint } =
+    useRender({
+      commitLayout,
+      isActive: idle.isActive,
+      renderContent,
+      renderOverlay,
+      hasAmbientAnimationsInViewport: () => {
+        // Loading-image shimmer is content-only: keep the shared scheduler
+        // ticking, but let resource changes below own layout invalidation.
+        if (hasLoadingImages) {
+          return true;
+        }
+
+        const layoutState = layout.peekLatest();
+        if (!layoutState) {
+          return false;
+        }
+
+        return (
+          hasActiveResourcesInViewport(editorState, layoutState, resourceRegistry) ||
+          hasAnimatedDecorationsInViewport(editorState, layoutState, textDecorations) ||
+          hasActiveCommentHighlightsInViewport(layoutState, commentRanges, commentPresence)
+        );
+      },
+    });
+
+  const commitEditorCommandTransition = useEffectEvent((transition: EditorStateTransition) => {
+    if (transition.source === "external") {
+      return;
+    }
+
+    // Selection-only transitions keep the cached layout. Document changes
+    // invalidate immediately so any imperative layout read after the
+    // transition resolves against the new structure.
+    if (transition.documentChanged) {
+      invalidateLayout();
+    }
+
+    if (transition.hasNewEffects) {
+      // All default editor effects are content-layer effects. None affect
+      // layout or overlay, so a content paint is sufficient.
+      scheduleContentPaint({ effects: transition.effects });
+    }
+
+    if (!transition.documentChanged) {
+      return;
+    }
+
+    emitContentChanged(transition);
+  });
+
+  useLayoutEffect(() => {
+    return store.editor.subscribe(commitEditorCommandTransition);
+  }, [store]);
+
+  // Repaint on the idle transition so ambient animations settle at rest.
+  useEffect(() => {
+    if (idle.activeAt === null) {
+      scheduleContentPaint();
+    }
+  }, [idle.activeAt, scheduleContentPaint]);
+
+  const { subscribeVisibility } = cursor;
+  useEffect(
+    () => subscribeVisibility(scheduleOverlayPaint),
+    [subscribeVisibility, scheduleOverlayPaint],
+  );
+
+  // The scheduler and viewport actions are Effect Events returned by custom
+  // hooks. Bridge them locally so exhaustive-deps can preserve that contract
+  // without treating their stable identities as reactive inputs.
+  const requestLayoutRender = useEffectEvent(() => {
+    invalidateLayout();
+    scheduleFullRender();
+  });
+  const requestFullPaint = useEffectEvent(() => scheduleFullPaint());
+  const requestContentPaint = useEffectEvent(() => scheduleContentPaint());
+  const requestContentPaintWithEffects = useEffectEvent((effects: readonly RendererEffectInput[]) =>
+    scheduleContentPaint({ effects }),
+  );
+  const requestOverlayPaint = useEffectEvent(() => scheduleOverlayPaint());
+
+  // Sync `useViewport`'s scroll metrics and schedule a render after any
+  // scroll position change — whether driven by the user (native scroll event)
+  // or programmatically (e.g. offscreen presence navigation). Stable identity
+  // via `useEffectEvent` so the listener doesn't re-attach on every render.
+  const handleViewportScroll = useEffectEvent((scrollContainer: HTMLDivElement) => {
+    scrollbar.sync(scrollContainer);
+    syncScrollContainer(scrollContainer);
+    scheduleFullRender();
+  });
+
+  const handleScrollEvent = useEffectEvent((event: UIEvent<HTMLDivElement>) => {
+    handleViewportScroll(event.currentTarget);
+  });
 
   const scrollToPresence = useEffectEvent((target: EditorPresence) => {
     if (!target.viewport || target.viewport.status === "unresolved") {
@@ -758,13 +709,13 @@ function DocumintHost({
   //   - `scheduleContentPaint()` — paint only the content layer.
   //     For changes that only restyle content (decorations, comment highlights, semantic effects).
   //   - `scheduleOverlayPaint()` — paint only the overlay layer.
-  //     For cursor blink and text-cursor presence updates. Wired inline to
-  //     `useCursor.onVisibilityChange` and reactive resolved presence changes.
+  //     For cursor blink and text-cursor presence updates. Subscribed via
+  //     `useCursor.subscribeVisibility` and reactive resolved presence changes.
   //
   // Other render triggers in the host live where they're naturally wired:
   //   - `handleViewportScroll` → `scheduleFullRender()` on scroll (native or
-  //      programmatic). Inside the resulting `renderViewport` pass,
-  //      the viewport store publishes the fresh viewport for reactive consumers.
+  //      programmatic). The resulting layout commit publishes the fresh
+  //      viewport for reactive consumers.
   //   - editor command transitions → `scheduleContentPaint()` when a
   //     semantic effect starts
 
@@ -775,7 +726,7 @@ function DocumintHost({
     requestLayoutRender();
   }, [
     editorState.documentIndex,
-    images,
+    renderResources.images,
     metadataExpanded,
     resolvedTheme,
     resourceProtocols.layoutKey,
@@ -828,69 +779,21 @@ function DocumintHost({
   }, [resolvedPresence]);
 
   useEffect(() => {
-    if (activeResourceKey === lastPaintedActiveResourceKeyRef.current) {
-      return;
-    }
-
-    lastPaintedActiveResourceKeyRef.current = activeResourceKey;
     requestContentPaint();
   }, [activeResourceKey]);
 
   /* Leaf presentation */
 
   // Search is fixed editor chrome. The remaining leaves are contextual
-  // document leaves; the host arbitrates their priority and resolves their
-  // anchors against the prepared layout.
+  // document leaves; the host arbitrates their priority and
+  // `DocumentLeafAnchor` places the winner against the rendered layout.
 
   const activeDocumentLeaf =
     documentCompletions.leaf ?? pointer.leaf ?? selection.leaf ?? cursor.leaf;
 
-  // Resolve the active leaf's anchor target into pixel geometry against
-  // the prepared layout. Returns null when no leaf is active or its
-  // anchor falls outside the editor's visible window — the same gate the
-  // canvas painter applies to the caret.
-  const resolveDocumentAnchor = (): DocumentAnchorResolution | null => {
-    if (!activeDocumentLeaf) {
-      return null;
-    }
-
-    const measured = measureVisualCaretTarget(editorState, layout.get(), activeDocumentLeaf.anchor);
-    if (!measured) {
-      return null;
-    }
-
-    const anchorBottom = measured.top + measured.height;
-    const viewportBottom = viewportTop + viewportHeight;
-    if (anchorBottom <= viewportTop || anchorBottom >= viewportBottom) {
-      return null;
-    }
-
-    // Doc-absolute coords let the browser handle host-page scrolls
-    // (including iOS keyboard auto-scroll) without window listeners. The
-    // host-rect read is gated by the early-returns above so it doesn't
-    // run on idle paint frames.
-    const scrollContainerBounds = scrollContainerRef.current?.getBoundingClientRect();
-    const hostScrollX = window.scrollX;
-    const hostScrollY = window.scrollY;
-    // Reference equality picks out the hover case when pointer arbitration
-    // leaves it active.
-    const isHoverLeaf = activeDocumentLeaf === pointer.leaf;
-
-    return {
-      anchorHeight: measured.height,
-      // Hover leaves want the bridge for pointer hand-off (see styles.css).
-      bridge: isHoverLeaf,
-      left:
-        (scrollContainerBounds?.left ?? 0) +
-        hostScrollX +
-        (activeDocumentLeaf.leftOverride ?? measured.left),
-      onPointerEnter: isHoverLeaf ? pointer.leafHandlers.onPointerEnter : undefined,
-      onPointerLeave: isHoverLeaf ? pointer.leafHandlers.onPointerLeave : undefined,
-      paddingY: activeDocumentLeaf.paddingY ?? 0,
-      top: (scrollContainerBounds?.top ?? 0) + hostScrollY + anchorBottom - viewportTop,
-    };
-  };
-  const documentAnchor = resolveDocumentAnchor();
+  // Reference equality picks out the hover case when pointer arbitration
+  // leaves it active.
+  const hoverLeafHandlers = activeDocumentLeaf === pointer.leaf ? pointer.leafHandlers : null;
 
   const resolveDocumentLeafContent = () => {
     if (!activeDocumentLeaf) {
@@ -905,21 +808,11 @@ function DocumintHost({
           <TableLeaf
             canDeleteColumn={activeDocumentLeaf.columnCount > 1}
             canDeleteRow={activeDocumentLeaf.rowCount > 1}
-            onDeleteColumn={() => {
-              deleteTableColumnCommand();
-            }}
-            onDeleteRow={() => {
-              deleteTableRowCommand();
-            }}
-            onDeleteTable={() => {
-              deleteTableCommand();
-            }}
-            onInsertColumn={(direction) => {
-              insertTableColumnCommand(direction);
-            }}
-            onInsertRow={(direction) => {
-              insertTableRowCommand(direction);
-            }}
+            onDeleteColumn={deleteTableColumnCommand}
+            onDeleteRow={deleteTableRowCommand}
+            onDeleteTable={deleteTableCommand}
+            onInsertColumn={insertTableColumnCommand}
+            onInsertRow={insertTableRowCommand}
           />
         );
       case "link":
@@ -959,14 +852,14 @@ function DocumintHost({
             readOnly={readOnly}
             onCreateThread={(body) => {
               const currentState = readCurrentState();
-              const threadIndex = getDocument(currentState).comments.length;
+              const threadIndex = currentState.documentIndex.document.comments.length;
               const transition = addCommentCommand(activeDocumentLeaf.selection, body.trim());
 
               if (!transition) {
                 return;
               }
 
-              selection.promoteLeafToThread(threadIndex, true);
+              selection.promoteLeafToThread(threadIndex);
               emitCommentAdded(threadIndex);
             }}
             actions={annotationActions}
@@ -985,7 +878,7 @@ function DocumintHost({
             onDeleteComment={(commentIndex) => {
               const { threadIndex } = activeDocumentLeaf;
               const previousState = readCurrentState();
-              const thread = getDocument(previousState).comments[threadIndex];
+              const thread = getCommentState(previousState.documentIndex).threads[threadIndex];
               const comment = thread?.comments[commentIndex];
               const transition = deleteCommentCommand(threadIndex, commentIndex);
               if (!transition) return;
@@ -996,7 +889,7 @@ function DocumintHost({
             onDeleteThread={() => {
               const { threadIndex } = activeDocumentLeaf;
               const previousState = readCurrentState();
-              const thread = getDocument(previousState).comments[threadIndex];
+              const thread = getCommentState(previousState.documentIndex).threads[threadIndex];
               const transition = deleteThreadCommand(threadIndex);
               if (!transition) return;
               if (thread) {
@@ -1008,8 +901,8 @@ function DocumintHost({
             onEditComment={(commentIndex, body) => {
               const { threadIndex } = activeDocumentLeaf;
               const previousState = readCurrentState();
-              const previousBody =
-                getDocument(previousState).comments[threadIndex]?.comments[commentIndex]?.body;
+              const previousBody = getCommentState(previousState.documentIndex).threads[threadIndex]
+                ?.comments[commentIndex]?.body;
               const transition = editCommentCommand(threadIndex, commentIndex, body);
               if (!transition) return;
               if (previousBody !== undefined) {
@@ -1034,11 +927,9 @@ function DocumintHost({
     }
   };
 
-  // Skip building the leaf's React tree when no leaf is going to render.
-  // Each branch of `resolveDocumentLeafContent` allocates several inline
-  // callbacks, so this avoids per-frame churn during scrolls that move the
-  // cursor leaf's anchor in and out of the viewport.
-  const documentLeafContent = documentAnchor ? resolveDocumentLeafContent() : null;
+  // Skip building the leaf's React tree when no leaf is active. The window
+  // check happens in `DocumentLeafAnchor`, which returns null off-screen.
+  const documentLeafContent = activeDocumentLeaf ? resolveDocumentLeafContent() : null;
 
   /* Render */
 
@@ -1093,7 +984,7 @@ function DocumintHost({
           </ViewportAnchor>
 
           {/* Scroll content wrapper (this forces a virtualized scroll height for the document, that is only partially rendered) */}
-          <div {...viewportProps.scrollContent} className="documint-scroll-content">
+          <div className="documint-scroll-content" style={{ height: `${scrollContentHeight}px` }}>
             {/* Main content canvas (used for rendering the document viewport) */}
             <canvas
               {...input.canvasHandlers}
@@ -1136,8 +1027,17 @@ function DocumintHost({
             )}
 
             {/* Leaf overlay */}
-            {documentAnchor ? (
-              <DocumentAnchor anchor={documentAnchor}>{documentLeafContent}</DocumentAnchor>
+            {activeDocumentLeaf ? (
+              <DocumentLeafAnchor
+                editorState={editorState}
+                hover={hoverLeafHandlers}
+                scrollContainerRef={scrollContainerRef}
+                target={activeDocumentLeaf}
+                viewportHeight={viewportHeight}
+                viewportTop={viewportTop}
+              >
+                {documentLeafContent}
+              </DocumentLeafAnchor>
             ) : null}
           </div>
         </div>

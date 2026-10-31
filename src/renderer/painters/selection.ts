@@ -1,10 +1,9 @@
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import type { DocumentFrameLine } from "../frame";
 
 export function paintSelectionHighlight(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  theme: ResolvedEditorTheme,
+  { context, theme }: { context: CanvasRenderingContext2D; theme: ResolvedEditorTheme },
 ) {
   const highlight = lineFrame.selectionHighlight;
 

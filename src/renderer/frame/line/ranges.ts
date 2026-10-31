@@ -6,8 +6,8 @@ import {
   type DocumentIndex,
   type NormalizedEditorSelection,
 } from "@/editor/state";
-import type { ResolvedEditorTheme } from "@/types";
-import { resolveLineRangeRectFrame } from "../range-frame";
+import type { ResolvedEditorTheme } from "../../theme";
+import { resolveLineRangeRectFrame } from "./text-geometry";
 import type { SelectionPathRange } from "../selection-frame";
 
 const commentHighlightBottomInset = 5;

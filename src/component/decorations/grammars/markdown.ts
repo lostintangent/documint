@@ -1,4 +1,4 @@
-import type { CodeGrammarRule } from "@/types";
+import type { CodeGrammarRule } from ".";
 
 // Basic Markdown lexer for fenced ```markdown blocks. Line-anchored rules use
 // the multiline flag so headings, list markers, and quotes match per line

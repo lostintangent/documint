@@ -8,7 +8,6 @@
 import { defragmentTextInlines, type Inline, type Mark } from "@/document";
 import {
   inlineMarkSpecs,
-  isDelimitedInlineMarkSpec,
   type DelimitedInlineMarkSpec,
   type HtmlInlineMarkSpec,
   type InlineMarkSpec,
@@ -23,9 +22,9 @@ const markdownTextEscapePattern = /([\\`*_[\]])/g;
 const markdownDestinationEscapePattern = /([\\)&])/g;
 const markdownTitleEscapePattern = /(["\\])/g;
 // Fast-reject probe for text-node escape: if a string contains none of the
-// markdown metacharacters (including `@` for mention defense), neither of
-// the replaces in `escapeMarkdownText` would have anything to do — and
-// plain prose, the dominant input, hits this case.
+// markdown metacharacters (or `@`, for the mention seam before a link),
+// `escapeMarkdownText` has nothing to do — and plain prose, the dominant
+// input, hits this case.
 const markdownTextMetaProbe = /[\\`*_[\]@]/;
 
 export function serializeInlines(nodes: Inline[]): string {
@@ -58,22 +57,19 @@ function serializeInline(node: Inline, nextNode?: Inline): string {
 }
 
 // Per-mark emit lookup derived from the markdown-owned mark specs. Exhaustive
-// coverage is enforced by `inlineMarkSpecByMark` in `shared.ts`; the
+// coverage is enforced by `inlineMarkSyntaxByMark` in `shared.ts`; the
 // serializer should not repeat one row per semantic mark.
 const inlineMarkEmit = createInlineMarkEmit(inlineMarkSpecs);
 const literalContentMarks = new Set(
   inlineMarkSpecs
-    .filter(isDelimitedInlineMarkSpec)
-    .filter((spec) => spec.content === "literal")
+    .filter((spec) => spec.kind === "delimiter" && spec.content === "literal")
     .map((spec) => spec.mark),
 );
 
-// Reduce wraps `marks[0]` innermost and the last mark outermost. The parser
-// builds the `marks` array by appending each mark as it descends into a
-// nested delimited range (`[...marks, spec.mark]` in `parseInlineRange`), so
-// the outer-most delimiter in the source ends up first in the array. The
-// reverse mapping here — first-in-array becomes innermost-on-emit — is what
-// makes the round trip stable for nested marks like `***foo***`.
+// Reduce wraps `marks[0]` innermost and the last mark outermost. Text marks
+// are always rank-canonicalized (`canonicalizeMarks`), so nesting follows the
+// document's mark order rather than source order, which keeps the round trip
+// stable for nested marks like `***foo***`.
 function serializeText(node: Extract<Inline, { type: "text" }>, nextNode?: Inline) {
   const value = hasLiteralContentMark(node.marks)
     ? node.text
@@ -111,12 +107,12 @@ function createInlineMarkEmit(specs: ReadonlyArray<InlineMarkSpec>): Record<Mark
 }
 
 function createHtmlInlineMarkEmit(spec: HtmlInlineMarkSpec): InlineMarkEmit {
-  const tag = spec.canonicalTag;
+  const tag = spec.tags[0];
   return (value) => `<${tag}>${value}</${tag}>`;
 }
 
 function createDelimitedInlineMarkEmit(spec: DelimitedInlineMarkSpec): InlineMarkEmit {
-  const delimiter = spec.canonicalDelimiter.delimiter;
+  const delimiter = spec.delimiters[0].delimiter;
 
   if (spec.content === "literal") {
     return (value) => serializeLiteralDelimitedMark(value, delimiter);
@@ -136,10 +132,6 @@ function serializeLiteralDelimitedMark(value: string, marker: string) {
 }
 
 function findWidestMarkerRun(value: string, marker: string) {
-  if (marker.length === 0) {
-    return 0;
-  }
-
   let widestRun = 0;
   let currentRun = 0;
   let index = 0;
@@ -197,11 +189,12 @@ function escapeMarkdownText(value: string, nextNode?: Inline) {
     return value;
   }
 
-  // Text escaping protects three round-trip hazards: ordinary markdown
-  // metacharacters, literal `@[...]` prose that would otherwise parse as a
-  // mention, and the seam where a text node ending in `@` sits before a link
-  // node and would synthesize mention syntax after serialization.
-  const escaped = value.replace(markdownTextEscapePattern, "\\$1").replace(/@(?=\[)/g, "\\@");
+  // Text escaping protects two round-trip hazards: ordinary markdown
+  // metacharacters (escaping `[` also keeps literal `@[...]` prose from
+  // parsing as a mention), and the seam where a text node ending in `@` sits
+  // before a link node and would synthesize mention syntax after
+  // serialization.
+  const escaped = value.replace(markdownTextEscapePattern, "\\$1");
   return nextNode?.type === "link" && escaped.endsWith("@")
     ? `${escaped.slice(0, -1)}\\@`
     : escaped;

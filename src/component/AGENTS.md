@@ -11,7 +11,12 @@ The component subsystem provides Documint's public React editor surface. The emb
 - **One render scheduler owns paint cadence.** `useRender` coalesces paint requests, `useViewport` owns the lazy layout handle, and `Documint` prepares frame inputs before passing them to renderer paint calls. Child hooks request work instead of inventing render loops. Editor effects stay semantic. Component attaches runtime starts and tracks active effect lifetimes before renderer paint resolves the current frame.
 - **Metadata expansion is transient host state.** Each mounted `Documint` starts with one false expansion boolean, passes it into `useViewport`, repairs a metadata-owned selection to the body start before collapse, and invalidates layout for one coalesced full render. Expansion never enters props, document state, history, callbacks, or editor effects.
 - **Durable React projections flow through the component store.** Component code that needs shared editor/layout projections should use sprigs defined in [`store/`](store/AGENTS.md). Feature-local leaf view models can stay with the feature that renders them, so the core store does not learn overlay-specific vocabulary. Hooks own browser lifetimes. The store owns durable reactive projections.
+- **The React Compiler owns memoization, so explicit memos mark identity contracts.** The compiler caches render values and handlers from their inputs. Keep a manual `useMemo` or `useCallback` only when its identity is part of a contract: an effect dependency, a render-phase reconcile, or a `useSprig` argument. A store read in a render body, such as `layout.get()`, can be cached against the stable store identity and go stale, so read geometry through reactive sprigs instead.
 - **Leaf UI is declarative and arbitrated once.** Hooks and feature subsystems emit candidates for insertion menus, links, comments, completions, table UI, and selection affordances. `Documint` resolves priority and geometry so DOM overlays share one placement contract around the canvas.
+
+## Known Limitations
+
+`bun dev` runs the Bun HTML dev server, which does not apply the React Compiler, so dev builds render more than the compiled library and playground builds. Compare render counts against `bun run build:prod` or the playground build. Compiler settings live in `scripts/build/build.ts` and `extensions/github/package.json`.
 
 ## Subsystem Map
 

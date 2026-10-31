@@ -9,20 +9,9 @@ import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react"
 import { LeafButton, type LeafButtonProps } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
 import { clx } from "./core/lib/clx";
+import type { SearchLeaf as SearchLeafModel } from "./core/shared";
 
-type SearchLeafProps = {
-  activeMatchNumber: number;
-  canNavigate: boolean;
-  caseSensitive: boolean;
-  matchCount: number;
-  onChange: (query: string) => void;
-  onClose: () => void;
-  onDismiss: () => void;
-  onNext: () => void;
-  onPrevious: () => void;
-  onToggleCaseSensitive: () => void;
-  query: string;
-};
+type SearchLeafProps = Omit<SearchLeafModel, "kind">;
 
 export function SearchLeaf({
   activeMatchNumber,

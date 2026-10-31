@@ -8,85 +8,46 @@ export function refineVirtualLayoutWithMeasuredSlice(
   virtualLayout: VirtualLayout,
   layout: DocumentLayout,
 ) {
+  const { entries } = virtualLayout;
   let offset = 0;
-  let changed = false;
 
-  for (let index = 0; index < virtualLayout.entries.length; index += 1) {
-    const entry = virtualLayout.entries[index];
-
-    if (!entry) {
-      continue;
-    }
-
-    const groupEndIndex = findEquivalentEntryGroupEnd(virtualLayout.entries, index);
-    const measuredBounds = resolveMeasuredEntryGroupBounds(
-      virtualLayout,
-      layout,
-      index,
-      groupEndIndex,
-    );
-
-    if (!measuredBounds) {
-      if (offset !== 0) {
-        entry.top += offset;
-        entry.bottom += offset;
-
-        for (let groupIndex = index + 1; groupIndex < groupEndIndex; groupIndex += 1) {
-          const groupedEntry = virtualLayout.entries[groupIndex];
-          if (!groupedEntry) continue;
-          groupedEntry.top += offset;
-          groupedEntry.bottom += offset;
-        }
-      }
-
-      index = groupEndIndex - 1;
-      continue;
-    }
-
+  for (let index = 0; index < entries.length;) {
+    const entry = entries[index]!;
+    const groupEndIndex = findEquivalentEntryGroupEnd(entries, index);
+    const measuredBounds = resolveMeasuredEntryGroupBounds(entries, layout, index, groupEndIndex);
     const previousBottom = entry.bottom;
 
-    if (entry.top !== measuredBounds.top || entry.bottom !== measuredBounds.bottom) {
-      changed = true;
+    // Measured groups snap to their exact bounds. Unmeasured groups shift by
+    // the drift between the last measured bottom and its estimate.
+    if (measuredBounds || offset !== 0) {
+      const top = measuredBounds ? measuredBounds.top : entry.top + offset;
+      const bottom = measuredBounds ? measuredBounds.bottom : entry.bottom + offset;
+
+      for (let groupIndex = index; groupIndex < groupEndIndex; groupIndex += 1) {
+        entries[groupIndex]!.top = top;
+        entries[groupIndex]!.bottom = bottom;
+      }
     }
 
-    entry.top = measuredBounds.top;
-    entry.bottom = measuredBounds.bottom;
-
-    for (let groupIndex = index + 1; groupIndex < groupEndIndex; groupIndex += 1) {
-      const groupedEntry = virtualLayout.entries[groupIndex];
-      if (!groupedEntry) continue;
-      groupedEntry.top = measuredBounds.top;
-      groupedEntry.bottom = measuredBounds.bottom;
+    if (measuredBounds) {
+      offset = measuredBounds.bottom - previousBottom;
     }
 
-    offset = measuredBounds.bottom - previousBottom;
-    index = groupEndIndex - 1;
+    index = groupEndIndex;
   }
 
-  if (offset !== 0) {
-    virtualLayout.totalHeight += offset;
-    changed = true;
-  }
-
-  return changed;
+  virtualLayout.totalHeight += offset;
 }
 
 function findEquivalentEntryGroupEnd(entries: VirtualLayout["entries"], startIndex: number) {
-  const entry = entries[startIndex];
-
-  if (!entry) {
-    return startIndex + 1;
-  }
-
+  const { bottom, top } = entries[startIndex]!;
   let endIndex = startIndex + 1;
 
-  while (endIndex < entries.length) {
-    const next = entries[endIndex];
-
-    if (!next || next.top !== entry.top || next.bottom !== entry.bottom) {
-      break;
-    }
-
+  while (
+    endIndex < entries.length &&
+    entries[endIndex]!.top === top &&
+    entries[endIndex]!.bottom === bottom
+  ) {
     endIndex += 1;
   }
 
@@ -94,7 +55,7 @@ function findEquivalentEntryGroupEnd(entries: VirtualLayout["entries"], startInd
 }
 
 function resolveMeasuredEntryGroupBounds(
-  virtualLayout: VirtualLayout,
+  entries: VirtualLayout["entries"],
   layout: DocumentLayout,
   startIndex: number,
   endIndex: number,
@@ -103,8 +64,7 @@ function resolveMeasuredEntryGroupBounds(
   let top = Number.POSITIVE_INFINITY;
 
   for (let index = startIndex; index < endIndex; index += 1) {
-    const path = virtualLayout.entries[index]?.path;
-    const bounds = path ? layout.pathBounds.get(path) : null;
+    const bounds = layout.pathBounds.get(entries[index]!.path);
 
     if (!bounds) {
       continue;

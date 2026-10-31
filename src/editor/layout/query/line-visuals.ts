@@ -3,7 +3,7 @@
 // resolve small per-line metric helpers (visual-left, task checkbox bounds,
 // inline image bounds).
 
-import type { DocumentResources } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
 import {
   findAncestorIndexedBlockByPath,
   resolveBlockTextPathBoundary,
@@ -33,14 +33,9 @@ export type InlineBounds = {
 };
 
 export type ListMarkerTarget = {
-  blockPath: string;
   listItemPath: string;
   marker: IndexedListItem;
 };
-
-export function resolveLineVisualLeft(line: DocumentLayout["lines"][number], offset: number) {
-  return measureCanvasLineOffsetLeft(line, offset) + line.contentInset;
-}
 
 export function resolveOrderedListMarkerAnchor(textLeft: number) {
   return textLeft - ORDERED_LIST_MARKER_GAP;
@@ -60,13 +55,6 @@ export function resolveUnorderedListMarkerBounds(line: LayoutLine) {
     top: centerY - size / 2,
     width: size,
   };
-}
-
-export function resolveIndexedListItem(
-  state: EditorState,
-  listItemPath: string,
-): IndexedListItem | null {
-  return state.documentIndex.listItems.get(listItemPath) ?? null;
 }
 
 export function resolveListMarkerTarget(
@@ -91,11 +79,10 @@ export function resolveListMarkerTarget(
     return null;
   }
 
-  const marker = resolveIndexedListItem(state, listItemEntry.path);
+  const marker = state.documentIndex.listItems.get(listItemEntry.path);
 
   return marker
     ? {
-        blockPath: listItemEntry.path,
         listItemPath: listItemEntry.path,
         marker,
       }

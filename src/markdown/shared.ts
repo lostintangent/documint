@@ -1,10 +1,4 @@
-import {
-  markOrder,
-  normalizeResourceProtocol,
-  resolveRegisteredResourceProtocol as resolveRegisteredResourceProtocolFromUrl,
-  type Mark,
-  type MentionTarget,
-} from "@/document";
+import { markOrder, normalizeResourceProtocol, type Mark, type MentionTarget } from "@/document";
 
 export type MarkdownOptions = {
   /**
@@ -47,140 +41,53 @@ export const containerDirectiveClosingMarker = ":::";
 // Single source of truth for Documint markdown's mark syntax. One row per
 // supported `Mark`, carrying both parser and serializer policy:
 //
-//   - specs default to `delimiter`, which parses paired markdown delimiters.
-//     Their contents are parsed as inline markdown unless `content` is
-//     `literal`.
-//   - the first delimiter is the canonical serializer form. Literal content
-//     uses variable-width delimiter fencing so the authored text stays
-//     unparsed.
-//   - `html` specs parse exact HTML tag pairs and emit the first tag as the
-//     canonical serializer form.
-//   - delimiter `boundary` policies model where a delimiter may bind. This
-//     captures the asymmetry between asterisk-italic (can bind at any
-//     character) and underscore-italic (binds only at word boundaries).
-//
-// The input table stays terse; `inlineMarkSpecs` normalizes it at module load
-// so parser and serializer consume concrete policy instead of re-resolving
-// defaults and canonical forms.
+//   - `delimiter` rows parse paired markdown delimiters. Their contents are
+//     parsed as inline markdown unless `content` is `literal`, which uses
+//     variable-width delimiter fencing so the authored text stays unparsed.
+//   - `html` rows parse exact HTML tag pairs.
+//   - the first delimiter or tag is the canonical serializer form.
+//   - a delimiter with `boundary: "word"` binds only at word boundaries. This
+//     captures the asymmetry between asterisk-italic (binds anywhere) and
+//     underscore-italic.
+export type InlineMarkContentPolicy = "inlines" | "literal";
+
 export type InlineMarkDelimiter = {
-  boundary?: "character" | "word";
+  boundary?: "word";
   delimiter: string;
 };
 
-export type InlineMarkContentPolicy = "inlines" | "literal";
-export type InlineMarkDelimiterInput = string | InlineMarkDelimiter;
-export type InlineMarkDelimiterSet =
-  | string
-  | readonly [InlineMarkDelimiterInput, ...InlineMarkDelimiterInput[]];
-
-export type DelimitedInlineMarkSpecInput = {
-  kind?: "delimiter";
-  content?: InlineMarkContentPolicy;
-  delimiter: InlineMarkDelimiterSet;
-};
-
-export type HtmlInlineMarkSpecInput = {
-  kind: "html";
-  tag: string | readonly [string, ...string[]];
-};
-
-export type InlineMarkSpecInput = DelimitedInlineMarkSpecInput | HtmlInlineMarkSpecInput;
-export type DelimitedInlineMarkSpec = {
-  canonicalDelimiter: InlineMarkDelimiter;
-  content: InlineMarkContentPolicy;
-  delimiters: ReadonlyArray<InlineMarkDelimiter>;
-  kind: "delimiter";
-  mark: Mark;
-};
-export type HtmlInlineMarkSpec = {
-  canonicalTag: string;
-  kind: "html";
-  mark: Mark;
-  tags: ReadonlyArray<string>;
-};
-export type InlineMarkSpec = DelimitedInlineMarkSpec | HtmlInlineMarkSpec;
-
-const inlineMarkSpecByMark = {
-  code: {
-    content: "literal",
-    delimiter: "`",
-  },
-  bold: {
-    delimiter: "**",
-  },
-  italic: {
-    delimiter: ["*", { boundary: "word", delimiter: "_" }],
-  },
-  strikethrough: {
-    delimiter: "~~",
-  },
-  underline: {
-    kind: "html",
-    tag: ["ins", "u"],
-  },
-  superscript: {
-    kind: "html",
-    tag: "sup",
-  },
-} satisfies Record<Mark, InlineMarkSpecInput>;
-
-export const inlineMarkSpecs: ReadonlyArray<InlineMarkSpec> =
-  defineInlineMarkSpecs(inlineMarkSpecByMark);
-
-function defineInlineMarkSpecs(specs: Record<Mark, InlineMarkSpecInput>): InlineMarkSpec[] {
-  return markOrder.map((mark) => defineInlineMarkSpec(mark, specs[mark]));
-}
-
-function defineInlineMarkSpec(mark: Mark, spec: InlineMarkSpecInput): InlineMarkSpec {
-  if (spec.kind === "html") {
-    const tags = resolveHtmlTags(spec);
-    return {
-      canonicalTag: tags[0],
-      kind: "html",
-      mark,
-      tags,
+type InlineMarkSyntax =
+  | {
+      kind: "delimiter";
+      content: InlineMarkContentPolicy;
+      delimiters: readonly [InlineMarkDelimiter, ...InlineMarkDelimiter[]];
+    }
+  | {
+      kind: "html";
+      tags: readonly [string, ...string[]];
     };
-  }
 
-  const delimiters = resolveDelimitedMarkDelimiters(spec);
-  return {
-    canonicalDelimiter: delimiters[0],
-    content: spec.content ?? "inlines",
-    delimiters,
+export type InlineMarkSpec = InlineMarkSyntax & { mark: Mark };
+export type DelimitedInlineMarkSpec = Extract<InlineMarkSpec, { kind: "delimiter" }>;
+export type HtmlInlineMarkSpec = Extract<InlineMarkSpec, { kind: "html" }>;
+
+const inlineMarkSyntaxByMark: Record<Mark, InlineMarkSyntax> = {
+  code: { kind: "delimiter", content: "literal", delimiters: [{ delimiter: "`" }] },
+  bold: { kind: "delimiter", content: "inlines", delimiters: [{ delimiter: "**" }] },
+  italic: {
     kind: "delimiter",
-    mark,
-  };
-}
+    content: "inlines",
+    delimiters: [{ delimiter: "*" }, { boundary: "word", delimiter: "_" }],
+  },
+  strikethrough: { kind: "delimiter", content: "inlines", delimiters: [{ delimiter: "~~" }] },
+  underline: { kind: "html", tags: ["ins", "u"] },
+  superscript: { kind: "html", tags: ["sup"] },
+};
 
-export function isDelimitedInlineMarkSpec(spec: InlineMarkSpec): spec is DelimitedInlineMarkSpec {
-  return spec.kind === "delimiter";
-}
-
-export function isHtmlInlineMarkSpec(spec: InlineMarkSpec): spec is HtmlInlineMarkSpec {
-  return spec.kind === "html";
-}
-
-function resolveInlineMarkDelimiter(delimiter: InlineMarkDelimiterInput): InlineMarkDelimiter {
-  return typeof delimiter === "string" ? { delimiter } : delimiter;
-}
-
-function resolveDelimitedMarkDelimiters(
-  spec: DelimitedInlineMarkSpecInput,
-): ReadonlyArray<InlineMarkDelimiter> {
-  return isInlineMarkDelimiterList(spec.delimiter)
-    ? spec.delimiter.map(resolveInlineMarkDelimiter)
-    : [resolveInlineMarkDelimiter(spec.delimiter)];
-}
-
-function resolveHtmlTags(spec: HtmlInlineMarkSpecInput): ReadonlyArray<string> {
-  return typeof spec.tag === "string" ? [spec.tag] : spec.tag;
-}
-
-function isInlineMarkDelimiterList(
-  delimiter: InlineMarkDelimiterSet,
-): delimiter is readonly [InlineMarkDelimiterInput, ...InlineMarkDelimiterInput[]] {
-  return typeof delimiter !== "string";
-}
+export const inlineMarkSpecs: ReadonlyArray<InlineMarkSpec> = markOrder.map((mark) => ({
+  mark,
+  ...inlineMarkSyntaxByMark[mark],
+}));
 
 /**
  * Name of the trailing container directive that carries persisted comment
@@ -201,7 +108,7 @@ function isInlineMarkDelimiterList(
  */
 export const commentDirectiveName = "documint-comments";
 
-// --- Resource protocol normalization and resolution ---//
+// --- Resource protocol normalization ---//
 
 export function normalizeResourceProtocols(
   protocols: readonly string[] | undefined,
@@ -220,8 +127,4 @@ export function normalizeResourceProtocols(
   }
 
   return normalized;
-}
-
-export function resolveResourceProtocol(url: string, protocols: ReadonlySet<string> | null) {
-  return protocols ? resolveRegisteredResourceProtocolFromUrl(url, protocols) : null;
 }

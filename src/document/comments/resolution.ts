@@ -26,7 +26,7 @@ import {
   suffixMatchesAt,
   type AnchorContainer,
   type AnchorMatch,
-  type AnchorResolutionStatus,
+  type TextAnchor,
 } from "../query/anchors/text";
 import type { Document } from "../model/types";
 import type { CommentResolution, CommentThread } from "./types";
@@ -114,7 +114,13 @@ function collectExactQuoteCandidates(thread: CommentThread, containers: AnchorCo
       candidates.push({
         container,
         endOffset: startOffset + quote.length,
-        score: scoreExactCandidate(thread, container, startOffset),
+        score: scoreContextMatch(
+          container.text,
+          thread.anchor,
+          startOffset,
+          startOffset + quote.length,
+          EXACT_CONTEXT_MATCH_SCORE,
+        ),
         startOffset,
       });
     }
@@ -125,11 +131,49 @@ function collectExactQuoteCandidates(thread: CommentThread, containers: AnchorCo
   return candidates;
 }
 
+// Context repair candidates need either both context edges or enough of the
+// old quote surviving at the candidate's edges to trust a one-sided match.
 function collectContextResolutionCandidates(thread: CommentThread, containers: AnchorContainer[]) {
   const candidates: AnchorMatchCandidate[] = [];
+  const originalLength = thread.quote.length;
+  const hasBothContextEdges = Boolean(thread.anchor.prefix && thread.anchor.suffix);
+  const minimumOneSidedSimilarity = Math.max(
+    2,
+    Math.ceil(Math.min(originalLength, MAX_SIMILARITY_COMPARE_LENGTH) / 2),
+  );
 
-  for (const container of containers) {
-    candidates.push(...collectContainerContextCandidates(thread, container));
+  for (const { container, endOffset, startOffset } of collectTextAnchorCandidates(
+    containers,
+    thread.anchor,
+    { estimatedLength: originalLength },
+  )) {
+    const sharedQuoteEdges = countSharedEdgeCharacters(
+      thread.quote,
+      container.text.slice(startOffset, endOffset),
+    );
+
+    if (!hasBothContextEdges && sharedQuoteEdges < minimumOneSidedSimilarity) {
+      continue;
+    }
+
+    candidates.push({
+      container,
+      endOffset,
+      score:
+        scoreContextMatch(
+          container.text,
+          thread.anchor,
+          startOffset,
+          endOffset,
+          CONTEXT_REPAIR_MATCH_SCORE,
+        ) +
+        Math.max(
+          0,
+          MAX_LENGTH_SIMILARITY_SCORE - Math.abs(originalLength - (endOffset - startOffset)),
+        ) +
+        sharedQuoteEdges,
+      startOffset,
+    });
   }
 
   candidates.sort((left, right) => right.score - left.score);
@@ -137,74 +181,12 @@ function collectContextResolutionCandidates(thread: CommentThread, containers: A
   return candidates;
 }
 
-function collectContainerContextCandidates(thread: CommentThread, container: AnchorContainer) {
-  const candidates: AnchorMatchCandidate[] = [];
-  const originalLength = thread.quote.length;
-
-  for (const range of collectTextAnchorCandidates([container], thread.anchor, {
-    estimatedLength: originalLength,
-  })) {
-    if (
-      !isAcceptableContextRepairCandidate(thread, container, range.startOffset, range.endOffset)
-    ) {
-      continue;
-    }
-
-    candidates.push({
-      container,
-      endOffset: range.endOffset,
-      score: scoreContextCandidate(
-        thread,
-        container,
-        range.startOffset,
-        range.endOffset,
-        originalLength,
-      ),
-      startOffset: range.startOffset,
-    });
-  }
-
-  return candidates;
-}
-
-function isAcceptableContextRepairCandidate(
-  thread: CommentThread,
-  container: AnchorContainer,
-  startOffset: number,
-  endOffset: number,
-) {
-  if (thread.anchor.prefix && thread.anchor.suffix) {
-    return true;
-  }
-
-  if (thread.quote.length === 0) {
-    return false;
-  }
-
-  const candidateText = container.text.slice(startOffset, endOffset);
-
-  if (candidateText.length === 0) {
-    return false;
-  }
-
-  const cap = MAX_SIMILARITY_COMPARE_LENGTH;
-  const shared =
-    sharedCharacterPrefixLength(thread.quote, candidateText, cap) +
-    sharedCharacterSuffixLength(thread.quote, candidateText, cap);
-
-  return shared >= minimumOneSidedRepairSimilarity(thread.quote.length);
-}
-
-function minimumOneSidedRepairSimilarity(quoteLength: number) {
-  return Math.max(2, Math.ceil(Math.min(quoteLength, MAX_SIMILARITY_COMPARE_LENGTH) / 2));
-}
-
 // --- Resolution finalization ---
 
 function finalizeResolution(
   thread: CommentThread,
   candidates: AnchorMatchCandidate[],
-  forceStatus: AnchorResolutionStatus | null,
+  forceStatus: "repaired" | null,
   previousMatch: AnchorMatch | null,
 ): CommentResolution {
   const winner = pickWinningCandidate(candidates, previousMatch);
@@ -256,11 +238,8 @@ function pickWinningCandidate(
   candidates: AnchorMatchCandidate[],
   previousMatch: AnchorMatch | null,
 ): AnchorMatchCandidate | null {
-  const [first, second] = candidates;
-
-  if (!first) {
-    return null;
-  }
+  const first = candidates[0]!;
+  const second = candidates[1];
 
   if (!second || first.score !== second.score) {
     return first;
@@ -302,81 +281,34 @@ function toAnchorMatch(
 
 // --- Scoring ---
 
-function scoreExactCandidate(
-  thread: CommentThread,
-  container: AnchorContainer,
-  startOffset: number,
-) {
-  let score = 0;
-
-  if (prefixMatchesAt(container.text, thread.anchor.prefix, startOffset)) {
-    score += EXACT_CONTEXT_MATCH_SCORE;
-  }
-
-  if (suffixMatchesAt(container.text, thread.anchor.suffix, startOffset + thread.quote.length)) {
-    score += EXACT_CONTEXT_MATCH_SCORE;
-  }
-
-  return score;
-}
-
-function scoreContextCandidate(
-  thread: CommentThread,
-  container: AnchorContainer,
+function scoreContextMatch(
+  text: string,
+  anchor: TextAnchor,
   startOffset: number,
   endOffset: number,
-  originalLength: number,
+  weight: number,
 ) {
-  let score = 0;
-
-  if (prefixMatchesAt(container.text, thread.anchor.prefix, startOffset)) {
-    score += CONTEXT_REPAIR_MATCH_SCORE;
-  }
-
-  if (suffixMatchesAt(container.text, thread.anchor.suffix, endOffset)) {
-    score += CONTEXT_REPAIR_MATCH_SCORE;
-  }
-
-  score += Math.max(
-    0,
-    MAX_LENGTH_SIMILARITY_SCORE - Math.abs(originalLength - (endOffset - startOffset)),
+  return (
+    (prefixMatchesAt(text, anchor.prefix, startOffset) ? weight : 0) +
+    (suffixMatchesAt(text, anchor.suffix, endOffset) ? weight : 0)
   );
-
-  if (thread.quote.length > 0) {
-    const candidateText = container.text.slice(startOffset, endOffset);
-
-    if (candidateText.length > 0) {
-      const cap = MAX_SIMILARITY_COMPARE_LENGTH;
-      score += sharedCharacterPrefixLength(thread.quote, candidateText, cap);
-      score += sharedCharacterSuffixLength(thread.quote, candidateText, cap);
-    }
-  }
-
-  return score;
 }
 
-// Count the leading characters two strings share, up to `cap`. Comment-
-// specific similarity metric for tiebreaking fuzzy match candidates.
-function sharedCharacterPrefixLength(left: string, right: string, cap: number): number {
-  const limit = Math.min(cap, left.length, right.length);
-  let length = 0;
+// Count the leading plus trailing characters two strings share, each side
+// capped at `MAX_SIMILARITY_COMPARE_LENGTH`. Comment-specific similarity
+// metric for accepting and tiebreaking fuzzy match candidates.
+function countSharedEdgeCharacters(left: string, right: string): number {
+  const limit = Math.min(MAX_SIMILARITY_COMPARE_LENGTH, left.length, right.length);
+  let prefix = 0;
+  let suffix = 0;
 
-  while (length < limit && left[length] === right[length]) {
-    length += 1;
+  while (prefix < limit && left[prefix] === right[prefix]) {
+    prefix += 1;
   }
 
-  return length;
-}
-
-// Count the trailing characters two strings share, up to `cap`. See
-// `sharedCharacterPrefixLength`.
-function sharedCharacterSuffixLength(left: string, right: string, cap: number): number {
-  const limit = Math.min(cap, left.length, right.length);
-  let length = 0;
-
-  while (length < limit && left[left.length - 1 - length] === right[right.length - 1 - length]) {
-    length += 1;
+  while (suffix < limit && left[left.length - 1 - suffix] === right[right.length - 1 - suffix]) {
+    suffix += 1;
   }
 
-  return length;
+  return prefix + suffix;
 }

@@ -1,0 +1,23 @@
+{
+  "plugins": ["react"],
+  "env": {
+    "browser": true,
+    "es2024": true,
+    "node": true
+  },
+  "globals": {
+    "Bun": "readonly"
+  },
+  "rules": {
+    "no-console": "off",
+    "react/immutability": "error",
+    "react/preserve-manual-memoization": "error",
+    "react/purity": "error",
+    "react/refs": "error",
+    "react/set-state-in-effect": "error"
+  },
+  "options": {
+    // Type errors come from `bun check`, which the check script runs after linting.
+    "typeAware": true
+  }
+}

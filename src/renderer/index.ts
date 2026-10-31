@@ -2,14 +2,11 @@
 // this module translates those frames into content and overlay canvas pixels.
 
 import {
-  paintActiveBlockBackground,
   paintActiveBlockChangedEffect,
-  paintBlockquoteRules,
-  paintDocumentChangeBackground,
+  paintBlockBackground,
   paintLineContainerBackground,
-  paintHeadingRules,
-  paintInertBlock,
-} from "./painters/blocks";
+} from "./painters/blocks/backgrounds";
+import { paintBlockquoteRules, paintHeadingRules, paintInertBlock } from "./painters/blocks/rules";
 import { paintCaretOverlay } from "./painters/caret";
 import { paintCommentHighlights } from "./painters/comments";
 import { paintListMarker } from "./painters/list";
@@ -17,13 +14,11 @@ import { paintMetadataBackgrounds, paintMetadataForeground } from "./painters/me
 import { paintSelectionHighlight } from "./painters/selection";
 import { paintHighlight } from "./painters/highlights";
 import {
-  paintTextFades,
-  paintTextHighlights,
-  paintLineText,
-  paintTextPulses,
   paintTextDecorationBackgrounds,
   paintTextDecorationOverlays,
-} from "./painters/text";
+} from "./painters/text/decorations";
+import { paintTextFades, paintTextHighlights, paintTextPulses } from "./painters/text/effects";
+import { paintLineText } from "./painters/text/inlines";
 import {
   createDocumentFrame,
   createOverlayFrame,
@@ -34,7 +29,19 @@ import {
 import { createPaintEffect, type EffectEnvironment, type PaintEffect } from "./effects";
 
 export { createDocumentFrame, createOverlayFrame };
-export type { DocumentChangeEffect, RendererEffect, RendererEffectInput } from "./effects";
+export type {
+  ActiveBlockChangedEffectContext,
+  DocumentChangeEffect,
+  DocumintEffectHandler,
+  DocumintEffects,
+  DocumintListMarkerPaintFrame,
+  ListItemInsertedEffectContext,
+  RendererEffect,
+  RendererEffectInput,
+  TextDeletedEffectContext,
+  TextInsertedEffectContext,
+} from "./effects";
+export type { CodeTokenKind, EditorTheme, ResolvedEditorTheme } from "./theme";
 export type { DocumentFrame, OverlayFrame };
 
 export function paintDocumentFrame(context: CanvasRenderingContext2D, frame: DocumentFrame): void {
@@ -77,14 +84,8 @@ function paintInertBlockChromePass(context: CanvasRenderingContext2D, frame: Doc
 
 function paintDocumentHighlightPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
   if (frame.hasDocumentChangeHighlights) {
-    const baseEnvironment: EffectEnvironment = {
-      context,
-      theme: frame.theme,
-      viewport: frame.viewport,
-    };
-
     for (const lineFrame of frame.lines) {
-      paintDocumentChangeBackground(lineFrame, baseEnvironment);
+      paintBlockBackground(context, lineFrame.documentChangeBackground);
     }
 
     for (const tableCellChange of frame.tableCellDocumentChanges) {
@@ -118,7 +119,7 @@ function paintLineForegroundPass(context: CanvasRenderingContext2D, frame: Docum
   };
 
   for (const lineFrame of frame.lines) {
-    paintActiveBlockBackground(lineFrame, environment);
+    paintBlockBackground(context, lineFrame.activeBlockBackground);
   }
 
   paintActiveBlockChangedEffect(frame.activeBlockChangedEffect, environment);
@@ -188,57 +189,16 @@ type LineForegroundPainter = (
 
 const lineForegroundPainters: LineForegroundPainter[] = [
   // Decoration backgrounds below glyphs.
-  (lineFrame, environment) => {
-    if (lineFrame.textDecorations) {
-      paintTextDecorationBackgrounds(
-        environment.context,
-        lineFrame,
-        lineFrame.textDecorations,
-        environment.clocks,
-      );
-    }
-  },
-  // Selection highlight.
-  (lineFrame, environment) => {
-    paintSelectionHighlight(environment.context, lineFrame, environment.theme);
-  },
-  // Comment highlights.
-  (lineFrame, environment) => {
-    paintCommentHighlights(environment.context, lineFrame, environment.clocks.ambientTime);
-  },
-  // List marker.
-  (lineFrame, environment) => {
-    paintListMarker(lineFrame, environment);
-  },
+  paintTextDecorationBackgrounds,
+  paintSelectionHighlight,
+  paintCommentHighlights,
+  paintListMarker,
   // Text and replacement segments.
-  (lineFrame, environment) => {
-    paintLineText(environment.context, lineFrame, {
-      clocks: environment.clocks,
-      resources: environment.resources,
-      theme: environment.theme,
-    });
-  },
+  paintLineText,
   // Decoration overlays above glyphs.
-  (lineFrame, environment) => {
-    if (lineFrame.textDecorations) {
-      paintTextDecorationOverlays(
-        environment.context,
-        lineFrame,
-        lineFrame.textDecorations,
-        environment.clocks,
-      );
-    }
-  },
-  // Insert highlights.
-  (lineFrame, environment) => {
-    paintTextHighlights(lineFrame, lineFrame.textHighlights, environment);
-  },
-  // Delete fades.
-  (lineFrame, environment) => {
-    paintTextFades(lineFrame, lineFrame.textFades, environment);
-  },
-  // Text pulses.
-  (lineFrame, environment) => {
-    paintTextPulses(lineFrame, lineFrame.textPulses, environment);
-  },
+  paintTextDecorationOverlays,
+  // Insert highlights, delete fades, and text pulses.
+  paintTextHighlights,
+  paintTextFades,
+  paintTextPulses,
 ];

@@ -18,8 +18,8 @@ import {
   type InlineBounds,
   type NormalizedEditorSelection,
   type SelectionFormatting,
+  type DocumentResources,
 } from "@/editor";
-import type { DocumentResources } from "@/types";
 import {
   equalDocumentCompletions,
   resolveDocumentCompletionContext,
@@ -28,7 +28,6 @@ import {
 import type { CompletionSource } from "../../completions/completions";
 import { createComputedSprig, createParameterizedSprig } from "../core/computed";
 import {
-  equalArrayBy,
   equalArraysByIdentity,
   equalCommentRanges,
   equalCommentStates,
@@ -105,7 +104,7 @@ export const commentStateSprig = createComputedSprig(
 export const commentThreadsSprig = createComputedSprig(
   [commentStateSprig],
   (_store, commentState) => commentState.threads,
-  equalArrayBy(Object.is),
+  equalArraysByIdentity,
 );
 
 // Exported because overlay leaf sprigs depend on it (cursor and pointer
@@ -158,33 +157,27 @@ export const selectionHandlesSprig = createComputedSprig(
 
 // `normalizedSelectionSprig` already covers selection + documentIndex via
 // its own deps, so it's the right subscription target. The rendered layout
-// ties the resolution to the painted frame. We read documentIndex / full
-// state imperatively because the underlying helpers take a state — but we
-// only fire when the selection projection or the layout actually change.
+// ties the resolution to the painted frame.
 export const caretInViewportSprig = createComputedSprig(
   [normalizedSelectionSprig, renderedLayoutSprig],
-  (store, normalizedSelection, layout): boolean => {
+  (_store, normalizedSelection, layout): boolean => {
     if (!layout) {
       return true;
     }
 
-    const status = resolveCursorViewportStatus(
-      store.editor.getState().documentIndex,
-      layout,
-      normalizedSelection.end,
-    );
+    const status = resolveCursorViewportStatus(layout, normalizedSelection.end);
     return status !== "above" && status !== "below";
   },
 );
 
 export const caretTargetSprig = createComputedSprig(
-  [normalizedSelectionSprig, renderedLayoutSprig],
-  (store, normalizedSelection, layout): CaretTarget | null => {
+  [editorStateSprig, normalizedSelectionSprig, renderedLayoutSprig],
+  (_store, state, normalizedSelection, layout): CaretTarget | null => {
     if (!layout) {
       return null;
     }
 
-    return measureCaretTarget(store.editor.getState(), layout, normalizedSelection.end);
+    return measureCaretTarget(state, layout, normalizedSelection.end);
   },
   equalCaretTargets,
 );

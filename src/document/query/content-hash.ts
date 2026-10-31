@@ -1,4 +1,3 @@
-import { getBlockChildren } from "../model/containers";
 import {
   FNV_OFFSET_BASIS,
   HASH_SEPARATOR_CHAR_CODE,
@@ -50,7 +49,7 @@ function computeDocumentNodeContentHash(block: Block): DocumentNodeContentHash {
 
   switch (block.type) {
     case "blockquote":
-      hash = mixBlockArray(hash, getBlockChildren(block) ?? []);
+      hash = mixBlockArray(hash, block.children);
       break;
     case "code":
       hash = mixNullableString(hash, block.language);
@@ -61,9 +60,6 @@ function computeDocumentNodeContentHash(block: Block): DocumentNodeContentHash {
       hash = mixString(hash, block.name);
       hash = mixString(hash, block.attributes);
       hash = mixString(hash, block.body);
-      break;
-    case "divider":
-      hash = mixString(hash, "divider");
       break;
     case "heading":
       hash = mixNumber(hash, block.depth);
@@ -118,9 +114,6 @@ function resolveInlineContentHash(inline: Inline): DocumentNodeContentHash {
       hash = mixString(hash, inline.url);
       hash = mixNullableNumber(hash, inline.width);
       break;
-    case "lineBreak":
-      hash = mixString(hash, "lineBreak");
-      break;
     case "link":
       hash = mixString(hash, inline.url);
       hash = mixNullableString(hash, inline.title);
@@ -171,19 +164,7 @@ export function resolveTableRowContentHash(row: TableRow): DocumentNodeContentHa
 }
 
 export function estimateDocumentNodeContentHashCost(block: Block) {
-  if ("plainText" in block && typeof block.plainText === "string") {
-    return estimateTextCost(block.plainText);
-  }
-
-  if ("source" in block && typeof block.source === "string") {
-    return estimateTextCost(block.source);
-  }
-
-  if (block.type === "table") {
-    return block.rows.reduce((sum, row) => sum + estimateTableRowContentHashCost(row), 1);
-  }
-
-  return 1;
+  return estimateTextCost(block.plainText);
 }
 
 export function estimateTableRowContentHashCost(row: TableRow) {

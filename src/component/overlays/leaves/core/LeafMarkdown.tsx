@@ -9,7 +9,7 @@ import {
   type Text,
 } from "@/document";
 import { parseFragment } from "@/markdown";
-import { createElement, useMemo, type ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 
 type LeafMarkdownProps = {
   value: string;
@@ -18,10 +18,7 @@ type LeafMarkdownProps = {
 };
 
 export function LeafMarkdown({ mentionTargets, onDoubleClick, value }: LeafMarkdownProps) {
-  const content = useMemo(
-    () => renderMarkdownFragment(value, mentionTargets),
-    [mentionTargets, value],
-  );
+  const content = renderMarkdownFragment(value, mentionTargets);
 
   return createElement(
     "div",
@@ -92,7 +89,7 @@ function renderListItem(block: ListItemBlock): ReactNode {
 }
 
 function renderInlines(nodes: readonly Inline[]): ReactNode[] {
-  return mapInlines<ReactNode>(nodes, (node, _context, children) => {
+  return mapInlines<ReactNode>(nodes, (node, children) => {
     switch (node.type) {
       case "text":
         return renderText(node);

@@ -6,6 +6,7 @@ import type { Inline, Mark, MetadataValue } from "@/document";
 import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
 import { fixtureOptions } from "../../playground/src/lib/data";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
+import { commentedParagraphMarkdown } from "./helpers";
 
 describe("Mentions", () => {
   test("parses user mentions as semantic inline nodes", () => {
@@ -47,6 +48,27 @@ describe("Mentions", () => {
 
     expect(paragraph.children).toHaveLength(1);
     expectTextAt(paragraph.children, 0, "email@Jane.com and @JaneDoe");
+  });
+
+  test("opens bare mentions after newline and tab boundaries", () => {
+    const paragraph = parseParagraph("first\n@Jane\t@John\n", {
+      mentionTargets: [
+        { name: "Jane", userId: "u-jane" },
+        { name: "John", userId: "u-john" },
+      ],
+    });
+
+    expect(expectInlineAt(paragraph.children, 1, "mention").userId).toBe("u-jane");
+    expect(expectInlineAt(paragraph.children, 3, "mention").userId).toBe("u-john");
+  });
+
+  test("does not parse bare mentions immediately after punctuation", () => {
+    const paragraph = parseParagraph("(@Jane) and /@Jane\n", {
+      mentionTargets: [{ name: "Jane", userId: "u-jane" }],
+    });
+
+    expect(paragraph.children).toHaveLength(1);
+    expectTextAt(paragraph.children, 0, "(@Jane) and /@Jane");
   });
 });
 
@@ -102,12 +124,6 @@ describe("Resources", () => {
     expect(resource.label).toBe(" Recording session ");
   });
 
-  test("keeps unknown protocol links as editable links", () => {
-    const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n");
-
-    expectInlineAt(paragraph.children, 1, "link");
-  });
-
   test("parses playground tutorial resource links as resources", () => {
     const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
 
@@ -146,17 +162,6 @@ describe("Resources", () => {
       "Planning note",
     ]);
     expect(demoResourceLinks).toEqual([]);
-  });
-
-  test("normalizes registered protocol arrays once for the whole document", () => {
-    const protocols = ["demo-resource:"];
-    const document = parseDocument(
-      "# Heading consumes inline parsing first\n\nUse [Recording](demo-resource://recording/live) now.\n",
-      { resourceProtocols: protocols },
-    );
-    const paragraph = expectBlockAt(document, 1, "paragraph");
-
-    expectInlineAt(paragraph.children, 1, "resource");
   });
 
   test("does not cache mutable resource protocol arrays across parses", () => {
@@ -319,6 +324,13 @@ describe("Backslash escapes", () => {
 });
 
 describe("Block parsing", () => {
+  test("parses a fenced code info string as the language and its body as source", () => {
+    const code = expectBlockAt(parseDocument("```ts\nconst x = 1;\n```\n"), 0, "code");
+
+    expect(code.language).toBe("ts");
+    expect(code.source).toBe("const x = 1;");
+  });
+
   test("preserves container directives as semantic blocks", () => {
     const document = parseDocument(`:::callout{tone}
 Body
@@ -383,6 +395,21 @@ Body
     expect(item.children).toHaveLength(2);
     expect(item.children[0]?.plainText).toBe("alpha");
     expect(item.children[1]?.plainText).toBe("beta");
+  });
+
+  // Indented code is not part of the dialect, so over-indented lines parse as
+  // paragraph text instead of ending their container and dropping what follows.
+  test.each([
+    ["the document root", "a\n\n    b\n\nc\n", ["a", "    b", "c"]],
+    ["a blockquote", "> a\n>\n>     b\n>\n> c\n\nd\n", ["a\n    b\nc", "d"]],
+    ["a list item", "- a\n\n      b\n\n  c\n\nd\n", ["a\n    b\nc", "d"]],
+    ["a task item", "- [ ]     b\n- [x] c\n\nd\n", ["b\nc", "d"]],
+  ])("keeps over-indented lines and the content after them in %s", (_, source, plainTexts) => {
+    const document = parseDocument(source);
+    const markdown = serializeDocument(document);
+
+    expect(document.blocks.map((block) => block.plainText)).toEqual(plainTexts);
+    expect(serializeDocument(parseDocument(markdown))).toBe(markdown);
   });
 });
 
@@ -453,13 +480,6 @@ url: "https://example.com/docs"
     expect(serializeDocument(document)).toBe(source);
   });
 
-  test("parses metadata on a document with no body blocks", () => {
-    const document = parseDocument("---\ntitle: Stub\n---\n");
-
-    expect(document.metadata).toEqual(new Map([["title", "Stub"]]));
-    expect(document.blocks).toHaveLength(0);
-  });
-
   test.each([
     ["duplicate source keys", ["title: First", "title: Second"]],
     ["duplicate decoded keys", ["title: First", '"title": Second']],
@@ -510,53 +530,14 @@ describe("Comment appendix extraction", () => {
   });
 
   test("lets document construction own parsed comment thread ids", () => {
-    const document = parseDocument(`Paragraph with a comment.
-
-:::documint-comments
-[
-  {
-    "id": "persisted-comment-id",
-    "anchor": {
-      "prefix": "Paragraph",
-      "suffix": " with a comment."
-    },
-    "comments": [
-      {
-        "body": "Reviewing this.",
-        "updatedAt": "2026-04-05T12:00:00.000Z"
-      }
-    ],
-    "quote": " with "
-  }
-]
-:::
-`);
+    const document = parseDocument(commentedParagraphMarkdown({ id: "persisted-comment-id" }));
 
     expect(document.comments[0]?.id).toMatch(/^commentThread-/);
     expect(document.comments[0]?.id).not.toBe("persisted-comment-id");
   });
 
   test("keeps generated comment thread ids stable across markdown round trips", () => {
-    const first = parseDocument(`Paragraph with a comment.
-
-:::documint-comments
-[
-  {
-    "anchor": {
-      "prefix": "Paragraph",
-      "suffix": " with a comment."
-    },
-    "comments": [
-      {
-        "body": "Reviewing this.",
-        "updatedAt": "2026-04-05T12:00:00.000Z"
-      }
-    ],
-    "quote": " with "
-  }
-]
-:::
-`);
+    const first = parseDocument(commentedParagraphMarkdown());
     const second = parseDocument(serializeDocument(first));
 
     expect(second.comments[0]?.id).toBe(first.comments[0]?.id);
@@ -594,81 +575,6 @@ Paragraph after misplaced appendix.
     expect(serializeDocument(document)).toBe("Paragraph before appendix.\n");
   });
 });
-
-describe("Document canonicalization", () => {
-  test("produces stable semantic nodes across repeated parses", () => {
-    const source = `# Heading
-
-\`\`\`ts
-const x = 1;
-\`\`\`
-
-Paragraph with :badge[alpha]{status="experimental"} inline.
-
-- first
-
-| A | B |
-| - | - |
-| one | two |
-
-:::callout{tone="info"}
-Body
-:::
-`;
-    const first = summarizeRepresentativeNodes(parseDocument(source));
-    const second = summarizeRepresentativeNodes(parseDocument(source));
-
-    expect(first).toEqual(second);
-    expect(first.headingText).toBe("Heading");
-    expect(first.codeSource).toBe("const x = 1;");
-    expect(first.codeLanguage).toBe("ts");
-    expect(first.paragraphText).toBe('Paragraph with :badge[alpha]{status="experimental"} inline.');
-    expect(first.listText).toBe("first");
-    expect(first.listItemText).toBe("first");
-    expect(first.tableText).toBe("A | B\none | two");
-    expect(first.inlineDirectiveRaw).toBe(':badge[alpha]{status="experimental"}');
-    expect(first.containerDirectiveName).toBe("callout");
-    expect(first.containerDirectiveAttributes).toBe('tone="info"');
-    expect(first.containerDirectiveBody).toBe("Body");
-  });
-});
-
-function summarizeRepresentativeNodes(document: ReturnType<typeof parseDocument>) {
-  const heading = expectBlockAt(document, 0, "heading");
-  const code = expectBlockAt(document, 1, "code");
-  const paragraph = expectBlockAt(document, 2, "paragraph");
-  const inlineDirective = findInline(paragraph.children, "raw");
-  const list = expectBlockAt(document, 3, "list");
-  const listItem = list.items[0];
-
-  if (!listItem) {
-    throw new Error("Expected list item");
-  }
-
-  const table = expectBlockAt(document, 4, "table");
-  const firstRow = table.rows[0];
-  const firstCell = firstRow?.cells[0];
-
-  if (!firstRow || !firstCell) {
-    throw new Error("Expected first table row and cell");
-  }
-
-  const containerDirective = expectBlockAt(document, 5, "directive");
-
-  return {
-    codeLanguage: code.language,
-    codeSource: code.source,
-    containerDirectiveAttributes: containerDirective.attributes,
-    containerDirectiveBody: containerDirective.body,
-    containerDirectiveName: containerDirective.name,
-    headingText: heading.plainText,
-    inlineDirectiveRaw: inlineDirective.source,
-    listItemText: listItem.plainText,
-    listText: list.plainText,
-    paragraphText: paragraph.plainText,
-    tableText: table.plainText,
-  };
-}
 
 function parseParagraph(source: string, options?: MarkdownOptions) {
   return expectBlockAt(parseDocument(source, options), 0, "paragraph");

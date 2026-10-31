@@ -1,12 +1,11 @@
+// Owns per-line block backgrounds (code fence fill and table cell chrome),
+// active-block and document-change tints, and active-block change effects.
+
 import type { LayoutRect } from "@/editor/layout";
-import type { ResolvedEditorTheme } from "@/types";
-import {
-  resolveActiveBlockFlashColor,
-  type EffectEnvironment,
-  type PaintEffect,
-} from "../../effects";
+import type { ResolvedEditorTheme } from "../../theme";
+import type { EffectEnvironment, PaintEffect } from "../../effects";
+import { fadeCanvasColor } from "../../effects/colors";
 import type { ActiveBlockChangedEffectFrame, DocumentFrameLine } from "../../frame";
-import { createRectBandedGeometryFrame } from "../../frame/banded-geometry";
 import { paintHighlight } from "../highlights";
 import { paintGridCellChrome } from "../table";
 
@@ -30,37 +29,24 @@ export function paintLineContainerBackground(
   paintGridCellChrome(context, background.rect, background.isHeaderRow, theme);
 }
 
-export function paintActiveBlockBackground(
-  lineFrame: DocumentFrameLine,
-  environment: EffectEnvironment,
+// Active-block and document-change backgrounds share one shape: a solid rect
+// with optional fade opacity.
+export function paintBlockBackground(
+  context: CanvasRenderingContext2D,
+  background: { color: string; opacity?: number; rect: LayoutRect } | null,
 ) {
-  const { context } = environment;
-  const background = lineFrame.activeBlockBackground;
-
   if (!background) {
     return;
   }
 
-  paintHighlight(context, createRectBandedGeometryFrame(background.rect), {
-    fill: background.color,
-  });
-}
-
-export function paintDocumentChangeBackground(
-  lineFrame: DocumentFrameLine,
-  environment: EffectEnvironment,
-) {
-  const { context } = environment;
-  const background = lineFrame.documentChangeBackground;
-
-  if (!background) {
-    return;
-  }
-
-  paintHighlight(context, createRectBandedGeometryFrame(background.rect), {
-    fill: background.color,
-    opacity: background.opacity,
-  });
+  paintHighlight(
+    context,
+    { bands: [background.rect], rect: background.rect },
+    {
+      fill: background.color,
+      opacity: background.opacity,
+    },
+  );
 }
 
 export function paintActiveBlockChangedEffect(
@@ -81,7 +67,7 @@ export function paintActiveBlockChangedEffect(
     ({ progress, theme }) => {
       paintHighlight(context, effect.geometry, {
         borderColor: effect.geometry.borderRect ? theme.tableBorder : undefined,
-        fill: resolveActiveBlockFlashColor(theme.activeBlockFlash, { progress }),
+        fill: fadeCanvasColor(theme.activeBlockFlash, progress),
       });
     },
   );

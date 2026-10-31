@@ -53,44 +53,24 @@ function createVsCodeDocumintTheme(): EditorTheme {
   const rootStyle = getComputedStyle(document.documentElement);
   const bodyStyle = getComputedStyle(document.body);
 
-  const readColor = (variableName: string, fallback: string) =>
-    readVsCodeColor(variableName, fallback, rootStyle, bodyStyle);
+  const readColor = (variableName: string) => readVsCodeColor(variableName, rootStyle, bodyStyle);
 
-  const editorBackground = readColor("--vscode-editor-background", baseTheme.background);
-  const editorForeground = readColor("--vscode-editor-foreground", baseTheme.text);
-  const accent = readColor("--vscode-focusBorder", baseTheme.accent);
-  const border = readColor(
-    "--vscode-widget-border",
-    readColor("--vscode-panel-border", baseTheme.muted),
-  );
+  const editorBackground = readColor("--vscode-editor-background") ?? baseTheme.background;
+  const editorForeground = readColor("--vscode-editor-foreground") ?? baseTheme.text;
+  const accent = readColor("--vscode-focusBorder") ?? baseTheme.accent;
+  const border =
+    readColor("--vscode-widget-border") ?? readColor("--vscode-panel-border") ?? baseTheme.muted;
   // `muted` is a dual-role neutral: used at full opacity for content (list
   // markers, checkbox outlines, secondary text) and alpha'd for chrome
   // (leafBorder etc.). VSCode's `--vscode-descriptionForeground` is the
   // canonical "muted text" color; it reads as content at full opacity while
   // still feeling subdued, which suits both halves of muted's role. Falls
   // back to the chrome border if descriptionForeground isn't available.
-  const muted = readColor("--vscode-descriptionForeground", border);
-  const widgetBackground = readColor(
-    "--vscode-editorWidget-background",
-    readColor("--vscode-quickInput-background", editorBackground),
-  );
-  // The resolver's mode-aware codeBackground default mirrors what most VS Code
-  // themes set --vscode-textCodeBlock-background to, so use the same formula
-  // as the fallback when the CSS var is missing.
-  const codeBackground = readColor(
-    "--vscode-textCodeBlock-background",
-    isDark
-      ? `color-mix(in srgb, ${editorForeground} 8%, ${editorBackground})`
-      : `color-mix(in srgb, ${editorForeground} 60%, #000)`,
-  );
-  const selectionBackground = readColor(
-    "--vscode-editor-selectionBackground",
-    baseTheme.selectionBackground ?? colorWithAlpha(accent, 0.28, baseTheme.background),
-  );
-  const lineHighlightBackground = readColor(
-    "--vscode-editor-lineHighlightBackground",
-    colorWithAlpha(accent, 0.12, baseTheme.background),
-  );
+  const muted = readColor("--vscode-descriptionForeground") ?? border;
+  const widgetBackground =
+    readColor("--vscode-editorWidget-background") ??
+    readColor("--vscode-quickInput-background") ??
+    editorBackground;
   // VS Code exposes the editor font size as a `<n>px` string on the document
   // root; mirror it so Documint's typography matches the user's editor
   // settings out of the box. Heading sizes and inline code derive from this
@@ -106,12 +86,13 @@ function createVsCodeDocumintTheme(): EditorTheme {
   const editorFontSize = parseFontSize(rootStyle, bodyStyle);
   const fontSize = editorFontSize !== undefined && isMacOs() ? editorFontSize + 2 : editorFontSize;
 
+  // Colors VS Code leaves unset (`undefined`) fall through to the resolver's
+  // accent- and text-derived defaults.
   return {
     accent,
-    activeBlockBackground: lineHighlightBackground,
-    activeBlockFlash: colorWithAlpha(accent, 0.22, baseTheme.background),
+    activeBlockBackground: readColor("--vscode-editor-lineHighlightBackground"),
     background: editorBackground,
-    codeBackground,
+    codeBackground: readColor("--vscode-textCodeBlock-background"),
     commentHighlight: baseTheme.commentHighlight,
     commentHighlightActive: baseTheme.commentHighlightActive,
     commentHighlightResolved: baseTheme.commentHighlightResolved,
@@ -120,11 +101,11 @@ function createVsCodeDocumintTheme(): EditorTheme {
     imageSurfaceBackground: widgetBackground,
     imageSurfaceBorder: border,
     muted,
-    selectionBackground,
-    tableHeaderBackground: readColor(
-      "--vscode-sideBar-background",
-      colorWithAlpha(editorForeground, isDark ? 0.1 : 0.06, baseTheme.background),
-    ),
+    selectionBackground:
+      readColor("--vscode-editor-selectionBackground") ?? baseTheme.selectionBackground,
+    tableHeaderBackground:
+      readColor("--vscode-sideBar-background") ??
+      `color-mix(in srgb, ${editorForeground} ${isDark ? 10 : 6}%, transparent)`,
     text: editorForeground,
   };
 }
@@ -160,70 +141,14 @@ function isVsCodeDarkTheme(): boolean {
 
 function readVsCodeColor(
   variableName: string,
-  fallback: string,
   rootStyle: CSSStyleDeclaration,
   bodyStyle: CSSStyleDeclaration,
-): string {
-  const rootValue = rootStyle.getPropertyValue(variableName).trim();
-  if (rootValue) {
-    return rootValue;
-  }
-
-  const bodyValue = bodyStyle.getPropertyValue(variableName).trim();
-
-  return bodyValue || fallback;
-}
-
-function colorWithAlpha(color: string, alpha: number, fallback: string): string {
-  const rgb = parseCssColor(color);
-
-  if (!rgb) {
-    return fallback;
-  }
-
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
-}
-
-function parseCssColor(color: string): { r: number; g: number; b: number } | null {
-  const normalized = color.trim();
-  const hexMatch = normalized.match(/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
-
-  if (hexMatch) {
-    const hex = hexMatch[1];
-    const expanded =
-      hex.length === 3 || hex.length === 4
-        ? hex
-            .split("")
-            .map((character) => character + character)
-            .join("")
-        : hex;
-
-    return {
-      r: Number.parseInt(expanded.slice(0, 2), 16),
-      g: Number.parseInt(expanded.slice(2, 4), 16),
-      b: Number.parseInt(expanded.slice(4, 6), 16),
-    };
-  }
-
-  const rgbMatch = normalized.match(/^rgba?\((.+)\)$/i);
-  if (!rgbMatch) {
-    return null;
-  }
-
-  const [r, g, b] = rgbMatch[1]
-    .split(/[,\s/]+/)
-    .map((part) => Number.parseFloat(part))
-    .filter((part) => Number.isFinite(part));
-
-  if (r === undefined || g === undefined || b === undefined) {
-    return null;
-  }
-
-  return {
-    r: Math.round(r),
-    g: Math.round(g),
-    b: Math.round(b),
-  };
+): string | undefined {
+  return (
+    rootStyle.getPropertyValue(variableName).trim() ||
+    bodyStyle.getPropertyValue(variableName).trim() ||
+    undefined
+  );
 }
 
 function areThemesEqual(left: EditorTheme, right: EditorTheme): boolean {

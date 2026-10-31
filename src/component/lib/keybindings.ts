@@ -1,5 +1,31 @@
-import type { EditorInputCommand } from "@/types";
 import { resolveEditorHostPlatform, type EditorHostPlatform } from "./platform";
+
+export type EditorInputCommand =
+  | "dedent"
+  | "deleteBackward"
+  | "deleteForward"
+  | "deleteWordBackward"
+  | "deleteWordForward"
+  | "indent"
+  | "insertLineBreak"
+  | "insertSoftLineBreak"
+  | "moveListItemDown"
+  | "moveListItemUp"
+  | "moveToDocumentEnd"
+  | "moveToDocumentStart"
+  | "moveToLineEnd"
+  | "moveToLineStart"
+  | "moveWordBackward"
+  | "moveWordForward"
+  | "redo"
+  | "selectAll"
+  | "toggleBold"
+  | "toggleCode"
+  | "toggleItalic"
+  | "toggleStrikethrough"
+  | "toggleSuperscript"
+  | "toggleUnderline"
+  | "undo";
 
 export type EditorInputKeybinding = {
   altKey?: boolean;

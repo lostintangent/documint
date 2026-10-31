@@ -61,12 +61,11 @@ export function LinkLeaf({ title, url, canEdit, onSave, onDelete }: LinkLeafProp
               onCancel: cancelEditing,
               onSave: saveLink,
               saveDisabled: !canSave,
+              saveOnEnter: true,
             }}
             autoFocus
             onChange={setDraftUrl}
             readOnly={!canEdit}
-            rows={3}
-            saveOnEnter
             value={draftUrl}
           />
         ) : (

@@ -102,10 +102,15 @@ function CopyableHostEventPill({
   copyValue: string;
 }) {
   const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const [trackedCopyValue, setTrackedCopyValue] = useState(copyValue);
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
 
-  useEffect(() => {
+  if (trackedCopyValue !== copyValue) {
+    setTrackedCopyValue(copyValue);
     setCopyStatus("idle");
+  }
+
+  useEffect(() => {
     return () => {
       if (copyFeedbackTimeoutRef.current !== null) {
         window.clearTimeout(copyFeedbackTimeoutRef.current);

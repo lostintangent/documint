@@ -1,6 +1,6 @@
 // Declarative selection targets and target resolution. Actions declare where
 // the selection should land after a mutation. Two families, two lifetimes:
-// coordinate targets (`target.root`/`target.blockPath`/`target.path`/
+// coordinate targets (`target.blockPath`/`target.path`/
 // `target.tableCell`) are positional intent, resolved against the rebuilt
 // document after the commit; `target.block` references a block inside the
 // action's own payload and is materialized into a path by dispatch *before*
@@ -8,7 +8,7 @@
 // construction. Actions should reference blocks they placed in their own
 // payload and fall back to coordinates only for destinations outside it.
 
-import { isBlockPath, rootBlockPath, type Block } from "@/document";
+import { isBlockPath, type Block } from "@/document";
 import {
   resolveEditorTextAtPath,
   resolveBlockTextPathBoundary,
@@ -39,11 +39,6 @@ export type SelectionTarget =
       offset: SelectionOffset;
       rowIndex: number;
       tablePath: string;
-    }
-  | {
-      kind: "root";
-      offset: SelectionOffset;
-      rootIndex: number;
     }
   | {
       blockPath: string;
@@ -101,17 +96,6 @@ export const target = {
     };
   },
 
-  // Select the first editable path of a root by post-edit index. Used when the
-  // target root is outside the action payload or only known by shifted
-  // coordinate.
-  root(rootIndex: number, offset: SelectionOffset = 0): SelectionTarget {
-    return {
-      kind: "root",
-      offset,
-      rootIndex,
-    };
-  },
-
   // Select the first editable path for a block path after the commit.
   blockPath(blockPath: string, offset: SelectionOffset = 0): SelectionTarget {
     if (!isBlockPath(blockPath)) {
@@ -140,16 +124,6 @@ export function resolveSelectionTarget(
     // this point means an action kind that doesn't support block targets
     // carried one — fail loudly instead of silently losing the caret.
     throw new Error("block targets must be materialized by dispatch.");
-  }
-
-  if (selection.kind === "root") {
-    const path = resolveBlockTextPathBoundary(
-      documentIndex,
-      rootBlockPath(selection.rootIndex),
-      "start",
-    );
-
-    return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
   }
 
   if (selection.kind === "block-path") {

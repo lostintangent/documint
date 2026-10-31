@@ -1,21 +1,13 @@
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import type { RendererEffect, RendererEffectInput } from "@/renderer";
 import { recordFpsFrame } from "../lib/diagnostics";
 
 type UseRenderOptions = {
-  hasAmbientAnimationsInViewport?: () => boolean;
-  isActive?: () => boolean;
-  renderContent: (rendererEffects: readonly RendererEffect[]) => ContentPaintResult;
+  commitLayout: () => void;
+  hasAmbientAnimationsInViewport: () => boolean;
+  isActive: () => boolean;
+  renderContent: (rendererEffects: readonly RendererEffect[]) => readonly RendererEffect[];
   renderOverlay: () => void;
-  renderViewport: (rendererEffects: readonly RendererEffect[]) => ContentPaintResult;
-};
-
-type ContentPaintResult = {
-  rendererEffects: readonly RendererEffect[];
-};
-
-const noActiveContentEffects: ContentPaintResult = {
-  rendererEffects: [],
 };
 
 type RenderController = {
@@ -29,169 +21,132 @@ type ScheduleContentPaintOptions = {
   effects?: readonly RendererEffectInput[];
 };
 
-type PendingRenderIntents = {
+export function useRender({
+  commitLayout,
+  hasAmbientAnimationsInViewport,
+  isActive,
+  renderContent,
+  renderOverlay,
+}: UseRenderOptions): RenderController {
+  // The scheduler outlives renders, so it reaches the latest host callbacks
+  // through Effect Events.
+  const commit = useEffectEvent(() => commitLayout());
+  const paintContent = useEffectEvent((rendererEffects: readonly RendererEffect[]) =>
+    renderContent(rendererEffects),
+  );
+  const paintOverlay = useEffectEvent(() => renderOverlay());
+  const isEditorActive = useEffectEvent(() => isActive());
+  const hasAmbientAnimations = useEffectEvent(() => hasAmbientAnimationsInViewport());
+
+  const [scheduler] = useState(() =>
+    createRenderScheduler({
+      commitLayout: commit,
+      hasAmbientAnimationsInViewport: hasAmbientAnimations,
+      isActive: isEditorActive,
+      paintContent,
+      paintOverlay,
+      // Gated inline so production builds strip the FPS diagnostics.
+      recordFrame: process.env.NODE_ENV !== "production" ? recordFpsFrame : undefined,
+      requestFrame: (flush) => {
+        const frameId = window.requestAnimationFrame(flush);
+        return () => window.cancelAnimationFrame(frameId);
+      },
+    }),
+  );
+
+  useEffect(() => scheduler.cancel, [scheduler]);
+
+  return scheduler;
+}
+
+type RenderSchedulerOptions = {
+  commitLayout: () => void;
+  hasAmbientAnimationsInViewport: () => boolean;
+  isActive: () => boolean;
+  paintContent: (rendererEffects: readonly RendererEffect[]) => readonly RendererEffect[];
+  paintOverlay: () => void;
+  recordFrame?: (durationMs: number) => void;
+  // Requests one animation frame and returns a function that cancels it.
+  requestFrame: (flush: () => void) => () => void;
+};
+
+type RenderIntents = {
   fullRender: boolean;
   fullPaint: boolean;
   contentPaint: boolean;
   overlayPaint: boolean;
 };
 
-function createPendingRenderIntents(): PendingRenderIntents {
+// Coalesces render intents into at most one pending frame. Each frame commits
+// layout for a full render, then paints content, then overlay, so `fullRender`
+// subsumes `fullPaint`, which subsumes both partial paints. Content painting
+// continues while renderer effects are active, and for ambient animations only
+// while the editor is idle.
+export function createRenderScheduler(options: RenderSchedulerOptions) {
+  let pending = createRenderIntents();
+  let rendererEffects: readonly RendererEffect[] = [];
+  let cancelFrame: (() => void) | null = null;
+
+  const schedule = (intent: keyof RenderIntents) => {
+    pending[intent] = true;
+    cancelFrame ??= options.requestFrame(flush);
+  };
+
+  const flush = () => {
+    cancelFrame = null;
+    const { fullRender, fullPaint, contentPaint, overlayPaint } = pending;
+    pending = createRenderIntents();
+    const startedAt = process.env.NODE_ENV !== "production" ? performance.now() : 0;
+
+    if (fullRender) {
+      options.commitLayout();
+    }
+
+    if (fullRender || fullPaint || contentPaint) {
+      rendererEffects = options.paintContent(rendererEffects);
+
+      if (
+        rendererEffects.length > 0 ||
+        (!options.isActive() && options.hasAmbientAnimationsInViewport())
+      ) {
+        schedule("contentPaint");
+      }
+    }
+
+    if (fullRender || fullPaint || overlayPaint) {
+      options.paintOverlay();
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      options.recordFrame?.(performance.now() - startedAt);
+    }
+  };
+
+  return {
+    cancel: () => {
+      cancelFrame?.();
+      cancelFrame = null;
+    },
+    scheduleContentPaint: (paintOptions?: ScheduleContentPaintOptions) => {
+      if (paintOptions?.effects && paintOptions.effects.length > 0) {
+        const startedAt = performance.now();
+        const effects = paintOptions.effects.map((effect) => ({ ...effect, startedAt }));
+        rendererEffects = [...rendererEffects, ...effects];
+      }
+
+      schedule("contentPaint");
+    },
+    scheduleFullPaint: () => schedule("fullPaint"),
+    scheduleFullRender: () => schedule("fullRender"),
+    scheduleOverlayPaint: () => schedule("overlayPaint"),
+  };
+}
+
+function createRenderIntents(): RenderIntents {
   return {
     fullRender: false,
     fullPaint: false,
     contentPaint: false,
     overlayPaint: false,
-  };
-}
-
-export function useRender({
-  hasAmbientAnimationsInViewport,
-  isActive,
-  renderContent,
-  renderOverlay,
-  renderViewport,
-}: UseRenderOptions): RenderController {
-  /* Render state */
-
-  const frameIdRef = useRef<number | null>(null);
-  const rendererEffectsRef = useRef<readonly RendererEffect[]>([]);
-  const pendingIntentsRef = useRef(createPendingRenderIntents());
-
-  /* Frame request */
-
-  const requestFrame = useEffectEvent(() => {
-    if (frameIdRef.current !== null) {
-      return;
-    }
-
-    frameIdRef.current = window.requestAnimationFrame((frameTimestamp) => {
-      flushRenderRequests(frameTimestamp);
-    });
-  });
-
-  const paintContent = useEffectEvent(() => {
-    const contentPaint = renderContent(rendererEffectsRef.current);
-    rendererEffectsRef.current = contentPaint.rendererEffects;
-    return contentPaint;
-  });
-
-  /* Frame flush */
-
-  const flushRenderRequests = useEffectEvent((frameTimestamp: number) => {
-    frameIdRef.current = null;
-
-    const pending = pendingIntentsRef.current;
-    const shouldFullRender = pending.fullRender;
-    const shouldFullPaint = pending.fullPaint;
-    const shouldContentPaint = pending.contentPaint;
-    const shouldOverlayPaint = pending.overlayPaint;
-
-    pendingIntentsRef.current = createPendingRenderIntents();
-    const renderStartedAt =
-      process.env.NODE_ENV !== "production" ? performance.now() : frameTimestamp;
-
-    if (shouldFullRender) {
-      const contentPaint = renderViewport(rendererEffectsRef.current);
-      rendererEffectsRef.current = contentPaint.rendererEffects;
-      if (process.env.NODE_ENV !== "production") {
-        recordFpsFrame(performance.now() - renderStartedAt);
-      }
-      schedulePaintContinuation(contentPaint);
-      return;
-    }
-
-    if (shouldFullPaint) {
-      const contentPaint = paintContent();
-      renderOverlay();
-      if (process.env.NODE_ENV !== "production") {
-        recordFpsFrame(performance.now() - renderStartedAt);
-      }
-      schedulePaintContinuation(contentPaint);
-      return;
-    }
-
-    const painted = shouldContentPaint || shouldOverlayPaint;
-
-    if (shouldContentPaint) {
-      const contentPaint = paintContent();
-      schedulePaintContinuation(contentPaint);
-    }
-    if (shouldOverlayPaint) {
-      renderOverlay();
-    }
-
-    if (painted) {
-      if (process.env.NODE_ENV !== "production") {
-        recordFpsFrame(performance.now() - renderStartedAt);
-      }
-    }
-  });
-
-  /* Paint continuation */
-
-  const schedulePaintContinuation = useEffectEvent(
-    (contentPaint: ContentPaintResult = noActiveContentEffects) => {
-      if (contentPaint.rendererEffects.length > 0) {
-        pendingIntentsRef.current.contentPaint = true;
-        requestFrame();
-        return;
-      }
-
-      if (isActive?.() === true || hasAmbientAnimationsInViewport?.() !== true) {
-        return;
-      }
-
-      pendingIntentsRef.current.contentPaint = true;
-      requestFrame();
-    },
-  );
-
-  /* Lifecycle */
-
-  useEffect(() => {
-    return () => {
-      if (frameIdRef.current === null) {
-        return;
-      }
-
-      window.cancelAnimationFrame(frameIdRef.current);
-      frameIdRef.current = null;
-    };
-  }, []);
-
-  /* Public API */
-
-  const scheduleFullRender = useEffectEvent(() => {
-    pendingIntentsRef.current.fullRender = true;
-    requestFrame();
-  });
-
-  const scheduleFullPaint = useEffectEvent(() => {
-    pendingIntentsRef.current.fullPaint = true;
-    requestFrame();
-  });
-
-  const scheduleContentPaint = useEffectEvent((options?: ScheduleContentPaintOptions) => {
-    if (options?.effects && options.effects.length > 0) {
-      const startedAt = performance.now();
-      const effects = options.effects.map((effect) => ({ ...effect, startedAt }));
-      rendererEffectsRef.current = [...rendererEffectsRef.current, ...effects];
-    }
-
-    pendingIntentsRef.current.contentPaint = true;
-    requestFrame();
-  });
-
-  const scheduleOverlayPaint = useEffectEvent(() => {
-    pendingIntentsRef.current.overlayPaint = true;
-    requestFrame();
-  });
-
-  return {
-    scheduleContentPaint,
-    scheduleFullPaint,
-    scheduleFullRender,
-    scheduleOverlayPaint,
   };
 }

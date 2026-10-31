@@ -1,7 +1,7 @@
 import { takeEditorEffects, type EditorState } from "@/editor";
 import { createEditorStateTransition, type EditorStateTransition } from "./transitions";
 
-export type EditorTransitionListener = (transition: EditorStateTransition) => void;
+type EditorTransitionListener = (transition: EditorStateTransition) => void;
 
 // The editor store is a pure event source. `subscribe` is the single
 // notification primitive — selectors, equality, and value-level dedup all

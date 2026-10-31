@@ -21,4 +21,4 @@ This is the capability layer. It owns editing semantics and geometry algorithms.
 - [`layout/`](layout/AGENTS.md) owns `EditorState → EditorLayoutState`, measurement, virtualization, core geometry hit testing, and layout queries.
 - [`anchors/`](anchors/AGENTS.md) owns editor-side resolution and repair of document anchors.
 - [`text/`](text/AGENTS.md) owns shared text semantics needed by multiple editor subsystems.
-- `resources/` owns editor-facing resource registry resolution, discovered-resource references, resource viewport queries, and resource icon cache signatures.
+- `resources/` owns the host resource types (`DocumentResources`, protocols, icons), registry resolution, discovered-resource references, resource viewport queries, and resource icon cache signatures.

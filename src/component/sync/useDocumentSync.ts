@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createEditorState, type TextRangeTarget } from "@/editor";
+import { createEditorState, type EditorSelectionRange } from "@/editor";
 import { findDocumentChanges, type Document, type DocumentChange } from "@/document";
 import { serializeDocument, type MarkdownOptions } from "@/markdown";
 import type { DocumentChangeEffect } from "@/renderer";
@@ -8,6 +8,7 @@ import {
   acknowledgeUnacknowledgedDocumentChanges,
   mergeUnacknowledgedDocumentChanges,
   type UnacknowledgedDocumentChange,
+  type UnacknowledgedDocumentChangeMerge,
 } from "./live-changes";
 import { reconcileExternalContentChange, restoreEquivalentSelection } from "./selection";
 import { resolveMentionLineChange } from "./mention-event";
@@ -20,12 +21,7 @@ export type UserMentionEvent = {
   userId: string;
 };
 
-type LiveChangeState = {
-  newChanges: readonly UnacknowledgedDocumentChange[];
-  changes: readonly UnacknowledgedDocumentChange[];
-};
-
-const emptyLiveChangeState: LiveChangeState = {
+const emptyLiveChangeState: UnacknowledgedDocumentChangeMerge = {
   newChanges: [],
   changes: [],
 };
@@ -60,9 +56,9 @@ export function useDocumentSync({
   /* Local event emission */
 
   const emitContentChanged = useEffectEvent((transition: EditorStateTransition) => {
-    // Emit the live runtime document, not the save-canonical commit document:
-    // trimming or empty-document collapse belongs at persistence boundaries,
-    // while this callback describes the editor's current runtime shape.
+    // Emit the live runtime document as-is, including trailing whitespace and
+    // the caret paragraph of an empty document: this callback describes the
+    // editor's current runtime shape.
     const nextContent = serializeDocument(transition.next.documentIndex.document, markdownOptions);
     onContentChanged?.(nextContent);
   });
@@ -73,7 +69,7 @@ export function useDocumentSync({
       transition,
       userId,
     }: {
-      target: TextRangeTarget;
+      target: EditorSelectionRange;
       transition: EditorStateTransition;
       userId: string;
     }) => {
@@ -108,13 +104,9 @@ export function useDocumentSync({
         previousState.documentIndex.document,
         nextState.documentIndex.document,
       );
-      setLiveChangeState((current) => {
-        const merge = mergeUnacknowledgedDocumentChanges(current.changes, changes, nextState);
-        return {
-          newChanges: merge.newChanges,
-          changes: merge.changes,
-        };
-      });
+      setLiveChangeState((current) =>
+        mergeUnacknowledgedDocumentChanges(current.changes, changes, nextState),
+      );
     },
   );
 
@@ -147,17 +139,13 @@ export function useDocumentSync({
     });
   }, [showLiveDiffs, store]);
 
-  useEffect(() => {
-    if (showLiveDiffs) return;
-
+  if (!showLiveDiffs) {
     // Turning diffs off is a host display policy, so drop any already-visible
     // diff lifecycle state instead of letting old markers linger.
-    setLiveChangeState((current) =>
-      current.newChanges.length === 0 && current.changes.length === 0
-        ? current
-        : emptyLiveChangeState,
-    );
-  }, [showLiveDiffs]);
+    if (liveChangeState.newChanges.length > 0 || liveChangeState.changes.length > 0) {
+      setLiveChangeState(emptyLiveChangeState);
+    }
+  }
 
   /* Document view reconciliation */
 
@@ -178,7 +166,7 @@ export function useDocumentSync({
     const reconciledState =
       documentView.kind === "snapshot"
         ? (restoreEquivalentSelection(previousState, nextState) ?? nextState)
-        : reconcileExternalContentChange(previousState, nextState).state;
+        : reconcileExternalContentChange(previousState, nextState);
     store.editor.replace(reconciledState);
 
     if (showLiveDiffs && contentChanged) {

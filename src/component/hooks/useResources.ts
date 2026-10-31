@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef } from "react";
 import { normalizeResourceProtocol } from "@/document";
-import { createResourceIconSignature, createResourceReference } from "@/editor";
-import type {
-  DocumentResourceProtocol,
-  DocumentResourceReference,
-  DocumentResourceRegistry,
-} from "@/types";
+import {
+  createResourceIconSignature,
+  createResourceReference,
+  type DocumentResourceProtocol,
+  type DocumentResourceReference,
+  type DocumentResourceRegistry,
+} from "@/editor";
 import { resourceUrlsSprig, useSprig } from "../store";
 
 export type ResourceProtocolRecord =
@@ -22,26 +23,18 @@ export type ResolvedResourceProtocols = {
 
 const emptyActiveResources = new Set<string>();
 
-export function useResourceProtocols(protocols: ResourceProtocolRecord | undefined) {
-  /* Protocol normalization */
+export function useResourceProtocols(
+  protocols: ResourceProtocolRecord | undefined,
+): ResolvedResourceProtocols {
+  return useMemo(() => {
+    const normalizedProtocols = normalizeResourceProtocolMap(protocols);
 
-  const normalizedProtocols = useMemo(() => normalizeResourceProtocolMap(protocols), [protocols]);
-  const key = useMemo(() => createResourceProtocolKey(normalizedProtocols), [normalizedProtocols]);
-  const layoutKey = useMemo(
-    () => createResourceProtocolLayoutKey(normalizedProtocols),
-    [normalizedProtocols],
-  );
-
-  /* Public API */
-
-  return useMemo(
-    () => ({
-      key,
-      layoutKey,
+    return {
+      key: createResourceProtocolKey(normalizedProtocols),
+      layoutKey: createResourceProtocolLayoutKey(normalizedProtocols),
       protocols: normalizedProtocols,
-    }),
-    [key, layoutKey, normalizedProtocols],
-  );
+    };
+  }, [protocols]);
 }
 
 export function useResources({
@@ -69,9 +62,15 @@ export function useResources({
   /* Discovered-resource requests */
 
   const lastRequestedResourceKeyRef = useRef("");
+  const hasResourceRequestHandler = Boolean(onResourcesRequested);
+  // Hosts often pass an inline callback, so only its presence should rerun
+  // discovery. The key dedup below already ignored identity-only changes.
+  const requestResources = useEffectEvent((discovered: DocumentResourceReference[]) => {
+    onResourcesRequested?.(discovered);
+  });
 
   useEffect(() => {
-    if (!onResourcesRequested) {
+    if (!hasResourceRequestHandler) {
       return;
     }
 
@@ -93,9 +92,9 @@ export function useResources({
 
     if (discoveredResourceKey !== lastRequestedResourceKeyRef.current) {
       lastRequestedResourceKeyRef.current = discoveredResourceKey;
-      onResourcesRequested(discovered);
+      requestResources(discovered);
     }
-  }, [resourceUrls, onResourcesRequested, protocols]);
+  }, [resourceUrls, hasResourceRequestHandler, protocols]);
 
   /* Public API */
 
@@ -138,10 +137,11 @@ export function normalizeResourceProtocolMap(value: ResourceProtocolRecord | und
 export function createResourceProtocolKey(
   protocols: ReadonlyMap<string, DocumentResourceProtocol>,
 ) {
-  return [...protocols.keys()]
-    .map((protocol) => protocol.toLowerCase())
-    .sort()
-    .join("\u0000");
+  return [...protocols.keys()].sort().join("\u0000");
+}
+
+export function resourceProtocolNamesFromKey(key: string) {
+  return key === "" ? [] : key.split("\u0000");
 }
 
 export function createResourceProtocolLayoutKey(
@@ -150,7 +150,7 @@ export function createResourceProtocolLayoutKey(
   return [...protocols]
     .map(
       ([protocol, spec]) =>
-        `${protocol.toLowerCase()}\u0001${createResourceIconSignature(spec.icon)}\u0001${spec.label}`,
+        `${protocol}\u0001${createResourceIconSignature(spec.icon)}\u0001${spec.label}`,
     )
     .sort()
     .join("\u0000");

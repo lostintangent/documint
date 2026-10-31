@@ -1,27 +1,12 @@
-import { indexedTextEntries } from "@test/editor/helpers";
 import { expect, test } from "bun:test";
-import {
-  createEditorLayoutState,
-  createLayoutCache,
-  createEditorState,
-  hasActiveResourcesInViewport,
-} from "@/editor";
-import { parseDocument } from "@/markdown";
-import type { DocumentResources } from "@/types";
+import { createEditorLayoutState, createLayoutCache, hasActiveResourcesInViewport } from "@/editor";
+import { createResources, getPath, setup } from "./helpers";
 
 test("detects active resources only when their line is visible", () => {
-  const state = createEditorState(
-    parseDocument("alpha\n\n[Recording](demo-resource://recording/live)\n\nomega\n", {
-      resourceProtocols: ["demo-resource:"],
-    }),
-  );
-  const resources: DocumentResources = {
-    images: new Map(),
-    resourceRegistry: {
-      active: new Set(["demo-resource://recording/live"]),
-      protocols: new Map([["demo-resource:", { icon: "R", label: "Demo resource" }]]),
-    },
-  };
+  const state = setup("alpha\n\n[Recording](demo-resource://recording/live)\n\nomega\n", {
+    resourceProtocols: ["demo-resource:"],
+  });
+  const resources = createResources({ active: ["demo-resource://recording/live"] });
   const layoutCache = createLayoutCache();
   const viewport = createEditorLayoutState(
     state,
@@ -29,14 +14,7 @@ test("detects active resources only when their line is visible", () => {
     layoutCache,
     resources,
   );
-  const resourcePath = indexedTextEntries(state).find((path) =>
-    (path.inlines ?? []).some((inline) => inline.node.type === "resource"),
-  );
-
-  if (!resourcePath) {
-    throw new Error("Expected resource path");
-  }
-
+  const resourcePath = getPath(state, "￼");
   const resourceLine = viewport.layout.lines.find((line) => line.path === resourcePath.path);
 
   if (!resourceLine) {

@@ -1,5 +1,4 @@
-import type { ResolvedResource } from "@/editor/resources";
-import type { DocumentResourceIcon } from "@/types";
+import type { ResolvedResource, DocumentResourceIcon } from "@/editor/resources";
 
 export const resourceHorizontalPadding = 7;
 export const resourceIconSegmentHorizontalPadding = 5;

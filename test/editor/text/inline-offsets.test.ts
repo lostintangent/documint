@@ -68,15 +68,5 @@ describe("editor inline offsets", () => {
       ["link", 9, 12],
       ["text", 12, 17],
     ]);
-
-    const unmarkedTextRuns = [...inlineNodesWithEditorRanges(nodes)].flatMap(
-      ({ node, start, end }) =>
-        node.type === "text" && node.marks.length === 0 ? [{ end, start, text: node.text }] : [],
-    );
-
-    expect(unmarkedTextRuns).toEqual([
-      { end: 1, start: 0, text: "a" },
-      { end: 17, start: 12, text: " tail" },
-    ]);
   });
 });

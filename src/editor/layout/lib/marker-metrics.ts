@@ -14,8 +14,7 @@ export const CHECKBOX_SIZE = 14;
 export const CHECKBOX_HIT_PADDING = 4;
 const CHECKBOX_BASE_FONT_SIZE = 16;
 // Gap between the task checkbox and the start of its text.
-export const TASK_CHECKBOX_TEXT_GAP = 8;
-export const TASK_MARKER_TEXT_INSET = CHECKBOX_SIZE + TASK_CHECKBOX_TEXT_GAP;
+const TASK_CHECKBOX_TEXT_GAP = 8;
 export const UNORDERED_LIST_MARKER_GUTTER_INSET = 2;
 export const UNORDERED_LIST_MARKER_SIZE = 6;
 
@@ -36,13 +35,6 @@ export function mergeLayoutBlockExtent(
     bottom: current ? Math.max(current.bottom, bottom) : bottom,
     top: current ? Math.min(current.top, top) : top,
   });
-}
-
-export function updateBlockExtent(
-  blockExtents: Map<string, LayoutBlockExtent>,
-  line: { blockPath: string; height: number; top: number },
-) {
-  mergeLayoutBlockExtent(blockExtents, line.blockPath, line.top, line.top + line.height);
 }
 
 // List item content is rendered shifted right by the marker inset (bullet

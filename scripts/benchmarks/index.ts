@@ -12,21 +12,14 @@ import { createComponentScenarios } from "./scenarios/component";
 import { createEditorScenarios } from "./scenarios/editor";
 import { createLayoutScenarios } from "./scenarios/layout";
 import { createMarkdownScenarios } from "./scenarios/markdown";
-import {
-  runBenchmarkScenarios,
-  type BenchmarkGroupId,
-  type BenchmarkScenarioRun,
-  type BenchmarkScenario,
-} from "./harness";
+import { runBenchmarkScenario, type BenchmarkScenarioRun, type BenchmarkScenario } from "./harness";
 
 type OutputMode = "json" | "table";
 
 const manifestPath = new URL("./manifest.json", import.meta.url);
 const manifest = (await Bun.file(manifestPath).json()) as BenchmarkManifest;
 const benchmarkSuiteRunCount = 3;
-const benchmarkWarmupSuiteRunCount = 1;
 const allowedBudgetFailureCount = 1;
-const benchmarkGroupOrder = ["markdown", "layout", "component", "editor"] as const;
 const outputMode = resolveOutputMode(process.argv);
 const fixtures = await createBenchmarkFixtures(manifest);
 
@@ -47,7 +40,7 @@ if (unusedBudgetNames.length > 0) {
   throw new Error(`Unused benchmark budget ids: ${unusedBudgetNames.join(", ")}`);
 }
 
-runBenchmarkWarmupSuites(benchmarkScenarios);
+runBenchmarkWarmupSuite();
 const suiteRuns = runBenchmarkSuite();
 const failures = collectRepeatedBudgetFailures(suiteRuns, allowedBudgetFailureCount);
 
@@ -71,14 +64,13 @@ if (failures.length > 0) {
   }
 }
 
-function runBenchmarkWarmupSuites(firstRunScenarios: BenchmarkScenario[]) {
-  for (let index = 0; index < benchmarkWarmupSuiteRunCount; index += 1) {
-    if (outputMode === "table") {
-      console.log(`Benchmark suite warmup ${index + 1}/${benchmarkWarmupSuiteRunCount}`);
-    }
-
-    void runScenarios(index === 0 ? firstRunScenarios : createBenchmarkScenarios());
+// The discarded warmup suite reuses the scenario set that passed validation.
+function runBenchmarkWarmupSuite() {
+  if (outputMode === "table") {
+    console.log("Benchmark suite warmup");
   }
+
+  void runScenarios(benchmarkScenarios);
 }
 
 function runBenchmarkSuite() {
@@ -103,18 +95,11 @@ function createBenchmarkScenarios(): BenchmarkScenario[] {
   ];
 }
 
+// Startup validation guarantees every scenario id has a budget.
 function runScenarios(scenarios: readonly BenchmarkScenario[]): BenchmarkScenarioRun[] {
-  return benchmarkGroupOrder.flatMap((groupId) =>
-    runBenchmarkScenarios(
-      groupId,
-      manifest.benchmarks[groupId],
-      selectGroupScenarios(scenarios, groupId),
-    ),
+  return scenarios.map((scenario) =>
+    runBenchmarkScenario(scenario, manifest.benchmarks[scenario.groupId][scenario.id]!),
   );
-}
-
-function selectGroupScenarios(scenarios: readonly BenchmarkScenario[], groupId: BenchmarkGroupId) {
-  return scenarios.filter((scenario) => scenario.groupId === groupId);
 }
 
 function formatBudgetFailureMessage(failures: RepeatedBudgetFailure[]) {

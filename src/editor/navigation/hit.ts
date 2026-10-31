@@ -1,5 +1,6 @@
 // Owns point-to-editor-intent resolution over prepared layout geometry.
 
+import type { Link, Resource } from "@/document";
 import type { EditorCommentRange } from "../anchors";
 import {
   findDocumentLayoutLineAtPoint,
@@ -16,38 +17,19 @@ import {
   resolveEditorTextAtPath,
   resolveIndexedBlock,
   resolveMetadataField,
-  resolveIndexedText,
-  resolveIndexedTextInlines,
+  resolveInlinesAtPath,
   type EditorSelectionPoint,
   type EditorState,
+  type IndexedInline,
 } from "../state";
 import { resolveWordRangeAtOffset } from "../text/words";
 
-export type EditorHit = {
+type EditorHit = {
   height: number;
   left: number;
   offset: number;
   path: string;
   top: number;
-};
-
-export type CanvasCheckboxHit = {
-  listItemPath: string;
-};
-
-export type CanvasLinkHit = {
-  endOffset: number;
-  path: string;
-  startOffset: number;
-  title: string | null;
-  url: string;
-};
-
-export type CanvasResourceHit = {
-  label: string;
-  protocol: string;
-  path: string;
-  url: string;
 };
 
 export type EditorHoverTarget =
@@ -121,7 +103,7 @@ export function resolveEditorHitAtPoint(
   return resolveHitOnLine(state, result.line, offsetX);
 }
 
-export function resolveHitBelowLayout(
+function resolveHitBelowLayout(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
@@ -150,9 +132,9 @@ export function resolveSelectionPointAt(
 // Resolves the focus point of a mouse drag. The focus follows the pointer's
 // hit across any path; if the pointer overshoots the document's content edge,
 // it clamps to the anchor path's near edge instead of collapsing.
-export function resolveDragFocusPoint(
-  layout: DocumentLayout,
+export function resolveDragFocus(
   state: EditorState,
+  viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
   anchor: EditorSelectionPoint,
 ): EditorSelectionPoint | null {
@@ -162,7 +144,7 @@ export function resolveDragFocusPoint(
     return null;
   }
 
-  const hit = resolveEditorHitAtPoint(layout, state, point);
+  const hit = resolveEditorHitAtPoint(viewport.layout, state, point);
 
   if (hit) {
     if (!canExtendSelectionBetweenPaths(anchor.path, hit.path)) {
@@ -175,7 +157,7 @@ export function resolveDragFocusPoint(
     };
   }
 
-  const isAboveLayout = point.y < resolveViewportTop(layout);
+  const isAboveLayout = point.y < resolveViewportTop(viewport.layout);
 
   return {
     path: anchor.path,
@@ -183,21 +165,12 @@ export function resolveDragFocusPoint(
   };
 }
 
-export function resolveDragFocus(
+export function resolveWordSelection(
   state: EditorState,
   viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
-  anchor: EditorSelectionPoint,
-): EditorSelectionPoint | null {
-  return resolveDragFocusPoint(viewport.layout, state, point, anchor);
-}
-
-export function resolveWordSelectionAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
 ) {
-  const hit = resolveEditorHitAtPoint(layout, state, point);
+  const hit = resolveEditorHitAtPoint(viewport.layout, state, point);
 
   if (!hit) {
     return null;
@@ -227,123 +200,13 @@ export function resolveWordSelectionAtPoint(
   };
 }
 
-export function resolveWordSelection(
+export function resolveHoverTarget(
   state: EditorState,
   viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
-) {
-  return resolveWordSelectionAtPoint(viewport.layout, state, point);
-}
-
-export function resolveTaskCheckboxHitAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-): CanvasCheckboxHit | null {
-  const line = resolveInteractiveLineAtPoint(layout, point);
-
-  if (!line) {
-    return null;
-  }
-
-  const target = resolveListMarkerTarget(state, line);
-
-  if (target?.marker.kind !== "task") {
-    return null;
-  }
-
-  const bounds = resolveTaskCheckboxBounds(line);
-  return pointInRect(point, bounds, CHECKBOX_HIT_PADDING)
-    ? {
-        listItemPath: target.listItemPath,
-      }
-    : null;
-}
-
-export function resolveLinkHitAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-): CanvasLinkHit | null {
-  const hit = resolveEditorHitAtPoint(layout, state, point);
-
-  if (!hit) {
-    return null;
-  }
-
-  return resolveLinkHit(state, hit);
-}
-
-function resolveLinkHit(state: EditorState, hit: EditorHit): CanvasLinkHit | null {
-  const indexedText = resolveIndexedText(state.documentIndex, hit.path);
-  const inlines = indexedText ? resolveIndexedTextInlines(indexedText) : null;
-
-  if (!inlines) {
-    return null;
-  }
-
-  const run = inlines.find(
-    (entry) => entry.link && hit.offset >= entry.start && hit.offset < entry.end,
-  );
-
-  if (!run?.link) {
-    return null;
-  }
-
-  return {
-    endOffset: run.end,
-    path: hit.path,
-    startOffset: run.start,
-    title: run.link.title,
-    url: run.link.url,
-  };
-}
-
-export function resolveResourceHitAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-): CanvasResourceHit | null {
-  const hit = resolveEditorHitAtPoint(layout, state, point);
-
-  if (!hit) {
-    return null;
-  }
-
-  return resolveResourceHit(state, hit);
-}
-
-function resolveResourceHit(state: EditorState, hit: EditorHit): CanvasResourceHit | null {
-  const indexedText = resolveIndexedText(state.documentIndex, hit.path);
-  const inlines = indexedText ? resolveIndexedTextInlines(indexedText) : null;
-
-  if (!inlines) {
-    return null;
-  }
-
-  const run = inlines.find(
-    (entry) =>
-      entry.node.type === "resource" && hit.offset >= entry.start && hit.offset <= entry.end,
-  );
-
-  if (run?.node.type !== "resource") {
-    return null;
-  }
-
-  return {
-    label: run.node.label,
-    protocol: run.node.protocol,
-    path: hit.path,
-    url: run.node.url,
-  };
-}
-
-export function resolveHoverTargetAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
   commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
+  const { layout } = viewport;
   const header = layout.metadata?.header;
   if (header && pointInRect(point, header)) {
     return {
@@ -366,13 +229,10 @@ export function resolveHoverTargetAtPoint(
     }
   }
 
-  const checkboxHit = resolveTaskCheckboxHitAtPoint(layout, state, point);
+  const taskToggle = resolveTaskToggleAtPoint(layout, state, point);
 
-  if (checkboxHit) {
-    return {
-      kind: "task-toggle",
-      listItemPath: checkboxHit.listItemPath,
-    };
+  if (taskToggle) {
+    return taskToggle;
   }
 
   const line = findDocumentLayoutLineAtPoint(layout, point)?.line ?? null;
@@ -395,46 +255,28 @@ export function resolveHoverTargetAtPoint(
     point.x,
     commentRanges,
   );
-  const resourceHit = resolveResourceHit(state, hit);
+  const inlines = resolveInlinesAtPath(state.documentIndex, hit.path);
+  const resourceRun = inlines?.find(
+    (entry) =>
+      entry.node.type === "resource" && hit.offset >= entry.start && hit.offset <= entry.end,
+  );
 
-  if (resourceHit) {
-    return {
-      commentThreadIndex,
-      kind: "resource",
-      label: resourceHit.label,
-      protocol: resourceHit.protocol,
-      path: resourceHit.path,
-      url: resourceHit.url,
-    };
+  if (resourceRun?.node.type === "resource") {
+    return resourceHoverTarget(resourceRun.node, hit.path, commentThreadIndex);
   }
 
-  const linkHit = resolveLinkHit(state, hit);
+  const linkRun = inlines?.find(
+    (entry) => entry.link && hit.offset >= entry.start && hit.offset < entry.end,
+  );
 
-  if (linkHit) {
-    return {
-      endOffset: linkHit.endOffset,
-      kind: "link",
-      commentThreadIndex,
-      path: linkHit.path,
-      startOffset: linkHit.startOffset,
-      title: linkHit.title,
-      url: linkHit.url,
-    };
+  if (linkRun?.link) {
+    return linkHoverTarget(linkRun, linkRun.link, hit.path, commentThreadIndex);
   }
 
   return {
     kind: "text",
     commentThreadIndex,
   };
-}
-
-export function resolveHoverTarget(
-  state: EditorState,
-  viewport: { layout: DocumentLayout },
-  point: { x: number; y: number },
-  commentRanges: readonly EditorCommentRange[],
-): EditorHoverTarget | null {
-  return resolveHoverTargetAtPoint(viewport.layout, state, point, commentRanges);
 }
 
 // Resolves what user-actionable target sits at a given document offset.
@@ -444,8 +286,7 @@ export function resolveTargetAtOffset(
   offset: number,
   commentRanges: readonly EditorCommentRange[],
 ): EditorHoverTarget | null {
-  const indexedText = resolveIndexedText(state.documentIndex, path);
-  const inlines = indexedText ? resolveIndexedTextInlines(indexedText) : null;
+  const inlines = resolveInlinesAtPath(state.documentIndex, path);
 
   if (!inlines) {
     return null;
@@ -455,26 +296,11 @@ export function resolveTargetAtOffset(
   const run = inlines.find((entry) => offset >= entry.start && offset <= entry.end) ?? null;
 
   if (run?.node.type === "resource") {
-    return {
-      commentThreadIndex,
-      kind: "resource",
-      label: run.node.label,
-      protocol: run.node.protocol,
-      path,
-      url: run.node.url,
-    };
+    return resourceHoverTarget(run.node, path, commentThreadIndex);
   }
 
   if (run?.link) {
-    return {
-      commentThreadIndex,
-      endOffset: run.end,
-      kind: "link",
-      path,
-      startOffset: run.start,
-      title: run.link.title,
-      url: run.link.url,
-    };
+    return linkHoverTarget(run, run.link, path, commentThreadIndex);
   }
 
   if (commentThreadIndex !== null) {
@@ -485,6 +311,64 @@ export function resolveTargetAtOffset(
   }
 
   return null;
+}
+
+function resolveTaskToggleAtPoint(
+  layout: DocumentLayout,
+  state: EditorState,
+  point: { x: number; y: number },
+): EditorHoverTarget | null {
+  const line = resolveInteractiveLineAtPoint(layout, point);
+
+  if (!line) {
+    return null;
+  }
+
+  const target = resolveListMarkerTarget(state, line);
+
+  if (target?.marker.kind !== "task") {
+    return null;
+  }
+
+  const bounds = resolveTaskCheckboxBounds(line);
+  return pointInRect(point, bounds, CHECKBOX_HIT_PADDING)
+    ? {
+        kind: "task-toggle",
+        listItemPath: target.listItemPath,
+      }
+    : null;
+}
+
+function resourceHoverTarget(
+  resource: Resource,
+  path: string,
+  commentThreadIndex: number | null,
+): EditorHoverTarget {
+  return {
+    commentThreadIndex,
+    kind: "resource",
+    label: resource.label,
+    protocol: resource.protocol,
+    path,
+    url: resource.url,
+  };
+}
+
+function linkHoverTarget(
+  run: IndexedInline,
+  link: Link,
+  path: string,
+  commentThreadIndex: number | null,
+): EditorHoverTarget {
+  return {
+    commentThreadIndex,
+    endOffset: run.end,
+    kind: "link",
+    path,
+    startOffset: run.start,
+    title: link.title,
+    url: link.url,
+  };
 }
 
 // Resolves a horizontal position on an already-identified line to a selection

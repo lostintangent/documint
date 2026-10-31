@@ -1,4 +1,4 @@
-import type { EditorTheme, ResolvedEditorTheme } from "@/types";
+import type { EditorTheme, ResolvedEditorTheme } from "@/renderer";
 
 const DEFAULT_THEME_PADDING_X = 16;
 const DEFAULT_THEME_PADDING_Y = 18;
@@ -128,9 +128,8 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
   const leafBorder = theme.leafBorder ?? `color-mix(in srgb, ${muted} 55%, transparent)`;
   const checkboxUncheckedStroke = theme.checkboxUncheckedStroke ?? muted;
   const isLight = isLightThemeBackground(background);
-  const commentDefaults = isLight
-    ? SEMANTIC_COMMENT_DEFAULTS.light
-    : SEMANTIC_COMMENT_DEFAULTS.dark;
+  const mode = isLight ? "light" : "dark";
+  const commentDefaults = SEMANTIC_COMMENT_DEFAULTS[mode];
   // Resolve inline code background first because mentionBackground falls back
   // to it: reading `theme.inlineCodeBackground` directly would yield undefined
   // for themes that omit it and rely on the mode-aware default.
@@ -139,9 +138,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     (isLight
       ? `color-mix(in srgb, ${text} 8%, transparent)`
       : SEMANTIC_INLINE_CODE_DEFAULTS.dark.background);
-  const inlineCodeText =
-    theme.inlineCodeText ??
-    (isLight ? SEMANTIC_INLINE_CODE_DEFAULTS.light.text : SEMANTIC_INLINE_CODE_DEFAULTS.dark.text);
+  const inlineCodeText = theme.inlineCodeText ?? SEMANTIC_INLINE_CODE_DEFAULTS[mode].text;
   // Resolve the code surface first so the scope palette keys off the code
   // background's brightness, not the editor background's.
   const codeBackground =
@@ -149,18 +146,15 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     (isLight
       ? `color-mix(in srgb, ${text} 60%, #000)`
       : `color-mix(in srgb, ${text} 8%, ${background})`);
-  const codeTokenDefaults = isLightThemeBackground(codeBackground)
-    ? CODE_TOKEN_DEFAULTS.light
-    : CODE_TOKEN_DEFAULTS.dark;
+  const codeTokenDefaults =
+    CODE_TOKEN_DEFAULTS[isLightThemeBackground(codeBackground) ? "light" : "dark"];
   const commentHighlight =
     theme.commentHighlight ?? `color-mix(in srgb, ${accent} 38%, transparent)`;
   const commentHighlightActive = theme.commentHighlightActive ?? commentDefaults.active;
   const commentHighlightResolved = theme.commentHighlightResolved ?? commentDefaults.resolved;
   const commentHighlightResolvedActive =
     theme.commentHighlightResolvedActive ?? commentDefaults.resolvedActive;
-  const externalChangeDefaults = isLight
-    ? SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.light
-    : SEMANTIC_EXTERNAL_CHANGE_DEFAULTS.dark;
+  const externalChangeDefaults = SEMANTIC_EXTERNAL_CHANGE_DEFAULTS[mode];
   const externalChangeTint = isLight ? 18 : 30;
 
   return {

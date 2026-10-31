@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { createBlockquoteBlock, createCodeBlock } from "@/document";
-import type { CodeGrammarRule } from "@/types";
 import {
   builtinGrammars,
   normalizeLanguage,
   resolveCodeGrammars,
+  type CodeGrammarRule,
 } from "@/component/decorations/grammars";
 import {
   compileCodeGrammars,
   resolveCodeDecorationRanges,
 } from "@/component/decorations/worker/code";
-import type { DocumintDecoration } from "@/types";
+import type { DocumintDecoration } from "@/component/decorations/shared";
 
 // Compile the built-in grammars with token-as-color, so each resolved range's
 // `color` is exactly the token kind it matched — making assertions self-documenting.

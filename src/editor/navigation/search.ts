@@ -7,15 +7,9 @@
 // the same neighborhood as line/page/document movement, just keyed on a query
 // string instead of a direction.
 //
-import { forEachEditorPathWithText, type DocumentIndex } from "../state";
+import { forEachEditorPathWithText, type DocumentIndex, type EditorSelectionRange } from "../state";
 
-export type EditorSearchMatch = {
-  endOffset: number;
-  path: string;
-  startOffset: number;
-};
-
-export type EditorSearchOptions = {
+type EditorSearchOptions = {
   caseSensitive?: boolean;
 };
 
@@ -29,14 +23,14 @@ export function resolveEditorSearchMatches(
   documentIndex: DocumentIndex,
   query: string,
   options: EditorSearchOptions = {},
-): EditorSearchMatch[] {
+): EditorSelectionRange[] {
   const normalizedQuery = options.caseSensitive ? query : query.toLowerCase();
 
   if (normalizedQuery.length === 0) {
     return [];
   }
 
-  const matches: EditorSearchMatch[] = [];
+  const matches: EditorSelectionRange[] = [];
 
   forEachEditorPathWithText(documentIndex, (path, text) => {
     const searchText = options.caseSensitive

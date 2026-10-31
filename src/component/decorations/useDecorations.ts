@@ -1,25 +1,19 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { visitBlockTree, type Block } from "@/document";
 import type { TextDecorationIndex } from "@/editor";
-import type { CodeGrammarRule, DocumintDecoration, ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "@/renderer";
 import {
   remapDecorationIndexForTextEdit,
   reconcileDecorationRootResults,
   resolveDecorationRootSnapshots,
 } from "./client/reconciliation";
-import { isValidDecoration, resolveDecorationsKey } from "./client/config";
-import { resolveCodeGrammars } from "./grammars";
+import { resolveDecorationsKey } from "./client/config";
+import { createDecorationWorkerClient, type DecorationWorkerClient } from "./client/worker";
+import { resolveCodeGrammars, type CodeGrammarRule } from "./grammars";
+import { isValidDecoration, type DecorationRootResult, type DocumintDecoration } from "./shared";
 import type { DocumintStore, EditorStateTransition } from "../store";
-import {
-  createDecorationWorkerClient,
-  isDecorationWorkerDisposedError,
-  type DecorationResult,
-  type DecorationWorkerClient,
-} from "./client/worker";
 
 const DECORATION_TRANSITION_DEBOUNCE_MS = 220;
-
-export type { DocumintDecoration } from "@/types";
 
 type UseDecorationsOptions = {
   decorations?: readonly DocumintDecoration[];
@@ -31,27 +25,18 @@ type UseDecorationsOptions = {
 export function useDecorations({ decorations, grammars, store, theme }: UseDecorationsOptions) {
   /* Resolve inputs */
 
-  const decorationRules = useMemo(() => {
-    return decorations?.filter(isValidDecoration) ?? [];
-  }, [decorations]);
+  const decorationRules = decorations?.filter(isValidDecoration) ?? [];
 
   // Syntax highlighting is a code-specific decoration: each grammar's scope
   // rules resolve to concrete colors against the theme here, so the worker only
   // ever matches colors. Keyed by language for per-code-block lookup.
-  const codeGrammars = useMemo(() => {
-    if (!grammars) return null;
-    const resolved = resolveCodeGrammars(
-      grammars,
-      (token) => theme.codeTokens[token] ?? theme.codeText,
-    );
-    return Object.keys(resolved).length === 0 ? null : resolved;
-  }, [grammars, theme.codeTokens, theme.codeText]);
+  const resolvedCodeGrammars = grammars
+    ? resolveCodeGrammars(grammars, (token) => theme.codeTokens[token] ?? theme.codeText)
+    : {};
+  const codeGrammars = Object.keys(resolvedCodeGrammars).length === 0 ? null : resolvedCodeGrammars;
 
   const decorationsConfigured = decorationRules.length > 0 || codeGrammars !== null;
-  const decorationConfigKey = useMemo(
-    () => resolveDecorationConfigKey(decorationRules, codeGrammars),
-    [decorationRules, codeGrammars],
-  );
+  const decorationConfigKey = resolveDecorationConfigKey(decorationRules, codeGrammars);
 
   /* Decoration state */
 
@@ -74,43 +59,77 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
     setTextDecorations((current) => (current.size === 0 ? current : new Map()));
   };
 
-  const applyDecorationResult = useEffectEvent((result: DecorationResult) => {
-    if (result.configKey !== decorationConfigKey || result.roots.length === 0) {
-      return;
+  const applyDecorationResult = useEffectEvent(
+    (configKey: string, results: readonly DecorationRootResult[]) => {
+      if (configKey !== decorationConfigKey || results.length === 0) {
+        return;
+      }
+
+      setTextDecorations((current) => {
+        return reconcileDecorationRootResults(store.editor.getState(), current, results) ?? current;
+      });
+    },
+  );
+
+  /* Transition policy */
+
+  function shouldRefreshDecorations(state: ReturnType<DocumintStore["editor"]["getState"]>) {
+    if (decorationRules.length > 0) {
+      return true;
     }
 
-    setTextDecorations((current) => {
+    if (codeGrammars === null) {
+      return false;
+    }
+
+    return documentContainsCode(state.documentIndex.document.blocks);
+  }
+
+  function affectsConfiguredDecorations(transition: EditorStateTransition) {
+    if (decorationRules.length > 0) {
+      return true;
+    }
+
+    if (codeGrammars === null) {
+      return false;
+    }
+
+    if (didRootCountChange(transition)) {
       return (
-        reconcileDecorationRootResults(store.editor.getState(), current, result.roots) ?? current
+        documentContainsCode(transition.previous.documentIndex.document.blocks) ||
+        documentContainsCode(transition.next.documentIndex.document.blocks)
       );
-    });
-  });
+    }
+
+    return transition.changedRootIndexes.some((rootIndex) =>
+      documentContainsCode([
+        transition.previous.documentIndex.document.blocks[rootIndex],
+        transition.next.documentIndex.document.blocks[rootIndex],
+      ]),
+    );
+  }
 
   /* Decoration jobs */
 
   const runDecorations = useEffectEvent(
     (roots: ReturnType<typeof resolveDecorationRootSnapshots>) => {
       const client = decorationWorkerRef.current ?? createDecorationWorkerClient();
+      const configKey = decorationConfigKey;
 
       decorationWorkerRef.current = client;
 
       void client
-        .run({
-          codeGrammars: codeGrammars ?? {},
-          configKey: decorationConfigKey,
-          decorations: decorationRules,
-          roots,
-        })
-        .then(applyDecorationResult)
-        .catch((error: unknown) => {
-          if (isDecorationWorkerDisposedError(error)) {
+        .run({ codeGrammars: codeGrammars ?? {}, configKey, decorations: decorationRules, roots })
+        .then((results) => applyDecorationResult(configKey, results))
+        .catch(() => {
+          // A disposed client was already detached, so its rejection is not a
+          // failure. Otherwise drop the dead client so the next job creates a
+          // fresh worker.
+          if (decorationWorkerRef.current !== client) {
             return;
           }
 
-          // Drop the dead client so the next job creates a fresh worker.
-          if (decorationWorkerRef.current === client) {
-            decorationWorkerRef.current = null;
-          }
+          decorationWorkerRef.current = null;
           clearTextDecorations();
         });
     },
@@ -191,20 +210,13 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
       return;
     }
 
-    const edit =
-      effect.kind === "text-inserted"
-        ? {
-            deletedLength: 0,
-            insertedLength: effect.text.length,
-            path: effect.path,
-            startOffset: effect.startOffset,
-          }
-        : {
-            deletedLength: effect.text.length,
-            insertedLength: 0,
-            path: effect.path,
-            startOffset: effect.startOffset,
-          };
+    const inserted = effect.kind === "text-inserted";
+    const edit = {
+      deletedLength: inserted ? 0 : effect.text.length,
+      insertedLength: inserted ? effect.text.length : 0,
+      path: effect.path,
+      startOffset: effect.startOffset,
+    };
 
     setTextDecorations((current) => remapDecorationIndexForTextEdit(current, edit) ?? current);
   });
@@ -240,23 +252,19 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
 
   /* Worker lifecycle */
 
+  // The worker lives while any decorations are configured. Unconfiguring or
+  // unmounting tears it down along with pending work and painted ranges.
   useEffect(() => {
+    if (!decorationsConfigured) {
+      return;
+    }
+
     return () => {
       clearPendingDecorationRequest();
       decorationWorkerRef.current?.dispose();
       decorationWorkerRef.current = null;
+      clearTextDecorations();
     };
-  }, []);
-
-  useEffect(() => {
-    if (decorationsConfigured) {
-      return;
-    }
-
-    clearPendingDecorationRequest();
-    decorationWorkerRef.current?.dispose();
-    decorationWorkerRef.current = null;
-    clearTextDecorations();
   }, [decorationsConfigured]);
 
   useEffect(() => {
@@ -270,50 +278,11 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
       return;
     }
 
+    // Synchronizes painted ranges with the worker-owned configuration. The
+    // clear inside is idempotent, so it cannot cascade.
+    // oxlint-disable-next-line react/set-state-in-effect
     refreshDecorations();
   }, [decorationConfigKey, decorationsConfigured]);
-
-  /* Transition policy */
-
-  function shouldRefreshDecorations(state: ReturnType<DocumintStore["editor"]["getState"]>) {
-    if (!decorationsConfigured) {
-      return false;
-    }
-
-    if (decorationRules.length > 0) {
-      return true;
-    }
-
-    if (codeGrammars === null) {
-      return false;
-    }
-
-    return documentContainsCode(state.documentIndex.document.blocks);
-  }
-
-  function affectsConfiguredDecorations(transition: EditorStateTransition) {
-    if (decorationRules.length > 0) {
-      return true;
-    }
-
-    if (codeGrammars === null) {
-      return false;
-    }
-
-    if (didRootCountChange(transition)) {
-      return (
-        documentContainsCode(transition.previous.documentIndex.document.blocks) ||
-        documentContainsCode(transition.next.documentIndex.document.blocks)
-      );
-    }
-
-    return transition.changedRootIndexes.some((rootIndex) =>
-      documentContainsCode([
-        transition.previous.documentIndex.document.blocks[rootIndex],
-        transition.next.documentIndex.document.blocks[rootIndex],
-      ]),
-    );
-  }
 
   /* Public API */
 

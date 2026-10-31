@@ -1,5 +1,5 @@
 import type { LayoutRect } from "@/editor/layout";
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 
 export function paintGridCellChrome(
   context: CanvasRenderingContext2D,

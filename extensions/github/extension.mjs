@@ -17,9 +17,18 @@ const defaultMarkdown = `# Documint Copilot canvas
 Select text, add a comment, and mention @Copilot to ask the agent to edit this file.
 `;
 const requestBodyLimitBytes = 25 * 1024 * 1024;
+// Ordered so `.jpg` wins when picking an extension for `image/jpeg`.
+const imageMimeTypes = new Map([
+  [".gif", "image/gif"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".png", "image/png"],
+  [".svg", "image/svg+xml"],
+  [".webp", "image/webp"],
+]);
 
 let session;
-let childClientPromise;
+let childClient;
 let server;
 let serverOrigin;
 
@@ -130,7 +139,7 @@ async function handleUpdateMarkdownAction({ instanceId, input }) {
     throw new CanvasError("invalid_content", "update_markdown requires a string content field.");
   }
 
-  await writeDocumentContent(document, content, "agent-action");
+  await writeDocumentContent(document, content);
   return { path: document.filePath, bytes: Buffer.byteLength(content, "utf8") };
 }
 
@@ -282,7 +291,7 @@ function getDocumentForInstance(instanceId) {
   return document;
 }
 
-async function refreshDocumentFromDisk(document, source = "disk") {
+async function refreshDocumentFromDisk(document) {
   const content = await readFile(document.filePath, "utf8");
   const stats = await stat(document.filePath);
   const updatedAt = stats.mtime.toISOString();
@@ -294,24 +303,18 @@ async function refreshDocumentFromDisk(document, source = "disk") {
   document.content = content;
   document.revision += 1;
   document.updatedAt = updatedAt;
-  broadcast(document.key, contentEvent(document, source));
+  broadcast(document.key, contentEvent(document));
   return document;
 }
 
-async function writeDocumentContent(
-  document,
-  content,
-  source,
-  metadata = {},
-  broadcastOptions = {},
-) {
+async function writeDocumentContent(document, content, skipClientId) {
   await mkdir(dirname(document.filePath), { recursive: true });
   await writeFile(document.filePath, content, "utf8");
   const stats = await stat(document.filePath);
   document.content = content;
   document.revision += 1;
   document.updatedAt = stats.mtime.toISOString();
-  broadcast(document.key, contentEvent(document, source, metadata), broadcastOptions);
+  broadcast(document.key, contentEvent(document), { skipClientId });
   return toClientState(document);
 }
 
@@ -326,10 +329,7 @@ function ensureWatcher(document) {
       document.key,
       setTimeout(async () => {
         try {
-          await refreshDocumentFromDisk(
-            document,
-            activeJobsForDocument(document.key).length > 0 ? "copilot" : "disk",
-          );
+          await refreshDocumentFromDisk(document);
         } catch (error) {
           broadcast(document.key, {
             type: "error",
@@ -382,7 +382,7 @@ async function handleRequest(request, response) {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
   const handler = httpRouteHandlers.get(`${request.method ?? ""} ${url.pathname}`);
   if (handler) {
-    await Promise.resolve(handler({ request, response, url }));
+    await handler({ request, response, url });
     return;
   }
 
@@ -416,15 +416,7 @@ async function handlePutContentRequest({ request, response, url }) {
   }
 
   const clientId = typeof body.clientId === "string" ? body.clientId : undefined;
-  const state = await writeDocumentContent(
-    document,
-    body.content,
-    "iframe",
-    {
-      clientId,
-    },
-    clientId ? { skipClientId: clientId } : {},
-  );
+  const state = await writeDocumentContent(document, body.content, clientId);
   sendJson(response, 200, state);
 }
 
@@ -570,7 +562,7 @@ function startCopilotJob(document, request) {
   };
   activeCopilotJobs.set(job.id, job);
   document.lastJob = job;
-  broadcast(document.key, jobEvent(document, job));
+  broadcast(document.key, jobEvent(document));
 
   void runCopilotJob(document, job, request);
   return job;
@@ -587,11 +579,11 @@ async function runCopilotJob(document, job, request) {
         const next = deriveJobStatus(event);
         if (next && next !== job.message) {
           job.message = next;
-          broadcast(document.key, jobEvent(document, job));
+          broadcast(document.key, jobEvent(document));
         }
       } catch {}
     });
-    broadcast(document.key, jobEvent(document, job));
+    broadcast(document.key, jobEvent(document));
     await workerSession.sendAndWait(
       {
         prompt,
@@ -601,7 +593,7 @@ async function runCopilotJob(document, job, request) {
       },
       300000,
     );
-    await refreshDocumentFromDisk(document, "copilot");
+    await refreshDocumentFromDisk(document);
     job.state = "succeeded";
     job.message = "Copilot finished editing the markdown file.";
   } catch (error) {
@@ -620,7 +612,7 @@ async function runCopilotJob(document, job, request) {
     job.finishedAt = new Date().toISOString();
     document.lastJob = job;
     activeCopilotJobs.delete(job.id);
-    broadcast(document.key, jobEvent(document, job));
+    broadcast(document.key, jobEvent(document));
   }
 }
 
@@ -647,7 +639,7 @@ function deriveJobStatus(event) {
 }
 
 async function createWorkerSession(document, job) {
-  const client = await getChildClient();
+  const client = getChildClient();
   const revisionGate = createWorkerRevisionGate(document);
   const workerSession = await client.createSession({
     clientName: "Documint worker",
@@ -676,7 +668,7 @@ function createWorkerRevisionGate(document) {
         return { permissionDecision: "allow" };
       }
 
-      await refreshDocumentFromDisk(document, "disk");
+      await refreshDocumentFromDisk(document);
       if (access === "read") {
         readRevision = document.revision;
         return { permissionDecision: "allow" };
@@ -702,7 +694,7 @@ function createWorkerRevisionGate(document) {
         return;
       }
 
-      await refreshDocumentFromDisk(document, "copilot");
+      await refreshDocumentFromDisk(document);
       readRevision = document.revision;
     },
   };
@@ -806,17 +798,13 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function getChildClient() {
-  if (!childClientPromise) {
-    childClientPromise = Promise.resolve(
-      new CopilotClient({
-        connection: RuntimeConnection.forStdio({ path: process.execPath }),
-        env: process.env,
-        workingDirectory: process.cwd(),
-      }),
-    );
-  }
-  return childClientPromise;
+function getChildClient() {
+  childClient ??= new CopilotClient({
+    connection: RuntimeConnection.forStdio({ path: process.execPath }),
+    env: process.env,
+    workingDirectory: process.cwd(),
+  });
+  return childClient;
 }
 
 const COMMENT_TRIAGE_RUBRIC = `First decide how to respond. The latest comment may be:
@@ -1025,10 +1013,9 @@ function toClientState(document) {
   };
 }
 
-function jobEvent(document, job) {
+function jobEvent(document) {
   return {
     type: "job",
-    job: jobSummary(job),
     jobs: activeJobsForDocument(document.key).map(jobSummary),
   };
 }
@@ -1037,51 +1024,25 @@ function activeJobsForDocument(documentKey) {
   return Array.from(activeCopilotJobs.values()).filter((job) => job.documentKey === documentKey);
 }
 
-function contentEvent(document, source, metadata = {}) {
-  return {
-    type: "content",
-    content: document.content,
-    path: document.filePath,
-    revision: document.revision,
-    source,
-    updatedAt: document.updatedAt,
-    ...metadata,
-  };
+function contentEvent(document) {
+  return { type: "content", content: document.content };
 }
 
+// Invalid paths throw a CanvasError, which `ensureServer` maps to a 400.
 async function sendStorageFile(response, document, storagePath) {
-  let filePath;
+  const filePath = resolveStoragePath(document, storagePath);
   try {
-    filePath = resolveStoragePath(document, storagePath);
+    await sendFile(response, filePath, inferMimeType(filePath));
   } catch (error) {
-    if (error instanceof CanvasError) {
-      sendJson(response, 400, { error: error.message });
-      return;
+    if (error?.code !== "ENOENT") {
+      throw error;
     }
-    throw error;
+    sendJson(response, 404, { error: "Storage file not found." });
   }
-
-  let body;
-  try {
-    body = await readFile(filePath);
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      sendJson(response, 404, { error: "Storage file not found." });
-      return;
-    }
-    throw error;
-  }
-
-  response.writeHead(200, {
-    "Cache-Control": "no-cache",
-    "Content-Length": body.length,
-    "Content-Type": inferMimeType(filePath),
-  });
-  response.end(body);
 }
 
 async function writeStorageFile(document, request) {
-  const bytes = await readBody(request, requestBodyLimitBytes);
+  const bytes = await readBody(request);
   const directory = join(dirname(document.filePath), "assets");
   const fileName = uniqueStorageFileName(
     readFileNameHeader(request),
@@ -1158,38 +1119,16 @@ function uniqueStorageFileName(name, mimeType) {
 }
 
 function inferMimeType(filePath) {
-  switch (extname(filePath).toLowerCase()) {
-    case ".gif":
-      return "image/gif";
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".png":
-      return "image/png";
-    case ".svg":
-      return "image/svg+xml";
-    case ".webp":
-      return "image/webp";
-    default:
-      return "application/octet-stream";
-  }
+  return imageMimeTypes.get(extname(filePath).toLowerCase()) ?? "application/octet-stream";
 }
 
 function extensionForMimeType(mimeType) {
-  switch (mimeType) {
-    case "image/gif":
-      return ".gif";
-    case "image/jpeg":
-      return ".jpg";
-    case "image/png":
-      return ".png";
-    case "image/svg+xml":
-      return ".svg";
-    case "image/webp":
-      return ".webp";
-    default:
-      return ".bin";
+  for (const [extension, type] of imageMimeTypes) {
+    if (type === mimeType) {
+      return extension;
+    }
   }
+  return ".bin";
 }
 
 function toPosixPath(path) {
@@ -1214,19 +1153,19 @@ function jobSummary(job) {
 }
 
 async function readJson(request) {
-  const body = await readBody(request, requestBodyLimitBytes);
+  const body = await readBody(request);
   if (body.length === 0) {
     return {};
   }
   return JSON.parse(body.toString("utf8"));
 }
 
-async function readBody(request, limitBytes) {
+async function readBody(request) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
     size += chunk.length;
-    if (size > limitBytes) {
+    if (size > requestBodyLimitBytes) {
       throw new CanvasError("payload_too_large", "Request body is too large.");
     }
     chunks.push(chunk);

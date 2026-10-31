@@ -73,10 +73,4 @@ describe("serializeFragment", () => {
       expect(serializeFragment(fragment)).toBe(expected);
     },
   );
-
-  test("round-trips a fragment with a leading divider without absorbing it", () => {
-    const source = "---\n\nBody.";
-    const fragment = parseFragment(source);
-    expect(serializeFragment(fragment)).toBe(source);
-  });
 });

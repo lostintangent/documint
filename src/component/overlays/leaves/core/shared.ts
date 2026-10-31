@@ -17,9 +17,10 @@ import {
   type EditorCommentState,
   type EditorHoverTarget,
   type EditorSelectionPoint,
+  type EditorSelectionRange,
   type SelectionFormatting,
 } from "@/editor";
-import type { CompletionItem } from "../../../completions/completions";
+import type { CompletionLeafProps } from "../../../completions/useCompletions";
 
 // Declarative anchoring intent emitted by leaf-producing hooks. Every
 // document-backed leaf candidate kind extends this target.
@@ -60,7 +61,8 @@ export type DocumentAnchorResolution = {
   // hand-off surface). False for cursor and selection leaves — the
   // wrapper also becomes pointer-event-transparent (see styles.css).
   bridge: boolean;
-  // Document-absolute anchor coordinates.
+  // Coordinates relative to the `DocumentAnchor` origin, or document-absolute
+  // when it has none.
   left: number;
   top: number;
   // Hover-bridge handlers — set only when `bridge: true`. The handlers
@@ -83,11 +85,9 @@ export type InsertionLeaf = DocumentAnchorTarget & {
 // Leaf shown when the caret sits inside a table cell — the table-editing
 // menu (insert/delete row/column, delete table).
 export type TableLeaf = DocumentAnchorTarget & {
-  cellIndex: number;
   columnCount: number;
   kind: "table";
   rowCount: number;
-  rowIndex: number;
 };
 
 // Leaf shown when there's an active text selection — the annotation
@@ -96,11 +96,7 @@ export type TableLeaf = DocumentAnchorTarget & {
 export type AnnotationLeaf = DocumentAnchorTarget & {
   formatting: SelectionFormatting;
   kind: "annotation";
-  selection: {
-    endOffset: number;
-    path: string;
-    startOffset: number;
-  };
+  selection: EditorSelectionRange;
 };
 
 // Leaf shown when hover or caret lands on a link span.
@@ -135,13 +131,10 @@ export type ThreadLeaf = DocumentAnchorTarget & {
 // `:` for emoji, `@` for mentions) — the inline suggestion list. The anchor
 // points to the trigger character so `DocumentAnchor` positions the popover
 // at that line's bottom, with the normal above/below flip.
-export type CompletionLeaf = DocumentAnchorTarget & {
-  activeIndex: number;
-  kind: "completion";
-  matches: readonly CompletionItem[];
-  onHover: (index: number) => void;
-  onSelect: (item: CompletionItem) => void;
-};
+export type CompletionLeaf = DocumentAnchorTarget &
+  CompletionLeafProps & {
+    kind: "completion";
+  };
 
 export type SearchLeaf = {
   activeMatchNumber: number;

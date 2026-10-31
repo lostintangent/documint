@@ -1,4 +1,4 @@
-import type { DocumentResourceIconNode } from "@/types";
+import type { DocumentResourceIconNode } from "@/editor/resources";
 
 export function paintSvgIconNode(
   context: CanvasRenderingContext2D,

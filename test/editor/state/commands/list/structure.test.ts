@@ -7,7 +7,6 @@ import {
   insertText,
   moveListItemDown,
   moveListItemUp,
-  readEditorEffects,
   resolveIndexedBlock,
   toggleTask,
 } from "@/editor/state";
@@ -46,42 +45,6 @@ describe("List structure", () => {
     state = insertLineBreak(state) ?? state;
 
     expect(toMarkdown(state)).toBe("- al\n  - child\n- pha\n- beta\n");
-  });
-
-  test("reports a list item inserted effect when Enter splits a regular list item", () => {
-    let state = setup("- alpha\n");
-    const target = indexedTextEntries(state)[0];
-
-    if (!target) {
-      throw new Error("Expected list item container");
-    }
-
-    state = placeAt(state, target, target.text.length);
-
-    const result = insertLineBreak(state);
-
-    expect(result).not.toBeNull();
-    expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
-      true,
-    );
-  });
-
-  test("reports a list item inserted effect when Enter splits a task list item", () => {
-    let state = setup("- [ ] alpha\n");
-    const target = indexedTextEntries(state)[0];
-
-    if (!target) {
-      throw new Error("Expected task list item container");
-    }
-
-    state = placeAt(state, target, target.text.length);
-
-    const result = insertLineBreak(state);
-
-    expect(result).not.toBeNull();
-    expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(
-      true,
-    );
   });
 
   test("moves top-level list items up and down while preserving their nested subtree", () => {
@@ -128,16 +91,6 @@ describe("List structure", () => {
     state = placeAt(state, beta, 0);
 
     expect(moveListItemDown(state)).toBeNull();
-  });
-
-  test("routes list item move commands through the editor command layer", () => {
-    let state = setup("- alpha\n- beta\n");
-    const beta = getPath(state, "beta");
-
-    state = placeAt(state, beta, 0);
-    state = moveListItemUp(state) ?? state;
-
-    expect(toMarkdown(state)).toBe("- beta\n- alpha\n");
   });
 
   test("inserts new list items above or below at list boundaries", () => {
@@ -569,23 +522,6 @@ describe("List structure", () => {
     }
 
     expect(toMarkdown(toggled)).toBe("- parent\n  - [x] ship nested\n");
-  });
-
-  test("toggles task list state through the action dispatcher", () => {
-    const state = setup("- [ ] task\n");
-    const taskItem = state.documentIndex.blocks.find((entry) => entry.block.type === "listItem");
-
-    if (!taskItem) {
-      throw new Error("Expected task list item");
-    }
-
-    const nextState = toggleTask(state, taskItem.path);
-
-    if (!nextState) {
-      throw new Error("Expected task toggle state");
-    }
-
-    expect(toMarkdown(nextState)).toBe("- [x] task\n");
   });
 
   test("places the cursor at the merge junction when backspacing a non-empty list item", () => {

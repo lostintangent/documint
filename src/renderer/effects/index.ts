@@ -2,24 +2,30 @@
 // this module decides which effects are active, how long they run, and which
 // paint-ready effect groups they contribute to for the current frame.
 
-import type { DocumintEffects, ResolvedEditorTheme } from "@/types";
-import { blendCanvasColors, transparentCanvasColor } from "./colors";
+import type { ResolvedEditorTheme } from "../theme";
+import { blendCanvasColors } from "./colors";
 import { descriptorFor, type EffectGroups } from "./kinds";
-import type { RendererEffect, TextFadeFrame, TextPulseFrame } from "./types";
+import type { RendererEffect, DocumintEffects } from "./types";
 
-export type { EffectEnvironment } from "@/types";
 export type { PaintEffect } from "./custom-effects";
 export { createPaintEffect } from "./custom-effects";
 export type {
+  ActiveBlockChangedEffectContext,
   BlockFlashFrame,
   BlockPulseFrame,
   DocumentChangeEffect,
   DocumentChangeFadeFrame,
+  DocumintEffectHandler,
+  DocumintEffects,
+  DocumintListMarkerPaintFrame,
+  EffectEnvironment,
+  ListItemInsertedEffectContext,
   RendererEffect,
   RendererEffectInput,
+  TextDeletedEffectContext,
   TextFadeFrame,
-  TextHighlightFrame,
-  TextPulseFrame,
+  TextInsertedEffectContext,
+  TextInsertionFrame,
 } from "./types";
 
 export type EffectPolicy = {
@@ -34,7 +40,7 @@ export type EffectPolicy = {
 export const defaultEffectPolicy: EffectPolicy = {
   duration: (effect) => {
     const descriptor = descriptorFor(effect);
-    return descriptor.animatesByDefault(effect) ? descriptor.duration(effect) : null;
+    return (descriptor.animatesByDefault?.(effect) ?? true) ? descriptor.duration(effect) : null;
   },
 };
 
@@ -76,25 +82,6 @@ export function resolveRendererEffects(
   }
 
   return { ...result, rendererEffects };
-}
-
-export function resolveTextFadeColor(baseColor: string, textFade: TextFadeFrame) {
-  return blendCanvasColors(baseColor, transparentCanvasColor, textFade.progress);
-}
-
-export function resolveActiveBlockFlashColor(
-  activeBlockFlashColor: string,
-  activeBlockFlash: { progress: number },
-) {
-  return blendCanvasColors(
-    activeBlockFlashColor,
-    transparentCanvasColor,
-    activeBlockFlash.progress,
-  );
-}
-
-export function resolveTextPulseColor(textPulse: TextPulseFrame, theme: ResolvedEditorTheme) {
-  return blendCanvasColors(theme.insertHighlightText, transparentCanvasColor, textPulse.progress);
 }
 
 export function resolveBlockPulseScale(pop: { progress: number }) {

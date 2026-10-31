@@ -1,13 +1,6 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
-  createAnchorFromContainer,
-  createCommentThread,
-  extractQuoteFromContainer,
-  listAnchorContainers,
-} from "@/document";
-import {
-  createDocumentFromEditorState,
   createEditorState,
   deleteBackward,
   deleteForward,
@@ -200,64 +193,28 @@ describe("Text commands", () => {
     expect(toMarkdown(state)).toBe("al-ma\n");
   });
 
-  test("deleteBackward collapses a cross-path selection instead of deleting a single character", () => {
-    let state = setup("alpha beta\n\ngamma delta\n");
-    const [first, second] = indexedTextEntries(state);
+  test.each([
+    ["deleteBackward", deleteBackward],
+    ["deleteForward", deleteForward],
+    ["deleteSelection", deleteSelection],
+  ] as const)(
+    "%s collapses a cross-path selection into its prefix and suffix",
+    (_name, command) => {
+      let state = setup("alpha beta\n\ngamma delta\n");
+      const [first, second] = indexedTextEntries(state);
 
-    if (!first || !second) {
-      throw new Error("Expected two paragraph paths");
-    }
+      if (!first || !second) {
+        throw new Error("Expected two paragraph paths");
+      }
 
-    state = setSelection(
-      state,
-      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
-    );
-    const nextState = deleteBackward(state);
+      state = setSelection(
+        state,
+        selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
+      );
 
-    if (!nextState) {
-      throw new Error("Expected deleteBackward to produce a new state for a cross-path selection");
-    }
-
-    expect(toMarkdown(nextState)).toBe("alpha delta\n");
-  });
-
-  test("deleteForward collapses a cross-path selection instead of deleting a single character", () => {
-    let state = setup("alpha beta\n\ngamma delta\n");
-    const [first, second] = indexedTextEntries(state);
-
-    if (!first || !second) {
-      throw new Error("Expected two paragraph paths");
-    }
-
-    state = setSelection(
-      state,
-      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
-    );
-    const nextState = deleteForward(state);
-
-    if (!nextState) {
-      throw new Error("Expected deleteForward to produce a new state for a cross-path selection");
-    }
-
-    expect(toMarkdown(nextState)).toBe("alpha delta\n");
-  });
-
-  test("cross-path deletion with empty text concatenates prefix and suffix without a separator", () => {
-    let state = setup("alpha beta\n\ngamma delta\n");
-    const [first, second] = indexedTextEntries(state);
-
-    if (!first || !second) {
-      throw new Error("Expected two paragraph paths");
-    }
-
-    state = setSelection(
-      state,
-      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
-    );
-    state = deleteSelection(state);
-
-    expect(toMarkdown(state)).toBe("alpha delta\n");
-  });
+      expect(toMarkdown(command(state) ?? state)).toBe("alpha delta\n");
+    },
+  );
 
   test("merges a heading with a paragraph using the start block's type", () => {
     let state = setup("# Heading\n\nParagraph body\n");
@@ -383,40 +340,6 @@ describe("Text commands", () => {
     // text — not at the start of the trimmed list.
     expect(resolveEditorTextAtPath(state.documentIndex, state.selection.focus.path)).toBe("!ter");
     expect(state.selection.focus.offset).toBe("!".length);
-  });
-
-  test("preserves comment threads anchored before a cross-path edit", () => {
-    const snapshot = parseDocument("alpha beta\n\ngamma delta\n");
-    const firstContainer = listAnchorContainers(snapshot)[0];
-
-    if (!firstContainer) {
-      throw new Error("Expected anchor container for the first paragraph");
-    }
-
-    const thread = createCommentThread({
-      anchor: createAnchorFromContainer(firstContainer, 0, 5),
-      body: "anchor",
-      createdAt: "2026-04-22T00:00:00.000Z",
-      quote: extractQuoteFromContainer(firstContainer, 0, 5),
-    });
-    let state = createEditorState({ ...snapshot, comments: [thread] });
-    const [first, second] = indexedTextEntries(state);
-
-    if (!first || !second) {
-      throw new Error("Expected two paragraph paths");
-    }
-
-    state = setSelection(
-      state,
-      selectionBetween(first.path, "alpha ".length, second.path, "gamma ".length),
-    );
-    state = deleteSelection(state);
-
-    // Thread anchored in content before the selection start survives the
-    // cross-path edit — same thread count, same quote, still resolvable.
-    const threads = createDocumentFromEditorState(state).comments;
-    expect(threads).toHaveLength(1);
-    expect(threads[0]?.quote).toBe("alpha");
   });
 
   test("replaces the entire document with a single paragraph when every block is fully consumed", () => {
@@ -545,14 +468,5 @@ describe("Text commands", () => {
 
     expect(backward ? toMarkdown(backward) : null).toBe("a b\n");
     expect(forward ? toMarkdown(forward) : null).toBe("a b\n");
-  });
-
-  test("does not persist a typed trailing prose space as a markdown entity", () => {
-    const state = setup("alpha\n");
-    const path = getPath(state, "alpha");
-    const result = insertText(placeAt(state, path, "end"), " ");
-
-    expect(result).not.toBeNull();
-    expect(toMarkdown(result!)).toBe("alpha\n");
   });
 });

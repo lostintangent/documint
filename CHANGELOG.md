@@ -1,3 +1,7 @@
+## 🗓️ v0.1.1 (11-01-26)
+
+- Upgraded numerous dependencies to improve perf/reliability
+
 ## 🗓️ v0.1.0 (09-10-26)
 
 - Introduced the `<Documint previousContent>` prop, which allows rendering a diff between two specific versions

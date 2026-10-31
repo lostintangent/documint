@@ -1,12 +1,5 @@
 // Mark toggling for any semantic document mark.
-import {
-  canonicalizeMarks,
-  createText,
-  defragmentTextInlines,
-  type Inline,
-  type Mark,
-  type Text,
-} from "@/document";
+import { createText, defragmentTextInlines, type Inline, type Mark, type Text } from "@/document";
 import { inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
 import {
   createInlineContainerReplacement,
@@ -155,6 +148,7 @@ function toggleTextNodeMark(
   return segments;
 }
 
+// `createText` canonicalizes the result, so the mark can go anywhere.
 function insertMark(marks: Mark[], mark: Mark) {
-  return marks.includes(mark) ? marks : canonicalizeMarks([...marks, mark]);
+  return marks.includes(mark) ? marks : [...marks, mark];
 }

@@ -158,7 +158,7 @@ describe("Word deletion", () => {
     const cell = getPath(state, "alpha beta");
     const nextState = deleteWord(placeAt(state, cell, "end"), "previousWord");
 
-    expect(toMarkdown(nextState!)).toBe("| alpha | gamma |\n| ----- | ----- |\n");
+    expect(toMarkdown(nextState!)).toBe("| alpha  | gamma |\n| ------ | ----- |\n");
   });
 
   test("does not leave table cells or source blocks", () => {

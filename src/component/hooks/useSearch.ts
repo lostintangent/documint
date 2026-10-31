@@ -1,13 +1,13 @@
 import {
+  getSelectionRange,
   isMetadataPath,
   normalizeSelection,
   resolveEditorTextAtPath,
   resolveEditorSearchMatches,
   setSelection,
   type DocumentIndex,
-  type EditorSearchMatch,
+  type EditorSelectionRange,
   type EditorState,
-  type NormalizedEditorSelection,
 } from "@/editor";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -18,12 +18,8 @@ import {
   useState,
 } from "react";
 import type { SearchLeaf } from "../overlays/leaves/core/shared";
-import {
-  normalizedSelectionSprig,
-  useDocumintStore,
-  useEditorCommand,
-  type DocumintStore,
-} from "../store";
+import { useDocumintStore, useEditorCommand } from "../store";
+import { equalShallowObject } from "../store/core/equality";
 
 type SearchController = {
   handleKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => boolean;
@@ -42,7 +38,7 @@ type SearchState = {
   query: string;
 };
 
-const emptyMatches: readonly EditorSearchMatch[] = [];
+const emptyMatches: readonly EditorSelectionRange[] = [];
 const initialSearchState: SearchState = {
   activeMatchKey: null,
   activeMatchIndex: 0,
@@ -68,9 +64,12 @@ export function useSearch(): SearchController {
 
   /* Document tracking */
 
+  if (!searchState.isOpen && openDocumentIndex !== null) {
+    setOpenDocumentIndex(null);
+  }
+
   useEffect(() => {
     if (!searchState.isOpen) {
-      setOpenDocumentIndex(null);
       return;
     }
 
@@ -91,7 +90,7 @@ export function useSearch(): SearchController {
 
   /* Match resolution */
 
-  const matches = useMemo<readonly EditorSearchMatch[]>(() => {
+  const matches = useMemo<readonly EditorSelectionRange[]>(() => {
     if (!searchState.isOpen || !openDocumentIndex || searchState.query.length === 0) {
       return emptyMatches;
     }
@@ -101,68 +100,50 @@ export function useSearch(): SearchController {
     });
   }, [openDocumentIndex, searchState.caseSensitive, searchState.isOpen, searchState.query]);
 
-  // Prefer identity; fall back to the last index when edits remove a match.
-  const activeIndex = useMemo(() => {
-    if (matches.length === 0) {
-      return 0;
-    }
-
-    if (searchState.activeMatchKey) {
-      const activeMatchKey = searchState.activeMatchKey;
-      const found = matches.findIndex(
-        (match) =>
-          match.path === activeMatchKey.path && match.startOffset === activeMatchKey.startOffset,
-      );
-
-      if (found !== -1) {
-        return found;
-      }
-    }
-
-    return Math.min(searchState.activeMatchIndex, matches.length - 1);
-  }, [matches, searchState.activeMatchKey, searchState.activeMatchIndex]);
+  const activeIndex = resolveActiveMatchIndex(
+    matches,
+    searchState.activeMatchKey,
+    searchState.activeMatchIndex,
+  );
 
   const activeMatch = matches[activeIndex] ?? null;
 
   /* Selection synchronization */
 
-  const collapseSearchSelection = useEffectEvent(() => {
-    try {
-      isApplyingSearchSelectionRef.current = true;
-      collapseSelectionToStart();
-    } finally {
-      isApplyingSearchSelectionRef.current = false;
-    }
+  // Selects the match, or collapses the selection when there is none, without
+  // the resulting local selection change closing search.
+  const applySearchSelection = useEffectEvent((match: EditorSelectionRange | null) => {
+    withSelectionSyncFlag(isApplyingSearchSelectionRef, () => {
+      if (match) {
+        selectMatch(match);
+      } else {
+        collapseSelectionToStart();
+      }
+    });
   });
 
   // Selection is the active-match highlight; `useCursor` owns the resulting
   // scroll, including virtualized off-layout targets.
   useEffect(() => {
-    if (!searchState.isOpen || !activeMatch) {
-      return;
+    if (searchState.isOpen) {
+      applySearchSelection(activeMatch);
     }
-
-    try {
-      isApplyingSearchSelectionRef.current = true;
-      selectMatch(activeMatch);
-    } finally {
-      isApplyingSearchSelectionRef.current = false;
-    }
-  }, [activeMatch, searchState.isOpen, selectMatch]);
-
-  useEffect(() => {
-    if (!searchState.isOpen || activeMatch) {
-      return;
-    }
-
-    collapseSearchSelection();
   }, [activeMatch, searchState.isOpen]);
 
   /* Search actions */
 
   const close = useEffectEvent(() => {
-    collapseSearchSelection();
+    applySearchSelection(null);
     setSearchState(initialSearchState);
+  });
+
+  const updateQuery = useEffectEvent((query: string) => {
+    setSearchState((current) => ({
+      ...current,
+      activeMatchKey: null,
+      activeMatchIndex: 0,
+      query,
+    }));
   });
 
   const dismiss = useEffectEvent(() => {
@@ -171,13 +152,8 @@ export function useSearch(): SearchController {
       return;
     }
 
-    collapseSearchSelection();
-    setSearchState((current) => ({
-      ...current,
-      activeMatchKey: null,
-      activeMatchIndex: 0,
-      query: "",
-    }));
+    applySearchSelection(null);
+    updateQuery("");
   });
 
   const moveActiveMatch = useEffectEvent((direction: -1 | 1) => {
@@ -192,15 +168,6 @@ export function useSearch(): SearchController {
       ...current,
       activeMatchKey: { path: nextMatch.path, startOffset: nextMatch.startOffset },
       activeMatchIndex: nextIndex,
-    }));
-  });
-
-  const updateQuery = useEffectEvent((query: string) => {
-    setSearchState((current) => ({
-      ...current,
-      activeMatchKey: null,
-      activeMatchIndex: 0,
-      query,
     }));
   });
 
@@ -219,8 +186,7 @@ export function useSearch(): SearchController {
       event.stopPropagation();
       const editorState = store.editor.getState();
       const initial = resolveInitialSearch(
-        store,
-        editorState.documentIndex,
+        editorState,
         searchState.query,
         searchState.caseSensitive,
       );
@@ -279,14 +245,8 @@ export function useSearch(): SearchController {
   };
 }
 
-function selectSearchMatch(state: EditorState, match: EditorSearchMatch): EditorState | null {
-  const normalized = normalizeSelection(state);
-  if (
-    normalized.start.path === match.path &&
-    normalized.start.offset === match.startOffset &&
-    normalized.end.path === match.path &&
-    normalized.end.offset === match.endOffset
-  ) {
+function selectSearchMatch(state: EditorState, match: EditorSelectionRange): EditorState | null {
+  if (equalShallowObject(getSelectionRange(state), match)) {
     return null;
   }
 
@@ -305,22 +265,28 @@ function collapseSelection(state: EditorState): EditorState {
 }
 
 function resolveInitialSearch(
-  store: DocumintStore,
-  documentIndex: DocumentIndex,
+  state: EditorState,
   fallbackQuery: string,
   caseSensitive: boolean,
 ): { activeMatchIndex: number; activeMatchKey: ActiveMatchKey | null; query: string } {
-  const selection = normalizedSelectionSprig.read(store);
-  const query = resolveQueryFromSelection(store, selection) ?? fallbackQuery;
+  const range = getSelectionRange(state);
+  const selectedText =
+    range && !isMetadataPath(range.path)
+      ? resolveEditorTextAtPath(state.documentIndex, range.path)?.slice(
+          range.startOffset,
+          range.endOffset,
+        )
+      : undefined;
+  const query = selectedText || fallbackQuery;
 
   if (query.length === 0) {
     return { activeMatchIndex: 0, activeMatchKey: null, query };
   }
 
-  const matches = resolveEditorSearchMatches(documentIndex, query, { caseSensitive });
-  const matchedIndex = resolveMatchIndexFromSelection(selection, matches);
+  const matches = resolveEditorSearchMatches(state.documentIndex, query, { caseSensitive });
+  const matchedIndex = matches.findIndex((match) => equalShallowObject(match, range));
 
-  if (matchedIndex === null) {
+  if (matchedIndex === -1) {
     return { activeMatchIndex: 0, activeMatchKey: null, query };
   }
 
@@ -332,44 +298,42 @@ function resolveInitialSearch(
   };
 }
 
-function resolveQueryFromSelection(
-  store: DocumintStore,
-  selection: NormalizedEditorSelection,
-): string | null {
-  if (selection.collapsed || selection.start.path !== selection.end.path) {
-    return null;
+// Prefer identity; fall back to the last index when edits remove a match.
+function resolveActiveMatchIndex(
+  matches: readonly EditorSelectionRange[],
+  activeMatchKey: SearchState["activeMatchKey"],
+  activeMatchIndex: number,
+): number {
+  if (matches.length === 0) {
+    return 0;
   }
 
-  if (isMetadataPath(selection.start.path)) {
-    return null;
+  if (activeMatchKey) {
+    const found = matches.findIndex(
+      (match) =>
+        match.path === activeMatchKey.path && match.startOffset === activeMatchKey.startOffset,
+    );
+
+    if (found !== -1) {
+      return found;
+    }
   }
 
-  const text = resolveEditorTextAtPath(store.editor.getState().documentIndex, selection.start.path);
-  const query = text?.slice(selection.start.offset, selection.end.offset) ?? "";
-
-  return query.length > 0 ? query : null;
-}
-
-function resolveMatchIndexFromSelection(
-  selection: NormalizedEditorSelection,
-  matches: readonly EditorSearchMatch[],
-): number | null {
-  if (selection.collapsed || selection.start.path !== selection.end.path) {
-    return null;
-  }
-
-  const index = matches.findIndex(
-    (match) =>
-      match.path === selection.start.path &&
-      match.startOffset === selection.start.offset &&
-      match.endOffset === selection.end.offset,
-  );
-
-  return index === -1 ? null : index;
+  return Math.min(activeMatchIndex, matches.length - 1);
 }
 
 function isModFindEvent(
   event: Pick<ReactKeyboardEvent<HTMLElement>, "ctrlKey" | "key" | "metaKey">,
 ) {
   return (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f";
+}
+
+// Keeps `flagRef` set while `apply` runs, including when it throws.
+function withSelectionSyncFlag(flagRef: { current: boolean }, apply: () => void) {
+  flagRef.current = true;
+  try {
+    apply();
+  } finally {
+    flagRef.current = false;
+  }
 }

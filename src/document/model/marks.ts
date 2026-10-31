@@ -18,20 +18,10 @@ export const markOrder = (Object.keys(markRank) as Mark[]).sort(
 );
 
 export function canonicalizeMarks(marks: readonly Mark[]): Mark[] {
-  if (marks.length === 0) {
-    return [];
-  }
-
-  // Fast path: a single mark is trivially canonical (sorted, unique). The
-  // dominant case in practice — most marked text carries exactly one mark
-  // — and skipping it avoids the `Set` + spread + sort allocations below.
-  if (marks.length === 1) {
-    return [marks[0]!];
-  }
-
   // Fast path: already strictly-ascending by rank with no duplicates. Hits
-  // whenever a caller built marks in rank order (e.g. `[bold, italic]`).
-  // Falls through to the full pass otherwise.
+  // for the dominant zero- and one-mark cases, and whenever a caller built
+  // marks in rank order (e.g. `[bold, italic]`), skipping the `Set` + spread
+  // + sort allocations below.
   if (isAlreadyCanonical(marks)) {
     return marks.slice();
   }

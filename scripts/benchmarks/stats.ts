@@ -1,11 +1,15 @@
-export type BenchmarkSampleSummary = {
+type BenchmarkSampleSummary = {
   p50Ms: number;
   p95Ms: number;
   p99Ms: number;
 };
 
 export function summarizeSamples(samples: readonly number[]): BenchmarkSampleSummary {
-  const sortedSamples = sortSamples(samples);
+  if (samples.length === 0) {
+    throw new Error("Expected at least one benchmark sample");
+  }
+
+  const sortedSamples = [...samples].sort((left, right) => left - right);
 
   return {
     p50Ms: percentile(sortedSamples, 0.5),
@@ -14,25 +18,7 @@ export function summarizeSamples(samples: readonly number[]): BenchmarkSampleSum
   };
 }
 
-export function percentile(sortedSamples: readonly number[], fraction: number) {
-  assertNonEmptySamples(sortedSamples);
-
-  const index = Math.min(
-    sortedSamples.length - 1,
-    Math.max(0, Math.ceil(sortedSamples.length * fraction) - 1),
-  );
-
-  return sortedSamples[index]!;
-}
-
-export function sortSamples(samples: readonly number[]) {
-  assertNonEmptySamples(samples);
-
-  return [...samples].sort((left, right) => left - right);
-}
-
-function assertNonEmptySamples(samples: readonly number[]) {
-  if (samples.length === 0) {
-    throw new Error("Expected at least one benchmark sample");
-  }
+// Nearest rank: for a fraction in (0, 1], the rank lands in [1, length].
+function percentile(sortedSamples: readonly number[], fraction: number) {
+  return sortedSamples[Math.ceil(sortedSamples.length * fraction) - 1]!;
 }

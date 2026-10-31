@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DocumentPresence, DocumentUser } from "@lostintangent/documint";
 import { createRandomAutoPresence } from "../lib/auto-presence";
 
@@ -28,8 +28,15 @@ export function useUsers(content: string) {
   const [autoMode, setAutoMode] = useState(false);
   const [autoPresence, setAutoPresence] = useState<DocumentPresence | null>(null);
 
+  if (!autoMode && autoPresence !== null) {
+    setAutoPresence(null);
+  }
+
   const contentRef = useRef(content);
-  contentRef.current = content;
+
+  useLayoutEffect(() => {
+    contentRef.current = content;
+  });
 
   const mode: UsersMode = autoMode ? "auto" : manualEntries.length > 0 ? "manual" : "empty";
 
@@ -45,7 +52,6 @@ export function useUsers(content: string) {
 
   useEffect(() => {
     if (!autoMode) {
-      setAutoPresence(null);
       return;
     }
 

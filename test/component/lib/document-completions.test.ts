@@ -94,10 +94,10 @@ describe("equalDocumentCompletions", () => {
 });
 
 describe("resolveDocumentCompletionApplication", () => {
-  test("routes mention completion items to atomic mention replacement", () => {
+  test("routes identified at-trigger items to atomic mention replacement", () => {
     expect(
       resolveDocumentCompletionApplication(
-        { kind: "mention", label: "Jane", id: "u-jane" },
+        { label: "Jane", id: "u-jane" },
         {
           path: "path",
           trigger: "@",
@@ -118,22 +118,6 @@ describe("resolveDocumentCompletionApplication", () => {
       trailingText: " ",
       userId: "u-jane",
     });
-  });
-
-  test("treats identified at-trigger items as user mentions", () => {
-    expect(
-      resolveDocumentCompletionApplication(
-        { label: "Jane", id: "u-jane" },
-        {
-          path: "path",
-          trigger: "@",
-          query: "Ja",
-          triggerStart: 6,
-          caret: 9,
-          matches: [],
-        },
-      ).kind,
-    ).toBe("mention");
   });
 
   test("routes emoji completion items to text replacement", () => {

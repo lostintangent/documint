@@ -20,8 +20,7 @@ import {
   resolveScrollTopToReveal,
   type EditorLayoutState,
 } from "../../layout";
-import type { DocumentIndex, EditorSelectionPoint } from "../../state";
-import type { EditorState } from "../../state/types";
+import type { EditorSelectionPoint } from "../../state";
 import { resolveCommentThreadViewportPosition, type EditorCommentRange } from "../comments";
 import type { EditorPresence, EditorPresenceViewport, EditorPresenceViewportStatus } from ".";
 
@@ -30,51 +29,25 @@ const presenceViewportScrollMargin = 48;
 /* Public API */
 
 export function resolvePresenceViewport(
-  state: EditorState,
-  viewport: EditorLayoutState,
-  presence: EditorPresence[],
-  commentRanges: readonly EditorCommentRange[],
-): EditorPresence[];
-export function resolvePresenceViewport(
-  documentIndex: DocumentIndex,
-  viewport: EditorLayoutState,
-  presence: EditorPresence[],
-  commentRanges: readonly EditorCommentRange[],
-): EditorPresence[];
-export function resolvePresenceViewport(
-  stateOrIndex: EditorState | DocumentIndex,
   viewport: EditorLayoutState,
   presence: EditorPresence[],
   commentRanges: readonly EditorCommentRange[],
 ): EditorPresence[] {
-  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
   if (presence.length === 0) {
     return [];
   }
 
   return presence.map((presenceItem) => ({
     ...presenceItem,
-    viewport: resolveEditorPresenceViewport(documentIndex, viewport, commentRanges, presenceItem),
+    viewport: resolveEditorPresenceViewport(viewport, commentRanges, presenceItem),
   }));
 }
 
 export function resolveCursorViewportStatus(
-  state: EditorState,
-  viewport: EditorLayoutState,
-  point: EditorSelectionPoint,
-): EditorPresenceViewportStatus;
-export function resolveCursorViewportStatus(
-  documentIndex: DocumentIndex,
-  viewport: EditorLayoutState,
-  point: EditorSelectionPoint,
-): EditorPresenceViewportStatus;
-export function resolveCursorViewportStatus(
-  stateOrIndex: EditorState | DocumentIndex,
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ): EditorPresenceViewportStatus {
-  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
-  const position = resolveCursorPosition(documentIndex, viewport, point);
+  const position = resolveCursorPosition(viewport, point);
   if (!position) {
     return "unresolved";
   }
@@ -84,13 +57,12 @@ export function resolveCursorViewportStatus(
 /* Internals */
 
 function resolveEditorPresenceViewport(
-  documentIndex: DocumentIndex,
   viewport: EditorLayoutState,
   commentRanges: readonly EditorCommentRange[],
   presence: EditorPresence,
 ): EditorPresenceViewport {
   const position = presence.cursorPoint
-    ? resolveCursorPosition(documentIndex, viewport, presence.cursorPoint)
+    ? resolveCursorPosition(viewport, presence.cursorPoint)
     : presence.commentThreadIndex != null
       ? resolveCommentThreadViewportPosition(viewport, commentRanges, presence.commentThreadIndex)
       : null;
@@ -105,11 +77,10 @@ function resolveEditorPresenceViewport(
 }
 
 function resolveCursorPosition(
-  documentIndex: DocumentIndex,
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ): { bottom: number; top: number } | null {
-  const exactCaret = measureCaretTarget(viewport.layout, documentIndex, {
+  const exactCaret = measureCaretTarget(viewport.layout, {
     path: point.path,
     offset: point.offset,
   });

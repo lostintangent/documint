@@ -13,13 +13,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      VP_GIT_HOOKS: "0"
 
     steps:
       - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: canary
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

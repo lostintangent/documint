@@ -23,6 +23,17 @@ class TestOffscreenCanvas {
   }
 }
 
+// Pretext picks its layout profile from navigator.userAgent. Bun's "Bun/x"
+// token matches no engine and falls back to Blink implicitly. Append Blink
+// tokens to the host string so the choice is explicit while the host's own
+// identity, including any OS token read by resolveEditorHostPlatform, stays.
+const hostUserAgent = globalThis.navigator.userAgent;
+Object.defineProperty(globalThis.navigator, "userAgent", {
+  configurable: true,
+  get: () =>
+    `${hostUserAgent} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36`,
+});
+
 if (typeof globalThis.OffscreenCanvas === "undefined") {
   Object.defineProperty(globalThis, "OffscreenCanvas", {
     configurable: true,
@@ -70,7 +81,7 @@ function resolveTestCanvasFontSize(font: string) {
 function measureTestTextUnitWidth(code: number) {
   if (code === 0x09) return 32;
   if (code === 0x0a) return 0;
-  if (code === 0x20) return 4;
+  if (code === 0x20 || code === 0xa0) return 4;
 
   switch (code) {
     case 0x23:

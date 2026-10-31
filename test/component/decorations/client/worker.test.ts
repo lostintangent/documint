@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createDocument, createParagraphTextBlock } from "@/document";
 import {
   createDecorationWorkerClient,
-  isDecorationWorkerDisposedError,
   type DecorationRequest,
 } from "@/component/decorations/client/worker";
 import type {
@@ -11,116 +10,80 @@ import type {
 } from "@/component/decorations/shared";
 
 describe("DecorationWorkerClient", () => {
-  test("resolves matching worker responses", async () => {
+  test("posts plain rule fields and pairs worker ranges with their snapshot roots", async () => {
+    const worker = new FakeDecorationWorker();
+    const client = createDecorationWorkerClient({ createWorker: () => worker });
+    const hostRule = Object.assign(
+      { color: "red", pattern: /\blist\b/g },
+      { label: "not cloneable", onMatch: () => {} },
+    );
+    const codeGrammars = {
+      tree: [
+        { color: "green", pattern: /&+/ },
+        { backgroundColor: "gold", pulse: true, pattern: /_+/ },
+      ],
+    };
+    const request = { ...createDecorationRequest(), codeGrammars, decorations: [hostRule] };
+    const promise = client.run(request);
+
+    // toEqual also rejects the host-only label and onMatch fields.
+    expect(worker.messages).toEqual([
+      {
+        kind: "configure-decorations",
+        codeGrammars,
+        decorations: [{ color: "red", pattern: /\blist\b/g }],
+      },
+      { kind: "apply-decorations", requestId: 1, roots: request.roots },
+    ]);
+    worker.emitMessage({
+      kind: "decoration-result",
+      ranges: [[{ color: "red", endOffset: 6, path: "root:0", startOffset: 2 }]],
+      requestId: 1,
+    });
+
+    const [result] = await promise;
+    expect(result!.block).toBe(request.roots[0]!.block);
+    expect(result).toEqual({
+      block: request.roots[0]!.block,
+      ranges: [{ color: "red", endOffset: 6, path: "root:0", startOffset: 2 }],
+      rootIndex: 0,
+    });
+  });
+
+  test("configures the worker on the first request, even with an empty key, and on key changes", async () => {
+    const worker = new FakeDecorationWorker();
+    const client = createDecorationWorkerClient({ createWorker: () => worker });
+
+    const first = client.run({ ...createDecorationRequest(), configKey: "" });
+    worker.emitMessage({ kind: "decoration-result", ranges: [[]], requestId: 1 });
+    await first;
+
+    const second = client.run({ ...createDecorationRequest(), configKey: "" });
+    worker.emitMessage({ kind: "decoration-result", ranges: [[]], requestId: 2 });
+    await second;
+
+    const third = client.run({ ...createDecorationRequest(), configKey: "next" });
+    worker.emitMessage({ kind: "decoration-result", ranges: [[]], requestId: 3 });
+    await third;
+
+    expect(worker.messages.map((message) => message.kind)).toEqual([
+      "configure-decorations",
+      "apply-decorations",
+      "apply-decorations",
+      "configure-decorations",
+      "apply-decorations",
+    ]);
+  });
+
+  test("rejects the matching job when the worker reports an error", async () => {
     const worker = new FakeDecorationWorker();
     const client = createDecorationWorkerClient({ createWorker: () => worker });
     const promise = client.run(createDecorationRequest());
 
-    expect(worker.messages).toEqual([
-      {
-        kind: "configure-decorations",
-        configKey: "decorations",
-        codeGrammars: {},
-        decorations: [{ color: "red", flags: "", source: "\\blist\\b" }],
-      },
-      {
-        kind: "apply-decorations",
-        configKey: "decorations",
-        requestId: 1,
-        roots: [expect.objectContaining({ rootIndex: 0 })],
-      },
-    ]);
-    worker.emitMessage({
-      kind: "decoration-result",
-      configKey: "decorations",
-      requestId: 1,
-      roots: [],
-    });
+    worker.emitMessage({ kind: "decoration-error", message: "bad pattern", requestId: 1 });
 
-    expect(await promise).toEqual({ configKey: "decorations", roots: [] });
-  });
-
-  test("serializes code grammars with the decoration config", async () => {
-    const worker = new FakeDecorationWorker();
-    const client = createDecorationWorkerClient({ createWorker: () => worker });
-
-    const promise = client.run({
-      ...createDecorationRequest(),
-      codeGrammars: {
-        tree: [
-          { color: "green", pattern: /&+/ },
-          { backgroundColor: "gold", pulse: true, pattern: /_+/ },
-        ],
-      },
-    });
-
-    expect(worker.messages[0]).toEqual({
-      kind: "configure-decorations",
-      configKey: "decorations",
-      codeGrammars: {
-        tree: [
-          { color: "green", flags: "", source: "&+" },
-          { backgroundColor: "gold", pulse: true, flags: "", source: "_+" },
-        ],
-      },
-      decorations: [{ color: "red", flags: "", source: "\\blist\\b" }],
-    });
-
-    worker.emitMessage({
-      kind: "decoration-result",
-      configKey: "decorations",
-      requestId: 1,
-      roots: [],
-    });
-    await promise;
-  });
-
-  test("sends decoration config only when the config key changes", async () => {
-    const worker = new FakeDecorationWorker();
-    const client = createDecorationWorkerClient({ createWorker: () => worker });
-
-    const first = client.run(createDecorationRequest());
-    worker.emitMessage({
-      kind: "decoration-result",
-      configKey: "decorations",
-      requestId: 1,
-      roots: [],
-    });
-    await first;
-
-    const second = client.run(createDecorationRequest());
-    worker.emitMessage({
-      kind: "decoration-result",
-      configKey: "decorations",
-      requestId: 2,
-      roots: [],
-    });
-    await second;
-
-    expect(worker.messages.map((message) => message.kind)).toEqual([
-      "configure-decorations",
-      "apply-decorations",
-      "apply-decorations",
-    ]);
-  });
-
-  test("sends decoration config for the first request even when the config key is empty", async () => {
-    const worker = new FakeDecorationWorker();
-    const client = createDecorationWorkerClient({ createWorker: () => worker });
-    const promise = client.run({ ...createDecorationRequest(), configKey: "" });
-
-    worker.emitMessage({
-      kind: "decoration-result",
-      configKey: "",
-      requestId: 1,
-      roots: [],
-    });
-    await promise;
-
-    expect(worker.messages.map((message) => message.kind)).toEqual([
-      "configure-decorations",
-      "apply-decorations",
-    ]);
+    expect((await expectRejected(promise)).message).toBe("bad pattern");
+    expect(worker.terminated).toBe(false);
   });
 
   test("terminates the worker when a job times out", async () => {
@@ -136,7 +99,7 @@ describe("DecorationWorkerClient", () => {
     expect(nextError.message).toContain("terminated");
   });
 
-  test("settles pending jobs with a disposal error when disposed", async () => {
+  test("rejects pending jobs when disposed", async () => {
     const worker = new FakeDecorationWorker();
     const client = createDecorationWorkerClient({ createWorker: () => worker });
     const promise = client.run(createDecorationRequest());
@@ -144,7 +107,7 @@ describe("DecorationWorkerClient", () => {
     client.dispose();
     const error = await expectRejected(promise);
 
-    expect(isDecorationWorkerDisposedError(error)).toBe(true);
+    expect(error.message).toContain("disposed");
     expect(worker.terminated).toBe(true);
   });
 });
@@ -199,7 +162,7 @@ function createDecorationRequest(): DecorationRequest {
     codeGrammars: {},
     configKey: "decorations",
     decorations: [{ color: "red", pattern: /\blist\b/ }],
-    roots: [{ block: document.blocks[0]!, rootIndex: 0, sourceKey: "source" }],
+    roots: [{ block: document.blocks[0]!, rootIndex: 0 }],
   };
 }
 

@@ -1,9 +1,8 @@
 // Owns paint policy for user mention segments. Mentions are projected into the
 // text stream as replacement segments, then rendered as a pill.
 
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import type { MentionSegment } from "../frame/line/text-segments";
-import { paintTextPillBackground } from "./pill";
 
 const mentionCornerRadius = 5;
 
@@ -12,17 +11,13 @@ export function paintMentionSegment(
   segment: MentionSegment,
   theme: ResolvedEditorTheme,
 ) {
-  const { pill } = segment;
+  const { rect, textBaseline } = segment.pill;
+  const radius = Math.min(mentionCornerRadius, rect.width / 2, rect.height / 2);
 
   context.fillStyle = theme.mentionBackground;
-  paintTextPillBackground(
-    context,
-    pill.rect.left,
-    pill.rect.top,
-    pill.rect.width,
-    pill.rect.height,
-    mentionCornerRadius,
-  );
+  context.beginPath();
+  context.roundRect(rect.left, rect.top, rect.width, rect.height, radius);
+  context.fill();
   context.fillStyle = theme.mentionText;
-  context.fillText(`@${segment.mentionName}`, segment.textLeft, pill.textBaseline);
+  context.fillText(`@${segment.mentionName}`, segment.textLeft, textBaseline);
 }

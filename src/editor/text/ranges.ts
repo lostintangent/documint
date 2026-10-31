@@ -1,10 +1,11 @@
 // Owns generic offset-range algebra over `{ startOffset, endOffset }` values.
 // Both canvas paint effects/text decorations and other range-shaped
-// editor data (comment ranges, presence ranges) use the same three operations:
-// collect the boundary set inside a window, find the first range covering a
-// segment, filter the ranges overlapping a segment. Keeping the algorithms in
-// one place removes the duplicated implementations and gives any future
-// range-shaped data a single primitive to reach for.
+// editor data (comment ranges, presence ranges) share one half-open overlap
+// test and three operations built on it: collect the boundary set inside a
+// window, find the first range covering a segment, filter the ranges
+// overlapping a segment. Keeping the algorithms in one place removes the
+// duplicated implementations and gives any future range-shaped data a single
+// primitive to reach for.
 
 export type TextRange = {
   endOffset: number;
@@ -27,7 +28,7 @@ export function collectRangeBoundaries(
   const boundaries = new Set<number>([windowStart, windowEnd]);
 
   for (const range of ranges) {
-    if (range.endOffset <= windowStart || range.startOffset >= windowEnd) {
+    if (!rangeOverlapsSegment(range, windowStart, windowEnd)) {
       continue;
     }
 
@@ -38,15 +39,21 @@ export function collectRangeBoundaries(
   return [...boundaries].sort((left, right) => left - right);
 }
 
+// Whether a range overlaps the half-open segment [start, end). Half-open is
+// intentional — paint segments are right-exclusive so a range ending exactly at
+// `start` should not match.
+export function rangeOverlapsSegment(range: TextRange, start: number, end: number) {
+  return range.startOffset < end && range.endOffset > start;
+}
+
 // Returns the first range overlapping the half-open segment [start, end), or
-// null. Half-open is intentional — paint segments are right-exclusive so a
-// range ending exactly at `start` should not match.
+// null.
 export function findRangeAtSegment<T extends TextRange>(
   ranges: readonly T[],
   start: number,
   end: number,
 ): T | null {
-  return ranges.find((range) => range.startOffset < end && range.endOffset > start) ?? null;
+  return ranges.find((range) => rangeOverlapsSegment(range, start, end)) ?? null;
 }
 
 // Returns every range overlapping the half-open segment [start, end).
@@ -55,5 +62,5 @@ export function filterRangesOverlappingSegment<T extends TextRange>(
   start: number,
   end: number,
 ): T[] {
-  return ranges.filter((range) => range.endOffset > start && range.startOffset < end);
+  return ranges.filter((range) => rangeOverlapsSegment(range, start, end));
 }

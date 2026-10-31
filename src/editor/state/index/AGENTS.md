@@ -16,11 +16,11 @@ The document index is the editor's random-access fast path over immutable `Docum
 
 ## Subsystem Map
 
-- `splice.ts` owns the public build and update boundary: `createDocumentIndex`, `spliceDocumentIndex`, non-block document replacement, block replacement, and `commitDocument`.
+- `splice.ts` owns the public build and update boundary: `createDocumentIndex`, `spliceDocumentIndex`, non-block document replacement, and block replacement.
 - `roots.ts` owns root construction and positioning: it stamps each block's document `blockContentKind` and projects the payload that kind implies (`IndexedRoot` slices, global text order, flat block streams, table-cell rows, path stamping, ranges, list-item context, and per-root URL collection).
 - `build.ts` owns `applyRootDelta`, lookup-map maintenance, document-level projection reuse, and comment-container index invalidation.
 - `query.ts` owns the reusable index algebra for block/table-cell lookup, metadata field paths, containment, document-flow text-path traversal, and editor-text projections.
 - `inlines.ts` owns runtime inline range construction and conversion between editor indexed offsets and document `plainText` offsets.
 - `types.ts` owns the index record contracts: `DocumentIndex`, body records, minimal metadata text/boolean records, and their unions. The block-kind discriminant is the document's `BlockContentKind`, not an index-local type.
 
-The only document content this folder creates is the empty paragraph used to host a caret in an otherwise empty document, and `commitDocument` removes it before saving. Do not put anchor matching, layout measurement, document construction, or text-editing rules here. Those responsibilities live in `src/document/query/anchors`, `src/editor/anchors`, `src/editor/layout`, `src/document/build`, and `src/editor/state/reducer`.
+The only document content this folder creates is the empty paragraph used to host a caret in an otherwise empty document. The runtime document keeps it, so an empty document serializes as `"\n"`. Do not put anchor matching, layout measurement, document construction, or text-editing rules here. Those responsibilities live in `src/document/query/anchors`, `src/editor/anchors`, `src/editor/layout`, `src/document/build`, and `src/editor/state/reducer`.

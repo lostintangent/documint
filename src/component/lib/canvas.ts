@@ -3,27 +3,22 @@
  * component body.
  */
 
+import type { EditorLayoutState } from "@/editor";
+
 export function resolveDevicePixelRatio() {
   return Math.max(1, window.devicePixelRatio || 1);
 }
 
 export function prepareCanvasLayer(
   canvas: HTMLCanvasElement | null,
-  {
-    paintHeight,
-    paintTop,
-    width,
-  }: {
-    paintHeight: number;
-    paintTop: number;
-    width: number;
-  },
+  { paintHeight, paintTop }: Pick<EditorLayoutState, "paintHeight" | "paintTop">,
+  width: number,
 ) {
   if (!canvas) {
     return null;
   }
 
-  const height = Math.max(240, Math.ceil(paintHeight));
+  const height = Math.ceil(paintHeight);
   const devicePixelRatio = resolveDevicePixelRatio();
 
   canvas.width = Math.ceil(width * devicePixelRatio);

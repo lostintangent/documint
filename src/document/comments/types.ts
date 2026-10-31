@@ -1,4 +1,4 @@
-import type { AnchorResolution, TextAnchor } from "../query/anchors/text";
+import type { AnchorMatch, TextAnchor } from "../query/anchors/text";
 
 export type CommentThread = {
   id: string;
@@ -23,7 +23,7 @@ export type Comment = {
 // `CommentThreadAnchor` is identity-addressable, and only consumers that know
 // about threads should see the latter shape.
 
-export type CommentThreadAnchor = {
+type CommentThreadAnchor = {
   threadId: string;
 };
 
@@ -38,9 +38,21 @@ export function isCommentThreadAnchor(anchor: Anchor): anchor is CommentThreadAn
 // What needs to be refreshed on a `CommentThread` when its anchor drifts and
 // has been re-located. Callers writing this back into a thread keep its
 // quote/anchor representation in sync with the snapshot.
-export type CommentRepair = {
+type CommentRepair = {
   anchor: TextAnchor;
   quote: string;
 };
 
-export type CommentResolution = AnchorResolution<CommentRepair>;
+// Lifecycle of a thread reattachment attempt.
+//   matched   - The anchor's exact context still appears in the snapshot.
+//   repaired  - The anchor drifted; resolution recovered a best-fit location.
+//   ambiguous - Multiple equally-strong locations exist; no safe pick.
+//   stale     - The anchor can no longer be located.
+// `repair` is non-null whenever `match` is non-null; together they describe
+// where the thread lives now and how its persisted anchor and quote should be
+// refreshed.
+export type CommentResolution = {
+  match: AnchorMatch | null;
+  repair: CommentRepair | null;
+  status: "ambiguous" | "matched" | "repaired" | "stale";
+};

@@ -3,7 +3,6 @@ export {
   type CommentChange,
   type DocumintAction,
   type DocumintActions,
-  type DocumintDecoration,
   type DocumintProps,
   type ActiveResourceSet,
   type ResourceProtocolRecord,
@@ -12,6 +11,15 @@ export {
 
 export { darkTheme, lightTheme } from "./lib/themes";
 
-export { defaultKeybindings, type EditorInputKeybinding } from "./lib/keybindings";
+export {
+  defaultKeybindings,
+  type EditorInputCommand,
+  type EditorInputKeybinding,
+} from "./lib/keybindings";
+
+export type { CodeGrammarRule } from "./decorations/grammars";
+export type { DocumintDecoration } from "./decorations/shared";
+
+export type { DocumintStorage } from "./lib/storage";
 
 export { lucideResourceIcon } from "./lib/resource-icons";

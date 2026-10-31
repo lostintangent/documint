@@ -19,13 +19,13 @@ import {
   extractQuoteFromContainer,
   resolveCommentThreadInContainers,
   type AnchorContainer,
-  type CommentResolution,
   type CommentThread,
   type TextAnchor,
 } from "@/document";
 import {
   compareEditorPositions,
   type DocumentIndex,
+  type EditorSelectionRange,
   resolveCommentThreadIndicesForPath,
 } from "../../state";
 import {
@@ -36,6 +36,7 @@ import {
 import type { EditorState } from "../../state/types";
 import { createEditorTextAnchorResolver, resolveDocumentRangeForPath } from "../text";
 import type { EditorPresence } from "../presence";
+import { rangeOverlapsSegment } from "../../text/ranges";
 import { remapEditedRange } from "./remap";
 
 // --- Types ---
@@ -43,7 +44,6 @@ import { remapEditedRange } from "./remap";
 export type EditorCommentRange = {
   endOffset: number;
   path: string;
-  resolution: CommentResolution;
   resolved: boolean;
   startOffset: number;
   threadIndex: number;
@@ -61,11 +61,7 @@ export type EditorCommentState = {
 // path isn't an anchorable kind (for example, a structural list-item marker).
 export function createCommentThreadForSelection(
   documentIndex: DocumentIndex,
-  selection: {
-    endOffset: number;
-    path: string;
-    startOffset: number;
-  },
+  selection: EditorSelectionRange,
   body: string,
 ) {
   const normalizedBody = body.trim();
@@ -109,33 +105,14 @@ export function createCommentThreadForSelection(
 // don't resolve are silently dropped from `ranges` while their persisted
 // `threads` entry stays untouched, ready to repair when the document
 // changes again.
-export function getCommentState(state: EditorState): EditorCommentState;
-export function getCommentState(documentIndex: DocumentIndex): EditorCommentState;
-export function getCommentState(stateOrIndex: EditorState | DocumentIndex): EditorCommentState {
-  const documentIndex = "documentIndex" in stateOrIndex ? stateOrIndex.documentIndex : stateOrIndex;
-  return resolveCommentStateForThreadIndices(
-    documentIndex,
-    documentIndex.document.comments.map((_, threadIndex) => threadIndex),
-  );
-}
-
-function resolveCommentStateForThreadIndices(
-  documentIndex: DocumentIndex,
-  threadIndices: readonly number[],
-): EditorCommentState {
+export function getCommentState(documentIndex: DocumentIndex): EditorCommentState {
   const textAnchorResolver = createEditorTextAnchorResolver(documentIndex);
   const anchorContainers = textAnchorResolver.listContainers();
   const threads = documentIndex.document.comments;
   let resolvedThreads: CommentThread[] | null = null;
   const ranges: EditorCommentRange[] = [];
 
-  for (const threadIndex of threadIndices) {
-    const thread = threads[threadIndex];
-
-    if (!thread) {
-      continue;
-    }
-
+  for (const [threadIndex, thread] of threads.entries()) {
     const resolution = resolveCommentThreadInContainers(thread, anchorContainers);
 
     if (!resolution.match) {
@@ -164,7 +141,6 @@ function resolveCommentStateForThreadIndices(
     ranges.push({
       endOffset: editorRange.endOffset,
       path: editorRange.path,
-      resolution,
       resolved: thread.resolvedAt != null,
       startOffset: editorRange.startOffset,
       threadIndex,
@@ -192,8 +168,7 @@ export function hasActiveCommentHighlightsInViewport(
         !range.resolved &&
         commentPresence.has(range.threadIndex) &&
         range.path === line.path &&
-        range.endOffset > line.start &&
-        range.startOffset < line.end,
+        rangeOverlapsSegment(range, line.start, line.end),
     ),
   );
 }

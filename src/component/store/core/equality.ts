@@ -16,7 +16,7 @@ export function defaultEquality<T>(a: T, b: T) {
 // element-wise. The reader function runs twice per call (once per side) and
 // each call allocates one small tuple — appropriate for sprig-equality
 // granularity, not for inner paint loops.
-export function equalBy<T>(readParts: (value: T) => readonly unknown[]): Equality<T> {
+function equalBy<T>(readParts: (value: T) => readonly unknown[]): Equality<T> {
   return (a, b) => {
     if (a === b) return true;
     const aParts = readParts(a);

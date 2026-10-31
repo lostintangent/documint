@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { resolveMentionLineChange } from "@/component/sync";
 import { createEditorStateTransition } from "@/component/store/editor/transitions";
 import { insertMention } from "@/editor/state";
-import type { TextRangeTarget } from "@/editor";
+import type { EditorSelectionRange } from "@/editor";
 import { getPath, setup } from "@test/editor/helpers";
 
 describe("resolveMentionLineChange", () => {
@@ -99,7 +99,7 @@ function createMentionTransition(markdown: string, text: string) {
     throw new Error(`Expected @Ja in path "${path.text}"`);
   }
 
-  const target: TextRangeTarget = {
+  const target: EditorSelectionRange = {
     endOffset: startOffset + "@Ja".length,
     path: path.path,
     startOffset,
@@ -110,5 +110,5 @@ function createMentionTransition(markdown: string, text: string) {
     throw new Error("Expected mention replacement to produce a state");
   }
 
-  return [createEditorStateTransition(previous, next, "local"), target] as const;
+  return [createEditorStateTransition(previous, next, "local", []), target] as const;
 }

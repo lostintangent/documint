@@ -1,7 +1,7 @@
-// Public splice API: the entry points the rest of the editor uses to build,
-// update, and commit a `DocumentIndex`. Each mutation constructs positioned
-// root slices and routes through `applyRootDelta`. The runtime empty-document
-// shim lives here because it belongs at the document/index boundary.
+// Public splice API: the entry points the rest of the editor uses to build
+// and update a `DocumentIndex`. Each mutation constructs positioned root
+// slices and routes through `applyRootDelta`. The runtime empty-document shim
+// lives here because it belongs at the document/index boundary.
 
 import {
   createDocument,
@@ -11,7 +11,6 @@ import {
   type Block,
   type Document,
 } from "@/document";
-import { getCommentState } from "../../anchors";
 import { applyRootDelta } from "./build";
 import { createIndexedRoot, positionIndexedRoots } from "./roots";
 import type { DocumentIndex } from "./types";
@@ -23,18 +22,6 @@ export function createDocumentIndex(document: Document): DocumentIndex {
   );
 
   return applyRootDelta(null, positionedRoots, runtimeDocument);
-}
-
-// Materializes the savable `Document`: removes the empty-document shim and
-// commits any anchor repair produced by the most recent index state.
-export function commitDocument(documentIndex: DocumentIndex): Document {
-  const commentState = getCommentState(documentIndex);
-
-  return createDocument(
-    collapseRuntimeEditableDocument(documentIndex.document).blocks,
-    commentState.threads,
-    documentIndex.document.metadata,
-  );
 }
 
 export function spliceDocumentIndex(
@@ -128,28 +115,13 @@ export function replaceEditorBlock(
 }
 
 // An empty `Document` has no blocks, but the editor always has a caret host.
-// The runtime synthesizes one empty paragraph at index construction time, and
-// `commitDocument` collapses it again before persistence. `documentIndex.document`
-// is therefore the runtime document, not necessarily the savable document.
+// The runtime synthesizes one empty paragraph at index construction time and
+// keeps it, so `documentIndex.document` for an empty document serializes as
+// `"\n"` rather than `""`.
 function createRuntimeEditableDocument(document: Document): Document {
   if (document.blocks.length > 0) {
     return document;
   }
 
   return createDocument([createParagraphTextBlock("")], document.comments, document.metadata);
-}
-
-function collapseRuntimeEditableDocument(document: Document): Document {
-  const firstBlock = document.blocks[0];
-
-  if (
-    document.blocks.length !== 1 ||
-    !firstBlock ||
-    firstBlock.type !== "paragraph" ||
-    firstBlock.children.length > 0
-  ) {
-    return document;
-  }
-
-  return createDocument([], document.comments, document.metadata);
 }

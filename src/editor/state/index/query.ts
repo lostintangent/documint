@@ -12,18 +12,18 @@ import type {
   ResolvedMetadataField,
 } from "./types";
 
-export type EditorIndexPosition = {
+type EditorIndexPosition = {
   offset: number;
   path: string;
 };
 
-export type EditorPositionOrder = number;
+type EditorPositionOrder = number;
 
 export type ResolvedEditorPosition = EditorIndexPosition & {
   order: EditorPositionOrder;
 };
 
-export type UniqueEditorPathWithTextMatch = {
+type UniqueEditorPathWithTextMatch = {
   ambiguous: boolean;
   path: string | null;
 };
@@ -362,14 +362,13 @@ export function resolveAdjacentEditorPathWithTextInFlow(
   const cell = resolveIndexedTableCell(documentIndex, path);
   if (cell) {
     const table = resolveIndexedBlock(documentIndex, cell.tablePath);
-    const fallbackStart =
-      direction < 0
-        ? (table?.blockArrayIndex ?? -1)
-        : (table?.blockRangeEnd ?? documentIndex.blocks.length);
+    if (!table) {
+      return null;
+    }
 
     return (
       findTableCellPathInFlow(table, direction, cell) ??
-      findEditorPathWithTextFromBlock(documentIndex, fallbackStart, direction)
+      findEditorPathWithTextOutsideBlock(documentIndex, table, direction)
     );
   }
 
@@ -378,11 +377,7 @@ export function resolveAdjacentEditorPathWithTextInFlow(
     return null;
   }
 
-  return findEditorPathWithTextFromBlock(
-    documentIndex,
-    direction < 0 ? indexedBlock.blockArrayIndex : indexedBlock.blockRangeEnd,
-    direction,
-  );
+  return findEditorPathWithTextOutsideBlock(documentIndex, indexedBlock, direction);
 }
 
 export function resolveDocumentTextPathBoundary(
@@ -421,18 +416,7 @@ export function resolveAdjacentEditorPathWithTextOutsideBlock(
   direction: -1 | 1,
 ) {
   const block = resolveIndexedBlock(documentIndex, blockPath);
-  if (!block) {
-    return null;
-  }
-
-  return direction < 0
-    ? findEditorPathWithTextInBlockSlice(documentIndex.blocks, 0, block.blockArrayIndex, -1)
-    : findEditorPathWithTextInBlockSlice(
-        documentIndex.blocks,
-        block.blockRangeEnd,
-        documentIndex.blocks.length,
-        1,
-      );
+  return block ? findEditorPathWithTextOutsideBlock(documentIndex, block, direction) : null;
 }
 
 // Shape and classification --------------------------------------------------
@@ -561,16 +545,17 @@ function editorPathWithTextForBlock(indexedBlock: IndexedBlock, direction: -1 | 
   return path;
 }
 
-function findEditorPathWithTextFromBlock(
+// Finds the nearest text path before or after `block`'s subtree in flow.
+function findEditorPathWithTextOutsideBlock(
   documentIndex: DocumentIndex,
-  blockArrayIndex: number,
+  block: IndexedBlock,
   direction: -1 | 1,
 ): string | null {
   return direction < 0
-    ? findEditorPathWithTextInBlockSlice(documentIndex.blocks, 0, blockArrayIndex, -1)
+    ? findEditorPathWithTextInBlockSlice(documentIndex.blocks, 0, block.blockArrayIndex, -1)
     : findEditorPathWithTextInBlockSlice(
         documentIndex.blocks,
-        blockArrayIndex,
+        block.blockRangeEnd,
         documentIndex.blocks.length,
         1,
       );

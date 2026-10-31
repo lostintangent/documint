@@ -2,9 +2,8 @@
 // The virtual layout mirrors exact block walking, but stores only estimated
 // path bounds and total document height.
 
-import type { DocumentResources } from "@/types";
 import { resolveResourceProtocol, type Block } from "@/document";
-import { createResourceIconSignature } from "@/editor/resources";
+import { createResourceIconSignature, type DocumentResources } from "@/editor/resources";
 import type { DocumentIndex, IndexedBlock } from "../../state";
 import {
   getVirtualLayout,
@@ -18,7 +17,8 @@ import type { DocumentLayoutOptions } from "../lib/options";
 import { resolveTableColumnMetrics, resolveTableRowHeight } from "../measure/table";
 import { resolveTextBlockLineHeight } from "../measure/text";
 import { resolveBlockLayoutTextInput, tableCellLayoutTextInput } from "../measure/text-input";
-import { estimateContainerHeight, estimateTableCellHeight } from "./height-estimate";
+import { estimateContainerHeight } from "./height-estimate";
+import { estimateTextHeight } from "./text-estimate";
 
 export function getOrCreateVirtualLayout(
   cache: LayoutCache,
@@ -52,18 +52,14 @@ export function getOrCreateVirtualLayout(
     if (isInert) {
       totalHeight += options.lineHeight;
     } else if (block.type === "table") {
-      const result = appendTableEstimateEntries({
+      totalHeight = appendTableEstimateEntries({
         block,
-        depth: indexedBlock.depth,
         entries,
         indexedBlock,
         options,
         pathIndices,
-        totalHeight,
+        top: totalHeight,
       });
-      if (result) {
-        totalHeight = result.totalHeight;
-      }
     } else {
       const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
       const input = resolveBlockLayoutTextInput(indexedBlock);
@@ -103,31 +99,31 @@ export function getOrCreateVirtualLayout(
   });
 }
 
+// Appends one entry per table cell, sharing its row's bounds, and returns the
+// table's bottom.
 function appendTableEstimateEntries({
   block,
-  depth,
   entries,
   indexedBlock,
   options,
   pathIndices,
-  totalHeight,
+  top,
 }: {
   block: Extract<Block, { type: "table" }>;
-  depth: number;
   entries: VirtualLayout["entries"];
   indexedBlock: IndexedBlock;
   options: DocumentLayoutOptions;
   pathIndices: Map<string, number>;
-  totalHeight: number;
+  top: number;
 }) {
   if (indexedBlock.kind !== "cells") {
-    return null;
+    return top;
   }
 
-  const left = options.paddingX + depth * options.indentWidth;
+  const left = options.paddingX + indexedBlock.depth * options.indentWidth;
   const { cellWidth } = resolveTableColumnMetrics(block, left, options);
   const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight, options.fontSize);
-  let nextTop = totalHeight;
+  let nextTop = top;
 
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
     const cells = indexedBlock.tableCellRows[rowIndex] ?? [];
@@ -135,7 +131,7 @@ function appendTableEstimateEntries({
     const rowHeight = resolveTableRowHeight(
       lineHeight,
       inputs.map((input) =>
-        estimateTableCellHeight(input, cellWidth, lineHeight, options.charWidth),
+        estimateTextHeight(input.text, cellWidth, options.charWidth, lineHeight),
       ),
     );
     const bottom = nextTop + rowHeight;
@@ -152,9 +148,7 @@ function appendTableEstimateEntries({
     nextTop = bottom;
   }
 
-  return {
-    totalHeight: nextTop,
-  };
+  return nextTop;
 }
 
 function appendEstimateEntry(

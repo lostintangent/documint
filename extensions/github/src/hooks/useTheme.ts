@@ -4,10 +4,7 @@ import { darkTheme, lightTheme, type EditorTheme } from "@lostintangent/documint
 type ColorMode = "dark" | "light";
 
 type GitHubDocumintTheme = {
-  accent: string;
-  background: string;
   colorMode: ColorMode;
-  text: string;
   theme: EditorTheme;
 };
 
@@ -81,13 +78,10 @@ export function useTheme(): EditorTheme {
   }, []);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--documint-agent-accent", themeState.accent);
-    document.documentElement.style.setProperty(
-      "--documint-agent-background",
-      themeState.background,
-    );
-    document.documentElement.style.setProperty("--documint-agent-text", themeState.text);
-    document.documentElement.style.colorScheme = themeState.colorMode;
+    const { style } = document.documentElement;
+    style.setProperty("--documint-agent-background", themeState.theme.background);
+    style.setProperty("--documint-agent-text", themeState.theme.text);
+    style.colorScheme = themeState.colorMode;
   }, [themeState]);
 
   return themeState.theme;
@@ -101,10 +95,7 @@ function createGitHubDocumintTheme(
   const baseTheme = colorMode === "dark" ? darkTheme : lightTheme;
 
   return {
-    accent: colors.accent,
-    background: colors.background,
     colorMode,
-    text: colors.text,
     theme: {
       ...baseTheme,
       accent: colors.accent,
@@ -192,13 +183,7 @@ function normalizeCssColor(value: string): string | null {
 }
 
 function areThemeStatesEqual(left: GitHubDocumintTheme, right: GitHubDocumintTheme): boolean {
-  return (
-    left.background === right.background &&
-    left.accent === right.accent &&
-    left.colorMode === right.colorMode &&
-    left.text === right.text &&
-    areThemesEqual(left.theme, right.theme)
-  );
+  return left.colorMode === right.colorMode && areThemesEqual(left.theme, right.theme);
 }
 
 function areThemesEqual(left: EditorTheme, right: EditorTheme): boolean {

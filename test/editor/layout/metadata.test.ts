@@ -76,7 +76,7 @@ describe("Metadata prefix layout", () => {
     });
     expect(layout.lines.some((line) => line.path === metadataValuePath(2))).toBe(false);
     expect(
-      measureCaretTarget(layout, state.documentIndex, {
+      measureCaretTarget(layout, {
         path: metadataValuePath(2),
         offset: 0,
       }),
@@ -147,7 +147,7 @@ Body
       width: 420,
     });
     const valuePath = metadataValuePath(0);
-    const caret = measureCaretTarget(layoutState.layout, state.documentIndex, {
+    const caret = measureCaretTarget(layoutState.layout, {
       path: valuePath,
       offset: 3,
     });

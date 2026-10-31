@@ -3,7 +3,7 @@
 // body beneath it.
 
 import type { DocumentMetadata } from "@/document";
-import type { DocumentResources } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
 import { metadataKeyPath, metadataValuePath } from "../../state";
 import { resolveCheckboxRect } from "../lib/marker-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
@@ -14,26 +14,18 @@ import {
   TABLE_CELL_PADDING_Y,
   TABLE_MIN_WIDTH,
 } from "./table";
-import type { LayoutLine, LayoutRect } from "./index";
+import type { LayoutLine, LayoutRect, PathBounds } from "./index";
 import {
-  measureTextContainerLines,
-  measureTextLineBoundaries,
+  layoutTextContainerLines,
   resolveBlockTypography,
+  sumLineHeights,
   type BlockTypography,
-  type LayoutTextInput,
 } from "./text";
 
 const METADATA_KEY_COLUMN_MIN_WIDTH = 116;
 const METADATA_KEY_COLUMN_RATIO = 0.3;
 const METADATA_VALUE_COLUMN_MIN_WIDTH = 40;
 const METADATA_HEADER_PADDING_Y = 4;
-
-type PathBounds = {
-  bottom: number;
-  left: number;
-  right: number;
-  top: number;
-};
 
 type MetadataLayoutRow = {
   checkbox?: {
@@ -213,38 +205,19 @@ function measureMetadataTextLines({
   typography: BlockTypography;
   width: number;
 }) {
-  const input: LayoutTextInput = { kind: "preformatted", path, text };
-  const measuredLines = measureTextContainerLines(cache, input, width, typography, resources);
-  let top = cellTop + TABLE_CELL_PADDING_Y;
-
-  return measuredLines.map((line): LayoutLine => {
-    const layoutLine = {
+  return layoutTextContainerLines(
+    cache,
+    { kind: "preformatted", path, text },
+    width,
+    typography,
+    resources,
+    {
       blockPath: null,
-      boundaries: measureTextLineBoundaries(
-        cache,
-        input,
-        line.start,
-        line.end,
-        line.text,
-        width,
-        typography,
-        resources,
-      ),
       contentInset: 0,
-      end: line.end,
-      font: typography.font,
-      height: line.height,
-      inlineReferences: null,
       left: cellLeft + TABLE_CELL_PADDING_X,
-      path,
-      start: line.start,
-      text: line.text,
-      top,
-      width: line.width,
-    } satisfies LayoutLine;
-    top += line.height;
-    return layoutLine;
-  });
+      top: cellTop + TABLE_CELL_PADDING_Y,
+    },
+  );
 }
 
 function rectToPathBounds(rect: LayoutRect): PathBounds {
@@ -254,8 +227,4 @@ function rectToPathBounds(rect: LayoutRect): PathBounds {
     right: rect.left + rect.width,
     top: rect.top,
   };
-}
-
-function sumLineHeights(lines: readonly { height: number }[]) {
-  return lines.reduce((total, line) => total + line.height, 0);
 }

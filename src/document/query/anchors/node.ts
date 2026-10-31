@@ -4,9 +4,7 @@ import {
   parentBlockPath,
   type Block,
   type Document,
-  type TableBlock,
   type TableCell,
-  type TableRow,
 } from "../../model";
 import {
   estimateDocumentNodeContentHashCost,
@@ -24,17 +22,15 @@ import {
 } from "../paths";
 import { visitDocument } from "../visit";
 
-export type DocumentBlockAnchor = {
-  readonly index: number;
+type DocumentBlockAnchor = {
   readonly kind: "block";
   readonly node: {
     readonly hash: DocumentNodeContentHash;
     readonly type: Block["type"];
   };
-  readonly parent: {
-    readonly kind: "block" | "document";
-    readonly type?: Block["type"];
-  };
+  // Paths use `.children` for every container, so the parent type is not
+  // recoverable from `path` alone.
+  readonly parentType?: Block["type"];
   readonly path: string;
   readonly siblings: {
     readonly nextHash?: DocumentNodeContentHash;
@@ -42,18 +38,16 @@ export type DocumentBlockAnchor = {
   };
 };
 
-export type DocumentTableCellAnchor = {
+type DocumentTableCellAnchor = {
   readonly cells: {
     readonly nextHash?: DocumentNodeContentHash;
     readonly previousHash?: DocumentNodeContentHash;
   };
-  readonly columnIndex: number;
   readonly kind: "table-cell";
   readonly node: {
     readonly hash: DocumentNodeContentHash;
   };
   readonly path: string;
-  readonly rowIndex: number;
   readonly rows: {
     readonly nextHash?: DocumentNodeContentHash;
     readonly previousHash?: DocumentNodeContentHash;
@@ -80,18 +74,15 @@ export type DocumentNodeAnchorResolution =
       readonly status: "absent";
     }
   | {
-      readonly reason: "duplicate" | "weak-evidence";
+      readonly reason: "weak-evidence";
       readonly status: "ambiguous";
     }
   | {
       readonly status: "exhausted";
     };
 
-export type DocumentNodeAnchorResolveMode = "contextual-content" | "exact-content";
-
-export type DocumentNodeAnchorResolveOptions = {
+type DocumentNodeAnchorResolveOptions = {
   readonly maxVisitedNodes?: number;
-  readonly mode?: DocumentNodeAnchorResolveMode;
 };
 
 const defaultMaxVisitedNodes = 800;
@@ -106,7 +97,7 @@ export function createDocumentNodeAnchor(
   }
 
   const cellMatch = resolveTableCellPathMatch(document, path);
-  return cellMatch ? createTableCellAnchor(cellMatch.cell, path, cellMatch) : null;
+  return cellMatch ? createTableCellAnchor(path, cellMatch) : null;
 }
 
 export function resolveDocumentNodeAnchor(
@@ -152,7 +143,7 @@ export function resolveDocumentNodeAnchors(
 
   for (const [key, anchor] of uniqueAnchors) {
     const candidates = collected.candidates.get(documentNodeAnchorContentKey(anchor)) ?? [];
-    matches.set(key, resolveAnchorFromCandidates(anchor, candidates, options));
+    matches.set(key, resolveAnchorFromCandidates(anchor, candidates));
   }
 
   return matches;
@@ -172,9 +163,7 @@ export function documentNodeAnchorKey(anchor: DocumentNodeAnchor) {
       anchor.node.type,
       anchor.node.hash,
       anchor.path,
-      anchor.index,
-      anchor.parent.kind,
-      anchor.parent.type ?? "",
+      anchor.parentType ?? "",
       anchor.siblings.previousHash ?? "",
       anchor.siblings.nextHash ?? "",
     ].join(":");
@@ -184,8 +173,6 @@ export function documentNodeAnchorKey(anchor: DocumentNodeAnchor) {
     "table-cell",
     anchor.node.hash,
     anchor.path,
-    anchor.rowIndex,
-    anchor.columnIndex,
     anchor.cells.previousHash ?? "",
     anchor.cells.nextHash ?? "",
     anchor.rows.previousHash ?? "",
@@ -197,16 +184,12 @@ function createBlockAnchor(document: Document, block: Block, path: string): Docu
   const siblingContext = resolveBlockSiblingContext(document, path);
 
   return {
-    index: siblingContext.index,
     kind: "block",
     node: {
       hash: resolveBlockContentHash(block),
       type: block.type,
     },
-    parent: {
-      kind: siblingContext.parent?.type ? "block" : "document",
-      type: siblingContext.parent?.type,
-    },
+    parentType: siblingContext.parent?.type,
     path,
     siblings: {
       nextHash: siblingContext.next ? resolveBlockContentHash(siblingContext.next) : undefined,
@@ -217,11 +200,7 @@ function createBlockAnchor(document: Document, block: Block, path: string): Docu
   };
 }
 
-function createTableCellAnchor(
-  cell: TableCell,
-  path: string,
-  context: TableCellPathMatch,
-): DocumentTableCellAnchor {
+function createTableCellAnchor(path: string, context: TableCellPathMatch): DocumentTableCellAnchor {
   return {
     cells: {
       nextHash: context.nextCell ? resolveTableCellContentHash(context.nextCell) : undefined,
@@ -229,13 +208,11 @@ function createTableCellAnchor(
         ? resolveTableCellContentHash(context.previousCell)
         : undefined,
     },
-    columnIndex: context.cellIndex,
     kind: "table-cell",
     node: {
-      hash: resolveTableCellContentHash(cell),
+      hash: resolveTableCellContentHash(context.cell),
     },
     path,
-    rowIndex: context.rowIndex,
     rows: {
       nextHash: context.nextRow ? resolveTableRowContentHash(context.nextRow) : undefined,
       previousHash: context.previousRow
@@ -278,10 +255,6 @@ function collectDocumentNodeAnchorCandidates(
 
   visitDocument(document, {
     enterBlock(block, { path }) {
-      if (exhausted || pendingContentKeys.size === 0) {
-        return exhausted ? "stop" : undefined;
-      }
-
       if (!pendingBlockTypes.has(block.type)) {
         return;
       }
@@ -296,14 +269,7 @@ function collectDocumentNodeAnchorCandidates(
         appendCandidate(candidates, key, { anchor, node: block, path });
       }
     },
-    enterInlineContainer() {
-      return "skip";
-    },
     enterTableCell(cell, context) {
-      if (exhausted || pendingContentKeys.size === 0) {
-        return exhausted ? "stop" : undefined;
-      }
-
       if (!hasPendingTableCells) {
         return;
       }
@@ -314,8 +280,16 @@ function collectDocumentNodeAnchorCandidates(
 
       const key = tableCellAnchorContentKey(cell);
       if (pendingContentKeys.has(key)) {
-        const pathMatch = tableCellPathMatchFromVisitContext(cell, context);
-        const anchor = createTableCellAnchor(cell, context.path, pathMatch);
+        const anchor = createTableCellAnchor(
+          context.path,
+          createTableCellPathMatch(
+            context.table,
+            context.row,
+            cell,
+            context.rowIndex,
+            context.cellIndex,
+          ),
+        );
         appendCandidate(candidates, key, {
           anchor,
           node: cell,
@@ -331,22 +305,24 @@ function collectDocumentNodeAnchorCandidates(
 function resolveAnchorFromCandidates(
   anchor: DocumentNodeAnchor,
   candidates: readonly DocumentNodeAnchorCandidate[],
-  options: DocumentNodeAnchorResolveOptions,
 ): DocumentNodeAnchorResolution {
   if (candidates.length === 0) {
     return { status: "absent" };
   }
 
-  if (candidates.length === 1) {
-    const candidate = candidates[0]!;
-    return resolveSingleAnchorCandidate(anchor, candidate);
-  }
-
-  if ((options.mode ?? "contextual-content") === "exact-content") {
-    return {
-      reason: "duplicate",
-      status: "ambiguous",
-    };
+  // A lone candidate at the anchored path, or for an anchor without neighbor
+  // context, is trusted outright. Moved context-bearing content must still
+  // prove its neighbors through the same contextual match as multiple
+  // candidates.
+  const onlyCandidate = candidates.length === 1 ? candidates[0]! : null;
+  if (
+    onlyCandidate &&
+    (onlyCandidate.path === anchor.path || !anchorRequiresContextualMatch(anchor))
+  ) {
+    return createMatchedAnchorResolution(
+      onlyCandidate,
+      onlyCandidate.path === anchor.path ? "exact-content-location" : "exact-content",
+    );
   }
 
   const contextualMatch =
@@ -360,36 +336,6 @@ function resolveAnchorFromCandidates(
       status: "ambiguous",
     }
   );
-}
-
-function resolveSingleAnchorCandidate(
-  anchor: DocumentNodeAnchor,
-  candidate: DocumentNodeAnchorCandidate,
-): DocumentNodeAnchorResolution {
-  if (!anchorRequiresContextualMatch(anchor) || candidate.path === anchor.path) {
-    return createMatchedAnchorResolution(
-      anchor,
-      candidate,
-      candidate.path === anchor.path ? "exact-content-location" : "exact-content",
-    );
-  }
-
-  const trustedContextMatch =
-    anchor.kind === "block"
-      ? candidate.anchor.kind === "block" && matchesBlockSiblingContext(anchor, candidate.anchor)
-      : candidate.anchor.kind === "table-cell" &&
-        hasTableCellContextMatch(anchor, candidate.anchor);
-
-  return trustedContextMatch
-    ? createMatchedAnchorResolution(
-        anchor,
-        candidate,
-        resolveContextualMatchBasis(anchor, candidate),
-      )
-    : {
-        reason: "weak-evidence",
-        status: "ambiguous",
-      };
 }
 
 function anchorRequiresContextualMatch(anchor: DocumentNodeAnchor) {
@@ -409,15 +355,28 @@ function resolveBlockAnchorContext(
   anchor: DocumentBlockAnchor,
   candidates: readonly DocumentNodeAnchorCandidate[],
 ): DocumentNodeAnchorResolution | null {
-  return (
-    resolveUniqueContextualCandidate(anchor, candidates, (candidate) => {
-      if (candidate.anchor.kind !== "block") {
-        return false;
-      }
+  // Single pass that stops at the second match. This runs once per anchor over
+  // every same-content candidate, so avoid allocating a filtered copy.
+  let matched: DocumentNodeAnchorCandidate | null = null;
 
-      return matchesBlockSiblingContext(anchor, candidate.anchor);
-    }) ?? null
-  );
+  for (const candidate of candidates) {
+    if (
+      candidate.anchor.kind !== "block" ||
+      !matchesBlockSiblingContext(anchor, candidate.anchor)
+    ) {
+      continue;
+    }
+
+    if (matched) {
+      return null;
+    }
+
+    matched = candidate;
+  }
+
+  return matched
+    ? createMatchedAnchorResolution(matched, resolveContextualMatchBasis(anchor, matched))
+    : null;
 }
 
 function resolveTableCellAnchorContext(
@@ -438,7 +397,7 @@ function resolveTableCellAnchorContext(
   const matched = selectTableCellContextCandidate(cellContextMatches, rowContextMatches);
 
   return matched
-    ? createMatchedAnchorResolution(anchor, matched, resolveContextualMatchBasis(anchor, matched))
+    ? createMatchedAnchorResolution(matched, resolveContextualMatchBasis(anchor, matched))
     : null;
 }
 
@@ -472,16 +431,6 @@ function matchesTableCellRowContext(
   );
 }
 
-function hasTableCellContextMatch(
-  anchor: DocumentTableCellAnchor,
-  candidateAnchor: DocumentTableCellAnchor,
-) {
-  return (
-    matchesTableCellNeighborContext(anchor, candidateAnchor) ||
-    matchesTableCellRowContext(anchor, candidateAnchor)
-  );
-}
-
 function selectTableCellContextCandidate<T>(
   cellContextMatches: readonly T[],
   rowContextMatches: readonly T[],
@@ -502,38 +451,7 @@ function selectOnlyCandidate<T>(candidates: readonly T[]): T | null {
   return candidates.length === 1 ? candidates[0]! : null;
 }
 
-function resolveUniqueContextualCandidate(
-  anchor: DocumentNodeAnchor,
-  candidates: readonly DocumentNodeAnchorCandidate[],
-  matches: (candidate: DocumentNodeAnchorCandidate) => boolean,
-): DocumentNodeAnchorResolution | null {
-  let matched: DocumentNodeAnchorCandidate | null = null;
-
-  for (const candidate of candidates) {
-    if (!matches(candidate)) {
-      continue;
-    }
-
-    if (matched) {
-      return null;
-    }
-
-    matched = candidate;
-  }
-
-  if (!matched) {
-    return null;
-  }
-
-  return createMatchedAnchorResolution(
-    anchor,
-    matched,
-    resolveContextualMatchBasis(anchor, matched),
-  );
-}
-
 function createMatchedAnchorResolution(
-  anchor: DocumentNodeAnchor,
   candidate: DocumentNodeAnchorCandidate,
   basis: Extract<DocumentNodeAnchorResolution, { status: "matched" }>["basis"],
 ): DocumentNodeAnchorResolution {
@@ -586,42 +504,15 @@ function hasMatchingHash<T>(left: T | undefined, right: T | undefined) {
 }
 
 function resolveBlockSiblingContext(document: Document, path: string) {
-  const siblingIndex = blockPathSiblingIndex(path);
+  // Callers pass paths of blocks that resolved in `document`.
+  const siblingIndex = blockPathSiblingIndex(path)!;
   const parentPath = parentBlockPath(path);
   const parent = parentPath ? resolveBlockByPath(document, parentPath) : null;
-  if (siblingIndex === null) {
-    return {
-      index: -1,
-      next: null,
-      parent,
-      previous: null,
-    };
-  }
-
   const siblings = parent ? (getBlockChildren(parent) ?? []) : document.blocks;
 
   return {
-    index: siblingIndex,
     next: siblings[siblingIndex + 1] ?? null,
     parent,
     previous: siblings[siblingIndex - 1] ?? null,
   };
-}
-
-function tableCellPathMatchFromVisitContext(
-  cell: TableCell,
-  context: {
-    cellIndex: number;
-    row: TableRow;
-    rowIndex: number;
-    table: TableBlock;
-  },
-): TableCellPathMatch {
-  return createTableCellPathMatch(
-    context.table,
-    context.row,
-    cell,
-    context.rowIndex,
-    context.cellIndex,
-  );
 }

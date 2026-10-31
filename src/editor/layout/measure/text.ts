@@ -1,18 +1,26 @@
-// Owns text measurement for render layout. Pretext handles the normal text
-// wrapping paths; this module adapts Pretext cursors back to editor UTF-16
-// offsets, materializes caret/hit-test boundaries, and keeps the narrow local
-// fallback for inline images and unsupported rich hard breaks.
+// Owns text measurement for render layout. Pretext wraps every line, plain
+// text through `prepareWithSegments` and rich paragraphs through
+// `rich-inline`; this module adapts Pretext's results back to editor UTF-16
+// offsets and materializes positioned layout lines with caret/hit-test
+// boundaries.
 
-import { prepareWithSegments, walkLineRanges, type PrepareOptions } from "@chenglou/pretext";
 import {
+  prepareWithSegments,
+  walkLineRanges,
+  type LayoutCursor,
+  type PrepareOptions,
+} from "@chenglou/pretext";
+import {
+  materializeRichInlineLineRange,
   prepareRichInline,
   walkRichInlineLineRanges,
   type PreparedRichInline,
-  type RichInlineFragmentRange,
+  type RichInlineBox,
   type RichInlineItem,
+  type RichInlineLineRange,
 } from "@chenglou/pretext/rich-inline";
 import { isReferenceInlineNode, type Block } from "@/document";
-import type { DocumentResources } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
 import { findInlinesInRange, inlineMarks, type IndexedInline } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
 import {
@@ -25,7 +33,7 @@ import {
 import {
   resolveInlineReferenceMeasurement,
   resolveInlineReferenceSignature,
-  type InlineReferenceLayoutMetric,
+  type LayoutInlineReference,
 } from "./inline-reference";
 import {
   cacheLineBoundaries,
@@ -34,17 +42,16 @@ import {
   getOrCreateGraphemeWidthCache,
   type LayoutCache,
 } from "../state/cache";
+import type { LayoutLine } from "./index";
 
 function inlineIsCode(run: IndexedInline): boolean {
   return inlineMarks(run).includes("code");
 }
 
-export type TextLineBoundary = {
+export type LineBoundary = {
   left: number;
   offset: number;
 };
-
-export type TextInlineReference = InlineReferenceLayoutMetric;
 
 export type LayoutTextInput = {
   path: string;
@@ -60,46 +67,28 @@ export type LayoutTextInput = {
 export type MeasuredTextLine = {
   end: number;
   height: number;
-  inlineReferences: TextInlineReference[] | null;
+  inlineReferences: LayoutInlineReference[] | null;
   start: number;
   text: string;
   width: number;
 };
 
-type MeasuredTextSegment = {
-  breakable: boolean;
-  end: number;
-  height: number;
-  inlineReference: TextInlineReference | null;
-  start: number;
-  text: string;
-  width: number;
+type TextLinePlacement = {
+  blockPath: string | null;
+  contentInset: number;
+  left: number;
+  top: number;
 };
 
 type RichInlineMeasurementItem = {
-  inlineReference: TextInlineReference | null;
-  leadingTrimLength: number;
+  height: number;
+  inlineReference: LayoutInlineReference | null;
   run: IndexedInline;
 };
 
 type InlineMeasurementProfile = {
   hasHardBreak: boolean;
-  hasImage: boolean;
   hasRichInline: boolean;
-};
-
-type TextCursor = { graphemeIndex: number; segmentIndex: number };
-
-// Pretext does not currently expose source-offset mapping for rich-inline
-// fragments, so this intentionally reads the prepared item table that backs
-// `RichInlineFragmentRange.itemIndex`. Keep this adapter narrow.
-type InternalPreparedRichInline = PreparedRichInline & {
-  itemsBySourceItemIndex: Array<
-    | {
-        prepared: ReturnType<typeof prepareWithSegments>;
-      }
-    | undefined
-  >;
 };
 
 // Heading typography expressed as ratios over the document base font size,
@@ -214,6 +203,62 @@ function isAsciiText(text: string) {
   return true;
 }
 
+// Measures a text container, then positions its lines top-down from
+// `placement.top` with their caret/hit-test boundaries. Body blocks, table
+// cells, and metadata cells all emit `LayoutLine`s through here.
+export function layoutTextContainerLines(
+  cache: LayoutCache,
+  container: LayoutTextInput,
+  availableWidth: number,
+  typography: BlockTypography,
+  resources: DocumentResources,
+  placement: TextLinePlacement,
+): LayoutLine[] {
+  const measuredLines = measureTextContainerLines(
+    cache,
+    container,
+    availableWidth,
+    typography,
+    resources,
+  );
+  const lines: LayoutLine[] = [];
+  let top = placement.top;
+
+  for (const line of measuredLines) {
+    lines.push({
+      blockPath: placement.blockPath,
+      boundaries: measureTextLineBoundaries(
+        cache,
+        container,
+        line.start,
+        line.end,
+        line.text,
+        availableWidth,
+        typography,
+        resources,
+      ),
+      contentInset: placement.contentInset,
+      end: line.end,
+      font: typography.font,
+      height: line.height,
+      inlineReferences: line.inlineReferences,
+      left: placement.left,
+      path: container.path,
+      start: line.start,
+      text: line.text,
+      top,
+      width: line.width,
+    });
+    top += line.height;
+  }
+
+  return lines;
+}
+
+export function sumLineHeights(lines: readonly { height: number }[]) {
+  return lines.reduce((total, line) => total + line.height, 0);
+}
+
 export function measureTextContainerLines(
   cache: LayoutCache,
   container: LayoutTextInput,
@@ -239,7 +284,7 @@ export function measureTextContainerLines(
   return cacheMeasuredLines(cache, cacheKey, measuredLines);
 }
 
-export function measureTextLineBoundaries(
+function measureTextLineBoundaries(
   cache: LayoutCache,
   container: LayoutTextInput,
   start: number,
@@ -248,7 +293,7 @@ export function measureTextLineBoundaries(
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
-): TextLineBoundary[] {
+): LineBoundary[] {
   // Pretext returns line ranges and widths, but it does not currently expose
   // every editor offset's x-position. Keep this boundary projection local so
   // caret placement, hit testing, and decoration clipping share one cache.
@@ -261,7 +306,7 @@ export function measureTextLineBoundaries(
 
   const context = getTextMeasurementContext();
 
-  const boundaries: TextLineBoundary[] = [
+  const boundaries: LineBoundary[] = [
     {
       left: 0,
       offset: 0,
@@ -359,20 +404,52 @@ function createMeasuredTextLines(
     return [emptyMeasuredLine(0, typography.lineHeight)];
   }
 
-  if (container.kind === "inlines" && requiresLocalInlineLayout(inlineProfile)) {
-    return createInlineMeasuredTextLines(cache, container, availableWidth, typography, resources);
+  const whiteSpace = resolveWhitespace(container, inlineProfile);
+  const measuredText = whiteSpace === "normal" ? pinCollapsibleWhitespace(text) : text;
+  const lines =
+    container.kind === "inlines" && inlineProfile.hasRichInline
+      ? createRichInlineMeasuredTextLines(
+          container,
+          measuredText,
+          whiteSpace,
+          availableWidth,
+          typography,
+          resources,
+        )
+      : createPlainMeasuredTextLines(
+          cache,
+          text,
+          measuredText,
+          whiteSpace,
+          availableWidth,
+          typography,
+        );
+
+  if (lines.length === 0) {
+    return [emptyMeasuredLine(0, typography.lineHeight)];
   }
 
-  if (container.kind === "inlines" && inlineProfile.hasRichInline) {
-    return createRichInlineMeasuredTextLines(container, availableWidth, typography, resources);
+  if (inlineProfile.hasHardBreak && text.endsWith("\n")) {
+    lines.push(emptyMeasuredLine(text.length, typography.lineHeight));
   }
 
-  const prepared = prepareTextSegments(
-    cache,
-    text,
-    typography.font,
-    resolveWhitespace(container, inlineProfile),
-  );
+  // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
+  // visual row after a trailing source newline. Materialize it so code-block
+  // carets can land immediately after pressing Enter at end-of-source.
+  return isPlainTextContainer(container) && text.endsWith("\n")
+    ? materializeTrailingSourceTextLine(lines, text.length, typography.lineHeight)
+    : lines;
+}
+
+function createPlainMeasuredTextLines(
+  cache: LayoutCache,
+  text: string,
+  measuredText: string,
+  whiteSpace: NonNullable<PrepareOptions["whiteSpace"]>,
+  availableWidth: number,
+  typography: BlockTypography,
+) {
+  const prepared = prepareTextSegments(cache, measuredText, typography.font, whiteSpace);
   const resolveOffset = createCursorOffsetResolver(prepared.segments);
   const lines: MeasuredTextLine[] = [];
 
@@ -390,20 +467,44 @@ function createMeasuredTextLines(
     });
   });
 
-  if (lines.length === 0) {
-    return [emptyMeasuredLine(0, typography.lineHeight)];
+  if (lines.length > 0 && whiteSpace === "normal") {
+    hangTrailingWhitespace(lines, text);
   }
 
-  if (inlineProfile.hasHardBreak && text.endsWith("\n")) {
-    lines.push(emptyMeasuredLine(text.length, typography.lineHeight));
-  }
+  return lines;
+}
 
-  // Pretext preserves `pre-wrap` hard breaks, but does not emit the empty
-  // visual row after a trailing source newline. Materialize it so code-block
-  // carets can land immediately after pressing Enter at end-of-source.
-  return isPlainTextContainer(container) && text.endsWith("\n")
-    ? materializeTrailingSourceTextLine(lines, text.length, typography.lineHeight)
-    : lines;
+// Pretext's `normal` mode collapses whitespace runs and drops leading and
+// trailing whitespace, leaving those characters with no geometry or caret
+// stops. Documint keeps every character, as `pre-wrap` does, while keeping
+// `normal` soft wrapping. Pinning runs with no-break spaces does that: a
+// leading run is pinned fully, and any longer run keeps only its last
+// character collapsible as its one break opportunity, so a lone space, soft
+// newline, or tab is untouched. The swap preserves UTF-16 length, so Pretext
+// offsets stay source offsets. Pinned spaces glue to the word before them, so
+// at a wrap point they count toward that word instead of hanging.
+const COLLAPSIBLE_WHITESPACE_RUN = /^[ \t\n\f\r]+|[ \t\n\f\r]{2,}/g;
+const NO_BREAK_SPACE = "\u00a0";
+
+function pinCollapsibleWhitespace(text: string) {
+  return text.replace(COLLAPSIBLE_WHITESPACE_RUN, (run: string, offset: number) =>
+    offset === 0
+      ? NO_BREAK_SPACE.repeat(run.length)
+      : NO_BREAK_SPACE.repeat(run.length - 1) + run.at(-1),
+  );
+}
+
+// The final whitespace character that pinning leaves collapsible is still
+// dropped by Pretext. Hang it on the last line, as `pre-wrap` does, so typing a
+// trailing space advances the caret without moving the wrap point.
+function hangTrailingWhitespace(lines: MeasuredTextLine[], text: string) {
+  const lastIndex = lines.length - 1;
+  const last = lines[lastIndex]!;
+  const end = resolveMeasuredLineEnd(text, last.start, text.length);
+
+  if (end !== last.end) {
+    lines[lastIndex] = { ...last, end, text: text.slice(last.start, end) };
+  }
 }
 
 function materializeTrailingSourceTextLine(
@@ -422,80 +523,68 @@ function resolveMeasuredLineEnd(text: string, start: number, end: number) {
   return end > start && text[end - 1] === "\n" ? end - 1 : end;
 }
 
-// Local line layout is intentionally limited to cases Pretext does not model:
-// images are replaced elements whose width and height come from document
-// resources, while `rich-inline` currently only accepts text items plus
-// horizontal `extraWidth`; and rich inline content mixed with hard breaks needs
-// `pre-wrap` semantics, while `rich-inline` is a `white-space: normal` helper.
-function createInlineMeasuredTextLines(
-  cache: LayoutCache,
-  container: Extract<LayoutTextInput, { kind: "inlines" }>,
-  availableWidth: number,
-  typography: BlockTypography,
-  resources: DocumentResources,
-) {
-  const segments = flattenMeasuredInlineSegments(
-    cache,
-    getTextMeasurementContext(),
-    container,
-    availableWidth,
-    typography,
-    resources,
-  );
-
-  if (segments.length === 0) {
-    return [emptyMeasuredLine(0, typography.lineHeight)];
-  }
-
-  return layoutSegmentsIntoLines(segments, container.text, availableWidth, typography.lineHeight);
-}
-
+// Rich paragraphs mix fonts, atomic mentions and resources, and image boxes,
+// so Pretext lays their items out as one paragraph. Each line is as tall as
+// the tallest item on it, since Pretext only owns horizontal geometry.
 function createRichInlineMeasuredTextLines(
   container: Extract<LayoutTextInput, { kind: "inlines" }>,
+  measuredText: string,
+  whiteSpace: NonNullable<PrepareOptions["whiteSpace"]>,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
 ) {
   const { items, measurementItems } = createRichInlineMeasurementItems(
     container,
+    measuredText,
     availableWidth,
     typography,
     resources,
   );
-
-  if (items.length === 0) {
-    return [emptyMeasuredLine(0, typography.lineHeight)];
-  }
-
-  const prepared = prepareRichInline(items);
-  const internalPrepared = prepared as InternalPreparedRichInline;
+  const prepared = prepareRichInline(items, { whiteSpace });
   const inlineReferences = resolveInlineReferencesFromMeasurementItems(measurementItems);
-  const lines: MeasuredTextLine[] = [];
+  const rows: Array<{ height: number; start: number; width: number }> = [];
 
   walkRichInlineLineRanges(prepared, availableWidth, (line) => {
-    const range = resolveRichInlineSourceRange(internalPrepared, measurementItems, line.fragments);
+    let height = typography.lineHeight;
 
-    if (!range) {
-      return;
+    for (const fragment of line.fragments) {
+      height = Math.max(height, measurementItems[fragment.itemIndex]!.height);
     }
 
-    lines.push({
-      end: range.end,
-      height: typography.lineHeight,
-      inlineReferences: resolveLineInlineReferences(inlineReferences, range.start, range.end),
-      start: range.start,
-      text: container.text.slice(range.start, range.end),
+    rows.push({
+      height,
+      start: resolveRichInlineLineStart(prepared, measurementItems, line),
       width: line.width,
     });
   });
 
-  return lines.length > 0 ? lines : [emptyMeasuredLine(0, typography.lineHeight)];
+  // `rich-inline` trims whitespace at item edges into one-space gaps, so
+  // fragment ends can stop short of the source. Tile lines instead: each runs
+  // to where the next starts, short of a hard break, and the last hangs any
+  // trailing whitespace.
+  return rows.map(({ height, start, width }, index): MeasuredTextLine => {
+    const end = resolveMeasuredLineEnd(
+      container.text,
+      start,
+      rows[index + 1]?.start ?? container.text.length,
+    );
+
+    return {
+      end,
+      height,
+      inlineReferences: resolveLineInlineReferences(inlineReferences, start, end),
+      start,
+      text: container.text.slice(start, end),
+      width,
+    };
+  });
 }
 
 function resolveInlineReferencesFromMeasurementItems(
   measurementItems: RichInlineMeasurementItem[],
 ) {
-  const references: TextInlineReference[] = [];
+  const references: LayoutInlineReference[] = [];
 
   for (const item of measurementItems) {
     if (item.inlineReference) {
@@ -506,29 +595,31 @@ function resolveInlineReferencesFromMeasurementItems(
   return references;
 }
 
+// Text items are sliced from the measured text as a whole, so whitespace runs
+// that span items stay pinned.
 function createRichInlineMeasurementItems(
   container: Extract<LayoutTextInput, { kind: "inlines" }>,
+  measuredText: string,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
 ) {
-  const items: RichInlineItem[] = [];
+  const items: Array<RichInlineItem | RichInlineBox> = [];
   const measurementItems: RichInlineMeasurementItem[] = [];
   const context = getTextMeasurementContext();
 
   for (const run of containerInlines(container)) {
-    const runText = container.text.slice(run.start, run.end);
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
       typography,
       resources,
     });
 
-    if (reference?.richItem) {
+    if (reference) {
       items.push(reference.richItem);
       measurementItems.push({
+        height: reference.height,
         inlineReference: reference.inlineReference,
-        leadingTrimLength: 0,
         run,
       });
       continue;
@@ -536,11 +627,11 @@ function createRichInlineMeasurementItems(
 
     items.push({
       font: resolveInlineTextStyle(typography, inlineMarks(run)).font,
-      text: runText,
+      text: measuredText.slice(run.start, run.end),
     });
     measurementItems.push({
+      height: typography.lineHeight,
       inlineReference: null,
-      leadingTrimLength: resolveLeadingCollapsibleLength(runText),
       run,
     });
   }
@@ -551,73 +642,31 @@ function createRichInlineMeasurementItems(
   };
 }
 
-function resolveRichInlineSourceRange(
-  prepared: InternalPreparedRichInline,
+// A line starts at its first fragment. Text items are their run's slice of
+// the container, so a fragment's source offset maps straight back to it,
+// while a reference item's text is its own label and starts at its run.
+function resolveRichInlineLineStart(
+  prepared: PreparedRichInline,
   measurementItems: RichInlineMeasurementItem[],
-  fragments: RichInlineFragmentRange[],
+  line: RichInlineLineRange,
 ) {
-  let start: number | null = null;
-  let end: number | null = null;
+  const first = line.fragments[0]!;
+  const { inlineReference, run } = measurementItems[first.itemIndex]!;
 
-  for (const fragment of fragments) {
-    const fragmentStart = resolveRichInlineFragmentOffset(
-      prepared,
-      measurementItems,
-      fragment,
-      "start",
-    );
-    const fragmentEnd = resolveRichInlineFragmentOffset(
-      prepared,
-      measurementItems,
-      fragment,
-      "end",
-    );
-
-    if (fragmentStart === null || fragmentEnd === null) {
-      continue;
-    }
-
-    start = start === null ? fragmentStart : Math.min(start, fragmentStart);
-    end = end === null ? fragmentEnd : Math.max(end, fragmentEnd);
+  if (inlineReference) {
+    return run.start;
   }
 
-  return start === null || end === null
-    ? null
-    : {
-        end,
-        start,
-      };
+  // Materializing only the first fragment skips building text for the rest.
+  const [fragment] = materializeRichInlineLineRange(prepared, {
+    ...line,
+    fragments: [first],
+  }).fragments;
+
+  return run.start + fragment!.sourceStart;
 }
 
-function resolveRichInlineFragmentOffset(
-  prepared: InternalPreparedRichInline,
-  measurementItems: RichInlineMeasurementItem[],
-  fragment: RichInlineFragmentRange,
-  side: "end" | "start",
-) {
-  const measurementItem = measurementItems[fragment.itemIndex];
-  const preparedItem = prepared.itemsBySourceItemIndex[fragment.itemIndex];
-
-  if (!measurementItem || !preparedItem) {
-    return null;
-  }
-
-  const { run } = measurementItem;
-
-  if (run.node.type === "mention" || run.node.type === "resource") {
-    return side === "start" ? run.start : run.end;
-  }
-
-  const cursor = side === "start" ? fragment.start : fragment.end;
-
-  return (
-    run.start +
-    measurementItem.leadingTrimLength +
-    createCursorOffsetResolver(preparedItem.prepared.segments)(cursor)
-  );
-}
-
-function createCursorOffsetResolver(segments: string[]) {
+function createCursorOffsetResolver(segments: readonly string[]) {
   const segmentOffsets: number[] = [];
   const graphemeOffsetsBySegment = new Map<number, number[]>();
   let offset = 0;
@@ -627,7 +676,7 @@ function createCursorOffsetResolver(segments: string[]) {
     offset += segment.length;
   }
 
-  return (cursor: TextCursor) => {
+  return (cursor: LayoutCursor) => {
     const segmentOffset = segmentOffsets[cursor.segmentIndex] ?? offset;
 
     if (cursor.graphemeIndex === 0) {
@@ -657,121 +706,6 @@ function createGraphemeOffsets(segment: string) {
   return offsets;
 }
 
-function resolveLeadingCollapsibleLength(text: string) {
-  return text.match(/^[ \t\n\f\r]+/)?.[0].length ?? 0;
-}
-
-// Greedy line-breaking over pre-measured inline segments. Consumes segments
-// left-to-right, accumulating width until the line overflows or hits an
-// explicit newline, then emits the line at the best available break point.
-function layoutSegmentsIntoLines(
-  segments: MeasuredTextSegment[],
-  text: string,
-  availableWidth: number,
-  lineHeight: number,
-) {
-  const lines: MeasuredTextLine[] = [];
-  let index = 0;
-
-  while (index < segments.length) {
-    const lineStart = segments[index]!.start;
-
-    if (segments[index]!.text === "\n") {
-      lines.push(emptyMeasuredLine(lineStart, lineHeight));
-      index += 1;
-      continue;
-    }
-
-    let width = 0;
-    let widthAtBreak = 0;
-    let cursor = index;
-    let breakIndex = -1;
-    let maxHeight = lineHeight;
-
-    while (cursor < segments.length) {
-      const segment = segments[cursor]!;
-
-      if (segment.text === "\n") {
-        break;
-      }
-
-      const nextWidth = width + segment.width;
-
-      if (nextWidth > availableWidth && cursor > index) {
-        break;
-      }
-
-      width = nextWidth;
-      maxHeight = Math.max(maxHeight, segment.height);
-
-      if (segment.breakable) {
-        breakIndex = cursor;
-        widthAtBreak = width;
-      }
-
-      cursor += 1;
-    }
-
-    if (cursor === segments.length || segments[cursor]?.text === "\n") {
-      const lineEnd = segments[cursor - 1]?.end ?? lineStart;
-
-      lines.push({
-        end: lineEnd,
-        height: maxHeight,
-        inlineReferences: resolveSegmentInlineReferences(segments, index, cursor),
-        start: lineStart,
-        text: text.slice(lineStart, lineEnd),
-        width,
-      });
-      index = cursor < segments.length && segments[cursor]?.text === "\n" ? cursor + 1 : cursor;
-      continue;
-    }
-
-    if (breakIndex >= index) {
-      const lineEnd = segments[breakIndex]!.end;
-
-      lines.push({
-        end: lineEnd,
-        height: maxHeight,
-        inlineReferences: resolveSegmentInlineReferences(segments, index, breakIndex + 1),
-        start: lineStart,
-        text: text.slice(lineStart, lineEnd),
-        width: widthAtBreak,
-      });
-      index = breakIndex + 1;
-      continue;
-    }
-
-    const lineEnd = segments[Math.max(index, cursor - 1)]!.end;
-
-    lines.push({
-      end: lineEnd,
-      height: maxHeight,
-      inlineReferences: resolveSegmentInlineReferences(
-        segments,
-        index,
-        Math.max(index + 1, cursor),
-      ),
-      start: lineStart,
-      text: text.slice(lineStart, lineEnd),
-      width,
-    });
-    index = Math.max(index + 1, cursor);
-  }
-
-  // If the path text ends on a `\n`, the loop consumes it as a separator but
-  // never materializes the empty line on the other side. Emit it explicitly
-  // so the caret has somewhere to land after a soft break at the path end.
-  // Mirrors the empty-text path at the top of `createMeasuredTextLines`,
-  // which materializes one empty line for a path with no content at all.
-  const lastSegment = segments.at(-1);
-  if (lastSegment?.text === "\n") {
-    lines.push(emptyMeasuredLine(lastSegment.end, lineHeight));
-  }
-
-  return lines;
-}
-
 function emptyMeasuredLine(offset: number, lineHeight: number): MeasuredTextLine {
   return {
     end: offset,
@@ -783,26 +717,8 @@ function emptyMeasuredLine(offset: number, lineHeight: number): MeasuredTextLine
   };
 }
 
-function resolveSegmentInlineReferences(
-  segments: MeasuredTextSegment[],
-  startIndex: number,
-  endIndex: number,
-) {
-  const references: TextInlineReference[] = [];
-
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const reference = segments[index]?.inlineReference;
-
-    if (reference) {
-      references.push(reference);
-    }
-  }
-
-  return references.length > 0 ? references : null;
-}
-
 function resolveLineInlineReferences(
-  references: TextInlineReference[],
+  references: LayoutInlineReference[],
   startOffset: number,
   endOffset: number,
 ) {
@@ -813,78 +729,19 @@ function resolveLineInlineReferences(
   return lineReferences.length > 0 ? lineReferences : null;
 }
 
-function flattenMeasuredInlineSegments(
-  cache: LayoutCache,
-  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-  container: Extract<LayoutTextInput, { kind: "inlines" }>,
-  availableWidth: number,
-  typography: BlockTypography,
-  resources: DocumentResources,
-) {
-  const segments: MeasuredTextSegment[] = [];
-
-  for (const run of containerInlines(container)) {
-    const runText = container.text.slice(run.start, run.end);
-    const reference = resolveInlineReferenceMeasurement(run, context, {
-      availableWidth,
-      typography,
-      resources,
-    });
-
-    if (reference) {
-      segments.push({
-        breakable: true,
-        end: run.end,
-        height: reference.height,
-        inlineReference: reference.inlineReference,
-        start: run.start,
-        text: reference.text,
-        width: reference.width,
-      });
-      continue;
-    }
-
-    context.font = resolveInlineTextStyle(typography, inlineMarks(run)).font;
-
-    let offset = run.start;
-
-    for (const grapheme of splitBoundaryUnits(runText)) {
-      const start = offset;
-      const end = start + grapheme.length;
-
-      segments.push({
-        breakable: /\s/.test(grapheme),
-        end,
-        height: typography.lineHeight,
-        inlineReference: null,
-        start,
-        text: grapheme,
-        width: grapheme === "\n" ? 0 : measureGraphemeWidth(cache, context, grapheme),
-      });
-      offset = end;
-    }
-  }
-
-  return segments;
-}
-
 function resolveInlineMeasurementProfile(container: LayoutTextInput): InlineMeasurementProfile {
   let hasHardBreak = false;
-  let hasImage = false;
   let hasRichInline = false;
 
   if (isPlainTextContainer(container)) {
     return {
       hasHardBreak,
-      hasImage,
       hasRichInline,
     };
   }
 
   for (const run of containerInlines(container)) {
-    if (run.node.type === "image") {
-      hasImage = true;
-    } else if (run.node.type === "lineBreak") {
+    if (run.node.type === "lineBreak") {
       hasHardBreak = true;
     }
 
@@ -895,16 +752,8 @@ function resolveInlineMeasurementProfile(container: LayoutTextInput): InlineMeas
 
   return {
     hasHardBreak,
-    hasImage,
     hasRichInline,
   };
-}
-
-function requiresLocalInlineLayout(profile: InlineMeasurementProfile) {
-  // Inline images affect line height, which Pretext's inline helpers do not
-  // own. Rich inline content with hard breaks also stays local because
-  // `rich-inline` is intentionally normal-whitespace-only.
-  return profile.hasImage || (profile.hasHardBreak && profile.hasRichInline);
 }
 
 // Memoizes the per-path cache identity by the indexed `inlines` array

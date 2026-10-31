@@ -6,7 +6,7 @@ import {
 } from "@/editor/state";
 import type { EditorLayoutState } from "@/editor/layout";
 import type { DocumentChange } from "@/document";
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import type { DocumentChangeFadeFrame } from "../effects";
 import { resolveTableCellGeometryFrame, type TableCellGeometryFrame } from "./chrome/table";
 
@@ -169,7 +169,6 @@ export function resolveTableCellDocumentChanges({
     const geometry = resolveTableCellGeometryFrame({
       endLineIndex,
       layout,
-      pathBounds: layout.pathBounds,
       path: line.path,
       startLineIndex,
     });

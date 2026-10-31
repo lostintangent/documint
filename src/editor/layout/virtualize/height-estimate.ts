@@ -4,16 +4,17 @@
 // estimated bottom.
 
 import { isReferenceInlineNode, type Block } from "@/document";
-import type { DocumentResources } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
 import type { LayoutCache } from "../state/cache";
 import type { LayoutContentMetrics } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
-import { estimateTextLayout } from "./text-estimate";
+import { estimateTextHeight } from "./text-estimate";
 import {
   measureTextContainerLines,
   resolveBlockTypography,
   resolveTextMeasurementCacheIdentity,
+  sumLineHeights,
   type LayoutTextInput,
 } from "../measure/text";
 
@@ -38,45 +39,27 @@ export function estimateContainerHeight(
     container.kind === "inlines" &&
     container.inlines.some((inline) => isReferenceInlineNode(inline.node))
   ) {
-    return measureTextContainerLines(
-      cache,
-      container,
-      contentMetrics.availableWidth,
-      typography,
-      resources,
-    ).reduce((total, line) => total + line.height, 0);
+    return sumLineHeights(
+      measureTextContainerLines(
+        cache,
+        container,
+        contentMetrics.availableWidth,
+        typography,
+        resources,
+      ),
+    );
   }
 
-  const estimate = estimateTextLayout({
-    charWidth: options.charWidth,
-    lineHeight: typography.lineHeight,
-    text: container.text,
-    width: contentMetrics.availableWidth,
-  });
-  const estimatedHeight = Math.max(
+  const estimatedHeight = estimateTextHeight(
+    container.text,
+    contentMetrics.availableWidth,
+    options.charWidth,
     typography.lineHeight,
-    estimate.lineCount * typography.lineHeight,
   );
 
   return block?.type === "code"
     ? estimatedHeight + CODE_BLOCK_BACKGROUND_PADDING_Y * 2
     : estimatedHeight;
-}
-
-export function estimateTableCellHeight(
-  container: LayoutTextInput,
-  width: number,
-  lineHeight: number,
-  charWidth: number | undefined,
-) {
-  const estimate = estimateTextLayout({
-    charWidth,
-    lineHeight,
-    text: container.text,
-    width,
-  });
-
-  return Math.max(lineHeight, estimate.lineCount * lineHeight);
 }
 
 export function createContainerHeightCacheKey(

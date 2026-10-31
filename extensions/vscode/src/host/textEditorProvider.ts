@@ -24,7 +24,6 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
   public async resolveCustomTextEditor(
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel,
-    _: vscode.CancellationToken,
   ): Promise<void> {
     const webview = webviewPanel.webview;
     const postMessage = (message: HostMessage) => webview.postMessage(message);

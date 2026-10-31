@@ -1,13 +1,8 @@
 import type { EditorPresence } from "@/editor/anchors";
-import {
-  findLineForPathOffset,
-  measureCaretTarget,
-  resolveCaretVisualLeft,
-  type EditorLayoutState,
-} from "@/editor/layout";
+import { measureVisualCaret, type EditorLayoutState } from "@/editor/layout";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import { resolveCenteredTextTop, resolveFontMetrics } from "@/editor/text/measure";
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import type { PaintLayerFrame } from "./document-frame";
 
 const caretOpticalTopInset = 1;
@@ -19,13 +14,10 @@ export function createOverlayFrame(
   options: CreateOverlayFrameOptions,
 ): OverlayFrame {
   const carets: OverlayCaretFrame[] = [];
-  const hasRangeSelection =
-    options.normalizedSelection.start.path !== options.normalizedSelection.end.path ||
-    options.normalizedSelection.start.offset !== options.normalizedSelection.end.offset;
-  const shouldPaintUserCaret = options.showCaret && !hasRangeSelection;
+  const shouldPaintUserCaret = options.showCaret && options.normalizedSelection.collapsed;
 
   if (shouldPaintUserCaret) {
-    const caret = resolveOverlayCaretFrame(editorState, layoutState, {
+    const caret = resolveOverlayCaretFrame(layoutState, {
       color: options.theme.caret,
       offset: editorState.selection.focus.offset,
       path: editorState.selection.focus.path,
@@ -42,7 +34,7 @@ export function createOverlayFrame(
         continue;
       }
 
-      const caret = resolveOverlayCaretFrame(editorState, layoutState, {
+      const caret = resolveOverlayCaretFrame(layoutState, {
         color: presence.color ?? options.theme.leafAccent,
         offset: presence.cursorPoint.offset,
         path: presence.cursorPoint.path,
@@ -88,7 +80,6 @@ export type OverlayCaretFrame = {
 };
 
 function resolveOverlayCaretFrame(
-  editorState: EditorState,
   layoutState: EditorLayoutState,
   target: {
     color: string;
@@ -96,43 +87,23 @@ function resolveOverlayCaretFrame(
     path: string;
   },
 ): OverlayCaretFrame | null {
-  const measured = measureCaretTarget(layoutState.layout, editorState.documentIndex, target);
+  const visualCaret = measureVisualCaret(layoutState.layout, target);
 
-  if (!measured) {
+  if (!visualCaret) {
     return null;
   }
 
-  const left = resolveCaretVisualLeft(editorState, layoutState.layout, measured);
-  const metrics = resolveCaretPaintMetrics(layoutState, measured);
+  const { caret, line } = visualCaret;
+  const { ascent, descent } = resolveFontMetrics(line.font);
+  const glyphHeight = Math.max(1, ascent + descent);
 
   return {
     color: target.color,
-    height: metrics.height,
-    left,
-    top: metrics.top,
-  };
-}
-
-function resolveCaretPaintMetrics(
-  layoutState: EditorLayoutState,
-  caret: NonNullable<ReturnType<typeof measureCaretTarget>>,
-) {
-  const line = findLineForPathOffset(layoutState.layout, caret.path, caret.offset);
-  const font =
-    line?.font ??
-    '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
-  const { ascent, descent } = resolveFontMetrics(font);
-  const glyphHeight = Math.max(1, ascent + descent);
-  const height = Math.min(caret.height - caretVerticalInset, glyphHeight);
-  const top = line
-    ? Math.max(
-        line.top,
-        line.top + resolveCenteredTextTop(line.height, font) - caretOpticalTopInset,
-      )
-    : caret.top + Math.max(0, Math.floor((caret.height - height) / 2));
-
-  return {
-    height,
-    top,
+    height: Math.min(line.height - caretVerticalInset, glyphHeight),
+    left: caret.left,
+    top: Math.max(
+      line.top,
+      line.top + resolveCenteredTextTop(line.height, line.font) - caretOpticalTopInset,
+    ),
   };
 }

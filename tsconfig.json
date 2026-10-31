@@ -25,6 +25,6 @@
     "src",
     "scripts",
     "test",
-    "vite.config.ts"
+    "tsdown.config.ts"
   ]
 }

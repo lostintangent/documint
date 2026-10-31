@@ -1,32 +1,6 @@
 const esbuild = require("esbuild");
 
 const production = process.argv.includes("--production");
-const watch = process.argv.includes("--watch");
-
-/**
- * @param {string} label
- * @type {import('esbuild').Plugin}
- */
-function esbuildProblemMatcherPlugin(label) {
-  return {
-    name: `esbuild-problem-matcher-${label}`,
-
-    setup(build) {
-      build.onStart(() => {
-        console.log(`[watch] ${label} build started`);
-      });
-      build.onEnd((result) => {
-        result.errors.forEach(({ text, location }) => {
-          console.error(`✘ [ERROR] ${text}`);
-          if (location) {
-            console.error(`    ${location.file}:${location.line}:${location.column}:`);
-          }
-        });
-        console.log(`[watch] ${label} build finished`);
-      });
-    },
-  };
-}
 
 /**
  * @type {import('esbuild').Plugin}
@@ -52,7 +26,6 @@ const extensionConfig = {
   outfile: "dist/extension.js",
   external: ["vscode"],
   logLevel: "silent",
-  plugins: [esbuildProblemMatcherPlugin("extension")],
 };
 
 const webviewConfig = {
@@ -71,20 +44,11 @@ const webviewConfig = {
   },
   logLevel: "silent",
   jsx: "automatic",
-  plugins: [reactAliasPlugin, esbuildProblemMatcherPlugin("webview")],
+  plugins: [reactAliasPlugin],
 };
 
 async function main() {
-  const contexts = await Promise.all([
-    esbuild.context(extensionConfig),
-    esbuild.context(webviewConfig),
-  ]);
-  if (watch) {
-    await Promise.all(contexts.map((ctx) => ctx.watch()));
-  } else {
-    await Promise.all(contexts.map((ctx) => ctx.rebuild()));
-    await Promise.all(contexts.map((ctx) => ctx.dispose()));
-  }
+  await Promise.all([esbuild.build(extensionConfig), esbuild.build(webviewConfig)]);
 }
 
 main().catch((e) => {

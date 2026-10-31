@@ -43,7 +43,7 @@ type UseSelectionOptions = {
 type SelectionController = {
   handle: ResizeHandle | null;
   leaf: SelectionLeaf | null;
-  promoteLeafToThread: (threadIndex: number, animateInitialComment?: boolean) => void;
+  promoteLeafToThread: (threadIndex: number) => void;
 };
 
 export function useSelection({
@@ -66,26 +66,23 @@ export function useSelection({
   const [promotedThread, setPromotedThread] = useState<PromotedSelectionThread | null>(null);
   const selectionLeaf = useSprig(selectionLeafSprig, promotedThread);
 
-  const promoteLeafToThread = useEffectEvent(
-    (threadIndex: number, animateInitialComment = true) => {
-      if (selectionLeaf?.kind !== "annotation") {
-        return;
-      }
+  const promoteLeafToThread = useEffectEvent((threadIndex: number) => {
+    if (selectionLeaf?.kind !== "annotation") {
+      return;
+    }
 
-      setPromotedThread({
-        anchor: selectionLeaf.anchor,
-        animateInitialComment,
-        leftOverride: selectionLeaf.leftOverride,
-        paddingY: selectionLeaf.paddingY,
-        selection: selectionLeaf.selection,
-        threadIndex,
-      });
-    },
-  );
+    setPromotedThread({
+      anchor: selectionLeaf.anchor,
+      animateInitialComment: true,
+      leftOverride: selectionLeaf.leftOverride,
+      paddingY: selectionLeaf.paddingY,
+      selection: selectionLeaf.selection,
+      threadIndex,
+    });
+  });
 
   /* Handle drag */
 
-  const activeHandleKindRef = useRef<SelectionHandleKind | null>(null);
   const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
 
@@ -98,22 +95,21 @@ export function useSelection({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    activeHandleKindRef.current = null;
     stationarySelectionPointRef.current = null;
     dragPointerIdRef.current = null;
   });
 
+  // Pointer capture routes a drag's events to the handle that started it, and
+  // the pointer-id check ignores any other pointer.
   const updateSelectionFromHandle = useEffectEvent((event: PointerEvent<HTMLDivElement>) => {
     const stationarySelectionPoint = stationarySelectionPointRef.current;
+    if (!stationarySelectionPoint || dragPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
     const point = resolvePoint(event);
     const layout = store.layout.peekRendered();
-
-    if (
-      !point ||
-      !stationarySelectionPoint ||
-      dragPointerIdRef.current !== event.pointerId ||
-      !layout
-    ) {
+    if (!point || !layout) {
       return;
     }
 
@@ -146,7 +142,6 @@ export function useSelection({
       event.stopPropagation();
       dragPointerIdRef.current = event.pointerId;
       stationarySelectionPointRef.current = stationarySelectionPoint;
-      activeHandleKindRef.current = kind;
       event.currentTarget.setPointerCapture(event.pointerId);
       onActivity();
       // Refocus the input bridge so the iOS keyboard stays visible while
@@ -158,18 +153,9 @@ export function useSelection({
         focus: draggedSelectionPoint,
       });
     },
-    onPointerMove: (event) => {
-      if (activeHandleKindRef.current !== kind) {
-        return;
-      }
-
-      updateSelectionFromHandle(event);
-    },
+    onPointerMove: updateSelectionFromHandle,
     onPointerUp: (event) => {
-      if (activeHandleKindRef.current === kind) {
-        updateSelectionFromHandle(event);
-      }
-
+      updateSelectionFromHandle(event);
       clearDrag(event);
     },
   });

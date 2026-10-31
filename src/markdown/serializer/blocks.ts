@@ -5,7 +5,7 @@
  * block-level low-level helpers (`indentText`, `escapeLeadingWhitespace`).
  */
 
-import type { Block, ListBlock, ListItemBlock } from "@/document";
+import { createParagraphBlock, type Block, type ListBlock, type ListItemBlock } from "@/document";
 import { shouldEscapeParagraphLineStart } from "../parser/blocks";
 import {
   blockquoteMarker,
@@ -25,6 +25,8 @@ const dividerMarker = "---";
 // Replaces leading spaces in inline output with an HTML entity so block parsers
 // don't strip them. Used by paragraph and heading serializers.
 const leadingSpaceEntity = "&#x20;";
+// A childless list item serializes like one holding an empty paragraph.
+const emptyListItemChild = createParagraphBlock([]);
 
 /**
  * Serializes a sequence of top-level blocks using the canonical block
@@ -33,49 +35,35 @@ const leadingSpaceEntity = "&#x20;";
  * serialization, which wants the bare block payload.
  */
 export function serializeBlocks(blocks: Block[], options: MarkdownOptions = {}): string {
-  if (blocks.length === 0) {
-    return "";
-  }
-
-  const optionsKey = resolveSerializationOptionsKey(options);
+  const cache = options.padTableColumns ? paddedRootCache : unpaddedRootCache;
 
   return blocks
-    .map((block) => serializeCachedRootBlock(block, options, optionsKey))
+    .map((block) => serializeCachedRootBlock(block, options, cache))
     .join(blockSeparator);
 }
 
-const serializedRootCache = new WeakMap<Block, Map<string, string>>();
+// Root blocks are immutable, so unchanged roots reuse their markdown by
+// identity. `padTableColumns` is the only option the serializer reads, so
+// there's one cache per value.
+const unpaddedRootCache = new WeakMap<Block, string>();
+const paddedRootCache = new WeakMap<Block, string>();
 
 function serializeCachedRootBlock(
   block: Block,
   options: MarkdownOptions,
-  optionsKey = resolveSerializationOptionsKey(options),
+  cache: WeakMap<Block, string>,
 ) {
-  const cachedByOptions = serializedRootCache.get(block);
-  const cached = cachedByOptions?.get(optionsKey);
+  let markdown = cache.get(block);
 
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  const markdown = serializeBlock(block, 0, options);
-  const nextCachedByOptions = cachedByOptions ?? new Map<string, string>();
-
-  nextCachedByOptions.set(optionsKey, markdown);
-  if (!cachedByOptions) {
-    serializedRootCache.set(block, nextCachedByOptions);
+  if (markdown === undefined) {
+    markdown = serializeBlock(block, 0, options);
+    cache.set(block, markdown);
   }
 
   return markdown;
 }
 
-function resolveSerializationOptionsKey(options: MarkdownOptions) {
-  return options.padTableColumns ? "pad-tables" : "";
-}
-
 function serializeBlock(block: Block, indent: number, options: MarkdownOptions): string {
-  const indentPrefix = indentText(indent);
-
   switch (block.type) {
     case "blockquote":
       return serializeBlockquote(block, indent, options);
@@ -94,9 +82,9 @@ function serializeBlock(block: Block, indent: number, options: MarkdownOptions):
     case "table":
       return serializeTable(block, indent, options);
     case "divider":
-      return `${indentPrefix}${dividerMarker}`;
+      return `${indentText(indent)}${dividerMarker}`;
     case "raw":
-      return indent === 0 ? block.source : indentBlockText(block.source, indent);
+      return indentBlockText(block.source, indent);
   }
 }
 
@@ -130,21 +118,15 @@ function serializeBlockquote(
 function serializeCode(block: Extract<Block, { type: "code" }>, indent: number) {
   const info = [block.language ?? "", block.meta ?? ""].filter(Boolean).join(" ").trim();
   const indentPrefix = indentText(indent);
-  const header = `${indentPrefix}${fencedCodeMarker}${info ? info : ""}`;
-  const body =
-    block.source.length > 0
-      ? block.source
-          .split(lineFeed)
-          .map((line) => `${indentPrefix}${line}`)
-          .join(lineFeed)
-      : indentPrefix;
+  const header = `${indentPrefix}${fencedCodeMarker}${info}`;
+  const body = indentBlockText(block.source, indent);
 
   return `${header}${lineFeed}${body}${lineFeed}${indentPrefix}${fencedCodeMarker}`;
 }
 
 function serializeDirective(block: Extract<Block, { type: "directive" }>, indent: number): string {
   const rendered = renderDirective(block);
-  return indent === 0 ? rendered : indentBlockText(rendered, indent);
+  return indentBlockText(rendered, indent);
 }
 
 // Builds the `:::name{attrs}\nbody\n:::` envelope. Shared between user-defined
@@ -186,13 +168,7 @@ function serializeListItem(
   const checkbox = block.checked === null ? "" : `[${block.checked ? "x" : " "}] `;
   const prefix = `${indentText(indent)}${marker} ${checkbox}`;
   const childIndent = indent + marker.length + 1;
-  const children = block.children;
-
-  if (children.length === 0) {
-    return checkbox.length > 0 ? prefix : prefix.trimEnd();
-  }
-
-  const [firstChild, ...rest] = children;
+  const [firstChild = emptyListItemChild, ...rest] = block.children;
   const firstContent = serializeListItemFirstChild(
     firstChild,
     prefix,
@@ -337,10 +313,12 @@ function indentText(indent: number) {
   return " ".repeat(indent);
 }
 
+// Prefixes every line, including an empty value's single line.
 function indentBlockText(value: string, indent: number) {
+  if (indent === 0) {
+    return value;
+  }
+
   const indentPrefix = indentText(indent);
-  return value
-    .split(lineFeed)
-    .map((line) => `${indentPrefix}${line}`)
-    .join(lineFeed);
+  return `${indentPrefix}${value.replaceAll(lineFeed, `${lineFeed}${indentPrefix}`)}`;
 }

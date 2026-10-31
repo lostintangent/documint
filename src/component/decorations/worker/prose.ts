@@ -1,8 +1,8 @@
-import { visitBlockTree, type Block, type Inline } from "@/document";
+import { visitBlockTree, type Block } from "@/document";
 import type { TextDecoration } from "@/editor";
 import { inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
-import type { DocumintDecoration } from "@/types";
-import { compileDecorations, resolveDecorationMatches } from "./matching";
+import type { DocumintDecoration } from "../shared";
+import { appendTextDecorations, compileDecorations } from "./matching";
 
 // Applies host rules to a root's inline prose, emitting decoration ranges by
 // canonical block/cell path. Leaf code blocks have no inline text and are
@@ -28,35 +28,16 @@ export function resolveCompiledBlockDecorationRanges(
     [block],
     {
       enterInlineContainer(nodes, context) {
-        resolveInlineDecorationRanges(nodes, context.path, compiledRules, ranges);
+        for (const { node, start } of inlineNodesWithEditorRanges(nodes)) {
+          if (node.type === "text" && node.marks.length === 0) {
+            appendTextDecorations(ranges, node.text, compiledRules, context.path, start);
+          }
+        }
         return "skip";
       },
     },
     { startIndex: rootIndex },
   );
 
-  return ranges.sort((a, b) => a.startOffset - b.startOffset);
-}
-
-function resolveInlineDecorationRanges(
-  nodes: readonly Inline[],
-  path: string,
-  compiledRules: readonly DocumintDecoration[],
-  ranges: TextDecoration[],
-) {
-  for (const { node, start: rangeStart } of inlineNodesWithEditorRanges(nodes)) {
-    if (node.type !== "text" || node.marks.length > 0) {
-      continue;
-    }
-
-    for (const match of resolveDecorationMatches(node.text, compiledRules)) {
-      const { end, start, ...decoration } = match;
-      ranges.push({
-        ...decoration,
-        endOffset: rangeStart + end,
-        path,
-        startOffset: rangeStart + start,
-      });
-    }
-  }
+  return ranges;
 }

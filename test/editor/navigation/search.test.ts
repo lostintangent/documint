@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   resolveEditorSearchMatches,
   resolveEditorTextAtPath,
-  type EditorSearchMatch,
+  type EditorSelectionRange,
 } from "@/editor";
 import { setup } from "../helpers";
 
@@ -72,7 +72,7 @@ Body text
 });
 
 function resolveMatchText(state: ReturnType<typeof setup>) {
-  return (match: EditorSearchMatch) => {
+  return (match: EditorSelectionRange) => {
     const text = resolveEditorTextAtPath(state.documentIndex, match.path);
     return text?.slice(match.startOffset, match.endOffset) ?? "";
   };

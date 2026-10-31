@@ -4,7 +4,7 @@
 import type { MetadataLayout } from "@/editor/layout";
 import { TABLE_CELL_PADDING_X } from "@/editor/layout/measure/table";
 import { resolvePlainTextFont } from "@/editor/text/fonts";
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import { paintCheckbox } from "./checkbox";
 import { paintGridCellChrome } from "./table";
 

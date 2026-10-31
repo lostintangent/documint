@@ -3,18 +3,12 @@ import {
   detectCompletionContext,
   filterCompletionItems,
   resolveCompletionInsertion,
-  sortCompletionSources,
-  tokenizeTriggers,
   type CompletionSource,
-  type TriggerSegment,
 } from "@/component/completions/completions";
-
-type TokenizeTriggersRow = {
-  name: string;
-  input: string;
-  sources: CompletionSource[] | undefined;
-  expected: TriggerSegment[];
-};
+import {
+  createMentionCompletionSource,
+  emojiCompletionSource,
+} from "@/component/completions/sources";
 
 const userSource: CompletionSource = {
   trigger: "@",
@@ -24,27 +18,6 @@ const userSource: CompletionSource = {
     { label: "John", id: "u-john" },
   ],
 };
-
-describe("sortCompletionSources", () => {
-  test("returns an empty list when no sources are provided", () => {
-    expect(sortCompletionSources(undefined)).toEqual([]);
-  });
-
-  test("sorts each source's items without mutating the original source", () => {
-    const source: CompletionSource = {
-      trigger: "@",
-      items: [{ label: "Zoe" }, { label: "amy" }, { label: "Bob" }],
-    };
-
-    expect(sortCompletionSources([source])).toEqual([
-      {
-        trigger: "@",
-        items: [{ label: "amy" }, { label: "Bob" }, { label: "Zoe" }],
-      },
-    ]);
-    expect(source.items).toEqual([{ label: "Zoe" }, { label: "amy" }, { label: "Bob" }]);
-  });
-});
 
 describe("detectCompletionContext", () => {
   test("detects a trigger at the start of the value", () => {
@@ -148,105 +121,33 @@ describe("resolveCompletionInsertion", () => {
   });
 });
 
-const emojiSource: CompletionSource = {
-  trigger: ":",
-  items: [
-    { label: "smile", id: "emoji-smile" },
-    { label: "wave", id: "emoji-wave" },
-  ],
-};
+describe("completion sources", () => {
+  test("labels mention items by full name or username and sorts them by label", () => {
+    expect(
+      createMentionCompletionSource([
+        { id: "u-zoe", username: "zoe" },
+        { id: "u-amy", username: "amy", fullName: "Amy Adams" },
+      ]),
+    ).toEqual({
+      trigger: "@",
+      items: [
+        { label: "Amy Adams", id: "u-amy" },
+        { label: "zoe", id: "u-zoe" },
+      ],
+    });
+  });
 
-describe("tokenizeTriggers", () => {
-  const rows: TokenizeTriggersRow[] = [
-    {
-      name: "returns a single text segment when no triggers are present",
-      input: "nothing to see here",
-      sources: [userSource],
-      expected: [{ kind: "text", text: "nothing to see here" }],
-    },
-    {
-      name: "tokenizes a mention at the start of the body",
-      input: "@Jane shipped it",
-      sources: [userSource],
-      expected: [
-        { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-        { kind: "text", text: " shipped it" },
-      ],
-    },
-    {
-      name: "tokenizes a mention after whitespace",
-      input: "hi @John!",
-      sources: [userSource],
-      expected: [
-        { kind: "text", text: "hi " },
-        { kind: "token", trigger: "@", label: "John", id: "u-john" },
-        { kind: "text", text: "!" },
-      ],
-    },
-    {
-      name: "tokenizes mentions after newline and tab boundaries",
-      input: "first\n@Jane\t@John",
-      sources: [userSource],
-      expected: [
-        { kind: "text", text: "first\n" },
-        { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-        { kind: "text", text: "\t" },
-        { kind: "token", trigger: "@", label: "John", id: "u-john" },
-      ],
-    },
-    {
-      name: "prefers the longest matching label",
-      input: "@Jane Doe wrote this",
-      sources: [userSource],
-      expected: [
-        { kind: "token", trigger: "@", label: "Jane Doe", id: "u-jane-doe" },
-        { kind: "text", text: " wrote this" },
-      ],
-    },
-    {
-      name: "does not match a trigger embedded inside a word",
-      input: "email@Jane.com",
-      sources: [userSource],
-      expected: [{ kind: "text", text: "email@Jane.com" }],
-    },
-    {
-      name: "does not partially match a longer word after a trigger",
-      input: "@JaneDoe and :smilewide",
-      sources: [userSource, emojiSource],
-      expected: [{ kind: "text", text: "@JaneDoe and :smilewide" }],
-    },
-    {
-      name: "does not match a trigger immediately after punctuation",
-      input: "(@Jane) and /@John",
-      sources: [userSource],
-      expected: [{ kind: "text", text: "(@Jane) and /@John" }],
-    },
-    {
-      name: "ignores triggers that don't match any source item",
-      input: "@Unknown person",
-      sources: [userSource],
-      expected: [{ kind: "text", text: "@Unknown person" }],
-    },
-    {
-      name: "tokenizes multiple trigger sources independently",
-      input: "Ping @Jane then :smile",
-      sources: [userSource, emojiSource],
-      expected: [
-        { kind: "text", text: "Ping " },
-        { kind: "token", trigger: "@", label: "Jane", id: "u-jane" },
-        { kind: "text", text: " then " },
-        { kind: "token", trigger: ":", label: "smile", id: "emoji-smile" },
-      ],
-    },
-    {
-      name: "returns a single text segment when no sources are provided",
-      input: "@Jane",
-      sources: undefined,
-      expected: [{ kind: "text", text: "@Jane" }],
-    },
-  ];
+  test("omits the mention source without users", () => {
+    expect(createMentionCompletionSource(undefined)).toBeNull();
+    expect(createMentionCompletionSource([])).toBeNull();
+  });
 
-  test.each(rows)("$name", ({ input, sources, expected }) => {
-    expect(tokenizeTriggers(input, sources)).toEqual(expected);
+  test("offers emoji through the colon trigger", () => {
+    expect(emojiCompletionSource.trigger).toBe(":");
+    expect(emojiCompletionSource.items).toContainEqual({
+      label: "sparkles",
+      icon: "✨",
+      insertText: "✨",
+    });
   });
 });

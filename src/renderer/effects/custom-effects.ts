@@ -1,5 +1,9 @@
-import type { DocumintEffectHandler, DocumintEffects, EffectEnvironment } from "@/types";
-import type { EffectFrame } from "./types";
+import type {
+  EffectFrame,
+  DocumintEffectHandler,
+  DocumintEffects,
+  EffectEnvironment,
+} from "./types";
 
 type EffectArgs<TKind extends keyof DocumintEffects> = Omit<
   EffectContextFor<TKind>,

@@ -3,29 +3,30 @@
 // one normalized measurement shape instead of branching on every reference
 // kind in every measurement phase.
 
-import type { RichInlineItem } from "@chenglou/pretext/rich-inline";
-import type { DocumentResources } from "@/types";
-import { createResourceIconSignature, resolveInlineResource } from "@/editor/resources";
-import { indexedInlineText, inlineMarks, type IndexedInline } from "../../state";
+import type { RichInlineBox } from "@chenglou/pretext/rich-inline";
+import {
+  createResourceIconSignature,
+  resolveInlineResource,
+  type DocumentResources,
+} from "@/editor/resources";
+import { inlineMarks, type IndexedInline } from "../../state";
 import { resolveInlineTextStyle } from "../../text/fonts";
 import { resolveInlineImageDimensions, resolveInlineImageSignature } from "./inline-image";
-import { measureInlineMentionWidth, mentionHorizontalPadding } from "./inline-mention";
+import { measureInlineMentionWidth } from "./inline-mention";
 import {
   measureInlineResourceIconSegmentWidth,
   measureInlineResourceWidth,
-  resourceHorizontalPadding,
 } from "./inline-resource";
 import type { BlockTypography } from "./text";
 
 export type InlineReferenceMeasurement = {
   height: number;
-  inlineReference: InlineReferenceLayoutMetric;
-  richItem: RichInlineItem | null;
-  text: string;
+  inlineReference: LayoutInlineReference;
+  richItem: RichInlineBox;
   width: number;
 };
 
-export type InlineReferenceLayoutMetric =
+export type LayoutInlineReference =
   | {
       end: number;
       kind: "image";
@@ -75,8 +76,7 @@ export function resolveInlineReferenceMeasurement(
         start: run.start,
         width: dimensions.width,
       },
-      richItem: null,
-      text: indexedInlineText(run),
+      richItem: { width: dimensions.width },
       width: dimensions.width,
     };
   }
@@ -95,13 +95,7 @@ export function resolveInlineReferenceMeasurement(
         start: run.start,
         width,
       },
-      richItem: {
-        break: "never",
-        extraWidth: mentionHorizontalPadding * 2,
-        font: styledFont,
-        text: `@${run.node.name}`,
-      },
-      text: indexedInlineText(run),
+      richItem: { width },
       width,
     };
   }
@@ -129,13 +123,7 @@ export function resolveInlineReferenceMeasurement(
       start: run.start,
       width,
     },
-    richItem: {
-      break: "never",
-      extraWidth: resourceHorizontalPadding * 2 + iconSegmentWidth,
-      font: styledFont,
-      text: resource.label,
-    },
-    text: indexedInlineText(run),
+    richItem: { width },
     width,
   };
 }

@@ -1,29 +1,16 @@
 // Owns cheap text-only layout estimates used before exact measurement.
 
-import { defaultDocumentLayoutOptions } from "../lib/options";
+// Estimates wrapped text height from a fixed character width. Every text
+// counts at least one line, so empty text still reserves one line height.
+export function estimateTextHeight(
+  text: string,
+  width: number,
+  charWidth: number,
+  lineHeight: number,
+) {
+  const charactersPerLine = Math.max(12, Math.floor(width / charWidth));
 
-export type TextLayoutEstimate = {
-  estimatedHeight: number;
-  lineCount: number;
-  width: number;
-};
-
-export function estimateTextLayout(input: {
-  text: string;
-  width: number;
-  charWidth?: number;
-  lineHeight?: number;
-}): TextLayoutEstimate {
-  const charWidth = input.charWidth ?? defaultDocumentLayoutOptions.charWidth;
-  const lineHeight = input.lineHeight ?? defaultDocumentLayoutOptions.lineHeight;
-  const charactersPerLine = Math.max(12, Math.floor(input.width / charWidth));
-  const lineCount = countEstimatedLines(input.text, charactersPerLine);
-
-  return {
-    estimatedHeight: lineCount * lineHeight,
-    lineCount,
-    width: input.width,
-  };
+  return countEstimatedLines(text, charactersPerLine) * lineHeight;
 }
 
 function countEstimatedLines(text: string, charactersPerLine: number) {

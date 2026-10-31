@@ -1,5 +1,4 @@
-import { useCallback } from "react";
-import { insertMention, replaceTextRange, type TextRangeTarget } from "@/editor";
+import { insertMention, replaceTextRange, type EditorSelectionRange } from "@/editor";
 import { useCompletions, type CompletionController } from "./useCompletions";
 import { type ActiveCompletion, type CompletionItem, type CompletionSource } from "./completions";
 import {
@@ -28,7 +27,7 @@ export function useDocumentCompletions({
   completionSources: CompletionSource[] | undefined;
   enabled: boolean;
   onMentionAccepted?: (mention: {
-    target: TextRangeTarget;
+    target: EditorSelectionRange;
     transition: EditorStateTransition;
     userId: string;
   }) => void;
@@ -40,35 +39,32 @@ export function useDocumentCompletions({
   const insertMentionCommand = useEditorCommand(insertMention);
   const replaceTextRangeCommand = useEditorCommand(replaceTextRange);
 
-  const acceptCompletion = useCallback(
-    (item: CompletionItem, completion: DocumentCompletion) => {
-      const documentCompletion = resolveDocumentCompletionApplication(item, completion);
+  const acceptCompletion = (item: CompletionItem, completion: DocumentCompletion) => {
+    const documentCompletion = resolveDocumentCompletionApplication(item, completion);
 
-      if (documentCompletion.kind === "mention") {
-        const transition = insertMentionCommand(
-          documentCompletion.target,
-          documentCompletion.userId,
-          documentCompletion.name,
-          documentCompletion.trailingText,
-        );
-        if (transition) {
-          onMentionAccepted?.({
-            target: documentCompletion.target,
-            transition,
-            userId: documentCompletion.userId,
-          });
-        }
-        return;
-      }
-
-      replaceTextRangeCommand(
-        documentCompletion.startOffset,
-        documentCompletion.endOffset,
-        documentCompletion.text,
+    if (documentCompletion.kind === "mention") {
+      const transition = insertMentionCommand(
+        documentCompletion.target,
+        documentCompletion.userId,
+        documentCompletion.name,
+        documentCompletion.trailingText,
       );
-    },
-    [insertMentionCommand, onMentionAccepted, replaceTextRangeCommand],
-  );
+      if (transition) {
+        onMentionAccepted?.({
+          target: documentCompletion.target,
+          transition,
+          userId: documentCompletion.userId,
+        });
+      }
+      return;
+    }
+
+    replaceTextRangeCommand(
+      documentCompletion.startOffset,
+      documentCompletion.endOffset,
+      documentCompletion.text,
+    );
+  };
 
   const completion = useCompletions({
     activeCompletion,

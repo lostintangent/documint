@@ -4,10 +4,11 @@ import {
   CODE_BLOCK_CONTENT_PADDING_X,
   type EditorLayoutState,
   type LayoutRect,
+  type PathBounds,
 } from "@/editor/layout";
 import type { BlockFlashFrame } from "../../effects";
-import type { ResolvedEditorTheme } from "@/types";
-import { resolveTableCellChromeFrame, type TableCellChromeFrame } from "../chrome/table";
+import type { ResolvedEditorTheme } from "../../theme";
+import { resolveTableCellPaintRect, type TableCellChromeFrame } from "../chrome/table";
 import {
   resolveDocumentChangeBackgroundColor,
   resolveDocumentChangeOpacity,
@@ -15,8 +16,6 @@ import {
 } from "../document-changes";
 
 const activeLineVerticalBleed = 2;
-
-type PathBounds = { bottom: number; left: number; right: number; top: number };
 
 export type ActiveBlockBackgroundFrame = {
   activeFlash: BlockFlashFrame | null;
@@ -67,19 +66,21 @@ export function resolveDocumentFrameLineBackgrounds({
     block?.type === "code" && line.start === 0 && containerBounds
       ? resolveCodeBlockBackgroundFrame(layout, line, containerBounds)
       : null;
+  const isActiveBlock = line.blockPath !== null && line.blockPath === activeBlockPath;
+  const blockRect =
+    isActiveBlock || documentChange
+      ? resolveBlockBackgroundRect(block, line, containerBounds, codeBlockBackgroundRect, width)
+      : null;
 
   return {
-    activeBlockBackground: resolveActiveBlockBackgroundFrame({
-      blockFlashes,
-      activeBlockPath,
-      block,
-      codeBlockBackgroundRect,
-      containerBounds,
-      line,
-      runtimeBlockPath,
-      theme,
-      width,
-    }),
+    activeBlockBackground:
+      isActiveBlock && blockRect
+        ? {
+            activeFlash: runtimeBlockPath ? (blockFlashes.get(runtimeBlockPath) ?? null) : null,
+            color: theme.activeBlockBackground,
+            rect: blockRect,
+          }
+        : null,
     containerBackground: resolveContainerBackgroundFrame({
       block,
       codeBlockBackgroundRect,
@@ -87,15 +88,14 @@ export function resolveDocumentFrameLineBackgrounds({
       line,
       tableCellPosition,
     }),
-    documentChangeBackground: resolveDocumentChangeBackgroundFrame({
-      block,
-      codeBlockBackgroundRect,
-      containerBounds,
-      documentChange,
-      line,
-      theme,
-      width,
-    }),
+    documentChangeBackground:
+      documentChange && blockRect
+        ? {
+            color: resolveDocumentChangeBackgroundColor(documentChange, theme),
+            opacity: resolveDocumentChangeOpacity(documentChange),
+            rect: blockRect,
+          }
+        : null,
   };
 }
 
@@ -149,56 +149,8 @@ function resolveContainerBackgroundFrame({
 
   return {
     kind: "table-cell",
-    ...resolveTableCellChromeFrame(containerBounds, {
-      isHeaderRow: tableCellPosition?.rowIndex === 0,
-      lineHeight: line.height,
-    }),
-  };
-}
-
-function resolveActiveBlockBackgroundFrame({
-  blockFlashes,
-  activeBlockPath,
-  block,
-  codeBlockBackgroundRect,
-  containerBounds,
-  line,
-  runtimeBlockPath,
-  theme,
-  width,
-}: {
-  blockFlashes: Map<string, BlockFlashFrame>;
-  activeBlockPath: string | null;
-  block: Block | null;
-  codeBlockBackgroundRect: LayoutRect | null;
-  containerBounds: PathBounds | null;
-  line: EditorLayoutState["layout"]["lines"][number];
-  runtimeBlockPath: string | null;
-  theme: ResolvedEditorTheme;
-  width: number;
-}): ActiveBlockBackgroundFrame | null {
-  const isActiveBlock = line.blockPath !== null && line.blockPath === activeBlockPath;
-
-  if (!isActiveBlock) {
-    return null;
-  }
-
-  const rect = resolveBlockBackgroundRect(
-    block,
-    line,
-    containerBounds,
-    codeBlockBackgroundRect,
-    width,
-  );
-
-  if (!rect) {
-    return null;
-  }
-
-  return {
-    activeFlash: runtimeBlockPath ? (blockFlashes.get(runtimeBlockPath) ?? null) : null,
-    color: theme.activeBlockBackground,
-    rect,
+    isHeaderRow: tableCellPosition?.rowIndex === 0,
+    rect: resolveTableCellPaintRect(containerBounds, line.height),
   };
 }
 
@@ -214,7 +166,7 @@ function resolveBlockBackgroundRect(
   }
 
   if (block?.type === "code") {
-    if (!containerBounds || line.start !== 0 || !codeBlockBackgroundRect) {
+    if (!codeBlockBackgroundRect || !containerBounds) {
       return null;
     }
 
@@ -231,45 +183,5 @@ function resolveBlockBackgroundRect(
     left: 0,
     top: line.top - activeLineVerticalBleed,
     width,
-  };
-}
-
-function resolveDocumentChangeBackgroundFrame({
-  block,
-  codeBlockBackgroundRect,
-  containerBounds,
-  documentChange,
-  line,
-  theme,
-  width,
-}: {
-  block: Block | null;
-  codeBlockBackgroundRect: LayoutRect | null;
-  containerBounds: PathBounds | null;
-  documentChange: DocumentChangeFrameEntry | null;
-  line: EditorLayoutState["layout"]["lines"][number];
-  theme: ResolvedEditorTheme;
-  width: number;
-}): DocumentChangeBackgroundFrame | null {
-  if (!documentChange) {
-    return null;
-  }
-
-  const rect = resolveBlockBackgroundRect(
-    block,
-    line,
-    containerBounds,
-    codeBlockBackgroundRect,
-    width,
-  );
-
-  if (!rect) {
-    return null;
-  }
-
-  return {
-    color: resolveDocumentChangeBackgroundColor(documentChange, theme),
-    opacity: resolveDocumentChangeOpacity(documentChange),
-    rect,
   };
 }

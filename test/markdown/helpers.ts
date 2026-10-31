@@ -1,5 +1,5 @@
-// Markdown round-trip assertions. Document-shape inspection helpers live
-// in `test/document/helpers.ts`.
+// Markdown round-trip assertions and shared fixtures. Document-shape
+// inspection helpers live in `test/document/helpers.ts`.
 
 import { expect } from "bun:test";
 import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
@@ -17,4 +17,19 @@ export function expectStableRoundTrip(source: string, options?: MarkdownOptions)
 
   expect(firstPass).toBe(source);
   expect(secondPass).toBe(firstPass);
+}
+
+// A paragraph followed by a one-thread comment appendix. `thread` adds or
+// overrides appendix fields, such as a persisted `id`.
+export function commentedParagraphMarkdown(thread: Record<string, unknown> = {}): string {
+  const appendix = [
+    {
+      anchor: { prefix: "Paragraph", suffix: " with a comment." },
+      comments: [{ body: "Reviewing this.", updatedAt: "2026-04-05T12:00:00.000Z" }],
+      quote: " with ",
+      ...thread,
+    },
+  ];
+
+  return `Paragraph with a comment.\n\n:::documint-comments\n${JSON.stringify(appendix, null, 2)}\n:::\n`;
 }

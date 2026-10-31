@@ -2,7 +2,6 @@ import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   compareEditorPositions,
-  commitDocument,
   createDocumentIndex,
   hasSameEditorTextPathShape,
   indexedInlineText,
@@ -350,61 +349,37 @@ omega
     expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, 1)).toBe(omega);
   });
 
-  test("round-trips through editor model materialization without changing markdown", () => {
+  test("round-trips the indexed document without changing markdown", () => {
     const markdown = `# Canvas Runtime
 
 > quoted
 
 - [ ] task
 `;
-    const snapshot = parseDocument(markdown);
-    const runtime = createDocumentIndex(snapshot);
-    const roundTrip = commitDocument(runtime);
+    const runtime = createDocumentIndex(parseDocument(markdown));
 
-    expect(serializeDocument(roundTrip)).toBe(markdown);
+    expect(serializeDocument(runtime.document)).toBe(markdown);
   });
 
-  test("creates a runtime paragraph for an empty document without changing markdown persistence", () => {
+  test("creates a runtime paragraph for an empty document", () => {
     const snapshot = parseDocument("");
     const runtime = createDocumentIndex(snapshot);
 
     expect(indexedTextEntries(runtime)).toHaveLength(1);
     expect(indexedTextEntries(runtime)[0]?.text).toBe("");
     expect(runtime.document.blocks[0]?.type).toBe("paragraph");
-    expect(serializeDocument(commitDocument(runtime))).toBe("");
+    expect(serializeDocument(runtime.document)).toBe("\n");
   });
 
   test("preserves metadata through the runtime empty-document paragraph", () => {
     const markdown = '---\ntitle: "Stub"\n---\n';
     const snapshot = parseDocument(markdown);
     const runtime = createDocumentIndex(snapshot);
-    const committed = commitDocument(runtime);
 
     expect(snapshot.blocks).toHaveLength(0);
     expect(runtime.document.blocks[0]?.type).toBe("paragraph");
     expect(runtime.document.metadata).toBe(snapshot.metadata);
-    expect(committed.blocks).toHaveLength(0);
-    expect(committed.metadata).toBe(snapshot.metadata);
-    expect(serializeDocument(committed)).toBe(markdown);
-  });
-
-  test("stores positioned block order on the unified editor model", () => {
-    const runtime = createDocumentIndex(
-      parseDocument(`# Heading
-
-alpha
-
-beta
-`),
-    );
-
-    expect(runtime.roots).toHaveLength(3);
-    expect(runtime.roots.map((root) => root.blocks[0]?.blockArrayIndex)).toEqual([0, 1, 2]);
-    expect(indexedTextEntries(runtime).map((entry) => entry.path)).toEqual([
-      "root.0",
-      "root.1",
-      "root.2",
-    ]);
+    expect(serializeDocument(runtime.document)).toBe(markdown);
   });
 
   test("normalizes canvas selections and replaces plain text within one container", () => {

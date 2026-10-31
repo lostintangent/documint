@@ -3,11 +3,9 @@
 // behavior; document-level completion should use a separate adapter.
 
 import {
-  useCallback,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
-  useMemo,
   useState,
   type ChangeEvent,
   type KeyboardEvent,
@@ -18,7 +16,6 @@ import { useCompletions, type CompletionLeafProps } from "../../../../completion
 import {
   detectCompletionContext,
   resolveCompletionInsertion,
-  sortCompletionSources,
   type ActiveCompletion,
   type CompletionItem,
   type CompletionSource,
@@ -27,7 +24,6 @@ import { resolveTextareaAnchor } from "./textarea-anchor";
 import type { DocumentAnchorResolution } from "../shared";
 
 export type LeafInputCompletionsController = {
-  activeCompletion: ActiveCompletion | null;
   anchor: DocumentAnchorResolution | null;
   leafProps: CompletionLeafProps | null;
   handleBlur: () => void;
@@ -51,81 +47,60 @@ export function useLeafInputCompletions({
   const [anchor, setAnchor] = useState<DocumentAnchorResolution | null>(null);
   const activeTriggerStart = activeCompletion?.triggerStart ?? null;
 
-  const sortedSources = useMemo(
-    () => sortCompletionSources(completionSources),
-    [completionSources],
-  );
+  const updateActiveCompletion = (nextValue: string, caret: number) => {
+    if (!completionSources?.length) {
+      setActiveCompletion(null);
+      return;
+    }
 
-  const updateActiveCompletion = useCallback(
-    (nextValue: string, caret: number) => {
-      if (!sortedSources.length) {
-        setActiveCompletion(null);
-        return;
-      }
+    const detected = detectCompletionContext(nextValue, caret, completionSources);
 
-      const detected = detectCompletionContext(nextValue, caret, sortedSources);
+    if (!detected) {
+      setActiveCompletion(null);
+      return;
+    }
 
-      if (!detected) {
-        setActiveCompletion(null);
-        return;
-      }
+    setActiveCompletion(detected);
+  };
 
-      setActiveCompletion(detected);
-    },
-    [sortedSources],
-  );
+  const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.currentTarget.value;
+    const caret = event.currentTarget.selectionEnd ?? nextValue.length;
 
-  const handleChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      const nextValue = event.currentTarget.value;
-      const caret = event.currentTarget.selectionEnd ?? nextValue.length;
+    onChange(nextValue);
+    updateActiveCompletion(nextValue, caret);
+  };
 
-      onChange(nextValue);
-      updateActiveCompletion(nextValue, caret);
-    },
-    [onChange, updateActiveCompletion],
-  );
+  const handleSelect = (event: SyntheticEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    updateActiveCompletion(textarea.value, textarea.selectionEnd ?? textarea.value.length);
+  };
 
-  const handleSelect = useCallback(
-    (event: SyntheticEvent<HTMLTextAreaElement>) => {
-      const textarea = event.currentTarget;
-      updateActiveCompletion(textarea.value, textarea.selectionEnd ?? textarea.value.length);
-    },
-    [updateActiveCompletion],
-  );
-
-  const handleBlur = useCallback(() => {
+  const handleBlur = () => {
     // A pointerdown on a popover row preventDefaults to keep the textarea
     // focused, so blur only fires on a genuine click-outside.
     setActiveCompletion(null);
-  }, []);
+  };
 
-  const acceptCompletion = useCallback(
-    (item: CompletionItem, completion: ActiveCompletion) => {
-      const textarea = textareaRef.current;
+  const acceptCompletion = (item: CompletionItem, completion: ActiveCompletion) => {
+    const textarea = textareaRef.current;
 
-      if (!textarea) {
-        return;
-      }
+    if (!textarea) {
+      return;
+    }
 
-      const insertion = resolveCompletionInsertion(
-        value,
-        completion,
-        resolveLeafInputCompletionItem(item),
-      );
+    const insertion = resolveCompletionInsertion(value, completion, item);
 
-      onChange(insertion.value);
-      setActiveCompletion(null);
+    onChange(insertion.value);
+    setActiveCompletion(null);
 
-      requestAnimationFrame(() => {
-        const current = textareaRef.current;
-        if (!current) return;
-        current.focus();
-        current.setSelectionRange(insertion.caret, insertion.caret);
-      });
-    },
-    [onChange, textareaRef, value],
-  );
+    requestAnimationFrame(() => {
+      const current = textareaRef.current;
+      if (!current) return;
+      current.focus();
+      current.setSelectionRange(insertion.caret, insertion.caret);
+    });
+  };
 
   const completion = useCompletions({
     activeCompletion,
@@ -148,13 +123,16 @@ export function useLeafInputCompletions({
   }, [textareaRef]);
 
   // Track the completion anchor as long as a completion is active. LeafInput
-  // uses the same page-absolute DocumentAnchor as document completions, so it
-  // keeps working when iOS scrolls the page to accommodate the virtual
-  // keyboard. Recompute on ancestor scroll and viewport resize because the
-  // source textarea can move inside any host container.
+  // passes this document-absolute anchor without an origin, so it keeps working
+  // when iOS scrolls the page to accommodate the virtual keyboard. Recompute on
+  // ancestor scroll and viewport resize because the source textarea can move
+  // inside any host container.
+  if (activeTriggerStart === null && anchor !== null) {
+    setAnchor(null);
+  }
+
   useLayoutEffect(() => {
     if (activeTriggerStart === null) {
-      setAnchor(null);
       return;
     }
 
@@ -192,7 +170,6 @@ export function useLeafInputCompletions({
   }, [activeTriggerStart, textareaRef]);
 
   return {
-    activeCompletion,
     anchor,
     handleBlur,
     handleChange,
@@ -200,8 +177,4 @@ export function useLeafInputCompletions({
     handleSelect,
     leafProps: completion.leafProps,
   };
-}
-
-function resolveLeafInputCompletionItem(item: CompletionItem): CompletionItem {
-  return item.kind === "mention" ? { ...item, insertText: `@${item.label} ` } : item;
 }

@@ -1,4 +1,4 @@
-import { indexedTextEntries } from "@test/editor/helpers";
+import { indexedTextEntries, setup } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   acknowledgeUnacknowledgedDocumentChanges,
@@ -6,180 +6,12 @@ import {
   type UnacknowledgedDocumentChange,
 } from "@/component/sync/live-changes";
 import { documentNodeAnchorKey, findDocumentChanges, type DocumentChange } from "@/document";
-import { createEditorState, setSelection } from "@/editor/state";
+import { setSelection } from "@/editor/state";
 import { parseDocument } from "@/markdown";
-
-describe("live external change targets", () => {
-  test("detects modified text roots", () => {
-    const targets = diff("Alpha\n", "Alpine\n");
-
-    expect(targets).toEqual([
-      expect.objectContaining({
-        kind: "modified",
-        anchor: expect.objectContaining({
-          kind: "block",
-          path: "root.0",
-        }),
-      }),
-    ]);
-  });
-
-  test("classifies inserted roots as added without marking shifted suffixes", () => {
-    const targets = diff("Alpha\n\nBeta\n", "Intro\n\nAlpha\n\nBeta\n");
-
-    expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({
-      kind: "added",
-      anchor: {
-        kind: "block",
-        path: "root.0",
-      },
-    });
-  });
-
-  test("detects checkbox changes at list-item granularity", () => {
-    const targets = diff("- [ ] task\n", "- [x] task\n");
-
-    expect(targets).toHaveLength(1);
-    expect(targets[0]).toMatchObject({
-      kind: "modified",
-      anchor: { kind: "block" },
-    });
-  });
-
-  test("detects changed table cells", () => {
-    const nextState = createState("| A | B |\n| - | - |\n| one | three |\n");
-    const targets = diff(
-      "| A | B |\n| - | - |\n| one | two |\n",
-      "| A | B |\n| - | - |\n| one | three |\n",
-    );
-    const changedCell = indexedTextEntries(nextState).find((path) => path.text === "three");
-
-    expect(targets).toHaveLength(1);
-    expect(changedCell).toBeDefined();
-    expect(targets[0]).toMatchObject({
-      kind: "modified",
-      anchor: {
-        kind: "table-cell",
-        path: changedCell!.path,
-      },
-    });
-  });
-
-  test("classifies inserted table rows as added without marking shifted rows", () => {
-    const targets = diff(
-      "| A | B |\n| - | - |\n| one | two |\n| three | four |\n",
-      "| A | B |\n| - | - |\n| one | two |\n| new | row |\n| three | four |\n",
-    );
-
-    expect(targets).toHaveLength(2);
-    expect(targets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({ kind: "table-cell" }),
-        }),
-      ]),
-    );
-    expect(targets.every((target) => target.kind === "added")).toBe(true);
-  });
-
-  test("classifies inserted rows before modified rows in the same snapshot", () => {
-    const targets = diff(
-      "| A | B |\n| - | - |\n| one | two |\n| three | four |\n",
-      "| A | B |\n| - | - |\n| new | row |\n| one | two updated |\n| three | four |\n",
-    );
-
-    expect(targets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "modified",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.2.cells.1",
-          }),
-        }),
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.0",
-          }),
-        }),
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.1",
-          }),
-        }),
-      ]),
-    );
-    expect(targets).toHaveLength(3);
-  });
-
-  test("classifies inserted table columns as added without marking shifted cells", () => {
-    const targets = diff(
-      "| A | B |\n| - | - |\n| one | two |\n",
-      "| A | New | B |\n| - | - | - |\n| one | inserted | two |\n",
-    );
-
-    expect(targets).toHaveLength(2);
-    expect(targets.every((target) => target.kind === "added")).toBe(true);
-  });
-
-  test("classifies inserted columns before modified cells in the same snapshot", () => {
-    const targets = diff(
-      "| A | B | C |\n| - | - | - |\n| one | two | three |\n",
-      "| A | New | B | C |\n| - | - | - | - |\n| one | inserted | two changed | three |\n",
-    );
-
-    expect(targets).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "modified",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.2",
-          }),
-        }),
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.0.cells.1",
-          }),
-        }),
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.1",
-          }),
-        }),
-      ]),
-    );
-    expect(targets).toHaveLength(3);
-  });
-
-  test("returns no new changes for noisy broad rewrites", () => {
-    const previous = Array.from({ length: 12 }, (_, index) => `Old ${index}`).join("\n\n");
-    const next = Array.from({ length: 12 }, (_, index) => `New ${index}`).join("\n\n");
-
-    expect(diff(previous, next)).toEqual([]);
-  });
-
-  test("returns no new changes for over-budget targeted diffs instead of partial changes", () => {
-    const previous = createTable(2);
-    const next = createTable(80);
-
-    expect(diff(previous, next)).toEqual([]);
-  });
-});
 
 describe("unacknowledged document changes", () => {
   test("merges targets, consumes repeated targets, and reports only new fade targets", () => {
-    let state = createState("Alpha\n\nBeta\n\nGamma\n");
+    let state = setup("Alpha\n\nBeta\n\nGamma\n");
     const third = indexedTextEntries(state)[2];
 
     if (!third) {
@@ -206,7 +38,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps unacknowledged added blocks added when later external snapshots modify them", () => {
-    let state = createState("Alpha updated\n\nOther\n");
+    let state = setup("Alpha updated\n\nOther\n");
     const otherPath = indexedTextEntries(state)[1];
 
     if (!otherPath) {
@@ -228,7 +60,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps unacknowledged added table cells added when later external snapshots modify them", () => {
-    const state = createState("| A | B |\n| - | - |\n| one | changed |\n");
+    const state = setup("| A | B |\n| - | - |\n| one | changed |\n");
 
     const current = unacknowledgedChange(
       changeAt(
@@ -251,7 +83,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("refreshes unacknowledged modified blocks without reporting a new fade target", () => {
-    let state = createState("Alpine\n\nOther\n");
+    let state = setup("Alpine\n\nOther\n");
     const otherPath = indexedTextEntries(state)[1];
 
     if (!otherPath) {
@@ -279,7 +111,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("does not add changes for the current selection target", () => {
-    const state = createState("Alpha\n");
+    const state = setup("Alpha\n");
     const path = indexedTextEntries(state)[0];
 
     if (!path) {
@@ -292,7 +124,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps fresh modified block changes when the new content is duplicated", () => {
-    let state = createState("Same\n\nSame\n");
+    let state = setup("Same\n\nSame\n");
     const secondPath = indexedTextEntries(state)[1];
 
     if (!secondPath) {
@@ -309,7 +141,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps fresh modified table-cell changes when the new content is duplicated", () => {
-    let state = createState("| A | B |\n| - | - |\n| same | same |\n");
+    let state = setup("| A | B |\n| - | - |\n| same | same |\n");
     const secondCell = indexedTextEntries(state).find(
       (path) => path.path === "root.0.rows.1.cells.1",
     );
@@ -331,9 +163,9 @@ describe("unacknowledged document changes", () => {
   });
 
   test("retargets existing changes when a later external snapshot has no targetable changes", () => {
-    const initial = createState("Alpha\n\nBeta\n");
+    const initial = setup("Alpha\n\nBeta\n");
     const beta = indexedTextEntries(initial).find((path) => path.text === "Beta");
-    const next = createState("Intro\n\nAlpha\n\nBeta\n");
+    const next = setup("Intro\n\nAlpha\n\nBeta\n");
     const shiftedBeta = indexedTextEntries(next).find((path) => path.text === "Beta");
 
     if (!beta || !shiftedBeta) {
@@ -360,9 +192,9 @@ describe("unacknowledged document changes", () => {
   });
 
   test("retargets active changes when an external insert shifts block paths", () => {
-    const initial = createState("Alpha\n\nBeta\n");
+    const initial = setup("Alpha\n\nBeta\n");
     const beta = indexedTextEntries(initial).find((path) => path.text === "Beta");
-    const next = createState("Intro\n\nAlpha\n\nBeta\n");
+    const next = setup("Intro\n\nAlpha\n\nBeta\n");
     const shiftedBeta = indexedTextEntries(next).find((path) => path.text === "Beta");
 
     if (!beta || !shiftedBeta) {
@@ -389,7 +221,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("acknowledges after retargeting instead of dismissing selected stale block paths", () => {
-    let next = createState("Stale occupant\n\nAlpha\n\nBeta\n");
+    let next = setup("Stale occupant\n\nAlpha\n\nBeta\n");
     const stalePath = indexedTextEntries(next).find((path) => path.text === "Alpha");
 
     if (!stalePath) {
@@ -412,7 +244,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("drops active changes when the anchor is absent even if the stale block path exists", () => {
-    const next = createState("Alpha\n\nStale occupant\n");
+    const next = setup("Alpha\n\nStale occupant\n");
     const active = unacknowledgedChange(
       changeAt(diff("Alpha\n\nOld\n", "Alpha\n\nBeta\n"), "root.1"),
     );
@@ -423,9 +255,9 @@ describe("unacknowledged document changes", () => {
   });
 
   test("retargets active table-cell changes when an external row insert shifts cell paths", () => {
-    const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
+    const initial = setup("| A | B |\n| - | - |\n| one | two |\n");
     const cell = indexedTextEntries(initial).find((path) => path.text === "two");
-    const next = createState("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
+    const next = setup("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
     const shiftedCell = indexedTextEntries(next).find((path) => path.text === "two");
 
     if (!cell || !shiftedCell) {
@@ -455,7 +287,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("acknowledges after retargeting instead of dismissing selected stale table-cell paths", () => {
-    let next = createState("| A | B |\n| - | - |\n| stale | occupant |\n| one | two |\n");
+    let next = setup("| A | B |\n| - | - |\n| stale | occupant |\n| one | two |\n");
     const staleCell = indexedTextEntries(next).find(
       (path) => path.path === "root.0.rows.1.cells.1",
     );
@@ -493,7 +325,7 @@ describe("unacknowledged document changes", () => {
       "Keep",
       "",
     ].join("\n");
-    let next = createState(
+    let next = setup(
       [
         "Drop",
         "",
@@ -546,7 +378,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("drops active table-cell changes when the anchor is absent even if stale path exists", () => {
-    const next = createState("| A | B |\n| - | - |\n| stale | occupant |\n");
+    const next = setup("| A | B |\n| - | - |\n| stale | occupant |\n");
     const active = unacknowledgedChange(
       changeAt(
         diff("| A | B |\n| - | - |\n| one | old |\n", "| A | B |\n| - | - |\n| one | two |\n"),
@@ -560,9 +392,9 @@ describe("unacknowledged document changes", () => {
   });
 
   test("retargets active table-cell changes when a local edit shifts cell paths", () => {
-    const initial = createState("| A | B |\n| - | - |\n| one | two |\n");
+    const initial = setup("| A | B |\n| - | - |\n| one | two |\n");
     const cell = indexedTextEntries(initial).find((path) => path.text === "two");
-    const locallyEdited = createState("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
+    const locallyEdited = setup("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
     const shiftedCell = indexedTextEntries(locallyEdited).find((path) => path.text === "two");
 
     if (!cell || !shiftedCell) {
@@ -592,7 +424,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps added block changes added when the same external snapshot shifts and edits them", () => {
-    let nextState = createState("Intro\n\nAlpha updated\n\nOther\n");
+    let nextState = setup("Intro\n\nAlpha updated\n\nOther\n");
     const otherPath = indexedTextEntries(nextState)[2];
     if (!otherPath) {
       throw new Error("Expected other path");
@@ -625,7 +457,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps added block changes added after multiple inserted blocks before the edit", () => {
-    let nextState = createState("Intro 1\n\nIntro 2\n\nAlpha updated\n\nOther\n");
+    let nextState = setup("Intro 1\n\nIntro 2\n\nAlpha updated\n\nOther\n");
     const otherPath = indexedTextEntries(nextState)[3];
     if (!otherPath) {
       throw new Error("Expected other path");
@@ -659,9 +491,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("keeps added table-cell changes added when the same external snapshot shifts and edits them", () => {
-    let nextState = createState(
-      "| A | B |\n| - | - |\n| inserted | row |\n| one | changed |\n\nOther\n",
-    );
+    let nextState = setup("| A | B |\n| - | - |\n| inserted | row |\n| one | changed |\n\nOther\n");
     const otherPath = indexedTextEntries(nextState).find((path) => path.text === "Other");
     if (!otherPath) {
       throw new Error("Expected other path");
@@ -706,7 +536,7 @@ describe("unacknowledged document changes", () => {
   });
 
   test("does not preserve added when only the path matches", () => {
-    let nextState = createState("Gamma\n\nOther\n");
+    let nextState = setup("Gamma\n\nOther\n");
     const otherPath = indexedTextEntries(nextState)[1];
     if (!otherPath) {
       throw new Error("Expected other path");
@@ -744,13 +574,4 @@ function unacknowledgedChange(change: DocumentChange): UnacknowledgedDocumentCha
     ...change,
     changeKey: documentNodeAnchorKey(change.anchor),
   };
-}
-
-function createState(markdown: string) {
-  return createEditorState(parseDocument(markdown));
-}
-
-function createTable(rowCount: number) {
-  const rows = Array.from({ length: rowCount }, (_, index) => `| row ${index} | value ${index} |`);
-  return ["| A | B |", "| - | - |", ...rows].join("\n") + "\n";
 }

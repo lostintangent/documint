@@ -5,6 +5,7 @@ import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 import { createLayoutStore } from "@/component/store/layout/store";
 import { insertText, readEditorEffects, setSelection } from "@/editor/state";
+import { equalStringSets } from "@test/component/helpers";
 import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("EditorStore", () => {
@@ -194,17 +195,4 @@ describe("EditorStore", () => {
 
 function createDocumintStore(state: ReturnType<typeof setup>) {
   return { editor: createEditorStore(state), layout: createLayoutStore() };
-}
-
-function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
-  if (a === b) return true;
-  if (a.size !== b.size) return false;
-
-  for (const value of a) {
-    if (!b.has(value)) {
-      return false;
-    }
-  }
-
-  return true;
 }

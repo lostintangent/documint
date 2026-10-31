@@ -129,39 +129,28 @@ export function resolveDocumentRangeForPath(
     startOffset: number;
   },
 ): EditorDocumentRange | null {
-  const anchorContainer = resolveAnchorContainerForPath(documentIndex, path);
   const indexedText = resolveIndexedText(documentIndex, path);
+  const anchorContainer = indexedText ? resolveAnchorContainerForPath(documentIndex, path) : null;
 
-  if (!anchorContainer || !indexedText) {
+  if (!indexedText || !anchorContainer) {
     return null;
   }
 
+  const inlines = resolveIndexedTextInlines(indexedText);
+
   return {
     anchorContainer,
-    endOffset: indexedOffsetToPlainTextOffset(
-      indexedText.text,
-      resolveIndexedTextInlines(indexedText),
-      range.endOffset,
-    ),
+    endOffset: indexedOffsetToPlainTextOffset(indexedText.text, inlines, range.endOffset),
     path,
-    startOffset: indexedOffsetToPlainTextOffset(
-      indexedText.text,
-      resolveIndexedTextInlines(indexedText),
-      range.startOffset,
-    ),
+    startOffset: indexedOffsetToPlainTextOffset(indexedText.text, inlines, range.startOffset),
   };
 }
 
+// Resolves the anchor container for a path that has indexed text.
 function resolveAnchorContainerForPath(
   documentIndex: DocumentIndex,
   path: string,
 ): Pick<AnchorContainer, "containerKind" | "text"> | null {
-  const indexedText = resolveIndexedText(documentIndex, path);
-
-  if (!indexedText) {
-    return null;
-  }
-
   const indexedCell = resolveIndexedTableCell(documentIndex, path);
   if (indexedCell) {
     const cell = indexedCell.cell;

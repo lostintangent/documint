@@ -6,8 +6,13 @@ import {
   useRef,
   useState,
 } from "react";
-import { resizeImage, type IndexedInline } from "@/editor";
-import type { DocumentImageResource, DocumentResourceRegistry, DocumentResources } from "@/types";
+import {
+  resizeImage,
+  type IndexedInline,
+  type DocumentImageResource,
+  type DocumentResourceRegistry,
+  type DocumentResources,
+} from "@/editor";
 import type { DocumentStorage } from "../lib/storage";
 import { imageAtCursorSprig, imageUrlsSprig, useEditorCommand, useSprig } from "../store";
 import type { ResizeHandle } from "../Documint";
@@ -34,8 +39,8 @@ type ImageHandleProps = {
 export type ImagesApi = {
   hasLoadingImages: boolean;
   imageHandle: ResizeHandle | null;
-  images: Map<string, DocumentImageResource>;
   persistImage: (file: File) => Promise<string | null>;
+  renderResources: DocumentResources;
 };
 
 export function useImages(
@@ -56,28 +61,30 @@ export function useImages(
 
   /* Image loading */
 
-  const reconcileImageResources = useEffectEvent((urls: ReadonlySet<string>) => {
-    if (typeof createImageBitmap === "undefined") {
-      return;
-    }
+  // Placeholders reconcile during render, when the referenced URL set or
+  // storage changes, so "loading" is visible in the same render. The effect
+  // below starts loads for placeholders that have none in flight.
+  const [reconciledInputs, setReconciledInputs] = useState<{
+    readonly storage: DocumentStorage;
+    readonly urls: ReadonlySet<string>;
+  } | null>(null);
+  if (reconciledInputs?.urls !== imageUrls || reconciledInputs?.storage !== storage) {
+    setReconciledInputs({ storage, urls: imageUrls });
+    setImageResources((previous) => reconcileImageResourceMap(previous, imageUrls));
+  }
 
-    const inactiveUrls = resolveInactiveImageUrls(imageResources, urls);
-    const pendingUrls = resolvePendingImageUrls(imageResources, urls);
+  const inFlightImageUrlsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const inFlightUrls = inFlightImageUrlsRef.current;
 
-    if (inactiveUrls.length || pendingUrls.length) {
-      setImageResources((previous) => {
-        const next = new Map(previous);
-        for (const url of inactiveUrls) next.delete(url);
-        for (const url of pendingUrls) next.set(url, createImageResource("loading"));
-        return next;
-      });
-    }
+    for (const [url, resource] of imageResources) {
+      if (resource.status !== "loading" || inFlightUrls.has(url)) {
+        continue;
+      }
 
-    // The "loading" placeholders above double as the dedup signal for
-    // in-flight loads from prior reconciliations: effects run post-commit,
-    // so by the next reconciliation the placeholders are visible here.
-    for (const url of pendingUrls) {
+      inFlightUrls.add(url);
       void loadImage(url, storage).then((bitmap) => {
+        inFlightUrls.delete(url);
         setImageResources((previous) => {
           // Evicted (or unmounted) before decode finished — drop the
           // bitmap so its pixels are freed immediately.
@@ -93,11 +100,7 @@ export function useImages(
         });
       });
     }
-  });
-
-  useEffect(() => {
-    reconcileImageResources(imageUrls);
-  }, [imageUrls, storage]);
+  }, [imageResources, storage]);
 
   /* Bitmap cleanup */
 
@@ -215,42 +218,39 @@ export function useImages(
 
   /* Image handle props */
 
-  const startHandleProps = useMemo<ImageHandleProps>(
-    () => ({
-      onPointerCancel: endImageResize,
-      onPointerDown: (event) => startImageResize(event, -1),
-      onPointerMove: resizeImageFromDrag,
-      onPointerUp: endImageResize,
-    }),
-    [],
-  );
+  const startHandleProps: ImageHandleProps = {
+    onPointerCancel: endImageResize,
+    onPointerDown: (event) => startImageResize(event, -1),
+    onPointerMove: resizeImageFromDrag,
+    onPointerUp: endImageResize,
+  };
 
-  const endHandleProps = useMemo<ImageHandleProps>(
-    () => ({
-      onPointerCancel: endImageResize,
-      onPointerDown: (event) => startImageResize(event, 1),
-      onPointerMove: resizeImageFromDrag,
-      onPointerUp: endImageResize,
-    }),
-    [],
-  );
+  const endHandleProps: ImageHandleProps = {
+    onPointerCancel: endImageResize,
+    onPointerDown: (event) => startImageResize(event, 1),
+    onPointerMove: resizeImageFromDrag,
+    onPointerUp: endImageResize,
+  };
 
-  const imageHandle = useMemo((): ResizeHandle | null => {
-    if (readOnly || !imageAtCursor) return null;
-    const { bounds } = imageAtCursor;
-    return {
-      start: { left: bounds.left, top: bounds.top, props: startHandleProps },
-      end: {
-        left: bounds.left + bounds.width,
-        props: endHandleProps,
-        top: bounds.top + bounds.height,
-      },
-    };
-  }, [endHandleProps, imageAtCursor, readOnly, startHandleProps]);
+  const imageHandle: ResizeHandle | null =
+    readOnly || !imageAtCursor
+      ? null
+      : {
+          start: {
+            left: imageAtCursor.bounds.left,
+            top: imageAtCursor.bounds.top,
+            props: startHandleProps,
+          },
+          end: {
+            left: imageAtCursor.bounds.left + imageAtCursor.bounds.width,
+            props: endHandleProps,
+            top: imageAtCursor.bounds.top + imageAtCursor.bounds.height,
+          },
+        };
 
   /* Public API */
 
-  return { hasLoadingImages, imageHandle, images: imageResources, persistImage };
+  return { hasLoadingImages, imageHandle, persistImage, renderResources };
 }
 
 /* Loading pipeline */
@@ -271,6 +271,26 @@ function resolveInactiveImageUrls(
   urls: ReadonlySet<string>,
 ) {
   return [...resources.keys()].filter((url) => !urls.has(url));
+}
+
+function reconcileImageResourceMap(
+  previous: Map<string, DocumentImageResource>,
+  urls: ReadonlySet<string>,
+): Map<string, DocumentImageResource> {
+  if (typeof createImageBitmap === "undefined") {
+    return previous;
+  }
+
+  const inactiveUrls = resolveInactiveImageUrls(previous, urls);
+  const pendingUrls = resolvePendingImageUrls(previous, urls);
+  if (inactiveUrls.length === 0 && pendingUrls.length === 0) {
+    return previous;
+  }
+
+  const next = new Map(previous);
+  for (const url of inactiveUrls) next.delete(url);
+  for (const url of pendingUrls) next.set(url, createImageResource("loading"));
+  return next;
 }
 
 function resolvePendingImageUrls(

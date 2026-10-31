@@ -1,26 +1,12 @@
 // Worker-side flat-text decoration engine. A caller compiles decorations once,
-// then resolves one text string into compact matches here; the prose and code
-// passes only differ in which text they feed in and how they attach owner
-// paths/base offsets afterward.
+// then appends one text string's decorated runs here; the prose and code passes
+// only differ in which text they feed in and which owner path and base offset
+// they attach.
 
-import type { DocumintDecoration } from "@/types";
+import type { TextDecoration } from "@/editor";
+import { isValidDecoration, type DocumintDecoration } from "../shared";
 
 type DecorationPaint = Pick<DocumintDecoration, "backgroundColor" | "color" | "pulse">;
-
-// A match is local to one flat string. Callers turn matches into `TextDecoration`s
-// once they know the owning path and base offset.
-type DecorationMatch = DecorationPaint & {
-  end: number;
-  start: number;
-};
-
-const supportsRegExpMatchIndices = (() => {
-  try {
-    return /./d.exec("x")?.indices !== undefined;
-  } catch {
-    return false;
-  }
-})();
 
 export function compileDecorations(
   decorations: readonly DocumintDecoration[],
@@ -35,10 +21,15 @@ export function compileDecorations(
     }));
 }
 
-export function resolveDecorationMatches(
+// Appends `text`'s decorated runs to `ranges` at `path`, shifting local match
+// offsets by the text's `baseOffset` within its owner.
+export function appendTextDecorations(
+  ranges: TextDecoration[],
   text: string,
   rules: readonly DocumintDecoration[],
-): DecorationMatch[] {
+  path: string,
+  baseOffset = 0,
+): void {
   const paints: DecorationPaint[] = Array.from({ length: text.length }, () => ({}));
 
   for (const { backgroundColor, color, pattern, pulse } of rules) {
@@ -47,12 +38,12 @@ export function resolveDecorationMatches(
     while ((match = pattern.exec(text)) !== null) {
       const matchedRange = resolveMatchRange(match);
 
-      if (!matchedRange || matchedRange.end <= matchedRange.start) {
+      if (!matchedRange || matchedRange[1] <= matchedRange[0]) {
         pattern.lastIndex = match.index + 1;
         continue;
       }
 
-      for (let index = matchedRange.start; index < matchedRange.end; index += 1) {
+      for (let index = matchedRange[0]; index < matchedRange[1]; index += 1) {
         const current = paints[index]!;
         if (color && !current.color) {
           current.color = color;
@@ -67,75 +58,53 @@ export function resolveDecorationMatches(
     }
   }
 
-  return compactDecorationMatches(paints);
-}
-
-function resolveCompiledDecorationFlags(flags: string): string {
-  const normalized = flags.replace(/[gy]/g, "");
-  if (supportsRegExpMatchIndices && !normalized.includes("d")) {
-    return `${normalized}dg`;
-  }
-  return normalized.includes("g") ? normalized : `${normalized}g`;
-}
-
-function resolveMatchRange(match: RegExpExecArray) {
-  if (match.length <= 1) {
-    return { end: match.index + match[0].length, start: match.index };
-  }
-
-  for (let index = 1; index < match.length; index += 1) {
-    const capturedText = match[index];
-
-    if (!capturedText) {
-      continue;
-    }
-
-    const indexedRange = match.indices?.[index];
-    if (indexedRange) {
-      const [start, end] = indexedRange;
-      return { end, start };
-    }
-
-    const fallbackStart = match[0].indexOf(capturedText);
-    if (fallbackStart !== -1) {
-      const start = match.index + fallbackStart;
-      return { end: start + capturedText.length, start };
-    }
-  }
-
-  return null;
-}
-
-function compactDecorationMatches(paints: readonly DecorationPaint[]): DecorationMatch[] {
-  const ranges: DecorationMatch[] = [];
+  // Compact per-character paint into runs of equal paint.
   let rangeStart = -1;
   let rangePaint: DecorationPaint | null = null;
 
-  for (let index = 0; index < paints.length; index += 1) {
-    const indexPaint = isValidDecoration(paints[index]!) ? paints[index]! : null;
+  for (let index = 0; index <= paints.length; index += 1) {
+    const paint = paints[index];
+    const indexPaint = paint && isValidDecoration(paint) ? paint : null;
+
+    if (rangeStart !== -1 && !equalDecorationPaint(indexPaint, rangePaint)) {
+      ranges.push({
+        ...rangePaint!,
+        endOffset: baseOffset + index,
+        path,
+        startOffset: baseOffset + rangeStart,
+      });
+      rangeStart = -1;
+    }
 
     if (indexPaint && rangeStart === -1) {
       rangeStart = index;
       rangePaint = indexPaint;
-      continue;
-    }
-
-    if (!equalDecorationPaint(indexPaint, rangePaint) && rangeStart !== -1) {
-      ranges.push({ ...rangePaint!, end: index, start: rangeStart });
-      rangeStart = indexPaint ? index : -1;
-      rangePaint = indexPaint;
     }
   }
-
-  if (rangeStart !== -1) {
-    ranges.push({ ...rangePaint!, end: paints.length, start: rangeStart });
-  }
-
-  return ranges;
 }
 
-function isValidDecoration(decoration: DecorationPaint) {
-  return Boolean(decoration.backgroundColor || decoration.color);
+// Every compiled pattern is global and carries match indices (`d`), so capture
+// group offsets come straight from `match.indices`.
+function resolveCompiledDecorationFlags(flags: string): string {
+  return `${flags.replace(/[dgy]/g, "")}dg`;
+}
+
+// The first non-empty capture group decorates when the pattern has groups;
+// otherwise the whole match does.
+function resolveMatchRange(match: RegExpExecArray): [number, number] | null {
+  const indices = match.indices!;
+
+  if (match.length <= 1) {
+    return indices[0]!;
+  }
+
+  for (let index = 1; index < match.length; index += 1) {
+    if (match[index]) {
+      return indices[index]!;
+    }
+  }
+
+  return null;
 }
 
 // Keep this local instead of using `equalShallowObject`: decoration paint

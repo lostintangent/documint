@@ -11,18 +11,13 @@ import { getBlockChildren, rebuildBlockChildren } from "../model/containers";
 import { childContainerPath, indexedPath, tableCellPath, tableRowPath } from "../model/paths";
 import type { Block, Document, Inline, TableBlock, TableCell, TableRow } from "../model/types";
 
-export type VisitControl = "skip" | "stop" | void;
+type VisitControl = "skip" | "stop" | void;
 
-export type BlockVisitContext = {
+type PathVisitContext = {
   path: string;
 };
 
-export type InlineVisitContext = {
-  block: Block | null;
-  path: string;
-};
-
-export type TableCellVisitContext = {
+type TableCellVisitContext = {
   cellIndex: number;
   path: string;
   row: TableRow;
@@ -30,20 +25,10 @@ export type TableCellVisitContext = {
   table: TableBlock;
 };
 
-export type InlineContainerVisitContext = {
-  block: Block;
-  container: Block | TableCell;
-  kind: "block" | "tableCell";
-  path: string;
-};
-
-export type DocumentVisitor = {
-  enterBlock?: (block: Block, context: BlockVisitContext) => VisitControl;
-  enterInlineContainer?: (
-    nodes: readonly Inline[],
-    context: InlineContainerVisitContext,
-  ) => VisitControl;
-  enterInline?: (node: Inline, context: InlineVisitContext) => VisitControl;
+type DocumentVisitor = {
+  enterBlock?: (block: Block, context: PathVisitContext) => VisitControl;
+  enterInlineContainer?: (nodes: readonly Inline[], context: PathVisitContext) => VisitControl;
+  enterInline?: (node: Inline) => VisitControl;
   enterTableCell?: (cell: TableCell, context: TableCellVisitContext) => VisitControl;
 };
 
@@ -51,32 +36,16 @@ type TraversalState = {
   stopped: boolean;
 };
 
-type BlockTraversalOptions = {
-  pathPrefix: string;
-  startIndex: number;
-};
-
-type InlineTraversalOptions = {
-  block: Block | null;
-  pathPrefix: string;
-};
-
 export function visitDocument(document: Document, visitor: DocumentVisitor): void {
-  visitBlocks(document.blocks, visitor, createTraversalState(), {
-    pathPrefix: "root",
-    startIndex: 0,
-  });
+  visitBlockTree(document.blocks, visitor);
 }
 
 export function visitBlockTree(
   blocks: Block[],
   visitor: DocumentVisitor,
-  options: { pathPrefix?: string; startIndex?: number } = {},
+  options: { startIndex?: number } = {},
 ): void {
-  visitBlocks(blocks, visitor, createTraversalState(), {
-    pathPrefix: options.pathPrefix ?? "root",
-    startIndex: options.startIndex ?? 0,
-  });
+  visitBlocks(blocks, visitor, { stopped: false }, "root", options.startIndex ?? 0);
 }
 
 // Locate `target` within `roots` by object identity and return its structural
@@ -119,41 +88,19 @@ function findChildIndicesByReference(block: Block, target: Block): number[] | nu
   return null;
 }
 
-export function findBlockByChildIndices(
-  rootBlock: Block | null,
-  childIndices: readonly number[],
-): Block | null {
-  let current = rootBlock;
-
-  for (const childIndex of childIndices) {
-    if (!current) {
-      return null;
-    }
-
-    const children = getBlockChildren(current);
-
-    if (!children) {
-      return null;
-    }
-
-    current = children[childIndex] ?? null;
-  }
-
-  return current;
-}
-
 function visitBlocks(
   blocks: Block[],
   visitor: DocumentVisitor,
   state: TraversalState,
-  options: BlockTraversalOptions,
+  pathPrefix: string,
+  startIndex: number,
 ) {
   for (const [index, block] of blocks.entries()) {
     if (state.stopped) {
       return;
     }
 
-    const path = indexedPath(options.pathPrefix, options.startIndex + index);
+    const path = indexedPath(pathPrefix, startIndex + index);
     const enterResult = visitor.enterBlock?.(block, { path });
 
     if (stopTraversal(enterResult, state)) {
@@ -167,22 +114,14 @@ function visitBlocks(
     const children = getBlockChildren(block);
 
     if (children) {
-      visitBlocks(children, visitor, state, {
-        pathPrefix: childContainerPath(path),
-        startIndex: 0,
-      });
+      visitBlocks(children, visitor, state, childContainerPath(path), 0);
       continue;
     }
 
     switch (block.type) {
       case "heading":
       case "paragraph":
-        visitInlineContainer(block.children, visitor, state, {
-          block,
-          container: block,
-          kind: "block",
-          path,
-        });
+        visitInlineContainer(block.children, visitor, state, path);
         break;
       case "table":
         visitTableCells(block, visitor, state, path);
@@ -190,44 +129,6 @@ function visitBlocks(
       // Leaf blocks (code, directive, divider, raw) have no children to walk.
     }
   }
-}
-
-function visitInlines(
-  nodes: Inline[],
-  visitor: DocumentVisitor,
-  state: TraversalState,
-  options: InlineTraversalOptions,
-) {
-  for (const [index, node] of nodes.entries()) {
-    if (state.stopped) {
-      return;
-    }
-
-    const path = indexedPath(options.pathPrefix, index);
-    const enterResult = visitor.enterInline?.(node, {
-      block: options.block,
-      path,
-    });
-
-    if (stopTraversal(enterResult, state)) {
-      return;
-    }
-
-    if (enterResult === "skip") {
-      continue;
-    }
-
-    if (node.type === "link") {
-      visitInlines(node.children, visitor, state, {
-        block: options.block,
-        pathPrefix: childContainerPath(path),
-      });
-    }
-  }
-}
-
-function createTraversalState(): TraversalState {
-  return { stopped: false };
 }
 
 function visitTableCells(
@@ -259,32 +160,42 @@ function visitTableCells(
         continue;
       }
 
-      visitInlineContainer(cell.children, visitor, state, {
-        block: table,
-        container: cell,
-        kind: "tableCell",
-        path,
-      });
+      visitInlineContainer(cell.children, visitor, state, path);
     }
   }
 }
 
+// Inline nodes are only walked for visitors that observe them, so block- and
+// cell-only visitors never pay for inline traversal.
 function visitInlineContainer(
   nodes: Inline[],
   visitor: DocumentVisitor,
   state: TraversalState,
-  context: InlineContainerVisitContext,
+  path: string,
 ) {
-  const enterResult = visitor.enterInlineContainer?.(nodes, context);
+  const enterResult = visitor.enterInlineContainer?.(nodes, { path });
 
-  if (stopTraversal(enterResult, state) || enterResult === "skip") {
-    return;
+  if (!stopTraversal(enterResult, state) && enterResult !== "skip" && visitor.enterInline) {
+    visitInlines(nodes, visitor, state);
   }
+}
 
-  visitInlines(nodes, visitor, state, {
-    block: context.block,
-    pathPrefix: childContainerPath(context.path),
-  });
+function visitInlines(nodes: Inline[], visitor: DocumentVisitor, state: TraversalState) {
+  for (const node of nodes) {
+    if (state.stopped) {
+      return;
+    }
+
+    const enterResult = visitor.enterInline?.(node);
+
+    if (stopTraversal(enterResult, state)) {
+      return;
+    }
+
+    if (enterResult !== "skip" && node.type === "link") {
+      visitInlines(node.children, visitor, state);
+    }
+  }
 }
 
 // Maps an inline list in semantic order, recursing through link children and
@@ -294,25 +205,12 @@ function visitInlineContainer(
 // link children themselves.
 export function mapInlines<T>(
   nodes: readonly Inline[],
-  visit: (node: Inline, context: InlineVisitContext, children: T[] | null) => T | null,
-): T[] {
-  return mapInlineChildren(nodes, visit, "root");
-}
-
-function mapInlineChildren<T>(
-  nodes: readonly Inline[],
-  visit: (node: Inline, context: InlineVisitContext, children: T[] | null) => T | null,
-  pathPrefix: string,
+  visit: (node: Inline, children: T[] | null) => T | null,
 ): T[] {
   const result: T[] = [];
 
-  for (const [index, node] of nodes.entries()) {
-    const path = indexedPath(pathPrefix, index);
-    const children =
-      node.type === "link"
-        ? mapInlineChildren(node.children, visit, childContainerPath(path))
-        : null;
-    const mapped = visit(node, { block: null, path }, children);
+  for (const node of nodes) {
+    const mapped = visit(node, node.type === "link" ? mapInlines(node.children, visit) : null);
 
     if (mapped !== null) {
       result.push(mapped);
@@ -340,7 +238,8 @@ function stopTraversal(result: VisitControl, state: TraversalState): boolean {
 // position should be. This gives callers both bottom-up and top-down idioms:
 //
 //   - Bottom-up: call `recurse()` first, then transform the rebuilt block.
-//     `trimTrailingWhitespace` uses this shape for blockquote/listItem/list.
+//     The boundary-collapse rebuild uses this shape to drop list items that
+//     no longer lead with a paragraph or heading.
 //   - Top-down with early termination: return a replacement without calling
 //     `recurse()`. The boundary-collapse rebuild uses this for victim/absorber
 //     substitution — the replaced subtree is never re-walked.
@@ -354,7 +253,7 @@ function stopTraversal(result: VisitControl, state: TraversalState): boolean {
 // anywhere else) are caller-managed — the inline tree is shallow enough that
 // dedicated walkers haven't earned their keep here.
 
-export type BlockMapContext = {
+type BlockMapContext = {
   // The structural parent of the current block, or `null` at the root. Useful
   // for transforms whose decision depends on what kind of container holds the
   // block (e.g. "remove this paragraph unless its parent is a listItem, in
@@ -370,7 +269,7 @@ export type BlockMapContext = {
   path: string;
 };
 
-export type BlockMapVisitor = (block: Block, context: BlockMapContext) => Block | Block[] | null;
+type BlockMapVisitor = (block: Block, context: BlockMapContext) => Block | Block[] | null;
 
 // Transform a block array, returning a new array with each block replaced by
 // the visitor's return value (`Block`, `Block[]`, or `null` to drop). Returns

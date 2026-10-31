@@ -12,7 +12,8 @@ import {
   createTableRow,
   createText,
 } from "@/document";
-import { resolveDecorationsKey, serializeDecorations } from "@/component/decorations/client/config";
+import { resolveDecorationsKey } from "@/component/decorations/client/config";
+import { compileDecorations } from "@/component/decorations/worker/matching";
 import { resolveBlockDecorationRanges } from "@/component/decorations/worker/prose";
 
 describe("resolveBlockDecorationRanges", () => {
@@ -57,15 +58,6 @@ describe("resolveBlockDecorationRanges", () => {
     expect(
       resolveBlockDecorationRanges(block, 0, [{ color: "gray", pattern: /\((\d+)?\)/ }]),
     ).toEqual([{ color: "gray", endOffset: 16, path: "root.0", startOffset: 13 }]);
-  });
-
-  test("does not match styled text or across styled text boundaries", () => {
-    const block = createParagraphBlock([createText("al", ["bold"]), createText("pha", ["italic"])]);
-
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "#f00", pattern: /alpha/ }])).toEqual(
-      [],
-    );
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "#f00", pattern: /al/ }])).toEqual([]);
   });
 
   test("earlier overlapping rules win and later rules only fill unclaimed ranges", () => {
@@ -135,73 +127,71 @@ describe("resolveBlockDecorationRanges", () => {
     ]);
   });
 
-  test("does not match across inline code boundaries and preserves later offsets", () => {
-    const block = createParagraphBlock([
-      createText("foo"),
-      createText("bar", ["code"]),
-      createText("baz target"),
-    ]);
+  test.each([
+    [
+      "styled text",
+      [createText("al", ["bold"]), createText("pha", ["italic"]), createText(" target")],
+      [/alpha/, /al/],
+      [6, 12],
+    ],
+    [
+      "inline code boundaries",
+      [createText("foo"), createText("bar", ["code"]), createText("baz target")],
+      [/foobaz/],
+      [10, 16],
+    ],
+    [
+      "link text",
+      [
+        createText("before "),
+        createLink({ children: [createText("pha")], url: "https://example.com" }),
+        createText(" target"),
+      ],
+      [/pha/],
+      [11, 17],
+    ],
+    [
+      "reference inlines",
+      [
+        createText("before "),
+        createImage({ alt: "preview", url: "https://example.com/image.png" }),
+        createMention({ name: "Jane Doe", userId: "user-123" }),
+        createResource({
+          label: "Recording",
+          protocol: "demo-resource:",
+          url: "demo-resource://recording/live",
+        }),
+        createText(" target"),
+      ],
+      [/Jane/, /preview|Recording/],
+      [11, 17],
+    ],
+    [
+      "links containing references",
+      [
+        createText("before "),
+        createLink({
+          children: [createText("go"), createMention({ name: "Jane Doe", userId: "user-123" })],
+          url: "https://example.com",
+        }),
+        createText(" target"),
+      ],
+      [/go|Jane/],
+      [11, 17],
+    ],
+  ] as const)(
+    "skips %s and preserves later offsets",
+    (_label, children, skippedPatterns, [startOffset, endOffset]) => {
+      const block = createParagraphBlock([...children]);
 
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /foobaz/ }])).toEqual(
-      [],
-    );
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 16, path: "root.0", startOffset: 10 },
-    ]);
-  });
-
-  test("skips link text and preserves later offsets", () => {
-    const block = createParagraphBlock([
-      createText("before "),
-      createLink({ children: [createText("pha")], url: "https://example.com" }),
-      createText(" target"),
-    ]);
-
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /pha/ }])).toEqual([]);
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 17, path: "root.0", startOffset: 11 },
-    ]);
-  });
-
-  test("skips reference inlines and preserves later offsets", () => {
-    const block = createParagraphBlock([
-      createText("before "),
-      createImage({ alt: "preview", url: "https://example.com/image.png" }),
-      createMention({ name: "Jane Doe", userId: "user-123" }),
-      createResource({
-        label: "Recording",
-        protocol: "demo-resource:",
-        url: "demo-resource://recording/live",
-      }),
-      createText(" target"),
-    ]);
-
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /Jane/ }])).toEqual([]);
-    expect(
-      resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /preview|Recording/ }]),
-    ).toEqual([]);
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 17, path: "root.0", startOffset: 11 },
-    ]);
-  });
-
-  test("skips links containing references and preserves later offsets", () => {
-    const block = createParagraphBlock([
-      createText("before "),
-      createLink({
-        children: [createText("go"), createMention({ name: "Jane Doe", userId: "user-123" })],
-        url: "https://example.com",
-      }),
-      createText(" target"),
-    ]);
-
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /go|Jane/ }])).toEqual(
-      [],
-    );
-    expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual([
-      { color: "red", endOffset: 17, path: "root.0", startOffset: 11 },
-    ]);
-  });
+      for (const pattern of skippedPatterns) {
+        expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern }])).toEqual([]);
+      }
+      expect(resolveBlockDecorationRanges(block, 0, [{ color: "red", pattern: /target/ }])).toEqual(
+        [{ color: "red", endOffset, path: "root.0", startOffset }],
+      );
+    },
+  );
 
   test("includes headings and table cells", () => {
     const heading = createHeadingTextBlock({ depth: 2, text: "Heading target" });
@@ -232,22 +222,30 @@ describe("resolveBlockDecorationRanges", () => {
   });
 });
 
-describe("decoration serialization", () => {
-  test("ignore rules without styles at scheduling and worker boundaries", () => {
-    const rules = [{ pattern: /TODO/ }, { backgroundColor: "yellow", pattern: /TODO/ }];
+describe("decoration config", () => {
+  test("ignores rules without styles when keying and compiling", () => {
+    const styled = { backgroundColor: "yellow", pattern: /TODO/ };
+    const rules = [{ pattern: /TODO/ }, styled];
 
-    expect(resolveDecorationsKey(rules)).toBe("TODO:::yellow:0");
-    expect(serializeDecorations(rules)).toEqual([
-      { backgroundColor: "yellow", flags: "", source: "TODO" },
+    expect(resolveDecorationsKey(rules)).toBe(resolveDecorationsKey([styled]));
+    expect(compileDecorations(rules)).toEqual([{ backgroundColor: "yellow", pattern: /TODO/dg }]);
+  });
+
+  test("preserves animated background decoration styles", () => {
+    const rules = [{ backgroundColor: "gold", pulse: true, pattern: /sparkle/ }];
+
+    expect(resolveDecorationsKey(rules)).not.toBe(
+      resolveDecorationsKey([{ backgroundColor: "gold", pattern: /sparkle/ }]),
+    );
+    expect(compileDecorations(rules)).toEqual([
+      { backgroundColor: "gold", pulse: true, pattern: /sparkle/dg },
     ]);
   });
 
-  test("preserves animated background decoration styles across the worker boundary", () => {
-    const rules = [{ backgroundColor: "gold", pulse: true, pattern: /sparkle/ }];
-
-    expect(resolveDecorationsKey(rules)).toBe("sparkle:::gold:1");
-    expect(serializeDecorations(rules)).toEqual([
-      { backgroundColor: "gold", pulse: true, flags: "", source: "sparkle" },
-    ]);
+  test("compiles global match-index patterns and drops sticky matching", () => {
+    expect(compileDecorations([{ color: "red", pattern: /todo/iy }])[0]!.pattern.flags).toBe("dgi");
+    expect(compileDecorations([{ color: "red", pattern: /todo/dgm }])[0]!.pattern.flags).toBe(
+      "dgm",
+    );
   });
 });

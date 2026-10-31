@@ -4,7 +4,7 @@
 // visible paths. The slice is measured directly in document space (via
 // `measureLayoutSlice`'s `startY`), so no coordinate shift is needed here.
 
-import type { DocumentResources } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
 import type { DocumentIndex } from "../../state";
 import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
 import { resolveBlockContentMetrics } from "../lib/content-metrics";

@@ -16,11 +16,59 @@ import {
   type AnchorContainer,
   type TextAnchor,
 } from "@/document";
-import type { DocumentUserPresence } from "@/types";
 import type { DocumentIndex, EditorSelectionPoint } from "../../state";
 import { createEditorTextAnchorResolver, type EditorTextAnchorResolver } from "../text";
 
 // --- Types ---
+
+// The roster and the live cursor list are separate inputs because they answer
+// different questions:
+//   - `users` is the roster Documint shows in mention completion (`@`). It
+//     includes everyone the host wants mentionable, whether or not they're
+//     currently in the document.
+//   - `presence` is who's actively in the document right now and what
+//     document target they are associated with. Each entry is foreign-keyed
+//     to a user via `userId`.
+//
+// Internally the two are joined into `DocumentUserPresence`, then resolved
+// against the document and viewport into `EditorPresence` below,
+// which feeds the canvas (paints remote carets and comment-thread presence
+// rules) and the DOM presence overlay (renders scroll-to-cursor arrow buttons
+// for off-screen text presences).
+
+/**
+ * A user known to the host. The full set is the mention roster; the subset
+ * that also appears in `presence` shows a live cursor in the document.
+ */
+export type DocumentUser = {
+  id: string;
+  username: string;
+  fullName?: string;
+  avatarUrl?: string;
+};
+
+/**
+ * One user's live document presence. `userId` foreign-keys into the `users`
+ * roster; entries without a matching user are silently dropped.
+ *
+ * `cursor` is either a content-addressable text anchor (prefix/suffix) or a
+ * comment-thread anchor (`{ threadId }`). The editor resolves comment-thread
+ * anchors to a presence-active comment rule instead of a remote caret.
+ */
+export type DocumentPresence = {
+  userId: string;
+  cursor?: Anchor;
+  color?: string;
+  status?: string;
+};
+
+/**
+ * Internal joined shape: a `DocumentUser` denormalized over its
+ * `DocumentPresence`. Produced by Documint, consumed by the presence
+ * pipeline. Embedders never construct this — they pass `users` and
+ * `presence` arrays and Documint joins them by `userId`.
+ */
+export type DocumentUserPresence = DocumentUser & Omit<DocumentPresence, "userId">;
 
 // Where a presence sits relative to the prepared viewport. `scrollTop` is the
 // y-position the host would scroll to to bring this target into view; it only

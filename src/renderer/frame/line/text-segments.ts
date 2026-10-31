@@ -1,14 +1,18 @@
 import type { Mark } from "@/document";
-import type { EditorLayoutState } from "@/editor/layout";
+import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import type { IndexedInline } from "@/editor/state";
 import { findInlinesInRange } from "@/editor/state";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
-import { resolveResource } from "@/editor/resources";
+import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/measure";
+import {
+  resolveResource,
+  type DocumentResourceIcon,
+  type DocumentResources,
+} from "@/editor/resources";
 import { mentionHorizontalPadding } from "@/editor/layout/measure/inline-mention";
 import { resourceHorizontalPadding } from "@/editor/layout/measure/inline-resource";
-import type { DocumentResourceIcon, DocumentResources, ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../../theme";
 import { resolveLineSegmentBounds } from "./text-geometry";
-import { resolveTextPillFrame, type TextPillFrame } from "./text-pill";
 
 type TextSegmentAtom = "image" | "inline-code" | "mention" | "resource" | "text";
 
@@ -18,6 +22,11 @@ type ResourceSegmentFrame = {
   isActive: boolean;
   labelLeft: number;
   label: string;
+};
+
+type TextPillFrame = {
+  rect: LayoutRect;
+  textBaseline: number;
 };
 
 type LayoutInlineReference = NonNullable<
@@ -57,6 +66,10 @@ export type ResourceSegment = SegmentPaintBase & {
 
 export type TextSegment = TextRunSegment | ImageSegment | MentionSegment | ResourceSegment;
 
+export function isTextRunSegment(segment: TextSegment): segment is TextRunSegment {
+  return segment.atom === "inline-code" || segment.atom === "text";
+}
+
 type ResolveLineTextSegmentsInput = {
   baseFontSize: number;
   defaultTextColor: string;
@@ -71,29 +84,10 @@ type ResolveLineTextSegmentsInput = {
 
 export function resolveLineTextSegments(input: ResolveLineTextSegmentsInput): TextSegment[] {
   const { inlines, line, text } = input;
+  const visibleInlines = text && inlines ? findInlinesInRange(inlines, line.start, line.end) : [];
 
-  if (!text || !inlines) {
-    return [
-      createPlainTextSegment({
-        end: line.end,
-        input,
-        start: line.start,
-        text: line.text,
-      }),
-    ];
-  }
-
-  const visibleInlines = findInlinesInRange(inlines, line.start, line.end);
-
-  if (visibleInlines.length === 0) {
-    return [
-      createPlainTextSegment({
-        end: line.end,
-        input,
-        start: line.start,
-        text: line.text,
-      }),
-    ];
+  if (!text || visibleInlines.length === 0) {
+    return [createPlainTextSegment(input)];
   }
 
   const segments: TextSegment[] = [];
@@ -113,17 +107,8 @@ export function resolveLineTextSegments(input: ResolveLineTextSegmentsInput): Te
   return segments;
 }
 
-function createPlainTextSegment({
-  end,
-  input,
-  start,
-  text,
-}: {
-  end: number;
-  input: ResolveLineTextSegmentsInput;
-  start: number;
-  text: string;
-}): TextSegment {
+function createPlainTextSegment(input: ResolveLineTextSegmentsInput): TextSegment {
+  const { end, font, start, text } = input.line;
   const { left, right } = resolveLineSegmentBounds(input.line, input.textLeft, start, end);
 
   return {
@@ -131,7 +116,7 @@ function createPlainTextSegment({
     baseline: input.textBaseline,
     color: input.defaultTextColor,
     end,
-    font: input.line.font,
+    font,
     left,
     right,
     start,
@@ -183,7 +168,7 @@ function createInlineTextSegment(
             ...baseSegment,
             atom,
             mentionName,
-            pill: resolveTextPillFrame(input.line, inlineStyle.font, left, right, textPill),
+            pill: resolveTextPillFrame(input.line, inlineStyle.font, left, right),
             textLeft: left + mentionHorizontalPadding,
           }
         : createTextRunSegment();
@@ -192,7 +177,7 @@ function createInlineTextSegment(
         ? {
             ...baseSegment,
             atom,
-            pill: resolveTextPillFrame(input.line, inlineStyle.font, left, right, textPill),
+            pill: resolveTextPillFrame(input.line, inlineStyle.font, left, right),
             resource,
           }
         : createTextRunSegment();
@@ -238,6 +223,28 @@ function resolveResourceSegmentFrame(
     isActive: resource.isActive,
     labelLeft: left + iconSegmentWidth + resourceHorizontalPadding,
     label: resource.label,
+  };
+}
+
+// Mention and resource pills wrap the font's ascent and descent around the
+// line's centered baseline.
+function resolveTextPillFrame(
+  line: EditorLayoutState["layout"]["lines"][number],
+  font: string,
+  left: number,
+  right: number,
+): TextPillFrame {
+  const baseline = line.top + resolveCenteredTextBaseline(line.height, font);
+  const { ascent, descent } = resolveFontMetrics(font);
+
+  return {
+    rect: {
+      height: ascent + descent + textPill.verticalPadding * 2,
+      left,
+      top: baseline - ascent - textPill.verticalPadding + textPill.verticalNudge,
+      width: Math.max(0, right - left),
+    },
+    textBaseline: baseline + textPill.verticalNudge + textPill.textVerticalNudge,
   };
 }
 

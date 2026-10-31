@@ -3,13 +3,14 @@ import type { EditorLayoutState, LayoutRect, MetadataLayout } from "@/editor/lay
 import { findVisibleBlockRange, findVisibleLineRange } from "@/editor/layout";
 import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
-import { emptyDocumentResources } from "@/editor/resources";
-import type { DocumentResources, DocumintEffects, ResolvedEditorTheme } from "@/types";
+import { emptyDocumentResources, type DocumentResources } from "@/editor/resources";
+import type { ResolvedEditorTheme } from "../theme";
 import {
   resolveRendererEffects,
   type EffectPolicy,
   type BlockFlashFrame,
   type RendererEffect,
+  type DocumintEffects,
 } from "../effects";
 import { resolveDocumentFrameChrome, type DocumentFrameChrome } from "./chrome";
 import {

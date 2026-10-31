@@ -7,7 +7,7 @@
 // that's a detail. Consumers (layout caret math, canvas painters) ask in
 // terms of font strings and lengths, not pixels.
 
-export type FontMetrics = {
+type FontMetrics = {
   ascent: number;
   descent: number;
   emHeight: number;

@@ -10,7 +10,14 @@
 // annotation, completion, comment thread). `ViewportAnchor` is its
 // counterpart for fixed editor-chrome positioning.
 
-import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { equalShallowObject } from "../../store/core/equality";
 import { OverlayPortal } from "../OverlayPortal";
 import { getVisualViewportMetrics, resolveHorizontalOffset } from "./placement";
@@ -22,11 +29,17 @@ export const LEAF_BRIDGE_HEIGHT = 12;
 
 type DocumentAnchorProps = {
   anchor: DocumentAnchorResolution;
+  // Element whose box the anchor's coordinates are relative to. Omit when the
+  // anchor is already document-absolute (e.g. textarea-resolved completions).
+  origin?: RefObject<HTMLElement | null>;
   children: ReactNode;
 };
 
 type DocumentAnchorPlacement = {
   horizontalOffset: number;
+  // Document-absolute anchor position.
+  left: number;
+  top: number;
   verticalPlacement: "above" | "below";
 };
 
@@ -35,13 +48,18 @@ type LeafShellSize = {
   width: number;
 };
 
-export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
+export function DocumentAnchor({ anchor, origin, children }: DocumentAnchorProps) {
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const shellSizeRef = useRef<LeafShellSize | null>(null);
   const latestAnchorRef = useRef(anchor);
   const [placement, setPlacement] = useState<DocumentAnchorPlacement | null>(null);
-  latestAnchorRef.current = anchor;
+
+  // Written after commit so render never mutates the ref. Declared first so
+  // later layout effects in this component read the latest anchor.
+  useLayoutEffect(() => {
+    latestAnchorRef.current = anchor;
+  });
 
   // Hover-bridge pointer tracking. Native `pointerenter`/`pointerleave`
   // listeners (rather than React's `onPointerEnter`/`Leave` synthetic
@@ -65,19 +83,21 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
     };
   }, [onPointerEnter, onPointerLeave]);
 
-  // Anchor moves reuse shell size cached by ResizeObserver, avoiding a
-  // shell layout read on scroll-only updates.
+  // Re-measure after every commit. The origin can move while the relative
+  // anchor stays equal (e.g. content above the editor changes height), and
+  // compiled output memoizes `anchor` on those relative values, so no value
+  // or identity dependency can see the move. The shell size comes from the
+  // ResizeObserver cache, keeping shell layout reads off this path.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const shellSize = shellSizeRef.current;
     if (!shellSize) {
       return;
     }
 
-    setPlacement((current) => {
-      const next = resolvePlacement(latestAnchorRef.current, shellSize);
-      return current && equalShallowObject(current, next) ? current : next;
-    });
-  }, [anchor.left, anchor.paddingY, anchor.top]);
+    const next = measurePlacement(latestAnchorRef.current, origin, shellSize);
+    setPlacement((current) => (current && equalShallowObject(current, next) ? current : next));
+  });
 
   useLayoutEffect(() => {
     const shell = shellRef.current;
@@ -89,16 +109,14 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
       const bounds = shell.getBoundingClientRect();
       const shellSize = { height: bounds.height, width: bounds.width };
       shellSizeRef.current = shellSize;
-      setPlacement((current) => {
-        const next = resolvePlacement(latestAnchorRef.current, shellSize);
-        return current && equalShallowObject(current, next) ? current : next;
-      });
+      const next = measurePlacement(latestAnchorRef.current, origin, shellSize);
+      setPlacement((current) => (current && equalShallowObject(current, next) ? current : next));
     };
 
     evaluatePlacement();
 
-    // Screen-space changes can also alter fit/flip decisions. Page scroll is
-    // handled by the anchor-move effect above, using the cached shell size.
+    // Screen-space changes can also alter fit/flip decisions. Anchor and origin
+    // moves are handled by the every-commit effect above.
     const resizeObserver = new ResizeObserver(evaluatePlacement);
     resizeObserver.observe(shell);
     window.addEventListener("resize", evaluatePlacement);
@@ -107,7 +125,7 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
       resizeObserver.disconnect();
       window.removeEventListener("resize", evaluatePlacement);
     };
-  }, []);
+  }, [origin]);
 
   return (
     <OverlayPortal>
@@ -121,9 +139,9 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
           {
             "--leaf-anchor-height": `${anchor.anchorHeight}px`,
             "--leaf-anchor-left": placement
-              ? `${anchor.left + placement.horizontalOffset}px`
+              ? `${placement.left + placement.horizontalOffset}px`
               : "0px",
-            "--leaf-anchor-top": placement ? `${anchor.top}px` : "0px",
+            "--leaf-anchor-top": placement ? `${placement.top}px` : "0px",
             "--leaf-bridge-expand-left": placement
               ? `${Math.max(0, placement.horizontalOffset)}px`
               : "0px",
@@ -144,15 +162,34 @@ export function DocumentAnchor({ anchor, children }: DocumentAnchorProps) {
   );
 }
 
-function resolvePlacement(
+// Document-absolute position of the anchor. Content-space anchors add the
+// origin's current box and the window scroll; anchors without an origin are
+// already document-absolute.
+function resolveDocumentPosition(
   anchor: DocumentAnchorResolution,
+  origin: RefObject<HTMLElement | null> | undefined,
+) {
+  if (!origin) {
+    return { left: anchor.left, top: anchor.top };
+  }
+
+  const bounds = origin.current?.getBoundingClientRect();
+  return {
+    left: (bounds?.left ?? 0) + window.scrollX + anchor.left,
+    top: (bounds?.top ?? 0) + window.scrollY + anchor.top,
+  };
+}
+
+function measurePlacement(
+  anchor: DocumentAnchorResolution,
+  origin: RefObject<HTMLElement | null> | undefined,
   shellSize: LeafShellSize,
 ): DocumentAnchorPlacement {
+  const position = resolveDocumentPosition(anchor, origin);
   const viewport = getVisualViewportMetrics();
-  // Anchor coordinates are doc-absolute; convert to visible-viewport
-  // relative to ask where the shell fits.
-  const anchorViewportLeft = anchor.left - window.scrollX - viewport.offsetLeft;
-  const anchorViewportTop = anchor.top - window.scrollY - viewport.offsetTop;
+  // Convert to visible-viewport relative to ask where the shell fits.
+  const anchorViewportLeft = position.left - window.scrollX - viewport.offsetLeft;
+  const anchorViewportTop = position.top - window.scrollY - viewport.offsetTop;
   const spaceBelow = viewport.height - anchorViewportTop;
   const verticalGap = LEAF_BRIDGE_HEIGHT + anchor.paddingY;
 
@@ -161,6 +198,8 @@ function resolvePlacement(
       anchorViewportLeft,
       floatingWidth: shellSize.width,
     }),
+    left: position.left,
+    top: position.top,
     verticalPlacement: shellSize.height + verticalGap > spaceBelow ? "above" : "below",
   };
 }

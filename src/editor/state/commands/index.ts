@@ -34,18 +34,16 @@ import {
   type InlineContext,
   type TableCellContext,
   type TextRangeContext,
-  type TextRangeTarget,
 } from "./context";
 import type { EditorState, EditorStateAction } from "../types";
-import { resolveMetadataSelectionContext } from "../selection";
+import { resolveMetadataSelectionContext, type EditorSelectionRange } from "../selection";
 import type { WordMovement } from "../../text/words";
 import { createCommentThreadForSelection, getCommentState } from "../../anchors";
 import {
-  insertInlineNode,
+  insertInlines,
   removeInlineLink,
   resolveInlineRangeReplacement,
   resolveImageResize,
-  resolveMentionReplacement,
   toggleInlineMark,
   updateInlineLinkUrl,
   wrapInlineLink,
@@ -54,6 +52,8 @@ import {
 import {
   createImage,
   createLineBreak,
+  createMention,
+  createText,
   deleteCommentFromThread,
   editCommentInThread,
   markCommentThreadAsResolved as markThreadResolved,
@@ -125,9 +125,8 @@ export const insertSoftLineBreak = makeCommand(
     },
 );
 
-export const replaceSelection = makeCommand(
-  (state, text: string): EditorStateAction =>
-    resolveSelectionTextReplacement(state.documentIndex, state.selection, text),
+export const replaceSelection = makeCommand((state, text: string): EditorStateAction =>
+  resolveSelectionTextReplacement(state.documentIndex, state.selection, text),
 );
 
 type TextRangeCommandContext = {
@@ -251,7 +250,7 @@ export const toggleMark = makeCommand(
 // --- Links ---
 
 export const updateLink = makeCommand(
-  (context: InlineContext, _target: TextRangeTarget, url: string) =>
+  (context: InlineContext, _target: EditorSelectionRange, url: string) =>
     resolveInlineRangeReplacement(context, (inlineContainer, start, end) =>
       updateInlineLinkUrl(inlineContainer, start, end, url),
     ),
@@ -259,7 +258,7 @@ export const updateLink = makeCommand(
 );
 
 export const removeLink = makeCommand(
-  (context: InlineContext, _target: TextRangeTarget) =>
+  (context: InlineContext, _target: EditorSelectionRange) =>
     resolveInlineRangeReplacement(context, removeInlineLink),
   resolveInlineTargetContext,
 );
@@ -276,18 +275,22 @@ export const insertLink = makeCommand(
 
 export const insertImage = makeCommand(
   (context: InlineContext, url: string, alt?: string) =>
-    insertInlineNode(context, createImage({ alt: alt ?? null, url })),
+    insertInlines(context, [createImage({ alt: alt ?? null, url })]),
   resolveInlineContext,
 );
 
 export const insertMention = makeCommand(
   (
     context: InlineContext,
-    _target: TextRangeTarget,
+    _target: EditorSelectionRange,
     userId: string,
     name: string,
     trailingText: string = "",
-  ): EditorStateAction => resolveMentionReplacement(context, userId, name, trailingText),
+  ): EditorStateAction =>
+    insertInlines(context, [
+      createMention({ name, userId }),
+      ...(trailingText.length > 0 ? [createText(trailingText)] : []),
+    ]),
   resolveInlineTargetContext,
 );
 
@@ -403,11 +406,7 @@ export const deleteTable = makeCommand(resolveTableDeletion, resolveTableCellCon
 // --- Comments ---
 
 export const addComment = makeCommand(
-  (
-    state: EditorState,
-    selection: { endOffset: number; path: string; startOffset: number },
-    body: string,
-  ): EditorStateAction | null => {
+  (state: EditorState, selection: EditorSelectionRange, body: string): EditorStateAction | null => {
     const thread = createCommentThreadForSelection(state.documentIndex, selection, body);
 
     if (!thread) {
@@ -503,7 +502,7 @@ function resolveContextAction<C, A extends unknown[], R extends EditorStateActio
 function insertSoftLineBreakInline(state: EditorState) {
   const context = resolveInlineContext(state);
 
-  return context ? insertInlineNode(context, createLineBreak()) : null;
+  return context ? insertInlines(context, [createLineBreak()]) : null;
 }
 
 function updateCommentThread(

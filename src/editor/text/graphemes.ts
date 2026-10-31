@@ -21,7 +21,7 @@ export function splitGraphemes(text: string): string[] {
   return Array.from(segmenter.segment(text), (segment) => segment.segment);
 }
 
-export function previousGraphemeOffset(text: string, offset: number) {
+function previousGraphemeOffset(text: string, offset: number) {
   const slice = splitGraphemes(text.slice(0, offset));
 
   if (slice.length === 0) {
@@ -31,7 +31,7 @@ export function previousGraphemeOffset(text: string, offset: number) {
   return offset - slice.at(-1)!.length;
 }
 
-export function nextGraphemeOffset(text: string, offset: number) {
+function nextGraphemeOffset(text: string, offset: number) {
   const next = splitGraphemes(text.slice(offset))[0];
 
   return next ? offset + next.length : text.length;

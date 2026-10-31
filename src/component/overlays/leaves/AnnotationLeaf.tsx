@@ -1,9 +1,4 @@
-import {
-  getCommentThreadUpdatedAt,
-  isResolvedCommentThread,
-  type CommentThread,
-  type MentionTarget,
-} from "@/document";
+import { getCommentThreadUpdatedAt, isResolvedCommentThread, type CommentThread } from "@/document";
 import {
   deleteSelection,
   toggleMark,
@@ -27,7 +22,6 @@ import {
 import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -37,6 +31,7 @@ import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
 import { type DocumintStore, useDocumintStore, useEditorCommand } from "../../store";
 import { copySelectionAsMarkdown, pastePlainText } from "../../lib/clipboard";
+import { resolveMentionTargets } from "../../lib/mentions";
 import { resolvePresenceName } from "../../lib/presence";
 import { LeafButton } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
@@ -79,7 +74,6 @@ type AnnotationThreadLeafProps = AnnotationLeafBaseProps & {
 
 type AnnotationLeafProps = AnnotationCreateLeafProps | AnnotationThreadLeafProps;
 
-const defaultCreateExpanded = false;
 const createToThreadTransitionMs = 220;
 const defaultFormatting: SelectionFormatting = {
   marks: [],
@@ -116,15 +110,15 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const [editDraft, setEditDraft] = useState("");
   const [replyDraft, setReplyDraft] = useState("");
   const [createDraft, setCreateDraft] = useState("");
-  const [isInitialCommentVisible, setIsInitialCommentVisible] = useState(!animateInitialComment);
-  const [isExpanded, setIsExpanded] = useState(defaultCreateExpanded);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [wasCreateMode, setWasCreateMode] = useState(createMode);
   const [isTransitioningFromCreate, setIsTransitioningFromCreate] = useState(false);
   const [isClipboardCopied, setIsClipboardCopied] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const commentsListRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const clipboardCopiedTimeoutRef = useRef<number | null>(null);
-  const hasScrolledThreadRef = useRef(false);
+  // The thread the comment list was last scrolled for: its first scroll
+  // jumps, and later scrolls for the same thread animate.
   const scrolledThreadIdRef = useRef<string | null>(null);
   const completionSources = props.completionSources;
   const threadUpdatedAt = thread ? getCommentThreadUpdatedAt(thread) : null;
@@ -187,10 +181,12 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     switch (value) {
       case "copy":
         showClipboardCopiedFeedback();
-        void copySelectedTextToClipboard(store);
+        void writeSelectionToClipboard(store);
         break;
       case "cut":
-        void cutSelectedTextToClipboard(store, deleteSelectionCommand);
+        void writeSelectionToClipboard(store).then((written) => {
+          if (written) deleteSelectionCommand();
+        });
         break;
       case "paste":
         void pasteClipboardText(pastePlainTextCommand, markdownOptions);
@@ -212,39 +208,24 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (
-      editingCommentIndex !== null &&
-      (editingCommentIndex < 0 || editingCommentIndex >= commentCount)
-    ) {
-      setEditingCommentIndex(null);
-      setEditDraft("");
-    }
-  }, [commentCount, editingCommentIndex]);
+  if (
+    editingCommentIndex !== null &&
+    (editingCommentIndex < 0 || editingCommentIndex >= commentCount)
+  ) {
+    setEditingCommentIndex(null);
+    setEditDraft("");
+  }
+
+  if (wasCreateMode !== createMode) {
+    setWasCreateMode(createMode);
+    setIsTransitioningFromCreate(wasCreateMode && animateInitialComment);
+  }
 
   useEffect(() => {
-    if (!showRootComment || !animateInitialComment) {
-      setIsInitialCommentVisible(true);
+    if (!isTransitioningFromCreate) {
       return;
     }
 
-    setIsInitialCommentVisible(false);
-    const frame = requestAnimationFrame(() => {
-      setIsInitialCommentVisible(true);
-    });
-
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [animateInitialComment, rootComment, showRootComment]);
-
-  useEffect(() => {
-    if (!threadProps || !animateInitialComment) {
-      setIsTransitioningFromCreate(false);
-      return;
-    }
-
-    setIsTransitioningFromCreate(true);
     const timeoutId = window.setTimeout(() => {
       setIsTransitioningFromCreate(false);
     }, createToThreadTransitionMs);
@@ -252,7 +233,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [animateInitialComment, threadProps]);
+  }, [isTransitioningFromCreate]);
 
   useEffect(() => {
     if (!createMode || !isExpanded || !canMutateComments) {
@@ -270,7 +251,6 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
 
   useLayoutEffect(() => {
     if (!threadId || !threadComments?.length) {
-      hasScrolledThreadRef.current = false;
       scrolledThreadIdRef.current = null;
       return;
     }
@@ -280,16 +260,11 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       return;
     }
 
-    if (scrolledThreadIdRef.current !== threadId) {
-      hasScrolledThreadRef.current = false;
-      scrolledThreadIdRef.current = threadId;
-    }
-
     commentsList.scrollTo({
-      behavior: hasScrolledThreadRef.current ? "smooth" : "auto",
+      behavior: scrolledThreadIdRef.current === threadId ? "smooth" : "auto",
       top: commentsList.scrollHeight,
     });
-    hasScrolledThreadRef.current = true;
+    scrolledThreadIdRef.current = threadId;
   }, [threadComments, threadId]);
 
   const cancelEditing = () => {
@@ -354,7 +329,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
       editDraft={editDraft}
       editingCommentIndex={editingCommentIndex}
       isComposerVisible={showComposer}
-      isInitialCommentVisible={isInitialCommentVisible}
+      animateRootComment={animateInitialComment}
       isResolved={isResolved}
       link={link}
       completionSources={completionSources}
@@ -381,7 +356,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   ) : null;
 
   return (
-    <div className={contentClassName} ref={rootRef}>
+    <div className={contentClassName}>
       <div className={showCreateChrome ? "comment-leaf-create-shell" : undefined}>
         {showCreateChrome ? (
           <div className="comment-leaf-create-toolbar">
@@ -465,7 +440,7 @@ function AnnotationLeafBody({
   editDraft,
   editingCommentIndex,
   isComposerVisible,
-  isInitialCommentVisible,
+  animateRootComment,
   isResolved,
   link,
   completionSources,
@@ -499,7 +474,7 @@ function AnnotationLeafBody({
   editDraft: string;
   editingCommentIndex: number | null;
   isComposerVisible: boolean;
-  isInitialCommentVisible: boolean;
+  animateRootComment: boolean;
   isResolved: boolean;
   link: AnnotationLink | null;
   completionSources: CompletionSource[] | undefined;
@@ -523,10 +498,7 @@ function AnnotationLeafBody({
   composerPlaceholder: string;
   composerValue: string;
 }) {
-  const mentionTargets = useMemo(
-    () => resolveMentionTargets(completionSources),
-    [completionSources],
-  );
+  const mentionTargets = resolveMentionTargets(completionSources);
 
   return (
     <>
@@ -565,7 +537,7 @@ function AnnotationLeafBody({
         <article
           className={
             showRootComment
-              ? `comment-message comment-message-root${isInitialCommentVisible ? " is-visible" : ""}`
+              ? `comment-message comment-message-root${animateRootComment ? " is-entering" : ""}`
               : "comment-message comment-message-root is-hidden"
           }
         >
@@ -589,7 +561,6 @@ function AnnotationLeafBody({
                   {canMutateComments ? (
                     <div className="comment-leaf-actions">
                       <LeafButton
-                        disabled={!canMutateComments}
                         icon={Pencil}
                         onClick={() => {
                           onBeginEditingComment(actualIndex, comment.body);
@@ -598,7 +569,6 @@ function AnnotationLeafBody({
                       />
                       <LeafButton
                         danger
-                        disabled={!canMutateComments}
                         icon={Trash2}
                         onClick={() => onDeleteComment(actualIndex)}
                         title="Delete comment"
@@ -618,7 +588,6 @@ function AnnotationLeafBody({
                   completionSources={completionSources}
                   onChange={onChangeEditDraft}
                   readOnly={!canMutateComments}
-                  rows={3}
                   value={editDraft}
                 />
               ) : (
@@ -657,7 +626,6 @@ function AnnotationLeafBody({
           placeholder={composerPlaceholder}
           readOnly={!canMutateComments}
           ref={composerRef}
-          rows={3}
           value={composerValue}
         />
         {mode === "thread" && presence ? (
@@ -668,49 +636,21 @@ function AnnotationLeafBody({
   );
 }
 
-function resolveMentionTargets(
-  completionSources: CompletionSource[] | undefined,
-): MentionTarget[] | undefined {
-  const source = completionSources?.find((candidate) => candidate.trigger === "@");
-
-  if (!source) {
-    return undefined;
-  }
-
-  return source.items.flatMap<MentionTarget>((item) =>
-    item.id ? [{ name: item.label, userId: item.id }] : [],
-  );
-}
-
-async function copySelectedTextToClipboard(store: DocumintStore) {
+// Resolves whether the selection's markdown reached the clipboard, so cut
+// keeps the selection intact when there is nothing to copy or access is denied.
+async function writeSelectionToClipboard(store: DocumintStore) {
   const markdown = copySelectionAsMarkdown(store.editor.getState());
 
   if (markdown === null) {
-    return;
+    return false;
   }
 
   try {
     await navigator.clipboard.writeText(markdown);
+    return true;
   } catch {
     // Clipboard access is permission- and secure-context-gated.
-  }
-}
-
-async function cutSelectedTextToClipboard(
-  store: DocumintStore,
-  deleteSelectionCommand: () => unknown,
-) {
-  const markdown = copySelectionAsMarkdown(store.editor.getState());
-
-  if (markdown === null) {
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(markdown);
-    deleteSelectionCommand();
-  } catch {
-    // Keep the selection intact if the browser refuses clipboard access.
+    return false;
   }
 }
 

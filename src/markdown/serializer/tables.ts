@@ -8,89 +8,53 @@ import type { TableBlock } from "@/document";
 import { lineFeed, type MarkdownOptions } from "../shared";
 import { serializeInlines } from "./inlines";
 
-// A divider cell is at minimum three dashes; each colon-marked side adds one
-// character to the rendered width. `alignmentColons(align)` returns 0/1/2.
+type TableAlignment = TableBlock["align"][number];
+
+// A divider cell is at minimum three dashes, plus the colons that mark its
+// alignment on either side.
 const minimumTableDividerWidth = 3;
+const alignmentColons = {
+  center: [":", ":"],
+  left: [":", ""],
+  right: ["", ":"],
+} as const;
 
 export function serializeTable(block: TableBlock, indent: number, options: MarkdownOptions) {
-  const rowValues = block.rows.map((row) =>
+  const [headerRow = [], ...bodyRows] = block.rows.map((row) =>
     row.cells.map((cell) => escapeTableCellPipes(serializeInlines(cell.children))),
   );
-  const columnCount = Math.max(1, ...rowValues.map((row) => row.length));
-  const headerRow = rowValues[0] ?? [];
+  const columnCount = Math.max(1, headerRow.length, ...bodyRows.map((row) => row.length));
   const columnWidths = Array.from({ length: columnCount }, (_, columnIndex) =>
     Math.max(
-      minimumAlignmentWidth(block.align[columnIndex]),
-      ...(options.padTableColumns
-        ? rowValues.map((row) => row[columnIndex]?.length ?? 0)
-        : [headerRow[columnIndex]?.length ?? 0]),
+      // A column is at least as wide as its narrowest divider cell.
+      alignmentCell(block.align[columnIndex], 0).length,
+      headerRow[columnIndex]?.length ?? 0,
+      ...(options.padTableColumns ? bodyRows.map((row) => row[columnIndex]?.length ?? 0) : []),
     ),
   );
-  const separator = serializeTableAlignment(columnWidths, block.align, indent);
-  const header = serializeTableRow(headerRow, columnWidths, block.align, indent, options);
-  const body = rowValues
-    .slice(1)
-    .map((row) => serializeTableRow(row, columnWidths, block.align, indent, options));
+  const formatCells = (row: string[]) =>
+    columnWidths.map((width, columnIndex) => {
+      const value = row[columnIndex] ?? "";
+      return options.padTableColumns ? padTableCell(value, width, block.align[columnIndex]) : value;
+    });
+  const alignmentRow = columnWidths.map((width, columnIndex) =>
+    alignmentCell(block.align[columnIndex], width),
+  );
+  const indentPrefix = " ".repeat(indent);
 
-  return [header, separator, ...body].join(lineFeed);
+  return [formatCells(headerRow), alignmentRow, ...bodyRows.map(formatCells)]
+    .map((cells) => `${indentPrefix}| ${cells.join(" | ")} |`)
+    .join(lineFeed);
 }
 
-function serializeTableRow(
-  row: string[],
-  widths: number[],
-  align: TableBlock["align"],
-  indent: number,
-  options: MarkdownOptions,
-) {
-  const cells = widths.map((width, columnIndex) => {
-    const value = row[columnIndex] ?? "";
+function alignmentCell(align: TableAlignment, width: number) {
+  const [before, after] = align ? alignmentColons[align] : ["", ""];
+  const dashCount = Math.max(minimumTableDividerWidth, width - before.length - after.length);
 
-    if (!options.padTableColumns) {
-      return value;
-    }
-
-    return padTableCell(value, width, align[columnIndex]);
-  });
-
-  return `${" ".repeat(indent)}| ${cells.join(" | ")} |`;
+  return `${before}${"-".repeat(dashCount)}${after}`;
 }
 
-function serializeTableAlignment(widths: number[], align: TableBlock["align"], indent: number) {
-  const cells = widths.map((width, columnIndex) => alignmentCell(align[columnIndex], width));
-
-  return `${" ".repeat(indent)}| ${cells.join(" | ")} |`;
-}
-
-function alignmentCell(align: TableBlock["align"][number], width: number) {
-  const colons = alignmentColons(align);
-  const dashCount = Math.max(minimumTableDividerWidth, width - colons);
-  const dashes = "-".repeat(dashCount);
-
-  switch (align) {
-    case "center":
-      return `:${dashes}:`;
-    case "left":
-      return `:${dashes}`;
-    case "right":
-      return `${dashes}:`;
-    default:
-      return dashes;
-  }
-}
-
-function minimumAlignmentWidth(align: TableBlock["align"][number]) {
-  return minimumTableDividerWidth + alignmentColons(align);
-}
-
-function alignmentColons(align: TableBlock["align"][number]) {
-  if (align === "center") {
-    return 2;
-  }
-
-  return align ? 1 : 0;
-}
-
-function padTableCell(value: string, width: number, align: TableBlock["align"][number]) {
+function padTableCell(value: string, width: number, align: TableAlignment) {
   if (align === "right") {
     return value.padStart(width, " ");
   }

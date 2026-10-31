@@ -14,12 +14,7 @@ export function collectRepeatedBudgetFailures(
   const scenarioRunsById = groupBenchmarkScenarioRunsById(suiteRuns);
 
   return [...scenarioRunsById.entries()].flatMap(([id, scenarioRuns]) => {
-    const budgetMs = resolveBenchmarkBudget(scenarioRuns);
-
-    if (budgetMs === undefined) {
-      return [];
-    }
-
+    const budgetMs = scenarioRuns[0]!.budgetMs;
     const failureCount = scenarioRuns.filter((scenarioRun) => scenarioRun.p99Ms > budgetMs).length;
 
     return failureCount > allowedBudgetFailureCount
@@ -84,10 +79,6 @@ function groupBenchmarkScenarioRunsById(suiteRuns: BenchmarkScenarioRun[][]) {
   }
 
   return scenarioRunsById;
-}
-
-function resolveBenchmarkBudget(scenarioRuns: BenchmarkScenarioRun[]) {
-  return scenarioRuns.find((scenarioRun) => scenarioRun.budgetMs !== undefined)?.budgetMs;
 }
 
 function collectBenchmarkBudgetNames(budgets: BenchmarkBudgetTree) {

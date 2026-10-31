@@ -1,4 +1,4 @@
-import type { CodeGrammarRule } from "@/types";
+import type { CodeGrammarRule } from ".";
 
 // Basic JavaScript/TypeScript lexer: an ordered, first-match-wins regex pass.
 // Not a contextual grammar — comments and strings lead so their interiors are

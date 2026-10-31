@@ -9,7 +9,6 @@ describe("LeafMarkdown", () => {
     );
 
     expect(html).toContain("<p>Plain <strong>bold</strong> and <em>italic</em> with ");
-    expect(html).toContain("bg-inline-code-bg");
     expect(html).toContain(">code</code>");
   });
 
@@ -18,7 +17,6 @@ describe("LeafMarkdown", () => {
       <LeafMarkdown value={"Ping @[Jane Doe](u-jane) via [docs](https://example.com)."} />,
     );
 
-    expect(html).toContain("whitespace-nowrap");
     expect(html).toContain(">@Jane Doe</span>");
     expect(html).toContain(
       '<a href="https://example.com" rel="noreferrer" target="_blank">docs</a>',
@@ -33,7 +31,6 @@ describe("LeafMarkdown", () => {
       />,
     );
 
-    expect(html).toContain("whitespace-nowrap");
     expect(html).toContain(">@Jane Doe</span>");
   });
 
@@ -51,9 +48,9 @@ describe("LeafMarkdown", () => {
     );
 
     expect(html).toContain("<ul><li><p><strong>One</strong></p></li>");
-    expect(html).toContain('<li class="grid grid-cols-[1rem_minmax(0,1fr)]');
-    expect(html).toContain('<input class="m-0 mt-0.5"');
-    expect(html).toContain("<p>Two</p></li></ul>");
+    expect(html).toMatch(
+      /<li[^>]*><input [^>]*type="checkbox" checked=""\/><p>Two<\/p><\/li><\/ul>/,
+    );
     expect(html).toContain("<ol><li><p>Three</p></li><li><p>Four</p></li></ol>");
   });
 

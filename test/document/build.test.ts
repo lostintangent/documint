@@ -2,13 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   createCodeBlock,
   createHeadingTextBlock,
-  createLink,
   createListBlock,
   createListItemBlock,
-  createParagraphBlock,
   createParagraphTextBlock,
-  createRaw,
-  createRawBlock,
   createTableBlock,
   createTableCell,
   createTableRow,
@@ -38,47 +34,6 @@ describe("Document builders", () => {
     });
   });
 
-  describe("derived plain text", () => {
-    test("creates lists, tables, links, and unsupported nodes from semantic children", () => {
-      const listItem = createListItemBlock({
-        children: [createParagraphTextBlock("alpha")],
-      });
-      const list = createListBlock({
-        items: [listItem],
-        ordered: true,
-        start: 5,
-      });
-      const table = createTableBlock({
-        align: [null, "right"],
-        rows: [
-          createTableRow([createTableCell([createText("A")]), createTableCell([createText("B")])]),
-        ],
-      });
-      const paragraph = createParagraphBlock([
-        createText("See "),
-        createLink({
-          children: [createText("alpha")],
-          url: "https://example.com",
-        }),
-        createRaw({
-          originalType: "textDirective",
-          source: ":badge[beta]{disabled}",
-        }),
-      ]);
-      const unsupportedBlock = createRawBlock({
-        originalType: "containerDirective",
-        source: ':::callout{tone="info"}\nBody\n:::',
-      });
-
-      expect(list.plainText).toBe("alpha");
-      expect(list.ordered).toBe(true);
-      expect(list.start).toBe(5);
-      expect(table.plainText).toBe("A | B");
-      expect(paragraph.plainText).toBe("See alpha:badge[beta]{disabled}");
-      expect(unsupportedBlock.plainText).toBe(':::callout{tone="info"}\nBody\n:::');
-    });
-  });
-
   describe("rebuilders", () => {
     test("rebuild semantic nodes while preserving non-derived fields", () => {
       const heading = createHeadingTextBlock({
@@ -95,22 +50,16 @@ describe("Document builders", () => {
           }),
         ],
         compact: false,
-        ordered: false,
+        ordered: true,
+        start: 3,
       });
-      const rebuiltList = rebuildListBlock(
-        list,
-        [
-          createListItemBlock({
-            checked: true,
-            compact: false,
-            children: [createParagraphTextBlock("renamed")],
-          }),
-        ],
-        {
-          ordered: true,
-          start: 3,
-        },
-      );
+      const rebuiltList = rebuildListBlock(list, [
+        createListItemBlock({
+          checked: true,
+          compact: false,
+          children: [createParagraphTextBlock("renamed")],
+        }),
+      ]);
       const table = createTableBlock({
         align: ["center"],
         rows: [createTableRow([createTableCell([createText("one")])])],

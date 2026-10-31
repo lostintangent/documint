@@ -3,13 +3,11 @@ import type { BenchmarkScenarioRun } from "./harness";
 
 const schemaVersion = 1;
 
-export type BenchmarkJsonInput = {
+export function formatBenchmarkJson(input: {
   failures: RepeatedBudgetFailure[];
   suiteRuns: BenchmarkScenarioRun[][];
-};
-
-export function createBenchmarkJson(input: BenchmarkJsonInput) {
-  return {
+}) {
+  const json = {
     schemaVersion,
     pass: input.failures.length === 0,
     failures: input.failures
@@ -23,40 +21,29 @@ export function createBenchmarkJson(input: BenchmarkJsonInput) {
     suiteRuns: input.suiteRuns.map((scenarioRuns, index) => ({
       index: index + 1,
       scenarioRuns: scenarioRuns
-        .map(formatBenchmarkScenarioRun)
+        .map((scenarioRun) => ({
+          budgetMs: roundMs(scenarioRun.budgetMs),
+          budgetExceeded: scenarioRun.p99Ms > scenarioRun.budgetMs,
+          id: scenarioRun.id,
+          ...roundPercentiles(scenarioRun),
+        }))
         .sort((left, right) => left.id.localeCompare(right.id)),
     })),
   };
-}
 
-export function formatBenchmarkJson(input: BenchmarkJsonInput) {
-  return JSON.stringify(createBenchmarkJson(input), null, 2);
+  return JSON.stringify(json, null, 2);
 }
 
 export function formatBenchmarkTableScenarioRuns(scenarioRuns: readonly BenchmarkScenarioRun[]) {
-  return scenarioRuns.map(formatBenchmarkTableScenarioRun);
-}
-
-function formatBenchmarkScenarioRun(scenarioRun: BenchmarkScenarioRun) {
-  return {
-    ...(scenarioRun.budgetMs === undefined ? {} : { budgetMs: roundMs(scenarioRun.budgetMs) }),
-    budgetExceeded:
-      scenarioRun.budgetMs === undefined ? false : scenarioRun.p99Ms > scenarioRun.budgetMs,
-    id: scenarioRun.id,
-    p50Ms: roundMs(scenarioRun.p50Ms),
-    p95Ms: roundMs(scenarioRun.p95Ms),
-    p99Ms: roundMs(scenarioRun.p99Ms),
-  };
-}
-
-function formatBenchmarkTableScenarioRun(scenarioRun: BenchmarkScenarioRun) {
-  return {
+  return scenarioRuns.map((scenarioRun) => ({
     benchmark: scenarioRun.id,
-    p50Ms: roundMs(scenarioRun.p50Ms),
-    p95Ms: roundMs(scenarioRun.p95Ms),
-    p99Ms: roundMs(scenarioRun.p99Ms),
-    ...(scenarioRun.budgetMs === undefined ? {} : { budgetMs: roundMs(scenarioRun.budgetMs) }),
-  };
+    ...roundPercentiles(scenarioRun),
+    budgetMs: roundMs(scenarioRun.budgetMs),
+  }));
+}
+
+function roundPercentiles({ p50Ms, p95Ms, p99Ms }: BenchmarkScenarioRun) {
+  return { p50Ms: roundMs(p50Ms), p95Ms: roundMs(p95Ms), p99Ms: roundMs(p99Ms) };
 }
 
 function roundMs(value: number) {

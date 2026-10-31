@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Documint,
@@ -14,6 +14,7 @@ import { useStorage } from "./hooks/useStorage";
 import { useTheme } from "./hooks/useTheme";
 import type { CopilotJob, FetchJsonError, ServerEvent, ServerState } from "./types";
 
+type AddedCommentChange = Extract<CommentChange, { kind: "added" }>;
 type CopilotTrigger = "direct-mention" | "thread-reply";
 type SetLoadError = Dispatch<SetStateAction<string | null>>;
 
@@ -78,68 +79,56 @@ function useDocumentState(instanceId: string | null) {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const saveFailureRef = useRef<FetchJsonError | null>(null);
 
-  const syncContent = useCallback((nextContent: string) => {
+  const syncContent = (nextContent: string) => {
     setContent((currentContent) => (currentContent === nextContent ? currentContent : nextContent));
-  }, []);
+  };
 
-  const saveEdit = useCallback(
-    async (content: string) => {
-      const runSave = async () => {
-        try {
-          await fetchJson<ServerState>(`/api/content?instanceId=${encodeInstanceId(instanceId)}`, {
-            method: "PUT",
-            body: JSON.stringify({
-              clientId,
-              content,
-            }),
-          });
-          saveFailureRef.current = null;
-          setLoadError(null);
-        } catch (error) {
-          if (isFetchJsonError(error) && error.status === 409 && error.payload.state) {
-            syncContent(error.payload.state.content);
-            saveFailureRef.current = error;
-            setLoadError("The file changed before this edit could be applied.");
-          }
-          if (!isFetchJsonError(error) || error.status !== 409) {
-            throw error;
-          }
+  const saveEdit = async (content: string) => {
+    const runSave = async () => {
+      try {
+        await fetchJson<ServerState>(`/api/content?instanceId=${encodeInstanceId(instanceId)}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            clientId,
+            content,
+          }),
+        });
+        saveFailureRef.current = null;
+        setLoadError(null);
+      } catch (error) {
+        if (isFetchJsonError(error) && error.status === 409 && error.payload.state) {
+          syncContent(error.payload.state.content);
+          saveFailureRef.current = error;
+          setLoadError("The file changed before this edit could be applied.");
         }
-      };
-
-      const savePromise = saveQueueRef.current.catch(() => {}).then(runSave);
-      saveQueueRef.current = savePromise;
-      await savePromise;
-    },
-    [instanceId, syncContent],
-  );
-
-  useEffect(() => {
-    if (!instanceId) {
-      setLoadError("Missing canvas instance id.");
-    }
-  }, [instanceId]);
-
-  const handleServerEvent = useCallback(
-    (payload: ServerEvent) => {
-      if (payload.type === "state") {
-        syncContent(payload.state.content);
-        setCopilotUser(payload.state.copilotUser);
-        setJobs(payload.state.jobs ?? []);
-        saveFailureRef.current = null;
-        setLoadError(null);
-      } else if (payload.type === "content") {
-        syncContent(payload.content);
-        saveFailureRef.current = null;
-        setLoadError(null);
-      } else if (payload.type === "job") {
-        setJobs(payload.jobs ?? []);
-      } else if (payload.type === "error") {
-        setLoadError(payload.message);
+        if (!isFetchJsonError(error) || error.status !== 409) {
+          throw error;
+        }
       }
-    },
-    [syncContent],
-  );
+    };
+
+    const savePromise = saveQueueRef.current.catch(() => {}).then(runSave);
+    saveQueueRef.current = savePromise;
+    await savePromise;
+  };
+
+  const handleServerEvent = (payload: ServerEvent) => {
+    if (payload.type === "state") {
+      syncContent(payload.state.content);
+      setCopilotUser(payload.state.copilotUser);
+      setJobs(payload.state.jobs ?? []);
+      saveFailureRef.current = null;
+      setLoadError(null);
+    } else if (payload.type === "content") {
+      syncContent(payload.content);
+      saveFailureRef.current = null;
+      setLoadError(null);
+    } else if (payload.type === "job") {
+      setJobs(payload.jobs ?? []);
+    } else if (payload.type === "error") {
+      setLoadError(payload.message);
+    }
+  };
 
   useServerEvents({
     clientId,
@@ -149,25 +138,22 @@ function useDocumentState(instanceId: string | null) {
     onInvalidEvent: () => setLoadError("Received an invalid update from the extension."),
   });
 
-  const handleContentChanged = useCallback(
-    (nextContent: string) => {
-      void saveEdit(nextContent).catch((error) => {
-        setLoadError(getErrorMessage(error));
-      });
-    },
-    [saveEdit],
-  );
+  const handleContentChanged = (nextContent: string) => {
+    void saveEdit(nextContent).catch((error) => {
+      setLoadError(getErrorMessage(error));
+    });
+  };
 
-  const flushLocalEdits = useCallback(async () => {
+  const flushLocalEdits = async () => {
     await saveQueueRef.current;
     if (saveFailureRef.current) {
       throw saveFailureRef.current;
     }
-  }, []);
+  };
 
-  const upsertRunningJob = useCallback((job: CopilotJob) => {
+  const upsertRunningJob = (job: CopilotJob) => {
     setJobs((currentJobs) => upsertJob(currentJobs, job));
-  }, []);
+  };
 
   return {
     content,
@@ -175,7 +161,7 @@ function useDocumentState(instanceId: string | null) {
     flushLocalEdits,
     handleContentChanged,
     jobs,
-    loadError,
+    loadError: instanceId ? loadError : "Missing canvas instance id.",
     setLoadError,
     upsertRunningJob,
   };
@@ -194,60 +180,51 @@ function useCopilotTriggers({
   setLoadError: SetLoadError;
   upsertRunningJob: (job: CopilotJob) => void;
 }) {
-  const startCopilotJob = useCallback(
-    async (path: string, body: unknown) => {
-      await flushLocalEdits();
-      const nextJob = await fetchJson<CopilotJob>(
-        `${path}?instanceId=${encodeInstanceId(instanceId)}`,
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-        },
-      );
-      upsertRunningJob(nextJob);
-      setLoadError(null);
-    },
-    [flushLocalEdits, instanceId, setLoadError, upsertRunningJob],
-  );
+  const startCopilotJob = async (path: string, body: unknown) => {
+    await flushLocalEdits();
+    const nextJob = await fetchJson<CopilotJob>(
+      `${path}?instanceId=${encodeInstanceId(instanceId)}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    );
+    upsertRunningJob(nextJob);
+    setLoadError(null);
+  };
 
-  const handleCommentChanged = useCallback(
-    (change: CommentChange) => {
-      if (change.kind !== "added") {
-        return;
-      }
+  const handleCommentChanged = (change: CommentChange) => {
+    if (change.kind !== "added") {
+      return;
+    }
 
-      const trigger = resolveCopilotTrigger(change, copilotUser.id);
-      if (!trigger) {
-        return;
-      }
+    const trigger = resolveCopilotTrigger(change, copilotUser.id);
+    if (!trigger) {
+      return;
+    }
 
-      void startCopilotJob("/api/copilot-comment", {
-        body: change.comment.body,
-        mentionedUserIds: change.mentionedUserIds,
-        source: trigger === "thread-reply" ? "reply" : "comment",
-        thread: change.thread,
-        threadId: change.threadId,
-        trigger,
-      }).catch((error) => setLoadError(getErrorMessage(error)));
-    },
-    [copilotUser.id, setLoadError, startCopilotJob],
-  );
+    void startCopilotJob("/api/copilot-comment", {
+      body: change.comment.body,
+      mentionedUserIds: change.mentionedUserIds,
+      source: trigger === "thread-reply" ? "reply" : "comment",
+      thread: change.thread,
+      threadId: change.threadId,
+      trigger,
+    }).catch((error) => setLoadError(getErrorMessage(error)));
+  };
 
-  const handleUserMentioned = useCallback(
-    (event: UserMentionEvent) => {
-      if (event.userId !== copilotUser.id && !mentionsCopilot(event.lineMarkdown)) {
-        return;
-      }
+  const handleUserMentioned = (event: UserMentionEvent) => {
+    if (event.userId !== copilotUser.id && !mentionsCopilot(event.lineMarkdown)) {
+      return;
+    }
 
-      void startCopilotJob("/api/copilot-user-mention", {
-        cursor: createCursorAnchorForMentionLine(event.lineMarkdown),
-        lineMarkdown: event.lineMarkdown,
-        lineNumber: event.lineNumber,
-        userId: event.userId,
-      }).catch((error) => setLoadError(getErrorMessage(error)));
-    },
-    [copilotUser.id, setLoadError, startCopilotJob],
-  );
+    void startCopilotJob("/api/copilot-user-mention", {
+      cursor: createCursorAnchorForMentionLine(event.lineMarkdown),
+      lineMarkdown: event.lineMarkdown,
+      lineNumber: event.lineNumber,
+      userId: event.userId,
+    }).catch((error) => setLoadError(getErrorMessage(error)));
+  };
 
   return { handleCommentChanged, handleUserMentioned };
 }
@@ -271,17 +248,10 @@ function useViewportResizeNotifier() {
 }
 
 function resolveCopilotTrigger(
-  change: CommentChange,
+  change: AddedCommentChange,
   copilotUserId: string,
 ): CopilotTrigger | null {
-  if (change.kind !== "added") {
-    return null;
-  }
-
-  if (
-    change.mentionedUserIds.some((mentionedUserId: string) => mentionedUserId === copilotUserId) ||
-    mentionsCopilot(change.comment.body)
-  ) {
+  if (change.mentionedUserIds.includes(copilotUserId) || mentionsCopilot(change.comment.body)) {
     return "direct-mention";
   }
 
@@ -289,18 +259,14 @@ function resolveCopilotTrigger(
   return previousComments.some((comment) => mentionsCopilot(comment.body)) ? "thread-reply" : null;
 }
 
-function upsertJob(jobs: CopilotJob[], job: CopilotJob | null | undefined): CopilotJob[] {
-  if (!job) {
-    return jobs;
-  }
-
-  const nextJobs = jobs.filter((candidate: CopilotJob) => candidate.id !== job.id);
+function upsertJob(jobs: CopilotJob[], job: CopilotJob): CopilotJob[] {
+  const nextJobs = jobs.filter((candidate) => candidate.id !== job.id);
   return job.state === "running" ? [...nextJobs, job] : nextJobs;
 }
 
 function createCopilotPresence(jobs: CopilotJob[], copilotUserId: string): DocumentPresence[] {
-  return jobs.flatMap((candidate: CopilotJob) => {
-    if (candidate?.state !== "running") {
+  return jobs.flatMap((candidate) => {
+    if (candidate.state !== "running") {
       return [];
     }
 
@@ -318,12 +284,11 @@ function createCopilotPresence(jobs: CopilotJob[], copilotUserId: string): Docum
   });
 }
 
-function mentionsCopilot(body: string | null | undefined): boolean {
-  return /(^|[^\w-])@copilot\b/i.test(body ?? "");
+function mentionsCopilot(body: string): boolean {
+  return /(^|[^\w-])@copilot\b/i.test(body);
 }
 
-function createCursorAnchorForMentionLine(lineMarkdown: string | null | undefined): Anchor {
-  const line = lineMarkdown ?? "";
+function createCursorAnchorForMentionLine(line: string): Anchor {
   const mention = /@copilot\b/i.exec(line);
 
   if (mention) {

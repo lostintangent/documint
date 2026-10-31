@@ -4,10 +4,10 @@
 
 import type { EditorSelectionPoint, EditorState } from "../state";
 
-export type { DocumentLayout, DocumentLayoutOptions, LayoutRect } from "./measure";
+export type { DocumentLayout, DocumentLayoutOptions, LayoutRect, PathBounds } from "./measure";
 export type { MetadataLayout } from "./measure/metadata";
 export type { EditorLayoutState } from "./state";
-export type { DocumentCaretTarget as CaretTarget, InlineBounds } from "./query";
+export type { CaretTarget, InlineBounds } from "./query";
 
 export {
   // Resolve lines within the prepared layout.
@@ -18,16 +18,14 @@ export {
   someVisibleDocumentLayoutLine,
 
   // Resolve point and caret geometry.
-  hitTestDocumentLayout,
   measureDocumentCaretTarget as measureCaretTarget,
+  measureDocumentVisualCaret as measureVisualCaret,
   measureCanvasLineOffsetLeft as measureLineOffsetLeft,
 
   // Resolve geometry against prepared layout.
   measureInlineImageBounds,
   resolveCaretHitTestX,
   resolveCaretVisualLeft,
-  resolveLineVisualLeft,
-  resolveIndexedListItem,
   resolveListMarkerTarget,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
@@ -45,7 +43,7 @@ export {
 } from "./state";
 
 import type { EditorLayoutState } from "./state";
-import { measureDocumentCaretTarget, resolveCaretVisualLeft } from "./query/caret";
+import { measureDocumentCaretTarget, measureDocumentVisualCaret } from "./query/caret";
 
 export type EditorPoint = {
   x: number;
@@ -57,7 +55,7 @@ export function measureLayoutCaretTarget(
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ) {
-  return measureDocumentCaretTarget(viewport.layout, state.documentIndex, {
+  return measureDocumentCaretTarget(viewport.layout, {
     path: point.path,
     offset: point.offset,
   });
@@ -68,17 +66,10 @@ export function measureLayoutVisualCaretTarget(
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ) {
-  const caret = measureDocumentCaretTarget(viewport.layout, state.documentIndex, {
-    path: point.path,
-    offset: point.offset,
-  });
-
-  if (!caret) {
-    return null;
-  }
-
-  return {
-    ...caret,
-    left: resolveCaretVisualLeft(state, viewport.layout, caret),
-  };
+  return (
+    measureDocumentVisualCaret(viewport.layout, {
+      path: point.path,
+      offset: point.offset,
+    })?.caret ?? null
+  );
 }

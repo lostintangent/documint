@@ -4,8 +4,7 @@
 import {
   blockPathCoordinates,
   getBlockChildren,
-  parentBlockPath,
-  tableCellPositionFromPath,
+  tableCellPathContextFromPath,
   type Block,
   type Document,
   type TableBlock,
@@ -53,24 +52,23 @@ export function resolveTableCellPathMatch(
   document: Document,
   path: string,
 ): TableCellPathMatch | null {
-  const tablePath = parentBlockPath(path);
-  const position = tableCellPositionFromPath(path);
-  if (!tablePath || !position) {
+  const cellPath = tableCellPathContextFromPath(path);
+  if (!cellPath) {
     return null;
   }
 
-  const table = resolveBlockByPath(document, tablePath) as TableBlock | null;
+  const table = resolveBlockByPath(document, cellPath.tablePath) as TableBlock | null;
   if (table?.type !== "table") {
     return null;
   }
 
-  const row = table.rows[position.rowIndex];
-  const cell = row?.cells[position.cellIndex];
+  const row = table.rows[cellPath.rowIndex];
+  const cell = row?.cells[cellPath.cellIndex];
   if (!row || !cell) {
     return null;
   }
 
-  return createTableCellPathMatch(table, row, cell, position.rowIndex, position.cellIndex);
+  return createTableCellPathMatch(table, row, cell, cellPath.rowIndex, cellPath.cellIndex);
 }
 
 export function createTableCellPathMatch(

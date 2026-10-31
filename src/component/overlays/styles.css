@@ -27,10 +27,6 @@
   /* Surface colors */
   --color-leaf-bg: var(--documint-leaf-bg);
   --color-leaf-border: var(--documint-leaf-border);
-  --color-leaf-divider: var(
-    --leaf-divider-color,
-    color-mix(in srgb, var(--documint-leaf-border) 72%, transparent)
-  );
   --color-leaf-input-bg: var(--documint-leaf-input-bg);
 
   /* Text colors */
@@ -113,7 +109,8 @@
     background: var(--presence-color, var(--documint-leaf-accent));
     opacity: 0.28;
     transform: scale(0.72);
-    animation: presence-avatar-pulse 1600ms ease-in-out infinite;
+    --pulse-scale: 1.24;
+    animation: presence-pulse 1600ms ease-in-out infinite;
     pointer-events: none;
     z-index: -1;
   }
@@ -173,8 +170,6 @@
      translate up by the anchor row's height + paddingY so the shell sits
      a bridge-height gap above the anchor — symmetric with below-mode. */
   &[data-placement="above"] {
-    padding-top: 0;
-    margin-top: 0;
     display: flex;
     flex-direction: column-reverse;
     transform: translateY(
@@ -212,10 +207,6 @@
 
 .overlay-leaf[data-state="closed"] .overlay-leaf-frame {
   transform: translateY(-100%);
-}
-
-.overlay-leaf .leaf-shell {
-  pointer-events: auto;
 }
 
 .leaf-bridge {
@@ -267,12 +258,10 @@
 }
 
 .leaf-divider {
-  /* Visible divider styling. `LeafDivider` also sets Tailwind dimension
-     utilities, but these rules win (later in the portal stylesheet) and
-     apply the design-system-precise values: 0.2rem horizontal margin,
-     1.15rem vertical height. The class also acts as a hook surface for
-     selector rules elsewhere (comment-create animation,
-     `.presence-divider` opacity reveal above). */
+  /* Visible divider styling: 0.2rem horizontal margin, 1.15rem vertical
+     height. The class also acts as a hook surface for selector rules
+     elsewhere (comment-create animation, `.presence-divider` opacity
+     reveal above). */
   flex: none;
   background: var(
     --leaf-divider-color,
@@ -300,7 +289,7 @@
 
 .comment-leaf:not(.comment-leaf-create),
 .comment-leaf-create.is-expanded {
-  width: var(--leaf-width, min(18rem, calc(100vw - 4rem)));
+  width: min(18rem, calc(100vw - 4rem));
 }
 
 .comment-leaf-header,
@@ -325,11 +314,6 @@
   color: var(--documint-leaf-secondary-text);
   font-size: 0.76rem;
   font-style: italic;
-}
-
-.comment-actions {
-  display: flex;
-  gap: 0.4rem;
 }
 
 .comment-message-meta span {
@@ -367,16 +351,10 @@
 }
 
 .comment-message-root {
-  transform: translateY(-8px) scaleY(0);
   transform-origin: top left;
-  opacity: 0;
-  transition:
-    opacity 140ms ease,
-    transform 180ms ease;
 
-  &.is-visible {
-    transform: translateY(0) scaleY(1);
-    opacity: 1;
+  &.is-entering {
+    animation: comment-root-enter 180ms ease both;
   }
 
   &.is-hidden {
@@ -384,6 +362,20 @@
     padding-bottom: 0;
     border-bottom: 0;
     overflow: hidden;
+  }
+}
+
+/* Plays once when a promoted thread mounts its root comment. Edits keep the
+   class, so they do not replay it. */
+@keyframes comment-root-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scaleY(0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
   }
 }
 
@@ -437,7 +429,8 @@
   }
 
   &.is-pulsing::after {
-    animation: comment-presence-pulse 1600ms ease-in-out infinite;
+    --pulse-scale: 1.55;
+    animation: presence-pulse 1600ms ease-in-out infinite;
   }
 }
 
@@ -455,7 +448,9 @@
   font-style: italic;
 }
 
-@keyframes comment-presence-pulse {
+/* Shared by the presence avatar and comment presence dot, which set their
+   own `--pulse-scale`. */
+@keyframes presence-pulse {
   0%,
   100% {
     opacity: 0.34;
@@ -464,26 +459,14 @@
 
   50% {
     opacity: 0.1;
-    transform: scale(1.55);
-  }
-}
-
-@keyframes presence-avatar-pulse {
-  0%,
-  100% {
-    opacity: 0.34;
-    transform: scale(0.72);
-  }
-
-  50% {
-    opacity: 0.1;
-    transform: scale(1.24);
+    transform: scale(var(--pulse-scale));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .presence-avatar.is-pulsing::after,
-  .comment-presence-dot.is-pulsing::after {
+  .comment-presence-dot.is-pulsing::after,
+  .comment-message-root.is-entering {
     animation: none;
   }
 }

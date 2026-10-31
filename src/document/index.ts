@@ -3,7 +3,7 @@
 //   model/       — the closed semantic schema, addressing vocabulary,
 //                  container/resource policy, and inline mark canonicalization.
 //   build/        — producing canonical Documents. Per-node builders,
-//                   high-level operations, save-time canonicalization.
+//                   high-level operations, inline defragmentation.
 //                   Non-node structural IDs stay internal.
 //   query/        — reading and comparing immutable Documents. Traversal,
 //                   projection, anchor algebra, and change detection.

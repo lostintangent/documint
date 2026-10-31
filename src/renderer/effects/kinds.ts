@@ -1,14 +1,13 @@
 import type { TextDeletedEffect, TextInsertedEffect } from "@/editor/state";
 import { containsColorEmoji } from "@/editor/text/emoji";
-import type { DocumintEffects } from "@/types";
 import type {
   BlockFlashFrame,
   BlockPulseFrame,
   RendererEffect,
   TextFadeFrame,
-  TextHighlightFrame,
-  TextPulseFrame,
+  TextInsertionFrame,
   DocumentChangeFadeFrame,
+  DocumintEffects,
 } from "./types";
 
 export type EffectGroups = {
@@ -16,14 +15,15 @@ export type EffectGroups = {
   blockPulses: Map<string, BlockPulseFrame>;
   documentChangeFades: Map<string, DocumentChangeFadeFrame>;
   textFades: Map<string, TextFadeFrame[]>;
-  textHighlights: Map<string, TextHighlightFrame[]>;
-  textPulses: Map<string, TextPulseFrame[]>;
+  textHighlights: Map<string, TextInsertionFrame[]>;
+  textPulses: Map<string, TextInsertionFrame[]>;
 };
 
 type EffectOfKind<TKind extends RendererEffect["kind"]> = Extract<RendererEffect, { kind: TKind }>;
 
 type EffectKindDescriptor<TKind extends RendererEffect["kind"]> = {
-  animatesByDefault: (effect: EffectOfKind<TKind>) => boolean;
+  // Omitted when every effect of the kind animates by default.
+  animatesByDefault?: (effect: EffectOfKind<TKind>) => boolean;
   collect: (
     groups: EffectGroups,
     effect: EffectOfKind<TKind>,
@@ -45,7 +45,6 @@ export const effectKinds: {
   [TKind in RendererEffect["kind"]]: EffectKindDescriptor<TKind>;
 } = {
   "active-block-changed": {
-    animatesByDefault: () => true,
     collect: (groups, effect, progress, defaultEnabled) => {
       groups.blockFlashes.set(effect.blockPath, {
         blockPath: effect.blockPath,
@@ -58,7 +57,6 @@ export const effectKinds: {
     duration: () => activeBlockChangedDurationMs,
   },
   "document-change": {
-    animatesByDefault: () => true,
     collect: (groups, effect, progress) => {
       groups.documentChangeFades.set(effect.changeKey, {
         progress,
@@ -68,7 +66,6 @@ export const effectKinds: {
     duration: () => documentChangeFadeDurationMs,
   },
   "list-item-inserted": {
-    animatesByDefault: () => true,
     collect: (groups, effect, progress, defaultEnabled) => {
       groups.blockPulses.set(effect.blockPath, {
         blockPath: effect.blockPath,
@@ -99,21 +96,9 @@ export const effectKinds: {
   "text-inserted": {
     animatesByDefault: shouldAnimateTextInsertedEffect,
     collect: (groups, effect, progress, defaultEnabled) => {
-      if (isPunctuationInsertion(effect)) {
-        collectMany(groups.textPulses, effect.path, {
-          contentKind: resolveTextEffectContentKind(effect),
-          customEffectName: "textInserted",
-          defaultEnabled,
-          endOffset: effect.endOffset,
-          progress,
-          path: effect.path,
-          startOffset: effect.startOffset,
-          text: effect.text,
-        });
-        return;
-      }
+      const group = isPunctuationInsertion(effect) ? groups.textPulses : groups.textHighlights;
 
-      collectMany(groups.textHighlights, effect.path, {
+      collectMany(group, effect.path, {
         contentKind: resolveTextEffectContentKind(effect),
         customEffectName: "textInserted",
         defaultEnabled,

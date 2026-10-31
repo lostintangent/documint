@@ -5,6 +5,7 @@ import {
   type EditorInputKeybinding,
 } from "@/component/lib/keybindings";
 import type { EditorHostPlatform } from "@/component/lib/platform";
+import { createKeyboardEvent } from "@test/component/helpers";
 
 describe("Default keybindings", () => {
   test.each([
@@ -92,11 +93,12 @@ describe("Default keybindings", () => {
 });
 
 describe("Custom keybindings", () => {
-  test("uses the active platform modifier for modKey", () => {
+  test("replaces the defaults and uses the active platform modifier for modKey", () => {
     const keybindings: EditorInputKeybinding[] = [
       { command: "toggleBold", key: "k", modKey: true },
     ];
 
+    expect(resolve("b", { metaKey: true }, "mac", keybindings)).toBeNull();
     expect(resolve("k", { metaKey: true }, "mac", keybindings)).toBe("toggleBold");
     expect(resolve("k", { ctrlKey: true }, "mac", keybindings)).toBeNull();
     expect(resolve("k", { ctrlKey: true }, "windows", keybindings)).toBe("toggleBold");
@@ -118,15 +120,6 @@ describe("Custom keybindings", () => {
     expect(resolve("k", { metaKey: true }, "windows", unmodified)).toBeNull();
   });
 
-  test("replaces rather than supplements the default keybinding set", () => {
-    const keybindings: EditorInputKeybinding[] = [
-      { command: "toggleBold", key: "k", modKey: true },
-    ];
-
-    expect(resolve("k", { metaKey: true }, "mac", keybindings)).toBe("toggleBold");
-    expect(resolve("b", { metaKey: true }, "mac", keybindings)).toBeNull();
-  });
-
   test("uses the first matching binding so callers can override defaults", () => {
     const keybindings: readonly EditorInputKeybinding[] = [
       { command: "toggleCode", key: "b", modKey: true },
@@ -144,14 +137,4 @@ function resolve(
   keybindings?: readonly EditorInputKeybinding[],
 ) {
   return resolveEditorInputCommand(createKeyboardEvent(key, modifiers), keybindings, platform);
-}
-
-function createKeyboardEvent(key: string, options: KeyboardEventInit = {}) {
-  return {
-    altKey: options.altKey ?? false,
-    ctrlKey: options.ctrlKey ?? false,
-    key,
-    metaKey: options.metaKey ?? false,
-    shiftKey: options.shiftKey ?? false,
-  } as KeyboardEvent;
 }

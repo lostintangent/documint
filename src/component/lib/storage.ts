@@ -1,4 +1,26 @@
-import type { DocumintStorage } from "@/types";
+// Host-provided storage for reading/writing resources needed by the document.
+//
+// `readFile` is invoked when the document references a non-remote URL (i.e.
+// anything that isn't `http(s):`, `data:`, or `blob:`); the host returns the
+// bytes as a Blob, or `null` to signal "not found" (rendered as an error
+// placeholder). The path is whatever string appears in the markdown — relative
+// (`./food.png`), absolute (`file:///…`), or a custom scheme — and is opaque
+// to the component.
+//
+// `writeFile` is invoked when content is pasted into the document (currently
+// images): the component hands over the pasted file and the host persists it,
+// returning a path string that will round-trip back through `readFile` on the
+// next render. The host can derive a name, MIME type, and extension from the
+// `File` directly.
+//
+// `openFile` is invoked when the user cmd+clicks a non-remote link. The host
+// is responsible for opening the path in the appropriate way (e.g. opening a
+// file in the OS, navigating within the app, etc.).
+export type DocumintStorage = {
+  readFile(path: string): Promise<Blob | null>;
+  writeFile(file: File): Promise<string>;
+  openFile?(path: string): void;
+};
 
 // Matches URLs the component handles directly without routing through host
 // storage: http(s):, data:, and blob: are all "remote" in the sense that the

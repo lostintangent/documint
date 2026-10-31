@@ -3,3 +3,7 @@ plugins = ["bun-plugin-tailwind"]
 
 [test]
 preload = ["./test/setup-canvas.ts"]
+
+[fmt]
+flavor = "oxfmt"
+ignorePatterns = ["test/goldens/**/*.md"]

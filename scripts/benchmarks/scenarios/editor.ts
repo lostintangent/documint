@@ -20,6 +20,7 @@ import {
   pasteFragment,
   resolveIndexedBlockContainingPath,
   setSelection,
+  type EditorState,
 } from "@/editor/state";
 import { dispatch } from "@/editor/state/reducer/state";
 import { parseDocument, parseFragment, serializeDocument, serializeFragment } from "@/markdown";
@@ -30,6 +31,7 @@ import {
   measureCaretTarget,
   resolveCaretVisualLeft,
   type DocumentLayout,
+  type EditorLayoutState,
 } from "@/editor/layout";
 import { resolveEditorHitAtPoint } from "@/editor/navigation";
 import { createLayoutCache } from "@/editor";
@@ -79,6 +81,26 @@ export function createEditorScenarios(fixtures: {
   const fullFrameLayoutCache = createLayoutCache();
   const metadataFullFrameLayoutCache = createLayoutCache();
   const frameTheme = resolveEditorTheme(lightTheme);
+  const createBenchmarkDocumentFrame = (
+    state: EditorState,
+    layoutState: EditorLayoutState,
+    activeBlockPath = resolveIndexedBlockContainingPath(
+      state.documentIndex,
+      state.selection.focus.path,
+    )?.path ?? null,
+  ) =>
+    createDocumentFrame(state, layoutState, {
+      activeBlockPath,
+      activePath: state.selection.focus.path,
+      activeThreadIndex: null,
+      commentRanges: [],
+      devicePixelRatio: 1,
+      height: BENCHMARK_VIEWPORT.height,
+      normalizedSelection: normalizeSelection(state),
+      now: 0,
+      theme: frameTheme,
+      width: BENCHMARK_VIEWPORT.width,
+    });
   const frameLayoutState = createEditorLayoutState(
     longCaretState,
     fullFrameLayoutOptions,
@@ -168,62 +190,17 @@ export function createEditorScenarios(fixtures: {
       void createEditorLayoutState(nextState, fullFrameLayoutOptions, fullFrameLayoutCache);
     }),
     createBenchmarkScenario("editor", "editor_create_document_frame_long", 200, () => {
-      void createDocumentFrame(longCaretState, frameLayoutState, {
-        activeBlockPath:
-          resolveIndexedBlockContainingPath(
-            longCaretState.documentIndex,
-            longCaretState.selection.focus.path,
-          )?.path ?? null,
-        activePath: longCaretState.selection.focus.path,
-        activeThreadIndex: null,
-        commentRanges: [],
-        devicePixelRatio: 1,
-        height: BENCHMARK_VIEWPORT.height,
-        normalizedSelection: normalizeSelection(longCaretState),
-        now: 0,
-        theme: frameTheme,
-        width: BENCHMARK_VIEWPORT.width,
-      });
+      void createBenchmarkDocumentFrame(longCaretState, frameLayoutState);
     }),
     createBenchmarkScenario("editor", "editor_create_document_frame_table", 200, () => {
-      void createDocumentFrame(tableFrameState, tableFrameLayoutState, {
-        activeBlockPath:
-          resolveIndexedBlockContainingPath(
-            tableFrameState.documentIndex,
-            tableFrameState.selection.focus.path,
-          )?.path ?? null,
-        activePath: tableFrameState.selection.focus.path,
-        activeThreadIndex: null,
-        commentRanges: [],
-        devicePixelRatio: 1,
-        height: BENCHMARK_VIEWPORT.height,
-        normalizedSelection: normalizeSelection(tableFrameState),
-        now: 0,
-        theme: frameTheme,
-        width: BENCHMARK_VIEWPORT.width,
-      });
+      void createBenchmarkDocumentFrame(tableFrameState, tableFrameLayoutState);
     }),
     createBenchmarkScenario(
       "editor",
       "editor_create_document_frame_dense_table_selection",
       200,
       () => {
-        void createDocumentFrame(denseTableFrameState, denseTableFrameLayoutState, {
-          activeBlockPath:
-            resolveIndexedBlockContainingPath(
-              denseTableFrameState.documentIndex,
-              denseTableFrameState.selection.focus.path,
-            )?.path ?? null,
-          activePath: denseTableFrameState.selection.focus.path,
-          activeThreadIndex: null,
-          commentRanges: [],
-          devicePixelRatio: 1,
-          height: BENCHMARK_VIEWPORT.height,
-          normalizedSelection: normalizeSelection(denseTableFrameState),
-          now: 0,
-          theme: frameTheme,
-          width: BENCHMARK_VIEWPORT.width,
-        });
+        void createBenchmarkDocumentFrame(denseTableFrameState, denseTableFrameLayoutState);
       },
     ),
     createBenchmarkScenario("editor", "editor_typing_code", 200, () => {
@@ -250,18 +227,7 @@ export function createEditorScenarios(fixtures: {
         },
         metadataFullFrameLayoutCache,
       );
-      void createDocumentFrame(nextState, layoutState, {
-        activeBlockPath: null,
-        activePath: nextState.selection.focus.path,
-        activeThreadIndex: null,
-        commentRanges: [],
-        devicePixelRatio: 1,
-        height: BENCHMARK_VIEWPORT.height,
-        normalizedSelection: normalizeSelection(nextState),
-        now: 0,
-        theme: frameTheme,
-        width: BENCHMARK_VIEWPORT.width,
-      });
+      void createBenchmarkDocumentFrame(nextState, layoutState, null);
     }),
     createBenchmarkScenario("editor", "editor_typing_comments_elsewhere", 200, () => {
       void insertText(commentIrrelevantTypingState, " updated");
@@ -330,66 +296,40 @@ export function createEditorScenarios(fixtures: {
 
     // --- Hit testing ---
 
-    createBenchmarkScenario("editor", "editor_hit_test", 200, () => {
-      const { layout, point, state } = longInteractionFixture;
+    ...[
+      { id: "editor_hit_test", iterations: 200, fixture: longInteractionFixture },
+      { id: "editor_hit_test_xlarge", iterations: 100, fixture: xlargeInteractionFixture },
+      { id: "editor_hit_test_huge", iterations: 50, fixture: hugeInteractionFixture },
+    ].map(({ fixture, id, iterations }) =>
+      createBenchmarkScenario("editor", id, iterations, () => {
+        const { layout, point, state } = fixture;
 
-      void resolveEditorHitAtPoint(layout, state, point);
-    }),
-    createBenchmarkScenario("editor", "editor_hit_test_xlarge", 100, () => {
-      const { layout, point, state } = xlargeInteractionFixture;
-
-      void resolveEditorHitAtPoint(layout, state, point);
-    }),
-    createBenchmarkScenario("editor", "editor_hit_test_huge", 50, () => {
-      const { layout, point, state } = hugeInteractionFixture;
-
-      void resolveEditorHitAtPoint(layout, state, point);
-    }),
+        void resolveEditorHitAtPoint(layout, state, point);
+      }),
+    ),
 
     // --- Cursor navigation ---
 
-    createBenchmarkScenario("editor", "editor_cursor_move", 100, () => {
-      const { layout } = longInteractionFixture;
-      let state = longInteractionFixture.state;
+    ...[
+      { id: "editor_cursor_move", iterations: 100, fixture: longInteractionFixture },
+      { id: "editor_cursor_move_xlarge", iterations: 50, fixture: xlargeInteractionFixture },
+      { id: "editor_cursor_move_huge", iterations: 200, fixture: hugeInteractionFixture },
+    ].map(({ fixture, id, iterations }) =>
+      createBenchmarkScenario("editor", id, iterations, () => {
+        const { layout } = fixture;
+        let state = fixture.state;
 
-      for (let step = 0; step < 25; step += 1) {
-        const nextState = moveSelectionToNextLine(state, layout);
+        for (let step = 0; step < 25; step += 1) {
+          const nextState = moveSelectionToNextLine(state, layout);
 
-        if (!nextState) {
-          break;
+          if (!nextState) {
+            break;
+          }
+
+          state = nextState;
         }
-
-        state = nextState;
-      }
-    }),
-    createBenchmarkScenario("editor", "editor_cursor_move_xlarge", 50, () => {
-      const { layout } = xlargeInteractionFixture;
-      let state = xlargeInteractionFixture.state;
-
-      for (let step = 0; step < 25; step += 1) {
-        const nextState = moveSelectionToNextLine(state, layout);
-
-        if (!nextState) {
-          break;
-        }
-
-        state = nextState;
-      }
-    }),
-    createBenchmarkScenario("editor", "editor_cursor_move_huge", 200, () => {
-      const { layout } = hugeInteractionFixture;
-      let state = hugeInteractionFixture.state;
-
-      for (let step = 0; step < 25; step += 1) {
-        const nextState = moveSelectionToNextLine(state, layout);
-
-        if (!nextState) {
-          break;
-        }
-
-        state = nextState;
-      }
-    }),
+      }),
+    ),
 
     // --- Clipboard ---
 
@@ -529,7 +469,7 @@ function moveSelectionToNextLine(
   state: ReturnType<typeof createEditorState>,
   layout: DocumentLayout,
 ) {
-  const caret = measureCaretTarget(layout, state.documentIndex, {
+  const caret = measureCaretTarget(layout, {
     path: state.selection.focus.path,
     offset: state.selection.focus.offset,
   });
@@ -551,7 +491,7 @@ function moveSelectionToNextLine(
   }
 
   const hit = resolveEditorHitAtPoint(layout, state, {
-    x: resolveCaretVisualLeft(state, layout, caret) + 1,
+    x: resolveCaretVisualLeft(layout, caret) + 1,
     y: targetLine.top + targetLine.height / 2,
   });
 

@@ -114,10 +114,10 @@ describe("document node anchors", () => {
       });
     });
 
-    test("keeps duplicate nested block content ambiguous when only path and parent type match", () => {
-      const previous = parseDocument("> Target\n");
-      const next = parseDocument("> Target\n>\n> Target\n");
-      const anchor = createAnchor(previous, "root.0.children.0");
+    test("keeps duplicate block content ambiguous when sibling context also ties", () => {
+      const previous = parseDocument("Intro\n\nTarget\n");
+      const next = parseDocument("Intro\n\nTarget\n\nIntro\n\nTarget\n");
+      const anchor = createAnchor(previous, "root.1");
 
       expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
         reason: "weak-evidence",
@@ -125,10 +125,10 @@ describe("document node anchors", () => {
       });
     });
 
-    test("does not let path alone resolve duplicate block content", () => {
-      const previous = parseDocument("Target\n");
-      const next = parseDocument("Target\n\nTarget\n");
-      const anchor = createAnchor(previous, "root.0");
+    test("keeps duplicate nested block content ambiguous when only path and parent type match", () => {
+      const previous = parseDocument("> Target\n");
+      const next = parseDocument("> Target\n>\n> Target\n");
+      const anchor = createAnchor(previous, "root.0.children.0");
 
       expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
         reason: "weak-evidence",
@@ -146,17 +146,6 @@ describe("document node anchors", () => {
         status: "ambiguous",
       });
     });
-
-    test("strict exact-content mode does not use context to disambiguate duplicates", () => {
-      const previous = parseDocument("Before\n\nTarget\n\nAfter\n");
-      const next = parseDocument("Target\n\nBefore\n\nTarget\n\nAfter\n");
-      const anchor = createAnchor(previous, "root.1");
-
-      expect(resolveDocumentNodeAnchor(next, anchor, { mode: "exact-content" })).toEqual({
-        reason: "duplicate",
-        status: "ambiguous",
-      });
-    });
   });
 
   describe("table cells", () => {
@@ -169,6 +158,24 @@ describe("document node anchors", () => {
         basis: "exact-content-context",
         node: { plainText: "two" },
         path: "root.0.rows.2.cells.1",
+        status: "matched",
+      });
+    });
+
+    test("proves a moved table cell through its next-cell context when that is its only context", () => {
+      const previous = parseDocument("| one | two |\n| - | - |\n");
+      const next = parseDocument("Intro\n\n| one | two |\n| - | - |\n");
+      const anchor = createAnchor(previous, "root.0.rows.0.cells.0");
+
+      expect(anchor).toMatchObject({
+        cells: { previousHash: undefined },
+        kind: "table-cell",
+        rows: { nextHash: undefined, previousHash: undefined },
+      });
+      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
+        basis: "exact-content-context",
+        node: { plainText: "one" },
+        path: "root.1.rows.0.cells.0",
         status: "matched",
       });
     });

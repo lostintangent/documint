@@ -6,15 +6,6 @@ import {
 import { parseDocument } from "@/markdown";
 
 describe("document content-hash", () => {
-  test("ignore root position while preserving semantic content", () => {
-    const first = parseDocument("Alpha\n\nBeta\n");
-    const second = parseDocument("Intro\n\nAlpha\n");
-
-    expect(resolveBlockContentHash(first.blocks[0]!)).toBe(
-      resolveBlockContentHash(second.blocks[1]!),
-    );
-  });
-
   test("include inline marks and link destinations", () => {
     const plain = parseDocument("Alpha [site](https://a.example)\n");
     const marked = parseDocument("**Alpha** [site](https://a.example)\n");

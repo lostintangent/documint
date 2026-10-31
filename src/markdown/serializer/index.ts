@@ -12,7 +12,6 @@ import { blockSeparator, renderDirective, serializeBlocks } from "./blocks";
 import { serializeInlines } from "./inlines";
 
 export { serializeBlocks } from "./blocks";
-export { serializeInlines } from "./inlines";
 
 /**
  * Serializes a full document, including metadata and trailing comment
@@ -67,8 +66,7 @@ export function serializeFragment(fragment: Fragment): string {
 }
 
 // The trailing comment appendix is markdown-only: comment threads have no
-// generic representation outside markdown persistence. Exposed for sync code
-// that needs canonical appendix text without serializing a full document.
+// generic representation outside markdown persistence.
 export function serializeCommentAppendix(comments: Document["comments"]) {
   if (comments.length === 0) {
     return "";

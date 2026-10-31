@@ -1,6 +1,6 @@
 import type { EditorLayoutState } from "@/editor";
 
-export type LayoutListener = () => void;
+type LayoutListener = () => void;
 
 export type EditorLayoutHandle = {
   /**
@@ -8,9 +8,11 @@ export type EditorLayoutHandle = {
    * the cache is empty. The result always reflects current inputs because
    * `invalidate()` clears the cache the instant any input changes.
    *
-   * For hot pointer paths and hit testing — `usePointer`, `useInput`,
-   * and `resolveDocumentAnchor` in the render body. These callers need
-   * geometry that matches the live scroll/state, not the painted frame.
+   * For hot pointer paths and hit testing: `usePointer` and `useInput`.
+   * These callers need geometry that matches the live scroll/state, not
+   * the painted frame. Don't call `get()` during render: the React Compiler
+   * memoizes the call on the stable store, so React overlays read
+   * `renderedLayoutSprig` instead.
    */
   get: () => EditorLayoutState;
   /**
@@ -53,9 +55,9 @@ export type LayoutStore = EditorLayoutHandle & {
   /**
    * Resolve the latest layout if needed, promote it to the rendered slot,
    * and notify subscribers. The single writer that bridges latest →
-   * rendered. Called by the render path (`renderViewport` → hook's
-   * `commitLayout`) right before painting the canvas; the returned layout
-   * is what the paint functions should draw against.
+   * rendered. Called by the render scheduler (via `useViewport`'s
+   * `commitLayout`) right before painting the canvas, so the painters'
+   * `peekLatest()` reads return the committed layout.
    */
   commit: () => EditorLayoutState;
   /**
@@ -73,9 +75,9 @@ export type LayoutStore = EditorLayoutHandle & {
   /**
    * Install the closure that builds an `EditorLayoutState` from current
    * hook inputs (state, viewport metrics, theme, resources). `useViewport`
-   * registers this once per store via a ref-cell pattern — the wrapper it
-   * passes here reads through a ref, so the resolver sees fresh hook
-   * state on every call without being re-registered.
+   * calls this from a layout effect keyed on the store, passing an Effect
+   * Event wrapper so the resolver always sees the last committed inputs.
+   * `get()` and `commit()` throw until that effect runs.
    */
   setLayoutResolver: (resolve: () => EditorLayoutState) => void;
   /**

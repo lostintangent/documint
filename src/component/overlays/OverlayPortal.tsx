@@ -11,8 +11,8 @@ import { compileOverlayStyles } from "@macros/overlay-styles" with { type: "macr
 import {
   createContext,
   useContext,
-  useLayoutEffect,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -34,32 +34,12 @@ export function OverlayPortalProvider({
   children: ReactNode;
   themeStyles: CSSProperties;
 }) {
-  const [shadowRoot, setShadowRoot] = useState<ShadowRoot | null>(null);
-
-  useLayoutEffect(() => {
-    const host = document.createElement("div");
-    host.dataset.documintOverlayRoot = "";
-    host.style.position = "absolute";
-    host.style.top = "0";
-    host.style.left = "0";
-    host.style.width = "0";
-    host.style.height = "0";
-    host.style.overflow = "visible";
-    host.style.zIndex = "2147483647";
-
-    const root = host.attachShadow({ mode: "open" });
-    const style = document.createElement("style");
-    style.textContent = overlayCss;
-    root.append(style);
-
-    document.body.append(host);
-    setShadowRoot(root);
-
-    return () => {
-      setShadowRoot(null);
-      host.remove();
-    };
-  }, []);
+  const [overlayRoot] = useState(() => createOverlayRootStore(overlayCss));
+  const shadowRoot = useSyncExternalStore(
+    overlayRoot.subscribe,
+    overlayRoot.getShadowRoot,
+    () => null,
+  );
 
   return (
     <OverlayPortalContext.Provider value={{ shadowRoot, themeStyles }}>
@@ -81,4 +61,40 @@ export function OverlayPortal({ children }: { children: ReactNode }) {
     </div>,
     context.shadowRoot,
   );
+}
+
+// The overlay host lives outside React's tree, so it is modeled as an external
+// store: subscribing mounts the host under document.body, and unsubscribing
+// removes it. Creating the store touches no DOM.
+function createOverlayRootStore(css: string) {
+  let shadowRoot: ShadowRoot | null = null;
+
+  return {
+    getShadowRoot: () => shadowRoot,
+    subscribe(onChange: () => void) {
+      const host = document.createElement("div");
+      host.dataset.documintOverlayRoot = "";
+      host.style.position = "absolute";
+      host.style.top = "0";
+      host.style.left = "0";
+      host.style.width = "0";
+      host.style.height = "0";
+      host.style.overflow = "visible";
+      host.style.zIndex = "2147483647";
+
+      const root = host.attachShadow({ mode: "open" });
+      const style = document.createElement("style");
+      style.textContent = css;
+      root.append(style);
+
+      document.body.append(host);
+      shadowRoot = root;
+      onChange();
+
+      return () => {
+        shadowRoot = null;
+        host.remove();
+      };
+    },
+  };
 }

@@ -21,13 +21,13 @@ export function resolveCodeFont(baseFontSize: number) {
   return `${Math.max(1, baseFontSize - 1)}px ${MONOSPACE_STACK}`;
 }
 
-export type InlineTextStyle = {
+type InlineTextStyle = {
   baselineShift: number;
   font: string;
   hasCustomMetrics: boolean;
 };
 
-export type InlineTextTypography = {
+type InlineTextTypography = {
   baseFontSize: number;
   font: string;
 };

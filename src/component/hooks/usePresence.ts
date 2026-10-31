@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { DocumentPresence, DocumentUser, DocumentUserPresence } from "@/types";
+import type { DocumentPresence, DocumentUser, DocumentUserPresence } from "@/editor";
 import { commentPresenceSprig, resolvedPresenceSprig, useSprig } from "../store";
 
 export function usePresence({

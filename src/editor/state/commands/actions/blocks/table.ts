@@ -16,7 +16,7 @@ import type { DocumentIndex } from "../../../index/types";
 import { target, type EditorSelection, type SelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import type { RootBlockInsertionContext, TableCellContext } from "../../context";
-import { spliceInlineContainer } from "../inlines/shared";
+import { createInlineReplacementAction, spliceInlineContainer } from "../inlines/shared";
 import { insertAt, removeAt, spliceAt } from "./shared";
 
 // Table block actions for insertion, cell navigation, row/column structure,
@@ -67,19 +67,13 @@ export function resolveTableSelectionMove(
   return moveSelectionToTableCell(context, nextPosition);
 }
 
-export function resolveTableCellLineBreak(context: TableCellContext): EditorStateAction | null {
+export function resolveTableCellLineBreak(context: TableCellContext): EditorStateAction {
   const startOffset = Math.min(context.selection.anchor.offset, context.selection.focus.offset);
   const endOffset = Math.max(context.selection.anchor.offset, context.selection.focus.offset);
-  const replacement = spliceInlineContainer(context.inlineContainer, startOffset, endOffset, [
-    createLineBreak(),
-  ]);
 
-  return {
-    kind: "replace-block",
-    block: replacement.block,
-    blockPath: replacement.blockPath,
-    selection: replacement.selection,
-  };
+  return createInlineReplacementAction(
+    spliceInlineContainer(context.inlineContainer, startOffset, endOffset, [createLineBreak()]),
+  );
 }
 
 export function resolveTableColumnInsertion(
@@ -149,8 +143,12 @@ export function resolveTableRowDeletion(context: TableCellContext): EditorStateA
   });
 }
 
-export function resolveTableDeletion(context: TableCellContext): EditorStateAction | null {
-  return replaceTableWithParagraph(context);
+export function resolveTableDeletion(context: TableCellContext): EditorStateAction {
+  const paragraph = createParagraphTextBlock("");
+
+  return replaceTable(context, paragraph, {
+    selection: target.block(paragraph),
+  });
 }
 
 function appendEmptyTableRow(context: TableCellContext): EditorStateAction {
@@ -208,14 +206,6 @@ function insertTableRow(table: TableBlock, rowIndex: number): TableBlock {
 
 function deleteTableRow(table: TableBlock, rowIndex: number): TableBlock {
   return rebuildTableBlock(table, removeAt(table.rows, rowIndex));
-}
-
-function replaceTableWithParagraph(context: TableCellContext): EditorStateAction {
-  const paragraph = createParagraphTextBlock("");
-
-  return replaceTable(context, paragraph, {
-    selection: target.block(paragraph),
-  });
 }
 
 function insertTableAtRoot(

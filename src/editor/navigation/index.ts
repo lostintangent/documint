@@ -32,27 +32,20 @@ import { moveCaretVerticallyInTable, resolveVerticalTablePathTarget } from "./ta
 import { resolveWordNavigationTarget } from "./word";
 export {
   isCanvasDirectActivationTarget,
-  resolveDragFocus,
-  resolveDragFocusPoint,
   resolveEditorHitAtPoint,
   resolveHoverTarget,
-  resolveHoverTargetAtPoint,
-  resolveLinkHitAtPoint,
   resolveSelectionPointAt,
   resolveTargetAtOffset,
-  resolveTaskCheckboxHitAtPoint,
   resolveWordSelection,
-  resolveWordSelectionAtPoint,
   type EditorHoverTarget,
-  type EditorHit,
 } from "./hit";
 import { canExtendSelectionBetweenPaths, resolveDragFocus, resolveSelectionPointAt } from "./hit";
 
-export { resolveEditorSearchMatches, type EditorSearchMatch } from "./search";
+export { resolveEditorSearchMatches } from "./search";
 
 export type EditorNavigationMode = "block" | "text";
 
-export type EditorNavigationOptions = {
+type EditorNavigationOptions = {
   extendSelection?: boolean;
   mode?: EditorNavigationMode;
 };
@@ -230,7 +223,7 @@ export function updateSelectionFromDrag(
 }
 
 function measureSelectionCaret(state: EditorState, viewport: EditorLayoutState) {
-  return measureCaretTarget(viewport.layout, state.documentIndex, {
+  return measureCaretTarget(viewport.layout, {
     path: state.selection.focus.path,
     offset: state.selection.focus.offset,
   });

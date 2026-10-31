@@ -13,7 +13,6 @@ import {
   remapDecorationIndexForTextEdit,
   remapDecorationRangesForTextEdit,
   reconcileDecorationRootResults,
-  resolveDecorationRootSourceKey,
 } from "@/component/decorations/client/reconciliation";
 
 describe("decoration root result reconciliation", () => {
@@ -34,7 +33,7 @@ describe("decoration root result reconciliation", () => {
         },
       ],
       rootIndex: 0,
-      sourceKey: resolveDecorationRootSourceKey(sourceBlock),
+      block: sourceBlock,
     };
 
     const next = reconcileDecorationRootResults(state, new Map(), [result]);
@@ -72,7 +71,7 @@ describe("decoration root result reconciliation", () => {
         },
       ],
       rootIndex: 0,
-      sourceKey: resolveDecorationRootSourceKey(document.blocks[0]!),
+      block: document.blocks[0]!,
     };
 
     expect(reconcileDecorationRootResults(changedState, previous, [result])).toBeNull();
@@ -97,7 +96,7 @@ describe("decoration root result reconciliation", () => {
         },
       ],
       rootIndex: 0,
-      sourceKey: resolveDecorationRootSourceKey(sourceBlock),
+      block: sourceBlock,
     };
 
     const next = reconcileDecorationRootResults(state, new Map(), [result]);

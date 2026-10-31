@@ -10,6 +10,7 @@ import {
 import { resolveEditorInputCommand } from "@/component/lib/keybindings";
 import { resolveEditorForwardWordMovement } from "@/component/lib/platform";
 import { createEditorLayoutState, createLayoutCache, resolveEditorTextAtPath } from "@/editor";
+import { createKeyboardEvent } from "@test/component/helpers";
 import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 test("treats both paragraph and line-break input types as structural Enter", () => {
@@ -83,18 +84,6 @@ test("routes platform word-forward gestures to their editor movements", () => {
   expect(windowsState?.selection.focus.offset).toBe("alpha ".length);
 });
 
-test("routes Windows word-forward movement directly to the next path start", () => {
-  const state = setup("alpha\n\nbeta");
-  const alpha = getPath(state, "alpha");
-  const beta = getPath(state, "beta");
-  const placed = placeAt(state, alpha, "start");
-  const event = createKeyboardEvent("ArrowRight", { ctrlKey: true });
-  const command = resolveEditorInputCommand(event, undefined, "windows");
-  const nextState = applyKeyboardInputCommand(placed, layoutAt(placed), event, command, "nextWord");
-
-  expect(nextState?.selection.focus).toEqual({ path: beta.path, offset: 0 });
-});
-
 test("routes word-forward deletion through the same editor movement", () => {
   const state = setup("alpha beta");
   const path = getPath(state, "alpha beta");
@@ -162,14 +151,4 @@ test.each([
 
 function layoutAt(state: ReturnType<typeof setup>) {
   return createEditorLayoutState(state, { height: 2_000, top: 0, width: 800 }, createLayoutCache());
-}
-
-function createKeyboardEvent(key: string, options: KeyboardEventInit = {}) {
-  return {
-    altKey: options.altKey ?? false,
-    ctrlKey: options.ctrlKey ?? false,
-    key,
-    metaKey: options.metaKey ?? false,
-    shiftKey: options.shiftKey ?? false,
-  } as KeyboardEvent;
 }

@@ -3,7 +3,6 @@ export {
   getCommentState,
   hasActiveCommentHighlightsInViewport,
   resolveActiveCommentIndex,
-  resolveCommentThreadViewportPosition,
   updateCommentThreadsForPathEdit,
   type EditorCommentRange,
   type EditorCommentState,
@@ -23,14 +22,15 @@ export {
   resolveSelectionAnchor,
   type SelectionAnchor,
   type SelectionAnchorAffinity,
-  type SelectionAnchorResolution,
 } from "./selection";
 
 export {
   resolvePresenceTargets,
+  type DocumentPresence,
+  type DocumentUser,
+  type DocumentUserPresence,
   type EditorPresence,
   type EditorPresenceViewport,
-  type EditorPresenceViewportStatus,
 } from "./presence";
 
 export { resolveCursorViewportStatus, resolvePresenceViewport } from "./presence/viewport";

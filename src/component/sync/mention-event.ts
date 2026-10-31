@@ -1,7 +1,7 @@
 // Mention event payload helper. Maps an accepted mention replacement to the
 // canonical markdown line the host reports to the embedder.
 import type { Block, Document } from "@/document";
-import type { TextRangeTarget } from "@/editor";
+import type { EditorSelectionRange } from "@/editor";
 import { resolveIndexedBlockContainingPath } from "@/editor/state";
 import { serializeBlocks, serializeMetadataPreamble } from "@/markdown";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
@@ -13,7 +13,7 @@ export type MentionLineChange = {
 
 export function resolveMentionLineChange(
   transition: EditorStateTransition,
-  target: TextRangeTarget,
+  target: EditorSelectionRange,
 ): MentionLineChange | null {
   const previousBlock = resolveIndexedBlockContainingPath(
     transition.previous.documentIndex,

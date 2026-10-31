@@ -3,8 +3,8 @@ import { createRoot } from "react-dom/client";
 import { Documint } from "@lostintangent/documint";
 import type { HostMessage } from "../types";
 
-import { useStorage } from "./hooks/useStorage";
 import { useTheme } from "./hooks/useTheme";
+import { storage } from "./storage";
 import { vscode } from "./vscode";
 
 const users = [{ id: "copilot", username: "copilot", fullName: "Copilot" }];
@@ -12,7 +12,6 @@ const users = [{ id: "copilot", username: "copilot", fullName: "Copilot" }];
 function App() {
   const [content, setContent] = useState<string | null>(null);
 
-  const storage = useStorage();
   const theme = useTheme();
 
   useEffect(() => {

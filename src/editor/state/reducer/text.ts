@@ -51,9 +51,9 @@ import {
   type SelectionTarget,
 } from "../selection";
 import { resolveFragmentEndpoint } from "../fragments/context";
-import { editorInlinesToDocumentInlines, replaceEditorInlines } from "./inlines";
+import { editIndexedInlines } from "./inlines";
 
-export type TextEditResult = {
+type TextEditResult = {
   documentIndex: DocumentIndex;
   selection: SelectionTarget | null;
 };
@@ -249,40 +249,17 @@ function replaceInSinglePath(
     throw new Error(`Failed to replace block for editor path: ${path}`);
   }
 
-  const finalizedDocumentIndex =
-    documentIndex.document.comments.length === 0
-      ? nextDocumentIndex
-      : finalizeCommentsAfterPathEdit(
-          documentIndex,
-          nextDocumentIndex,
-          path,
-          normalized.start.offset,
-          normalized.end.offset,
-          text,
-        );
-
   return {
-    documentIndex: finalizedDocumentIndex,
+    documentIndex: finalizeCommentsAfterEdit(
+      documentIndex,
+      nextDocumentIndex,
+      path,
+      normalized.start.offset,
+      normalized.end.offset,
+      text,
+    ),
     selection: target.path(path, normalized.start.offset + text.length),
   };
-}
-
-function finalizeCommentsAfterPathEdit(
-  previousDocumentIndex: DocumentIndex,
-  nextDocumentIndex: DocumentIndex,
-  path: string,
-  startOffset: number,
-  endOffset: number,
-  insertedText: string,
-): DocumentIndex {
-  return finalizeCommentsAfterEdit(
-    previousDocumentIndex,
-    nextDocumentIndex,
-    path,
-    startOffset,
-    endOffset,
-    insertedText,
-  );
 }
 
 function replaceBlockPathText(
@@ -317,7 +294,7 @@ function replaceBlockPathText(
 
       return rebuildTextBlock(
         block,
-        editPathInlines(currentInlines, startOffset, endOffset, replacementText, path),
+        editIndexedInlines(currentInlines, startOffset, endOffset, replacementText),
       );
     }
     case "table":
@@ -357,12 +334,11 @@ function replaceTableCellText(
     throw new Error(`Unable to resolve table cell position for editor path: ${path}`);
   }
 
-  const nextChildren = editPathInlines(
+  const nextChildren = editIndexedInlines(
     indexedCell.inlines,
     startOffset,
     endOffset,
     replacementText,
-    path,
   );
   const rows = block.rows.map((row, currentRowIndex) => {
     if (currentRowIndex !== rowIndex) {
@@ -377,22 +353,6 @@ function replaceTableCellText(
   });
 
   return rebuildTableBlock(block, rows);
-}
-
-function editPathInlines(
-  inlines: readonly IndexedInline[] | null,
-  startOffset: number,
-  endOffset: number,
-  replacementText: string,
-  path: string,
-) {
-  if (!inlines) {
-    throw new Error(`Editor path does not expose indexed inlines: ${path}`);
-  }
-
-  return editorInlinesToDocumentInlines(
-    replaceEditorInlines(inlines, startOffset, endOffset, replacementText),
-  );
 }
 
 function replacePathText(

@@ -16,7 +16,7 @@ export type ServerState = {
 
 export type ServerEvent =
   | { type: "state"; state: ServerState }
-  | ({ type: "content"; source?: string; clientId?: string } & ServerState)
+  | { type: "content"; content: string }
   | { type: "job"; jobs?: CopilotJob[] }
   | { type: "error"; message: string };
 

@@ -11,10 +11,8 @@ import { ChevronDown } from "lucide-react";
 type PlaygroundPopoverProps = {
   ariaLabel: string;
   children: ReactNode | ((popover: { close: () => void }) => ReactNode);
-  containerClassName?: string;
   flyoutClassName?: string;
   icon: ReactNode;
-  iconClassName?: string;
   iconStyle?: CSSProperties;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -38,10 +36,8 @@ export const popoverControlClassName =
 export function PlaygroundPopover({
   ariaLabel,
   children,
-  containerClassName,
   flyoutClassName = "",
   icon,
-  iconClassName,
   iconStyle,
   open: controlledOpen,
   onOpenChange,
@@ -99,10 +95,7 @@ export function PlaygroundPopover({
   }, [close, open]);
 
   return (
-    <div
-      className={`relative${containerClassName ? ` ${containerClassName}` : ""}`}
-      ref={popoverRef}
-    >
+    <div className="relative" ref={popoverRef}>
       <button
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -115,7 +108,7 @@ export function PlaygroundPopover({
           aria-hidden="true"
           className={`inline-flex size-5 flex-none items-center justify-center rounded-full border${
             showSwatch ? " border-border/15" : " border-transparent bg-transparent"
-          }${iconClassName ? ` ${iconClassName}` : ""}`}
+          }`}
           style={showSwatch ? iconStyle : undefined}
         >
           {icon}

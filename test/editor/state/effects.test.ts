@@ -303,17 +303,6 @@ describe("Active block changed effects", () => {
 });
 
 describe("List item inserted effects", () => {
-  test("emits list-item-inserted when splitting a list item with insertLineBreak", () => {
-    const state = setup("- alpha\n");
-    const path = getPath(state, "alpha");
-    const result = insertLineBreak(placeAt(state, path, "end"));
-
-    expect(result).not.toBeNull();
-    expect(readEditorEffects(result!)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "list-item-inserted" })]),
-    );
-  });
-
   test("orders edit effects before derived selection effects", () => {
     const state = setup("- alpha\n");
     const path = getPath(state, "alpha");

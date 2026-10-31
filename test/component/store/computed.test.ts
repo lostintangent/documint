@@ -7,14 +7,11 @@ import {
   documentCompletionSprig,
   normalizedSelectionSprig,
 } from "@/component/store/editor/computed-sprigs";
-import {
-  createMentionCompletionSource,
-  emojiCompletionSource,
-} from "@/component/completions/sources";
 import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/sprigs";
 import { commentPresenceSprig, resolvedPresenceSprig } from "@/component/store/presence";
-import { getDocument } from "@/editor";
+import { getDocument, type DocumentUserPresence } from "@/editor";
 import { addComment, insertText, resolveThread, setSelection } from "@/editor/state";
+import { equalStringSets } from "@test/component/helpers";
 import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("computed sprigs", () => {
@@ -158,168 +155,63 @@ describe("computed sprigs", () => {
     expect(computeCount).toBe(2);
   });
 
-  test("derives parameterized presence from host input", () => {
-    const state = setup("alpha beta\n");
-    const store = createStore(getDocument(state));
-    const resolvedPresence = resolvedPresenceSprig.read(store, [
-      {
-        cursor: {
-          prefix: "alpha",
-        },
-        id: "user",
-        status: "Reviewing introduction",
-        username: "User",
-      },
-    ]);
-    const presence = resolvedPresence?.[0];
-
-    expect(presence?.cursorPoint).toEqual({
-      offset: 5,
-      path: getPath(state, "alpha beta").path,
-    });
-    expect(presence?.viewport).toBeNull();
-    expect(presence?.status).toBe("Reviewing introduction");
-    expect(resolvedPresenceSprig.read(store, undefined)).toBeUndefined();
-  });
-
-  test("derives comment presence by thread index", () => {
-    let state = setup("alpha beta\n");
-    const path = getPath(state, "alpha beta");
-    state = setSelection(state, {
-      anchor: { path: path.path, offset: 0 },
-      focus: { path: path.path, offset: "alpha".length },
-    });
-    state =
-      addComment(
-        state,
-        { endOffset: "alpha".length, path: path.path, startOffset: 0 },
-        "Working here",
-      ) ?? state;
-    const store = createStore(getDocument(state));
-    const threadId = getDocument(state).comments[0]?.id;
-
-    if (!threadId) {
-      throw new Error("Expected comment thread id");
-    }
-
-    expect(
-      commentPresenceSprig.read(store, [
-        {
-          color: "#f97316",
-          cursor: { threadId },
-          id: "user",
-          username: "User",
-        },
-      ]),
-    ).toEqual(
-      new Map([
-        [
-          0,
-          {
-            color: "#f97316",
-            commentThreadIndex: 0,
-            cursor: { threadId },
-            cursorPoint: null,
-            id: "user",
-            isOnUnresolvedCommentThread: true,
-            username: "User",
-            viewport: null,
-          },
-        ],
-      ]),
-    );
-  });
-
-  test("marks presence on unresolved comment threads", () => {
+  test("resolves host presence against text and comment thread cursors", () => {
     const state = setupPresenceCommentState();
     const store = createStore(getDocument(state));
+    const path = getPath(state, "alpha beta gamma");
     const [unresolvedThread, resolvedThread] = getDocument(state).comments;
 
     if (!unresolvedThread || !resolvedThread) {
       throw new Error("Expected comment threads");
     }
 
-    const resolvedPresence = resolvedPresenceSprig.read(store, [
+    const userPresence: DocumentUserPresence[] = [
       {
+        color: "#f97316",
         cursor: { threadId: unresolvedThread.id },
         id: "unresolved-user",
         username: "Unresolved",
       },
-      {
-        cursor: { threadId: resolvedThread.id },
-        id: "resolved-user",
-        username: "Resolved",
-      },
+      { cursor: { threadId: resolvedThread.id }, id: "resolved-user", username: "Resolved" },
       {
         cursor: { prefix: "alpha" },
         id: "text-user",
+        status: "Reviewing introduction",
         username: "Text",
       },
+    ];
+    const resolvedPresence = resolvedPresenceSprig.read(store, userPresence);
+
+    expect(resolvedPresence).toEqual([
+      {
+        ...userPresence[0]!,
+        commentThreadIndex: 0,
+        cursorPoint: null,
+        isOnUnresolvedCommentThread: true,
+        viewport: null,
+      },
+      {
+        ...userPresence[1]!,
+        commentThreadIndex: 1,
+        cursorPoint: null,
+        isOnUnresolvedCommentThread: false,
+        viewport: null,
+      },
+      {
+        ...userPresence[2]!,
+        commentThreadIndex: null,
+        cursorPoint: { offset: "alpha".length, path: path.path },
+        isOnUnresolvedCommentThread: false,
+        viewport: null,
+      },
     ]);
-
-    expect(
-      resolvedPresence?.map((presence) => [presence.id, presence.isOnUnresolvedCommentThread]),
-    ).toEqual([
-      ["unresolved-user", true],
-      ["resolved-user", false],
-      ["text-user", false],
-    ]);
-  });
-
-  test("derives document completion from the active editor selection", () => {
-    const state = setup("Hello @Ja\n");
-    const store = createStore(getDocument(state));
-    const path = getPath(store.editor.getState(), "Hello @Ja");
-    store.editor.command(setSelection, { path: path.path, offset: path.text.length });
-
-    expect(
-      documentCompletionSprig.read(store, [
-        {
-          trigger: "@",
-          items: [
-            { label: "Jane", id: "u-jane" },
-            { label: "John", id: "u-john" },
-          ],
-        },
+    expect(commentPresenceSprig.read(store, userPresence)).toEqual(
+      new Map([
+        [0, resolvedPresence![0]!],
+        [1, resolvedPresence![1]!],
       ]),
-    ).toEqual({
-      path: path.path,
-      trigger: "@",
-      query: "Ja",
-      triggerStart: 6,
-      caret: 9,
-      matches: [{ label: "Jane", id: "u-jane" }],
-    });
-  });
-
-  // Mirrors the composition done inside Documint's `completionSources`
-  // `useMemo`: a sorted mention source (when users are present) followed
-  // by the always-available emoji source. Kept here because there's no
-  // other dedicated test for the source-builders today.
-  test("composes mention and emoji completion sources from host users", () => {
-    const composeSources = (
-      users: { id: string; username: string; fullName?: string }[] | undefined,
-    ) => {
-      const mentionSource = createMentionCompletionSource(users);
-      return mentionSource ? [mentionSource, emojiCompletionSource] : [emojiCompletionSource];
-    };
-
-    const sources = composeSources([
-      { id: "u-zoe", username: "zoe" },
-      { id: "u-amy", username: "amy", fullName: "Amy Adams" },
-    ]);
-
-    expect(sources[0]).toEqual({
-      trigger: "@",
-      items: [
-        { label: "Amy Adams", id: "u-amy", kind: "mention" },
-        { label: "zoe", id: "u-zoe", kind: "mention" },
-      ],
-    });
-    expect(sources[1]?.trigger).toBe(":");
-    expect(sources[1]?.items.some((item) => item.label === "sparkles")).toBe(true);
-
-    expect(composeSources(undefined).map((source) => source.trigger)).toEqual([":"]);
+    );
+    expect(resolvedPresenceSprig.read(store, undefined)).toBeUndefined();
   });
 
   test("preserves parameterized presence output when resolved semantics are equal", () => {
@@ -375,6 +267,32 @@ describe("computed sprigs", () => {
     expect(second?.[0]?.status).toBe("Editing");
   });
 
+  test("derives document completion from the active editor selection", () => {
+    const state = setup("Hello @Ja\n");
+    const store = createStore(getDocument(state));
+    const path = getPath(store.editor.getState(), "Hello @Ja");
+    store.editor.command(setSelection, { path: path.path, offset: path.text.length });
+
+    expect(
+      documentCompletionSprig.read(store, [
+        {
+          trigger: "@",
+          items: [
+            { label: "Jane", id: "u-jane" },
+            { label: "John", id: "u-john" },
+          ],
+        },
+      ]),
+    ).toEqual({
+      path: path.path,
+      trigger: "@",
+      query: "Ja",
+      triggerStart: 6,
+      caret: 9,
+      matches: [{ label: "Jane", id: "u-jane" }],
+    });
+  });
+
   test("derives the active comment thread index", () => {
     let state = setup("alpha beta\n");
     const path = getPath(state, "alpha beta");
@@ -397,19 +315,6 @@ describe("computed sprigs", () => {
     expect(activeCommentIndexSprig.read(store, true)).toBeNull();
   });
 });
-
-function equalStringSets(a: ReadonlySet<string>, b: ReadonlySet<string>) {
-  if (a === b) return true;
-  if (a.size !== b.size) return false;
-
-  for (const value of a) {
-    if (!b.has(value)) {
-      return false;
-    }
-  }
-
-  return true;
-}
 
 function setupPresenceCommentState() {
   let state = setup("alpha beta gamma\n");

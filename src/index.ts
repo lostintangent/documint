@@ -14,30 +14,33 @@ export {
   type ActiveResourceSet,
   type UserMentionEvent,
   lucideResourceIcon,
+  type CodeGrammarRule,
+  type DocumintDecoration,
+  type DocumintStorage,
+  type EditorInputCommand,
 } from "./component";
 
 export type {
-  ActiveBlockChangedEffectContext,
-  DocumintEffectHandler,
+  DocumentPresence,
   DocumentResourceIcon,
   DocumentResourceIconNode,
-  DocumentResourceVectorIcon,
-  DocumentPresence,
   DocumentResourceProtocol,
   DocumentResourceReference,
+  DocumentResourceVectorIcon,
   DocumentUser,
-  DocumintListMarkerPaintFrame,
-  DocumintEffects,
-  DocumintDecoration,
-  DocumintStorage,
-  CodeGrammarRule,
+} from "./editor";
+
+export type {
+  ActiveBlockChangedEffectContext,
   CodeTokenKind,
-  EditorInputCommand,
+  DocumintEffectHandler,
+  DocumintEffects,
+  DocumintListMarkerPaintFrame,
   EditorTheme,
   ListItemInsertedEffectContext,
   TextDeletedEffectContext,
   TextInsertedEffectContext,
-} from "./types";
+} from "./renderer";
 
 export { normalizeResourceProtocol, resolveResourceProtocol } from "./document";
 

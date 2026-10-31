@@ -1,6 +1,6 @@
 import { isSelectionCollapsed, type EditorSelection } from "../../../selection";
 import { moveGraphemeOffset } from "../../../../text/graphemes";
-import { effect } from "../../../effects";
+import { effect, type DeletionDirection } from "../../../effects";
 import { resolveEditorTextAtPath, resolveInlinesAtPath } from "../../../index/query";
 import type { EditorState, EditorStateAction } from "../../../types";
 
@@ -17,7 +17,7 @@ type CharacterDeleteAction = Extract<EditorStateAction, { kind: "splice-text" }>
 
 export function resolveCharacterDelete(
   state: EditorState,
-  direction: "backward" | "forward",
+  direction: DeletionDirection,
 ): CharacterDeleteAction | null {
   const selection = state.selection;
 

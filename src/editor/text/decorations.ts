@@ -10,6 +10,7 @@ import {
   type DocumentIndex,
   type EditorState,
 } from "../state";
+import { rangeOverlapsSegment } from "./ranges";
 
 export type TextDecoration = {
   backgroundColor?: string;
@@ -40,7 +41,7 @@ export function reconcileTextDecorationIndex(
   let changed = next.size !== previous.size;
 
   for (const update of updates) {
-    const rootPaths = collectRootEditorPaths(documentIndex, update.rootIndex);
+    const rootPaths = collectEditorPaths(documentIndex, update.rootIndex);
     for (const path of rootPaths) {
       next.delete(path);
     }
@@ -107,22 +108,7 @@ function sameRootDecorations(
   return true;
 }
 
-function sameDecorations(
-  a: readonly {
-    backgroundColor?: string;
-    pulse?: boolean;
-    color?: string;
-    endOffset: number;
-    startOffset: number;
-  }[],
-  b: readonly {
-    backgroundColor?: string;
-    pulse?: boolean;
-    color?: string;
-    endOffset: number;
-    startOffset: number;
-  }[],
-) {
+function sameDecorations(a: readonly TextDecoration[], b: readonly TextDecoration[]) {
   if (a.length !== b.length) return false;
   return a.every((decoration, index) => {
     const candidate = b[index]!;
@@ -163,17 +149,9 @@ export function hasAnimatedDecorationsInViewport(
   });
 }
 
-function collectEditorPaths(documentIndex: DocumentIndex) {
-  const paths = new Set<string>();
-
-  forEachEditorPathWithText(documentIndex, (path) => {
-    paths.add(path);
-  });
-
-  return paths;
-}
-
-function collectRootEditorPaths(documentIndex: DocumentIndex, rootIndex: number) {
+// Collects editor paths in one root, or across the document when `rootIndex`
+// is omitted.
+function collectEditorPaths(documentIndex: DocumentIndex, rootIndex?: number) {
   const paths = new Set<string>();
 
   forEachEditorPathWithText(
@@ -194,7 +172,6 @@ function isAnimatedDecorationOnLine(
   return (
     decoration.pulse === true &&
     Boolean(decoration.backgroundColor) &&
-    decoration.endOffset > line.start &&
-    decoration.startOffset < line.end
+    rangeOverlapsSegment(decoration, line.start, line.end)
   );
 }

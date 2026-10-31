@@ -64,7 +64,7 @@ export type ResolvedMetadataText = {
   type: "key" | "value";
 };
 
-export type ResolvedMetadataBoolean = {
+type ResolvedMetadataBoolean = {
   fieldIndex: number;
   key: string;
   type: "boolean";
@@ -122,7 +122,6 @@ export type IndexedRoot = {
   // item block path. Collected while the root is already being walked so
   // unrelated root edits don't force a full-document list-item rebuild.
   listItems: ReadonlyMap<string, IndexedListItem>;
-  rootIndex: number;
   pathsWithTextCount: number;
 };
 
@@ -150,7 +149,6 @@ export type IndexedTableCell = {
   editorOrder: number;
   inlines: readonly IndexedInline[];
   path: string;
-  rootIndex: number;
   rowIndex: number;
   tablePath: string;
   text: string;

@@ -154,7 +154,7 @@ export function placeCaretAtLineY(
   extendSelection: boolean,
 ): EditorState {
   const hit = resolveEditorHitAtPoint(layout, state, {
-    x: resolveCaretHitTestX(state, layout, caret),
+    x: resolveCaretHitTestX(layout, caret),
     y,
   });
 

@@ -8,13 +8,13 @@ import {
   type NormalizedEditorSelection,
 } from "@/editor/state";
 import type { TextDecorationIndex } from "@/editor/text/decorations";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
+import type { ResolvedEditorTheme } from "../../theme";
 import type {
   BlockFlashFrame,
   BlockPulseFrame,
   TextFadeFrame,
-  TextHighlightFrame,
-  TextPulseFrame,
+  TextInsertionFrame,
 } from "../../effects";
 import type {
   ActiveBlockBackgroundFrame,
@@ -47,8 +47,8 @@ type ResolveDocumentFrameLineOptions = {
   activeBlockPath: string | null;
   blockPulses: Map<string, BlockPulseFrame>;
   textFades: Map<string, TextFadeFrame[]>;
-  textHighlights: Map<string, TextHighlightFrame[]>;
-  textPulses: Map<string, TextPulseFrame[]>;
+  textHighlights: Map<string, TextInsertionFrame[]>;
+  textPulses: Map<string, TextInsertionFrame[]>;
   activeThreadIndex: number | null;
   commentPresence: ReadonlyMap<number, EditorPresence> | null;
   commentRangesByPath: ReadonlyMap<string, EditorCommentRange[]>;

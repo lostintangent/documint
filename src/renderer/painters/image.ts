@@ -2,7 +2,8 @@
 // delegates image-specific draw behavior here so text and image rendering stay
 // separate.
 import type { DocumentLayout, LayoutRect } from "@/editor/layout";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
+import type { DocumentImageResource, DocumentResources } from "@/editor/resources";
+import type { ResolvedEditorTheme } from "../theme";
 import type { DocumentFrameLine } from "../frame";
 import type { ImageSegment } from "../frame/line/text-segments";
 
@@ -39,7 +40,7 @@ export function paintImageSegment(
   const { clocks, resources, theme } = frameContext;
   const width = Math.max(24, segment.right - segment.left);
   const resource = resources.images.get(segment.image.url) ?? null;
-  const imageHeight = resolvePaintedImageHeight(segment, resources, width);
+  const imageHeight = resolvePaintedImageHeight(resource, width);
   const box = resolveImageSegmentPaintBox(lineFrame.layoutLine, segment.left, width, imageHeight);
 
   context.fillStyle = theme.imageSurfaceBackground;
@@ -134,13 +135,7 @@ function paintImageLoadingShimmer(
   context.fillRect(box.left, box.top, box.width, box.height);
 }
 
-function resolvePaintedImageHeight(
-  segment: ImageSegment,
-  resources: DocumentResources,
-  width: number,
-) {
-  const resource = resources.images.get(segment.image.url);
-
+function resolvePaintedImageHeight(resource: DocumentImageResource | null, width: number) {
   if (!resource || resource.intrinsicWidth <= 0 || resource.intrinsicHeight <= 0) {
     return resolveFallbackImageHeight(width);
   }

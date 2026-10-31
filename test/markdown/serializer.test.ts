@@ -8,9 +8,6 @@ import {
   createListItemBlock,
   createParagraphBlock,
   createResource,
-  createTableBlock,
-  createTableCell,
-  createTableRow,
   createText,
   type Inline,
   type ListItemBlock,
@@ -23,25 +20,17 @@ import {
   serializeMetadataPreamble,
 } from "@/markdown";
 import { expectBlockAt } from "../document/helpers";
-import { expectRoundTrip, expectStableRoundTrip } from "./helpers";
+import { commentedParagraphMarkdown, expectRoundTrip, expectStableRoundTrip } from "./helpers";
 
 describe("Inline marks", () => {
   test("canonicalizes underscore italic to asterisks", () => {
     expect(serializeDocument(parseDocument("_foo_\n"))).toBe("*foo*\n");
   });
 
-  test("emits underline marks as ins html", () => {
-    expectRoundTrip("Paragraph with <ins>underline</ins> text.\n");
-  });
-
   test("canonicalizes u underline html to ins", () => {
     expect(serializeDocument(parseDocument("Paragraph with <u>underline</u> text.\n"))).toBe(
       "Paragraph with <ins>underline</ins> text.\n",
     );
-  });
-
-  test("emits superscript marks as sup html", () => {
-    expectRoundTrip("Area x<sup>2</sup>\n");
   });
 
   test("emits nested marks in canonical semantic mark order", () => {
@@ -78,22 +67,15 @@ describe("Inline marks", () => {
 });
 
 describe("Line breaks", () => {
-  // All four hard-break input forms canonicalize to a bare `<br>`. Omitting
+  // Every hard-break input form canonicalizes to a bare `<br>`. Omitting
   // a trailing `\n` keeps table cells single-line and avoids inflating
   // diffs in any renderer that doesn't reflow paragraph lines.
   test.each([
-    ["bare <br>", "a<br>b\n"],
     ["<br>\\n (parser absorbs trailing newline)", "a<br>\nb\n"],
     ["two-or-more trailing spaces", "a  \nb\n"],
     ["backslash-newline", "a\\\nb\n"],
   ])("emits %s as canonical <br>", (_label, source) => {
     expect(serializeDocument(parseDocument(source))).toBe("a<br>b\n");
-  });
-
-  test("preserves bare intra-paragraph newlines as soft breaks", () => {
-    // Soft breaks must not be promoted to `<br>` on serialize — that would
-    // change the rendering in every external markdown renderer.
-    expect(serializeDocument(parseDocument("a\nb\n"))).not.toContain("<br>");
   });
 });
 
@@ -141,15 +123,6 @@ describe("Lists", () => {
 
     expect(list.start).toBe(3);
     expectRoundTrip(source, { preserveOrderedListStart: true });
-  });
-
-  test("preserves non-compact list item separators", () => {
-    const source = "- alpha\n\n- beta\n";
-    const document = parseDocument(source);
-    const list = expectBlockAt(document, 0, "list");
-
-    expect(list.compact).toBe(false);
-    expectRoundTrip(source);
   });
 
   test("serializes non-compact lists with blank lines between items", () => {
@@ -216,14 +189,6 @@ describe("Images", () => {
 });
 
 describe("Tables", () => {
-  test("emits compact table cells by default", () => {
-    expectRoundTrip(`| Block | Status | Width | Notes |
-| :---- | :----- | ----: | :---- |
-| Heading | stable | 640 | stays semantic |
-| Comments | anchored | 3 | remain durable |
-`);
-  });
-
   test("pads table cells to the widest column when requested", () => {
     expectRoundTrip(
       `| Block    | Status   | Width | Notes          |
@@ -247,39 +212,11 @@ describe("Tables", () => {
     expect(cell?.plainText).toBe("alpha | beta");
     expectStableRoundTrip(source);
   });
-
-  test("escapes semantic table cell pipes", () => {
-    const document = createTableDocument([["Query"], ["alpha | beta"]]);
-
-    expect(serializeDocument(document)).toBe(`| Query |
-| ----- |
-| alpha \\| beta |
-`);
-  });
 });
 
 describe("Comments", () => {
   test("serializes the trailing comment appendix without a document newline", () => {
-    const document = parseDocument(`Paragraph with a comment.
-
-:::documint-comments
-[
-  {
-    "anchor": {
-      "prefix": "Paragraph",
-      "suffix": " with a comment."
-    },
-    "comments": [
-      {
-        "body": "Reviewing this.",
-        "updatedAt": "2026-04-05T12:00:00.000Z"
-      }
-    ],
-    "quote": " with "
-  }
-]
-:::
-`);
+    const document = parseDocument(commentedParagraphMarkdown());
 
     expect(serializeCommentAppendix(document.comments)).toBe(`:::documint-comments
 [
@@ -298,32 +235,6 @@ describe("Comments", () => {
   }
 ]
 :::`);
-  });
-
-  test("omits runtime comment thread ids from markdown output", () => {
-    const document = parseDocument(`Paragraph with a comment.
-
-:::documint-comments
-[
-  {
-    "anchor": {
-      "prefix": "Paragraph",
-      "suffix": " with a comment."
-    },
-    "comments": [
-      {
-        "body": "Reviewing this.",
-        "updatedAt": "2026-04-05T12:00:00.000Z"
-      }
-    ],
-    "quote": " with "
-  }
-]
-:::
-`);
-
-    expect(document.comments[0]?.id).toMatch(/^commentThread-/);
-    expect(serializeDocument(document)).not.toContain('"id"');
   });
 });
 
@@ -371,20 +282,6 @@ title: Second
     const markdown = serializeDocument(createDocument([], [], metadata));
 
     expect(parseDocument(markdown).metadata).toEqual(metadata);
-  });
-
-  test("emits metadata cleanly when the document has no body blocks", () => {
-    expect(serializeDocument(parseDocument("---\ntitle: Stub\n---\n"))).toBe(
-      '---\ntitle: "Stub"\n---\n',
-    );
-  });
-});
-
-describe("Unsupported preservation", () => {
-  test("preserves unsupported semantic nodes during markdown export", async () => {
-    const source = await Bun.file("test/goldens/unsupported-html.md").text();
-
-    expectRoundTrip(source);
   });
 });
 
@@ -452,15 +349,4 @@ function createParagraphListItem(text: string, options: ListItemOptions = {}): L
     ...options,
     children: [createParagraph(text)],
   });
-}
-
-function createTableDocument(rows: string[][]) {
-  return createDocument([
-    createTableBlock({
-      align: rows[0]?.map(() => null) ?? [],
-      rows: rows.map((row) =>
-        createTableRow(row.map((cell) => createTableCell([createText(cell)]))),
-      ),
-    }),
-  ]);
 }

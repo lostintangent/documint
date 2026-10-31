@@ -2,16 +2,13 @@
 // anchors. Paths are not stored on nodes; they are deterministic coordinates
 // derived from the node's position in the semantic tree.
 
-export type TableCellPathPosition = {
+type TableCellPathContext = {
   cellIndex: number;
   rowIndex: number;
-};
-
-export type TableCellPathContext = TableCellPathPosition & {
   tablePath: string;
 };
 
-export type BlockPathCoordinates = {
+type BlockPathCoordinates = {
   childIndices: number[];
   rootIndex: number;
   siblingIndex: number;
@@ -29,10 +26,6 @@ export function childContainerPath(parentPath: string) {
   return `${parentPath}.children`;
 }
 
-export function sourcePath(parentPath: string) {
-  return `${parentPath}.source`;
-}
-
 export function childBlockPath(parentPath: string, childIndex: number) {
   return indexedPath(childContainerPath(parentPath), childIndex);
 }
@@ -46,15 +39,7 @@ export function tableCellPath(rowPath: string, cellIndex: number) {
 }
 
 export function isBlockPath(path: string) {
-  return blockPathRootIndex(path) !== null;
-}
-
-export function rootIndexForPath(path: string) {
-  return readRootIndex(path);
-}
-
-export function blockPathCoordinates(path: string): BlockPathCoordinates | null {
-  return readBlockPath(path);
+  return blockPathCoordinates(path) !== null;
 }
 
 export function blockPathFromCoordinates(rootIndex: number, childIndices: readonly number[] = []) {
@@ -66,20 +51,20 @@ export function blockPathFromCoordinates(rootIndex: number, childIndices: readon
 }
 
 export function blockPathWithRootIndex(path: string, rootIndex: number) {
-  const blockPath = readBlockPath(path);
+  const blockPath = blockPathCoordinates(path);
 
   return blockPath ? blockPathFromCoordinates(rootIndex, blockPath.childIndices) : null;
 }
 
 export function blockPathSiblingIndex(path: string) {
-  return readBlockPath(path)?.siblingIndex ?? null;
+  return blockPathCoordinates(path)?.siblingIndex ?? null;
 }
 
 export function parentBlockPath(path: string) {
-  const blockPath = readBlockPath(path);
+  const blockPath = blockPathCoordinates(path);
 
   if (!blockPath) {
-    return readTableCellPath(path)?.tablePath ?? null;
+    return tableCellPathContextFromPath(path)?.tablePath ?? null;
   }
 
   if (blockPath.childIndices.length === 0) {
@@ -90,31 +75,7 @@ export function parentBlockPath(path: string) {
   return blockPathFromCoordinates(blockPath.rootIndex, parentChildIndices);
 }
 
-export function blockPathContainsPath(ancestorBlockPath: string, descendantPath: string) {
-  const ancestor = readBlockPath(ancestorBlockPath);
-  const descendant = readContainingBlockPath(descendantPath);
-
-  if (!ancestor || !descendant) {
-    return false;
-  }
-
-  return containsBlockCoordinates(ancestor, descendant);
-}
-
-export function tableCellPositionFromPath(path: string): TableCellPathPosition | null {
-  const cellPath = readTableCellPath(path);
-
-  return cellPath ? { cellIndex: cellPath.cellIndex, rowIndex: cellPath.rowIndex } : null;
-}
-
-export function tableCellPathContextFromPath(path: string): TableCellPathContext | null {
-  return readTableCellPath(path);
-}
-
-const tableCellPathPattern = /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)\.cells\.(\d+)$/;
-const tableRowPathPattern = /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)$/;
-
-function readRootIndex(path: string) {
+export function rootIndexForPath(path: string) {
   const [prefix, rootIndexSegment] = path.split(".", 2);
 
   if (prefix !== "root" || rootIndexSegment === undefined) {
@@ -124,11 +85,7 @@ function readRootIndex(path: string) {
   return pathIndexFromSegment(rootIndexSegment);
 }
 
-function blockPathRootIndex(path: string) {
-  return readBlockPath(path)?.rootIndex ?? null;
-}
-
-function readBlockPath(path: string) {
+export function blockPathCoordinates(path: string): BlockPathCoordinates | null {
   const segments = path.split(".");
   if (segments[0] !== "root" || segments.length < 2) {
     return null;
@@ -161,7 +118,9 @@ function readBlockPath(path: string) {
   };
 }
 
-function readTableCellPath(path: string) {
+const tableCellPathPattern = /^(root\.\d+(?:\.children\.\d+)*)\.rows\.(\d+)\.cells\.(\d+)$/;
+
+export function tableCellPathContextFromPath(path: string): TableCellPathContext | null {
   const match = tableCellPathPattern.exec(path);
   if (!match) {
     return null;
@@ -183,69 +142,6 @@ function readTableCellPath(path: string) {
     rowIndex,
     tablePath,
   };
-}
-
-function readTableRowPath(path: string) {
-  const match = tableRowPathPattern.exec(path);
-  if (!match) {
-    return null;
-  }
-
-  const tablePath = match[1]!;
-  if (!isBlockPath(tablePath)) {
-    return null;
-  }
-
-  const rowIndex = pathIndexFromSegment(match[2]);
-  return rowIndex === null ? null : { rowIndex, tablePath };
-}
-
-function readContainingBlockPath(path: string) {
-  return (
-    readBlockPath(path) ??
-    readChildContainerOwnerPath(path) ??
-    readSourceOwnerPath(path) ??
-    readTableRowOwnerPath(path) ??
-    readTableCellOwnerPath(path)
-  );
-}
-
-function readChildContainerOwnerPath(path: string) {
-  return readSuffixedBlockPath(path, ".children");
-}
-
-function readSourceOwnerPath(path: string) {
-  return readSuffixedBlockPath(path, ".source");
-}
-
-function readTableRowOwnerPath(path: string) {
-  const rowPath = readTableRowPath(path);
-  return rowPath ? readBlockPath(rowPath.tablePath) : null;
-}
-
-function readTableCellOwnerPath(path: string) {
-  const cellPath = readTableCellPath(path);
-  return cellPath ? readBlockPath(cellPath.tablePath) : null;
-}
-
-function readSuffixedBlockPath(path: string, suffix: string) {
-  return path.endsWith(suffix) ? readBlockPath(path.slice(0, -suffix.length)) : null;
-}
-
-function containsBlockCoordinates(
-  ancestor: BlockPathCoordinates,
-  descendant: BlockPathCoordinates,
-) {
-  if (
-    ancestor.rootIndex !== descendant.rootIndex ||
-    ancestor.childIndices.length > descendant.childIndices.length
-  ) {
-    return false;
-  }
-
-  return ancestor.childIndices.every((childIndex, index) => {
-    return descendant.childIndices[index] === childIndex;
-  });
 }
 
 function pathIndexFromSegment(segment: string | undefined) {

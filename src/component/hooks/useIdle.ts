@@ -9,11 +9,7 @@ export type IdleState = {
   markActive: () => void;
 };
 
-type UseIdleOptions = {
-  onIdle?: () => void;
-};
-
-export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
+export function useIdle(): IdleState {
   /* Activity state */
 
   const [activeAt, setActiveAt] = useState<number | null>(null);
@@ -31,10 +27,11 @@ export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
 
   /* Animation clock */
 
-  const animationClockOriginRef = useRef(performance.now());
+  const [initialOriginAt] = useState(() => performance.now());
+  const animationOriginRef = useRef(initialOriginAt);
 
   const resolveAnimationTime = useEffectEvent(
-    (now = performance.now()) => (activeAtRef.current ?? now) - animationClockOriginRef.current,
+    (now = performance.now()) => (activeAtRef.current ?? now) - animationOriginRef.current,
   );
 
   /* Activity transitions */
@@ -43,14 +40,12 @@ export function useIdle({ onIdle }: UseIdleOptions = {}): IdleState {
     const activeAt = activeAtRef.current;
 
     if (activeAt !== null) {
-      animationClockOriginRef.current =
-        performance.now() - (activeAt - animationClockOriginRef.current);
+      animationOriginRef.current = performance.now() - (activeAt - animationOriginRef.current);
     }
 
     idleTimerRef.current = null;
     activeAtRef.current = null;
     setActiveAt(null);
-    onIdle?.();
   });
 
   const markActive = useEffectEvent(() => {

@@ -11,12 +11,9 @@ import {
 } from "@/document";
 import { resolveInlineContext, type InlineContext } from "../commands/context";
 import { effect } from "../effects";
-import type { DocumentIndex, IndexedBlock } from "../index/types";
-import {
-  resolveBlockTextPathBoundary,
-  resolveIndexedBlockContainingPath,
-  resolveIndexedText,
-} from "../index/query";
+import { resolveFragmentEndpoint, type FragmentEndpoint } from "./context";
+import type { DocumentIndex } from "../index/types";
+import { resolveBlockTextPathBoundary, resolveIndexedText } from "../index/query";
 import {
   normalizeSelection,
   type EditorSelection,
@@ -29,12 +26,6 @@ type FragmentDestinationContext = {
   prefersVerbatimFallback: boolean;
   samePath: boolean;
   structuralBlocked: boolean;
-};
-
-type DestinationEndpoint = {
-  indexedBlock: IndexedBlock;
-  path: string;
-  text: string;
 };
 
 type PasteFragmentContext = {
@@ -205,8 +196,8 @@ function resolveFragmentDestinationContext(
   selection: EditorSelection,
 ): FragmentDestinationContext | null {
   const normalized = normalizeSelection(documentIndex, selection);
-  const startEndpoint = resolveDestinationEndpoint(documentIndex, normalized.start.path);
-  const endEndpoint = resolveDestinationEndpoint(documentIndex, normalized.end.path);
+  const startEndpoint = resolveFragmentEndpoint(documentIndex, normalized.start.path);
+  const endEndpoint = resolveFragmentEndpoint(documentIndex, normalized.end.path);
 
   if (!startEndpoint || !endEndpoint) {
     return null;
@@ -231,17 +222,7 @@ function resolveFragmentDestinationContext(
   };
 }
 
-function resolveDestinationEndpoint(
-  documentIndex: DocumentIndex,
-  path: string,
-): DestinationEndpoint | null {
-  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
-  const indexedText = resolveIndexedText(documentIndex, path);
-
-  return indexedBlock && indexedText ? { indexedBlock, path, text: indexedText.text } : null;
-}
-
-function isOpaqueEndpoint(endpoint: DestinationEndpoint): boolean {
+function isOpaqueEndpoint(endpoint: FragmentEndpoint): boolean {
   return (
     endpoint.indexedBlock.block.type === "table" || endpoint.indexedBlock.block.type === "code"
   );
@@ -249,7 +230,7 @@ function isOpaqueEndpoint(endpoint: DestinationEndpoint): boolean {
 
 function cutsThroughOpaqueRoot(
   documentIndex: DocumentIndex,
-  endpoint: DestinationEndpoint,
+  endpoint: FragmentEndpoint,
   offset: number,
   boundary: "end" | "start",
   selection: NormalizedEditorSelection,
@@ -267,7 +248,7 @@ function cutsThroughOpaqueRoot(
 
 function isRootBoundary(
   documentIndex: DocumentIndex,
-  endpoint: DestinationEndpoint,
+  endpoint: FragmentEndpoint,
   offset: number,
   boundary: "end" | "start",
 ): boolean {

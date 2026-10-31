@@ -8,8 +8,8 @@
  * comment-directive parsing live in sibling modules.
  *
  * The `MarkdownLineCursor` primitive and the shared cursor/line helpers
- * (`currentLine`, `peekLine`, `isBlankLine`, `sliceIndentedContent`) live
- * here because every parser module consumes them.
+ * (`currentLine`, `peekLine`, `isBlankLine`) live here because every parser
+ * module consumes them.
  */
 
 import type { Document, DocumentMetadata, Fragment } from "@/document";
@@ -117,8 +117,4 @@ export function isBlankLine(line: string) {
   }
 
   return true;
-}
-
-export function sliceIndentedContent(line: string, indent: number) {
-  return line.slice(indent);
 }

@@ -268,16 +268,12 @@ export function rebuildListItemBlock(block: ListItemBlock, children: Block[]): L
   });
 }
 
-export function rebuildListBlock(
-  block: ListBlock,
-  items: ListItemBlock[],
-  overrides: Partial<Pick<ListBlock, "compact" | "ordered" | "start">> = {},
-): ListBlock {
+export function rebuildListBlock(block: ListBlock, items: ListItemBlock[]): ListBlock {
   return createListBlock({
-    compact: overrides.compact ?? block.compact,
+    compact: block.compact,
     items,
-    ordered: overrides.ordered ?? block.ordered,
-    start: overrides.start ?? block.start,
+    ordered: block.ordered,
+    start: block.start,
   });
 }
 

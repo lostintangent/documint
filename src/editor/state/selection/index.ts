@@ -23,6 +23,8 @@ export type NormalizedEditorSelection = {
   start: EditorSelectionPoint;
 };
 
+// A text range within one editor path. Shared by single-path selections,
+// search matches, comment capture, and text-range command targets.
 export type EditorSelectionRange = {
   endOffset: number;
   path: string;

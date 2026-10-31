@@ -1,6 +1,6 @@
 // Owns the low-level primitives every text painter draws through. Text runs,
-// decorations, and effects all paint into glyph space; they share three jobs:
-//   - drawing a colored or rounded background behind glyph rows
+// decorations, and effects all paint into glyph space; they share two jobs:
+//   - drawing a colored background behind glyph rows
 //     (`paintTextBackground`)
 //   - re-drawing text glyphs at a new color clipped to a sub-range, with
 //     optional glyph erase first (`paintClippedTextOverlay`)
@@ -12,21 +12,10 @@ import { resolveCenteredTextBaseline, resolveFontMetrics } from "@/editor/text/m
 export const textDecorationMinimumWidth = 2;
 export const textDecorationThickness = 1.25;
 
-export const editableTextBackgroundGeometry = {
-  bottomPadding: 1,
-  cornerRadius: 0,
-  horizontalPadding: 1,
-  topPadding: 2,
-  verticalNudge: -1,
-} as const;
-
-export type TextBackgroundGeometry = {
-  bottomPadding: number;
-  cornerRadius: number;
-  horizontalPadding: number;
-  topPadding: number;
-  verticalNudge: number;
-};
+const textBackgroundBottomPadding = 1;
+const textBackgroundHorizontalPadding = 1;
+const textBackgroundTopPadding = 2;
+const textBackgroundVerticalNudge = -1;
 
 export function resolveStrikethroughTop(textBaseline: number, lineHeight: number, font: string) {
   const { ascent } = resolveFontMetrics(font);
@@ -50,34 +39,15 @@ export function paintTextBackground(
   right: number,
   textBaseline: number,
   color: string,
-  geometry: TextBackgroundGeometry,
 ) {
-  const backgroundBounds = resolveTextBackgroundBounds(
-    context,
-    left,
-    right,
-    textBaseline,
-    geometry,
-  );
+  const backgroundBounds = resolveTextBackgroundBounds(context, left, right, textBaseline);
 
   context.fillStyle = color;
-  if (geometry.cornerRadius <= 0) {
-    context.fillRect(
-      backgroundBounds.left,
-      backgroundBounds.top,
-      backgroundBounds.width,
-      backgroundBounds.height,
-    );
-    return;
-  }
-
-  paintRoundedRect(
-    context,
+  context.fillRect(
     backgroundBounds.left,
     backgroundBounds.top,
     backgroundBounds.width,
     backgroundBounds.height,
-    geometry.cornerRadius,
   );
 }
 
@@ -133,38 +103,24 @@ export function paintClippedTextOverlay(
   context.restore();
 }
 
-function paintRoundedRect(
-  context: CanvasRenderingContext2D,
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  if (width <= 0 || height <= 0) {
-    return;
-  }
-
-  context.beginPath();
-  context.roundRect(left, top, width, height, Math.min(radius, width / 2, height / 2));
-  context.fill();
-}
-
 function resolveTextBackgroundBounds(
   context: CanvasRenderingContext2D,
   left: number,
   right: number,
   textBaseline: number,
-  geometry: TextBackgroundGeometry,
 ) {
   const fontMetrics = resolveFontMetrics(context.font);
-  const paddedLeft = left - geometry.horizontalPadding;
-  const paddedRight = right + geometry.horizontalPadding;
+  const paddedLeft = left - textBackgroundHorizontalPadding;
+  const paddedRight = right + textBackgroundHorizontalPadding;
 
   return {
-    height: fontMetrics.ascent + fontMetrics.descent + geometry.topPadding + geometry.bottomPadding,
+    height:
+      fontMetrics.ascent +
+      fontMetrics.descent +
+      textBackgroundTopPadding +
+      textBackgroundBottomPadding,
     left: paddedLeft,
-    top: textBaseline - fontMetrics.ascent - geometry.topPadding + geometry.verticalNudge,
+    top: textBaseline - fontMetrics.ascent - textBackgroundTopPadding + textBackgroundVerticalNudge,
     width: Math.max(0, paddedRight - paddedLeft),
   };
 }

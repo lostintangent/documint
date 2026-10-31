@@ -20,6 +20,7 @@ import {
   resolveRootBlock,
 } from "../../../index/query";
 import type { DocumentIndex, IndexedBlock } from "../../../index/types";
+import type { DeletionDirection } from "../../../effects";
 import type { EditorStateAction } from "../../../types";
 import { target, type SelectionTarget } from "../../../selection";
 
@@ -66,8 +67,6 @@ import { target, type SelectionTarget } from "../../../selection";
 //   - "absorber" — the path that survives. For content merges it
 //                  also receives the victim's inline children.
 
-export type DeleteDirection = "backward" | "forward";
-
 type BoundaryPathContext = {
   block: Block;
   blockPath: string;
@@ -85,7 +84,7 @@ export function resolveInFlowBoundaryDelete(
   documentIndex: DocumentIndex,
   path: string,
   empty: boolean,
-  direction: DeleteDirection,
+  direction: DeletionDirection,
 ): EditorStateAction | null {
   const current = resolveBoundaryPathContext(documentIndex, path);
   if (!current) {
@@ -119,7 +118,7 @@ export function resolveInFlowBoundaryDelete(
 function resolveAdjacentInertBlock(
   documentIndex: DocumentIndex,
   current: BoundaryPathContext,
-  direction: DeleteDirection,
+  direction: DeletionDirection,
 ): IndexedBlock | null {
   const adjacent =
     direction === "backward"
@@ -132,7 +131,7 @@ function resolveAdjacentInertBlock(
 function resolveAdjacentBoundaryPathContext(
   documentIndex: DocumentIndex,
   path: string,
-  direction: DeleteDirection,
+  direction: DeletionDirection,
 ): BoundaryPathContext | null {
   const adjacentPath = resolveAdjacentEditorPathWithTextInFlow(
     documentIndex,
@@ -171,7 +170,7 @@ function resolveBoundaryPathContext(
 function resolveBoundaryMerge(
   current: BoundaryPathContext,
   neighbor: BoundaryPathContext,
-  direction: DeleteDirection,
+  direction: DeletionDirection,
 ): BoundaryMerge | null {
   const victim = direction === "backward" ? current : neighbor;
   const absorber = direction === "backward" ? neighbor : current;
@@ -189,7 +188,7 @@ function resolveBoundaryMerge(
 function resolveInertNeighborCollapse(
   current: BoundaryPathContext,
   inertBlock: IndexedBlock,
-  direction: DeleteDirection,
+  direction: DeletionDirection,
 ): EditorStateAction | null {
   if (!isRootIndexedBlock(inertBlock)) return null;
 
@@ -222,7 +221,7 @@ function resolveEmptyCollapse(
   documentIndex: DocumentIndex,
   victim: BoundaryPathContext,
   absorber: BoundaryPathContext,
-  direction: DeleteDirection,
+  direction: DeletionDirection,
 ): EditorStateAction | null {
   const victimRoot = resolveRootBlock(documentIndex, victim.rootIndex);
   if (!victimRoot) return null;

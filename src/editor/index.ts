@@ -8,17 +8,14 @@ export {
   moveCaretVertically,
   extendSelectionToPoint,
   isCanvasDirectActivationTarget,
-  resolveDragFocus,
   resolveEditorSearchMatches,
+  resolveHoverTarget,
   resolveSelectionPointAt,
-  resolveTargetAtOffset,
   resolveWordSelection,
   setSelectionAtPoint,
   updateSelectionFromDrag,
   type EditorHoverTarget,
   type EditorNavigationMode,
-  type EditorNavigationOptions,
-  type EditorSearchMatch,
 } from "./navigation";
 
 // Layout — viewport composition (aliased to public names)
@@ -52,10 +49,17 @@ export {
   createResourceIconSignature,
   createResourceReference,
   hasActiveResourcesInViewport,
-  resolveInlineResource,
   resolveResource,
+  type DocumentImageResource,
+  type DocumentResourceIcon,
+  type DocumentResourceIconNode,
+  type DocumentResourceIconNodeElement,
+  type DocumentResourceProtocol,
+  type DocumentResourceReference,
+  type DocumentResourceRegistry,
+  type DocumentResources,
+  type DocumentResourceVectorIcon,
 } from "./resources";
-export type { ResolvedResource } from "./resources";
 
 // State lifecycle, selection, and commands
 export {
@@ -76,7 +80,6 @@ export {
   resolveImageAtSelection,
   setSelection,
   takeEditorEffects,
-  type CaretTextContext,
   type DocumentIndex,
   type EditorEffect,
   type IndexedInline,
@@ -87,25 +90,11 @@ export {
   type NormalizedEditorSelection,
   type SelectionContext,
   type SelectionFormatting,
-  type TextRangeTarget,
 } from "./state";
 
-import {
-  resolveHoverTarget as resolveNavigationHoverTarget,
-  resolveTargetAtOffset,
-} from "./navigation";
-import { type EditorLayoutState, type EditorPoint } from "./layout";
-import { getCommentState, type EditorCommentRange } from "./anchors";
+import { resolveTargetAtOffset } from "./navigation";
+import { getCommentState } from "./anchors";
 import type { EditorSelectionPoint, EditorState } from "./state";
-
-export function resolveHoverTarget(
-  state: EditorState,
-  viewport: EditorLayoutState,
-  point: EditorPoint,
-  commentRanges: readonly EditorCommentRange[] = getCommentState(state).ranges,
-) {
-  return resolveNavigationHoverTarget(state, viewport, point, commentRanges);
-}
 
 // Offset-based sibling of `resolveHoverTarget`. The callers we have here
 // (selection-driven UI surfacing) don't have a layout point, just a known
@@ -116,7 +105,7 @@ export function resolveTargetAtSelection(state: EditorState, selectionPoint: Edi
     state,
     selectionPoint.path,
     selectionPoint.offset,
-    getCommentState(state).ranges,
+    getCommentState(state.documentIndex).ranges,
   );
 }
 
@@ -129,9 +118,11 @@ export {
   resolveCursorViewportStatus,
   resolvePresenceTargets,
   resolvePresenceViewport,
+  type DocumentPresence,
+  type DocumentUser,
+  type DocumentUserPresence,
   type EditorCommentRange,
   type EditorCommentState,
   type EditorPresence,
   type EditorPresenceViewport,
-  type EditorPresenceViewportStatus,
 } from "./anchors";

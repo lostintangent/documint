@@ -17,6 +17,9 @@ export type LeafInputActions =
       onCancel: () => void;
       onSave: () => void;
       saveDisabled?: boolean;
+      // Single-value edits (like a link URL) save on Enter instead of
+      // inserting a newline.
+      saveOnEnter?: boolean;
     }
   | {
       kind: "compose";
@@ -33,8 +36,6 @@ type LeafInputProps = {
   placeholder?: string;
   readOnly?: boolean;
   ref?: RefObject<HTMLTextAreaElement | null>;
-  rows?: number;
-  saveOnEnter?: boolean;
   value: string;
 };
 
@@ -46,15 +47,12 @@ export function LeafInput({
   placeholder,
   readOnly = false,
   ref,
-  rows = 3,
-  saveOnEnter = false,
   value,
 }: LeafInputProps) {
   const fallbackRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaRef = ref ?? fallbackRef;
 
   const {
-    activeCompletion,
     anchor: completionAnchor,
     handleBlur,
     handleChange,
@@ -66,24 +64,21 @@ export function LeafInput({
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Completion popover gets first crack at navigation keys.
     if (handleCompletionKeyDown(event)) return;
+    if (actions.kind !== "edit") return;
 
-    if (event.key === "Escape" && actions.kind === "edit") {
+    if (event.key === "Escape") {
       event.preventDefault();
       actions.onCancel();
       return;
     }
 
-    if (event.key === "Enter" && saveOnEnter) {
+    if (event.key === "Enter" && actions.saveOnEnter) {
       event.preventDefault();
-      if (actions.kind === "edit" && !actions.saveDisabled) {
+      if (!actions.saveDisabled) {
         actions.onSave();
-      } else if (actions.kind === "compose" && !actions.submitDisabled) {
-        actions.onSubmit();
       }
     }
   };
-
-  const showCompletion = activeCompletion && completionAnchor && leafProps;
 
   return (
     <div className="relative w-full min-w-0">
@@ -97,11 +92,11 @@ export function LeafInput({
         placeholder={placeholder}
         readOnly={readOnly}
         ref={textareaRef}
-        rows={rows}
+        rows={3}
         value={value}
       />
       {renderActions(actions)}
-      {showCompletion && (
+      {completionAnchor && leafProps && (
         <DocumentAnchor anchor={completionAnchor}>
           <CompletionLeaf {...leafProps} />
         </DocumentAnchor>

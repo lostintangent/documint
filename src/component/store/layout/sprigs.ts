@@ -10,7 +10,7 @@ const renderedLayoutSource: SprigSource<EditorLayoutState | null> = {
 
 export const renderedLayoutSprig = createSourceSprig(renderedLayoutSource, (state) => state);
 
-export type RenderedViewportSize = {
+type RenderedViewportSize = {
   height: number;
   width: number;
 };

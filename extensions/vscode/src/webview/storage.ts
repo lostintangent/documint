@@ -1,9 +1,8 @@
-import { useEffect } from "react";
 import type { DocumintStorage } from "@lostintangent/documint";
-import type { HostMessage, WebviewMessage } from "../../types";
-import { vscode } from "../vscode";
+import type { HostMessage, WebviewMessage } from "../types";
+import { vscode } from "./vscode";
 
-const storage: DocumintStorage = {
+export const storage: DocumintStorage = {
   async readFile(filePath) {
     const { data, mimeType } = await sendRequest<"read-result">((id) => ({
       type: "read-path",
@@ -33,27 +32,20 @@ const storage: DocumintStorage = {
   },
 };
 
-export function useStorage(): DocumintStorage {
-  useEffect(() => {
-    const handleMessage = ({ data }: MessageEvent<HostMessage>) => {
-      if (!("id" in data)) return;
-
-      const resolveRequest = pendingRequests.get(data.id);
-      if (!resolveRequest) return;
-
-      pendingRequests.delete(data.id);
-      resolveRequest(data);
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  return storage;
-}
-
 const pendingRequests = new Map<string, (message: HostMessage) => void>();
 let requestSequence = 0;
+
+// The webview lives as long as this module, so the response listener never
+// needs removing.
+window.addEventListener("message", ({ data }: MessageEvent<HostMessage>) => {
+  if (!("id" in data)) return;
+
+  const resolveRequest = pendingRequests.get(data.id);
+  if (!resolveRequest) return;
+
+  pendingRequests.delete(data.id);
+  resolveRequest(data);
+});
 
 const sendRequest = <TType extends "read-result" | "write-result">(
   createMessage: (id: string) => Extract<WebviewMessage, { id: string }>,

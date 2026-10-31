@@ -80,8 +80,12 @@ export function applyRootDelta(
       ? prev.commentContainerIndex
       : createCommentContainerIndex(nextDocument),
     document: nextDocument,
-    imageUrls: createDocumentImageUrls(positionedRoots, prev?.imageUrls),
-    resourceUrls: createDocumentResourceUrls(positionedRoots, prev?.resourceUrls),
+    imageUrls: createDocumentUrlSet(positionedRoots, prev?.imageUrls, (root) => root.imageUrls),
+    resourceUrls: createDocumentUrlSet(
+      positionedRoots,
+      prev?.resourceUrls,
+      (root) => root.resourceUrls,
+    ),
     listItems: createDocumentListItems(positionedRoots, prev?.listItems),
     roots: positionedRoots,
     tableCellIndex,
@@ -136,28 +140,13 @@ function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document)
       ? prev.commentContainerIndex
       : createCommentContainerIndex(nextDocument),
     document: nextDocument,
-    listItems: prev.listItems,
   };
 }
 
 // URL projections -----------------------------------------------------------
 
-// Builds the document-level union of image URLs from per-root sets, reusing
-// the previous index's reference when the URL set is unchanged.
-function createDocumentImageUrls(
-  roots: IndexedRoot[],
-  previous: ReadonlySet<string> | undefined,
-): ReadonlySet<string> {
-  return createDocumentUrlSet(roots, previous, (root) => root.imageUrls);
-}
-
-function createDocumentResourceUrls(
-  roots: IndexedRoot[],
-  previous: ReadonlySet<string> | undefined,
-): ReadonlySet<string> {
-  return createDocumentUrlSet(roots, previous, (root) => root.resourceUrls);
-}
-
+// Builds a document-level union of URLs from per-root sets, reusing the
+// previous index's reference when the URL set is unchanged.
 function createDocumentUrlSet(
   roots: IndexedRoot[],
   previous: ReadonlySet<string> | undefined,

@@ -16,7 +16,6 @@ import {
   findBlockChildIndicesByReference,
   spliceCommentThreads,
   spliceDocument,
-  trimTrailingWhitespace,
   type Block,
   type Document,
 } from "@/document";
@@ -67,7 +66,7 @@ export function createDocumentFromEditorState(state: EditorState) {
   const commentState = getCommentState(state.documentIndex);
 
   return createDocument(
-    trimTrailingWhitespace(state.documentIndex.document.blocks),
+    state.documentIndex.document.blocks,
     commentState.threads,
     state.documentIndex.document.metadata,
   );
@@ -388,7 +387,7 @@ export function setSelectionPoint(
 
 /* History */
 
-export function pushHistory(state: EditorState, documentIndex: DocumentIndex): EditorState {
+function pushHistory(state: EditorState, documentIndex: DocumentIndex): EditorState {
   const point = resolveDefaultSelectionPoint(documentIndex);
 
   return {

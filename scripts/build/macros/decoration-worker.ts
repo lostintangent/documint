@@ -1,18 +1,10 @@
 import { join } from "node:path";
+import { isMacroChild, projectRoot, runMacroChild } from "./child";
 
-const projectRoot = join(import.meta.dir, "../../..");
 const entrypoint = join(projectRoot, "src/component/decorations/worker/index.ts");
 
 export function bundleDecorationWorker(): string {
-  // Bun forbids nested builds inside macros, so the worker bundles in a child.
-  const child = Bun.spawnSync(["bun", "run", import.meta.path, "--compile"], {
-    cwd: projectRoot,
-  });
-  if (child.exitCode !== 0) {
-    process.stderr.write(child.stderr);
-    throw new Error("Decoration worker failed to bundle.");
-  }
-  return new TextDecoder().decode(child.stdout);
+  return runMacroChild(import.meta.path, "Decoration worker failed to bundle.");
 }
 
 async function emitDecorationWorker(): Promise<void> {
@@ -31,4 +23,4 @@ async function emitDecorationWorker(): Promise<void> {
   process.stdout.write(await output.text());
 }
 
-if (process.argv.includes("--compile")) await emitDecorationWorker();
+if (isMacroChild) await emitDecorationWorker();

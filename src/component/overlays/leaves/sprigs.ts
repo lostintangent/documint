@@ -96,10 +96,8 @@ const equalLinkLeaf = (a: LinkLeaf, b: LinkLeaf): boolean =>
 
 const equalTableLeaf = (a: TableLeaf, b: TableLeaf): boolean =>
   areDocumentAnchorTargetsEqual(a, b) &&
-  a.cellIndex === b.cellIndex &&
   a.columnCount === b.columnCount &&
-  a.rowCount === b.rowCount &&
-  a.rowIndex === b.rowIndex;
+  a.rowCount === b.rowCount;
 
 // Thread identity equality is load-bearing: threads in this codebase are
 // immutable, so reference identity captures any meaningful change. If
@@ -143,17 +141,22 @@ function equalPointerViews(previous: PointerView, next: PointerView) {
 /* Sprigs */
 
 export const selectionLeafSprig = createParameterizedSprig(
-  [selectionRangeSprig, selectionFormattingSprig, selectionHandlesSprig, commentThreadsSprig],
+  [
+    editorStateSprig,
+    selectionRangeSprig,
+    selectionFormattingSprig,
+    selectionHandlesSprig,
+    commentThreadsSprig,
+  ],
   (
     _store,
     [promotedThread]: readonly [PromotedSelectionThread | null],
+    state,
     selectionRange,
     formatting,
     handles,
     threads,
   ): SelectionLeaf | null => {
-    const state = _store.editor.getState();
-
     if (isMetadataPath(state.selection.anchor.path) || isMetadataPath(state.selection.focus.path)) {
       return null;
     }
@@ -354,14 +357,12 @@ function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableL
   return textLeft !== null
     ? {
         anchor: focus,
-        cellIndex: tableCell.cellIndex,
         columnCount,
         kind: "table",
         // The cell's text-area edge isn't a caret position, so override the
         // host's default left (caret-x at the anchor).
         leftOverride: textLeft,
         rowCount: blockEntry.block.rows.length,
-        rowIndex: tableCell.rowIndex,
       }
     : null;
 }

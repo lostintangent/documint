@@ -1,48 +1,41 @@
-import { indexedTextEntries } from "@test/editor/helpers";
 // Frame-level renderer tests. These assert the paint contract produced by
 // `createDocumentFrame` / `createOverlayFrame` before any canvas operations run.
 
 import { describe, expect, test } from "bun:test";
 import { compareDocuments } from "@/document";
-import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
-import { createEditorLayoutState } from "@/editor/layout";
-import {
-  createEditorState,
-  normalizeSelection,
-  resolveIndexedBlockContainingPath,
-  setSelection,
-  type EditorState,
-} from "@/editor/state";
-import type { DocumintEffects, DocumentResources, ResolvedEditorTheme } from "@/types";
-import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
-import { parseDocument, type MarkdownOptions } from "@/markdown";
-import {
-  createDocumentFrame,
-  createOverlayFrame,
-  type DocumentFrame,
-  type RendererEffect,
-} from "@/renderer";
+import type { EditorCommentRange } from "@/editor/anchors";
+import { createEditorState, setSelection } from "@/editor/state";
+import { parseDocument } from "@/markdown";
+import type { DocumentFrame, RendererEffect } from "@/renderer";
 import type { EffectPolicy } from "@/renderer/effects";
 import type { DocumentFrameLine } from "@/renderer/frame";
-import { emptyDocumentResources } from "@/editor/resources";
-import { setup } from "../editor/helpers";
-import { liveDocumentChangeAt } from "./helpers";
-
-const resolvedLightTheme = resolveEditorTheme(lightTheme);
+import {
+  createPresence,
+  createResources,
+  getPath,
+  getPathByType,
+  placeAt,
+  selectIn,
+  setup,
+} from "../editor/helpers";
+import {
+  createTestDocumentFrame,
+  createTestOverlayFrame,
+  liveDocumentChangeAt,
+  resolvedLightTheme,
+} from "./helpers";
 
 describe("DocumentFrame line text rows", () => {
   test("resolves text segments as frame rows for text, code, mentions, resources, and images", () => {
-    const resources = createResourceFixture({
-      activeResources: ["demo-resource://recording/live"],
-      images: [["https://example.com/image.png", { height: 90, width: 160 }]],
+    const resources = createResources({
+      active: ["demo-resource://recording/live"],
+      images: { "https://example.com/image.png": { height: 90, width: 160 } },
     });
-    const state = createState(
+    const state = setup(
       "Hello `code` @[Jane Doe](user-123) [Recording](demo-resource://recording/live) ![Alt](https://example.com/image.png)\n",
-      {
-        resourceProtocols: ["demo-resource:"],
-      },
+      { resourceProtocols: ["demo-resource:"] },
     );
-    const frame = createTestDocumentFrame(state, { resources, width: 760 });
+    const { frame } = createTestDocumentFrame(state, { resources, width: 760 });
     const line = lineFrameContaining(frame, "Hello");
 
     expect(line.segments.map((segment) => segment.atom)).toEqual([
@@ -87,18 +80,16 @@ describe("DocumentFrame line text rows", () => {
 describe("DocumentFrame line range rows", () => {
   test("skips selection highlight rows for collapsed selections", () => {
     const state = setup("alpha\n\nbeta\n");
-    const frame = createTestDocumentFrame(state);
+    const { frame } = createTestDocumentFrame(state);
 
     expect(frame.lines.every((line) => line.selectionHighlight === null)).toBe(true);
   });
 
   test("clips selection and comment highlights into line range frame rows", () => {
     let state = setup("alpha\n\nbeta\n\ngamma\n");
-    const [first, second, third] = indexedTextEntries(state);
-
-    if (!first || !second || !third) {
-      throw new Error("Expected three paragraph paths");
-    }
+    const first = getPath(state, "alpha");
+    const second = getPath(state, "beta");
+    const third = getPath(state, "gamma");
 
     state = setSelection(state, {
       anchor: { path: first.path, offset: 2 },
@@ -109,14 +100,13 @@ describe("DocumentFrame line range rows", () => {
       {
         endOffset: 3,
         path: second.path,
-        resolution: { match: null, repair: null, status: "stale" },
         resolved: false,
         startOffset: 1,
         threadIndex: 7,
       },
     ];
-    const frame = createTestDocumentFrame(state, {
-      commentPresence: new Map([[7, createPresence(7, "#f97316")]]),
+    const { frame } = createTestDocumentFrame(state, {
+      commentPresence: new Map([[7, createPresence({ color: "#f97316", commentThreadIndex: 7 })]]),
       commentRanges,
     });
     const firstLine = lineFrameForPath(frame, first.path);
@@ -138,53 +128,16 @@ describe("DocumentFrame line range rows", () => {
 });
 
 describe("DocumentFrame effect policy", () => {
-  test("forwards custom effect policy into frame lines", () => {
+  const textInsertedPolicy: EffectPolicy = {
+    duration: (effect) => (effect.kind === "text-inserted" ? 1000 : null),
+  };
+
+  test.each([
+    { label: "a custom effect policy", options: { effectPolicy: textInsertedPolicy } },
+    { label: "a matching custom handler", options: { customEffects: { textInserted() {} } } },
+  ])("keeps default-skipped effects active in frame lines with $label", ({ options }) => {
     const state = setup("alpha 🔥\n");
-    const path = indexedTextEntries(state)[0];
-
-    if (!path) {
-      throw new Error("Expected paragraph path");
-    }
-
-    const effect: RendererEffect = {
-      kind: "text-inserted",
-      text: "🔥",
-      contentKind: "inlines",
-      path: path.path,
-      startOffset: path.text.indexOf("🔥"),
-      endOffset: path.text.length,
-      startedAt: 100,
-    };
-    const effectPolicy: EffectPolicy = {
-      duration: (currentEffect) => (currentEffect.kind === "text-inserted" ? 1000 : null),
-    };
-
-    const defaultFrame = createTestDocumentFrame(state, {
-      effects: [effect],
-      now: 110,
-    });
-    const customFrame = createTestDocumentFrame(state, {
-      effectPolicy,
-      effects: [effect],
-      now: 110,
-    });
-
-    expect(defaultFrame.effects).toEqual([]);
-    expect(customFrame.effects).toEqual([effect]);
-    expect(lineFrameForPath(defaultFrame, path.path).textHighlights).toEqual([]);
-    expect(lineFrameForPath(customFrame, path.path).textHighlights).toEqual([
-      expect.objectContaining({ startOffset: effect.startOffset, endOffset: effect.endOffset }),
-    ]);
-  });
-
-  test("keeps default-skipped effects active when a matching custom handler exists", () => {
-    const state = setup("alpha 🔥\n");
-    const path = indexedTextEntries(state)[0];
-
-    if (!path) {
-      throw new Error("Expected paragraph path");
-    }
-
+    const path = getPath(state, "alpha 🔥");
     const effect: RendererEffect = {
       kind: "text-inserted",
       text: "🔥",
@@ -195,14 +148,12 @@ describe("DocumentFrame effect policy", () => {
       startedAt: 100,
     };
 
-    const defaultFrame = createTestDocumentFrame(state, {
+    const { frame: defaultFrame } = createTestDocumentFrame(state, {
       effects: [effect],
       now: 110,
     });
-    const customFrame = createTestDocumentFrame(state, {
-      customEffects: {
-        textInserted: () => {},
-      },
+    const { frame: customFrame } = createTestDocumentFrame(state, {
+      ...options,
       effects: [effect],
       now: 110,
     });
@@ -219,15 +170,11 @@ describe("DocumentFrame effect policy", () => {
 describe("DocumentFrame chrome and block rows", () => {
   test("document-change backgrounds stay separate from active block backgrounds", () => {
     let state = setup("alpha\n\nbeta\n");
-    const first = indexedTextEntries(state)[0];
+    const first = getPath(state, "alpha");
 
-    if (!first) {
-      throw new Error("Expected first path");
-    }
-
-    state = setSelection(state, { path: first.path, offset: 0 });
+    state = placeAt(state, first, "start");
     const change = liveDocumentChangeAt(state, "old\n\nbeta\n", first.blockPath, "change-alpha");
-    const frame = createTestDocumentFrame(state, {
+    const { frame } = createTestDocumentFrame(state, {
       documentChanges: [change],
       effects: [
         {
@@ -253,14 +200,9 @@ describe("DocumentFrame chrome and block rows", () => {
 
   test("document-change backgrounds keep steady color after the fade effect expires", () => {
     const state = setup("alpha\n\nbeta\n");
-    const first = indexedTextEntries(state)[0];
-
-    if (!first) {
-      throw new Error("Expected first path");
-    }
-
+    const first = getPath(state, "alpha");
     const change = liveDocumentChangeAt(state, "old\n\nbeta\n", first.blockPath, "change-alpha");
-    const frame = createTestDocumentFrame(state, {
+    const { frame } = createTestDocumentFrame(state, {
       documentChanges: [change],
       effects: [
         {
@@ -285,14 +227,9 @@ describe("DocumentFrame chrome and block rows", () => {
 | - | - |
 | one | two |
 `);
-    const cell = indexedTextEntries(state).find((path) => path.text === "two");
-
-    if (!cell) {
-      throw new Error("Expected table cell path");
-    }
-
+    const cell = getPath(state, "two");
     const change = liveDocumentChangeAt(state, "| A | B |\n| - | - |\n", cell.path, "change-cell");
-    const frame = createTestDocumentFrame(state, {
+    const { frame } = createTestDocumentFrame(state, {
       documentChanges: [change],
       effects: [
         {
@@ -319,13 +256,8 @@ describe("DocumentFrame chrome and block rows", () => {
       parseDocument("before\n\nafter\n"),
     );
     const state = createEditorState(comparison.document);
-    const removed = indexedTextEntries(state).find((path) => path.text === "removed");
-
-    if (!removed) {
-      throw new Error("Expected deleted block");
-    }
-
-    const frame = createTestDocumentFrame(state, {
+    const removed = getPath(state, "removed");
+    const { frame } = createTestDocumentFrame(state, {
       documentChanges: comparison.changes,
     });
 
@@ -336,14 +268,14 @@ describe("DocumentFrame chrome and block rows", () => {
   });
 
   test("renders list markers only on the primary line for mixed list-item children", () => {
-    const state = createState(`1. Review and iterate until the guide satisfies the standard:
+    const state = setup(`1. Review and iterate until the guide satisfies the standard:
 
    - For source-grounded changes
    - Make one bloat-removal pass
 
    Take only feedback that fixes a real contradiction.
 `);
-    const frame = createTestDocumentFrame(state, { width: 720 });
+    const { frame } = createTestDocumentFrame(state, { width: 720 });
     const parentLine = lineFrameContaining(frame, "Review and iterate");
     const nestedFirstLine = lineFrameContaining(frame, "For source-grounded changes");
     const nestedSecondLine = lineFrameContaining(frame, "Make one bloat-removal pass");
@@ -363,19 +295,11 @@ describe("DocumentFrame chrome and block rows", () => {
 | --- | --- | --- |
 | one | two | three |
 `);
-    const activePath = indexedTextEntries(state).find((path) => path.text === "Active");
+    const activePath = getPath(state, "Active");
 
-    if (!activePath) {
-      throw new Error("Expected active table cell path");
-    }
+    state = placeAt(state, activePath, 1);
 
-    state = setSelection(state, { path: activePath.path, offset: 1 });
-
-    const frame = createTestDocumentFrame(state, {
-      activeBlockPath: activePath.blockPath,
-      activePath: activePath.path,
-      width: 480,
-    });
+    const { frame } = createTestDocumentFrame(state, { width: 480 });
 
     expect(frame.chrome.activeTableCellGeometry).not.toBeNull();
     expect(frame.chrome.activeTableCellGeometry?.bands.length).toBeGreaterThan(0);
@@ -390,26 +314,23 @@ describe("DocumentFrame chrome and block rows", () => {
 
   test("resolves code chrome once while keeping code text rows paint-ready", () => {
     let state = setup("```ts\nconst value = 1;\nconst next = 2;\n```\n");
-    const path = indexedTextEntries(state)[0];
+    const path = getPathByType(state, "code");
 
-    if (!path) {
-      throw new Error("Expected code path");
-    }
+    state = placeAt(state, path, 2);
 
-    state = setSelection(state, { path: path.path, offset: 2 });
-
-    const frame = createTestDocumentFrame(state, {
-      activeBlockPath: path.blockPath,
-      width: 320,
-    });
+    const { frame } = createTestDocumentFrame(state, { width: 320 });
     const codeLines = frame.lines.filter((line) => line.layoutLine.path === path.path);
 
     expect(codeLines).toHaveLength(2);
     expect(codeLines.filter((line) => line.containerBackground?.kind === "code")).toHaveLength(1);
-    expect(codeLines[0]?.activeBlockBackground?.rect).toMatchObject({
-      left: codeLines[0].containerBackground?.rect.left,
-      width: codeLines[0].containerBackground?.rect.width,
-    });
+    const activeRect = codeLines[0]!.activeBlockBackground!.rect;
+    const backgroundRect = codeLines[0]!.containerBackground!.rect;
+
+    expect(activeRect).toMatchObject({ left: backgroundRect.left, width: backgroundRect.width });
+    // The active tint sits centered inside the code background padding.
+    expect(activeRect.top - backgroundRect.top).toBe(
+      backgroundRect.top + backgroundRect.height - (activeRect.top + activeRect.height),
+    );
     expect(codeLines[1]?.activeBlockBackground).toBeNull();
     expect(codeLines.every((line) => line.segments.length === 1)).toBe(true);
     expect(codeLines.every((line) => line.defaultTextColor === resolvedLightTheme.codeText)).toBe(
@@ -421,24 +342,14 @@ describe("DocumentFrame chrome and block rows", () => {
 describe("OverlayFrame caret rows", () => {
   test("resolves overlay caret rows before overlay painting", () => {
     let state = setup("alpha beta gamma\n");
-    const path = indexedTextEntries(state)[0];
+    const path = getPath(state, "alpha beta gamma");
 
-    if (!path) {
-      throw new Error("Expected paragraph path");
-    }
-
-    state = setSelection(state, {
-      anchor: { path: path.path, offset: 1 },
-      focus: { path: path.path, offset: 5 },
-    });
+    state = selectIn(state, path, 1, 5);
 
     const frame = createTestOverlayFrame(state, {
       presence: [
-        createPresence(1, "#0ea5e9", {
-          offset: 7,
-          path: path.path,
-        }),
-        createPresence(2, "#f97316", null),
+        createPresence({ color: "#0ea5e9", cursorPoint: { offset: 7, path: path.path } }),
+        createPresence({ color: "#f97316", commentThreadIndex: 2 }),
       ],
     });
 
@@ -449,107 +360,6 @@ describe("OverlayFrame caret rows", () => {
     expect(frame.carets[0]!.height).toBeGreaterThan(0);
   });
 });
-
-function createState(markdown: string, options: MarkdownOptions = {}) {
-  return createEditorState(parseDocument(markdown, options));
-}
-
-function createTestDocumentFrame(
-  state: EditorState,
-  {
-    activeBlockPath,
-    activePath = state.selection.focus.path,
-    activeThreadIndex = null,
-    commentPresence,
-    commentRanges = [],
-    customEffects,
-    effectPolicy,
-    effects,
-    documentChanges,
-    height = 420,
-    now = 0,
-    resources = emptyDocumentResources,
-    theme = resolvedLightTheme,
-    width = 420,
-  }: {
-    activeBlockPath?: string | null;
-    activePath?: string | null;
-    activeThreadIndex?: number | null;
-    commentPresence?: ReadonlyMap<number, EditorPresence>;
-    commentRanges?: EditorCommentRange[];
-    customEffects?: DocumintEffects;
-    effectPolicy?: EffectPolicy;
-    effects?: readonly RendererEffect[];
-    documentChanges?: Parameters<typeof createDocumentFrame>[2]["documentChanges"];
-    height?: number;
-    now?: number;
-    resources?: DocumentResources;
-    theme?: ResolvedEditorTheme;
-    width?: number;
-  } = {},
-) {
-  const resolvedActiveBlockPath =
-    activeBlockPath ??
-    resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ??
-    null;
-  const layoutState = createEditorLayoutState(
-    state,
-    {
-      height,
-      top: 0,
-      width,
-    },
-    undefined,
-    resources,
-  );
-  return createDocumentFrame(state, layoutState, {
-    activeBlockPath: resolvedActiveBlockPath,
-    activePath,
-    activeThreadIndex,
-    commentPresence,
-    commentRanges,
-    devicePixelRatio: 1,
-    customEffects,
-    effectPolicy,
-    effects,
-    documentChanges,
-    height,
-    normalizedSelection: normalizeSelection(state),
-    now,
-    resources,
-    theme,
-    width,
-  });
-}
-
-function createTestOverlayFrame(
-  state: EditorState,
-  {
-    height = 180,
-    presence = [],
-    width = 420,
-  }: {
-    height?: number;
-    presence?: EditorPresence[];
-    width?: number;
-  } = {},
-) {
-  const layoutState = createEditorLayoutState(state, {
-    height,
-    top: 0,
-    width,
-  });
-
-  return createOverlayFrame(state, layoutState, {
-    devicePixelRatio: 1,
-    height,
-    normalizedSelection: normalizeSelection(state),
-    presence,
-    showCaret: true,
-    theme: resolvedLightTheme,
-    width,
-  });
-}
 
 function lineFrameContaining(frame: DocumentFrame, text: string): DocumentFrameLine {
   const line = frame.lines.find((candidate) => candidate.layoutLine.text.includes(text));
@@ -569,47 +379,4 @@ function lineFrameForPath(frame: DocumentFrame, path: string): DocumentFrameLine
   }
 
   return line;
-}
-
-function createResourceFixture({
-  activeResources = [],
-  images = [],
-}: {
-  activeResources?: string[];
-  images?: Array<[string, { height: number; width: number }]>;
-} = {}): DocumentResources {
-  return {
-    images: new Map(
-      images.map(([url, size]) => [
-        url,
-        {
-          intrinsicHeight: size.height,
-          intrinsicWidth: size.width,
-          source: null,
-          status: "loaded" as const,
-        },
-      ]),
-    ),
-    resourceRegistry: {
-      active: new Set(activeResources),
-      protocols: new Map([["demo-resource:", { icon: "R", label: "Demo resource" }]]),
-    },
-  };
-}
-
-function createPresence(
-  threadIndex: number,
-  color: string | null,
-  cursorPoint: EditorPresence["cursorPoint"] = null,
-): EditorPresence {
-  return {
-    color: color ?? undefined,
-    commentThreadIndex: threadIndex,
-    cursor: { prefix: "" },
-    cursorPoint,
-    id: `presence-${threadIndex}`,
-    isOnUnresolvedCommentThread: cursorPoint === null,
-    username: `Presence ${threadIndex}`,
-    viewport: null,
-  };
 }

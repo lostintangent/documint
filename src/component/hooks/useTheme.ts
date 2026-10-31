@@ -1,48 +1,21 @@
-import { useMemo, useSyncExternalStore, type CSSProperties } from "react";
-import type { EditorTheme, ResolvedEditorTheme } from "@/types";
+import { useMemo, type CSSProperties } from "react";
+import type { EditorTheme, ResolvedEditorTheme } from "@/renderer";
 import { darkTheme, lightTheme, resolveEditorTheme } from "../lib/themes";
-
-const DARK_QUERY = "(prefers-color-scheme: dark)";
+import { useMediaQuery } from "./useMediaQuery";
 
 export function useTheme(theme?: EditorTheme) {
-  const defaultTheme = useDefaultTheme(theme === undefined);
+  // The system color scheme only matters when the host omits `theme`.
+  const prefersDark = useMediaQuery("(prefers-color-scheme: dark)", theme === undefined);
   const resolvedTheme = useMemo(
-    () => resolveEditorTheme(theme ?? defaultTheme),
-    [defaultTheme, theme],
+    () => resolveEditorTheme(theme ?? (prefersDark ? darkTheme : lightTheme)),
+    [prefersDark, theme],
   );
-  const themeStyles = useMemo(() => createThemeStyles(resolvedTheme), [resolvedTheme]);
+  const themeStyles = createThemeStyles(resolvedTheme);
 
   return {
     theme: resolvedTheme,
     themeStyles,
   };
-}
-
-function useDefaultTheme(enabled: boolean): EditorTheme {
-  const dark = useSyncExternalStore(
-    enabled ? subscribeToColorScheme : ignoreColorScheme,
-    enabled ? prefersDark : preferLight,
-    preferLight,
-  );
-  return dark ? darkTheme : lightTheme;
-}
-
-function subscribeToColorScheme(onChange: () => void): () => void {
-  const media = window.matchMedia(DARK_QUERY);
-  media.addEventListener("change", onChange);
-  return () => media.removeEventListener("change", onChange);
-}
-
-function ignoreColorScheme(): () => void {
-  return () => {};
-}
-
-function prefersDark(): boolean {
-  return window.matchMedia(DARK_QUERY).matches;
-}
-
-function preferLight(): boolean {
-  return false;
 }
 
 function createThemeStyles(theme: ResolvedEditorTheme): CSSProperties {

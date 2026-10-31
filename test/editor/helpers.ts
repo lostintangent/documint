@@ -14,12 +14,14 @@ import {
   type IndexedTableCell,
   type EditorState,
 } from "@/editor/state";
-import { parseDocument, serializeDocument } from "@/markdown";
+import type { EditorPresence } from "@/editor/anchors";
+import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
 import type { Block } from "@/document";
+import type { DocumentResourceIcon, DocumentResources } from "@/editor";
 
 /** Create an editor state from a markdown string. */
-export function setup(markdown: string): EditorState {
-  return createEditorState(parseDocument(markdown));
+export function setup(markdown: string, options?: MarkdownOptions): EditorState {
+  return createEditorState(parseDocument(markdown, options));
 }
 
 /** Serialize an editor state back to a markdown string. */
@@ -175,4 +177,55 @@ export function selectSubstring(
   }
 
   return selectIn(state, path, start, start + substring.length);
+}
+
+/**
+ * Create document resources from active resource URLs, protocol icons, and
+ * loaded image sizes. Registers a `demo-resource:` protocol by default.
+ */
+export function createResources({
+  active = [],
+  images = {},
+  protocols = { "demo-resource:": "R" },
+}: {
+  active?: string[];
+  images?: Record<string, { height: number; width: number }>;
+  protocols?: Record<string, DocumentResourceIcon | undefined>;
+} = {}): DocumentResources {
+  return {
+    images: new Map(
+      Object.entries(images).map(([url, { height, width }]) => [
+        url,
+        { intrinsicHeight: height, intrinsicWidth: width, source: null, status: "loaded" },
+      ]),
+    ),
+    resourceRegistry: {
+      active: new Set(active),
+      protocols: new Map(
+        Object.entries(protocols).map(([protocol, icon]) => [
+          protocol,
+          { icon, label: "Demo resource" },
+        ]),
+      ),
+    },
+  };
+}
+
+/** Create a remote presence, optionally on a comment thread or at a cursor point. */
+export function createPresence({
+  color,
+  commentThreadIndex = null,
+  cursorPoint = null,
+}: Partial<
+  Pick<EditorPresence, "color" | "commentThreadIndex" | "cursorPoint">
+> = {}): EditorPresence {
+  return {
+    color,
+    commentThreadIndex,
+    cursorPoint,
+    id: "presence",
+    isOnUnresolvedCommentThread: commentThreadIndex !== null,
+    username: "Presence",
+    viewport: null,
+  };
 }

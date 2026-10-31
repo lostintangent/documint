@@ -1,20 +1,9 @@
-// Post-mutation canonicalization passes. Both functions here restore a
-// document tree to its canonical shape after edits that may have left it
-// fragmented or non-canonical:
-//
-//   - `defragmentTextInlines` merges adjacent same-mark text runs. Called by
-//     the markdown parser when an inline range finishes, and by editor
-//     commands after mark/link/inline-replace operations.
-//   - `trimTrailingWhitespace` strips trailing whitespace from text-block
-//     tails. Run as a save-time pre-pass before `createDocument` so the
-//     persisted form stays clean without disturbing in-progress edits.
-//
-// Both are identity-preserving (return the input unchanged via `===` when
-// nothing changed) so callers can use them as cheap no-op-aware filters.
+// Post-mutation canonicalization. `defragmentTextInlines` merges adjacent
+// same-mark text runs. Called by the markdown parser when an inline range
+// finishes, and by editor commands after mark/link/inline-replace operations.
+// Identity-preserving: returns the input unchanged (`===`) when nothing merged.
 
-import { mapBlockTree } from "../query/visit";
-import type { Block, Inline, Mark, TableRow } from "../model/types";
-import { createTableCell, createText, rebuildTableBlock, rebuildTextBlock } from "./builders";
+import type { Inline, Mark } from "../model/types";
 
 // Restore the canonical form after a mutation that fragmented adjacent
 // text inlines — e.g. removing a link spreads its children into the parent
@@ -44,7 +33,7 @@ export function defragmentTextInlines(nodes: Inline[]): Inline[] {
       node.type === "text" &&
       marksEqual(previous.marks, node.marks)
     ) {
-      defragmented[defragmented.length - 1] = createText(previous.text + node.text, previous.marks);
+      defragmented[defragmented.length - 1] = { ...previous, text: previous.text + node.text };
       continue;
     }
 
@@ -68,13 +57,8 @@ function hasAdjacentSameMarkTextPair(nodes: Inline[]): boolean {
 }
 
 // Mark sets are canonicalized by document builders, so order-sensitive
-// equality is the canonical check. The reference check is a free win when two
-// adjacent text inlines were emitted by the same `flushText` context and share
-// the same `marks` array — the dominant parser pattern.
+// equality is the canonical check.
 function marksEqual(left: readonly Mark[], right: readonly Mark[]): boolean {
-  if (left === right) {
-    return true;
-  }
   if (left.length !== right.length) {
     return false;
   }
@@ -86,117 +70,4 @@ function marksEqual(left: readonly Mark[], right: readonly Mark[]): boolean {
   }
 
   return true;
-}
-
-// Strip trailing whitespace from the last non-empty text run in every text
-// block, table cell, and link tail. Returns the input array unchanged (===) if
-// nothing trimmed, so callers can use referential equality as a fast no-op
-// check. Run as a save-time canonicalization pass; the editor doesn't trim
-// during editing because trailing whitespace is structurally significant for
-// the caret position the user just left.
-export function trimTrailingWhitespace(blocks: Block[]): Block[] {
-  return mapBlockTree(blocks, (block, { recurse }) => {
-    switch (block.type) {
-      case "blockquote":
-      case "list":
-      case "listItem":
-        return recurse();
-      case "heading":
-      case "paragraph":
-        return trimTextBlockTrailingWhitespace(block);
-      case "table":
-        return trimTableTrailingWhitespace(block);
-      default:
-        return block;
-    }
-  });
-}
-
-function trimTextBlockTrailingWhitespace(block: Extract<Block, { type: "heading" | "paragraph" }>) {
-  const children = trimTrailingInlineWhitespace(block.children);
-
-  return children === block.children ? block : rebuildTextBlock(block, children);
-}
-
-function trimTableTrailingWhitespace(block: Extract<Block, { type: "table" }>) {
-  let nextRows: TableRow[] | null = null;
-  const ensureRows = () => (nextRows ??= [...block.rows]);
-
-  for (const [rowIndex, row] of block.rows.entries()) {
-    let nextCells: typeof row.cells | null = null;
-    const ensureCells = () => (nextCells ??= [...row.cells]);
-
-    for (const [cellIndex, cell] of row.cells.entries()) {
-      const children = trimTrailingInlineWhitespace(cell.children);
-
-      if (children !== cell.children) {
-        ensureCells()[cellIndex] = createTableCell(children);
-      }
-    }
-
-    if (nextCells) {
-      ensureRows()[rowIndex] = {
-        ...row,
-        cells: nextCells,
-      };
-    }
-  }
-
-  return nextRows ? rebuildTableBlock(block, nextRows) : block;
-}
-
-// Trim trailing whitespace from the last non-empty text run in an inline list,
-// recursing into the tail of any link encountered. The walk goes right-to-left
-// and stops at the first node that doesn't change, so the average case visits a
-// single text node. Returns the input array unchanged (===) when nothing
-// trimmed, so callers can use referential equality as a fast no-op check.
-function trimTrailingInlineWhitespace(nodes: Inline[]): Inline[] {
-  let nextNodes: Inline[] | null = null;
-  const ensureMutable = () => (nextNodes ??= [...nodes]);
-
-  for (let index = nodes.length - 1; index >= 0; index -= 1) {
-    const node = nodes[index]!;
-
-    if (node.type === "text") {
-      const trimmedText = node.text.replace(/[ \t]+$/u, "");
-
-      if (trimmedText.length === node.text.length) {
-        return nextNodes ?? nodes;
-      }
-
-      const mutable = ensureMutable();
-
-      if (trimmedText.length === 0) {
-        mutable.splice(index, 1);
-        continue;
-      }
-
-      mutable[index] = { ...node, text: trimmedText };
-
-      return mutable;
-    }
-
-    if (node.type === "link") {
-      const trimmedChildren = trimTrailingInlineWhitespace(node.children);
-
-      if (trimmedChildren === node.children) {
-        return nextNodes ?? nodes;
-      }
-
-      const mutable = ensureMutable();
-
-      if (trimmedChildren.length === 0) {
-        mutable.splice(index, 1);
-        continue;
-      }
-
-      mutable[index] = { ...node, children: trimmedChildren };
-
-      return mutable;
-    }
-
-    return nextNodes ?? nodes;
-  }
-
-  return nextNodes ?? nodes;
 }

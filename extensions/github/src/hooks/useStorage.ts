@@ -6,11 +6,11 @@ export function useStorage(instanceId: string | null): DocumintStorage {
 }
 
 function createWorkspaceStorage(instanceId: string | null): DocumintStorage {
+  const storageUrl = `/api/storage?instanceId=${encodeURIComponent(instanceId ?? "")}`;
+
   return {
     async readFile(path) {
-      const response = await fetch(
-        `/api/storage?instanceId=${encodeInstanceId(instanceId)}&path=${encodeURIComponent(path)}`,
-      );
+      const response = await fetch(`${storageUrl}&path=${encodeURIComponent(path)}`);
       if (response.status === 404) {
         return null;
       }
@@ -21,7 +21,7 @@ function createWorkspaceStorage(instanceId: string | null): DocumintStorage {
       return response.blob();
     },
     async writeFile(file) {
-      const response = await fetch(`/api/storage?instanceId=${encodeInstanceId(instanceId)}`, {
+      const response = await fetch(storageUrl, {
         method: "POST",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
@@ -37,14 +37,10 @@ function createWorkspaceStorage(instanceId: string | null): DocumintStorage {
     },
     openFile(path) {
       window.open(
-        `/api/storage?instanceId=${encodeInstanceId(instanceId)}&path=${encodeURIComponent(path)}`,
+        `${storageUrl}&path=${encodeURIComponent(path)}`,
         "_blank",
         "noopener,noreferrer",
       );
     },
   };
-}
-
-function encodeInstanceId(instanceId: string | null): string {
-  return encodeURIComponent(instanceId ?? "");
 }

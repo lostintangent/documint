@@ -108,10 +108,10 @@ describe("Headings", () => {
   });
 
   test("paste: mid-paragraph splits the paragraph cleanly", () => {
-    // Trailing whitespace on the prefix paragraph is normalized away by the
-    // markdown serializer; the structural break around the heading survives.
+    // The prefix paragraph keeps its trailing space; the structural break
+    // around the heading survives.
     expect(pasteInto("alpha beta\n", { text: "alpha beta", offset: 6 }, "# H\n")).toBe(
-      "alpha\n\n# H\n\nbeta\n",
+      "alpha \n\n# H\n\nbeta\n",
     );
   });
 });
@@ -197,7 +197,7 @@ describe("Lists", () => {
 
   test("paste: list mid-paragraph splits the paragraph cleanly", () => {
     expect(pasteInto("alpha beta\n", { text: "alpha beta", offset: 6 }, "- item\n")).toBe(
-      "alpha\n\n- item\n\nbeta\n",
+      "alpha \n\n- item\n\nbeta\n",
     );
   });
 
@@ -520,7 +520,7 @@ describe("Thematic breaks", () => {
 
   test("paste: thematic break splits the paragraph cleanly", () => {
     expect(pasteInto("alpha beta\n", { text: "alpha beta", offset: 6 }, "---\n")).toBe(
-      "alpha\n\n---\n\nbeta\n",
+      "alpha \n\n---\n\nbeta\n",
     );
   });
 });
@@ -804,7 +804,7 @@ function withCommentOn(state: EditorState, text: string, quote: string): EditorS
 // preserving thread order. Threads that no longer match any container are
 // implicitly excluded — that's the "did the comment survive the edit?" check.
 function resolvedCommentTexts(state: EditorState): string[] {
-  const commentState = getCommentState(state);
+  const commentState = getCommentState(state.documentIndex);
   const rangesByIndex = new Map(commentState.ranges.map((range) => [range.threadIndex, range]));
 
   return commentState.threads

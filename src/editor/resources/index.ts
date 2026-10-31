@@ -1,22 +1,56 @@
-import type {
-  DocumentResourceIcon,
-  DocumentResources,
-  DocumentResourceProtocol,
-  DocumentResourceReference,
-  DocumentResourceRegistry,
-} from "@/types";
 import type { Resource } from "@/document";
 import { resolveResourceProtocol } from "@/document";
 import { someVisibleDocumentLayoutLine } from "../layout/query";
 import type { EditorLayoutState } from "../layout/state";
 import { resolveInlinesAtPath, type EditorState, type IndexedInline } from "../state";
 
+// Loaded images and host resource protocols. The component host loads them,
+// layout measures with them, and paint draws them.
+export type DocumentResources = {
+  images: Map<string, DocumentImageResource>;
+  resourceRegistry: DocumentResourceRegistry;
+};
+
+export type DocumentImageResource = {
+  intrinsicHeight: number;
+  intrinsicWidth: number;
+  source: ImageBitmap | null;
+  status: "error" | "loaded" | "loading";
+};
+
+export type DocumentResourceProtocol = {
+  icon?: DocumentResourceIcon;
+  label: string;
+};
+
+export type DocumentResourceIcon = string | DocumentResourceVectorIcon;
+
+export type DocumentResourceVectorIcon = {
+  node: DocumentResourceIconNode;
+  type: "svg";
+};
+
+export type DocumentResourceIconNode = readonly DocumentResourceIconNodeElement[];
+
+export type DocumentResourceIconNodeElement = readonly [
+  elementName: string,
+  attrs: Readonly<Record<string, string>>,
+];
+
+export type DocumentResourceReference = {
+  protocol: string;
+  url: string;
+};
+
+export type DocumentResourceRegistry = {
+  active: ReadonlySet<string>;
+  protocols: ReadonlyMap<string, DocumentResourceProtocol>;
+};
+
 export type ResolvedResource = {
   icon: DocumentResourceIcon | null;
   isActive: boolean;
   label: string;
-  protocol: string;
-  protocolSpec: DocumentResourceProtocol;
   url: string;
 };
 
@@ -82,8 +116,6 @@ export function resolveResource(
     icon,
     isActive: registry.active.has(resource.url),
     label,
-    protocol: resource.protocol,
-    protocolSpec,
     url: resource.url,
   };
 }

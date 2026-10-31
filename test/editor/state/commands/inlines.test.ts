@@ -80,19 +80,6 @@ describe("Inline mark toggles", () => {
     expect(toMarkdown(off)).toBe("Hello world\n");
   });
 
-  test("toggles marks through the generic mark command", () => {
-    const base = setup("Area of x2.\n");
-    const path = getPath(base, "Area of x2.");
-    const selected = selectSubstring(base, path, "x2");
-    const marked = toggleMark(selected, "bold") ?? selected;
-
-    expect(toMarkdown(marked)).toBe("Area of **x2**.\n");
-
-    const unmarked = toggleMark(marked, "bold") ?? marked;
-
-    expect(toMarkdown(unmarked)).toBe("Area of x2.\n");
-  });
-
   test("routes mod-u through inline underline toggles", () => {
     const base = setup("Paragraph body.\n");
     const path = getPath(base, "Paragraph body.");
@@ -122,14 +109,6 @@ describe("Inline mark toggles", () => {
     expect(toMarkdown(state)).toBe("Paragraph body.\n");
   });
 
-  test("routes mod-e through inline code toggles", () => {
-    const base = setup("Call fn here.\n");
-    const path = getPath(base, "Call fn here.");
-    const state = toggleMark(selectSubstring(base, path, "fn"), "code");
-
-    expect(toMarkdown(state ?? base)).toBe("Call `fn` here.\n");
-  });
-
   test("composes code with other inline marks", () => {
     const base = setup("Call fn here.\n");
     const path = getPath(base, "Call fn here.");
@@ -144,7 +123,7 @@ describe("Inline mark toggles", () => {
 
 describe("Soft line breaks", () => {
   // Insertion path: every inline-bearing block routes through
-  // `insertInlineNode` and produces a `replace-block` action that splices
+  // `insertInlines` and produces a `replace-block` action that splices
   // a `LineBreak` into the host's inline tree. Code blocks are the one
   // exception — their content is source text, so the command falls back
   // to a `splice-text` action with a literal `\n`.
@@ -177,7 +156,7 @@ describe("Soft line breaks", () => {
   test("inserts a soft line break inside a list item paragraph", () => {
     const base = setup("- foobar\n");
     // The cursor in a list item lives inside the item's descendant
-    // paragraph, so `insertInlineNode` resolves to that paragraph's inline
+    // paragraph, so `insertInlines` resolves to that paragraph's inline
     // tree.
     const path = getPath(base, "foobar");
     const placed = placeAt(base, path, 3);

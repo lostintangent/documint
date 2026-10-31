@@ -432,10 +432,12 @@ test("resolves link hover targets with overlapping comment metadata", () => {
     throw new Error("Expected caret target");
   }
 
-  const hover = resolveHoverTarget(state, viewport, {
-    x: caret.left + 4,
-    y: caret.top + caret.height / 2,
-  });
+  const hover = resolveHoverTarget(
+    state,
+    viewport,
+    { x: caret.left + 4, y: caret.top + caret.height / 2 },
+    getCommentState(state.documentIndex).ranges,
+  );
 
   expect(hover).toEqual(
     expect.objectContaining({
@@ -447,7 +449,7 @@ test("resolves link hover targets with overlapping comment metadata", () => {
   );
 });
 
-test("preserves selection when creating a comment thread", () => {
+test("creates a comment thread from a path range without moving the selection", () => {
   let state = setup("Review surface\n");
   const path = indexedTextEntries(state)[0];
 
@@ -455,59 +457,21 @@ test("preserves selection when creating a comment thread", () => {
     throw new Error("Expected editor path");
   }
 
-  state = setSelection(state, {
-    path: path.path,
-    offset: 4,
-  });
+  state = setSelection(state, { path: path.path, offset: 4 });
 
   const nextState = addEditorComment(
     state,
     { path: path.path, startOffset: 0, endOffset: 6 },
-    "Review this heading",
+    "Review this",
   );
 
   if (!nextState) {
     throw new Error("Expected state change");
   }
 
-  expect(nextState.selection.anchor.path).toBe(state.selection.anchor.path);
-  expect(nextState.selection.anchor.offset).toBe(4);
-  expect(nextState.selection.focus.path).toBe(state.selection.focus.path);
-  expect(nextState.selection.focus.offset).toBe(4);
-  expect(getDocument(nextState).comments).toHaveLength(1);
-});
-
-test("creates a new comment thread from a single-path selection", () => {
-  let state = setup("Review surface\n");
-  const path = indexedTextEntries(state)[0];
-
-  if (!path) {
-    throw new Error("Expected editor path");
-  }
-
-  state = setSelection(state, {
-    anchor: {
-      offset: 0,
-      path: path.path,
-    },
-    focus: {
-      offset: 6,
-      path: path.path,
-    },
-  });
-
-  const result = addEditorComment(
-    state,
-    {
-      endOffset: 6,
-      path: path.path,
-      startOffset: 0,
-    },
-    "Review this",
-  );
-
-  expect(result).not.toBeNull();
-  expect(getDocument(result!).comments).toEqual([
+  expect(nextState.selection.anchor).toEqual({ path: path.path, offset: 4 });
+  expect(nextState.selection.focus).toEqual({ path: path.path, offset: 4 });
+  expect(getDocument(nextState).comments).toEqual([
     expect.objectContaining({
       comments: [expect.objectContaining({ body: "Review this" })],
       quote: "Review",
@@ -714,26 +678,7 @@ test("resolveActiveCommentIndex returns null when no ranges exist", () => {
   expect(resolveActiveCommentIndex(state, [])).toBeNull();
 });
 
-test("resolveActiveCommentIndex returns the thread covering a collapsed caret", () => {
-  let state = setup("alpha beta\n");
-  const path = getPath(state, "alpha beta");
-  const commented = addEditorComment(
-    state,
-    { path: path.path, startOffset: 0, endOffset: 5 },
-    "note",
-  );
-
-  if (!commented) {
-    throw new Error("Expected comment to be added");
-  }
-
-  state = setSelection(commented, { path: path.path, offset: 3 });
-  const { ranges } = getCommentState(state);
-
-  expect(resolveActiveCommentIndex(state, ranges)).toBe(0);
-});
-
-test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed caret", () => {
+test("resolveActiveCommentIndex matches a collapsed caret inside or on the bounds of a range", () => {
   let state = setup("alpha beta\n");
   const path = getPath(state, "alpha beta");
   const commented = addEditorComment(
@@ -746,13 +691,15 @@ test("resolveActiveCommentIndex treats range bounds as inclusive for a collapsed
     throw new Error("Expected comment to be added");
   }
 
-  const { ranges } = getCommentState(commented);
+  const { ranges } = getCommentState(commented.documentIndex);
   const atStart = setSelection(commented, { path: path.path, offset: 1 });
+  const inside = setSelection(commented, { path: path.path, offset: 2 });
   const atEnd = setSelection(commented, { path: path.path, offset: 4 });
   const justBefore = setSelection(commented, { path: path.path, offset: 0 });
   const justAfter = setSelection(commented, { path: path.path, offset: 5 });
 
   expect(resolveActiveCommentIndex(atStart, ranges)).toBe(0);
+  expect(resolveActiveCommentIndex(inside, ranges)).toBe(0);
   expect(resolveActiveCommentIndex(atEnd, ranges)).toBe(0);
   expect(resolveActiveCommentIndex(justBefore, ranges)).toBeNull();
   expect(resolveActiveCommentIndex(justAfter, ranges)).toBeNull();
@@ -771,7 +718,7 @@ test("resolveActiveCommentIndex uses an open-interval overlap for ranged selecti
     throw new Error("Expected comment to be added");
   }
 
-  const { ranges } = getCommentState(commented);
+  const { ranges } = getCommentState(commented.documentIndex);
 
   // Touching the comment range at its end-boundary with a positive-length
   // selection: no shared interior, so no thread is reported.
@@ -803,7 +750,7 @@ test("resolveActiveCommentIndex resolves selections that span paths", () => {
     throw new Error("Expected comment to be added");
   }
 
-  const { ranges } = getCommentState(commented);
+  const { ranges } = getCommentState(commented.documentIndex);
   state = setSelection(commented, {
     anchor: { path: alpha.path, offset: 0 },
     focus: { path: beta.path, offset: 1 },

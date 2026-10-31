@@ -1,4 +1,4 @@
-import type { DocumentUser } from "@/types";
+import type { DocumentUser } from "@/editor";
 import type { CompletionSource } from "../completions";
 
 export function createMentionCompletionSource(
@@ -13,7 +13,6 @@ export function createMentionCompletionSource(
     items: users
       .map((user) => ({
         id: user.id,
-        kind: "mention" as const,
         label: user.fullName ?? user.username,
       }))
       .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),

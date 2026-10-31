@@ -4,7 +4,7 @@ import { isReferenceInlineNode, type Inline, type Link } from "@/document";
 // selection offset so caret motion and range editing treat them as atoms.
 export const INLINE_OBJECT_REPLACEMENT_TEXT = "\uFFFC";
 
-export type InlineNodeWithEditorRange = {
+type InlineNodeWithEditorRange = {
   end: number;
   node: Inline;
   start: number;

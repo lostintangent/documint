@@ -21,4 +21,4 @@ Anchors sit alongside the editor pipeline rather than inside one stage. They kee
 - `nodes.ts` owns editor resolution of document node anchors into matched document and editor paths.
 - `selection.ts` owns editor selection anchors, which recover runtime offsets and text continuity from document text-anchor context plus selection affinity.
 - `comments/` owns comment capture, runtime range resolution, viewport geometry, active-thread lookup, and edit-time repair.
-- `presence/` owns host-provided presence target resolution and viewport mapping.
+- `presence/` owns the host `DocumentUser` and `DocumentPresence` inputs, presence target resolution, and viewport mapping.

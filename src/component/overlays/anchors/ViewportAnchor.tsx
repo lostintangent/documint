@@ -67,26 +67,33 @@ export function ViewportAnchor({
   paddingY,
 }: ViewportAnchorProps) {
   const [isPresent, setIsPresent] = useState(open);
+  const [trackedOpen, setTrackedOpen] = useState(open);
   const [isVisible, setIsVisible] = useState(false);
   const [leafSize, setLeafSize] = useState<LeafSize>({ height: 0, width: 0 });
   const [geometry, setGeometry] = useState<Geometry | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const renderedChildrenRef = useRef<ReactNode>(children);
+  const [renderedChildren, setRenderedChildren] = useState<ReactNode>(children);
   const hasPresence = presence !== undefined && presence.length > 0;
 
-  if (open) {
-    renderedChildrenRef.current = children;
+  // Keep the last open children so the exit animation still has content to draw.
+  if (open && children !== renderedChildren) {
+    setRenderedChildren(children);
+  }
+
+  if (open !== trackedOpen) {
+    setTrackedOpen(open);
+    if (open) {
+      setIsPresent(true);
+    }
+    setIsVisible(false);
   }
 
   useEffect(() => {
     if (open) {
-      setIsPresent(true);
-      setIsVisible(false);
       return;
     }
 
-    setIsVisible(false);
     const timeoutId = window.setTimeout(() => setIsPresent(false), animationMs);
     return () => window.clearTimeout(timeoutId);
   }, [open]);
@@ -208,7 +215,7 @@ export function ViewportAnchor({
               <div className={leafClassName} data-state={leafDataState} style={leafStyle}>
                 <div className="overlay-leaf-frame">
                   <div className="leaf-shell" ref={shellRef}>
-                    {renderedChildrenRef.current}
+                    {renderedChildren}
                   </div>
                 </div>
               </div>

@@ -32,7 +32,7 @@ export type Block =
 
 export type Inline = Text | Link | Image | Mention | Resource | LineBreak | Raw;
 
-export type Reference = Image | Mention | Resource;
+type Reference = Image | Mention | Resource;
 
 // References are inline nodes whose durable document payload points outside plain
 // editable text: an image URL, a mentioned user, or a host-registered resource

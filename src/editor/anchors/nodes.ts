@@ -28,7 +28,7 @@ export type EditorNodeAnchor =
       status: "matched";
     }
   | {
-      reason: "duplicate" | "weak-evidence";
+      reason: "weak-evidence";
       status: "ambiguous";
     }
   | {

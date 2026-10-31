@@ -1,53 +1,49 @@
-import { indexedTextEntries } from "@test/editor/helpers";
 // Integration tests for the canvas paint pipeline. Each test drives
 // `createDocumentFrame` + `paintDocumentFrame` with a recording context and asserts against
 // the resulting operation sequence — covering pass ordering, pixel
 // geometry, and inter-painter interactions that are hard to verify in
 // isolation.
 
-import { describe, expect, test } from "bun:test";
-import { createDocumentFrame, paintDocumentFrame, type RendererEffect } from "@/renderer";
-import type { DocumintEffects } from "@/types";
-import { createEditorLayoutState } from "@/editor/layout";
-import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
-import type { TextDecorationIndex } from "@/editor/text/decorations";
+import { describe, expect, spyOn, test } from "bun:test";
+import type { DocumintEffects, DocumintListMarkerPaintFrame } from "@/renderer";
 import {
-  createEditorState,
+  CODE_BLOCK_BACKGROUND_PADDING_Y,
+  CODE_BLOCK_CONTENT_PADDING_X,
+  type DocumentImageResource,
+  type DocumentResourceIcon,
+} from "@/editor";
+import {
   deleteBackward,
   insertLineBreak,
   insertText,
   metadataValuePath,
-  normalizeSelection,
   readEditorEffects,
-  resolveIndexedBlockContainingPath,
   setSelection,
-  type EditorState,
 } from "@/editor/state";
-import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
-import { parseDocument } from "@/markdown";
-import type { DocumentResourceIcon, DocumentResources, ResolvedEditorTheme } from "@/types";
-import { fixtureOptions, slowSampleImagePath } from "../../playground/src/lib/data";
-import { setup } from "../editor/helpers";
+import { resolveEditorTheme } from "@/component/lib/themes";
+import type { ResolvedEditorTheme, TextDeletedEffectContext } from "@/renderer";
+import {
+  createPresence,
+  createResources,
+  getPath,
+  getPathByType,
+  placeAt,
+  selectIn,
+  setup,
+} from "../editor/helpers";
 import {
   approximately,
+  createTestDocumentFrame,
+  createTestOverlayFrame,
   findFillTextOperation,
   findLastOperationIndex,
   findOperationIndex,
   liveDocumentChangeAt,
+  paint,
   RecordingCanvasContext,
+  resolvedLightTheme,
   type RecordingOperation,
 } from "./helpers";
-
-const resolvedLightTheme = resolveEditorTheme(lightTheme);
-
-type ScheduledTestEffect =
-  | RendererEffect
-  | {
-      [TKind in RendererEffect["kind"]]: Omit<
-        Extract<RendererEffect, { kind: TKind }>,
-        "startedAt"
-      >;
-    }[RendererEffect["kind"]];
 
 describe("Block and chrome paint order", () => {
   test("paints active table highlights only within the active cell before text", () => {
@@ -55,19 +51,13 @@ describe("Block and chrome paint order", () => {
 | --- | --- | --- |
 | one | two | three |
 `);
-    const activeContainer = indexedTextEntries(state).find((entry) => entry.text === "Active");
-    const rightContainer = indexedTextEntries(state).find((entry) => entry.text === "Right");
+    const activeContainer = getPath(state, "Active");
+    const rightContainer = getPath(state, "Right");
 
-    if (!activeContainer || !rightContainer) {
-      throw new Error("Expected table header cells");
-    }
+    state = placeAt(state, activeContainer, 1);
 
-    state = setSelection(state, {
-      path: activeContainer.path,
-      offset: 1,
-    });
-
-    const { context, layout } = renderPaintOperations(state, { height: 240, width: 480 });
+    const { frame, layout } = createTestDocumentFrame(state, { height: 240, width: 480 });
+    const context = paint(frame);
     const activeBounds = layout.pathBounds.get(activeContainer.path);
     const rightBounds = layout.pathBounds.get(rightContainer.path);
 
@@ -118,18 +108,12 @@ describe("Block and chrome paint order", () => {
 
   test("keeps non-table active block highlights full width", () => {
     let state = setup("alpha beta gamma\n");
-    const container = indexedTextEntries(state)[0];
+    const container = getPath(state, "alpha beta gamma");
 
-    if (!container) {
-      throw new Error("Expected paragraph container");
-    }
+    state = placeAt(state, container, 1);
 
-    state = setSelection(state, {
-      path: container.path,
-      offset: 1,
-    });
-
-    const { context } = renderPaintOperations(state, { height: 180, width: 240 });
+    const { frame } = createTestDocumentFrame(state, { height: 180, width: 240 });
+    const context = paint(frame);
 
     const activeHighlightIndex = findOperationIndex(context.operations, (operation) => {
       return (
@@ -154,14 +138,10 @@ describe("Block and chrome paint order", () => {
 
   test("fades document-change block backgrounds in before text", () => {
     const state = setup("alpha beta\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected paragraph container");
-    }
+    const container = getPath(state, "alpha beta");
 
     const change = liveDocumentChangeAt(state, "old\n", container.blockPath, "change-alpha");
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       documentChanges: [change],
       effects: [
         {
@@ -174,6 +154,7 @@ describe("Block and chrome paint order", () => {
       now: 110,
       width: 320,
     });
+    const context = paint(frame);
     const backgroundIndex = findOperationIndex(
       context.operations,
       (operation) =>
@@ -202,19 +183,16 @@ describe("Block and chrome paint order", () => {
 | - | - |
 | one | two |
 `);
-    const cell = indexedTextEntries(state).find((path) => path.text === "two");
-
-    if (!cell) {
-      throw new Error("Expected table cell");
-    }
+    const cell = getPath(state, "two");
 
     const change = liveDocumentChangeAt(state, "| A | B |\n| - | - |\n", cell.path, "change-cell");
-    const { context, layout } = renderPaintOperations(state, {
+    const { frame, layout } = createTestDocumentFrame(state, {
       documentChanges: [change],
       height: 240,
       now: 110,
       width: 480,
     });
+    const context = paint(frame);
     const cellBounds = layout.pathBounds.get(cell.path);
 
     if (!cellBounds) {
@@ -246,82 +224,62 @@ describe("Block and chrome paint order", () => {
     expect(textIndex).toBeGreaterThan(borderAfterExternalIndex);
   });
 
-  test("can compose custom active-block-changed effects once around a wrapped block", () => {
-    let state = setup("alpha\n\nbeta beta beta beta beta beta beta beta beta\n");
-    const second = indexedTextEntries(state).find((entry) => entry.text.startsWith("beta"));
-
-    if (!second) {
-      throw new Error("Expected second paragraph path");
-    }
-
-    state = setSelection(state, { path: second.path, offset: 0 });
-
-    const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
-    const { context } = renderPaintOperations(state, {
-      customEffects: {
-        activeBlockChanged: {
-          compose: "after",
-          paint: ({ context, rect }) => {
-            receivedRects.push(rect);
-            context.strokeStyle = "#abcdef";
-            context.strokeRect(rect.left, rect.top, rect.width, rect.height);
-          },
-        },
-      },
-      effects: readEditorEffects(state),
-      height: 220,
+  test.each([
+    {
+      label: "a wrapped paragraph at full width",
+      markdown: "alpha\n\nbeta beta beta beta beta beta beta beta beta\n",
+      maxWidth: 140,
+      minHeight: 25,
+      minWidth: 140,
+      target: "beta beta beta beta beta beta beta beta beta",
       width: 140,
-    });
-    const customStrokeIndex = findOperationIndex(
-      context.operations,
-      (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#abcdef",
-    );
+    },
+    {
+      label: "a table cell within its column",
+      markdown: "| One | Two |\n| --- | --- |\n| alpha | beta |\n",
+      maxWidth: 359,
+      minHeight: 0,
+      minWidth: 80,
+      target: "beta",
+      width: 360,
+    },
+  ])(
+    "composes custom active-block-changed effects once around $label",
+    ({ markdown, maxWidth, minHeight, minWidth, target, width }) => {
+      let state = setup(markdown);
+      state = placeAt(state, getPath(state, target), "start");
 
-    expect(receivedRects).toHaveLength(1);
-    expect(receivedRects[0]?.height).toBeGreaterThan(24);
-    expect(receivedRects[0]?.width).toBe(140);
-    expect(customStrokeIndex).toBeGreaterThanOrEqual(0);
-  });
-
-  test("can compose custom active-block-changed effects for table cells", () => {
-    let state = setup(`| One | Two |
-| --- | --- |
-| alpha | beta |
-`);
-    const cell = indexedTextEntries(state).find((entry) => entry.text === "beta");
-
-    if (!cell) {
-      throw new Error("Expected table cell path");
-    }
-
-    state = setSelection(state, { path: cell.path, offset: 0 });
-
-    const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
-    const { context } = renderPaintOperations(state, {
-      customEffects: {
-        activeBlockChanged: {
-          compose: "after",
-          paint: ({ context, rect }) => {
-            receivedRects.push(rect);
-            context.strokeStyle = "#fedcba";
-            context.strokeRect(rect.left, rect.top, rect.width, rect.height);
+      const receivedRects: Array<{ height: number; left: number; top: number; width: number }> = [];
+      const { frame } = createTestDocumentFrame(state, {
+        customEffects: {
+          activeBlockChanged: {
+            compose: "after",
+            paint: ({ context, rect }) => {
+              receivedRects.push(rect);
+              context.strokeStyle = "#abcdef";
+              context.strokeRect(rect.left, rect.top, rect.width, rect.height);
+            },
           },
         },
-      },
-      effects: readEditorEffects(state),
-      height: 220,
-      width: 360,
-    });
-    const customStrokeIndex = findOperationIndex(
-      context.operations,
-      (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#fedcba",
-    );
+        effects: readEditorEffects(state),
+        height: 220,
+        width,
+      });
+      const context = paint(frame);
+      const [rect] = receivedRects;
 
-    expect(receivedRects).toHaveLength(1);
-    expect(receivedRects[0]?.width).toBeGreaterThanOrEqual(80);
-    expect(receivedRects[0]?.width).toBeLessThan(360);
-    expect(customStrokeIndex).toBeGreaterThanOrEqual(0);
-  });
+      expect(receivedRects).toHaveLength(1);
+      expect(rect!.height).toBeGreaterThanOrEqual(minHeight);
+      expect(rect!.width).toBeGreaterThanOrEqual(minWidth);
+      expect(rect!.width).toBeLessThanOrEqual(maxWidth);
+      expect(
+        findOperationIndex(
+          context.operations,
+          (operation) => operation.kind === "strokeRect" && operation.strokeStyle === "#abcdef",
+        ),
+      ).toBeGreaterThanOrEqual(0);
+    },
+  );
 });
 
 describe("Metadata prefix painting", () => {
@@ -332,11 +290,12 @@ draft: true
 ---
 Body
 `);
-    const { context, layout } = renderPaintOperations(state, {
+    const { frame, layout } = createTestDocumentFrame(state, {
       height: 320,
       metadataExpanded: true,
       width: 520,
     });
+    const context = paint(frame);
     const metadata = layout.metadata;
     const titleRow = metadata?.rows[0];
 
@@ -421,12 +380,14 @@ Body
     expect(chevron.path[0]?.x).toBeGreaterThan(metadata.header.left + metadata.header.width / 2);
     expect(chevron.path[1]?.y).toBeLessThan(chevron.path[0]?.y ?? 0);
 
-    const collapsed = renderPaintOperations(state, {
-      height: 320,
-      metadataExpanded: false,
-      width: 520,
-    });
-    const collapsedChevron = collapsed.context.operations.find(
+    const collapsed = paint(
+      createTestDocumentFrame(state, {
+        height: 320,
+        metadataExpanded: false,
+        width: 520,
+      }).frame,
+    );
+    const collapsedChevron = collapsed.operations.find(
       (operation) =>
         operation.kind === "strokePath" &&
         operation.strokeStyle === resolvedLightTheme.headingText &&
@@ -452,13 +413,14 @@ Body
     });
     state = insertText(state, "!") ?? state;
 
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       effects: readEditorEffects(state),
       height: 320,
       metadataExpanded: true,
       now: 100,
       width: 520,
     });
+    const context = paint(frame);
 
     expect(
       context.operations.some(
@@ -472,43 +434,17 @@ Body
 });
 
 describe("Replacement and link painting", () => {
-  test("paints playground tutorial resources as pills, not links", () => {
-    const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
-
-    if (!tutorial) {
-      throw new Error("Expected playground tutorial fixture");
-    }
-
-    const state = createEditorState(
-      parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
+  test("paints registered resources as pills instead of links or replacement glyphs", () => {
+    const state = setup(
+      "Try the active [Recording session](demo-resource://recording/live) resource and the inactive [Planning note](demo-note://note/complete) resource.\n",
+      { resourceProtocols: ["demo-note:", "demo-resource:"] },
     );
-    const resources: DocumentResources = {
-      images: new Map(),
-      resourceRegistry: {
-        active: new Set(["demo-resource://recording/live"]),
-        protocols: new Map([
-          ["demo-note:", { icon: "N", label: "Demo note" }],
-          ["demo-resource:", { icon: "R", label: "Demo resource" }],
-        ]),
-      },
-    };
-    for (const url of [
-      slowSampleImagePath,
-      "https://dummyimage.com/640x360/1e293b/e2e8f0.png&text=Narrow+Host",
-      "https://dummyimage.com/720x360/0f766e/f0fdfa.png&text=Diagnostics",
-    ]) {
-      resources.images.set(url, {
-        intrinsicHeight: 360,
-        intrinsicWidth: 640,
-        source: null,
-        status: "loaded",
-      });
-    }
-    const { context } = renderPaintOperations(state, {
-      height: 5000,
-      resources,
-      width: 900,
+    const resources = createResources({
+      active: ["demo-resource://recording/live"],
+      protocols: { "demo-note:": "N", "demo-resource:": "R" },
     });
+    const { frame } = createTestDocumentFrame(state, { height: 180, resources, width: 900 });
+    const context = paint(frame);
     const recordingText = findFillTextOperation(context.operations, "Recording session");
     const noteText = findFillTextOperation(context.operations, "Planning note");
     const objectReplacementText = context.operations.find(
@@ -520,66 +456,22 @@ describe("Replacement and link painting", () => {
         operation.fillStyle === resolvedLightTheme.commentHighlight,
     );
 
-    if (!recordingText || !noteText) {
-      throw new Error("Expected resource label paint operations");
-    }
-
-    expect(recordingText.fillStyle).toBe(resolvedLightTheme.text);
-    expect(noteText.fillStyle).toBe(resolvedLightTheme.leafSecondaryText);
+    expect(recordingText?.fillStyle).toBe(resolvedLightTheme.text);
+    expect(noteText?.fillStyle).toBe(resolvedLightTheme.leafSecondaryText);
     expect(objectReplacementText).toBeUndefined();
     expect(resourceBackgrounds.length).toBeGreaterThanOrEqual(2);
-  });
-
-  test("does not paint playground tutorial resources as link text", () => {
-    const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
-
-    if (!tutorial) {
-      throw new Error("Expected playground tutorial fixture");
-    }
-
-    const state = createEditorState(
-      parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
-    );
-    const resources: DocumentResources = {
-      images: new Map(),
-      resourceRegistry: {
-        active: new Set(),
-        protocols: new Map([
-          ["demo-note:", { icon: "N", label: "Demo note" }],
-          ["demo-resource:", { icon: "R", label: "Demo resource" }],
-        ]),
-      },
-    };
-    for (const url of [
-      slowSampleImagePath,
-      "https://dummyimage.com/640x360/1e293b/e2e8f0.png&text=Narrow+Host",
-      "https://dummyimage.com/720x360/0f766e/f0fdfa.png&text=Diagnostics",
-    ]) {
-      resources.images.set(url, {
-        intrinsicHeight: 360,
-        intrinsicWidth: 640,
-        source: null,
-        status: "loaded",
-      });
-    }
-    const { context } = renderPaintOperations(state, {
-      height: 5000,
-      resources,
-      width: 900,
-    });
-    const linkTextOperations = context.operations.filter(
-      (operation) =>
-        operation.kind === "fillText" &&
-        (operation.text === "Recording session" || operation.text === "Planning note") &&
-        operation.fillStyle === resolvedLightTheme.linkText,
-    );
-
-    expect(linkTextOperations).toEqual([]);
+    expect(
+      context.operations.filter(
+        (operation) =>
+          operation.kind === "fillText" && operation.fillStyle === resolvedLightTheme.linkText,
+      ),
+    ).toEqual([]);
   });
 
   test("paints ordinary links as link text", () => {
     const state = setup("[Recording session](demo-resource://recording/live)\n");
-    const { context } = renderPaintOperations(state, { height: 180, width: 360 });
+    const { frame } = createTestDocumentFrame(state, { height: 180, width: 360 });
+    const context = paint(frame);
     const linkText = findFillTextOperation(context.operations, "Recording session");
 
     if (!linkText) {
@@ -589,28 +481,115 @@ describe("Replacement and link painting", () => {
     expect(linkText.fillStyle).toBe(resolvedLightTheme.linkText);
   });
 
-  test("paints resource svg icon nodes onto canvas", () => {
-    const state = createEditorState(
-      parseDocument("[Recording session](demo-resource://recording/live)\n", {
-        resourceProtocols: ["demo-resource:"],
-      }),
+  test("paints mentions as pills behind @-prefixed labels", () => {
+    const state = setup("Ping @[Jane Doe](user-123) today\n");
+    const context = paint(createTestDocumentFrame(state, { height: 180 }).frame);
+    const pillIndex = findOperationIndex(
+      context.operations,
+      (operation) =>
+        operation.kind === "fillRect" &&
+        operation.fillStyle === resolvedLightTheme.mentionBackground,
     );
+    const pill = context.operations[pillIndex];
+    const label = context.operations[pillIndex + 1];
+
+    if (pill?.kind !== "fillRect" || label?.kind !== "fillText") {
+      throw new Error("Expected mention pill followed by its label");
+    }
+
+    expect(label).toMatchObject({ fillStyle: resolvedLightTheme.mentionText, text: "@Jane Doe" });
+    expect(label.x).toBeGreaterThan(pill.x);
+    expect(label.x).toBeLessThan(pill.x + pill.width);
+  });
+
+  test.each([
+    // Unknown intrinsic sizes use the shared 240px, 9:16 layout and paint fallback.
+    { height: 135, intrinsicHeight: 0, intrinsicWidth: 0, label: "Loading image", width: 240 },
+    { height: 135, intrinsicHeight: 0, intrinsicWidth: 0, label: "Image unavailable", width: 240 },
+    { height: 90, intrinsicHeight: 90, intrinsicWidth: 160, label: "Loading image", width: 160 },
+  ])(
+    "paints $width by $height '$label' image placeholders",
+    ({ height, intrinsicHeight, intrinsicWidth, label, width }) => {
+      const status: DocumentImageResource["status"] =
+        label === "Image unavailable" ? "error" : "loading";
+      const url = "https://example.com/pending.png";
+      const state = setup(`![Alt](${url})\n`);
+      const resources = {
+        ...createResources(),
+        images: new Map([
+          [
+            url,
+            {
+              intrinsicHeight,
+              intrinsicWidth,
+              source: null,
+              status,
+            },
+          ],
+        ]),
+      };
+      const context = paint(createTestDocumentFrame(state, { resources }).frame);
+      const surfaceIndex = findOperationIndex(
+        context.operations,
+        (operation) =>
+          operation.kind === "fillRect" &&
+          operation.fillStyle === resolvedLightTheme.imageSurfaceBackground,
+      );
+      const surface = context.operations[surfaceIndex];
+      const labelIndex = findOperationIndex(
+        context.operations,
+        (operation) => operation.kind === "fillText" && operation.text === label,
+      );
+      const borderIndex = findOperationIndex(
+        context.operations,
+        (operation) =>
+          operation.kind === "strokeRect" &&
+          operation.strokeStyle === resolvedLightTheme.imageSurfaceBorder,
+      );
+
+      if (surface?.kind !== "fillRect") {
+        throw new Error("Expected image surface paint");
+      }
+
+      expect(surface).toMatchObject({ height, width });
+      expect(context.operations[labelIndex]).toMatchObject({
+        fillStyle: resolvedLightTheme.imagePlaceholderText,
+        x: surface.x + surface.width / 2,
+      });
+      expect(context.operations[borderIndex]).toMatchObject({
+        height: surface.height,
+        width: surface.width,
+        x: surface.x,
+        y: surface.y,
+      });
+      expect(labelIndex).toBeGreaterThan(surfaceIndex);
+      expect(borderIndex).toBeGreaterThan(labelIndex);
+      expect(
+        context.operations.some(
+          (operation) => operation.kind === "fillRect" && typeof operation.fillStyle !== "string",
+        ),
+      ).toBe(status === "loading");
+    },
+  );
+
+  test("paints resource svg icon nodes onto canvas", () => {
+    const state = setup("[Recording session](demo-resource://recording/live)\n", {
+      resourceProtocols: ["demo-resource:"],
+    });
     const icon: DocumentResourceIcon = {
       node: [["line", { x1: "5", x2: "19", y1: "12", y2: "12" }]],
       type: "svg",
     };
-    const resources: DocumentResources = {
-      images: new Map(),
-      resourceRegistry: {
-        active: new Set(["demo-resource://recording/live"]),
-        protocols: new Map([["demo-resource:", { icon, label: "Demo resource" }]]),
-      },
-    };
-    const { context } = renderPaintOperations(state, {
+    const resources = createResources({
+      active: ["demo-resource://recording/live"],
+      protocols: { "demo-resource:": icon },
+    });
+    const { frame } = createTestDocumentFrame(state, {
       height: 180,
       resources,
       width: 360,
     });
+    const context = paint(frame);
     const iconSegment = context.operations.find(
       (operation) =>
         operation.kind === "fillRect" &&
@@ -638,7 +617,8 @@ describe("Replacement and link painting", () => {
 describe("Block chrome geometry", () => {
   test("paints code block chrome inside document padding with content inset", () => {
     const state = setup("```ts\nconst value = 1;\n```\n");
-    const { context, layout } = renderPaintOperations(state, { height: 180, width: 240 });
+    const { frame, layout } = createTestDocumentFrame(state, { height: 180, width: 240 });
+    const context = paint(frame);
     const line = layout.lines.find((entry) => entry.text === "const value = 1;");
 
     if (!line) {
@@ -656,62 +636,44 @@ describe("Block chrome geometry", () => {
     }
 
     expect(backgroundPaint.x).toBe(layout.options.paddingX);
-    expect(backgroundPaint.y).toBe(line.top - 6);
+    expect(backgroundPaint.y).toBe(line.top - CODE_BLOCK_BACKGROUND_PADDING_Y);
     expect(backgroundPaint.width).toBe(240 - layout.options.paddingX * 2);
-    expect(backgroundPaint.height).toBe(line.height + 12);
-    expect(textOperation.x).toBe(layout.options.paddingX + 12);
-    expect(line.left).toBe(layout.options.paddingX + 12);
+    expect(backgroundPaint.height).toBe(line.height + CODE_BLOCK_BACKGROUND_PADDING_Y * 2);
+    expect(textOperation.x).toBe(layout.options.paddingX + CODE_BLOCK_CONTENT_PADDING_X);
+    expect(line.left).toBe(layout.options.paddingX + CODE_BLOCK_CONTENT_PADDING_X);
   });
 
-  test("centers active code block tint inside the code background padding", () => {
-    let state = setup("```ts\nconst value = 1;\n```\n");
-    const path = indexedTextEntries(state)[0];
+  test("paints divider rules across the content width at the divider's vertical center", () => {
+    const state = setup("alpha\n\n---\n\nbeta\n");
+    const { frame, layout } = createTestDocumentFrame(state);
+    const context = paint(frame);
+    const rule = context.operations.find(
+      (operation) =>
+        operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.dividerRule,
+    );
+    const divider = layout.blocks.find((block) => block.type === "divider");
 
-    if (!path) {
-      throw new Error("Expected code path");
+    if (rule?.kind !== "fillRect" || !divider) {
+      throw new Error("Expected divider block and rule paint");
     }
 
-    state = setSelection(state, { path: path.path, offset: "const".length });
-
-    const { context, layout } = renderPaintOperations(state, { height: 180, width: 240 });
-    const line = layout.lines.find((entry) => entry.text === "const value = 1;");
-
-    if (!line) {
-      throw new Error("Expected code line");
-    }
-
-    const backgroundPaint = context.operations.find(
-      (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
-        operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.codeBackground,
-    );
-    const activePaint = context.operations.find(
-      (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
-        operation.kind === "fillRect" &&
-        operation.fillStyle === resolvedLightTheme.activeBlockBackground,
-    );
-
-    if (!backgroundPaint || !activePaint) {
-      throw new Error("Expected code background and active block paints");
-    }
-
-    expect(activePaint.x).toBe(backgroundPaint.x);
-    expect(activePaint.width).toBe(backgroundPaint.width);
-    expect(activePaint.y - backgroundPaint.y).toBe(
-      backgroundPaint.y + backgroundPaint.height - (activePaint.y + activePaint.height),
-    );
+    expect(rule).toMatchObject({
+      height: 1,
+      width: 420 - layout.options.paddingX * 2,
+      x: layout.options.paddingX,
+    });
+    expect(rule.y).toBeGreaterThan(divider.top);
+    expect(rule.y + rule.height).toBeLessThan(divider.bottom);
   });
 
   test("bleeds active blockquote rules to the quote line-box top", () => {
     let state = setup("> alpha\n>\n> beta\n");
-    const activePath = indexedTextEntries(state).find((path) => path.text === "beta");
+    const activePath = getPath(state, "beta");
 
-    if (!activePath) {
-      throw new Error("Expected quoted paragraph");
-    }
+    state = placeAt(state, activePath, 1);
 
-    state = setSelection(state, { path: activePath.path, offset: 1 });
-
-    const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
+    const { frame, layout } = createTestDocumentFrame(state, { height: 240, width: 240 });
+    const context = paint(frame);
     const firstLine = layout.lines.find((line) => line.text === "alpha");
     const activeLine = layout.lines.find((line) => line.path === activePath.path);
 
@@ -741,141 +703,79 @@ describe("Block chrome geometry", () => {
 });
 
 describe("Selections, comments, and text overlays", () => {
-  test("paints selection highlights across every path the selection spans", () => {
-    let state = setup("alpha\n\nbeta\n\ngamma\n");
-    const [first, second, third] = indexedTextEntries(state);
+  test.each([
+    {
+      erasesBaseGlyphs: false,
+      label: "insert highlights",
+      overlayColor: resolvedLightTheme.insertHighlightText,
+      renderFrame: () => {
+        let state = setup("alpha\n");
+        state = placeAt(state, getPath(state, "alpha"), "end");
+        state = insertText(state, "!") ?? state;
 
-    if (!first || !second || !third) {
-      throw new Error("Expected three paragraph paths");
-    }
+        return createTestDocumentFrame(state, { effects: readEditorEffects(state) }).frame;
+      },
+      splitText: "!",
+      text: "alpha!",
+    },
+    {
+      erasesBaseGlyphs: true,
+      label: "text color decorations",
+      overlayColor: "#c026d3",
+      renderFrame: () => {
+        const state = setup("alpha beta\n");
+        const { path } = getPath(state, "alpha beta");
 
-    state = setSelection(state, {
-      anchor: { path: first.path, offset: 2 },
-      focus: { path: third.path, offset: 3 },
-    });
-
-    const { context, layout } = renderPaintOperations(state, { height: 240, width: 240 });
-
-    const selectionFills = context.operations.filter(
-      (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
-        operation.kind === "fillRect" &&
-        operation.fillStyle === resolvedLightTheme.selectionBackground,
-    );
-
-    expect(selectionFills.length).toBe(3);
-
-    const firstLine = layout.lines.find((line) => line.path === first.path);
-    const secondLine = layout.lines.find((line) => line.path === second.path);
-    const thirdLine = layout.lines.find((line) => line.path === third.path);
-
-    if (!firstLine || !secondLine || !thirdLine) {
-      throw new Error("Expected one line per paragraph path");
-    }
-
-    const fillForLine = (line: typeof firstLine) =>
-      selectionFills.find(
-        (operation) => operation.y >= line.top && operation.y <= line.top + line.height,
+        return createTestDocumentFrame(state, {
+          textDecorations: new Map([
+            [path, [{ color: "#c026d3", endOffset: 10, path, startOffset: 6 }]],
+          ]),
+        }).frame;
+      },
+      splitText: "beta",
+      text: "alpha beta",
+    },
+  ])(
+    "paints $label as a glyph overlay without splitting text runs",
+    ({ erasesBaseGlyphs, overlayColor, renderFrame, splitText, text }) => {
+      const textOperations = paint(renderFrame()).operations.filter(
+        (operation): operation is Extract<RecordingOperation, { kind: "fillText" }> =>
+          operation.kind === "fillText",
+      );
+      const runPaints = textOperations.filter((operation) => operation.text === text);
+      const overlayPaint = runPaints.find(
+        (operation) =>
+          operation.fillStyle === overlayColor &&
+          operation.globalCompositeOperation === "source-over",
       );
 
-    const firstFill = fillForLine(firstLine);
-    const middleFill = fillForLine(secondLine);
-    const lastFill = fillForLine(thirdLine);
-
-    if (!firstFill || !middleFill || !lastFill) {
-      throw new Error("Expected one selection fill per spanned path");
-    }
-
-    // The middle path paints whole-line; both boundary paths are clipped to
-    // the selection offsets and therefore cover a strict subset of the middle.
-    expect(firstFill.x).toBeGreaterThan(middleFill.x);
-    expect(lastFill.x + lastFill.width).toBeLessThan(middleFill.x + middleFill.width);
-  });
-
-  test("does not paint a selection highlight when the selection is collapsed", () => {
-    let state = setup("alpha\n\nbeta\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: 2 });
-
-    const { context } = renderPaintOperations(state, { height: 180, width: 240 });
-
-    const selectionFillIndex = findOperationIndex(
-      context.operations,
-      (operation) =>
-        operation.kind === "fillRect" &&
-        operation.fillStyle === resolvedLightTheme.selectionBackground,
-    );
-
-    expect(selectionFillIndex).toBe(-1);
-  });
-
-  test("paints insert highlights as a glyph overlay without splitting text runs", () => {
-    let state = setup("alpha\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
-    state = insertText(state, "!") ?? state;
-
-    const { context } = renderPaintOperations(state, {
-      effects: readEditorEffects(state),
-      height: 180,
-      width: 240,
-    });
-    const textOperations = context.operations.filter(
-      (operation): operation is Extract<RecordingOperation, { kind: "fillText" }> =>
-        operation.kind === "fillText",
-    );
-    const insertedCharacterPaint = textOperations.find((operation) => operation.text === "!");
-    const baseTextPaint = textOperations.find(
-      (operation) =>
-        operation.text === "alpha!" && operation.fillStyle === resolvedLightTheme.paragraphText,
-    );
-    const highlightOverlayPaint = textOperations.find(
-      (operation) =>
-        operation.text === "alpha!" &&
-        operation.fillStyle === resolvedLightTheme.insertHighlightText,
-    );
-
-    expect(insertedCharacterPaint).toBeUndefined();
-    expect(baseTextPaint).toBeDefined();
-    expect(highlightOverlayPaint).toBeDefined();
-    expect(highlightOverlayPaint?.globalAlpha).toBeGreaterThan(0);
-    expect(highlightOverlayPaint?.globalAlpha).toBeLessThanOrEqual(1);
-  });
+      expect(textOperations.find((operation) => operation.text === splitText)).toBeUndefined();
+      expect(
+        runPaints.find(
+          (operation) =>
+            operation.fillStyle === resolvedLightTheme.paragraphText &&
+            operation.globalCompositeOperation === "source-over",
+        ),
+      ).toBeDefined();
+      expect(overlayPaint?.globalAlpha).toBeGreaterThan(0);
+      expect(overlayPaint?.globalAlpha).toBeLessThanOrEqual(1);
+      expect(
+        runPaints.some((operation) => operation.globalCompositeOperation === "destination-out"),
+      ).toBe(erasesBaseGlyphs);
+    },
+  );
 
   test("passes a baseline-left insertion anchor and visible viewport to custom text-inserted effects", () => {
     let highlightState = setup("alpha\n");
-    const highlightContainer = indexedTextEntries(highlightState)[0];
+    const highlightContainer = getPath(highlightState, "alpha");
 
-    if (!highlightContainer) {
-      throw new Error("Expected paragraph path");
-    }
-
-    highlightState = setSelection(highlightState, {
-      path: highlightContainer.path,
-      offset: highlightContainer.text.length,
-    });
+    highlightState = placeAt(highlightState, highlightContainer, "end");
     highlightState = insertText(highlightState, "!") ?? highlightState;
 
     let pulseState = setup("alpha\n");
-    const pulseContainer = indexedTextEntries(pulseState)[0];
+    const pulseContainer = getPath(pulseState, "alpha");
 
-    if (!pulseContainer) {
-      throw new Error("Expected paragraph path");
-    }
-
-    pulseState = setSelection(pulseState, {
-      path: pulseContainer.path,
-      offset: pulseContainer.text.length,
-    });
+    pulseState = placeAt(pulseState, pulseContainer, "end");
     pulseState = insertText(pulseState, ".") ?? pulseState;
 
     const receivedContexts: Array<{
@@ -891,22 +791,26 @@ describe("Selections, comments, and text overlays", () => {
       },
     } satisfies DocumintEffects;
 
-    renderPaintOperations(highlightState, {
-      customEffects: {
-        ...customEffects,
-      },
-      effects: readEditorEffects(highlightState),
-      height: 180,
-      width: 240,
-    });
-    renderPaintOperations(pulseState, {
-      customEffects: {
-        ...customEffects,
-      },
-      effects: readEditorEffects(pulseState),
-      height: 180,
-      width: 240,
-    });
+    paint(
+      createTestDocumentFrame(highlightState, {
+        customEffects: {
+          ...customEffects,
+        },
+        effects: readEditorEffects(highlightState),
+        height: 180,
+        width: 240,
+      }).frame,
+    );
+    paint(
+      createTestDocumentFrame(pulseState, {
+        customEffects: {
+          ...customEffects,
+        },
+        effects: readEditorEffects(pulseState),
+        height: 180,
+        width: 240,
+      }).frame,
+    );
 
     expect(receivedContexts).toHaveLength(2);
     expect(receivedContexts).toEqual(
@@ -949,16 +853,12 @@ describe("Selections, comments, and text overlays", () => {
 
   test("can compose custom text-inserted effects after the default paint", () => {
     let state = setup("alpha\n");
-    const container = indexedTextEntries(state)[0];
+    const container = getPath(state, "alpha");
 
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
+    state = placeAt(state, container, "end");
     state = insertText(state, "!") ?? state;
 
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       customEffects: {
         textInserted: {
           compose: "after",
@@ -972,6 +872,7 @@ describe("Selections, comments, and text overlays", () => {
       height: 180,
       width: 240,
     });
+    const context = paint(frame);
 
     const highlightOverlayIndex = findOperationIndex(
       context.operations,
@@ -991,17 +892,13 @@ describe("Selections, comments, and text overlays", () => {
 
   test("runs custom source-path text-inserted effects without default insert highlight", () => {
     let state = setup("```ts\nconst value = 1;\n```\n");
-    const container = indexedTextEntries(state)[0];
+    const container = getPathByType(state, "code");
 
-    if (!container) {
-      throw new Error("Expected code path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
+    state = placeAt(state, container, "end");
     state = insertText(state, "!") ?? state;
 
     const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       customEffects: {
         textInserted: {
           compose: "after",
@@ -1016,6 +913,7 @@ describe("Selections, comments, and text overlays", () => {
       height: 180,
       width: 240,
     });
+    const context = paint(frame);
 
     expect(customContexts).toEqual([{ contentKind: "code", text: "!" }]);
     expect(
@@ -1032,92 +930,61 @@ describe("Selections, comments, and text overlays", () => {
     ).toBe(true);
   });
 
-  test("uses custom text-deleted effects in place of the default fade", () => {
-    let state = setup("alpha\n");
-    const container = indexedTextEntries(state)[0];
+  test.each([
+    {
+      blockType: "paragraph",
+      compose: undefined,
+      expected: { contentKind: "text", text: "a" },
+      label: "paragraph text through the function form",
+      markdown: "alpha\n",
+    },
+    {
+      blockType: "code",
+      compose: undefined,
+      expected: { contentKind: "code", text: ";" },
+      label: "code text through the function form",
+      markdown: "```ts\nconst value = 1;\n```\n",
+    },
+    {
+      blockType: "paragraph",
+      compose: "replace",
+      expected: { contentKind: "text", text: "a" },
+      label: "paragraph text through explicit replace composition",
+      markdown: "alpha\n",
+    },
+  ] as const)(
+    "replaces the default deletion fade with custom text-deleted effects for $label",
+    ({ blockType, compose, expected, markdown }) => {
+      let state = setup(markdown);
+      state = placeAt(state, getPathByType(state, blockType), "end");
+      state = deleteBackward(state) ?? state;
 
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
-    state = deleteBackward(state) ?? state;
-
-    const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
-    const { context } = renderPaintOperations(state, {
-      customEffects: {
-        textDeleted: ({ contentKind, context, left, text, textBaseline }) => {
-          customContexts.push({ contentKind, text });
-          context.fillText("custom-delete", left, textBaseline);
+      const received: Array<Pick<TextDeletedEffectContext, "contentKind" | "text">> = [];
+      const paintDeleted = ({
+        contentKind,
+        context,
+        left,
+        text,
+        textBaseline,
+      }: TextDeletedEffectContext) => {
+        received.push({ contentKind, text });
+        context.fillText("custom-delete", left, textBaseline);
+      };
+      const { frame } = createTestDocumentFrame(state, {
+        customEffects: {
+          textDeleted: compose ? { compose, paint: paintDeleted } : paintDeleted,
         },
-      },
-      effects: readEditorEffects(state),
-      height: 180,
-      width: 240,
-    });
+        effects: readEditorEffects(state),
+        height: 180,
+        width: 240,
+      });
+      const context = paint(frame);
 
-    expect(customContexts).toEqual([{ contentKind: "text", text: "a" }]);
-    expect(findFillTextOperation(context.operations, "custom-delete")).toBeDefined();
-    expect(findFillTextOperation(context.operations, "a")).toBeNull();
-  });
-
-  test("passes code content kind to custom source-path text-deleted effects", () => {
-    let state = setup("```ts\nconst value = 1;\n```\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected code path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
-    state = deleteBackward(state) ?? state;
-
-    const customContexts: Array<{ contentKind: "code" | "text"; text: string }> = [];
-    const { context } = renderPaintOperations(state, {
-      customEffects: {
-        textDeleted: ({ contentKind, context, left, text, textBaseline }) => {
-          customContexts.push({ contentKind, text });
-          context.fillText("custom-delete", left, textBaseline);
-        },
-      },
-      effects: readEditorEffects(state),
-      height: 180,
-      width: 240,
-    });
-
-    expect(customContexts).toEqual([{ contentKind: "code", text: ";" }]);
-    expect(findFillTextOperation(context.operations, "custom-delete")).toBeDefined();
-    expect(findFillTextOperation(context.operations, ";")).toBeNull();
-  });
-
-  test("supports explicit replace composition for custom effects", () => {
-    let state = setup("alpha\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
-    state = deleteBackward(state) ?? state;
-
-    const { context } = renderPaintOperations(state, {
-      customEffects: {
-        textDeleted: {
-          compose: "replace",
-          paint: ({ context, left, textBaseline }) => {
-            context.fillText("explicit-replace", left, textBaseline);
-          },
-        },
-      },
-      effects: readEditorEffects(state),
-      height: 180,
-      width: 240,
-    });
-
-    expect(findFillTextOperation(context.operations, "explicit-replace")).toBeDefined();
-    expect(findFillTextOperation(context.operations, "a")).toBeNull();
-  });
+      expect(received).toEqual([expected]);
+      expect(findFillTextOperation(context.operations, "custom-delete")).not.toBeNull();
+      expect(findFillTextOperation(context.operations, expected.text)).toBeNull();
+    },
+  );
 
   test("paints sparse theme text colors from the resolved base text", () => {
     const state = setup("# Heading\n\nParagraph\n\n> Quote\n");
@@ -1125,64 +992,12 @@ describe("Selections, comments, and text overlays", () => {
       ...withoutTextTokens(resolvedLightTheme),
       text: "#f5f5f5",
     });
-    const { context } = renderPaintOperations(state, { height: 260, theme, width: 360 });
+    const { frame } = createTestDocumentFrame(state, { height: 260, theme, width: 360 });
+    const context = paint(frame);
 
     expect(findFillTextOperation(context.operations, "Heading")?.fillStyle).toBe("#f5f5f5");
     expect(findFillTextOperation(context.operations, "Paragraph")?.fillStyle).toBe("#f5f5f5");
     expect(findFillTextOperation(context.operations, "Quote")?.fillStyle).toBe("#f5f5f5");
-  });
-
-  test("paints text color decorations as a glyph overlay without splitting text runs", () => {
-    const state = setup("alpha beta\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
-
-    const { context } = renderPaintOperations(state, {
-      height: 180,
-      textDecorations: new Map([
-        [
-          container.path,
-          [
-            {
-              color: "#c026d3",
-              endOffset: 10,
-              path: container.path,
-              startOffset: 6,
-            },
-          ],
-        ],
-      ]),
-      width: 240,
-    });
-    const textOperations = context.operations.filter(
-      (operation): operation is Extract<RecordingOperation, { kind: "fillText" }> =>
-        operation.kind === "fillText",
-    );
-    const splitDecorationPaint = textOperations.find((operation) => operation.text === "beta");
-    const baseTextPaint = textOperations.find(
-      (operation) =>
-        operation.text === "alpha beta" &&
-        operation.fillStyle === resolvedLightTheme.paragraphText &&
-        operation.globalCompositeOperation === "source-over",
-    );
-    const decorationMaskPaint = textOperations.find(
-      (operation) =>
-        operation.text === "alpha beta" && operation.globalCompositeOperation === "destination-out",
-    );
-    const decorationOverlayPaint = textOperations.find(
-      (operation) =>
-        operation.text === "alpha beta" &&
-        operation.fillStyle === "#c026d3" &&
-        operation.globalCompositeOperation === "source-over",
-    );
-
-    expect(splitDecorationPaint).toBeUndefined();
-    expect(baseTextPaint).toBeDefined();
-    expect(decorationMaskPaint).toBeDefined();
-    expect(decorationOverlayPaint).toBeDefined();
   });
 
   test("paints text color decorations in table cells", () => {
@@ -1190,13 +1005,9 @@ describe("Selections, comments, and text overlays", () => {
 | --- | --- |
 | Cell target | Other |
 `);
-    const container = indexedTextEntries(state).find((path) => path.text === "Cell target");
+    const container = getPath(state, "Cell target");
 
-    if (!container) {
-      throw new Error("Expected table cell path");
-    }
-
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       height: 240,
       textDecorations: new Map([
         [
@@ -1213,6 +1024,7 @@ describe("Selections, comments, and text overlays", () => {
       ]),
       width: 360,
     });
+    const context = paint(frame);
     const decorationOverlayPaint = context.operations.find((operation) => {
       return (
         operation.kind === "fillText" &&
@@ -1227,18 +1039,11 @@ describe("Selections, comments, and text overlays", () => {
 
   test("paints decoration background colors behind text", () => {
     let state = setup("alpha TODO\n");
-    const container = indexedTextEntries(state)[0];
+    const container = getPath(state, "alpha TODO");
 
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
+    state = selectIn(state, container, 6, 10);
 
-    state = setSelection(state, {
-      anchor: { path: container.path, offset: 6 },
-      focus: { path: container.path, offset: 10 },
-    });
-
-    const { context, layout } = renderPaintOperations(state, {
+    const { frame, layout } = createTestDocumentFrame(state, {
       height: 180,
       textDecorations: new Map([
         [
@@ -1256,6 +1061,7 @@ describe("Selections, comments, and text overlays", () => {
       ]),
       width: 240,
     });
+    const context = paint(frame);
     const backgroundPaintIndex = context.operations.findIndex(
       (operation) => operation.kind === "fillRect" && operation.fillStyle === "#fde047",
     );
@@ -1294,11 +1100,7 @@ describe("Selections, comments, and text overlays", () => {
 
   test("pulses animated decoration backgrounds with paint-time alpha", () => {
     const state = setup("alpha sparkle\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected paragraph path");
-    }
+    const container = getPath(state, "alpha sparkle");
 
     const textDecorations = new Map([
       [
@@ -1315,12 +1117,13 @@ describe("Selections, comments, and text overlays", () => {
         ],
       ],
     ]);
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       height: 180,
       now: 550,
       textDecorations,
       width: 240,
     });
+    const context = paint(frame);
     const pulsingBackground = context.operations.find(
       (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
     );
@@ -1345,12 +1148,14 @@ describe("Selections, comments, and text overlays", () => {
     expect(pulsingTextOverlay.fillStyle).not.toBe("#713f12");
     expect(pulsingTextOverlay.fillStyle).not.toBe(resolvedLightTheme.paragraphText);
 
-    const { context: transparentContext } = renderPaintOperations(state, {
-      height: 180,
-      now: 1100,
-      textDecorations,
-      width: 240,
-    });
+    const transparentContext = paint(
+      createTestDocumentFrame(state, {
+        height: 180,
+        now: 1100,
+        textDecorations,
+        width: 240,
+      }).frame,
+    );
     const transparentTextOverlay = transparentContext.operations.find(
       (operation) =>
         operation.kind === "fillText" &&
@@ -1374,13 +1179,15 @@ describe("Selections, comments, and text overlays", () => {
     expect(transparentTextOverlay.fillStyle).not.toBe("#713f12");
     expect(transparentTextOverlay.fillStyle).not.toBe(resolvedLightTheme.paragraphText);
 
-    const { context: pausedContext } = renderPaintOperations(state, {
-      ambientTime: 1100,
-      height: 180,
-      now: 1650,
-      textDecorations,
-      width: 240,
-    });
+    const pausedContext = paint(
+      createTestDocumentFrame(state, {
+        ambientTime: 1100,
+        height: 180,
+        now: 1650,
+        textDecorations,
+        width: 240,
+      }).frame,
+    );
     const pausedBackground = pausedContext.operations.find(
       (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
     );
@@ -1390,49 +1197,28 @@ describe("Selections, comments, and text overlays", () => {
     }
 
     expect(pausedBackground.globalAlpha).toBeCloseTo(0.42);
-
-    const { context: resumedContext } = renderPaintOperations(state, {
-      ambientTime: 1100,
-      height: 180,
-      now: 2200,
-      textDecorations,
-      width: 240,
-    });
-    const resumedBackground = resumedContext.operations.find(
-      (operation) => operation.kind === "fillRect" && operation.fillStyle === "#facc15",
-    );
-
-    if (!resumedBackground || resumedBackground.kind !== "fillRect") {
-      throw new Error("Expected resumed decoration background");
-    }
-
-    expect(resumedBackground.globalAlpha).toBeCloseTo(pausedBackground.globalAlpha);
   });
 
   test("pulses presence-active comment highlights with ambient time", () => {
     const state = setup("alpha comment\n");
-    const path = indexedTextEntries(state)[0];
+    const path = getPath(state, "alpha comment");
 
-    if (!path) {
-      throw new Error("Expected paragraph path");
-    }
-
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       ambientTime: 1100,
       height: 180,
       commentRanges: [
         {
           endOffset: 13,
           path: path.path,
-          resolution: { match: null, repair: null, status: "stale" },
           resolved: false,
           startOffset: 6,
           threadIndex: 2,
         },
       ],
-      commentPresence: new Map([[2, createCommentPresence(2, "#f97316")]]),
+      commentPresence: new Map([[2, createPresence({ color: "#f97316", commentThreadIndex: 2 })]]),
       width: 240,
     });
+    const context = paint(frame);
     const commentHighlight = context.operations.find(
       (operation) => operation.kind === "fillRect" && operation.fillStyle === "#f97316",
     );
@@ -1446,27 +1232,23 @@ describe("Selections, comments, and text overlays", () => {
 
   test("falls back to the leaf accent when presence has no color", () => {
     const state = setup("alpha comment\n");
-    const path = indexedTextEntries(state)[0];
+    const path = getPath(state, "alpha comment");
 
-    if (!path) {
-      throw new Error("Expected paragraph path");
-    }
-
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       height: 180,
       commentRanges: [
         {
           endOffset: 13,
           path: path.path,
-          resolution: { match: null, repair: null, status: "stale" },
           resolved: false,
           startOffset: 6,
           threadIndex: 2,
         },
       ],
-      commentPresence: new Map([[2, createCommentPresence(2)]]),
+      commentPresence: new Map([[2, createPresence({ commentThreadIndex: 2 })]]),
       width: 240,
     });
+    const context = paint(frame);
     const commentHighlight = context.operations.find(
       (operation) =>
         operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.leafAccent,
@@ -1479,10 +1261,15 @@ describe("Selections, comments, and text overlays", () => {
 describe("Text glyph geometry", () => {
   test("paints inline code background with text background geometry", () => {
     const state = setup("alpha `TODO` beta\n");
-    const { context, layout } = renderPaintOperations(state, {
+    const { path } = getPathByType(state, "paragraph");
+    const { frame, layout } = createTestDocumentFrame(state, {
       height: 180,
+      textDecorations: new Map([
+        [path, [{ backgroundColor: "#fde047", endOffset: 4, path, startOffset: 0 }]],
+      ]),
       width: 240,
     });
+    const context = paint(frame);
     const backgroundPaintIndex = context.operations.findIndex(
       (operation) =>
         operation.kind === "fillRect" &&
@@ -1511,14 +1298,26 @@ describe("Text glyph geometry", () => {
     expect(codeTextPaint.font).toContain("ui-monospace");
     expect(backgroundPaint.y).toBeGreaterThanOrEqual(line.top);
     expect(backgroundPaint.height).toBeLessThan(line.height);
+
+    const decorationBackground = context.operations.find(
+      (operation) => operation.kind === "fillRect" && operation.fillStyle === "#fde047",
+    );
+
+    if (decorationBackground?.kind !== "fillRect") {
+      throw new Error("Expected decoration background paint");
+    }
+
+    // Inline code and decoration backgrounds stay visually aligned within a pixel.
+    expect(Math.abs(decorationBackground.height - backgroundPaint.height)).toBeLessThanOrEqual(1);
   });
 
   test("paints superscript with scaled font and raised baseline", () => {
     const state = setup("Area x<sup>2</sup>\n");
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       height: 180,
       width: 240,
     });
+    const context = paint(frame);
     const basePaint = context.operations.find(
       (operation) => operation.kind === "fillText" && operation.text === "Area x",
     );
@@ -1540,52 +1339,24 @@ describe("Text glyph geometry", () => {
     expect(superscriptPaint.y).toBeLessThan(basePaint.y);
   });
 
-  test("keeps inline code and decoration background heights visually aligned", () => {
-    const state = setup("alpha `TODO` beta\n");
-    const container = indexedTextEntries(state)[0];
+  test("paints strikethrough bars between the line top and baseline of struck runs only", () => {
+    const state = setup("~~gone~~ kept\n");
+    const { frame, layout } = createTestDocumentFrame(state, { height: 180, width: 240 });
+    const context = paint(frame);
+    const struck = findFillTextOperation(context.operations, "gone");
+    const bars = context.operations.filter(
+      (operation) => operation.kind === "fillRect" && operation.fillStyle === struck?.fillStyle,
+    );
+    const line = layout.lines[0];
 
-    if (!container) {
-      throw new Error("Expected paragraph path");
+    if (!struck || !line || bars.length !== 1 || bars[0]?.kind !== "fillRect") {
+      throw new Error("Expected one strikethrough bar across the struck run");
     }
 
-    const { context } = renderPaintOperations(state, {
-      height: 180,
-      textDecorations: new Map([
-        [
-          container.path,
-          [
-            {
-              backgroundColor: "#fde047",
-              endOffset: 4,
-              path: container.path,
-              startOffset: 0,
-            },
-          ],
-        ],
-      ]),
-      width: 240,
-    });
-    const decorationBackground = context.operations.find(
-      (operation) => operation.kind === "fillRect" && operation.fillStyle === "#fde047",
-    );
-    const inlineCodeBackground = context.operations.find(
-      (operation) =>
-        operation.kind === "fillRect" &&
-        operation.fillStyle === resolvedLightTheme.inlineCodeBackground,
-    );
-
-    if (
-      !decorationBackground ||
-      decorationBackground.kind !== "fillRect" ||
-      !inlineCodeBackground ||
-      inlineCodeBackground.kind !== "fillRect"
-    ) {
-      throw new Error("Expected text background paints");
-    }
-
-    expect(Math.abs(inlineCodeBackground.height - decorationBackground.height)).toBeLessThanOrEqual(
-      1,
-    );
+    expect(bars[0].x).toBe(struck.x);
+    expect(bars[0].width).toBeGreaterThan(0);
+    expect(bars[0].y).toBeGreaterThan(line.top);
+    expect(bars[0].y).toBeLessThan(struck.y);
   });
 });
 
@@ -1606,7 +1377,8 @@ describe("List marker painting", () => {
 
 - bullet
 `);
-    const { context } = renderPaintOperations(state, { height: 360, width: 320 });
+    const { frame } = createTestDocumentFrame(state, { height: 360, width: 320 });
+    const context = paint(frame);
     const markerOne = findFillTextOperation(context.operations, "1.");
     const markerTen = findFillTextOperation(context.operations, "10.");
     const textOne = findFillTextOperation(context.operations, "one");
@@ -1629,7 +1401,8 @@ describe("List marker painting", () => {
   - child
     - grandchild
 `);
-    const { context } = renderPaintOperations(state, { height: 220, width: 320 });
+    const { frame } = createTestDocumentFrame(state, { height: 220, width: 320 });
+    const context = paint(frame);
     const markerFills = context.operations.filter(
       (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
         operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.listMarkerText,
@@ -1658,16 +1431,14 @@ describe("List marker painting", () => {
 
   test("scales task checkbox checkmark with marker bounds", () => {
     const state = setup("- [x] task\n");
-
-    for (const expectation of [
+    const checkmarks = [
       { fontSize: 12, size: 11 },
       { fontSize: 20, size: 18 },
-    ]) {
-      const theme: ResolvedEditorTheme = {
-        ...resolvedLightTheme,
-        fontSize: expectation.fontSize,
-      };
-      const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
+    ].map(({ fontSize, size }) => {
+      const theme: ResolvedEditorTheme = { ...resolvedLightTheme, fontSize };
+      const context = paint(
+        createTestDocumentFrame(state, { height: 180, theme, width: 240 }).frame,
+      );
       const checkboxFill = context.operations.find(
         (operation): operation is Extract<RecordingOperation, { kind: "fillRect" }> =>
           operation.kind === "fillRect" &&
@@ -1684,16 +1455,25 @@ describe("List marker painting", () => {
         throw new Error("Expected checked task checkbox paint operations");
       }
 
-      const scale = expectation.size / 14;
+      expect(checkboxFill.width).toBe(size);
+      expect(checkboxFill.height).toBe(size);
 
-      expect(checkboxFill.width).toBe(expectation.size);
-      expect(checkboxFill.height).toBe(expectation.size);
-      expect(approximately(checkmarkStroke.lineWidth, 2 * scale)).toBeTrue();
-      expect(approximately(checkmarkStroke.path[0]!.x - checkboxFill.x, 3.5 * scale)).toBeTrue();
-      expect(approximately(checkmarkStroke.path[0]!.y - checkboxFill.y, 7.5 * scale)).toBeTrue();
-      expect(approximately(checkmarkStroke.path[2]!.x - checkboxFill.x, 11.5 * scale)).toBeTrue();
-      expect(approximately(checkmarkStroke.path[2]!.y - checkboxFill.y, 3.5 * scale)).toBeTrue();
-    }
+      return {
+        lineWidth: checkmarkStroke.lineWidth / size,
+        points: checkmarkStroke.path.flatMap((point) => [
+          (point.x - checkboxFill.x) / size,
+          (point.y - checkboxFill.y) / size,
+        ]),
+      };
+    });
+    const [small, large] = checkmarks as [(typeof checkmarks)[0], (typeof checkmarks)[0]];
+
+    // The checkmark keeps its shape relative to the box at every size.
+    expect(small.points.every((value) => value > 0 && value < 1)).toBeTrue();
+    expect(
+      small.points.every((value, index) => approximately(value, large.points[index]!)),
+    ).toBeTrue();
+    expect(approximately(small.lineWidth, large.lineWidth)).toBeTrue();
   });
 
   test("uses explicit list marker text color when provided", () => {
@@ -1703,7 +1483,8 @@ describe("List marker painting", () => {
       listMarkerText: "#f97316",
       paragraphText: "#14532d",
     };
-    const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
+    const { frame } = createTestDocumentFrame(state, { height: 180, theme, width: 240 });
+    const context = paint(frame);
     const marker = context.operations.find(
       (operation) => operation.kind === "fillPath" && operation.fillStyle === "#f97316",
     );
@@ -1717,119 +1498,18 @@ describe("List marker painting", () => {
     expect(text.fillStyle).toBe("#14532d");
   });
 
-  test("uses resolved list marker text color", () => {
-    const state = setup("- bullet\n");
-    const theme: ResolvedEditorTheme = {
-      ...resolvedLightTheme,
-      listMarkerText: resolvedLightTheme.checkboxUncheckedStroke,
-      paragraphText: "#14532d",
-    };
-
-    const { context } = renderPaintOperations(state, { height: 180, theme, width: 240 });
-    const marker = context.operations.find(
-      (operation) =>
-        operation.kind === "fillPath" &&
-        operation.fillStyle === resolvedLightTheme.checkboxUncheckedStroke,
-    );
-    const text = findFillTextOperation(context.operations, "bullet");
-
-    if (!marker || !text) {
-      throw new Error("Expected list marker and text paint operations");
-    }
-
-    expect(marker).toBeDefined();
-    expect(text.fillStyle).toBe("#14532d");
-  });
-
-  test("can compose custom list-item-inserted effects before the default marker paint", () => {
+  test("composes custom list-item-inserted effects before the default marker in isolated canvas state", () => {
     let state = setup("- alpha\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected list item path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
+    state = placeAt(state, getPath(state, "alpha"), "end");
     state = insertLineBreak(state) ?? state;
 
     const receivedMarkers: string[] = [];
-    const { context } = renderPaintOperations(state, {
+    const { frame } = createTestDocumentFrame(state, {
       customEffects: {
         listItemInserted: {
           compose: "before",
           paint: ({ context, marker }) => {
             receivedMarkers.push(marker.kind);
-            context.fillStyle = "#123abc";
-            context.fillRect(
-              marker.rect.left,
-              marker.rect.top,
-              marker.rect.width,
-              marker.rect.height,
-            );
-          },
-        },
-      },
-      effects: readEditorEffects(state),
-      height: 220,
-      width: 320,
-    });
-    const customFlashIndex = findOperationIndex(
-      context.operations,
-      (operation) => operation.kind === "fillRect" && operation.fillStyle === "#123abc",
-    );
-    const defaultMarkerIndex = context.operations.findIndex(
-      (operation, index) => index > customFlashIndex && operation.kind === "fillPath",
-    );
-
-    expect(receivedMarkers).toEqual(["unordered"]);
-    expect(customFlashIndex).toBeGreaterThanOrEqual(0);
-    expect(defaultMarkerIndex).toBeGreaterThan(customFlashIndex);
-  });
-
-  test("passes task markers to custom list-item-inserted effects", () => {
-    let state = setup("- [ ] alpha\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected task list item path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
-    state = insertLineBreak(state) ?? state;
-
-    const receivedMarkers: string[] = [];
-    renderPaintOperations(state, {
-      customEffects: {
-        listItemInserted: ({ marker }) => {
-          receivedMarkers.push(
-            marker.kind === "task" ? `${marker.kind}:${marker.checked}` : marker.kind,
-          );
-        },
-      },
-      effects: readEditorEffects(state),
-      height: 220,
-      width: 320,
-    });
-
-    expect(receivedMarkers).toEqual(["task:false"]);
-  });
-
-  test("isolates canvas state between composed custom and default effects", () => {
-    let state = setup("- alpha\n");
-    const container = indexedTextEntries(state)[0];
-
-    if (!container) {
-      throw new Error("Expected list item path");
-    }
-
-    state = setSelection(state, { path: container.path, offset: container.text.length });
-    state = insertLineBreak(state) ?? state;
-
-    const { context } = renderPaintOperations(state, {
-      customEffects: {
-        listItemInserted: {
-          compose: "before",
-          paint: ({ context, marker }) => {
             context.fillStyle = "#123abc";
             context.globalAlpha = 0.25;
             context.fillRect(
@@ -1845,100 +1525,115 @@ describe("List marker painting", () => {
       height: 220,
       width: 320,
     });
-    const defaultMarker = context.operations.find(
-      (operation) =>
-        operation.kind === "fillPath" && operation.fillStyle === resolvedLightTheme.listMarkerText,
+    const context = paint(frame);
+    const customFlashIndex = findOperationIndex(
+      context.operations,
+      (operation) => operation.kind === "fillRect" && operation.fillStyle === "#123abc",
+    );
+    const defaultMarkerIndex = context.operations.findIndex(
+      (operation, index) => index > customFlashIndex && operation.kind === "fillPath",
     );
 
-    if (!defaultMarker || defaultMarker.kind !== "fillPath") {
-      throw new Error("Expected default marker paint after custom effect");
+    expect(receivedMarkers).toEqual(["unordered"]);
+    expect(customFlashIndex).toBeGreaterThanOrEqual(0);
+    expect(defaultMarkerIndex).toBeGreaterThan(customFlashIndex);
+    expect(context.operations[defaultMarkerIndex]).toMatchObject({ globalAlpha: 1 });
+  });
+
+  test("passes task markers to custom list-item-inserted effects", () => {
+    let state = setup("- [ ] alpha\n");
+    state = placeAt(state, getPath(state, "alpha"), "end");
+    state = insertLineBreak(state) ?? state;
+
+    const receivedMarkers: string[] = [];
+    paint(
+      createTestDocumentFrame(state, {
+        customEffects: {
+          listItemInserted: ({ marker }) => {
+            receivedMarkers.push(
+              marker.kind === "task" ? `${marker.kind}:${marker.checked}` : marker.kind,
+            );
+          },
+        },
+        effects: readEditorEffects(state),
+        height: 220,
+        width: 320,
+      }).frame,
+    );
+
+    expect(receivedMarkers).toEqual(["task:false"]);
+  });
+
+  test("scales popping ordered markers around their effect rect center", () => {
+    let state = setup("1. alpha\n");
+    state = placeAt(state, getPath(state, "alpha"), "end");
+    state = insertLineBreak(state) ?? state;
+
+    const markerRects: DocumintListMarkerPaintFrame["rect"][] = [];
+    const translate = spyOn(RecordingCanvasContext.prototype, "translate");
+    let translateCalls: [number, number][];
+
+    try {
+      paint(
+        createTestDocumentFrame(state, {
+          customEffects: {
+            listItemInserted: {
+              compose: "before",
+              paint: ({ marker }) => {
+                markerRects.push(marker.rect);
+              },
+            },
+          },
+          effects: readEditorEffects(state),
+          height: 220,
+          width: 320,
+        }).frame,
+      );
+      translateCalls = [...(translate.mock.calls as unknown as [number, number][])];
+    } finally {
+      translate.mockRestore();
     }
 
-    expect(defaultMarker.globalAlpha).toBe(1);
+    const [rect] = markerRects;
+
+    if (!rect) {
+      throw new Error("Expected ordered marker effect rect");
+    }
+
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    expect(translateCalls).toContainEqual([centerX, centerY]);
+    expect(translateCalls).toContainEqual([-centerX, -centerY]);
   });
 });
 
-function renderPaintOperations(
-  state: EditorState,
-  options: {
-    ambientTime?: number;
-    height: number;
-    commentRanges?: EditorCommentRange[];
-    customEffects?: DocumintEffects;
-    effects?: readonly ScheduledTestEffect[];
-    documentChanges?: Parameters<typeof createDocumentFrame>[2]["documentChanges"];
-    metadataExpanded?: boolean;
-    now?: number;
-    commentPresence?: ReadonlyMap<number, EditorPresence>;
-    resources?: DocumentResources;
-    textDecorations?: TextDecorationIndex;
-    theme?: ResolvedEditorTheme;
-    width: number;
-  },
-) {
-  const layoutState = createEditorLayoutState(
-    state,
-    {
-      height: options.height,
-      fontSize: (options.theme ?? resolvedLightTheme).fontSize,
-      metadataExpanded: options.metadataExpanded ?? false,
-      top: 0,
-      width: options.width,
-    },
-    undefined,
-    options.resources,
-  );
-  const context = new RecordingCanvasContext();
+describe("Overlay painting", () => {
+  test("paints the local caret and resolved presence cursors on the overlay canvas", () => {
+    let state = setup("alpha beta gamma\n");
+    const container = getPath(state, "alpha beta gamma");
 
-  const now = options.now ?? 0;
-  const effects = options.effects?.map(
-    (effect): RendererEffect =>
-      "startedAt" in effect ? effect : ({ ...effect, startedAt: now } as RendererEffect),
-  );
+    state = placeAt(state, container, 1);
 
-  const frame = createDocumentFrame(state, layoutState, {
-    activeBlockPath:
-      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ??
-      null,
-    activePath: state.selection.focus.path,
-    activeThreadIndex: null,
-    ambientTime: options.ambientTime,
-    customEffects: options.customEffects,
-    devicePixelRatio: 1,
-    effects,
-    documentChanges: options.documentChanges,
-    height: options.height,
-    commentRanges: options.commentRanges ?? [],
-    normalizedSelection: normalizeSelection(state),
-    commentPresence: options.commentPresence,
-    // `now` defaults to 0 in tests so paint is deterministic: any state without
-    // active timed effects renders identically across runs. Tests that
-    // exercise effect progression set their own `now`.
-    now,
-    resources: options.resources,
-    textDecorations: options.textDecorations,
-    theme: options.theme ?? resolvedLightTheme,
-    width: options.width,
+    const context = paint(
+      createTestOverlayFrame(state, {
+        presence: [
+          createPresence({ color: "#0ea5e9", cursorPoint: { path: container.path, offset: 5 } }),
+        ],
+        width: 240,
+      }),
+    );
+    const userCaretIndex = findOperationIndex(context.operations, (operation) => {
+      return operation.kind === "fillRect" && operation.fillStyle === resolvedLightTheme.caret;
+    });
+    const presenceCaretIndex = findOperationIndex(context.operations, (operation) => {
+      return operation.kind === "fillRect" && operation.fillStyle === "#0ea5e9";
+    });
+
+    expect(userCaretIndex).toBeGreaterThanOrEqual(0);
+    expect(presenceCaretIndex).toBeGreaterThanOrEqual(0);
   });
-  paintDocumentFrame(context as unknown as CanvasRenderingContext2D, frame);
-
-  return {
-    context,
-    layout: layoutState.layout,
-  };
-}
-
-function createCommentPresence(threadIndex: number, color?: string): EditorPresence {
-  return {
-    ...(color ? { color } : {}),
-    commentThreadIndex: threadIndex,
-    cursorPoint: null,
-    id: "user",
-    isOnUnresolvedCommentThread: true,
-    username: "User",
-    viewport: null,
-  };
-}
+});
 
 function withoutTextTokens(theme: ResolvedEditorTheme) {
   const {

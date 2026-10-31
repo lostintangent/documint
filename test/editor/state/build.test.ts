@@ -1,7 +1,6 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
-  blockPathContainsPath,
   createAnchorFromContainer,
   createCommentThread,
   createDividerBlock,
@@ -20,11 +19,7 @@ import {
   type IndexedBlock,
 } from "@/editor/state";
 import { createIndexedRoot, positionIndexedRoots } from "@/editor/state/index/roots";
-import {
-  commitDocument,
-  replaceIndexedDocument,
-  replaceEditorBlock,
-} from "@/editor/state/index/splice";
+import { replaceIndexedDocument, replaceEditorBlock } from "@/editor/state/index/splice";
 import { parseDocument, serializeDocument } from "@/markdown";
 
 describe("Document index build", () => {
@@ -53,9 +48,10 @@ alpha
 `);
     const original = createIndexedRoot(snapshot.blocks[1]!, 1);
     const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
-    const rebuilt = createIndexedRoot(nextDocument.blocks[1]!, original.rootIndex);
+    const rebuilt = createIndexedRoot(nextDocument.blocks[1]!, 1);
 
-    expect(rebuilt.rootIndex).toBe(1);
+    expect(original.blocks[0]?.rootIndex).toBe(1);
+    expect(rebuilt.blocks[0]?.rootIndex).toBe(1);
     expect(rebuilt.blocks[0]?.path).toBe("root.1");
     expect(rebuilt.blocks[0]).toMatchObject({ kind: "inlines", text: "omega" });
   });
@@ -67,23 +63,16 @@ alpha
 
 beta
 `);
-    const model = createDocumentIndex(snapshot);
-    const runtime = createDocumentIndex(snapshot);
+    const index = createDocumentIndex(snapshot);
     const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("alphabet")]);
-    const replacedModel = spliceDocumentIndex(model, nextDocument, 1, 1);
-    const replaced = spliceDocumentIndex(runtime, nextDocument, 1, 1);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
 
-    expect(replacedModel.document).toBe(nextDocument);
-    expect(replacedModel.roots[0]).toBe(model.roots[0]);
-    expect(replacedModel.roots[1]).not.toBe(model.roots[1]);
-    expect(replacedModel.roots[2]).toBe(model.roots[2]);
-    expect(replaced.roots[0]).toBe(runtime.roots[0]);
-    expect(replaced.roots[1]).not.toBe(runtime.roots[1]);
-    expect(replaced.roots[2]).toBe(runtime.roots[2]);
-    expect(resolveEditorTextAtPath(replacedModel, "root.2")).toBe("beta");
-    expect(resolveEditorTextAtPath(replaced, "root.2")).toBe("beta");
-    expectDocumentIndexMaps(replacedModel);
-    expectDocumentIndexMaps(replaced);
+    expect(next.document).toBe(nextDocument);
+    expect(next.roots[0]).toBe(index.roots[0]);
+    expect(next.roots[1]).not.toBe(index.roots[1]);
+    expect(next.roots[2]).toBe(index.roots[2]);
+    expect(resolveEditorTextAtPath(next, "root.2")).toBe("beta");
+    expectDocumentIndexMaps(next);
   });
 
   test("preserves suffix roots when only text length changes", () => {
@@ -155,26 +144,11 @@ beta
     expect(nextCell).toMatchObject({
       cellIndex: 1,
       path: "root.2.rows.1.cells.1",
-      rootIndex: 2,
       rowIndex: 1,
       tablePath: "root.2",
       editorOrder: previousCell.editorOrder + 1,
       text: "two",
     });
-    expectDocumentIndexMaps(next);
-  });
-
-  test("keeps lookup maps exact when replacing a root with new paths", () => {
-    const snapshot = parseDocument(`alpha
-
-beta
-`);
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
-    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
-
-    expect(next.blocks).toHaveLength(2);
-    expect(indexedTextEntries(next)).toHaveLength(2);
     expectDocumentIndexMaps(next);
   });
 
@@ -269,7 +243,7 @@ beta
 
     expect(blockquote.blockRangeEnd).toBeGreaterThan(list.blockArrayIndex);
     expect(blockquote.blockRangeEnd).toBeGreaterThan(listItem.blockArrayIndex);
-    expect(blockPathContainsPath(blockquote.path, listItem.path)).toBe(true);
+    expect(blockPathContains(blockquote.path, listItem.path)).toBe(true);
     expect(index.tableCellIndex.get("root.2.rows.0.cells.0")).toMatchObject({
       cellIndex: 0,
       rowIndex: 0,
@@ -471,7 +445,7 @@ alpha
       throw new Error("Expected nested block replacement");
     }
 
-    expect(serializeDocument(commitDocument(reduction))).toBe("- beta\n");
+    expect(serializeDocument(reduction.document)).toBe("- beta\n");
   });
 
   test("does not delete a block when the replacer rejects it", () => {
@@ -485,7 +459,7 @@ alpha
     }
 
     expect(replaceEditorBlock(documentIndex, paragraph.path, () => null)).toBeNull();
-    expect(serializeDocument(commitDocument(documentIndex))).toBe("- alpha\n");
+    expect(serializeDocument(documentIndex.document)).toBe("- alpha\n");
     expectDocumentIndexMaps(documentIndex);
   });
 
@@ -707,9 +681,14 @@ commented target
           parent.blockArrayIndex <= child.blockArrayIndex &&
           child.blockRangeEnd <= parent.blockRangeEnd;
 
-        expect(rangeContains).toBe(blockPathContainsPath(parent.path, child.path));
+        expect(rangeContains).toBe(blockPathContains(parent.path, child.path));
       }
     }
+  }
+
+  // Block paths nest by prefix, so this is the structural containment oracle.
+  function blockPathContains(ancestorPath: string, descendantPath: string) {
+    return descendantPath === ancestorPath || descendantPath.startsWith(`${ancestorPath}.`);
   }
 
   function withCommentAt(document: ReturnType<typeof parseDocument>, containerIndex = 0) {

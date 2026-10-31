@@ -22,7 +22,7 @@ import {
 type TextLikeBlock = Extract<Block, { type: "heading" | "paragraph" }>;
 type CaretTarget = { childIndices: number[]; offset: number | "end" };
 
-export type MergeResult = {
+type MergeResult = {
   blocks: Block[];
   caretLocalIndex: number;
   caretChildIndices: number[];

@@ -30,28 +30,17 @@ import {
 import { resolveExternalPathMatch } from "./path-match";
 import { restoreTransientEmptyRootParagraphSelection } from "./empty-paragraph";
 
-export type ExternalSelectionReconciliationResult = {
-  didReconcile: boolean;
-  state: EditorState;
-};
-
 export function reconcileExternalContentChange(
-  previousState: EditorState | null,
+  previousState: EditorState,
   nextState: EditorState,
-): ExternalSelectionReconciliationResult {
-  if (!previousState) {
-    return { didReconcile: false, state: nextState };
-  }
-
+): EditorState {
   // Prefer semantic path/offset repair. Recreate transient empty paragraphs
   // only when normal selection reconciliation cannot find an equivalent point.
-  const restoredState =
+  return (
     restoreEquivalentSelection(previousState, nextState) ??
-    restoreTransientEmptyRootParagraphSelection(previousState, nextState);
-
-  return restoredState
-    ? { didReconcile: true, state: restoredState }
-    : { didReconcile: false, state: nextState };
+    restoreTransientEmptyRootParagraphSelection(previousState, nextState) ??
+    nextState
+  );
 }
 
 // Apply the equivalent selection (if any) to `nextState`. Exposed so tests
@@ -133,22 +122,17 @@ function resolveEquivalentSelectionPoint(
   };
 }
 
+// Range starts should stay before the selected text; range ends should stay
+// after it. Reverse selections preserve the user's original anchor/focus.
+// Callers resolve collapsed selections with neutral affinity before reaching
+// this helper.
 function resolveSelectionPointAffinity(state: EditorState): {
   anchor: SelectionAnchorAffinity;
   focus: SelectionAnchorAffinity;
 } {
   const { anchor, focus } = state.selection;
 
-  if (areSelectionPointsEqual(anchor, focus)) {
-    return {
-      anchor: "neutral",
-      focus: "neutral",
-    };
-  }
-
-  // Range starts should stay before the selected text; range ends should stay
-  // after it. Reverse selections preserve the user's original anchor/focus.
-  return compareSelectionPoints(state, anchor, focus) <= 0
+  return compareEditorPositions(state.documentIndex, anchor, focus, { unknown: "before" }) <= 0
     ? {
         anchor: "before-suffix",
         focus: "after-prefix",
@@ -157,12 +141,4 @@ function resolveSelectionPointAffinity(state: EditorState): {
         anchor: "after-prefix",
         focus: "before-suffix",
       };
-}
-
-function compareSelectionPoints(
-  state: EditorState,
-  left: EditorSelectionPoint,
-  right: EditorSelectionPoint,
-) {
-  return compareEditorPositions(state.documentIndex, left, right, { unknown: "before" });
 }

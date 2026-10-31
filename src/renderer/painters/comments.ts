@@ -2,26 +2,18 @@ import type { DocumentFrameLine } from "../frame";
 import { paintAmbientlyPulsing } from "../effects/pulse";
 
 export function paintCommentHighlights(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  ambientTime: number,
+  { clocks, context }: { clocks: { ambientTime: number }; context: CanvasRenderingContext2D },
 ) {
-  for (const highlight of lineFrame.commentHighlights) {
-    context.fillStyle = highlight.color;
+  for (const { color, pulse, rect } of lineFrame.commentHighlights) {
+    context.fillStyle = color;
 
-    if (highlight.pulse) {
-      paintAmbientlyPulsing(context, ambientTime, () => {
-        paintCommentHighlightRect(context, highlight.rect);
-      });
+    if (pulse) {
+      paintAmbientlyPulsing(context, clocks.ambientTime, () =>
+        context.fillRect(rect.left, rect.top, rect.width, rect.height),
+      );
     } else {
-      paintCommentHighlightRect(context, highlight.rect);
+      context.fillRect(rect.left, rect.top, rect.width, rect.height);
     }
   }
-}
-
-function paintCommentHighlightRect(
-  context: CanvasRenderingContext2D,
-  rect: { height: number; left: number; top: number; width: number },
-) {
-  context.fillRect(rect.left, rect.top, rect.width, rect.height);
 }

@@ -65,4 +65,22 @@ describe("extractMentionedUserIds", () => {
     };
     expect(extractMentionedUserIds("@Anon waved", [sourceWithoutIds])).toEqual([]);
   });
+
+  test("collects mentions across nested blocks", () => {
+    expect(extractMentionedUserIds("- @Jane\n\n> ask @John", [userSource])).toEqual([
+      "u-jane",
+      "u-john",
+    ]);
+  });
+
+  test("counts explicit mention links even outside the roster", () => {
+    expect(extractMentionedUserIds("ask @[Bob](u-bob) and @Jane", [userSource])).toEqual([
+      "u-bob",
+      "u-jane",
+    ]);
+  });
+
+  test("ignores mention text inside code", () => {
+    expect(extractMentionedUserIds("`hi @Jane`\n\n```\n@John\n```", [userSource])).toEqual([]);
+  });
 });

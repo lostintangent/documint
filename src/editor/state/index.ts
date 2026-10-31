@@ -1,5 +1,5 @@
 // Build
-export { commitDocument, createDocumentIndex, spliceDocumentIndex } from "./index/splice";
+export { createDocumentIndex, spliceDocumentIndex } from "./index/splice";
 // Types
 export type {
   IndexedBlock,
@@ -7,7 +7,6 @@ export type {
   IndexedInline,
   IndexedListItem,
   IndexedTableCell,
-  IndexedText,
 } from "./index/types";
 
 // Inline selectors
@@ -31,19 +30,15 @@ export {
   resolveMetadataField,
   resolveIndexedText,
   resolveIndexedTextInlines,
-  resolveIndexedTextKind,
   resolveIndexedTableCell,
   resolveInlinesAtPath,
   resolveIndexedBlockContainingPath,
-  resolveRootBlock,
-  resolveSiblingRootBlock,
   resolveEditorTextAtPath,
 
   // Comment projection
   resolveCommentThreadIndicesForPath,
 
   // Block extents
-  blockContainsBlock,
   findAncestorIndexedBlockByPath,
   resolveParentIndexedBlock,
   resolveIndexedTableCellByTablePath,
@@ -87,25 +82,17 @@ export {
 } from "./selection";
 
 export type {
-  CaretTextContext,
   EditorSelection,
   EditorSelectionPoint,
   EditorSelectionRange,
   NormalizedEditorSelection,
   SelectionContext,
   SelectionFormatting,
-  SelectionTarget,
 } from "./selection";
 
 // Semantic effects
 export { readEditorEffects, takeEditorEffects } from "./effects";
-export type {
-  ActiveBlockChangedEffect,
-  EditorEffect,
-  ListItemInsertedEffect,
-  TextDeletedEffect,
-  TextInsertedEffect,
-} from "./effects";
+export type { EditorEffect, TextDeletedEffect, TextInsertedEffect } from "./effects";
 
 // State
 export {
@@ -118,8 +105,6 @@ export {
 } from "./reducer/state";
 
 export type { EditorState } from "./types";
-
-export type { TextRangeTarget } from "./commands/context";
 
 // Commands
 export * from "./commands";

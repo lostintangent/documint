@@ -2,7 +2,7 @@
 // viewport slice selection, exact slice measurement, and refinement of cached
 // estimates from measured geometry.
 
-import type { DocumentResources } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
 import { type DocumentIndex, type EditorState } from "../../state";
 import { type LayoutCache } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
@@ -84,48 +84,33 @@ export function createVirtualizedLayoutSlice({
     sliceEndIndex = Math.max(sliceEndIndex, index + 1);
   }
 
-  let layout: DocumentLayout;
+  const expandedSlice = expandViewportSliceToBlockBoundaries(
+    documentIndex,
+    virtualLayout,
+    sliceStartIndex,
+    sliceEndIndex,
+  );
+  // Seed measurement at the slice's document-space top so geometry is
+  // produced directly in document coordinates — no post-shift needed.
+  const sliceLayout = measureBodyLayoutSlice(
+    documentIndex,
+    options,
+    cache,
+    resources,
+    expandedSlice.top ?? options.paddingY,
+    expandedSlice.blockStartIndex,
+    expandedSlice.blockEndIndex,
+  );
 
-  if (!Number.isFinite(sliceStartIndex) || !Number.isFinite(sliceEndIndex)) {
-    layout = measureBodyLayoutSlice(documentIndex, options, cache, resources, undefined, 0, 0);
-  } else {
-    const expandedSlice = expandViewportSliceToBlockBoundaries(
-      documentIndex,
-      virtualLayout,
-      sliceStartIndex,
-      sliceEndIndex,
-    );
-    const sliceTop = expandedSlice.top ?? options.paddingY;
-    // Seed measurement at the slice's document-space top so geometry is
-    // produced directly in document coordinates — no post-shift needed.
-    // Override `height` with the full-document estimate so consumers that
-    // read `layout.height` (scrollbars, paint extents) see the doc height,
-    // not the slice height.
-    const sliceLayout = measureBodyLayoutSlice(
-      documentIndex,
-      options,
-      cache,
-      resources,
-      sliceTop,
-      expandedSlice.blockStartIndex,
-      expandedSlice.blockEndIndex,
-    );
+  updateMeasuredContainerHeights(cache, documentIndex, sliceLayout, options, resources);
+  refineVirtualLayoutWithMeasuredSlice(virtualLayout, sliceLayout);
 
-    layout = { ...sliceLayout, height: virtualLayout.totalHeight };
-
-    updateMeasuredContainerHeights(cache, documentIndex, layout, options, resources);
-
-    if (refineVirtualLayoutWithMeasuredSlice(virtualLayout, layout)) {
-      layout = {
-        ...layout,
-        height: virtualLayout.totalHeight,
-      };
-    }
-  }
-
+  // Override `height` with the refined full-document estimate so consumers
+  // that read `layout.height` (scrollbars, paint extents) see the doc height,
+  // not the slice height.
   return {
     estimatePathBounds: virtualLayout.estimatePathBounds,
-    layout,
+    layout: { ...sliceLayout, height: virtualLayout.totalHeight },
     totalHeight: virtualLayout.totalHeight,
   };
 }

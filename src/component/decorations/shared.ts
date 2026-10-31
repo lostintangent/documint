@@ -1,54 +1,53 @@
 import type { Block } from "@/document";
 import type { TextDecoration } from "@/editor";
 
-export type SerializedDecoration = {
+export type DocumintDecoration = {
   backgroundColor?: string;
   pulse?: boolean;
   color?: string;
-  flags: string;
-  source: string;
+  pattern: RegExp;
 };
 
 export type DecorationRootSnapshot = {
   block: Block;
   rootIndex: number;
-  sourceKey: string;
 };
 
-export type DecorationRootResult = {
+// A worker result paired with the snapshot it classified. Blocks are immutable,
+// so the result still applies exactly when the current root is the same object.
+export type DecorationRootResult = DecorationRootSnapshot & {
   ranges: TextDecoration[];
-  rootIndex: number;
-  sourceKey: string;
 };
 
+// Rules cross the worker boundary as plain objects; structured clone keeps
+// their RegExp patterns intact.
 export type DecorationWorkerRequest =
   | {
       kind: "configure-decorations";
-      codeGrammars: Record<string, SerializedDecoration[]>;
-      decorations: SerializedDecoration[];
-      // Identifies the complete configured decoration inputs: host prose
-      // decorations plus resolved per-language code grammar decorations. Apply
-      // requests and results use this to avoid mixing roots with stale worker
-      // configuration.
-      configKey: string;
+      codeGrammars: Record<string, DocumintDecoration[]>;
+      decorations: DocumintDecoration[];
     }
   | {
       kind: "apply-decorations";
-      configKey: string;
       requestId: number;
       roots: DecorationRootSnapshot[];
     };
 
+// `ranges[i]` classifies `roots[i]` from the matching apply request.
 export type DecorationWorkerResponse =
   | {
       kind: "decoration-result";
-      configKey: string;
+      ranges: TextDecoration[][];
       requestId: number;
-      roots: DecorationRootResult[];
     }
   | {
       kind: "decoration-error";
-      configKey: string;
-      requestId: number;
       message: string;
+      requestId: number;
     };
+
+export function isValidDecoration(
+  decoration: Pick<DocumintDecoration, "backgroundColor" | "color">,
+) {
+  return Boolean(decoration.backgroundColor || decoration.color);
+}

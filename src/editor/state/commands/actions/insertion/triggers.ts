@@ -4,7 +4,6 @@ import {
   createHeadingBlock,
   createListBlock,
   createListItemBlock,
-  rebuildListBlock,
   rebuildListItemBlock,
   rebuildTextBlock,
   type Block,
@@ -404,13 +403,14 @@ function transformListAction(
 
   return {
     kind: "replace-block",
-    block: rebuildListBlock(
-      itemContext.list,
-      itemContext.list.items.map((item, index) =>
+    block: createListBlock({
+      compact: itemContext.list.compact,
+      items: itemContext.list.items.map((item, index) =>
         index === itemContext.itemIndex ? transformedItem : item,
       ),
-      { ordered: options.ordered, start: options.start },
-    ),
+      ordered: options.ordered,
+      start: options.start,
+    }),
     blockPath: itemContext.listPath,
     selection: target.block(transformedItem),
   };

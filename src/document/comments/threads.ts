@@ -122,11 +122,9 @@ export function isResolvedCommentThread(thread: CommentThread): boolean {
   return thread.resolvedAt != null;
 }
 
-export function getCommentThreadUpdatedAt(thread: CommentThread): string | null {
-  if (thread.comments.length === 0) {
-    return null;
-  }
-
+// Threads always hold at least one comment: creation adds the first, parsing
+// rejects empty threads, and deleting the last comment deletes the thread.
+export function getCommentThreadUpdatedAt(thread: CommentThread): string {
   return thread.comments.reduce(
     (latest, comment) => (comment.updatedAt > latest ? comment.updatedAt : latest),
     thread.comments[0]!.updatedAt,
@@ -143,16 +141,11 @@ export function createCommentThreadId(
   // comment-domain field shapes. Markdown persistence omits thread IDs, so the
   // generated handle is derived only from persisted comment content.
   const seed = `${anchor.kind ?? ""}:${anchor.prefix ?? ""}:${anchor.suffix ?? ""}:${quote}:${body}:${updatedAt}`;
-  return createDeterministicCommentId("commentThread", seed);
-}
-
-function createDeterministicCommentId(type: string, semanticSeed: string): string {
-  let hash = FNV_OFFSET_BASIS;
-  hash = mixStringIntoHash(hash, type);
+  let hash = mixStringIntoHash(FNV_OFFSET_BASIS, "commentThread");
   hash = mixByteIntoHash(hash, HASH_SEPARATOR_CHAR_CODE);
-  hash = mixStringIntoHash(hash, semanticSeed);
+  hash = mixStringIntoHash(hash, seed);
 
-  return `${type}-${finishHash(hash).toString(36)}`;
+  return `commentThread-${finishHash(hash).toString(36)}`;
 }
 
 function createComment(options: { body: string; updatedAt?: string }): Comment {

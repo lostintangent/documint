@@ -6,16 +6,19 @@ import {
   resolveBlockPulseScale,
   type EffectEnvironment,
   type PaintEffect,
+  type DocumintListMarkerPaintFrame,
 } from "../effects";
+import type { LayoutRect } from "@/editor/layout";
 import type { DocumentFrameLine } from "../frame";
 import type { ListMarkerFrame } from "../frame/chrome/list-markers";
-import type { DocumintListMarkerPaintFrame, ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import { paintCheckbox } from "./checkbox";
 
 const unorderedMarkerRadius = 3;
 const unorderedMarkerStrokeWidth = 1.5;
 
-type MarkerPulse = { progress: number };
+// A popping marker scales around the center of its public effect rect.
+type MarkerPulse = { progress: number; rect: LayoutRect };
 
 export function paintListMarker(
   lineFrame: DocumentFrameLine,
@@ -33,7 +36,7 @@ export function paintListMarker(
     const effectMarker = resolveListMarkerEffectFrame(marker, context);
 
     paintEffect(pop, { marker: effectMarker, progress: pop.progress }, ({ progress, theme }) => {
-      paintListMarkerDefault(context, marker, theme, { progress });
+      paintListMarkerDefault(context, marker, theme, { progress, rect: effectMarker.rect });
     });
     return;
   }
@@ -49,12 +52,13 @@ function paintListMarkerDefault(
 ) {
   if (pop) {
     const scale = resolveBlockPulseScale(pop);
-    const center = resolveListMarkerCenter(marker, context);
+    const centerX = pop.rect.left + pop.rect.width / 2;
+    const centerY = pop.rect.top + pop.rect.height / 2;
 
     context.save();
-    context.translate(center.x, center.y);
+    context.translate(centerX, centerY);
     context.scale(scale, scale);
-    context.translate(-center.x, -center.y);
+    context.translate(-centerX, -centerY);
   }
 
   if (marker.kind === "task") {
@@ -111,29 +115,6 @@ function paintUnorderedListMarker(
   } else {
     context.fill();
   }
-}
-
-function resolveListMarkerCenter(marker: ListMarkerFrame, context: CanvasRenderingContext2D) {
-  if (marker.kind === "task") {
-    const bounds = marker.rect;
-    return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
-  }
-
-  if (marker.kind === "ordered") {
-    const metrics = context.measureText(marker.label);
-    const y =
-      marker.textBaseline -
-      (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
-
-    return { x: marker.anchorX - metrics.width / 2, y };
-  }
-
-  const bounds = marker.rect;
-
-  return {
-    x: bounds.left + bounds.width / 2,
-    y: bounds.top + bounds.height / 2,
-  };
 }
 
 function resolveListMarkerEffectFrame(

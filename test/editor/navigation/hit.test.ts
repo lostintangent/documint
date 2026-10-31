@@ -7,41 +7,33 @@ import {
   getCommentState,
   resolveHoverTarget,
   setSelection,
+  type DocumentResources,
 } from "@/editor";
+import { addComment, createEditorState, metadataValuePath } from "@/editor/state";
+import { measureCaretTarget } from "@/editor/layout";
 import {
-  addComment,
-  createDocumentIndex,
-  createEditorState,
-  metadataValuePath,
-} from "@/editor/state";
-import { hitTestDocumentLayout, measureCaretTarget } from "@/editor/layout";
-import {
-  resolveDragFocusPoint,
   resolveEditorHitAtPoint,
-  resolveHoverTargetAtPoint,
-  resolveLinkHitAtPoint,
   resolveSelectionPointAt,
-  resolveWordSelectionAtPoint,
+  resolveWordSelection,
 } from "@/editor/navigation";
+import { resolveDragFocus } from "@/editor/navigation/hit";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
-import { fixtureOptions } from "../../../playground/src/lib/data";
-import type { DocumentResources } from "@/types";
 import { getPath, getPathByType, setup } from "../helpers";
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
-  const runtime = createDocumentIndex(parseDocument(`Paragraph with semantic offsets.\n`));
-  const layout = measureLayoutSlice(runtime, {
+  const state = setup(`Paragraph with semantic offsets.\n`);
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
-  const paragraphContainer = indexedTextEntries(runtime)[0];
+  const paragraphContainer = indexedTextEntries(state)[0];
 
   if (!paragraphContainer) {
     throw new Error("Expected paragraph container");
   }
 
-  const hit = hitTestDocumentLayout(layout, runtime, {
-    x: measureCaretTarget(layout, runtime, {
+  const hit = resolveEditorHitAtPoint(layout, state, {
+    x: measureCaretTarget(layout, {
       path: paragraphContainer.path,
       offset: 10,
     })!.left,
@@ -107,7 +99,7 @@ test("keeps clicks left of a soft-wrapped line start on that visual line", () =>
     expect(hit?.offset).toBe(line.start);
 
     const caret = hit
-      ? measureCaretTarget(layout, state.documentIndex, {
+      ? measureCaretTarget(layout, {
           offset: hit.offset,
           path: hit.path,
         })
@@ -129,11 +121,8 @@ test("resolves link hits from document-space coordinates over linked text", () =
   }
 
   expect(
-    resolveLinkHitAtPoint(layout, state, {
-      x: line.left + 4,
-      y: line.top + 4,
-    })?.url,
-  ).toBe("https://example.com");
+    resolveHoverTarget(state, { layout }, { x: line.left + 4, y: line.top + 4 }, []),
+  ).toMatchObject({ kind: "link", url: "https://example.com" });
 });
 
 test("limits link hover targets to the visual line bounds", () => {
@@ -150,9 +139,9 @@ test("limits link hover targets to the visual line bounds", () => {
   const x = line.left + 4;
 
   expect(
-    resolveHoverTargetAtPoint(layout, state, { x, y: line.top + line.height - 0.01 }, []),
+    resolveHoverTarget(state, { layout }, { x, y: line.top + line.height - 0.01 }, []),
   ).toMatchObject({ kind: "link" });
-  expect(resolveHoverTargetAtPoint(layout, state, { x, y: line.top + line.height }, [])).toBeNull();
+  expect(resolveHoverTarget(state, { layout }, { x, y: line.top + line.height }, [])).toBeNull();
 });
 
 test("limits comment hover targets to quoted text at a line end", () => {
@@ -170,7 +159,7 @@ test("limits comment hover targets to quoted text at a line end", () => {
     ) ?? state;
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
   const line = layout.lines[0];
-  const quoteEnd = measureCaretTarget(layout, state.documentIndex, {
+  const quoteEnd = measureCaretTarget(layout, {
     path: path.path,
     offset: path.text.length,
   });
@@ -183,10 +172,10 @@ test("limits comment hover targets to quoted text at a line end", () => {
   const y = line.top + line.height / 2;
 
   expect(
-    resolveHoverTargetAtPoint(layout, state, { x: quoteEnd.left - 1, y }, commentRanges),
+    resolveHoverTarget(state, { layout }, { x: quoteEnd.left - 1, y }, commentRanges),
   ).toMatchObject({ commentThreadIndex: 0, kind: "text" });
   expect(
-    resolveHoverTargetAtPoint(layout, state, { x: quoteEnd.left + 40, y }, commentRanges),
+    resolveHoverTarget(state, { layout }, { x: quoteEnd.left + 40, y }, commentRanges),
   ).toEqual({ commentThreadIndex: null, kind: "text" });
 });
 
@@ -203,9 +192,9 @@ test("resolves drag focus to the anchor start above the prepared layout", () => 
   }
 
   expect(
-    resolveDragFocusPoint(
-      layout,
+    resolveDragFocus(
       state,
+      { layout },
       {
         x: firstLine.left,
         y: firstLine.top - 40,
@@ -239,9 +228,9 @@ test("resolves drag focus into a different path instead of clamping to the ancho
   }
 
   expect(
-    resolveDragFocusPoint(
-      layout,
+    resolveDragFocus(
       state,
+      { layout },
       {
         x: secondLine.left + 4,
         y: secondLine.top + secondLine.height / 2,
@@ -270,9 +259,9 @@ test("resolves drag focus to the anchor end below the prepared layout", () => {
   }
 
   expect(
-    resolveDragFocusPoint(
-      layout,
+    resolveDragFocus(
       state,
+      { layout },
       {
         x: lastLine.left,
         y: lastLine.top + lastLine.height + 40,
@@ -304,7 +293,7 @@ test("resolves a click on the trailing empty line below a soft break to its post
     throw new Error("Expected a trailing empty line for the soft break");
   }
 
-  const hit = hitTestDocumentLayout(layout, state.documentIndex, {
+  const hit = resolveEditorHitAtPoint(layout, state, {
     x: trailingLine.left + 4,
     y: trailingLine.top + trailingLine.height / 2,
   });
@@ -317,7 +306,7 @@ test("resolves clicks inside code block lines to source offsets", () => {
   const state = setup("```ts\nconst value = 1;\n```\n");
   const path = getPathByType(state, "code");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
-  const caret = measureCaretTarget(layout, state.documentIndex, {
+  const caret = measureCaretTarget(layout, {
     path: path.path,
     offset: "const".length,
   });
@@ -339,7 +328,7 @@ test("resolves word selection with shared unicode word boundaries", () => {
   const state = setup("hello 世界\n");
   const path = getPath(state, "hello 世界");
   const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
-  const caret = measureCaretTarget(layout, state.documentIndex, {
+  const caret = measureCaretTarget(layout, {
     path: path.path,
     offset: 7,
   });
@@ -349,10 +338,14 @@ test("resolves word selection with shared unicode word boundaries", () => {
   }
 
   expect(
-    resolveWordSelectionAtPoint(layout, state, {
-      x: caret.left,
-      y: caret.top + caret.height / 2,
-    }),
+    resolveWordSelection(
+      state,
+      { layout },
+      {
+        x: caret.left,
+        y: caret.top + caret.height / 2,
+      },
+    ),
   ).toEqual({
     anchor: {
       offset: 6,
@@ -366,13 +359,11 @@ test("resolves word selection with shared unicode word boundaries", () => {
 });
 
 test("hit-tests the correct table column within the same row band", () => {
-  const runtime = createDocumentIndex(
-    parseDocument(`| Layer | Narrow host | Wide host |
+  const state = setup(`| Layer | Narrow host | Wide host |
 | :---- | :---------- | --------: |
 | Editor | stable | 640 |
-`),
-  );
-  const layout = measureLayoutSlice(runtime, {
+`);
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 640,
   });
   const headerValue = layout.lines.find((line) => line.text === "Wide host");
@@ -387,7 +378,7 @@ test("hit-tests the correct table column within the same row band", () => {
     throw new Error("Expected table cell bounds");
   }
 
-  const hit = hitTestDocumentLayout(layout, runtime, {
+  const hit = resolveEditorHitAtPoint(layout, state, {
     x: extent.left + 8,
     y: headerValue.top + 4,
   });
@@ -396,13 +387,11 @@ test("hit-tests the correct table column within the same row band", () => {
 });
 
 test("hit-tests the clicked table cell even below its text content", () => {
-  const runtime = createDocumentIndex(
-    parseDocument(`| Short | Much wider content that wraps |
+  const state = setup(`| Short | Much wider content that wraps |
 | :---- | :---------------------------- |
 | One | Two three four five six seven eight nine ten eleven twelve |
-`),
-  );
-  const layout = measureLayoutSlice(runtime, {
+`);
+  const layout = measureLayoutSlice(state.documentIndex, {
     width: 220,
   });
   const shortCellLine = layout.lines.find((line) => line.text === "One");
@@ -428,7 +417,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
     throw new Error("Expected wrapped neighboring cell line inside the short cell bounds");
   }
 
-  const hit = hitTestDocumentLayout(layout, runtime, {
+  const hit = resolveEditorHitAtPoint(layout, state, {
     x: extent.left + 8,
     y: neighboringLineY + 2,
   });
@@ -438,9 +427,7 @@ test("hit-tests the clicked table cell even below its text content", () => {
 });
 
 test("hit-tests image runs as single reference caret stops", () => {
-  const runtime = createDocumentIndex(
-    parseDocument("before ![alt](https://example.com/image.png) after\n"),
-  );
+  const state = setup("before ![alt](https://example.com/image.png) after\n");
   const resources: DocumentResources = {
     images: new Map([
       [
@@ -455,9 +442,9 @@ test("hit-tests image runs as single reference caret stops", () => {
     ]),
     resourceRegistry: { active: new Set(), protocols: new Map() },
   };
-  const layout = measureLayoutSlice(runtime, { width: 520 }, undefined, resources);
+  const layout = measureLayoutSlice(state.documentIndex, { width: 520 }, undefined, resources);
   const line = layout.lines[0];
-  const paragraph = indexedTextEntries(runtime)[0];
+  const paragraph = indexedTextEntries(state)[0];
 
   if (!line || !paragraph) {
     throw new Error("Expected image paragraph layout");
@@ -469,11 +456,11 @@ test("hit-tests image runs as single reference caret stops", () => {
     throw new Error("Expected image run");
   }
 
-  const beforeImage = measureCaretTarget(layout, runtime, {
+  const beforeImage = measureCaretTarget(layout, {
     path: paragraph.path,
     offset: imageRun.start,
   });
-  const afterImage = measureCaretTarget(layout, runtime, {
+  const afterImage = measureCaretTarget(layout, {
     path: paragraph.path,
     offset: imageRun.end,
   });
@@ -482,11 +469,11 @@ test("hit-tests image runs as single reference caret stops", () => {
     throw new Error("Expected image caret targets");
   }
 
-  const leftHit = hitTestDocumentLayout(layout, runtime, {
+  const leftHit = resolveEditorHitAtPoint(layout, state, {
     x: beforeImage.left + (afterImage.left - beforeImage.left) * 0.25,
     y: line.top + line.height / 2,
   });
-  const rightHit = hitTestDocumentLayout(layout, runtime, {
+  const rightHit = resolveEditorHitAtPoint(layout, state, {
     x: beforeImage.left + (afterImage.left - beforeImage.left) * 0.75,
     y: line.top + line.height / 2,
   });
@@ -526,10 +513,15 @@ test("resolves resource hover targets from registered resource inlines", () => {
   expect(inlines[0]?.node.type).toBe("resource");
   expect(inlines[0]?.link).toBeNull();
 
-  const hover = resolveHoverTarget(state, viewport, {
-    x: line.left + line.width / 2,
-    y: line.top + line.height / 2,
-  });
+  const hover = resolveHoverTarget(
+    state,
+    viewport,
+    {
+      x: line.left + line.width / 2,
+      y: line.top + line.height / 2,
+    },
+    [],
+  );
 
   expect(hover).toMatchObject({
     label: "Recording",
@@ -538,63 +530,35 @@ test("resolves resource hover targets from registered resource inlines", () => {
     url: "demo-resource://recording/live",
   });
 
-  const leftEdgeHover = resolveHoverTarget(state, viewport, {
-    x: line.left + 1,
-    y: line.top + line.height / 2,
-  });
+  const leftEdgeHover = resolveHoverTarget(
+    state,
+    viewport,
+    {
+      x: line.left + 1,
+      y: line.top + line.height / 2,
+    },
+    [],
+  );
 
   expect(leftEdgeHover).toMatchObject({
     kind: "resource",
     url: "demo-resource://recording/live",
   });
 
-  const rightEdgeHover = resolveHoverTarget(state, viewport, {
-    x: line.left + line.width - 1,
-    y: line.top + line.height / 2,
-  });
+  const rightEdgeHover = resolveHoverTarget(
+    state,
+    viewport,
+    {
+      x: line.left + line.width - 1,
+      y: line.top + line.height / 2,
+    },
+    [],
+  );
 
   expect(rightEdgeHover).toMatchObject({
     kind: "resource",
     url: "demo-resource://recording/live",
   });
-});
-
-test("indexes playground tutorial demo resources as resource inlines", () => {
-  const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
-
-  if (!tutorial) {
-    throw new Error("Expected playground tutorial fixture");
-  }
-
-  const state = createEditorState(
-    parseDocument(tutorial.markdown, { resourceProtocols: ["demo-note:", "demo-resource:"] }),
-  );
-  const resourcePath = indexedTextEntries(state).find((path) =>
-    path.text.includes("Try the active"),
-  );
-
-  if (!resourcePath) {
-    throw new Error("Expected playground resource paragraph");
-  }
-
-  const inlines = resourcePath.inlines ?? [];
-  const resources = inlines.filter((inline) => inline.node.type === "resource");
-  const links = inlines.filter(
-    (inline) =>
-      inline.link?.url.startsWith("demo-resource:") || inline.link?.url.startsWith("demo-note:"),
-  );
-
-  expect([...state.documentIndex.resourceUrls]).toEqual([
-    "demo-resource://recording/live",
-    "demo-note://note/complete",
-  ]);
-  expect(resourcePath.text).toBe("Try the active ￼ resource and the inactive ￼ resource.");
-  expect(resources.map((inline) => inline.node.type === "resource" && inline.node.url)).toEqual([
-    "demo-resource://recording/live",
-    "demo-note://note/complete",
-  ]);
-  expect(resources.every((inline) => inline.link === null)).toBe(true);
-  expect(links).toEqual([]);
 });
 
 test("keeps ordinary registered-protocol links as link hover targets without resource parsing", () => {
@@ -604,10 +568,15 @@ test("keeps ordinary registered-protocol links as link hover targets without res
 
   if (!line) throw new Error("Expected link paragraph layout");
 
-  const hover = resolveHoverTarget(state, viewport, {
-    x: line.left + line.width / 2,
-    y: line.top + line.height / 2,
-  });
+  const hover = resolveHoverTarget(
+    state,
+    viewport,
+    {
+      x: line.left + line.width / 2,
+      y: line.top + line.height / 2,
+    },
+    [],
+  );
 
   expect(hover).toMatchObject({
     kind: "link",
@@ -624,10 +593,15 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
 
   if (!line || !listItem) throw new Error("Expected task list line");
 
-  const hover = resolveHoverTarget(state, viewport, {
-    x: line.left + 6,
-    y: line.top + line.height / 2,
-  });
+  const hover = resolveHoverTarget(
+    state,
+    viewport,
+    {
+      x: line.left + 6,
+      y: line.top + line.height / 2,
+    },
+    [],
+  );
 
   expect(hover).toEqual({ kind: "task-toggle", listItemPath: listItem.path });
 });
@@ -660,14 +634,14 @@ test("resolves metadata header, checkbox, and text hit precedence", () => {
     y: centerY,
   };
 
-  expect(resolveHoverTargetAtPoint(layout, state, headerPoint, [])).toEqual({
+  expect(resolveHoverTarget(state, { layout }, headerPoint, [])).toEqual({
     kind: "metadata-toggle",
   });
   expect(resolveSelectionPointAt(state, { layout }, headerPoint)).toBeNull();
   expect(
-    resolveHoverTargetAtPoint(
-      layout,
+    resolveHoverTarget(
       state,
+      { layout },
       {
         x: header.left + header.width + 1,
         y: centerY,
@@ -680,14 +654,14 @@ test("resolves metadata header, checkbox, and text hit precedence", () => {
     y: checkbox.rect.top + checkbox.rect.height / 2,
   };
 
-  expect(resolveHoverTargetAtPoint(layout, state, checkboxPoint, [])).toEqual({
+  expect(resolveHoverTarget(state, { layout }, checkboxPoint, [])).toEqual({
     kind: "metadata-boolean-toggle",
     path: metadataValuePath(1),
   });
   expect(resolveSelectionPointAt(state, { layout }, checkboxPoint)).toBeNull();
 
   const path = metadataValuePath(0);
-  const caret = measureCaretTarget(layout, state.documentIndex, {
+  const caret = measureCaretTarget(layout, {
     path,
     offset: 3,
   });
@@ -723,7 +697,7 @@ test("keeps metadata selection extension within one text field", () => {
     top: 0,
     width: 520,
   });
-  const slugCaret = measureCaretTarget(viewport.layout, state.documentIndex, {
+  const slugCaret = measureCaretTarget(viewport.layout, {
     path: metadataValuePath(2),
     offset: 2,
   });

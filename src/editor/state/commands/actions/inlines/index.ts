@@ -19,7 +19,6 @@ export type { InlineContainer, InlineContainerReplacement } from "./shared";
 export { toggleInlineMark } from "./marks";
 export { resolveImageResize, type ImageResizeTarget } from "./images";
 export { removeInlineLink, updateInlineLinkUrl, wrapInlineLink } from "./links";
-export { resolveMentionReplacement } from "./mentions";
 
 // Runs `applyEdit` over a resolved inline range and wraps the resulting
 // replacement in a `replace-block` action.
@@ -35,10 +34,6 @@ export function resolveInlineRangeReplacement(
 
   return replacement ? createInlineReplacementAction(replacement) : null;
 }
-
-// Inserts a single inline node over a resolved inline range.
-export const insertInlineNode = (context: InlineContext, node: Inline): EditorStateAction =>
-  insertInlines(context, [node]);
 
 // Splices a sequence of inline nodes over a resolved inline range.
 export function insertInlines(context: InlineContext, inlines: Inline[]): EditorStateAction {

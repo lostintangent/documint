@@ -13,7 +13,7 @@ export type SelectionAnchor = {
   textAnchor: TextAnchor;
 };
 
-export type SelectionAnchorResolution = {
+type SelectionAnchorResolution = {
   matched: boolean;
   offset: number;
 };
@@ -61,14 +61,10 @@ export function resolveSelectionAnchor(
     enumerateTextAnchorRanges(text, { suffix: anchor.textAnchor.suffix }),
   );
 
-  if (anchor.affinity === "before-suffix") {
-    const anchoredOffset = suffixOffset ?? prefixOffset;
-    return anchoredOffset !== null
-      ? { matched: true, offset: anchoredOffset }
-      : { matched: false, offset: clamp(anchor.offset, 0, text.length) };
-  }
-
-  const anchoredOffset = prefixOffset ?? suffixOffset;
+  const anchoredOffset =
+    anchor.affinity === "before-suffix"
+      ? (suffixOffset ?? prefixOffset)
+      : (prefixOffset ?? suffixOffset);
   return anchoredOffset !== null
     ? { matched: true, offset: anchoredOffset }
     : { matched: false, offset: clamp(anchor.offset, 0, text.length) };

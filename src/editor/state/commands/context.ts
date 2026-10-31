@@ -19,10 +19,15 @@ import {
   resolveIndexedTableCell,
   resolveParentIndexedBlock,
   resolveRootBlock,
-  resolveSiblingRootBlock,
 } from "../index/query";
 import type { DocumentIndex, IndexedBlock, IndexedTableCell } from "../index/types";
-import { isSelectionCollapsed, normalizeSelection, type EditorSelection } from "../selection";
+import {
+  isSelectionCollapsed,
+  normalizeSelection,
+  type EditorSelection,
+  type EditorSelectionRange,
+} from "../selection";
+import type { DeletionDirection } from "../effects";
 import type { EditorState } from "../types";
 
 // Semantic command context resolution. This module answers "what structural
@@ -32,7 +37,7 @@ import type { EditorState } from "../types";
 
 // --- Context shapes ---
 
-export type TextContextFacts = {
+type TextContextFacts = {
   atEnd: boolean;
   atStart: boolean;
   empty: boolean;
@@ -40,17 +45,8 @@ export type TextContextFacts = {
   text: string;
 };
 
-export type TextRangeContext = {
-  endOffset: number;
-  path: string;
+export type TextRangeContext = EditorSelectionRange & {
   selection: EditorSelection;
-  startOffset: number;
-};
-
-export type TextRangeTarget = {
-  endOffset: number;
-  path: string;
-  startOffset: number;
 };
 
 export type InlineContext = TextRangeContext & {
@@ -102,10 +98,9 @@ export type CodeBlockContext = TextContextFacts & {
   blockPath: string;
   path: string;
   rootIndex: number;
-  selection: EditorSelection;
 };
 
-export type TableCellTextContext = TextContextFacts & TableCellContext;
+type TableCellTextContext = TextContextFacts & TableCellContext;
 
 // A classifiable structural context for the current selection. `null` from
 // the resolver means "the selection didn't classify into any known shape" —
@@ -117,33 +112,10 @@ export type BlockContext =
   | ({ kind: "blockquoteTextBlock" } & BlockquoteTextBlockContext)
   | ({ kind: "rootTextBlock" } & RootTextBlockContext);
 
-export type DeletionDirection = "backward" | "forward";
-
-export type DeletionContext =
-  | ({
-      atBoundary: boolean;
-      direction: DeletionDirection;
-    } & CodeBlockContext & { kind: "code" })
-  | ({
-      atBoundary: boolean;
-      direction: DeletionDirection;
-      nextRoot: Block | null;
-      previousRoot: Block | null;
-    } & RootTextBlockContext & { kind: "rootTextBlock" })
-  | ({
-      atBoundary: boolean;
-      direction: DeletionDirection;
-      nextItem: ListItemBlock | null;
-      nextRoot: Block | null;
-      previousItem: ListItemBlock | null;
-      previousRoot: Block | null;
-    } & ListItemContext & { kind: "listItem" })
-  | ({
-      atBoundary: boolean;
-      direction: DeletionDirection;
-      nextSibling: Block | null;
-      previousSibling: Block | null;
-    } & BlockquoteTextBlockContext & { kind: "blockquoteTextBlock" });
+export type DeletionContext = Exclude<BlockContext, { kind: "tableCell" }> & {
+  atBoundary: boolean;
+  direction: DeletionDirection;
+};
 
 // --- Command context resolvers ---
 
@@ -159,9 +131,9 @@ export function resolveTextRangeContext(
   });
 }
 
-export function resolveTargetRangeContext(
+function resolveTargetRangeContext(
   state: EditorState,
-  target: TextRangeTarget,
+  target: EditorSelectionRange,
 ): TextRangeContext | null {
   const text = resolveEditorTextAtPath(state.documentIndex, target.path);
 
@@ -185,7 +157,7 @@ export function resolveTargetRangeContext(
 
 export function resolveInlineTargetContext(
   state: EditorState,
-  target: TextRangeTarget,
+  target: EditorSelectionRange,
 ): InlineContext | null {
   const range = resolveTargetRangeContext(state, target);
   return range ? resolveInlineContextFromTextRange(state, range) : null;
@@ -293,7 +265,6 @@ function resolveBlockContextFromSelection(
       blockPath: indexedBlock.path,
       path,
       rootIndex: indexedBlock.rootIndex,
-      selection,
       ...resolveTextContextFacts(documentIndex, path, text, selection),
     };
   }
@@ -341,58 +312,20 @@ export function resolveDeletionContext(
   state: EditorState,
   direction: DeletionDirection,
 ): DeletionContext | null {
-  const { documentIndex, selection } = state;
-  const ctx = resolveBlockContextFromSelection(documentIndex, selection);
+  const ctx = resolveBlockContextFromSelection(state.documentIndex, state.selection);
 
-  if (!ctx) {
+  // No structural deletion semantic for table cells — backspace/forward-delete
+  // inside them is handled by character-delete or same-path splice paths
+  // upstream.
+  if (!ctx || ctx.kind === "tableCell") {
     return null;
   }
 
-  const atBoundary = direction === "backward" ? ctx.atStart : ctx.atEnd;
-
-  switch (ctx.kind) {
-    case "rootTextBlock":
-      return {
-        ...ctx,
-        kind: "rootTextBlock",
-        direction,
-        atBoundary,
-        previousRoot: resolveSiblingRootBlock(documentIndex, ctx.rootIndex, -1),
-        nextRoot: resolveSiblingRootBlock(documentIndex, ctx.rootIndex, 1),
-      };
-    case "listItem":
-      return {
-        ...ctx,
-        kind: "listItem",
-        direction,
-        atBoundary,
-        previousItem: ctx.list.items[ctx.itemIndex - 1] ?? null,
-        nextItem: ctx.list.items[ctx.itemIndex + 1] ?? null,
-        previousRoot: resolveSiblingRootBlock(documentIndex, ctx.rootIndex, -1),
-        nextRoot: resolveSiblingRootBlock(documentIndex, ctx.rootIndex, 1),
-      };
-    case "blockquoteTextBlock":
-      return {
-        ...ctx,
-        kind: "blockquoteTextBlock",
-        direction,
-        atBoundary,
-        previousSibling: ctx.quote.children[ctx.childIndex - 1] ?? null,
-        nextSibling: ctx.quote.children[ctx.childIndex + 1] ?? null,
-      };
-    case "code":
-      return {
-        ...ctx,
-        kind: "code",
-        direction,
-        atBoundary,
-      };
-    case "tableCell":
-      // No structural deletion semantic for table cells — backspace/forward-
-      // delete inside them is handled by character-delete or same-path splice
-      // paths upstream.
-      return null;
-  }
+  return {
+    ...ctx,
+    atBoundary: direction === "backward" ? ctx.atStart : ctx.atEnd,
+    direction,
+  };
 }
 
 // --- Structural context resolvers ---
@@ -516,7 +449,7 @@ function resolveBlockquoteTextBlockContextFromIndexedBlock(
   };
 }
 
-export type ListParentContext = {
+type ListParentContext = {
   item: ListItemBlock;
   itemIndex: number;
   list: ListBlock;

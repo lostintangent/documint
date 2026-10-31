@@ -25,7 +25,6 @@ import {
   createDividerBlock,
   createRawBlock,
   createRaw,
-  trimTrailingWhitespace,
   extractPlainTextFromBlockNodes,
   extractPlainTextFromInlineNodes,
   isReferenceInlineNode,
@@ -62,24 +61,6 @@ describe("Document construction", () => {
     expect(text.marks).toEqual(["bold", "underline", "superscript"]);
   });
 
-  test("assigns runtime ids to comment threads", () => {
-    const block = createParagraphTextBlock("Review this paragraph");
-    const container = expectAnchorContainerAt(createDocument([block]), 0);
-
-    const thread = createCommentThread({
-      anchor: createAnchorFromContainer(container, 0, "Review".length),
-      body: "Looks good.",
-      createdAt: "2026-04-05T12:00:00.000Z",
-      quote: "Review",
-    });
-    const document = createDocument([block], [thread]);
-    const resolved = document.comments[0];
-
-    expect(resolved?.id).toBe(thread.id);
-    expect(resolved?.id).toMatch(/^commentThread-/);
-    expect(createDocument([block], [{ ...thread, id: "" }]).comments[0]?.id).toBe(thread.id);
-  });
-
   test("deduplicates generated comment thread ids within a document", () => {
     const block = createParagraphTextBlock("Review this paragraph");
     const container = expectAnchorContainerAt(createDocument([block]), 0);
@@ -101,21 +82,10 @@ describe("Document construction", () => {
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids[0]).toBe(thread.id);
+    expect(ids[0]).toMatch(/^commentThread-/);
     expect(ids[1]).not.toBe(thread.id);
     expect(ids[2]).not.toBe(thread.id);
     expect(reloaded.comments.map((comment) => comment.id)).toEqual(ids);
-  });
-
-  test("preserves semantic document blocks without cached source metadata", () => {
-    const document = createTestDocument([
-      createHeadingTextBlock({
-        depth: 1,
-        text: "Title",
-      }),
-      createParagraphTextBlock("Paragraph"),
-    ]);
-
-    expect(document.blocks.map((block) => block.type)).toEqual(["heading", "paragraph"]);
   });
 
   test("keeps resource inlines as semantic values after document construction", () => {
@@ -176,45 +146,6 @@ describe("Document construction", () => {
   });
 });
 
-describe("Document canonicalization", () => {
-  test("preserves block references when trailing whitespace is already canonical", () => {
-    const paragraph = createParagraphTextBlock("alpha");
-    const cell = createTableCell([createText("cell")]);
-    const row = createTableRow([cell]);
-    const table = createTableBlock({ rows: [row] });
-    const blocks = [paragraph, table];
-
-    const next = trimTrailingWhitespace(blocks);
-
-    expect(next).toBe(blocks);
-    expect(next[0]).toBe(paragraph);
-    expect(next[1]).toBe(table);
-  });
-
-  test("trims table-cell trailing whitespace without rebuilding clean cells", () => {
-    const cleanCell = createTableCell([createText("clean")]);
-    const dirtyCell = createTableCell([createText("dirty   ")]);
-    const table = createTableBlock({
-      rows: [createTableRow([cleanCell, dirtyCell])],
-    });
-    const blocks = [table];
-
-    const next = trimTrailingWhitespace(blocks);
-    const nextTable = next[0];
-
-    if (nextTable?.type !== "table") {
-      throw new Error("Expected table block");
-    }
-
-    expect(next).not.toBe(blocks);
-    expect(nextTable).not.toBe(table);
-    expect(nextTable.rows[0]?.cells[0]).toBe(cleanCell);
-    expect(nextTable.rows[0]?.cells[1]).not.toBe(dirtyCell);
-    expect(nextTable.rows[0]?.cells[1]?.plainText).toBe("dirty");
-    expect(nextTable.plainText).toBe("clean | dirty");
-  });
-});
-
 describe("Document splicing", () => {
   test("splices one root without renormalizing unaffected siblings", () => {
     const metadata = new Map([["title", "Sample"]]);
@@ -228,35 +159,6 @@ describe("Document splicing", () => {
     expect(nextDocument.blocks[1]).not.toBe(trailingBlock);
     expect(nextDocument.comments).toBe(document.comments);
     expect(nextDocument.metadata).toBe(metadata);
-  });
-
-  test("preserves shifted suffix roots when inserting new top-level blocks", () => {
-    const document = createTestDocument(createSampleBlocks());
-    const shiftedBlock = document.blocks[1];
-    const nextDocument = spliceDocument(document, 1, 0, [createParagraphTextBlock("inserted")]);
-
-    expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
-    expect(nextDocument.blocks[1]?.plainText).toBe("inserted");
-    expect(nextDocument.blocks[2]?.plainText).toBe("alpha");
-    expect(nextDocument.blocks[2]).toBe(shiftedBlock);
-  });
-
-  test("preserves shifted suffix roots when removing top-level blocks", () => {
-    const document = createTestDocument([
-      createHeadingTextBlock({
-        depth: 1,
-        text: "Sample",
-      }),
-      createParagraphTextBlock("alpha"),
-      createParagraphTextBlock("beta"),
-    ]);
-    const shiftedBlock = document.blocks[2];
-    const nextDocument = spliceDocument(document, 1, 1, []);
-
-    expect(nextDocument.blocks).toHaveLength(2);
-    expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
-    expect(nextDocument.blocks[1]?.plainText).toBe("beta");
-    expect(nextDocument.blocks[1]).toBe(shiftedBlock);
   });
 
   test("splices comment threads without rebuilding semantic blocks", () => {
@@ -449,38 +351,5 @@ describe("Plain text extraction", () => {
       'Quote\nNested :badge[body]{tone="info"}\nconst stage = 1;\n:::callout{tone="note"}\nBody\n:::',
     );
     expect(extractPlainTextFromBlockNodes([createDividerBlock()])).toBe("");
-  });
-});
-
-describe("Anchor containers", () => {
-  test("read canonical plain text from committed document nodes", () => {
-    const document = createDocument([
-      createHeadingTextBlock({ depth: 1, text: "Title" }),
-      createParagraphBlock([
-        createText("Paragraph "),
-        createLink({
-          children: [createText("link")],
-          url: "https://example.com",
-        }),
-      ]),
-      createCodeBlock({ source: "const x = 1;" }),
-      createTableBlock({
-        rows: [createTableRow([createTableCell([createText("Cell")])])],
-      }),
-      createBlockquoteBlock([createParagraphTextBlock("Nested quote")]),
-    ]);
-    const table = document.blocks[3];
-
-    if (table?.type !== "table") {
-      throw new Error("Expected table block");
-    }
-
-    expect(listAnchorContainers(document).map((container) => container.text)).toEqual([
-      document.blocks[0]!.plainText,
-      document.blocks[1]!.plainText,
-      document.blocks[2]!.plainText,
-      table.rows[0]!.cells[0]!.plainText,
-      "Nested quote",
-    ]);
   });
 });

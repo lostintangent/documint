@@ -121,7 +121,6 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
                 editorOrder: pathsWithTextCount,
                 inlines,
                 path: cellPath,
-                rootIndex: baseBlock.rootIndex,
                 rowIndex,
                 tablePath: path,
                 text,
@@ -201,7 +200,6 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
     imageUrls,
     resourceUrls: resourceUrls ?? EMPTY_URLS,
     listItems,
-    rootIndex,
     pathsWithTextCount,
   };
 }

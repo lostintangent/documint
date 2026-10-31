@@ -1,5 +1,9 @@
-import { resolvePresenceTargets, resolvePresenceViewport, type EditorPresence } from "@/editor";
-import type { DocumentUserPresence } from "@/types";
+import {
+  resolvePresenceTargets,
+  resolvePresenceViewport,
+  type EditorPresence,
+  type DocumentUserPresence,
+} from "@/editor";
 import { createParameterizedSprig } from "./core/computed";
 import {
   equalArrayBy,
@@ -8,7 +12,7 @@ import {
   equalSelectionPoints,
   equalShallowObject,
 } from "./core/equality";
-import { commentStateSprig } from "./editor/computed-sprigs";
+import { commentRangesSprig } from "./editor/computed-sprigs";
 import { documentIndexSprig } from "./editor/sprigs";
 import { renderedLayoutSprig } from "./layout/sprigs";
 
@@ -54,12 +58,13 @@ const presenceTargetsSprig = createParameterizedSprig(
 );
 
 export const resolvedPresenceSprig = createParameterizedSprig(
-  [documentIndexSprig, renderedLayoutSprig],
+  [documentIndexSprig, renderedLayoutSprig, commentRangesSprig],
   (
     store,
     [userPresence]: readonly [DocumentUserPresence[] | undefined],
-    documentIndex,
+    _documentIndex,
     layout,
+    ranges,
   ): EditorPresence[] | undefined => {
     const targets = presenceTargetsSprig.read(store, userPresence);
 
@@ -74,10 +79,10 @@ export const resolvedPresenceSprig = createParameterizedSprig(
     const commentRanges = targets.some((presenceItem) => {
       return presenceItem.commentThreadIndex != null;
     })
-      ? commentStateSprig.read(store).ranges
+      ? ranges
       : [];
 
-    return resolvePresenceViewport(documentIndex, layout, targets, commentRanges);
+    return resolvePresenceViewport(layout, targets, commentRanges);
   },
   equalPresence,
 );

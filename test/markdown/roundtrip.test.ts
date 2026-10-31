@@ -26,6 +26,7 @@ const stableFixtures: string[] = [
   "test/goldens/frontmatter.md",
   "test/goldens/frontmatter-raw.md",
   "test/goldens/line-breaks.md",
+  "test/goldens/unsupported-html.md",
 ];
 
 describe("Goldens", () => {

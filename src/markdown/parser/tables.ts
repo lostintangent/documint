@@ -2,13 +2,7 @@
  * Owns canonical GFM-style table parsing and helper logic.
  */
 import { createTableBlock, createTableCell, createTableRow } from "@/document";
-import {
-  currentLine,
-  isBlankLine,
-  peekLine,
-  sliceIndentedContent,
-  type MarkdownLineCursor,
-} from "./index";
+import { currentLine, isBlankLine, peekLine, type MarkdownLineCursor } from "./index";
 import { parseInlines } from "./inlines";
 import type { MarkdownParseContext } from "./context";
 
@@ -16,29 +10,26 @@ const tableAlignmentCell = /^:?-+:?$/;
 
 // --- Public exports ---
 
+// The dispatcher only calls this once `looksLikeTableRow` accepted the header
+// line, so the alignment row is the only thing left to confirm.
 export function readTable(cursor: MarkdownLineCursor, context: MarkdownParseContext) {
-  const headerLine = currentLine(cursor);
-  const alignLine = peekLine(cursor, 1);
-  const headerContent = sliceIndentedContent(headerLine, context.baseIndent);
-  const alignmentContent = sliceIndentedContent(alignLine, context.baseIndent);
+  const align = readAlignmentRow(peekLine(cursor, 1));
 
-  if (!looksLikeTableRow(headerContent) || !looksLikeAlignmentRow(alignmentContent)) {
+  if (!align) {
     return null;
   }
 
-  const rows = [splitTableRow(headerContent)];
-  const align = parseAlignmentRow(alignmentContent);
+  const rows = [splitTableRow(currentLine(cursor))];
   cursor.index += 2;
 
   while (cursor.index < cursor.lines.length) {
     const line = currentLine(cursor);
-    const content = sliceIndentedContent(line, context.baseIndent);
 
-    if (isBlankLine(line) || !looksLikeTableRow(content)) {
+    if (isBlankLine(line) || !looksLikeTableRow(line)) {
       break;
     }
 
-    rows.push(splitTableRow(content));
+    rows.push(splitTableRow(line));
     cursor.index += 1;
   }
 
@@ -50,16 +41,28 @@ export function readTable(cursor: MarkdownLineCursor, context: MarkdownParseCont
   });
 }
 
-export function looksLikeAlignmentRow(line: string) {
+// Returns the column alignments when `line` is an alignment row, else null.
+export function readAlignmentRow(line: string) {
   // Verify the row shape before splitting so the speculative path
   // (`interruptsParagraph` on an ordinary paragraph line) bails without
   // allocating split/map intermediates.
   if (!looksLikeTableRow(line)) {
-    return false;
+    return null;
   }
 
   const cells = splitTableRow(line);
-  return cells.length > 0 && cells.every((cell) => tableAlignmentCell.test(cell.trim()));
+
+  if (!cells.every((cell) => tableAlignmentCell.test(cell))) {
+    return null;
+  }
+
+  return cells.map((cell) => {
+    if (cell.startsWith(":")) {
+      return cell.endsWith(":") ? "center" : "left";
+    }
+
+    return cell.endsWith(":") ? "right" : null;
+  });
 }
 
 // Cheap header-line check shared with `parser/blocks.ts` for the
@@ -74,33 +77,10 @@ export function looksLikeTableRow(line: string) {
 
 // --- Internal helpers ---
 
-function parseAlignmentRow(line: string) {
-  return splitTableRow(line).map((cell) => {
-    const trimmed = cell.trim();
-
-    if (trimmed.startsWith(":") && trimmed.endsWith(":")) {
-      return "center";
-    }
-
-    if (trimmed.startsWith(":")) {
-      return "left";
-    }
-
-    if (trimmed.endsWith(":")) {
-      return "right";
-    }
-
-    return null;
-  });
-}
-
 // Caller must have already verified `line` is a pipe-fenced row via
-// `looksLikeTableRow`. Returns the trimmed cell list, splitting only on
-// unescaped pipes so `a \| b` stays one semantic cell. Every call site —
-// `readTable` (twice), `looksLikeAlignmentRow`, `parseAlignmentRow` —
-// pre-gates with `looksLikeTableRow` (directly or transitively), so the
-// boundary check that used to live here was always redundant on the path
-// that reached it.
+// `looksLikeTableRow`. Returns the trimmed cell list (always at least one
+// cell), splitting only on unescaped pipes so `a \| b` stays one semantic
+// cell.
 function splitTableRow(line: string) {
   const cells: string[] = [];
   const body = line.trim().slice(1, -1);

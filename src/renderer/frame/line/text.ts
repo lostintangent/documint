@@ -3,14 +3,15 @@ import type { EditorLayoutState } from "@/editor/layout";
 import type { IndexedInline } from "@/editor/state";
 import type { TextDecoration, TextDecorationIndex } from "@/editor/text/decorations";
 import { resolveCenteredTextBaseline } from "@/editor/text/measure";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
-import type { TextFadeFrame, TextHighlightFrame, TextPulseFrame } from "../../effects";
+import type { DocumentResources } from "@/editor/resources";
+import type { ResolvedEditorTheme } from "../../theme";
+import type { TextFadeFrame, TextInsertionFrame } from "../../effects";
 import { resolveLineTextSegments, type TextSegment } from "./text-segments";
 
 export type DocumentFrameLineText = {
   readonly textFades: readonly TextFadeFrame[];
-  readonly textHighlights: readonly TextHighlightFrame[];
-  readonly textPulses: readonly TextPulseFrame[];
+  readonly textHighlights: readonly TextInsertionFrame[];
+  readonly textPulses: readonly TextInsertionFrame[];
   readonly defaultTextColor: string;
   readonly segments: readonly TextSegment[];
   readonly textBaseline: number;
@@ -32,8 +33,8 @@ export function resolveDocumentFrameLineText({
   theme,
 }: {
   textFades: Map<string, TextFadeFrame[]>;
-  textHighlights: Map<string, TextHighlightFrame[]>;
-  textPulses: Map<string, TextPulseFrame[]>;
+  textHighlights: Map<string, TextInsertionFrame[]>;
+  textPulses: Map<string, TextInsertionFrame[]>;
   block: Block | null;
   inlines: readonly IndexedInline[] | null;
   layout: EditorLayoutState["layout"];

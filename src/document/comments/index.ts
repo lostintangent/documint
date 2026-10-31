@@ -14,10 +14,4 @@ export {
 
 export { isCommentThreadAnchor } from "./types";
 
-export type {
-  Anchor,
-  Comment,
-  CommentResolution,
-  CommentThread,
-  CommentThreadAnchor,
-} from "./types";
+export type { Anchor, Comment, CommentResolution, CommentThread } from "./types";

@@ -3,7 +3,8 @@
 // parsing upgrades registered protocols before layout and rendering see them.
 
 import { resourceVectorIconSize } from "@/editor/layout/measure/inline-resource";
-import type { DocumentResourceIcon, ResolvedEditorTheme } from "@/types";
+import type { DocumentResourceIcon } from "@/editor/resources";
+import type { ResolvedEditorTheme } from "../theme";
 import type { ResourceSegment } from "../frame/line/text-segments";
 import { blendCanvasColors } from "../effects/colors";
 import { resolveRestingPulseAlpha } from "../effects/pulse";

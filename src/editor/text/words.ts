@@ -2,7 +2,7 @@
 // editor path text.
 import { INLINE_OBJECT_REPLACEMENT_TEXT } from "./inline-offsets";
 
-export type TextRange = {
+type WordRange = {
   end: number;
   start: number;
 };
@@ -21,14 +21,14 @@ type WordSegmenter = {
 
 let wordSegmenter: WordSegmenter | undefined;
 
-export function resolveWordRangeAtOffset(text: string, offset: number): TextRange | null {
+export function resolveWordRangeAtOffset(text: string, offset: number): WordRange | null {
   if (text.length === 0) {
     return null;
   }
 
   offset = Math.max(0, Math.min(offset, text.length));
   const segmenter = getWordSegmenter();
-  let previousWord: TextRange | null = null;
+  let previousWord: WordRange | null = null;
 
   for (const segment of segmenter.segment(text)) {
     const start = segment.index;

@@ -12,6 +12,7 @@ import {
   updateSelectionFromDrag,
   type EditorHoverTarget,
   type EditorSelectionPoint,
+  type DocumentResourceReference,
 } from "@/editor";
 import {
   type MouseEvent,
@@ -24,7 +25,6 @@ import {
 } from "react";
 import type { FocusInput } from "./useInput";
 import type { DocumentStorage } from "../lib/storage";
-import type { DocumentResourceReference } from "@/types";
 import {
   commentRangesSprig,
   editorStateSprig,
@@ -40,9 +40,7 @@ type UsePointerOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>;
 
   // Browser coordinate translation owned by useViewport.
-  resolvePoint: (
-    event: PointerEvent<HTMLCanvasElement> | MouseEvent<HTMLCanvasElement>,
-  ) => { x: number; y: number } | null;
+  resolvePoint: (event: CanvasPointerEvent) => CanvasPoint | null;
 
   // Host callbacks the hook invokes.
   autoScrollDuringDrag: (event: PointerEvent<HTMLElement>) => void;
@@ -114,21 +112,53 @@ export function resolveHorizontalSwipeDirection(
   end: SwipePoint,
 ): "left" | "right" | null {
   const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  const absX = Math.abs(dx);
-  const absY = Math.abs(dy);
-  const elapsed = end.time - start.time;
 
   if (
-    absX < MIN_HORIZONTAL_SWIPE_PX ||
-    absY > MAX_HORIZONTAL_SWIPE_VERTICAL_PX ||
-    absX < absY * HORIZONTAL_SWIPE_RATIO ||
-    elapsed > MAX_HORIZONTAL_SWIPE_DURATION_MS
+    !isHorizontalSwipeDelta(dx, end.y - start.y) ||
+    end.time - start.time > MAX_HORIZONTAL_SWIPE_DURATION_MS
   ) {
     return null;
   }
 
   return dx < 0 ? "left" : "right";
+}
+
+function isHorizontalSwipeDelta(dx: number, dy: number) {
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+
+  return (
+    absX >= MIN_HORIZONTAL_SWIPE_PX &&
+    absY <= MAX_HORIZONTAL_SWIPE_VERTICAL_PX &&
+    absX >= absY * HORIZONTAL_SWIPE_RATIO
+  );
+}
+
+// Plain text outside a comment clears the hover, and read-only documents only
+// keep the metadata header toggle.
+function isHoverableTarget(target: EditorHoverTarget, readOnly: boolean) {
+  if (isCanvasDirectActivationTarget(target)) {
+    return target.kind === "metadata-toggle" || !readOnly;
+  }
+
+  return target.commentThreadIndex !== null || target.kind !== "text";
+}
+
+// Keeping the previous target preserves the pointer view's identity. Comment
+// leaves anchor to their thread rather than the run under the pointer, so any
+// target inside the same thread counts as the same hover.
+function isSameHoverTarget(previous: EditorHoverTarget | null, next: EditorHoverTarget) {
+  if (equalShallowObject(previous, next)) {
+    return true;
+  }
+
+  return (
+    previous !== null &&
+    !isCanvasDirectActivationTarget(previous) &&
+    !isCanvasDirectActivationTarget(next) &&
+    next.commentThreadIndex !== null &&
+    previous.commentThreadIndex === next.commentThreadIndex
+  );
 }
 
 export function usePointer({
@@ -179,16 +209,14 @@ export function usePointer({
 
   // If the comment thread under the pointer disappears (e.g. resolved by
   // another user), the hover target is no longer meaningful — drop it.
-  useEffect(() => {
-    if (
-      hoverTarget &&
-      !isCanvasDirectActivationTarget(hoverTarget) &&
-      hoverTarget.kind !== "resource" &&
-      !leaf
-    ) {
-      setHoverTarget(null);
-    }
-  }, [hoverTarget, leaf]);
+  if (
+    hoverTarget &&
+    !isCanvasDirectActivationTarget(hoverTarget) &&
+    hoverTarget.kind !== "resource" &&
+    !leaf
+  ) {
+    setHoverTarget(null);
+  }
 
   // Cancel any in-flight hide on unmount so we don't call setState on a
   // torn-down hook.
@@ -226,58 +254,13 @@ export function usePointer({
   });
 
   const applyHoverTarget = useEffectEvent((target: EditorHoverTarget | null) => {
-    if (!target) {
-      clearLeafIfPointerIsOutsideLeaf();
-      return;
-    }
-
-    if (isCanvasDirectActivationTarget(target)) {
-      if (target.kind !== "metadata-toggle" && readOnly) {
-        clearLeafIfPointerIsOutsideLeaf();
-        return;
-      }
-
-      cancelHide();
-      setHoverTarget((previous) =>
-        previous && equalShallowObject(previous, target) ? previous : target,
-      );
-      return;
-    }
-
-    if (target.commentThreadIndex !== null) {
-      cancelHide();
-      const threadIndex = target.commentThreadIndex;
-      setHoverTarget((previous) =>
-        !isCanvasDirectActivationTarget(previous) && previous?.commentThreadIndex === threadIndex
-          ? previous
-          : target,
-      );
-      return;
-    }
-
-    if (target.kind === "resource") {
-      cancelHide();
-      setHoverTarget((previous) =>
-        previous?.kind === "resource" && previous.url === target.url ? previous : target,
-      );
-      return;
-    }
-
-    if (target.kind !== "link") {
+    if (!target || !isHoverableTarget(target, readOnly)) {
       clearLeafIfPointerIsOutsideLeaf();
       return;
     }
 
     cancelHide();
-    setHoverTarget((previous) =>
-      previous?.kind === "link" &&
-      previous.title === target.title &&
-      previous.url === target.url &&
-      previous.startOffset === target.startOffset &&
-      previous.endOffset === target.endOffset
-        ? previous
-        : target,
-    );
+    setHoverTarget((previous) => (isSameHoverTarget(previous, target) ? previous : target));
   });
 
   /* Hit testing */
@@ -286,28 +269,7 @@ export function usePointer({
     resolveEditorHoverTarget(editorState, store.layout.get(), point, commentRanges),
   );
 
-  const resolveHoverTarget = useEffectEvent((event: CanvasPointerEvent) => {
-    const point = resolvePoint(event);
-    return point ? resolveHoverTargetAtPoint(point) : null;
-  });
-
   /* Gesture helpers */
-
-  const releaseCanvasPointer = useEffectEvent((pointerId: number) => {
-    const canvas = canvasRef.current;
-    if (canvas && dragPointerIdRef.current === pointerId) {
-      canvas.releasePointerCapture(pointerId);
-    }
-  });
-
-  const clearCanvasDrag = useEffectEvent(() => {
-    dragPointerIdRef.current = null;
-    dragAnchorRef.current = null;
-  });
-
-  const clearTouchSwipe = useEffectEvent(() => {
-    touchSwipeRef.current = null;
-  });
 
   const suppressTouchClick = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
     suppressedTouchClickRef.current = {
@@ -317,21 +279,22 @@ export function usePointer({
     };
   });
 
-  const forgetTouchPointer = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
-    if (event.pointerType === "touch") {
-      activeTouchPointerIdsRef.current.delete(event.pointerId);
-    }
-  });
-
   // pointerup and pointercancel collapse to the same response: release the
   // captured pointer and clear drag state. The browser fires pointercancel
   // when it preempts the gesture (e.g. native scroll on touch) and pointerup
   // on a clean release — both end the drag.
   const endPointerGesture = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
-    releaseCanvasPointer(event.pointerId);
-    clearCanvasDrag();
-    clearTouchSwipe();
-    forgetTouchPointer(event);
+    const canvas = canvasRef.current;
+    if (canvas && dragPointerIdRef.current === event.pointerId) {
+      canvas.releasePointerCapture(event.pointerId);
+    }
+
+    dragPointerIdRef.current = null;
+    dragAnchorRef.current = null;
+    touchSwipeRef.current = null;
+    if (event.pointerType === "touch") {
+      activeTouchPointerIdsRef.current.delete(event.pointerId);
+    }
   });
 
   /* Canvas event handlers */
@@ -347,7 +310,7 @@ export function usePointer({
     if (event.pointerType === "touch") {
       activeTouchPointerIdsRef.current.add(event.pointerId);
       if (activeTouchPointerIdsRef.current.size > 1) {
-        clearTouchSwipe();
+        touchSwipeRef.current = null;
       } else if (!readOnly && event.isPrimary) {
         touchSwipeRef.current = {
           pointerId: event.pointerId,
@@ -365,7 +328,7 @@ export function usePointer({
     const point = resolvePoint(event);
     if (!point) return;
 
-    const target = resolveHoverTarget(event);
+    const target = resolveHoverTargetAtPoint(point);
 
     // Canvas toggles are handled in `click` for both mouse and touch — early
     // return here so we don't drop a caret into header or checkbox
@@ -399,15 +362,8 @@ export function usePointer({
   const handlePointerMove = useEffectEvent((event: PointerEvent<HTMLCanvasElement>) => {
     const touchSwipe = touchSwipeRef.current;
     if (event.pointerType === "touch" && touchSwipe?.pointerId === event.pointerId) {
-      const dx = event.clientX - touchSwipe.startX;
-      const dy = event.clientY - touchSwipe.startY;
-      const absX = Math.abs(dx);
-      const absY = Math.abs(dy);
-
       if (
-        absX >= MIN_HORIZONTAL_SWIPE_PX &&
-        absY <= MAX_HORIZONTAL_SWIPE_VERTICAL_PX &&
-        absX >= absY * HORIZONTAL_SWIPE_RATIO
+        isHorizontalSwipeDelta(event.clientX - touchSwipe.startX, event.clientY - touchSwipe.startY)
       ) {
         touchSwipe.swiping = true;
         event.preventDefault();
@@ -504,7 +460,8 @@ export function usePointer({
     // Canvas toggles fire from `click` for all input types. `click` is the
     // browser's already-disambiguated activation event, so we don't need to
     // hand-roll tap-vs-drag detection.
-    const target = resolveHoverTarget(event);
+    const point = resolvePoint(event);
+    const target = point ? resolveHoverTargetAtPoint(point) : null;
 
     if (target?.kind === "metadata-toggle") {
       event.preventDefault();
@@ -558,11 +515,9 @@ export function usePointer({
       return;
     }
 
-    // Touch path: pointerdown deferred to here. Resolve the hit and place
-    // the caret now, after the browser has confirmed this was a tap and
-    // not a scroll/swipe/long-press.
-    const point = resolvePoint(event);
-
+    // Touch path: pointerdown deferred to here. Place the caret now, after
+    // the browser has confirmed this was a tap and not a
+    // scroll/swipe/long-press.
     if (point) {
       const transition = setEditorSelectionAtPoint(store.layout.get(), point);
       if (!transition) {
@@ -578,13 +533,10 @@ export function usePointer({
   });
 
   const handleDoubleClick = useEffectEvent((event: MouseEvent<HTMLCanvasElement>) => {
-    const currentState = store.editor.getState();
     const point = resolvePoint(event);
-    const target = resolveHoverTarget(event);
+    if (!point || isCanvasDirectActivationTarget(resolveHoverTargetAtPoint(point))) return;
 
-    if (!point || isCanvasDirectActivationTarget(target)) return;
-
-    const wordSel = resolveWordSelection(currentState, store.layout.get(), point);
+    const wordSel = resolveWordSelection(store.editor.getState(), store.layout.get(), point);
     if (!wordSel) return;
 
     event.preventDefault();

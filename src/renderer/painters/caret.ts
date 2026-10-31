@@ -11,11 +11,7 @@ export function paintCaretOverlay(
   carets: readonly OverlayCaretFrame[],
 ) {
   for (const caret of carets) {
-    paintCaret(context, caret);
+    context.fillStyle = caret.color;
+    context.fillRect(caret.left, caret.top, caretStrokeWidth, caret.height);
   }
-}
-
-function paintCaret(context: CanvasRenderingContext2D, caret: OverlayCaretFrame) {
-  context.fillStyle = caret.color;
-  context.fillRect(caret.left, caret.top, caretStrokeWidth, caret.height);
 }

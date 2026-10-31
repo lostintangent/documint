@@ -5,12 +5,12 @@
 import type { DocumentLayout } from "@/editor/layout";
 import type { DocumentFrameLine } from "@/renderer/frame";
 import type { TextRunSegment } from "@/renderer/frame/line/text-segments";
-import type { DocumentResources, ResolvedEditorTheme } from "@/types";
+import type { DocumentResources } from "@/editor/resources";
+import type { ResolvedEditorTheme } from "../../theme";
 import { paintImageSegment } from "../image";
 import { paintMentionSegment } from "../mention";
 import { paintResourceSegment } from "../resource";
 import {
-  editableTextBackgroundGeometry,
   paintTextBackground,
   resolveStrikethroughTop,
   resolveUnderlineTop,
@@ -19,29 +19,31 @@ import {
 } from "./glyphs";
 
 export function paintLineText(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  frameContext: {
+  environment: {
     clocks: { ambientTime: number };
+    context: CanvasRenderingContext2D;
     resources: DocumentResources;
     theme: ResolvedEditorTheme;
   },
 ) {
+  const { clocks, context, theme } = environment;
+
   for (const segment of lineFrame.segments) {
     context.font = segment.font;
 
     if (segment.atom === "image") {
-      paintImageSegment(context, lineFrame, segment, frameContext);
+      paintImageSegment(context, lineFrame, segment, environment);
       continue;
     }
 
     if (segment.atom === "mention") {
-      paintMentionSegment(context, segment, frameContext.theme);
+      paintMentionSegment(context, segment, theme);
       continue;
     }
 
     if (segment.atom === "resource") {
-      paintResourceSegment(context, segment, frameContext.clocks, frameContext.theme);
+      paintResourceSegment(context, segment, clocks, theme);
       continue;
     }
 
@@ -51,8 +53,7 @@ export function paintLineText(
         segment.left,
         segment.right,
         segment.baseline,
-        frameContext.theme.inlineCodeBackground,
-        editableTextBackgroundGeometry,
+        theme.inlineCodeBackground,
       );
     }
 

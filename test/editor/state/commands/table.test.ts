@@ -1,6 +1,6 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
-import { tableCellPositionFromPath } from "@/document";
+import { tableCellPathContextFromPath } from "@/document";
 import {
   dedent,
   deleteBackward,
@@ -64,7 +64,7 @@ describe("Table navigation", () => {
     expect(nextState).toBeDefined();
     expect(toMarkdown(nextState!)).toBe("| A | B |\n| --- | --- |\n| alpha | beta |\n|  |  |\n");
 
-    expect(tableCellPositionFromPath(nextState!.selection.focus.path)).toEqual({
+    expect(tableCellPathContextFromPath(nextState!.selection.focus.path)).toMatchObject({
       cellIndex: 0,
       rowIndex: 2,
     });
@@ -199,7 +199,7 @@ describe("Table structure", () => {
     const next = insertTableRow(state, "below");
 
     expect(next).not.toBeNull();
-    expect(tableCellPositionFromPath(next!.selection.focus.path)).toEqual({
+    expect(tableCellPathContextFromPath(next!.selection.focus.path)).toMatchObject({
       cellIndex: 0,
       rowIndex: 2,
     });

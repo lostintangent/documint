@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createDocument,
-  createBlockquoteBlock,
   createParagraphTextBlock,
   createLink,
   createMention,
@@ -91,20 +89,18 @@ Paragraph.
 
     visitDocument(snapshot, {
       enterInlineContainer(nodes, context) {
-        visited.push(
-          `${context.kind}:${context.path}:${extractPlainTextFromInlineNodes([...nodes])}`,
-        );
+        visited.push(`${context.path}:${extractPlainTextFromInlineNodes([...nodes])}`);
         return "skip";
       },
     });
 
     expect(visited).toEqual([
-      "block:root.0:Title",
-      "block:root.1:Paragraph.",
-      "tableCell:root.2.rows.0.cells.0:A",
-      "tableCell:root.2.rows.0.cells.1:B",
-      "tableCell:root.2.rows.1.cells.0:one",
-      "tableCell:root.2.rows.1.cells.1:two",
+      "root.0:Title",
+      "root.1:Paragraph.",
+      "root.2.rows.0.cells.0:A",
+      "root.2.rows.0.cells.1:B",
+      "root.2.rows.1.cells.0:one",
+      "root.2.rows.1.cells.1:two",
     ]);
   });
 
@@ -128,7 +124,7 @@ Second
     expect(visited).toEqual(["root.1"]);
   });
 
-  test("maps inline lists with nested link children and stable paths", () => {
+  test("maps inline lists with nested link children", () => {
     const inlines = [
       createText("See "),
       createLink({
@@ -138,24 +134,20 @@ Second
       createText("."),
     ];
 
-    const mapped = mapInlines(inlines, (node, context, children) => {
+    const mapped = mapInlines(inlines, (node, children) => {
       if (node.type === "link") {
-        return `${context.path}:link(${children?.join("|")})`;
+        return `link(${children?.join("|")})`;
       }
       if (node.type === "mention") {
-        return `${context.path}:mention:${node.userId}`;
+        return `mention:${node.userId}`;
       }
       if (node.type === "text") {
-        return `${context.path}:text:${node.text}`;
+        return `text:${node.text}`;
       }
       return null;
     });
 
-    expect(mapped).toEqual([
-      "root.0:text:See ",
-      "root.1:link(root.1.children.0:text:alpha|root.1.children.1:mention:u-jane)",
-      "root.2:text:.",
-    ]);
+    expect(mapped).toEqual(["text:See ", "link(text:alpha|mention:u-jane)", "text:."]);
   });
 
   test("supports stopping traversal once a semantic target has been found", () => {
@@ -176,25 +168,6 @@ Second
     });
 
     expect(visited).toEqual(["A", "B", "one"]);
-  });
-
-  test("locates nested blocks by reference in committed trees", () => {
-    const nestedParagraph = createParagraphTextBlock("Inside");
-    const snapshot = createDocument([createBlockquoteBlock([nestedParagraph])]);
-    const root = snapshot.blocks[0];
-    const committedParagraph = root?.type === "blockquote" ? root.children[0] : null;
-
-    if (!committedParagraph) {
-      throw new Error("Expected nested paragraph");
-    }
-
-    expect(findBlockChildIndicesByReference(snapshot.blocks, committedParagraph)).toEqual({
-      childIndices: [0],
-      rootOffset: 0,
-    });
-    expect(
-      findBlockChildIndicesByReference(snapshot.blocks, createParagraphTextBlock("Inside")),
-    ).toBeNull();
   });
 
   test("locates blocks by reference identity in un-normalized trees", () => {

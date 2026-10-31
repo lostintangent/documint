@@ -1,9 +1,18 @@
 // UI-side code grammar configuration: built-in grammars, language normalization,
 // and token-to-color resolution. The worker owns actual source matching.
 
-import type { CodeGrammarRule, CodeTokenKind, DocumintDecoration } from "@/types";
+import type { DocumintDecoration } from "../shared";
+import type { CodeTokenKind } from "@/renderer";
 import { javascript } from "./javascript";
 import { markdown } from "./markdown";
+
+// A regex paired with the token kind it classifies a match as. A language's
+// grammar is just an ordered list of these — first match wins per character;
+// not a contextual/TextMate grammar (no nesting or state).
+export type CodeGrammarRule = {
+  pattern: RegExp;
+  token: CodeTokenKind;
+};
 
 // Grammars shipped enabled by default. Hosts merge additional languages over
 // this set via the `grammars` prop; TypeScript reuses the JavaScript grammar

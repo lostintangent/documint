@@ -47,17 +47,9 @@ export type TextareaAnchor = {
   top: number;
 };
 
-export type ResolveTextareaAnchorOptions = {
-  /** Document-page x scroll to add to viewport-space textarea geometry. */
-  scrollX?: number;
-  /** Document-page y scroll to add to viewport-space textarea geometry. */
-  scrollY?: number;
-};
-
 export function resolveTextareaAnchor(
   textarea: HTMLTextAreaElement,
   index: number,
-  { scrollX = window.scrollX, scrollY = window.scrollY }: ResolveTextareaAnchorOptions = {},
 ): TextareaAnchor | null {
   if (!textarea.isConnected) return null;
 
@@ -95,13 +87,13 @@ export function resolveTextareaAnchor(
   const anchor: TextareaAnchor = {
     anchorHeight: lineHeight,
     left:
-      scrollX +
+      window.scrollX +
       rect.left +
       marker.offsetLeft +
       parseFloat(computed.borderLeftWidth) -
       textarea.scrollLeft,
     top:
-      scrollY +
+      window.scrollY +
       rect.top +
       marker.offsetTop +
       parseFloat(computed.borderTopWidth) +

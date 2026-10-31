@@ -9,7 +9,7 @@
 
 import type { DocumentLayout } from "@/editor/layout";
 import type { DocumentFrameLine } from "@/renderer/frame";
-import type { TextRunSegment, TextSegment } from "@/renderer/frame/line/text-segments";
+import { isTextRunSegment } from "@/renderer/frame/line/text-segments";
 import { resolveLineSegmentBounds } from "@/renderer/frame/line/text-geometry";
 import type { TextDecoration } from "@/editor/text/decorations";
 import {
@@ -17,29 +17,30 @@ import {
   filterRangesOverlappingSegment,
   findRangeAtSegment,
 } from "@/editor/text/ranges";
-import { blendCanvasColors, resolveOptionalCanvasColor } from "../../effects/colors";
 import {
-  paintAmbientlyPulsing,
-  resolveRestingPulseProgress,
-  restingPulseMinimumAlpha,
-} from "../../effects/pulse";
-import {
-  editableTextBackgroundGeometry,
-  paintClippedTextOverlay,
-  paintTextBackground,
-} from "./glyphs";
+  blendCanvasColors,
+  formatCanvasColor,
+  mixCanvasColor,
+  resolveOptionalCanvasColor,
+  type CanvasColor,
+} from "../../effects/colors";
+import { paintAmbientlyPulsing, resolveRestingPulseProgress } from "../../effects/pulse";
+import { paintClippedTextOverlay, paintTextBackground } from "./glyphs";
 
 const decorationPulseTextMaximumBaseBlend = 0.72;
 const minimumDecorationTextContrast = 4.5;
 const decorationTextContrastStep = 0.05;
 
+type DecorationPaintEnvironment = {
+  clocks: { ambientTime: number };
+  context: CanvasRenderingContext2D;
+};
+
 export function paintTextDecorationBackgrounds(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  textDecorations: readonly TextDecoration[],
-  clocks: { ambientTime: number },
+  { clocks, context }: DecorationPaintEnvironment,
 ) {
-  forEachDecoratedTextSegment(context, lineFrame, textDecorations, (segment, decoration) => {
+  forEachDecoratedTextSegment(context, lineFrame, (segment, decoration) => {
     if (!decoration.backgroundColor) {
       return;
     }
@@ -56,12 +57,10 @@ export function paintTextDecorationBackgrounds(
 }
 
 export function paintTextDecorationOverlays(
-  context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  textDecorations: readonly TextDecoration[],
-  clocks: { ambientTime: number },
+  { clocks, context }: DecorationPaintEnvironment,
 ) {
-  forEachDecoratedTextSegment(context, lineFrame, textDecorations, (segment, decoration) => {
+  forEachDecoratedTextSegment(context, lineFrame, (segment, decoration) => {
     if (!decoration.color && !decoration.backgroundColor) {
       return;
     }
@@ -83,9 +82,14 @@ export function paintTextDecorationOverlays(
 function forEachDecoratedTextSegment(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  textDecorations: readonly TextDecoration[],
   paintSegment: (segment: DecorationSegment, decoration: TextDecoration) => void,
 ) {
+  const { textDecorations } = lineFrame;
+
+  if (!textDecorations) {
+    return;
+  }
+
   const lineDecorations = filterRangesOverlappingSegment(
     textDecorations,
     lineFrame.layoutLine.start,
@@ -135,10 +139,6 @@ type DecorationSegment = {
   textColor: string;
   textLeft: number;
 };
-
-function isTextRunSegment(segment: TextSegment): segment is TextRunSegment {
-  return segment.atom === "inline-code" || segment.atom === "text";
-}
 
 function paintDecorationSegments({
   line,
@@ -214,25 +214,13 @@ function paintDecorationBackground(
   },
 ) {
   if (!pulse) {
-    paintTextBackground(context, left, right, textBaseline, color, editableTextBackgroundGeometry);
+    paintTextBackground(context, left, right, textBaseline, color);
     return;
   }
 
-  paintAmbientlyPulsing(
-    context,
-    decorationTime,
-    () => {
-      paintTextBackground(
-        context,
-        left,
-        right,
-        textBaseline,
-        color,
-        editableTextBackgroundGeometry,
-      );
-    },
-    restingPulseMinimumAlpha,
-  );
+  paintAmbientlyPulsing(context, decorationTime, () => {
+    paintTextBackground(context, left, right, textBaseline, color);
+  });
 }
 
 function resolveDecorationTextColor(
@@ -271,8 +259,8 @@ function resolveContrastingDecorationTextColor(textColor: string, backgroundColo
     return textColor;
   }
 
-  const black: [number, number, number, number] = [0, 0, 0, text[3]];
-  const white: [number, number, number, number] = [255, 255, 255, text[3]];
+  const black: CanvasColor = [0, 0, 0, text[3]];
+  const white: CanvasColor = [255, 255, 255, text[3]];
   const blackContrast = contrastRatio(black, background);
   const whiteContrast = contrastRatio(white, background);
   const target = blackContrast >= whiteContrast ? black : white;
@@ -292,10 +280,7 @@ function resolveContrastingDecorationTextColor(textColor: string, backgroundColo
   return formatCanvasColor(target);
 }
 
-function contrastRatio(
-  a: readonly [number, number, number, number],
-  b: readonly [number, number, number, number],
-) {
+function contrastRatio(a: CanvasColor, b: CanvasColor) {
   const aLuminance = relativeLuminance(a);
   const bLuminance = relativeLuminance(b);
   const lighter = Math.max(aLuminance, bLuminance);
@@ -304,7 +289,7 @@ function contrastRatio(
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function relativeLuminance(color: readonly [number, number, number, number]) {
+function relativeLuminance(color: CanvasColor) {
   const [r, g, b] = color;
   return (
     0.2126 * linearizeRgbChannel(r) +
@@ -316,21 +301,4 @@ function relativeLuminance(color: readonly [number, number, number, number]) {
 function linearizeRgbChannel(value: number) {
   const channel = value / 255;
   return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-}
-
-function mixCanvasColor(
-  from: readonly [number, number, number, number],
-  to: readonly [number, number, number, number],
-  progress: number,
-): [number, number, number, number] {
-  return [
-    from[0] + (to[0] - from[0]) * progress,
-    from[1] + (to[1] - from[1]) * progress,
-    from[2] + (to[2] - from[2]) * progress,
-    from[3],
-  ];
-}
-
-function formatCanvasColor(color: readonly [number, number, number, number]) {
-  return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(color[2])}, ${color[3]})`;
 }

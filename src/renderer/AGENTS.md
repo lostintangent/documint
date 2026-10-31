@@ -17,4 +17,5 @@ The renderer subsystem is Documint's Canvas 2D paint backend. It turns prepared 
 - `index.ts` owns the renderer facade, content/overlay paint entry points, layer setup, and document z-order orchestration.
 - `frame/` owns paint-ready frame construction from editor/layout snapshots, including overscanned viewport rows, chrome aggregates, selection/comment ranges, text segments, list marker plans, and overlay carets.
 - `painters/` owns immediate-mode Canvas 2D drawing for metadata, blocks, text, decorations, selections, comments, shared checkboxes, lists, tables, resources, images, mentions, and carets.
-- `effects/` owns paint-time effect policy, active-effect grouping, color blending, ambient pulse helpers, and custom effect composition.
+- `effects/` owns paint-time effect policy, active-effect grouping, color blending, ambient pulse helpers, and the host `DocumintEffects` handlers it composes with the defaults.
+- `theme.ts` owns the host theme contract: the `EditorTheme` hosts pass and the `ResolvedEditorTheme` that paint, CSS variables, and layout metrics read.

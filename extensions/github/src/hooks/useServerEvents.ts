@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ServerEvent } from "../types";
 
 type ServerEventsOptions = {
@@ -22,11 +22,13 @@ export function useServerEvents({
     onInvalidEvent,
   });
 
-  handlersRef.current = {
-    onConnectionError,
-    onEvent,
-    onInvalidEvent,
-  };
+  useLayoutEffect(() => {
+    handlersRef.current = {
+      onConnectionError,
+      onEvent,
+      onInvalidEvent,
+    };
+  });
 
   useEffect(() => {
     if (!instanceId) {

@@ -8,7 +8,6 @@ import {
   useEffectEvent,
   useLayoutEffect,
   useRef,
-  useState,
 } from "react";
 import {
   deleteBackward,
@@ -42,13 +41,17 @@ import {
   type EditorState,
   type WordMovement,
 } from "@/editor";
-import type { EditorInputCommand } from "@/types";
 import type { MarkdownOptions } from "@/markdown";
 import { copySelectionAsMarkdown, pastePlainText } from "../lib/clipboard";
 import { emitDiagnostic, useDiagnostics } from "../lib/diagnostics";
-import { resolveEditorInputCommand, type EditorInputKeybinding } from "../lib/keybindings";
+import {
+  resolveEditorInputCommand,
+  type EditorInputKeybinding,
+  type EditorInputCommand,
+} from "../lib/keybindings";
 import { resolveEditorForwardWordMovement, resolveEditorHostPlatform } from "../lib/platform";
 import { editorStateSprig, useDocumintStore, useSprig } from "../store";
+import { useMediaQuery } from "./useMediaQuery";
 
 type UseInputOptions = {
   // DOM refs the hook reads from.
@@ -216,7 +219,7 @@ export function useInput({
   inputRef,
   keybindings,
   markdownOptions,
-  enableTouchKeyDown = false,
+  enableTouchKeyDown,
   onActivity,
   onBeforeInput,
   onKeyDown,
@@ -227,7 +230,10 @@ export function useInput({
 
   const store = useDocumintStore();
   const editorState = useSprig(editorStateSprig);
-  const isTouchPrimary = useIsTouchPrimary();
+  // Touch-primary devices omit the keydown listener: iOS Safari suppresses
+  // `autocapitalize` on inputs that have one, and soft keyboards don't fire
+  // keydown anyway.
+  const isTouchPrimary = useMediaQuery("(pointer: coarse)");
   const readCurrentState = () => store.editor.getState();
   // When `isUndoStackPrimingRef.current === true`, the bridge is in the middle of
   // execCommand-ing a dummy insert+delete to seed iOS's UIUndoManager so
@@ -253,7 +259,7 @@ export function useInput({
 
   /* iOS UIUndoManager priming */
 
-  const runUndoStackPrime = useEffectEvent(() => {
+  const primeUndoStack = useEffectEvent(() => {
     const input = inputRef.current;
     if (!input) return;
     // `document.execCommand` is deprecated but still works on iOS Safari and
@@ -274,28 +280,11 @@ export function useInput({
       // If the priming throws (e.g. Safari rejects execCommand in some
       // sandbox), undo via gesture just won't work — which is the same as
       // the pre-fix state.
-    } finally {
-      isUndoStackPrimingRef.current = false;
-      // Restore the textarea to its canonical shape in case the exec'd
-      // insertion/deletion left any residue.
-      syncInputContext(input, readCurrentState());
     }
-  });
-
-  const primeUndoStack = useEffectEvent(() => {
-    if (undoStackPrimedRef.current) return;
-    undoStackPrimedRef.current = true;
-    runUndoStackPrime();
-  });
-
-  // After handling an iOS-originated historyUndo/historyRedo, run a fresh
-  // priming pass. iOS's UIUndoManager advances its internal pointer even
-  // when the handler preventDefaults, so without re-priming it would offer
-  // "Redo" on the next shake instead of continuing to offer "Undo" —
-  // decoupled from our editor's deeper undo stack, which may still have
-  // more steps to roll back.
-  const rePrimeUndoStack = useEffectEvent(() => {
-    runUndoStackPrime();
+    isUndoStackPrimingRef.current = false;
+    // Restore the textarea to its canonical shape in case the exec'd
+    // insertion/deletion left any residue.
+    syncInputContext(input, readCurrentState());
   });
 
   /* Caret positioning + focus */
@@ -352,7 +341,10 @@ export function useInput({
     if (!readOnly) {
       syncInputContext(input, readCurrentState());
       // First editable focus is also where we seed iOS's undo manager.
-      primeUndoStack();
+      if (!undoStackPrimedRef.current) {
+        undoStackPrimedRef.current = true;
+        primeUndoStack();
+      }
     }
   });
 
@@ -529,7 +521,7 @@ export function useInput({
       event.preventDefault();
       event.stopPropagation();
       runInputCommand(undo);
-      rePrimeUndoStack();
+      primeUndoStack();
       return;
     }
 
@@ -537,7 +529,7 @@ export function useInput({
       event.preventDefault();
       event.stopPropagation();
       runInputCommand(redo);
-      rePrimeUndoStack();
+      primeUndoStack();
       return;
     }
   });
@@ -621,31 +613,26 @@ export function useInput({
   // editor-side clipboard policy lives in component/lib/clipboard so toolbar
   // actions and native shortcuts agree on fragment serialization and paste.
 
+  // Returns whether there was a selection to copy, so cut knows to delete it.
   const handleCopy = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
       const markdown = copySelectionAsMarkdown(readCurrentState());
 
       if (markdown === null) {
-        return;
+        return false;
       }
 
       event.preventDefault();
       event.clipboardData.setData("text/plain", markdown);
+      return true;
     },
   );
 
   const handleCut = useEffectEvent(
     (event: ClipboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => {
-      const state = readCurrentState();
-      const markdown = copySelectionAsMarkdown(state);
-
-      if (markdown === null) {
-        return;
+      if (handleCopy(event)) {
+        runInputCommand(deleteSelection);
       }
-
-      event.preventDefault();
-      event.clipboardData.setData("text/plain", markdown);
-      runInputCommand(deleteSelection);
     },
   );
 
@@ -756,17 +743,8 @@ export function useInput({
 
   /* Diagnostics */
 
-  // Install diagnostic listeners (composition events on the input bridge,
-  // document `selectionchange`). Production strips this call and the
-  // hook's body entirely (the `useEffect` registrations included). The
-  // conditional-hooks lint rule is disabled because the gate is a
-  // build-time constant — within a single bundle's lifetime the hook is
-  // either always called or never called, preserving React's per-render
-  // hook-ordering invariant.
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useDiagnostics(inputRef);
-  }
+  // Dev-only composition and selection listeners. The gate lives inside the hook.
+  useDiagnostics(inputRef);
 
   /* Public API */
 
@@ -791,34 +769,6 @@ export function useInput({
 }
 
 export const INPUT_SEED = "\u200b";
-
-// Returns true on devices whose primary input is a coarse pointer (touch
-// screens on phones and tablets). Used to decide whether to attach a keydown
-// listener to the input bridge — iOS Safari (and likely other WebKit-based
-// touch browsers) suppress `autocapitalize` and related keyboard-intelligence
-// features on text inputs that have a keydown listener directly attached, and
-// soft keyboards don't fire keydown events anyway, so the desktop-only
-// keyboard-shortcut path is simply skipped on touch-primary devices.
-function useIsTouchPrimary(): boolean {
-  const [isTouchPrimary, setIsTouchPrimary] = useState(() => {
-    if (typeof window.matchMedia !== "function") {
-      return false;
-    }
-    return window.matchMedia("(pointer: coarse)").matches;
-  });
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      return;
-    }
-    const mediaQuery = window.matchMedia("(pointer: coarse)");
-    const onChange = (event: MediaQueryListEvent) => setIsTouchPrimary(event.matches);
-    mediaQuery.addEventListener?.("change", onChange);
-    return () => mediaQuery.removeEventListener?.("change", onChange);
-  }, []);
-
-  return isTouchPrimary;
-}
 
 // `insertParagraph` is what desktop browsers fire for plain Enter;
 // `insertLineBreak` is what they fire for Shift+Enter — but iOS Safari
@@ -904,7 +854,7 @@ export function stripInputSeed(value: string) {
   return value.replaceAll(INPUT_SEED, "");
 }
 
-export function resolveInputPrefix(state: EditorState, maxLength = INPUT_CONTEXT_WINDOW) {
+function resolveInputPrefix(state: EditorState, maxLength = INPUT_CONTEXT_WINDOW) {
   const { anchor, focus } = state.selection;
 
   if (anchor.path !== focus.path || anchor.offset !== focus.offset) {
@@ -920,7 +870,7 @@ export function resolveInputPrefix(state: EditorState, maxLength = INPUT_CONTEXT
   return text.slice(Math.max(0, focus.offset - maxLength), focus.offset);
 }
 
-export function stripSyncedInputPrefix(value: string, prefix: string) {
+function stripSyncedInputPrefix(value: string, prefix: string) {
   const syncedValue = stripInputSeed(value);
 
   return syncedValue.startsWith(prefix) ? syncedValue.slice(prefix.length) : syncedValue;
@@ -938,7 +888,7 @@ export function stripSyncedInputPrefix(value: string, prefix: string) {
 //   accurate suggestions and completions.
 //
 // The caret is placed at the end so new input appends after the prefix.
-export function syncInputContext(input: HTMLTextAreaElement, state: EditorState) {
+function syncInputContext(input: HTMLTextAreaElement, state: EditorState) {
   const prefix = resolveInputPrefix(state);
   const nextValue = prefix.length > 0 ? prefix : INPUT_SEED;
 

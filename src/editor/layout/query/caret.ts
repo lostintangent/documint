@@ -1,15 +1,12 @@
 // Owns caret target measurement and the visual-left adjustment that paint
 // and keyboard navigation use to render the caret. Given a prepared
 // `DocumentLayout` plus a (path, offset), resolves where the caret
-// should land — including any visual offset from list-marker indent or
-// trailing whitespace that the line wrapping collapsed.
+// should land — including the visual offset from list-marker indent.
 
-import { resolveEditorTextAtPath, type DocumentIndex, type EditorState } from "../../state";
-import { measureTextWidth } from "../../text/measure";
 import type { DocumentLayout, LayoutLine } from "../measure";
 import { findDocumentLayoutLineForPathOffset, measureCanvasLineOffsetLeft } from "./line-lookup";
 
-export type DocumentCaretTarget = {
+export type CaretTarget = {
   blockPath: string | null;
   path: string;
   height: number;
@@ -20,74 +17,54 @@ export type DocumentCaretTarget = {
 
 export function measureDocumentCaretTarget(
   layout: DocumentLayout,
-  _documentIndex: DocumentIndex,
   target: { path: string; offset: number },
-): DocumentCaretTarget | null {
+): CaretTarget | null {
   // No separate presence check — `findDocumentLayoutLineForPathOffset`
   // returns null for any path that isn't in this layout's path/line
   // index.
+  const line = findDocumentLayoutLineForPathOffset(layout, target.path, target.offset);
+
+  return line ? measureLineCaretTarget(line, target.offset) : null;
+}
+
+// Resolves the caret's line once for callers that need both the visual caret
+// and the line it sits on, such as caret paint.
+export function measureDocumentVisualCaret(
+  layout: DocumentLayout,
+  target: { path: string; offset: number },
+): { caret: CaretTarget; line: LayoutLine } | null {
   const line = findDocumentLayoutLineForPathOffset(layout, target.path, target.offset);
 
   if (!line) {
     return null;
   }
 
-  return {
-    blockPath: line.blockPath,
-    path: line.path,
-    height: line.height,
-    left: measureCanvasLineOffsetLeft(line, target.offset - line.start),
-    offset: target.offset,
-    top: line.top,
-  };
+  const caret = measureLineCaretTarget(line, target.offset);
+
+  return { caret: { ...caret, left: caret.left + line.contentInset }, line };
 }
 
-export function resolveCaretVisualLeft(
-  state: EditorState,
-  layout: DocumentLayout,
-  caret: NonNullable<ReturnType<typeof measureDocumentCaretTarget>>,
-) {
+export function resolveCaretVisualLeft(layout: DocumentLayout, caret: CaretTarget) {
   const resolvedLine = findDocumentLayoutLineForPathOffset(layout, caret.path, caret.offset);
 
-  if (!resolvedLine) {
-    return caret.left;
-  }
-
-  return (
-    caret.left +
-    resolvedLine.contentInset +
-    resolveCollapsedTrailingSpaceWidth(state, resolvedLine, caret.offset)
-  );
+  return resolvedLine ? caret.left + resolvedLine.contentInset : caret.left;
 }
 
 // The caret's visual X, nudged one pixel right so hit-testing at this X
 // doesn't land exactly on a text/cell boundary and resolve to the wrong
 // side. Used by navigation when hit-testing the caret onto a target line
 // (vertical motion, page motion, table column tracking).
-export function resolveCaretHitTestX(
-  state: EditorState,
-  layout: DocumentLayout,
-  caret: NonNullable<ReturnType<typeof measureDocumentCaretTarget>>,
-) {
-  return resolveCaretVisualLeft(state, layout, caret) + 1;
+export function resolveCaretHitTestX(layout: DocumentLayout, caret: CaretTarget) {
+  return resolveCaretVisualLeft(layout, caret) + 1;
 }
 
-function resolveCollapsedTrailingSpaceWidth(state: EditorState, line: LayoutLine, offset: number) {
-  if (offset <= line.end) {
-    return 0;
-  }
-
-  const text = resolveEditorTextAtPath(state.documentIndex, line.path);
-
-  if (text === null) {
-    return 0;
-  }
-
-  const hiddenTrailingText = text.slice(line.end, offset);
-
-  if (!/^[ \t]+$/u.test(hiddenTrailingText)) {
-    return 0;
-  }
-
-  return measureTextWidth(hiddenTrailingText, line.font);
+function measureLineCaretTarget(line: LayoutLine, offset: number): CaretTarget {
+  return {
+    blockPath: line.blockPath,
+    path: line.path,
+    height: line.height,
+    left: measureCanvasLineOffsetLeft(line, offset - line.start),
+    offset,
+    top: line.top,
+  };
 }

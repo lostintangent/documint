@@ -1,6 +1,6 @@
 const restingPulseCycleMs = 2200;
 
-export const restingPulseMinimumAlpha = 0.42;
+const restingPulseMinimumAlpha = 0.42;
 
 export function resolveRestingPulseProgress(time: number) {
   const progress = (Math.max(0, time) % restingPulseCycleMs) / restingPulseCycleMs;

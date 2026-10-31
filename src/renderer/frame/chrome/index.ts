@@ -8,12 +8,7 @@ import {
   type BlockquoteRuleFrame,
 } from "./rules";
 import { resolveListMarkerPlans, type ListMarkerPlan } from "./list-markers";
-import { resolveActiveTableCellGeometryFrame, type ActiveTableCellGeometryFrame } from "./table";
-
-type ActiveTableCellGeometryTarget = {
-  activeFlash: BlockFlashFrame | null;
-  activePath: string;
-};
+import { resolveTableCellGeometryFrame, type ActiveTableCellGeometryFrame } from "./table";
 
 export type DocumentFrameChrome = {
   readonly activeTableCellGeometry: ActiveTableCellGeometryFrame | null;
@@ -51,25 +46,18 @@ export function resolveDocumentFrameChrome({
   width: number;
 }): ResolvedDocumentFrameChrome {
   const { layout } = layoutState;
-  const activeTableCellGeometry = resolveActiveTableCellGeometryTarget(
-    editorState,
-    activeBlockPath,
-    activePath,
-    blockFlashes,
-  );
 
   return {
     chrome: {
-      activeTableCellGeometry: activeTableCellGeometry
-        ? resolveActiveTableCellGeometryFrame({
-            activeFlash: activeTableCellGeometry.activeFlash,
-            activePath: activeTableCellGeometry.activePath,
-            endLineIndex,
-            layout,
-            pathBounds: layout.pathBounds,
-            startLineIndex,
-          })
-        : null,
+      activeTableCellGeometry: resolveActiveTableCellGeometry({
+        activeBlockPath,
+        activePath,
+        blockFlashes,
+        editorState,
+        endLineIndex,
+        layout,
+        startLineIndex,
+      }),
       blockquoteRules: resolveBlockquoteRuleFrames(
         layout,
         editorState,
@@ -84,12 +72,23 @@ export function resolveDocumentFrameChrome({
   };
 }
 
-function resolveActiveTableCellGeometryTarget(
-  editorState: EditorState,
-  activeBlockPath: string | null,
-  activePath: string | null,
-  blockFlashes: Map<string, BlockFlashFrame>,
-): ActiveTableCellGeometryTarget | null {
+function resolveActiveTableCellGeometry({
+  activeBlockPath,
+  activePath,
+  blockFlashes,
+  editorState,
+  endLineIndex,
+  layout,
+  startLineIndex,
+}: {
+  activeBlockPath: string | null;
+  activePath: string | null;
+  blockFlashes: Map<string, BlockFlashFrame>;
+  editorState: EditorState;
+  endLineIndex: number;
+  layout: EditorLayoutState["layout"];
+  startLineIndex: number;
+}): ActiveTableCellGeometryFrame | null {
   if (!activeBlockPath || !activePath) {
     return null;
   }
@@ -106,8 +105,17 @@ function resolveActiveTableCellGeometryTarget(
     return null;
   }
 
-  return {
-    activeFlash: activeBlock.path ? (blockFlashes.get(activeBlock.path) ?? null) : null,
-    activePath,
-  };
+  const geometry = resolveTableCellGeometryFrame({
+    endLineIndex,
+    layout,
+    path: activePath,
+    startLineIndex,
+  });
+
+  return geometry
+    ? {
+        ...geometry,
+        activeFlash: activeBlock.path ? (blockFlashes.get(activeBlock.path) ?? null) : null,
+      }
+    : null;
 }

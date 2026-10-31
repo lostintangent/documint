@@ -11,7 +11,7 @@ import tailwindPlugin from "bun-plugin-tailwind";
 //     time. Used by `.github/workflows/ci.yml` to confirm both entry
 //     points still bundle on every push / PR.
 //
-//   - `prod` — publishable minified library bundle. `vp pack` generates
+//   - `prod` — publishable minified library bundle. `tsdown` generates
 //     `dist/index.d.ts` before this script runs. Used by
 //     `.github/workflows/publish.yml` (and the `build:prod` script
 //     locally for inspection of the prod-shaped bundle).
@@ -56,6 +56,9 @@ const libraryBuild =
         sourcemap: mode === "dev" ? "external" : "none",
         splitting: false,
         external: ["react", "react-dom", "react/jsx-runtime"],
+        // The React Compiler only runs on .tsx/.jsx, so parse .ts as tsx to compile hooks too.
+        loader: { ".ts": "tsx" },
+        reactCompiler: true,
         ...(mode === "prod" && { minify: true }),
         define,
       })
@@ -78,6 +81,8 @@ if (mode !== "prod") {
     outdir: "dist/playground",
     plugins: [tailwindPlugin],
     sourcemap: mode === "dev" ? "external" : "none",
+    loader: { ".ts": "tsx" },
+    reactCompiler: true,
     ...(mode === "playground" && { compile: true }),
     ...(mode === "playground" && { minify: true }),
     define,

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import {
   caretInViewportSprig,
   caretTargetSprig,
@@ -27,18 +27,13 @@ type UseCursorOptions = {
 
   // Host callbacks the hook invokes.
   getScrollTop: () => number;
-  onVisibilityChange: () => void;
   scrollTo: (top: number) => number;
 };
 
 type CursorController = {
-  /**
-   * Whether the caret is inside the visible scroll window. Used to suspend
-   * blinking and gate caret-anchored UI.
-   */
-  caretInViewport: boolean;
   leaf: CursorLeaf | null;
   isVisible: () => boolean;
+  subscribeVisibility: (listener: () => void) => () => void;
 };
 
 type CursorRevealIntent = {
@@ -67,7 +62,6 @@ export function useCursor({
   activeAt,
   getScrollTop,
   viewportWidth,
-  onVisibilityChange,
   readOnly,
   scrollTo,
   viewportHeight,
@@ -93,8 +87,23 @@ export function useCursor({
   const caretInViewport = useSprig(caretInViewportSprig);
   const shouldBlinkCaret = !readOnly && normalizedSelection.collapsed;
   const caretVisibleRef = useRef(true);
+  // The timer lives here, so the host subscribes to repaint the overlay
+  // instead of passing in its scheduler. The subscription is stable across renders.
+  const [visibility] = useState(() => {
+    const listeners = new Set<() => void>();
+
+    return {
+      notify: () => listeners.forEach((listener) => listener()),
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+  });
   const requestCaretPaint = useEffectEvent(() => {
-    onVisibilityChange();
+    visibility.notify();
   });
   const revealCursorTarget = useEffectEvent((target: CursorRevealTarget) => {
     const currentTop = getScrollTop();
@@ -177,11 +186,11 @@ export function useCursor({
   /* Public API */
 
   return {
-    caretInViewport,
     leaf,
     // `isVisible` is read during render, before effects can clear the ref
     // after a read-only flip. Keep the read-only gate on the synchronous read.
     isVisible: () => !readOnly && caretVisibleRef.current,
+    subscribeVisibility: visibility.subscribe,
   };
 }
 

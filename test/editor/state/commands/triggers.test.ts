@@ -102,6 +102,12 @@ describe("Markdown creation triggers", () => {
     expect(getPath(state, "al* pha").block.type).toBe("paragraph");
   });
 
+  test("keeps markers literal inside code blocks", () => {
+    const state = applyTriggerAtStart("```\nalpha\n```\n", "#");
+
+    expect(toMarkdown(state)).toBe("```\n# alpha\n```\n");
+  });
+
   test("preserves comments anchored in suffix content", () => {
     let state = setup("alpha\n");
     const path = getPath(state, "alpha");
@@ -111,7 +117,7 @@ describe("Markdown creation triggers", () => {
       state;
     state = applyTriggerAtStartOfState(state, "#");
 
-    const commentState = getCommentState(state);
+    const commentState = getCommentState(state.documentIndex);
 
     expect(commentState.threads.map((thread) => thread.quote)).toEqual(["alpha"]);
     expect(commentState.ranges).toHaveLength(1);
@@ -157,6 +163,17 @@ describe("Markdown transform triggers", () => {
     taskState = insertText(taskState, " ") ?? taskState;
 
     expect(toMarkdown(taskState)).toBe("- [x] alpha\n- beta\n");
+  });
+
+  test("clears an ordered start when a list item becomes a bullet", () => {
+    const ordered = applyTriggerAtStart("- alpha\n", "1.");
+    const bulleted = applyTriggerAtStartOfState(ordered, "-");
+
+    expect(ordered.documentIndex.document.blocks[0]).toMatchObject({ ordered: true, start: 1 });
+    expect(bulleted.documentIndex.document.blocks[0]).toMatchObject({
+      ordered: false,
+      start: null,
+    });
   });
 
   test("transforms empty headings and list items", () => {

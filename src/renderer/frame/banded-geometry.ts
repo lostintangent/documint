@@ -5,10 +5,3 @@ export type BandedGeometryFrame = {
   borderRect?: LayoutRect;
   rect: LayoutRect;
 };
-
-export function createRectBandedGeometryFrame(rect: LayoutRect): BandedGeometryFrame {
-  return {
-    bands: [rect],
-    rect,
-  };
-}

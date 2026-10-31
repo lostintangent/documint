@@ -3,7 +3,7 @@
 
 import { CHECKBOX_SIZE } from "@/editor/layout/lib/marker-metrics";
 import type { LayoutRect } from "@/editor/layout";
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../theme";
 import { resolveBlockPulseColor } from "../effects";
 
 const checkboxCornerRadius = 3;

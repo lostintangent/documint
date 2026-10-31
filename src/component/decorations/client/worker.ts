@@ -1,12 +1,10 @@
 import { bundleDecorationWorker } from "@macros/decoration-worker" with { type: "macro" };
-import { serializeDecorations } from "./config";
-import type { DocumintDecoration } from "@/types";
 import type {
   DecorationRootResult,
   DecorationRootSnapshot,
   DecorationWorkerRequest,
   DecorationWorkerResponse,
-  SerializedDecoration,
+  DocumintDecoration,
 } from "../shared";
 
 const workerSource = process.env.NODE_ENV === "test" ? "" : bundleDecorationWorker();
@@ -29,38 +27,24 @@ type DecorationWorkerClientOptions = {
 
 type PendingDecorationRequest = {
   reject: (error: Error) => void;
-  resolve: (result: DecorationResult) => void;
+  resolve: (results: DecorationRootResult[]) => void;
+  roots: DecorationRootSnapshot[];
   timeoutId: ReturnType<typeof setTimeout>;
 };
 
-export class DecorationWorkerDisposedError extends Error {
-  constructor() {
-    super("Decoration worker disposed.");
-    this.name = "DecorationWorkerDisposedError";
-  }
-}
-
-export function isDecorationWorkerDisposedError(
-  error: unknown,
-): error is DecorationWorkerDisposedError {
-  return error instanceof Error && error.name === "DecorationWorkerDisposedError";
-}
-
 export type DecorationRequest = {
-  codeGrammars: Record<string, readonly DocumintDecoration[]>;
+  codeGrammars: Record<string, DocumintDecoration[]>;
+  // Identifies the complete configured decoration inputs: host prose
+  // decorations plus resolved per-language code grammar decorations. The
+  // worker is reconfigured only when this changes.
   configKey: string;
   decorations: readonly DocumintDecoration[];
   roots: DecorationRootSnapshot[];
 };
 
-export type DecorationResult = {
-  configKey: string;
-  roots: DecorationRootResult[];
-};
-
 export type DecorationWorkerClient = {
   dispose: () => void;
-  run: (request: DecorationRequest) => Promise<DecorationResult>;
+  run: (request: DecorationRequest) => Promise<DecorationRootResult[]>;
 };
 
 export function createDecorationWorkerClient(
@@ -98,10 +82,9 @@ export function createDecorationWorkerClient(
       return;
     }
 
-    entry.resolve({
-      configKey: response.configKey,
-      roots: response.roots,
-    });
+    entry.resolve(
+      entry.roots.map((root, index) => ({ ...root, ranges: response.ranges[index] ?? [] })),
+    );
   });
 
   worker.addEventListener("error", (event) => {
@@ -110,7 +93,7 @@ export function createDecorationWorkerClient(
 
   return {
     dispose() {
-      terminateWithError(new DecorationWorkerDisposedError());
+      terminateWithError(new Error("Decoration worker disposed."));
     },
 
     run(request) {
@@ -122,41 +105,34 @@ export function createDecorationWorkerClient(
       if (configuredKey !== request.configKey) {
         worker.postMessage({
           kind: "configure-decorations",
-          configKey: request.configKey,
-          codeGrammars: serializeCodeGrammars(request.codeGrammars),
-          decorations: serializeDecorations(request.decorations),
+          codeGrammars: request.codeGrammars,
+          decorations: copyDecorationRules(request.decorations),
         });
         configuredKey = request.configKey;
       }
 
-      const message: DecorationWorkerRequest = {
-        kind: "apply-decorations",
-        configKey: request.configKey,
-        requestId,
-        roots: request.roots,
-      };
-
-      return new Promise<DecorationResult>((resolve, reject) => {
+      return new Promise<DecorationRootResult[]>((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           // Terminate the worker — a pathological regex can spin forever.
           terminateWithError(new Error("Decoration worker job timed out."));
         }, timeoutMs);
 
-        pending.set(requestId, { reject, resolve, timeoutId });
-        worker.postMessage(message);
+        pending.set(requestId, { reject, resolve, roots: request.roots, timeoutId });
+        worker.postMessage({ kind: "apply-decorations", requestId, roots: request.roots });
       });
     },
   };
 }
 
-function serializeCodeGrammars(
-  grammars: Record<string, readonly DocumintDecoration[]>,
-): Record<string, SerializedDecoration[]> {
-  const serialized: Record<string, SerializedDecoration[]> = {};
-  for (const [language, rules] of Object.entries(grammars)) {
-    serialized[language] = serializeDecorations(rules);
-  }
-  return serialized;
+// Host rule objects may carry extra fields that structured clone rejects, so
+// only the rule fields cross the worker boundary.
+function copyDecorationRules(rules: readonly DocumintDecoration[]): DocumintDecoration[] {
+  return rules.map(({ backgroundColor, color, pattern, pulse }) => ({
+    backgroundColor,
+    color,
+    pattern,
+    pulse,
+  }));
 }
 
 function createDecorationWorker(): DecorationWorkerHandle {

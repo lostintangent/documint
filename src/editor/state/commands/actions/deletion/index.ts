@@ -1,5 +1,6 @@
-import { rebuildListBlock, type ListBlock } from "@/document";
+import { rebuildListBlock, rootBlockPath, type ListBlock } from "@/document";
 import type { DocumentIndex } from "../../../index/types";
+import type { DeletionDirection } from "../../../effects";
 import type { EditorState, EditorStateAction } from "../../../types";
 import {
   resolveDeletionContext,
@@ -48,7 +49,7 @@ type AdjacentLists = {
 // start" or "join the two lists you're sitting between."
 export function resolveDeletion(
   state: EditorState,
-  direction: "backward" | "forward",
+  direction: DeletionDirection,
 ): EditorStateAction | null {
   return (
     resolveExpandedSelectionDelete(state) ??
@@ -57,7 +58,7 @@ export function resolveDeletion(
   );
 }
 
-export function resolveStructuralDelete(
+function resolveStructuralDelete(
   documentIndex: DocumentIndex,
   ctx: DeletionContext | null,
 ): EditorStateAction | null {
@@ -161,7 +162,7 @@ function mergeAdjacentLists(
   const previousInFlow = resolveAdjacentEditorPathWithTextInFlow(documentIndex, ctx.path, -1);
   const cursorTarget = previousInFlow
     ? shiftedBlockPathTarget(previousInFlow, ctx.rootIndex - 1, "end")
-    : target.root(ctx.rootIndex - 1, "end");
+    : target.blockPath(rootBlockPath(ctx.rootIndex - 1), "end");
 
   return {
     kind: "splice-blocks",

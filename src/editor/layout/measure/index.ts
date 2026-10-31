@@ -1,36 +1,34 @@
 // Owns exact layout for a concrete set of indexed editor blocks. This module resolves
 // local line, path, and block geometry without doing viewport virtualization
 // or whole-document height estimation.
-import type { Block } from "@/document";
-import { emptyDocumentResources } from "@/editor/resources";
-import type { DocumentResources } from "@/types";
-import { isContainerBlock, type DocumentIndex } from "../../state";
+import { emptyDocumentResources, type DocumentResources } from "@/editor/resources";
+import { isContainerBlock, type DocumentIndex, type IndexedBlock } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
 import { walkLayoutBlocks } from "../lib/block-walk";
 import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
-import { resolveBlockContentMetrics } from "../lib/content-metrics";
+import { resolveBlockContentMetrics, type LayoutContentMetrics } from "../lib/content-metrics";
 import {
   resolveDocumentLayoutOptions,
   type DocumentLayoutOptions,
   type PartialDocumentLayoutOptions,
 } from "../lib/options";
-import { updateBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
+import { mergeLayoutBlockExtent, type LayoutBlockExtent } from "../lib/marker-metrics";
 import { layoutTable } from "./table";
 import { measureMetadataPrefix, type MetadataLayout } from "./metadata";
 import {
-  measureTextContainerLines,
-  measureTextLineBoundaries,
+  layoutTextContainerLines,
   resolveBlockTypography,
-  type TextInlineReference,
-  type TextLineBoundary,
+  type LayoutTextInput,
+  type LineBoundary,
 } from "./text";
+import type { LayoutInlineReference } from "./inline-reference";
 import { resolveBlockLayoutTextInput } from "./text-input";
 
 export type { DocumentLayoutOptions } from "../lib/options";
 export type { LayoutBlockExtent } from "../lib/marker-metrics";
 
-export type LineBoundary = TextLineBoundary;
-export type LayoutInlineReference = TextInlineReference;
+export type { LayoutInlineReference } from "./inline-reference";
+export type { LineBoundary } from "./text";
 
 export type LayoutLine = {
   blockPath: string | null;
@@ -63,9 +61,16 @@ export type LayoutBlock = {
   type: DocumentIndex["blocks"][number]["block"]["type"];
 };
 
+export type PathBounds = {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+};
+
 export type DocumentLayout = {
   blocks: LayoutBlock[];
-  pathBounds: Map<string, { bottom: number; left: number; right: number; top: number }>;
+  pathBounds: Map<string, PathBounds>;
   pathLineIndices: Map<string, number[]>;
   height: number;
   lines: LayoutLine[];
@@ -118,10 +123,7 @@ export function measureBodyLayoutSlice(
   const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
   const resolvedOptions = resolveDocumentLayoutOptions(options);
   const lines: LayoutLine[] = [];
-  const pathBounds = new Map<
-    string,
-    { bottom: number; left: number; right: number; top: number }
-  >();
+  const pathBounds = new Map<string, PathBounds>();
   const blockExtents = new Map<string, LayoutBlockExtent>();
   const boundedBlockStartIndex = clampBlockIndex(documentIndex, blockStartIndex);
   const boundedBlockEndIndex = clampBlockIndex(documentIndex, blockEndIndex);
@@ -185,7 +187,6 @@ export function measureBodyLayoutSlice(
         indexedBlock,
         cache,
         block,
-        indexedBlock.path,
         contentMetrics.left,
         y,
         resolvedOptions,
@@ -200,12 +201,9 @@ export function measureBodyLayoutSlice(
           pathBounds,
           input,
           cache,
-          block,
-          indexedBlock.path,
-          contentMetrics.contentLeft,
+          indexedBlock,
+          contentMetrics,
           y,
-          contentMetrics.availableWidth,
-          contentMetrics.listInset,
           resolvedOptions,
           resolvedResources,
         );
@@ -314,61 +312,40 @@ function layoutSingleContainer(
   lines: LayoutLine[],
   blockExtents: Map<string, LayoutBlockExtent>,
   pathBounds: DocumentLayout["pathBounds"],
-  container: Parameters<typeof measureTextContainerLines>[1],
+  container: LayoutTextInput,
   cache: LayoutCache,
-  block: Block | null,
-  blockPath: string,
-  left: number,
+  indexedBlock: IndexedBlock,
+  contentMetrics: LayoutContentMetrics,
   top: number,
-  availableWidth: number,
-  contentInset: number,
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
+  const { block, path: blockPath } = indexedBlock;
   const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
-  const blockPaddingY = block?.type === "code" ? CODE_BLOCK_BACKGROUND_PADDING_Y : 0;
-  const measuredLines = measureTextContainerLines(
+  const blockPaddingY = block.type === "code" ? CODE_BLOCK_BACKGROUND_PADDING_Y : 0;
+  let y = top + blockPaddingY;
+  const containerLines = layoutTextContainerLines(
     cache,
     container,
-    availableWidth,
+    contentMetrics.availableWidth,
     typography,
     resources,
-  );
-  let y = top + blockPaddingY;
-
-  for (const line of measuredLines) {
-    const layoutLine = {
+    {
       blockPath,
-      boundaries: measureTextLineBoundaries(
-        cache,
-        container,
-        line.start,
-        line.end,
-        line.text,
-        availableWidth,
-        typography,
-        resources,
-      ),
-      contentInset,
-      end: line.end,
-      font: typography.font,
-      height: line.height,
-      inlineReferences: line.inlineReferences,
-      left,
-      path: container.path,
-      start: line.start,
-      text: line.text,
+      contentInset: contentMetrics.listInset,
+      left: contentMetrics.contentLeft,
       top: y,
-      width: line.width,
-    } satisfies LayoutLine;
+    },
+  );
 
-    lines.push(layoutLine);
-    updateBlockExtent(blockExtents, layoutLine);
-    updatePathBoundsFromLine(pathBounds, layoutLine);
+  for (const line of containerLines) {
+    lines.push(line);
+    mergeLayoutBlockExtent(blockExtents, blockPath, line.top, line.top + line.height);
+    updatePathBoundsFromLine(pathBounds, line);
     y += line.height;
   }
 
-  if (block?.type === "code") {
+  if (block.type === "code") {
     const current = blockExtents.get(blockPath);
     if (current) {
       blockExtents.set(blockPath, {

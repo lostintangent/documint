@@ -389,7 +389,6 @@ test("resolves presence viewport state", () => {
     layoutCache,
   );
   const [visiblePresence, belowPresence] = resolvePresenceViewport(
-    state,
     topViewport,
     [createResolvedCursor("visible", firstPath), createResolvedCursor("below", lastPath)],
     [],
@@ -409,7 +408,6 @@ test("resolves presence viewport state", () => {
     layoutCache,
   );
   const [abovePresence] = resolvePresenceViewport(
-    state,
     lowerViewport,
     [createResolvedCursor("above", firstPath)],
     [],
@@ -462,7 +460,7 @@ test("resolves comment thread presence viewport state", () => {
     ),
   });
   const state = createEditorState(createDocument(blocks, [firstThread, lastThread]));
-  const commentRanges = getCommentState(state).ranges;
+  const commentRanges = getCommentState(state.documentIndex).ranges;
   const topViewport = createEditorLayoutState(
     state,
     {
@@ -473,7 +471,6 @@ test("resolves comment thread presence viewport state", () => {
     layoutCache,
   );
   const [visiblePresence, belowPresence] = resolvePresenceViewport(
-    state,
     topViewport,
     resolvePresenceTargets(state.documentIndex, [
       {
@@ -504,7 +501,6 @@ test("resolves comment thread presence viewport state", () => {
     layoutCache,
   );
   const [abovePresence] = resolvePresenceViewport(
-    state,
     lowerViewport,
     resolvePresenceTargets(state.documentIndex, [
       {
@@ -535,7 +531,6 @@ test("keeps unresolved presence visible without a scroll target", () => {
 
   expect(
     resolvePresenceViewport(
-      state,
       viewport,
       [
         {

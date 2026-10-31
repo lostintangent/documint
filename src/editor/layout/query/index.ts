@@ -1,18 +1,17 @@
 // Owns the query API for a prepared `DocumentLayout`. These reads sit on
-// top of finished geometry: point-to-line testing, caret target measurement,
+// top of finished geometry: point-to-line lookup, caret target measurement,
 // visible-range lookups, and visual helpers shared with paint and navigation.
 
 export {
   measureDocumentCaretTarget,
+  measureDocumentVisualCaret,
   resolveCaretHitTestX,
   resolveCaretVisualLeft,
-  type DocumentCaretTarget,
+  type CaretTarget,
 } from "./caret";
 
 export {
   measureInlineImageBounds,
-  resolveLineVisualLeft,
-  resolveIndexedListItem,
   resolveListMarkerTarget,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
@@ -20,8 +19,6 @@ export {
   type InlineBounds,
   type ListMarkerTarget,
 } from "./line-visuals";
-
-export { hitTestDocumentLayout, type DocumentHitTestResult } from "./hit-test";
 
 export {
   findDocumentLayoutLineAtPoint,

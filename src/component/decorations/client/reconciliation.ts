@@ -1,8 +1,8 @@
 // Snapshot and stale-result helpers for the async decoration pipeline. The
 // editor owns reconciliation against indexed text paths; this module only
-// deals with worker source keys and document-root snapshots.
+// pairs document-root snapshots with their worker results.
 
-import type { Block, Document } from "@/document";
+import type { Document } from "@/document";
 import {
   reconcileTextDecorationIndex,
   type EditorState,
@@ -20,7 +20,7 @@ export function resolveDecorationRootSnapshots(
 
   return indexes.flatMap((rootIndex) => {
     const block = document.blocks[rootIndex];
-    return block ? [{ block, rootIndex, sourceKey: resolveDecorationRootSourceKey(block) }] : [];
+    return block ? [{ block, rootIndex }] : [];
   });
 }
 
@@ -29,14 +29,14 @@ export function reconcileDecorationRootResults(
   previous: TextDecorationIndex,
   roots: readonly DecorationRootResult[],
 ): TextDecorationIndex | null {
-  const updates = roots.flatMap<TextDecorationRootUpdate>((root) => {
-    const currentBlock = state.documentIndex.document.blocks[root.rootIndex];
-    if (!currentBlock || resolveDecorationRootSourceKey(currentBlock) !== root.sourceKey) {
-      return [];
-    }
-
-    return [{ ranges: root.ranges, rootIndex: root.rootIndex }];
-  });
+  // Blocks are immutable, so a result still applies exactly when its snapshot
+  // block is the current root at that index.
+  const blocks = state.documentIndex.document.blocks;
+  const updates = roots.flatMap<TextDecorationRootUpdate>((root) =>
+    blocks[root.rootIndex] === root.block
+      ? [{ ranges: root.ranges, rootIndex: root.rootIndex }]
+      : [],
+  );
 
   if (updates.length === 0) {
     return null;
@@ -113,23 +113,6 @@ export function remapDecorationRangesForTextEdit(
   }
 
   return next;
-}
-
-// Blocks are immutable. A per-reference token is enough to tell whether a
-// worker result still applies to the current root without serializing markdown
-// on the UI thread.
-const sourceKeyCache = new WeakMap<Block, string>();
-let nextSourceKey = 1;
-
-export function resolveDecorationRootSourceKey(block: Block): string {
-  let key = sourceKeyCache.get(block);
-
-  if (key === undefined) {
-    key = String(nextSourceKey++);
-    sourceKeyCache.set(block, key);
-  }
-
-  return key;
 }
 
 function sameDecorationRanges(a: readonly TextDecoration[], b: readonly TextDecoration[]): boolean {

@@ -11,14 +11,12 @@ import {
   createText,
   defragmentTextInlines,
   extractPlainTextFromInlineNodes,
+  resolveRegisteredResourceProtocol,
 } from "@/document";
 import type { Inline, Mark } from "@/document";
 import {
   inlineMarkSpecs,
-  isDelimitedInlineMarkSpec,
-  isHtmlInlineMarkSpec,
   lineFeed,
-  resolveResourceProtocol,
   type InlineMarkContentPolicy,
   type InlineMarkDelimiter,
 } from "../shared";
@@ -83,14 +81,15 @@ const htmlMarkTags = collectHtmlMarkTags();
 
 function collectInlineMarkDelimiters(): ReadonlyArray<ParsedInlineMarkDelimiter> {
   return inlineMarkSpecs
-    .filter(isDelimitedInlineMarkSpec)
     .flatMap((spec) =>
-      spec.delimiters.map<ParsedInlineMarkDelimiter>((delimiter) => ({
-        content: spec.content,
-        mark: spec.mark,
-        boundary: delimiter.boundary,
-        delimiter: delimiter.delimiter,
-      })),
+      spec.kind === "delimiter"
+        ? spec.delimiters.map<ParsedInlineMarkDelimiter>((delimiter) => ({
+            content: spec.content,
+            mark: spec.mark,
+            boundary: delimiter.boundary,
+            delimiter: delimiter.delimiter,
+          }))
+        : [],
     )
     .sort((left, right) => right.delimiter.length - left.delimiter.length);
 }
@@ -104,12 +103,14 @@ function collectDelimiterLeadChars(delimiters: ReadonlyArray<ParsedInlineMarkDel
 }
 
 function collectHtmlMarkTags(): ReadonlyArray<ParsedHtmlMarkTag> {
-  return inlineMarkSpecs.filter(isHtmlInlineMarkSpec).flatMap((spec) =>
-    spec.tags.map((tag) => ({
-      closeTag: `</${tag}>`,
-      mark: spec.mark,
-      openTag: `<${tag}>`,
-    })),
+  return inlineMarkSpecs.flatMap((spec) =>
+    spec.kind === "html"
+      ? spec.tags.map((tag) => ({
+          closeTag: `</${tag}>`,
+          mark: spec.mark,
+          openTag: `<${tag}>`,
+        }))
+      : [],
   );
 }
 
@@ -174,74 +175,36 @@ type InlineTokenReader = (
   context: MarkdownParseContext,
 ) => InlineToken | null;
 
-// Order matters within a given lead character: the more specific reader
-// runs first (for `<`, hard-break then semantic HTML marks, then catchall
-// raw HTML; for `\`, the line-break shape before the generic escape).
-const inlineTokenReaders: ReadonlyArray<{
-  leadChars: ReadonlyArray<string>;
-  read: InlineTokenReader;
-}> = [
-  { leadChars: [directiveMarker], read: readInlineDirectiveToken },
-  { leadChars: ["&"], read: readNumericSpaceEntityToken },
-  { leadChars: ["<"], read: readLineBreakHtmlToken },
-  { leadChars: ["<"], read: readHtmlMarkToken },
-  { leadChars: ["<"], read: readRawHtmlToken },
-  { leadChars: [escapeMarker], read: readBackslashLineBreakToken },
-  { leadChars: [escapeMarker], read: readGenericEscapeToken },
-  { leadChars: [lineFeed], read: readTrailingSpaceLineBreakToken },
-  { leadChars: ["!"], read: readImageToken },
-  { leadChars: ["@"], read: readMentionToken },
-  { leadChars: [linkOpening], read: readLinkToken },
-  {
-    leadChars: collectDelimiterLeadChars(delimitedMarkDelimiters),
-    read: readDelimitedMarkToken,
-  },
-];
-
-const inlineReadersByLeadChar = buildInlineLeadCharIndex();
-// Derived from the reader registry so plain prose can skip directly to the
+// Readers keyed by the character every token they read starts with, so a
+// reader can assume `source[index]` is its lead character. Order matters
+// within a key: the more specific reader runs first (for `<`, hard-break
+// then semantic HTML marks, then catchall raw HTML; for `\`, the line-break
+// shape before the generic escape; for `@`, bracketed before bare mentions).
+// Mark delimiter lead chars must stay distinct from the literal keys, since a
+// repeated key would replace the earlier readers.
+const inlineReadersByLeadChar = new Map<string, ReadonlyArray<InlineTokenReader>>([
+  [directiveMarker, [readInlineDirectiveToken]],
+  ["&", [readNumericSpaceEntityToken]],
+  ["<", [readLineBreakHtmlToken, readHtmlMarkToken, readRawHtmlToken]],
+  [escapeMarker, [readBackslashLineBreakToken, readGenericEscapeToken]],
+  [lineFeed, [readTrailingSpaceLineBreakToken]],
+  ["!", [readImageToken]],
+  ["@", [readBracketedMentionToken, readBareMentionToken]],
+  [linkOpening, [readLinkToken]],
+  ...collectDelimiterLeadChars(delimitedMarkDelimiters).map(
+    (char) => [char, [readDelimitedMarkToken]] as const,
+  ),
+]);
+// Derived from the reader table so plain prose can skip directly to the
 // next character that could start a token without duplicating dialect policy.
 const inlineTokenStartPattern = buildInlineTokenStartPattern();
 
-function buildInlineLeadCharIndex(): Map<string, InlineTokenReader[]> {
-  const index = new Map<string, InlineTokenReader[]>();
-  for (const { leadChars, read } of inlineTokenReaders) {
-    for (const char of leadChars) {
-      const list = index.get(char);
-      if (list) {
-        list.push(read);
-      } else {
-        index.set(char, [read]);
-      }
-    }
-  }
-  return index;
-}
-
 function buildInlineTokenStartPattern() {
+  // Escape the characters that are special inside a character class.
   const characterClass = [...inlineReadersByLeadChar.keys()]
-    .map(escapeInlineTokenStartForCharacterClass)
+    .map((character) => character.replace(/[\\\]^-]/g, "\\$&"))
     .join("");
   return new RegExp(`[${characterClass}]`, "g");
-}
-
-function escapeInlineTokenStartForCharacterClass(character: string) {
-  switch (character) {
-    case lineFeed:
-      return "\\n";
-    case "\\":
-      return "\\\\";
-    case "]":
-      return "\\]";
-    case "[":
-      return "\\x5B";
-    case "^":
-      return "\\x5E";
-    case "-":
-      return "\\-";
-    default:
-      return character;
-  }
 }
 
 function readInlineToken(
@@ -280,7 +243,7 @@ function findNextInlineTokenStart(source: string, start: number, end: number) {
 // keep scanning for the next token.
 
 function readInlineDirectiveToken(source: string, index: number, end: number) {
-  if (source[index] !== directiveMarker || !textDirectiveNameStart.test(source[index + 1] ?? "")) {
+  if (!textDirectiveNameStart.test(source[index + 1] ?? "")) {
     return null;
   }
 
@@ -296,15 +259,11 @@ function readInlineDirectiveToken(source: string, index: number, end: number) {
 
   return {
     end: rawEnd,
-    nodes: [createRawInline("textDirective", source.slice(index, rawEnd))],
+    nodes: [createRaw({ originalType: "textDirective", source: source.slice(index, rawEnd) })],
   };
 }
 
 function readNumericSpaceEntityToken(source: string, index: number, end: number, marks: Mark[]) {
-  if (source[index] !== "&") {
-    return null;
-  }
-
   const match = numericSpaceEntity.exec(source.slice(index, end));
 
   if (!match) {
@@ -351,10 +310,6 @@ function readHtmlMarkToken(
 }
 
 function readRawHtmlToken(source: string, index: number, end: number) {
-  if (source[index] !== "<") {
-    return null;
-  }
-
   const closeIndex = source.indexOf(">", index + 1);
 
   if (closeIndex < 0 || closeIndex >= end) {
@@ -363,7 +318,7 @@ function readRawHtmlToken(source: string, index: number, end: number) {
 
   return {
     end: closeIndex + 1,
-    nodes: [createRawInline("html", source.slice(index, closeIndex + 1))],
+    nodes: [createRaw({ originalType: "html", source: source.slice(index, closeIndex + 1) })],
   };
 }
 
@@ -374,10 +329,6 @@ function readRawHtmlToken(source: string, index: number, end: number) {
 const lineBreakHtmlTag = /^<br\s*\/?>/i;
 
 function readLineBreakHtmlToken(source: string, index: number, end: number) {
-  if (source[index] !== "<") {
-    return null;
-  }
-
   const match = lineBreakHtmlTag.exec(source.slice(index, end));
 
   if (!match) {
@@ -398,7 +349,7 @@ function readLineBreakHtmlToken(source: string, index: number, end: number) {
 }
 
 function readBackslashLineBreakToken(source: string, index: number, end: number) {
-  if (source[index] !== escapeMarker || source[index + 1] !== lineFeed || index + 1 >= end) {
+  if (source[index + 1] !== lineFeed || index + 1 >= end) {
     // Anything else falls through to `readGenericEscapeToken`, which knows
     // how to consume a generic backslash escape.
     return null;
@@ -414,7 +365,7 @@ function readBackslashLineBreakToken(source: string, index: number, end: number)
 // (so `\a` round-trips as `\a`). Trailing `\` at end of input returns null
 // so the dispatcher's default one-char advance preserves it as literal text.
 function readGenericEscapeToken(source: string, index: number, end: number, marks: Mark[]) {
-  if (source[index] !== escapeMarker || index + 1 >= end) {
+  if (index + 1 >= end) {
     return null;
   }
 
@@ -433,11 +384,7 @@ function readGenericEscapeToken(source: string, index: number, end: number, mark
 // retroactively via `trimLeading` on the returned token — see the dispatcher
 // loop in `parseInlineRange`.
 function readTrailingSpaceLineBreakToken(source: string, index: number) {
-  if (
-    source[index] !== lineFeed ||
-    source[index - 1] !== spaceCharacter ||
-    source[index - 2] !== spaceCharacter
-  ) {
+  if (source[index - 1] !== spaceCharacter || source[index - 2] !== spaceCharacter) {
     return null;
   }
 
@@ -460,12 +407,7 @@ function readImageToken(source: string, index: number, end: number) {
   }
 
   const labelEnd = findClosingBracket(source, index + 1, end);
-
-  if (labelEnd < 0 || source[labelEnd + 1] !== linkDestinationOpening) {
-    return null;
-  }
-
-  const destination = readLinkDestination(source, labelEnd + 1, end);
+  const destination = labelEnd < 0 ? null : readLinkDestination(source, labelEnd + 1, end);
 
   if (!destination) {
     return null;
@@ -486,31 +428,13 @@ function readImageToken(source: string, index: number, end: number) {
   };
 }
 
-function readMentionToken(
-  source: string,
-  index: number,
-  end: number,
-  _marks: Mark[],
-  context: MarkdownParseContext,
-) {
-  return (
-    readBracketedMentionToken(source, index, end) ??
-    readBareMentionToken(source, index, end, context)
-  );
-}
-
 function readBracketedMentionToken(source: string, index: number, end: number) {
   if (!source.startsWith(mentionOpening, index)) {
     return null;
   }
 
   const labelEnd = findClosingBracket(source, index + 1, end);
-
-  if (labelEnd < 0 || source[labelEnd + 1] !== linkDestinationOpening) {
-    return null;
-  }
-
-  const destination = readLinkDestination(source, labelEnd + 1, end);
+  const destination = labelEnd < 0 ? null : readLinkDestination(source, labelEnd + 1, end);
 
   if (!destination || destination.title !== null) {
     return null;
@@ -531,13 +455,10 @@ function readBareMentionToken(
   source: string,
   index: number,
   end: number,
+  _marks: Mark[],
   context: MarkdownParseContext,
 ) {
-  if (
-    source[index] !== "@" ||
-    context.mentionTargets === null ||
-    !bareMentionCanOpen(source, index)
-  ) {
+  if (context.mentionTargets === null || !bareMentionCanOpen(source, index)) {
     return null;
   }
 
@@ -583,32 +504,28 @@ function readLinkToken(
   // Reject `[` that's the second byte of a malformed `![...]` image. Without
   // this guard, a failed image parse would leak through here and the bracketed
   // segment would be silently promoted to a link.
-  if (source[index] !== linkOpening || source.startsWith(imageOpening, index - 1)) {
+  if (source.startsWith(imageOpening, index - 1)) {
     return null;
   }
 
   const labelEnd = findClosingBracket(source, index, end);
-
-  if (labelEnd < 0 || source[labelEnd + 1] !== linkDestinationOpening) {
-    return null;
-  }
-
-  const destination = readLinkDestination(source, labelEnd + 1, end);
+  const destination = labelEnd < 0 ? null : readLinkDestination(source, labelEnd + 1, end);
 
   if (!destination) {
     return null;
   }
 
   const children = parseInlineRange(source, index + linkOpening.length, labelEnd, marks, context);
-  const resourceProtocol = resolveResourceProtocol(destination.url, context.resourceProtocols);
+  const isResource =
+    context.resourceProtocols !== null &&
+    resolveRegisteredResourceProtocol(destination.url, context.resourceProtocols) !== null;
 
   return {
     end: destination.end,
     nodes: [
-      resourceProtocol
+      isResource
         ? createResource({
-            label: extractResourceLabel(children),
-            protocol: resourceProtocol,
+            label: extractPlainTextFromInlineNodes(children),
             url: destination.url,
           })
         : createLink({
@@ -621,6 +538,10 @@ function readLinkToken(
 }
 
 function readLinkDestination(source: string, openParenIndex: number, end: number) {
+  if (source[openParenIndex] !== linkDestinationOpening) {
+    return null;
+  }
+
   let index = skipSpaces(source, openParenIndex + 1, end);
 
   let urlEnd = index;
@@ -666,10 +587,6 @@ function readLinkDestination(source: string, openParenIndex: number, end: number
     title,
     url,
   };
-}
-
-function extractResourceLabel(children: readonly Inline[]) {
-  return extractPlainTextFromInlineNodes(children);
 }
 
 function readImageWidth(source: string, index: number, end: number) {
@@ -853,11 +770,4 @@ function unescapeMarkdownText(value: string) {
 
 function unescapeMarkdownDestination(value: string) {
   return value.replace(markdownDestinationEscape, "$1");
-}
-
-function createRawInline(originalType: string, raw: string) {
-  return createRaw({
-    originalType,
-    source: raw,
-  });
 }

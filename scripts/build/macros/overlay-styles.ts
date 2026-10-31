@@ -1,18 +1,10 @@
 import { join } from "node:path";
+import { isMacroChild, projectRoot, runMacroChild } from "./child";
 
-const projectRoot = join(import.meta.dir, "../../..");
 const stylesheet = join(projectRoot, "src/component/overlays/styles.css");
 
 export function compileOverlayStyles(): string {
-  // Bun forbids nested builds inside macros, so Tailwind compiles in a child.
-  const child = Bun.spawnSync(["bun", "run", import.meta.path, "--compile"], {
-    cwd: projectRoot,
-  });
-  if (child.exitCode !== 0) {
-    process.stderr.write(child.stderr);
-    throw new Error("Overlay styles failed to compile.");
-  }
-  return new TextDecoder().decode(child.stdout);
+  return runMacroChild(import.meta.path, "Overlay styles failed to compile.");
 }
 
 async function emitOverlayStyles(): Promise<void> {
@@ -32,4 +24,4 @@ async function emitOverlayStyles(): Promise<void> {
   process.stdout.write(await output.text());
 }
 
-if (process.argv.includes("--compile")) await emitOverlayStyles();
+if (isMacroChild) await emitOverlayStyles();

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   createAnchorFromContainer,
-  createCommentThread,
   deleteCommentFromThread,
   editCommentInThread,
   enumerateTextAnchorRanges,
@@ -10,6 +9,7 @@ import {
   isResolvedCommentThread,
   listAnchorContainers,
   markCommentThreadAsResolved,
+  replyToCommentThread,
   resolveCommentThread,
 } from "@/document";
 import { parseDocument } from "@/markdown";
@@ -156,10 +156,6 @@ console.log("hi");
 | one | two |
 `);
     const containers = listAnchorContainers(snapshot);
-    const outerListParagraph = containers[2];
-    const innerListParagraph = containers[3];
-    const codeContainer = containers[4];
-    const firstTableCell = containers[5];
 
     expect(containers.map((container) => `${container.containerKind}:${container.text}`)).toEqual([
       "text:Title",
@@ -175,10 +171,6 @@ console.log("hi");
     expect(containers.map((container) => container.containerOrdinal)).toEqual([
       0, 1, 2, 3, 4, 5, 6, 7, 8,
     ]);
-    expect(outerListParagraph?.containerKind).toBe("text");
-    expect(innerListParagraph?.containerKind).toBe("text");
-    expect(codeContainer?.containerKind).toBe("code");
-    expect(firstTableCell?.containerKind).toBe("tableCell");
     expect(new Set(containers.slice(5).map((container) => container.path)).size).toBe(4);
   });
 });
@@ -205,7 +197,10 @@ describe("Comment threads", () => {
       6,
       "Initial note.",
     );
-    const replyThread = appendReply(thread);
+    const replyThread = replyToCommentThread(thread, {
+      body: "Follow-up note.",
+      updatedAt: "2026-04-05T13:00:00.000Z",
+    });
     const editedThread = editCommentInThread(
       replyThread,
       1,
@@ -222,16 +217,3 @@ describe("Comment threads", () => {
     expect(deletedThread).toBeNull();
   });
 });
-
-function appendReply(thread: ReturnType<typeof createCommentThread>) {
-  return {
-    ...thread,
-    comments: [
-      ...thread.comments,
-      {
-        body: "Follow-up note.",
-        updatedAt: "2026-04-05T13:00:00.000Z",
-      },
-    ],
-  };
-}

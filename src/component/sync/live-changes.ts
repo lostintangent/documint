@@ -76,17 +76,13 @@ export function acknowledgeUnacknowledgedDocumentChanges(
       );
       if (retargetedChange) {
         changes[candidate.index] = retargetedChange;
-      } else {
-        didChange = true;
       }
     }
 
     didChange = true;
   }
 
-  const compactedChanges = changes.filter((change) => change !== null);
-
-  return !didChange && compactedChanges.length === current.length ? current : compactedChanges;
+  return didChange ? changes.filter((change) => change !== null) : current;
 }
 
 export function mergeUnacknowledgedDocumentChanges(
@@ -96,8 +92,11 @@ export function mergeUnacknowledgedDocumentChanges(
 ): UnacknowledgedDocumentChangeMerge {
   const byKey = new Map<string, UnacknowledgedDocumentChange>();
   const consumedIncoming = new Set<number>();
-  const resolvedIncoming = resolveIncomingDocumentChanges(changes, state);
-  const resolvedCurrent = retargetUnacknowledgedDocumentChanges(current, state);
+  const resolvedIncoming = resolveVisibleDocumentChanges(changes, state, { retarget: false });
+  const resolvedCurrent = resolveVisibleDocumentChanges(current, state, {
+    changeKeys: current.map((change) => change.changeKey),
+    retarget: true,
+  });
   const newChanges: UnacknowledgedDocumentChange[] = [];
 
   for (const [index, active] of current.entries()) {
@@ -129,23 +128,6 @@ export function mergeUnacknowledgedDocumentChanges(
     changes: [...byKey.values()],
     newChanges,
   };
-}
-
-function resolveIncomingDocumentChanges(
-  changes: readonly DocumentChange[],
-  state: EditorState,
-): readonly (UnacknowledgedDocumentChange | null)[] {
-  return resolveVisibleDocumentChanges(changes, state, { retarget: false });
-}
-
-function retargetUnacknowledgedDocumentChanges(
-  changes: readonly UnacknowledgedDocumentChange[],
-  state: EditorState,
-): readonly (UnacknowledgedDocumentChange | null)[] {
-  return resolveVisibleDocumentChanges(changes, state, {
-    changeKeys: changes.map((change) => change.changeKey),
-    retarget: true,
-  });
 }
 
 function resolveVisibleDocumentChanges(
@@ -273,18 +255,7 @@ function resolveDocumentChange(
     return null;
   }
 
-  return retarget ? retargetDocumentChange(change, anchorMatch) : change;
-}
-
-function retargetDocumentChange(
-  change: DocumentChange,
-  anchorMatch: EditorNodeAnchor,
-): DocumentChange {
-  if (anchorMatch.status !== "matched") {
-    throw new Error("Expected matched document change anchor");
-  }
-
-  return { ...change, anchor: anchorMatch.anchor };
+  return retarget ? { ...change, anchor: anchorMatch.anchor } : change;
 }
 
 function isSelectionOnDocumentChange(state: EditorState, change: DocumentChange) {

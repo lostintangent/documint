@@ -55,7 +55,7 @@ export function resolveListMarkerPlans(
       continue;
     }
 
-    listMarkerPlans.set(line.path, { blockPath: target.blockPath, marker: target.marker });
+    listMarkerPlans.set(line.path, { blockPath: target.listItemPath, marker: target.marker });
   }
 
   return listMarkerPlans;

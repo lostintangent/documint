@@ -8,15 +8,14 @@ import { isAnchorKind, normalizeAnchorKind, type TextAnchor } from "../query/anc
 import type { Comment, CommentThread } from "./types";
 
 export function parseCommentThread(candidate: unknown): CommentThread | null {
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+  if (!isRecord(candidate)) {
     return null;
   }
 
-  const record = candidate as Record<string, unknown>;
-  const anchor = parseCommentAnchor(record.anchor);
-  const quote = typeof record.quote === "string" ? record.quote : null;
-  const comments = Array.isArray(record.comments)
-    ? record.comments.flatMap((comment) => {
+  const anchor = parseCommentAnchor(candidate.anchor);
+  const quote = typeof candidate.quote === "string" ? candidate.quote : null;
+  const comments = Array.isArray(candidate.comments)
+    ? candidate.comments.flatMap((comment) => {
         const parsed = parseComment(comment);
 
         return parsed ? [parsed] : [];
@@ -32,49 +31,45 @@ export function parseCommentThread(candidate: unknown): CommentThread | null {
     quote,
     anchor,
     comments,
-    resolvedAt: typeof record.resolvedAt === "string" ? record.resolvedAt : undefined,
+    resolvedAt: typeof candidate.resolvedAt === "string" ? candidate.resolvedAt : undefined,
   };
 }
 
 function parseComment(candidate: unknown): Comment | null {
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-    return null;
-  }
-
-  const record = candidate as Record<string, unknown>;
-
-  if (typeof record.body !== "string" || typeof record.updatedAt !== "string") {
-    return null;
-  }
-
-  return {
-    body: record.body,
-    updatedAt: record.updatedAt,
-  };
-}
-
-function parseCommentAnchor(candidate: unknown): TextAnchor | null {
-  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
-    return null;
-  }
-
-  const { kind, prefix, suffix } = candidate as {
-    kind?: unknown;
-    prefix?: unknown;
-    suffix?: unknown;
-  };
-
   if (
-    ("kind" in candidate && !isAnchorKind(kind)) ||
-    ("prefix" in candidate && typeof prefix !== "string") ||
-    ("suffix" in candidate && typeof suffix !== "string")
+    !isRecord(candidate) ||
+    typeof candidate.body !== "string" ||
+    typeof candidate.updatedAt !== "string"
   ) {
     return null;
   }
 
   return {
-    kind: isAnchorKind(kind) ? normalizeAnchorKind(kind) : undefined,
-    prefix: typeof prefix === "string" ? prefix : undefined,
-    suffix: typeof suffix === "string" ? suffix : undefined,
+    body: candidate.body,
+    updatedAt: candidate.updatedAt,
   };
+}
+
+// Payloads come from `JSON.parse`, which never produces an `undefined` field,
+// so `undefined` means the field was absent.
+function parseCommentAnchor(candidate: unknown): TextAnchor | null {
+  if (!isRecord(candidate)) {
+    return null;
+  }
+
+  const { kind, prefix, suffix } = candidate;
+
+  if (
+    (kind === undefined || isAnchorKind(kind)) &&
+    (prefix === undefined || typeof prefix === "string") &&
+    (suffix === undefined || typeof suffix === "string")
+  ) {
+    return { kind: normalizeAnchorKind(kind), prefix, suffix };
+  }
+
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

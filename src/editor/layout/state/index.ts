@@ -1,8 +1,7 @@
 // Owns viewport-aware layout orchestration. Small/common documents use exact
 // full-document layout; larger documents use cheap whole-document estimates to
 // choose the visible path slice, then run exact layout only for that slice.
-import type { DocumentResources } from "@/types";
-import { emptyDocumentResources } from "@/editor/resources";
+import { emptyDocumentResources, type DocumentResources } from "@/editor/resources";
 import { countEditorPathsWithText, type EditorState } from "../../state";
 import { createLayoutCache, type LayoutCache } from "./cache";
 import { resolveDocumentLayoutOptions, type DocumentLayoutOptions } from "../lib/options";

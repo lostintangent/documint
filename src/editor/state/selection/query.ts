@@ -14,7 +14,7 @@ import {
   resolveIndexedBlockContainingPath,
   resolveEditorTextAtPath,
 } from "../index/query";
-import type { IndexedBlock, IndexedInline, ResolvedMetadataText } from "../index/types";
+import type { IndexedInline, ResolvedMetadataText } from "../index/types";
 import type { EditorState } from "../types";
 import {
   isSelectionCollapsed,
@@ -23,14 +23,14 @@ import {
   type NormalizedEditorSelection,
 } from "./index";
 
-export type SelectionBlockContext = {
+type SelectionBlockContext = {
   blockPath: string;
   depth: number;
   nodeType: string;
   text: string;
 };
 
-export type SelectionSpanContext =
+type SelectionSpanContext =
   | { kind: "link"; url: string }
   | { kind: "marks"; marks: Mark[] }
   | { kind: "none" };
@@ -40,7 +40,7 @@ export type SelectionContext = {
   span: SelectionSpanContext;
 };
 
-export type CaretTextContext = {
+type CaretTextContext = {
   offset: number;
   path: string;
   text: string;
@@ -133,15 +133,13 @@ export function getSelectionRange(state: EditorState): EditorSelectionRange | nu
   };
 }
 
-export function selectionIntersectsPath(
-  state: EditorState,
-  path: string,
-  selection: NormalizedEditorSelection = normalizeSelection(state),
-) {
+export function selectionIntersectsPath(state: EditorState, path: string) {
   const text = resolveEditorTextAtPath(state.documentIndex, path);
   if (text === null) {
     return false;
   }
+
+  const selection = normalizeSelection(state);
 
   if (selection.collapsed) {
     return selection.start.path === path;
@@ -159,19 +157,17 @@ export function selectionIntersectsPath(
   );
 }
 
-export function selectionIntersectsBlockPath(
-  state: EditorState,
-  blockPath: string,
-  selection: NormalizedEditorSelection = normalizeSelection(state),
-) {
+export function selectionIntersectsBlockPath(state: EditorState, blockPath: string) {
   const target = resolveIndexedBlock(state.documentIndex, blockPath);
   if (!target) {
     return false;
   }
 
+  const selection = normalizeSelection(state);
+
   for (const point of [selection.start, selection.end]) {
     const focusedBlock = resolveIndexedBlockContainingPath(state.documentIndex, point.path);
-    if (focusedBlock && isIndexedBlockWithinTarget(focusedBlock, target)) {
+    if (focusedBlock && blockContainsBlock(target, focusedBlock)) {
       return true;
     }
   }
@@ -214,8 +210,4 @@ function resolveInlineAtAnchor(state: EditorState): IndexedInline | null {
     inlines.find((entry) => entry.start === offset) ??
     null
   );
-}
-
-function isIndexedBlockWithinTarget(block: IndexedBlock, target: IndexedBlock) {
-  return blockContainsBlock(target, block);
 }

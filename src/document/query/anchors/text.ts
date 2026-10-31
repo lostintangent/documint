@@ -9,8 +9,8 @@
  *
  * This module owns the primitives those consumers share:
  *   - Vocabulary: text anchors plus thin indirect anchors such as comment
- *     thread anchors, and the container/match/resolution types used by the
- *     text-anchor algebra.
+ *     thread anchors, and the container/match types used by the text-anchor
+ *     algebra.
  *   - Discovery: enumerate the text containers an anchor can attach to.
  *   - Construction: capture a content-addressable fingerprint around a range.
  *   - Search: enumerate substring matches, prefix/suffix ranges, and verify
@@ -104,30 +104,10 @@ export type AnchorMatch = {
 // A raw location where a `TextAnchor` could attach inside a specific
 // container. Consumers decide whether candidates are unique enough, need
 // scoring, or should be rejected as ambiguous.
-export type TextAnchorCandidate = {
+type TextAnchorCandidate = {
   container: AnchorContainer;
   endOffset: number;
   startOffset: number;
-};
-
-// --- Resolution result ---
-
-// Lifecycle of an anchor reattachment attempt.
-//   matched   - The anchor's exact context still appears in the snapshot.
-//   repaired  - The anchor drifted; resolution recovered a best-fit location.
-//   ambiguous - Multiple equally-strong locations exist; no safe pick.
-//   stale    - The anchor can no longer be located.
-export type AnchorResolutionStatus = "ambiguous" | "matched" | "repaired" | "stale";
-
-// Generic resolution result. Consumers pick their own `TRepair` payload to
-// carry whatever they want to refresh on the anchored entity (e.g. a comment's
-// quoted text). `repair` is non-null whenever `match` is non-null; together
-// they describe both *where* the anchor lives now and *how* its persisted
-// representation should be updated to keep tracking the same span cleanly.
-export type AnchorResolution<TRepair> = {
-  match: AnchorMatch | null;
-  repair: TRepair | null;
-  status: AnchorResolutionStatus;
 };
 
 // --- Container discovery ---
@@ -258,7 +238,7 @@ export function findOccurrences(text: string, query: string): number[] {
 // `endOffset` is where the suffix begins (so `endOffset >= startOffset`).
 // Returns `[]` if either context is empty. Consumers apply their own
 // scoring, uniqueness, or affinity policy on top of the raw candidate list.
-export function findContextRanges(
+function findContextRanges(
   text: string,
   prefix: string,
   suffix: string,
@@ -287,14 +267,13 @@ export function findContextRanges(
 // `estimatedLength` so consumers that track spans can keep producing ranges.
 // Point-like consumers can omit `estimatedLength` and use the collapsed range.
 export function enumerateTextAnchorRanges(
-  target: AnchorContainer | string,
+  text: string,
   anchor: TextAnchor,
   options: { estimatedLength?: number } = {},
 ): Array<{ startOffset: number; endOffset: number }> {
   const prefix = anchor.prefix ?? "";
   const suffix = anchor.suffix ?? "";
   const estimatedLength = Math.max(0, options.estimatedLength ?? 0);
-  const text = typeof target === "string" ? target : target.text;
 
   if (prefix.length > 0 && suffix.length > 0) {
     return findContextRanges(text, prefix, suffix);
@@ -339,7 +318,7 @@ export function collectTextAnchorCandidates(
       continue;
     }
 
-    for (const range of enumerateTextAnchorRanges(container, anchor, options)) {
+    for (const range of enumerateTextAnchorRanges(container.text, anchor, options)) {
       candidates.push({
         container,
         endOffset: range.endOffset,

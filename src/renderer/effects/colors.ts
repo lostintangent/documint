@@ -1,10 +1,10 @@
-// Owns canvas color math: blending two colors by progress, plus the parsing
-// and caching that makes repeated blend calls cheap. Visual effects compose
-// their resolved colors on top of this primitive.
+// Owns canvas color math: blending two colors by progress, plus the numeric
+// mix, formatting, parsing, and caching that make repeated blend calls cheap.
+// Visual effects and painters compose their resolved colors on top of these.
 
 export const transparentCanvasColor = "rgba(0, 0, 0, 0)";
 
-export type CanvasColor = [number, number, number, number];
+export type CanvasColor = readonly [number, number, number, number];
 
 // Preserve Documint's established straight-alpha interpolation for colors we
 // can resolve numerically. CSS color-mix premultiplies alpha, which would
@@ -19,20 +19,27 @@ export function blendCanvasColors(fromColor: string, toColor: string, progress: 
     return `color-mix(in srgb, ${fromColor} ${100 - toPercentage}%, ${toColor} ${toPercentage}%)`;
   }
 
-  return `rgba(${roundColorChannel(mixColorChannel(from[0], to[0], progress))}, ${roundColorChannel(
+  return formatCanvasColor(mixCanvasColor(from, to, progress));
+}
+
+export function fadeCanvasColor(color: string, progress: number) {
+  return blendCanvasColors(color, transparentCanvasColor, progress);
+}
+
+export function mixCanvasColor(from: CanvasColor, to: CanvasColor, progress: number): CanvasColor {
+  return [
+    mixColorChannel(from[0], to[0], progress),
     mixColorChannel(from[1], to[1], progress),
-  )}, ${roundColorChannel(mixColorChannel(from[2], to[2], progress))}, ${mixColorChannel(
-    from[3],
-    to[3],
-    progress,
-  )})`;
+    mixColorChannel(from[2], to[2], progress),
+    mixColorChannel(from[3], to[3], progress),
+  ];
+}
+
+export function formatCanvasColor(color: CanvasColor) {
+  return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(color[2])}, ${color[3]})`;
 }
 
 const colorCache = new Map<string, CanvasColor | null>([[transparentCanvasColor, [0, 0, 0, 0]]]);
-
-export function resolveCanvasColor(color: string): CanvasColor {
-  return resolveOptionalCanvasColor(color) ?? colorCache.get(transparentCanvasColor)!;
-}
 
 export function resolveOptionalCanvasColor(color: string): CanvasColor | null {
   const cached = colorCache.get(color);
@@ -64,7 +71,7 @@ function parseHexCanvasColor(color: string) {
       Number.parseInt(`${hex[1]}${hex[1]}`, 16),
       Number.parseInt(`${hex[2]}${hex[2]}`, 16),
       1,
-    ] satisfies [number, number, number, number];
+    ] satisfies CanvasColor;
   }
 
   if (hex.length === 6) {
@@ -73,7 +80,7 @@ function parseHexCanvasColor(color: string) {
       Number.parseInt(hex.slice(2, 4), 16),
       Number.parseInt(hex.slice(4, 6), 16),
       1,
-    ] satisfies [number, number, number, number];
+    ] satisfies CanvasColor;
   }
 
   return null;
@@ -86,12 +93,7 @@ function parseRgbCanvasColor(color: string) {
     return null;
   }
 
-  return [Number(match[1]), Number(match[2]), Number(match[3]), 1] satisfies [
-    number,
-    number,
-    number,
-    number,
-  ];
+  return [Number(match[1]), Number(match[2]), Number(match[3]), 1] satisfies CanvasColor;
 }
 
 function parseRgbaCanvasColor(color: string) {
@@ -103,18 +105,14 @@ function parseRgbaCanvasColor(color: string) {
     return null;
   }
 
-  return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])] satisfies [
-    number,
-    number,
-    number,
-    number,
-  ];
+  return [
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+    Number(match[4]),
+  ] satisfies CanvasColor;
 }
 
 function mixColorChannel(from: number, to: number, progress: number) {
   return from + (to - from) * progress;
-}
-
-function roundColorChannel(value: number) {
-  return Math.round(value);
 }

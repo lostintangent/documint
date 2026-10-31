@@ -6,14 +6,8 @@
 
 import { useEffect, useRef, type PointerEvent } from "react";
 import type { CompletionItem } from "../../completions/completions";
+import type { CompletionLeafProps } from "../../completions/useCompletions";
 import { LeafButton } from "./core/LeafButton";
-
-type CompletionLeafProps = {
-  activeIndex: number;
-  matches: readonly CompletionItem[];
-  onHover: (index: number) => void;
-  onSelect: (item: CompletionItem) => void;
-};
 
 export function CompletionLeaf({ activeIndex, matches, onHover, onSelect }: CompletionLeafProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -81,5 +75,5 @@ function preserveInputFocus(event: PointerEvent<HTMLButtonElement>) {
 }
 
 function completionItemKey(item: CompletionItem) {
-  return item.id ?? `${item.kind ?? ""}:${item.label}:${item.insertText ?? ""}:${item.icon ?? ""}`;
+  return item.id ?? `${item.label}:${item.insertText ?? ""}:${item.icon ?? ""}`;
 }

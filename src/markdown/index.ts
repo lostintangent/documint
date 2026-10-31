@@ -9,7 +9,7 @@
 // The semantic shapes (`Document`, `Fragment`) live in `src/document`; this
 // subsystem only owns the text adapters between them and markdown source.
 
-export { commentDirectiveName, lineFeed, type MarkdownOptions } from "./shared";
+export type { MarkdownOptions } from "./shared";
 export { serializeMetadataPreamble } from "./front-matter";
 
 export { parseDocument, parseFragment } from "./parser";

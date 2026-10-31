@@ -9,18 +9,10 @@ import { splitGraphemes } from "@/editor/text/graphemes";
 import { resolveFontMetrics } from "@/editor/text/measure";
 import { collectRangeBoundaries, findRangeAtSegment } from "@/editor/text/ranges";
 import type { DocumentFrameLine } from "@/renderer/frame";
-import type { TextRunSegment, TextSegment } from "@/renderer/frame/line/text-segments";
+import { isTextRunSegment, type TextRunSegment } from "@/renderer/frame/line/text-segments";
 import { resolveLineSegmentBounds } from "@/renderer/frame/line/text-geometry";
-import type { TextDeletedEffectContext } from "@/types";
-import {
-  resolveTextFadeColor,
-  resolveTextPulseColor,
-  type TextFadeFrame,
-  type TextHighlightFrame,
-  type TextPulseFrame,
-  type EffectEnvironment,
-  type PaintEffect,
-} from "../../effects";
+import type { EffectEnvironment, PaintEffect, TextDeletedEffectContext } from "../../effects";
+import { fadeCanvasColor } from "../../effects/colors";
 import { paintClippedTextOverlay } from "./glyphs";
 
 const textPulseBaseRadius = 4;
@@ -30,10 +22,10 @@ const textHighlightMinimumVisibleAlpha = 0.02;
 
 export function paintTextHighlights(
   lineFrame: DocumentFrameLine,
-  textHighlights: readonly TextHighlightFrame[],
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { context, paintEffect, theme } = environment;
+  const { textHighlights } = lineFrame;
 
   if (textHighlights.length === 0) {
     return;
@@ -101,7 +93,7 @@ export function paintTextHighlights(
           text: activeHighlight.text,
         },
         ({ context }) => {
-          paintDefaultTextInsertedHighlight(context, {
+          paintClippedTextOverlay(context, {
             alpha,
             color: theme.insertHighlightText,
             height: lineFrame.layoutLine.height,
@@ -118,49 +110,12 @@ export function paintTextHighlights(
   });
 }
 
-function paintDefaultTextInsertedHighlight(
-  context: CanvasRenderingContext2D,
-  {
-    alpha,
-    color,
-    height,
-    left,
-    text,
-    textBaseline,
-    textLeft,
-    top,
-    width,
-  }: {
-    alpha: number;
-    color: string;
-    height: number;
-    left: number;
-    text: string;
-    textBaseline: number;
-    textLeft: number;
-    top: number;
-    width: number;
-  },
-) {
-  paintClippedTextOverlay(context, {
-    alpha,
-    color,
-    height,
-    left,
-    text,
-    textBaseline,
-    textLeft,
-    top,
-    width,
-  });
-}
-
 export function paintTextFades(
   lineFrame: DocumentFrameLine,
-  textFades: readonly TextFadeFrame[],
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { paintEffect } = environment;
+  const { textFades } = lineFrame;
 
   if (textFades.length === 0) {
     return;
@@ -178,7 +133,7 @@ export function paintTextFades(
       fade.startOffset,
     );
 
-    const color = resolveTextFadeColor(lineFrame.defaultTextColor, fade);
+    const color = fadeCanvasColor(lineFrame.defaultTextColor, fade.progress);
 
     paintEffect(
       fade,
@@ -209,10 +164,10 @@ function paintDefaultTextDeleted({
 
 export function paintTextPulses(
   lineFrame: DocumentFrameLine,
-  textPulses: readonly TextPulseFrame[],
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { paintEffect, theme } = environment;
+  const { textPulses } = lineFrame;
 
   if (textPulses.length === 0) {
     return;
@@ -236,7 +191,7 @@ export function paintTextPulses(
     const { ascent, descent } = resolveFontMetrics(lineFrame.layoutLine.font);
     const glyphCenterY =
       lineFrame.textBaseline - Math.max(1, ascent * 0.42) + Math.max(0.5, descent * 0.15);
-    const color = resolveTextPulseColor(pulse, theme);
+    const color = fadeCanvasColor(theme.insertHighlightText, pulse.progress);
 
     paintEffect(
       pulse,
@@ -291,10 +246,6 @@ function forEachTextRunSegment(
       visit(textSegment);
     }
   }
-}
-
-function isTextRunSegment(textSegment: TextSegment): textSegment is TextRunSegment {
-  return textSegment.atom === "text" || textSegment.atom === "inline-code";
 }
 
 function isOffsetInLine(

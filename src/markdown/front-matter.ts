@@ -66,12 +66,7 @@ function parseMetadataField(line: string): { key: string; valueSource: string } 
   }
 
   const sourceKey = match[1]!;
-
-  if (!sourceKey.startsWith('"')) {
-    return { key: sourceKey, valueSource: match[2] ?? "" };
-  }
-
-  const key = parseJsonString(sourceKey);
+  const key = sourceKey.startsWith('"') ? parseJsonString(sourceKey) : sourceKey;
   return key === null ? null : { key, valueSource: match[2] ?? "" };
 }
 

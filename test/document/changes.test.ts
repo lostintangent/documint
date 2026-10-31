@@ -30,6 +30,21 @@ describe("document changes", () => {
     ]);
   });
 
+  test("finds inserted roots as added without marking shifted suffixes", () => {
+    const changes = findDocumentChanges(
+      parse("Alpha\n\nBeta\n"),
+      parse("Intro\n\nAlpha\n\nBeta\n"),
+    );
+
+    expect(changes.map(changeSummary)).toEqual([["added", "root.0"]]);
+  });
+
+  test("finds checkbox changes at list-item granularity", () => {
+    const changes = findDocumentChanges(parse("- [ ] task\n"), parse("- [x] task\n"));
+
+    expect(changes.map(changeSummary)).toEqual([["modified", "root.0.children.0"]]);
+  });
+
   test("finds targeted table-cell changes", () => {
     const changes = findDocumentChanges(
       parse("| A | B |\n| - | - |\n| one | two |\n"),
@@ -51,41 +66,63 @@ describe("document changes", () => {
     ]);
   });
 
+  test("finds inserted table rows as added without marking shifted rows", () => {
+    const changes = findDocumentChanges(
+      parse("| A | B |\n| - | - |\n| one | two |\n| three | four |\n"),
+      parse("| A | B |\n| - | - |\n| one | two |\n| new | row |\n| three | four |\n"),
+    );
+
+    expect(changes.map(changeSummary)).toEqual([
+      ["added", "root.0.rows.2.cells.0"],
+      ["added", "root.0.rows.2.cells.1"],
+    ]);
+  });
+
+  test("finds inserted table columns as added without marking shifted cells", () => {
+    const changes = findDocumentChanges(
+      parse("| A | B |\n| - | - |\n| one | two |\n"),
+      parse("| A | New | B |\n| - | - | - |\n| one | inserted | two |\n"),
+    );
+
+    expect(changes.map(changeSummary)).toEqual([
+      ["added", "root.0.rows.0.cells.1"],
+      ["added", "root.0.rows.1.cells.1"],
+    ]);
+  });
+
   test("finds added table cells and shifted modified cells in the same row window", () => {
     const changes = findDocumentChanges(
       parse("| A | B |\n| - | - |\n| one | old |\n| two | stable |\n"),
       parse("| A | B |\n| - | - |\n| new | row |\n| one | changed |\n| two | stable |\n"),
     );
 
-    expect(changes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.0",
-          }),
+    expect(changes).toEqual([
+      expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.1.cells.0",
         }),
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.1",
-          }),
+      }),
+      expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.1.cells.1",
         }),
-        expect.objectContaining({
-          kind: "modified",
-          previousAnchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.1",
-          }),
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.2.cells.1",
-          }),
+      }),
+      expect.objectContaining({
+        kind: "modified",
+        previousAnchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.1.cells.1",
         }),
-      ]),
-    );
+        anchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.2.cells.1",
+        }),
+      }),
+    ]);
   });
 
   test("finds added table columns and shifted modified cells in the same row", () => {
@@ -94,28 +131,33 @@ describe("document changes", () => {
       parse("| A | X | B | C |\n| - | - | - | - |\n| one | added | old changed | stable |\n"),
     );
 
-    expect(changes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "added",
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.1",
-          }),
+    expect(changes).toEqual([
+      expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.0.cells.1",
         }),
-        expect.objectContaining({
-          kind: "modified",
-          previousAnchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.1",
-          }),
-          anchor: expect.objectContaining({
-            kind: "table-cell",
-            path: "root.0.rows.1.cells.2",
-          }),
+      }),
+      expect.objectContaining({
+        kind: "added",
+        anchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.1.cells.1",
         }),
-      ]),
-    );
+      }),
+      expect.objectContaining({
+        kind: "modified",
+        previousAnchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.1.cells.1",
+        }),
+        anchor: expect.objectContaining({
+          kind: "table-cell",
+          path: "root.0.rows.1.cells.2",
+        }),
+      }),
+    ]);
   });
 
   test("compares broad rewrites exhaustively", () => {
@@ -322,6 +364,12 @@ describe("document changes", () => {
     expect(compareDocuments(previous, next).changes).toHaveLength(65);
   });
 
+  test("returns no changes when inserted table rows exceed the target cap", () => {
+    expect(
+      findDocumentChanges(parse(createTableMarkdown(2)), parse(createTableMarkdown(80))),
+    ).toEqual([]);
+  });
+
   test("returns changes below the work budget and none at the exact limit", () => {
     const belowBudget = findDocumentChanges(
       parse(`${"a".repeat(16_896)}\n`),
@@ -353,6 +401,11 @@ function changeSummary(change: {
   readonly kind: string;
 }) {
   return [change.kind, change.anchor.path];
+}
+
+function createTableMarkdown(rowCount: number) {
+  const rows = Array.from({ length: rowCount }, (_, index) => `| row ${index} | value ${index} |`);
+  return `${["| A | B |", "| - | - |", ...rows].join("\n")}\n`;
 }
 
 function createTableAlignmentDocuments(cellCount: number) {

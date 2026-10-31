@@ -2,7 +2,7 @@
 // editor's current collapsed selection into the active text path, then lets
 // the pure completion detector operate on that path text.
 
-import { getCaretTextContext, type EditorState, type TextRangeTarget } from "@/editor";
+import { getCaretTextContext, type EditorState, type EditorSelectionRange } from "@/editor";
 import {
   detectCompletionContext,
   equalCompletionItemLists,
@@ -55,7 +55,7 @@ export type DocumentCompletionApplication =
   | {
       kind: "mention";
       name: string;
-      target: TextRangeTarget;
+      target: EditorSelectionRange;
       trailingText: string;
       userId: string;
     }
@@ -98,5 +98,5 @@ function isDocumentMentionCompletion(
   item: CompletionItem,
   completion: ActiveCompletion,
 ): item is CompletionItem & { id: string } {
-  return Boolean(item.id) && (item.kind === "mention" || completion.trigger === "@");
+  return Boolean(item.id) && completion.trigger === "@";
 }

@@ -13,7 +13,7 @@ import {
 } from "../state";
 import { placeCaretAtLineY } from "./line";
 
-export type VerticalTablePathTarget = {
+type VerticalTablePathTarget = {
   currentPath: string;
   targetPath: string | null;
 };

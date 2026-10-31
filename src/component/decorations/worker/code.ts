@@ -1,11 +1,11 @@
 import { visitBlockTree, type Block } from "@/document";
 import type { TextDecoration } from "@/editor";
-import type { DocumintDecoration } from "@/types";
+import type { DocumintDecoration } from "../shared";
 import { normalizeLanguage } from "../grammars";
-import { compileDecorations, resolveDecorationMatches } from "./matching";
+import { appendTextDecorations, compileDecorations } from "./matching";
 
 // Pre-compiles each language's resolved rules into the regex form the code pass
-// runs. Shared by the worker (after deserializing wire config) and benchmarks.
+// runs. Shared by the worker configure step and benchmarks.
 export function compileCodeGrammars(
   rulesByLanguage: Record<string, readonly DocumintDecoration[]>,
 ): Record<string, DocumintDecoration[]> {
@@ -48,19 +48,11 @@ export function resolveCodeDecorationRanges(
           return;
         }
 
-        for (const match of resolveDecorationMatches(node.source, compiled)) {
-          const { end, start, ...decoration } = match;
-          ranges.push({
-            ...decoration,
-            endOffset: end,
-            path: context.path,
-            startOffset: start,
-          });
-        }
+        appendTextDecorations(ranges, node.source, compiled, context.path);
       },
     },
     { startIndex: rootIndex },
   );
 
-  return ranges.sort((a, b) => a.startOffset - b.startOffset);
+  return ranges;
 }

@@ -163,16 +163,21 @@ function LeafToolbarMenuView({
   const [isOpen, setIsOpen] = useState(false);
   const [menuHorizontalOffset, setMenuHorizontalOffset] = useState<number | null>(null);
 
+  if (!isOpen && menuHorizontalOffset !== null) {
+    setMenuHorizontalOffset(null);
+  }
+
+  if (disabled && isOpen) {
+    setIsOpen(false);
+  }
+
   // Horizontal placement. The popover renders twice on open: first
   // `position: fixed; visibility: hidden` so we can read its rendered
   // width (see `resolveMenuPlacementStyle(null)`), then re-rendered at
   // the computed `left` offset. `useLayoutEffect` runs the measurement
   // before paint so the user never sees the off-screen first pass.
   useLayoutEffect(() => {
-    if (!isOpen) {
-      setMenuHorizontalOffset(null);
-      return;
-    }
+    if (!isOpen) return;
 
     const updateMenuHorizontalOffset = () => {
       const menuShell = menuShellRef.current;
@@ -200,12 +205,6 @@ function LeafToolbarMenuView({
   // Outside-click dismissal. `composedPath()` walks across shadow-DOM
   // boundaries so portaled overlays don't fool the "is this in the menu?"
   // check; `capture: true` runs before any descendant handler.
-  useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-    }
-  }, [disabled]);
-
   useEffect(() => {
     if (!isOpen) return;
 

@@ -23,7 +23,7 @@ export type FragmentEndpoint = LeafTrimTarget & {
   tableCell: IndexedTableCell | null;
 };
 
-export type FragmentSourceContext =
+type FragmentSourceContext =
   | {
       endpoint: FragmentEndpoint;
       kind: "single-path";

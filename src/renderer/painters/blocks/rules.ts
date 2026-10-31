@@ -1,5 +1,7 @@
+// Owns block-level rules: heading underlines, blockquote bars, and dividers.
+
 import type { LayoutRect } from "@/editor/layout";
-import type { ResolvedEditorTheme } from "@/types";
+import type { ResolvedEditorTheme } from "../../theme";
 import type { BlockquoteRuleFrame } from "@/renderer/frame/chrome/rules";
 
 // Horizontal rules (heading underline, divider). Both terminate at the same
