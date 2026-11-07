@@ -39,8 +39,7 @@ export function useTheme(): EditorTheme {
       frameId = null;
       setThemeState((previousThemeState) => {
         const nextThemeState = createGitHubDocumintTheme(media);
-
-        return areThemeStatesEqual(previousThemeState, nextThemeState)
+        return JSON.stringify(nextThemeState) === JSON.stringify(previousThemeState)
           ? previousThemeState
           : nextThemeState;
       });
@@ -180,18 +179,4 @@ function normalizeCssColor(value: string): string | null {
 
   const hslColor = `hsl(${color})`;
   return CSS.supports("color", hslColor) ? hslColor : null;
-}
-
-function areThemeStatesEqual(left: GitHubDocumintTheme, right: GitHubDocumintTheme): boolean {
-  return left.colorMode === right.colorMode && areThemesEqual(left.theme, right.theme);
-}
-
-function areThemesEqual(left: EditorTheme, right: EditorTheme): boolean {
-  const leftEntries = Object.entries(left);
-  const rightEntries = Object.entries(right);
-
-  return (
-    leftEntries.length === rightEntries.length &&
-    leftEntries.every(([key, value]) => right[key as keyof EditorTheme] === value)
-  );
 }

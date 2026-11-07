@@ -1,64 +1,43 @@
 /**
- * Editor-side resolution of comment threads.
+ * Editor-side comment threads.
  *
  * Comments themselves live on the semantic `Document` (anchored against text);
  * this module is the bridge between that semantic state and the runtime
- * `EditorState`. It owns four operations:
+ * `EditorState`. It owns three operations:
  *
- *   - Capture: build a thread from an editor selection.
- *   - Runtime resolution: resolve every persisted thread against the current snapshot
- *     and emit runtime ranges plus repaired thread copies.
+ *   - Capture: build a thread, and where it matched, from an editor selection.
+ *   - Runtime resolution: each snapshot's threads matched to runtime ranges,
+ *     carried forward across commits (see `carry.ts`).
  *   - Viewport geometry: resolve a comment range to document-space bounds.
- *   - Edit-time repair: optimistically remap thread anchors during inline
- *     edits so threads stay sticky to their text without a full re-resolve.
  */
 
-import {
-  createAnchorFromContainer,
-  createCommentThread,
-  extractQuoteFromContainer,
-  resolveCommentThreadInContainers,
-  type AnchorContainer,
-  type CommentThread,
-  type TextAnchor,
-} from "@/document";
-import {
-  compareEditorPositions,
-  type DocumentIndex,
-  type EditorSelectionRange,
-  resolveCommentThreadIndicesForPath,
-} from "../../state";
+import { captureTextAnchor, createCommentThread, type AnchorMatch } from "@/document";
+import { compareEditorPositions, type DocumentIndex, type EditorSelectionRange } from "../../state";
 import {
   findLineEntryForPathOffset,
   someVisibleDocumentLayoutLine,
   type EditorLayoutState,
 } from "../../layout";
 import type { EditorState } from "../../state/types";
-import { createEditorTextAnchorResolver, resolveDocumentRangeForPath } from "../text";
+import { resolveDocumentRangeForPath } from "../text";
 import type { EditorPresence } from "../presence";
 import { rangeOverlapsSegment } from "../../text/ranges";
-import { remapEditedRange } from "./remap";
+import type { EditorCommentRange } from "./carry";
 
-// --- Types ---
-
-export type EditorCommentRange = {
-  endOffset: number;
-  path: string;
-  resolved: boolean;
-  startOffset: number;
-  threadIndex: number;
-};
-
-export type EditorCommentState = {
-  ranges: EditorCommentRange[];
-  threads: CommentThread[];
-};
+export {
+  carryComments,
+  getCommentState,
+  type CommentChange,
+  type EditorCommentRange,
+  type EditorCommentState,
+} from "./carry";
 
 // --- Capture ---
 
-// Build a `CommentThread` from the current editor selection. Returns
-// `null` if the body is empty, the selection is collapsed, or the selected
-// path isn't an anchorable kind (for example, a structural list-item marker).
+// Build a `CommentThread` from the current editor selection, along with the
+// match it was captured at. Returns `null` if the body is empty, the
+// selection is collapsed, or the selected path isn't an anchorable kind (for
+// example, a structural list-item marker).
 export function createCommentThreadForSelection(
   documentIndex: DocumentIndex,
   selection: EditorSelectionRange,
@@ -83,73 +62,20 @@ export function createCommentThreadForSelection(
     return null;
   }
 
-  return createCommentThread({
-    anchor: createAnchorFromContainer(
-      anchorRange.anchorContainer,
-      anchorRange.startOffset,
-      anchorRange.endOffset,
-    ),
-    body: normalizedBody,
-    quote: extractQuoteFromContainer(
-      anchorRange.anchorContainer,
-      anchorRange.startOffset,
-      anchorRange.endOffset,
-    ),
-  });
-}
-
-// --- Runtime Resolution ---
-
-// Resolve every persisted thread against the current document snapshot and
-// emit runtime ranges plus repaired thread copies. Threads whose anchors
-// don't resolve are silently dropped from `ranges` while their persisted
-// `threads` entry stays untouched, ready to repair when the document
-// changes again.
-export function getCommentState(documentIndex: DocumentIndex): EditorCommentState {
-  const textAnchorResolver = createEditorTextAnchorResolver(documentIndex);
-  const anchorContainers = textAnchorResolver.listContainers();
-  const threads = documentIndex.document.comments;
-  let resolvedThreads: CommentThread[] | null = null;
-  const ranges: EditorCommentRange[] = [];
-
-  for (const [threadIndex, thread] of threads.entries()) {
-    const resolution = resolveCommentThreadInContainers(thread, anchorContainers);
-
-    if (!resolution.match) {
-      continue;
-    }
-
-    const editorRange = textAnchorResolver.resolveEditorRange(resolution.match);
-
-    if (!editorRange) {
-      continue;
-    }
-
-    if (
-      resolution.repair &&
-      (!sameTextAnchor(resolution.repair.anchor, thread.anchor) ||
-        resolution.repair.quote !== thread.quote)
-    ) {
-      resolvedThreads ??= [...threads];
-      resolvedThreads[threadIndex] = {
-        ...thread,
-        anchor: resolution.repair.anchor,
-        quote: resolution.repair.quote,
-      };
-    }
-
-    ranges.push({
-      endOffset: editorRange.endOffset,
-      path: editorRange.path,
-      resolved: thread.resolvedAt != null,
-      startOffset: editorRange.startOffset,
-      threadIndex,
-    });
-  }
+  const { anchorContainer, endOffset, startOffset } = anchorRange;
+  const match: AnchorMatch = {
+    containerKind: anchorContainer.containerKind,
+    containerPath: anchorContainer.path,
+    endOffset,
+    startOffset,
+  };
 
   return {
-    ranges,
-    threads: resolvedThreads ?? threads,
+    match,
+    thread: createCommentThread({
+      ...captureTextAnchor(anchorContainer, startOffset, endOffset),
+      body: normalizedBody,
+    }),
   };
 }
 
@@ -249,101 +175,4 @@ export function resolveCommentThreadViewportPosition(
   }
 
   return viewport.estimatePathBounds(range.path);
-}
-
-// --- Edit-time repair ---
-
-// Optimistically keep comments sticky within an edited path by remapping
-// each affected thread's comment range through the splice math. General
-// resolution still runs against the next document snapshot via
-// `getCommentState`; this fast path just minimizes anchor drift for inline
-// edits where prefix/suffix context is about to shift.
-export function updateCommentThreadsForPathEdit(
-  documentIndex: DocumentIndex,
-  nextDocumentIndex: DocumentIndex,
-  path: string,
-  selectionStart: number,
-  selectionEnd: number,
-  insertedText: string,
-) {
-  if (documentIndex.document.comments.length === 0) {
-    return nextDocumentIndex.document.comments;
-  }
-
-  const threadIndices = resolveCommentThreadIndicesForPath(documentIndex, path);
-  const threadIndexSet = new Set(threadIndices);
-
-  if (threadIndices.length === 0) {
-    return nextDocumentIndex.document.comments;
-  }
-
-  const currentEditRange = resolveDocumentRangeForPath(documentIndex, path, {
-    endOffset: selectionEnd,
-    startOffset: selectionStart,
-  });
-  const currentContainer: AnchorContainer | null = currentEditRange
-    ? {
-        ...currentEditRange.anchorContainer,
-        containerOrdinal: -1,
-        path,
-      }
-    : null;
-  const nextContainer =
-    resolveDocumentRangeForPath(nextDocumentIndex, path, {
-      endOffset: 0,
-      startOffset: 0,
-    })?.anchorContainer ?? null;
-
-  if (!currentEditRange || !currentContainer || !nextContainer) {
-    return nextDocumentIndex.document.comments;
-  }
-
-  const baseComments = nextDocumentIndex.document.comments;
-  let nextComments: CommentThread[] | null = null;
-
-  for (const threadIndex of threadIndexSet) {
-    const currentThread = documentIndex.document.comments[threadIndex];
-    const nextThread = baseComments[threadIndex];
-
-    if (!currentThread || !nextThread) {
-      continue;
-    }
-
-    const repairedMatch = resolveCommentThreadInContainers(currentThread, [currentContainer]).match;
-
-    if (!repairedMatch || repairedMatch.containerPath !== path) {
-      continue;
-    }
-
-    const nextRange = remapEditedRange(
-      repairedMatch.startOffset,
-      repairedMatch.endOffset,
-      currentEditRange.startOffset,
-      currentEditRange.endOffset,
-      insertedText.length,
-    );
-    const nextAnchor = createAnchorFromContainer(nextContainer, nextRange.start, nextRange.end);
-    const nextQuote = extractQuoteFromContainer(nextContainer, nextRange.start, nextRange.end);
-
-    if (sameTextAnchor(nextAnchor, nextThread.anchor) && nextQuote === nextThread.quote) {
-      continue;
-    }
-
-    nextComments ??= [...baseComments];
-    nextComments[threadIndex] = {
-      ...nextThread,
-      anchor: nextAnchor,
-      quote: nextQuote,
-    };
-  }
-
-  return nextComments ?? baseComments;
-}
-
-function sameTextAnchor(left: TextAnchor, right: TextAnchor) {
-  return (
-    (left.kind ?? null) === (right.kind ?? null) &&
-    (left.prefix ?? null) === (right.prefix ?? null) &&
-    (left.suffix ?? null) === (right.suffix ?? null)
-  );
 }

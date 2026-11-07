@@ -56,7 +56,7 @@ export function OverlayPortal({ children }: { children: ReactNode }) {
   }
 
   return createPortal(
-    <div className="overlay" style={{ display: "contents", ...context.themeStyles }}>
+    <div className="overlay" style={context.themeStyles}>
       {children}
     </div>,
     context.shadowRoot,
@@ -74,13 +74,8 @@ function createOverlayRootStore(css: string) {
     subscribe(onChange: () => void) {
       const host = document.createElement("div");
       host.dataset.documintOverlayRoot = "";
-      host.style.position = "absolute";
-      host.style.top = "0";
-      host.style.left = "0";
-      host.style.width = "0";
-      host.style.height = "0";
-      host.style.overflow = "visible";
-      host.style.zIndex = "2147483647";
+      host.style.cssText =
+        "position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: visible; z-index: 2147483647";
 
       const root = host.attachShadow({ mode: "open" });
       const style = document.createElement("style");

@@ -12,9 +12,8 @@
  *     thread anchors, and the container/match types used by the text-anchor
  *     algebra.
  *   - Discovery: enumerate the text containers an anchor can attach to.
- *   - Construction: capture a content-addressable fingerprint around a range.
- *   - Search: enumerate substring matches, prefix/suffix ranges, and verify
- *     that captured context aligns at known positions.
+ *   - Construction: capture a content-addressable anchor and quote around a range.
+ *   - Search: enumerate substring matches and prefix/suffix ranges.
  *
  * Consumers layer their own scoring, uniqueness, or affinity policy on top of
  * these primitives. This module never picks a winner — it returns candidates.
@@ -81,13 +80,16 @@ export type TextAnchor = {
   suffix?: string;
 };
 
+// A text anchor plus the quoted text it addresses, captured together.
+export type TextAnchorCapture = {
+  anchor: TextAnchor;
+  quote: string;
+};
+
 // A text container an anchor can attach to. `path` is the structural container
-// path in the current snapshot. `containerOrdinal` is the position among
-// containers in document order — used to disambiguate identical-text
-// containers when content alone is tied.
+// path in the current snapshot.
 export type AnchorContainer = {
   containerKind: AnchorKind;
-  containerOrdinal: number;
   path: string;
   text: string;
 };
@@ -96,7 +98,6 @@ export type AnchorContainer = {
 export type AnchorMatch = {
   containerPath: string;
   containerKind: AnchorKind;
-  containerOrdinal: number;
   startOffset: number;
   endOffset: number;
 };
@@ -118,8 +119,6 @@ type TextAnchorCandidate = {
 // Container text comes from the committed document's cached `plainText` fields
 // so anchoring and future content search share one canonical semantic text
 // projection instead of re-projecting inline children ad hoc.
-// `containerOrdinal` reflects the global order across all kinds, so it stays
-// stable even when consumers filter by kind.
 export function listAnchorContainers(document: Document): AnchorContainer[] {
   const containers: AnchorContainer[] = [];
 
@@ -130,7 +129,6 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
       if (anchorKind) {
         containers.push({
           containerKind: anchorKind,
-          containerOrdinal: containers.length,
           path: context.path,
           text: block.plainText,
         });
@@ -139,7 +137,6 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
     enterTableCell(cell, context) {
       containers.push({
         containerKind: tableCellAnchorKind,
-        containerOrdinal: containers.length,
         path: context.path,
         text: cell.plainText,
       });
@@ -151,64 +148,36 @@ export function listAnchorContainers(document: Document): AnchorContainer[] {
 
 // --- Anchor construction ---
 
-// Capture prefix and suffix windows surrounding a `(startOffset, endOffset)`
-// range as a content-addressable fingerprint. Each side is up to
-// `CONTEXT_WINDOW` characters of the surrounding text. The foundational
-// primitive behind `createAnchorFromContainer`; consumers that need a
-// fingerprint for raw text without an `AnchorContainer` in hand call this
-// directly.
-export function captureContextWindows(
-  text: string,
-  startOffset: number,
-  endOffset: number,
-): { prefix: string; suffix: string } {
-  return {
-    prefix: text.slice(Math.max(0, startOffset - CONTEXT_WINDOW), startOffset),
-    suffix: text.slice(endOffset, Math.min(text.length, endOffset + CONTEXT_WINDOW)),
-  };
-}
-
-// Build an `Anchor` from a (container, range) pair, capturing up to
-// `CONTEXT_WINDOW` characters of surrounding text as the prefix/suffix
-// fingerprint. Used by any consumer that wants to record a position by
-// content rather than by index.
-export function createAnchorFromContainer(
+// Record a (container, range) pair by content: the anchor fingerprints up to
+// `CONTEXT_WINDOW` characters on each side, and the quote is the addressed
+// text, kept for later drift detection. Offsets clamp to the container text.
+export function captureTextAnchor(
   container: Pick<AnchorContainer, "containerKind" | "text">,
   startOffset: number,
   endOffset: number,
-): TextAnchor {
-  const normalizedStart = clamp(startOffset, 0, container.text.length);
-  const normalizedEnd = clamp(endOffset, normalizedStart, container.text.length);
-  const { prefix, suffix } = captureContextWindows(container.text, normalizedStart, normalizedEnd);
+): TextAnchorCapture {
+  const { text } = container;
+  const start = clamp(startOffset, 0, text.length);
+  const end = clamp(endOffset, start, text.length);
 
   return {
-    kind: normalizeAnchorKind(container.containerKind),
-    prefix: prefix || undefined,
-    suffix: suffix || undefined,
+    anchor: {
+      kind: normalizeAnchorKind(container.containerKind),
+      prefix: text.slice(Math.max(0, start - CONTEXT_WINDOW), start) || undefined,
+      suffix: text.slice(end, end + CONTEXT_WINDOW) || undefined,
+    },
+    quote: text.slice(start, end),
   };
-}
-
-// Slice the text span addressed by a (container, range) pair. Pairs with
-// `createAnchorFromContainer` to capture both the descriptor and the original
-// quoted text for later drift detection.
-export function extractQuoteFromContainer(
-  container: Pick<AnchorContainer, "text">,
-  startOffset: number,
-  endOffset: number,
-): string {
-  const normalizedStart = clamp(startOffset, 0, container.text.length);
-  const normalizedEnd = clamp(endOffset, normalizedStart, container.text.length);
-
-  return container.text.slice(normalizedStart, normalizedEnd);
 }
 
 // --- Search primitives ---
 
-// Enumerate every starting index of `query` in `text`. Substrate for
-// content-addressable anchor resolution: thread reattachment, selection
-// rebase, presence target placement. Returns `[]` for an empty query so
-// callers can treat "no signal" descriptors uniformly.
-export function findOccurrences(text: string, query: string): number[] {
+// The start of each non-overlapping copy of `query` in `text`, left to right,
+// so a periodic context such as "abab" in "ababab" matches once. Comment quote
+// search steps one character at a time instead, since overlapping quotes are
+// distinct copies. Returns `[]` for an empty query so callers can treat "no
+// signal" descriptors uniformly.
+function findOccurrences(text: string, query: string): number[] {
   if (query.length === 0) {
     return [];
   }
@@ -328,36 +297,6 @@ export function collectTextAnchorCandidates(
   }
 
   return candidates;
-}
-
-// Verify that `prefix` ends exactly at `position` in `text`. Returns `false`
-// for an absent prefix so consumers can score against optional descriptors
-// uniformly. The inverse of the prefix capture done by `captureContextWindows`.
-export function prefixMatchesAt(
-  text: string,
-  prefix: string | undefined,
-  position: number,
-): boolean {
-  if (!prefix) {
-    return false;
-  }
-
-  return text.slice(Math.max(0, position - prefix.length), position) === prefix;
-}
-
-// Verify that `suffix` starts exactly at `position` in `text`. Returns `false`
-// for an absent suffix so consumers can score against optional descriptors
-// uniformly. The inverse of the suffix capture done by `captureContextWindows`.
-export function suffixMatchesAt(
-  text: string,
-  suffix: string | undefined,
-  position: number,
-): boolean {
-  if (!suffix) {
-    return false;
-  }
-
-  return text.slice(position, position + suffix.length) === suffix;
 }
 
 // --- Utilities ---

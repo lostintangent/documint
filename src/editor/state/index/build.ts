@@ -9,16 +9,10 @@
 // document. That's what makes the splice hot path fast: the typing edit only
 // pays for the per-root delta, not for re-iterating the whole document.
 //
-// Per-document projections (`commentContainerIndex`, `listItems`,
-// `imageUrls`, `resourceUrls`) live next to the primitive so their cache-reuse
-// policies stay in one place.
+// Per-document projections (`listItems`, `imageUrls`, `resourceUrls`) live
+// next to the primitive so their cache-reuse policies stay in one place.
 
-import {
-  listAnchorContainers,
-  resolveCommentThread,
-  rootIndexForPath,
-  type Document,
-} from "@/document";
+import type { Document } from "@/document";
 import type {
   IndexedBlock,
   DocumentIndex,
@@ -35,11 +29,10 @@ export function applyRootDelta(
   nextDocument: Document,
 ): DocumentIndex {
   // Fast path: roots are reference-identical (document-only change such as
-  // `replaceIndexedDocument`). Every map and flat array is byte-for-byte
-  // identical to `prev`; only document-derived projections may need to
-  // refresh.
+  // comments or metadata via `replaceIndexedDocument`). Every map and flat
+  // array is byte-for-byte identical to `prev`.
   if (prev && positionedRoots === prev.roots) {
-    return refreshDocumentProjections(prev, nextDocument);
+    return nextDocument === prev.document ? prev : { ...prev, document: nextDocument };
   }
 
   const blockIndex = new Map(prev?.blockIndex);
@@ -76,9 +69,6 @@ export function applyRootDelta(
   return {
     blockIndex,
     blocks,
-    commentContainerIndex: canReuseCommentContainerIndex(prev, positionedRoots, nextDocument)
-      ? prev.commentContainerIndex
-      : createCommentContainerIndex(nextDocument),
     document: nextDocument,
     imageUrls: createDocumentUrlSet(positionedRoots, prev?.imageUrls, (root) => root.imageUrls),
     resourceUrls: createDocumentUrlSet(
@@ -125,22 +115,6 @@ function addRootRecords(
       }
     }
   }
-}
-
-// Roots unchanged but the document reference may have been swapped (comments
-// or metadata). Reuse everything except the document-derived projections,
-// which still gate on their own input identity.
-function refreshDocumentProjections(prev: DocumentIndex, nextDocument: Document): DocumentIndex {
-  if (nextDocument === prev.document) {
-    return prev;
-  }
-  return {
-    ...prev,
-    commentContainerIndex: canReuseCommentContainerIndex(prev, prev.roots, nextDocument)
-      ? prev.commentContainerIndex
-      : createCommentContainerIndex(nextDocument),
-    document: nextDocument,
-  };
 }
 
 // URL projections -----------------------------------------------------------
@@ -213,129 +187,4 @@ function areListItemsEqual(a: IndexedListItem, b: IndexedListItem): boolean {
     case "ordered":
       return b.kind === "ordered" && a.ordinal === b.ordinal;
   }
-}
-
-// Comment-container projection ---------------------------------------------
-
-// Note: this is O(C × N) on cold build — each thread resolves against the
-// full document via `resolveCommentThread`. Warm edits reuse the previous
-// projection when every resolved comment container's root is still the same
-// positioned root, so typing outside commented roots avoids the full scan
-// without projecting comments onto shifted or replaced paths.
-function createCommentContainerIndex(document: Document) {
-  const commentContainerIndex = new Map<string, number[]>();
-
-  for (const [threadIndex, thread] of document.comments.entries()) {
-    const containerPath = resolveCommentThread(thread, document).match?.containerPath ?? null;
-
-    if (!containerPath) {
-      continue;
-    }
-
-    const threadIndices = commentContainerIndex.get(containerPath) ?? [];
-    threadIndices.push(threadIndex);
-    commentContainerIndex.set(containerPath, threadIndices);
-  }
-
-  return commentContainerIndex;
-}
-
-function canReuseCommentContainerIndex(
-  prev: DocumentIndex | null,
-  positionedRoots: readonly IndexedRoot[],
-  nextDocument: Document,
-): prev is DocumentIndex {
-  if (!prev || nextDocument.comments !== prev.document.comments) {
-    return false;
-  }
-
-  if (positionedRoots === prev.roots || prev.document.comments.length === 0) {
-    return true;
-  }
-
-  const indexedThreadCount = countIndexedCommentThreads(prev.commentContainerIndex);
-
-  // If any thread was stale or ambiguous in the previous projection, a
-  // document edit could make it resolvable. Rebuild rather than preserving a
-  // partial index that would miss the newly repairable thread.
-  if (indexedThreadCount !== prev.document.comments.length) {
-    return false;
-  }
-
-  for (const containerPath of prev.commentContainerIndex.keys()) {
-    const rootIndex = rootIndexForPath(containerPath);
-
-    if (rootIndex == null || positionedRoots[rootIndex] !== prev.roots[rootIndex]) {
-      return false;
-    }
-  }
-
-  if (changedRootsMayAffectCommentResolution(prev, positionedRoots, nextDocument)) {
-    return false;
-  }
-
-  return true;
-}
-
-function changedRootsMayAffectCommentResolution(
-  prev: DocumentIndex,
-  positionedRoots: readonly IndexedRoot[],
-  nextDocument: Document,
-) {
-  for (let rootIndex = 0; rootIndex < positionedRoots.length; rootIndex += 1) {
-    const rootBlock = nextDocument.blocks[rootIndex];
-
-    // Re-positioning can allocate fresh `IndexedRoot` objects when block
-    // coordinates shift, but unchanged document blocks cannot introduce a new
-    // comment-anchor collision.
-    if (!rootBlock || rootBlock === prev.document.blocks[rootIndex]) {
-      continue;
-    }
-
-    if (rootBlockMayAffectCommentResolution(rootBlock, nextDocument.comments)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function rootBlockMayAffectCommentResolution(
-  rootBlock: Document["blocks"][number],
-  comments: Document["comments"],
-) {
-  // Match comment resolution's semantic text projection. Editor path text uses
-  // selection-space text for references, but comments anchor against document
-  // `plainText` via `listAnchorContainers`.
-  for (const container of listAnchorContainers({
-    blocks: [rootBlock],
-    comments: [],
-    metadata: null,
-  })) {
-    for (const thread of comments) {
-      if (textMayAffectCommentResolution(container.text, thread)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function textMayAffectCommentResolution(text: string, thread: Document["comments"][number]) {
-  return (
-    (thread.quote.length > 0 && text.includes(thread.quote)) ||
-    (thread.anchor.prefix !== undefined && text.includes(thread.anchor.prefix)) ||
-    (thread.anchor.suffix !== undefined && text.includes(thread.anchor.suffix))
-  );
-}
-
-function countIndexedCommentThreads(commentContainerIndex: ReadonlyMap<string, readonly number[]>) {
-  let count = 0;
-
-  for (const threadIndices of commentContainerIndex.values()) {
-    count += threadIndices.length;
-  }
-
-  return count;
 }

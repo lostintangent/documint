@@ -12,9 +12,6 @@ export type EditorStateTransition = {
   documentChanged: boolean;
   effects: readonly EditorEffect[];
   changedRootIndexes: readonly number[];
-  // True when the transition emitted semantic effects that may start content
-  // layer effects. Effect lifetime is owned by the component, not state.
-  hasNewEffects: boolean;
 };
 
 export function createEditorStateTransition(
@@ -32,7 +29,6 @@ export function createEditorStateTransition(
     documentChanged,
     effects,
     changedRootIndexes: documentChanged ? resolveChangedRootIndexes(previous, next) : [],
-    hasNewEffects: effects.length > 0,
   };
 }
 

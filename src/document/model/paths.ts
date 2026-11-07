@@ -56,6 +56,19 @@ export function blockPathWithRootIndex(path: string, rootIndex: number) {
   return blockPath ? blockPathFromCoordinates(rootIndex, blockPath.childIndices) : null;
 }
 
+// The same position under another root, for block and table cell paths.
+export function pathWithRootIndex(path: string, rootIndex: number) {
+  const cell = tableCellPathContextFromPath(path);
+
+  if (!cell) {
+    return blockPathWithRootIndex(path, rootIndex);
+  }
+
+  const tablePath = blockPathWithRootIndex(cell.tablePath, rootIndex);
+
+  return tablePath && tableCellPath(tableRowPath(tablePath, cell.rowIndex), cell.cellIndex);
+}
+
 export function blockPathSiblingIndex(path: string) {
   return blockPathCoordinates(path)?.siblingIndex ?? null;
 }

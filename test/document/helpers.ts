@@ -3,12 +3,11 @@
 
 import type { Block, Document, Inline } from "@/document";
 import {
-  createAnchorFromContainer,
+  captureTextAnchor,
   createCommentThread,
   createDocument,
   createHeadingTextBlock,
   createParagraphTextBlock,
-  extractQuoteFromContainer,
   listAnchorContainers,
   type AnchorContainer,
 } from "@/document";
@@ -101,10 +100,9 @@ export function createAnchoredThread(
     container,
     document,
     thread: createCommentThread({
-      anchor: createAnchorFromContainer(container, startOffset, endOffset),
+      ...captureTextAnchor(container, startOffset, endOffset),
       body,
       createdAt: "2026-04-05T12:00:00.000Z",
-      quote: extractQuoteFromContainer(container, startOffset, endOffset),
     }),
   };
 }

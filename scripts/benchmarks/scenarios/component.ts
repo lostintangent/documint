@@ -1,4 +1,6 @@
 import { indexedTextEntries } from "@test/editor/helpers";
+import { cursorLeafSprig } from "@/component/overlays/leaves/sprigs";
+import { createStore } from "@/component/store";
 import { reconcileExternalContentChange } from "@/component/sync";
 import {
   acknowledgeUnacknowledgedDocumentChanges,
@@ -18,12 +20,13 @@ import {
   resolveDocumentNodeAnchors,
   rootBlockPath,
   spliceDocument,
-  type Document,
 } from "@/document";
+import { createEditorLayoutState, createLayoutCache } from "@/editor";
 import { createEditorState, resolveBlockTextPathBoundary, setSelection } from "@/editor/state";
 import { parseDocument } from "@/markdown";
-import type { BenchmarkScenario } from "../harness";
-import { createBenchmarkScenario } from "../harness";
+import type { BenchmarkFixtures } from "../fixtures";
+import { BENCHMARK_VIEWPORT, createBenchmarkScenario, type BenchmarkScenario } from "../harness";
+import { createDenseCommentSnapshot } from "./editor";
 
 const decorationRules = [
   { color: "#d00", pattern: /\b(?:document|list|table|text|item)\b/gi },
@@ -35,91 +38,107 @@ const compiledDecorationRules = compileDecorations(decorationRules);
 // irrelevant to tokenization cost, so any color resolves them).
 const compiledGrammars = compileCodeGrammars(resolveCodeGrammars(builtinGrammars, () => "#fff"));
 
-export function createComponentScenarios(fixtures: {
-  longSnapshot: Document;
-  mediumSnapshot: Document;
-}): BenchmarkScenario[] {
+export function createComponentScenarios(fixtures: BenchmarkFixtures): BenchmarkScenario[] {
   const fixture = createLongReconciliationFixture(1200);
   const codeHeavySnapshot = parseDocument(createCodeHeavyMarkdown(200));
   const externalChangesFixture = createExternalChangesFixture();
+  const cursorLeafFixture = createCursorLeafFixture(fixtures.mediumMarkdown);
 
   return [
-    createBenchmarkScenario("component", "component_decorations_medium", 100, () =>
+    createBenchmarkScenario("component_decorations_medium", 100, () =>
       fixtures.mediumSnapshot.blocks.forEach((block, rootIndex) =>
         resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
       ),
     ),
-    createBenchmarkScenario("component", "component_decorations_long", 50, () =>
+    createBenchmarkScenario("component_decorations_long", 50, () =>
       fixtures.longSnapshot.blocks.forEach((block, rootIndex) =>
         resolveCompiledBlockDecorationRanges(block, rootIndex, compiledDecorationRules),
       ),
     ),
-    createBenchmarkScenario("component", "component_grammar_tokenize_code_heavy", 150, () =>
+    createBenchmarkScenario("component_grammar_tokenize_code_heavy", 150, () =>
       codeHeavySnapshot.blocks.forEach((block, rootIndex) =>
         resolveCodeDecorationRanges(block, rootIndex, compiledGrammars),
       ),
     ),
-    createBenchmarkScenario("component", "component_reconcile_selection_long", 200, () => {
+    // Caret moves keep `documentIndex`, so cursor leaves must reuse the
+    // store's cached comment ranges instead of re-resolving every thread.
+    createBenchmarkScenario("component_cursor_leaf_comments_dense", 200, () => {
+      const { points, store } = cursorLeafFixture;
+
+      for (const point of points) {
+        store.editor.command(setSelection, point);
+        void cursorLeafSprig.read(store, false);
+      }
+    }),
+    createBenchmarkScenario("component_reconcile_selection_long", 200, () => {
       void reconcileExternalContentChange(fixture.selectedState, fixture.shiftedState);
     }),
-    createBenchmarkScenario(
-      "component",
-      "component_reconcile_transient_empty_paragraph_long",
-      100,
-      () => {
-        void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);
-      },
-    ),
-    createBenchmarkScenario("component", "component_diff_external_blocks", 100, () => {
+    createBenchmarkScenario("component_reconcile_transient_empty_paragraph_long", 100, () => {
+      void reconcileExternalContentChange(fixture.transientState, fixture.shiftedState);
+    }),
+    createBenchmarkScenario("component_diff_external_blocks", 100, () => {
       void findDocumentChanges(
         externalChangesFixture.previousBlocks,
         externalChangesFixture.nextBlocks,
       );
     }),
-    createBenchmarkScenario("component", "component_diff_external_table", 100, () => {
+    createBenchmarkScenario("component_diff_external_table", 100, () => {
       void findDocumentChanges(
         externalChangesFixture.previousTable,
         externalChangesFixture.nextTable,
       );
     }),
-    createBenchmarkScenario("component", "component_merge_external_changes", 200, () => {
+    createBenchmarkScenario("component_merge_external_changes", 200, () => {
       void mergeUnacknowledgedDocumentChanges(
         [],
         externalChangesFixture.incomingChanges,
         externalChangesFixture.incomingState,
       );
     }),
-    createBenchmarkScenario(
-      "component",
-      "component_acknowledge_external_changes_local_edit",
-      200,
-      () => {
-        void acknowledgeUnacknowledgedDocumentChanges(
-          externalChangesFixture.unacknowledgedChanges,
-          externalChangesFixture.localEditState,
-          { retarget: true },
-        );
-      },
-    ),
-    createBenchmarkScenario(
-      "component",
-      "component_retarget_many_external_changes_reparsed_shift",
-      100,
-      () => {
-        void acknowledgeUnacknowledgedDocumentChanges(
-          externalChangesFixture.manyUnacknowledgedChanges,
-          externalChangesFixture.manyReparsedShiftState,
-          { retarget: true },
-        );
-      },
-    ),
-    createBenchmarkScenario("component", "component_resolve_duplicate_node_anchors", 100, () => {
+    createBenchmarkScenario("component_acknowledge_external_changes_local_edit", 200, () => {
+      void acknowledgeUnacknowledgedDocumentChanges(
+        externalChangesFixture.unacknowledgedChanges,
+        externalChangesFixture.localEditState,
+        { retarget: true },
+      );
+    }),
+    createBenchmarkScenario("component_retarget_many_external_changes_reparsed_shift", 100, () => {
+      void acknowledgeUnacknowledgedDocumentChanges(
+        externalChangesFixture.manyUnacknowledgedChanges,
+        externalChangesFixture.manyReparsedShiftState,
+        { retarget: true },
+      );
+    }),
+    createBenchmarkScenario("component_resolve_duplicate_node_anchors", 100, () => {
       void resolveDocumentNodeAnchors(
         externalChangesFixture.duplicateAnchorNext,
         externalChangesFixture.duplicateAnchors,
       );
     }),
   ];
+}
+
+// Dense threads on the first bullet of a long document with unique text, so
+// every thread resolves. The caret walks 25 text paths from that bullet.
+function createCursorLeafFixture(seedMarkdown: string) {
+  const snapshot = parseDocument(`${seedMarkdown}\n\n${createNumberedParagraphMarkdown(1200)}`);
+  const store = createStore(createDenseCommentSnapshot(snapshot, 60));
+  const entries = indexedTextEntries(store.editor.getState());
+  const start = entries.findIndex((entry) => entry.text.includes("Bullet item"));
+  const points = entries
+    .slice(start, start + 25)
+    .map((entry) => ({ offset: Math.min(2, entry.text.length), path: entry.path }));
+
+  store.layout.setLayoutResolver(() =>
+    createEditorLayoutState(
+      store.editor.getState(),
+      { ...BENCHMARK_VIEWPORT, top: 0 },
+      createLayoutCache(),
+    ),
+  );
+  store.layout.commit();
+
+  return { points, store };
 }
 
 function createExternalChangesFixture() {

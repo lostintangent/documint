@@ -8,6 +8,7 @@ import {
   useEffectEvent,
   useLayoutEffect,
   useRef,
+  useState,
 } from "react";
 import {
   deleteBackward,
@@ -18,7 +19,7 @@ import {
   insertSoftLineBreak,
   insertImage,
   insertText,
-  measureVisualCaretTarget,
+  measureVisualCaret,
   moveCaretByViewport,
   moveCaretByWord,
   moveCaretHorizontally,
@@ -51,10 +52,12 @@ import {
 } from "../lib/keybindings";
 import { resolveEditorForwardWordMovement, resolveEditorHostPlatform } from "../lib/platform";
 import { editorStateSprig, useDocumintStore, useSprig } from "../store";
+import { CURSOR_REVEAL_PADDING } from "./useCursor";
 import { useMediaQuery } from "./useMediaQuery";
 
 type UseInputOptions = {
   // DOM refs the hook reads from.
+  canvasRef: RefObject<HTMLCanvasElement | null>;
   inputRef: RefObject<HTMLTextAreaElement | null>;
 
   keybindings?: readonly EditorInputKeybinding[];
@@ -103,6 +106,7 @@ type ClipboardHandlers = {
 // operations on iOS Safari. We attach a native `beforeinput` listener on
 // the textarea directly (see the `useEffect` in `useInput`).
 type SharedInputHandlers = ClipboardHandlers & {
+  onBlur: (event: FocusEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
   onKeyDown?: (event: ReactKeyboardEvent<HTMLCanvasElement | HTMLTextAreaElement>) => void;
 };
 
@@ -118,6 +122,7 @@ type CanvasHandlers = SharedInputHandlers & {
 type InputController = {
   canvasHandlers: CanvasHandlers;
   focus: FocusInput;
+  focused: boolean;
   inputHandlers: InputHandlers;
 };
 
@@ -216,6 +221,7 @@ const INPUT_CONTEXT_WINDOW = 1024;
 const DICTATION_FLUSH_OVERLAP_THRESHOLD = 16;
 
 export function useInput({
+  canvasRef,
   inputRef,
   keybindings,
   markdownOptions,
@@ -301,7 +307,7 @@ export function useInput({
     if (!input) return;
 
     const layout = store.layout.get();
-    const caret = measureVisualCaretTarget(readCurrentState(), layout, point);
+    const caret = measureVisualCaret(layout.layout, point)?.caret;
     if (!caret) return;
 
     input.style.top = `${caret.top}px`;
@@ -429,14 +435,15 @@ export function useInput({
     const state = readCurrentState();
     const deleteCommand = resolveDeleteInputCommand(event.inputType);
 
-    if (event.inputType === "insertText") {
+    if (event.inputType === "insertText" || event.inputType === "insertReplacementText") {
       if (!event.data) return;
       event.preventDefault();
 
-      // User-initiated replacement (suggestion-bar tap, dictation revision):
-      // textarea selection extended over the range to replace.
+      // Replacement: the OS (autocorrect, Text Replacements, spellcheck)
+      // always replaces, and the user (suggestion-bar tap, dictation
+      // revision) extends the textarea selection over the range to replace.
       const range = resolveReplacementRange(event.target);
-      if (range.charsToReplace > 0) {
+      if (event.inputType === "insertReplacementText" || range.charsToReplace > 0) {
         runInputCommand(
           replaceNativeTextCommand,
           range.charsToReplace,
@@ -459,22 +466,6 @@ export function useInput({
 
       // Plain typing / IME commit / autocomplete.
       runInputCommand(insertNativeTextCommand, event.data);
-      return;
-    }
-
-    if (event.inputType === "insertReplacementText") {
-      // OS-initiated replacement (autocorrect, Text Replacements,
-      // spellcheck). Same selection-based mechanics as the
-      // user-initiated `insertText` path above; see JSDoc.
-      if (!event.data) return;
-      event.preventDefault();
-      const range = resolveReplacementRange(event.target);
-      runInputCommand(
-        replaceNativeTextCommand,
-        range.charsToReplace,
-        range.trailingOffset,
-        event.data,
-      );
       return;
     }
 
@@ -517,20 +508,11 @@ export function useInput({
     // textarea. Redirect to the editor's own undo stack, then re-prime so
     // iOS keeps offering "Undo" rather than flipping to "Redo" (its
     // UIUndoManager pointer advances even when we preventDefault).
-    if (event.inputType === "historyUndo") {
+    if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
       event.preventDefault();
       event.stopPropagation();
-      runInputCommand(undo);
+      runInputCommand(event.inputType === "historyUndo" ? undo : redo);
       primeUndoStack();
-      return;
-    }
-
-    if (event.inputType === "historyRedo") {
-      event.preventDefault();
-      event.stopPropagation();
-      runInputCommand(redo);
-      primeUndoStack();
-      return;
     }
   });
 
@@ -670,7 +652,10 @@ export function useInput({
 
   /* Focus handlers */
 
+  const [focused, setFocused] = useState(false);
+
   const handleInputFocus = useEffectEvent(() => {
+    setFocused(true);
     onActivity();
     const input = inputRef.current;
 
@@ -688,10 +673,17 @@ export function useInput({
   // silently route focus to the textarea and open the iOS keyboard before
   // our click handler could decide whether the keyboard was wanted.
   const handleCanvasFocus = useEffectEvent((event: FocusEvent<HTMLCanvasElement>) => {
+    setFocused(true);
     onActivity();
     if (event.target.matches(":focus-visible")) {
       focus();
     }
+  });
+
+  // A mouse press hands focus from the textarea to the canvas and back, so
+  // only focus leaving both surfaces, for the host page or a leaf input, counts.
+  const handleBlur = useEffectEvent(({ relatedTarget }: FocusEvent) => {
+    setFocused(relatedTarget === inputRef.current || relatedTarget === canvasRef.current);
   });
 
   /* Textarea synchronization effects */
@@ -749,6 +741,7 @@ export function useInput({
   /* Public API */
 
   const sharedHandlers: SharedInputHandlers = {
+    onBlur: handleBlur,
     onCopy: handleCopy,
     ...(!readOnly ? { onCut: handleCut, onPaste: handlePaste } : {}),
     ...(!isTouchPrimary || enableTouchKeyDown ? { onKeyDown: handleKeyDown } : {}),
@@ -760,6 +753,7 @@ export function useInput({
       onFocus: handleCanvasFocus,
     },
     focus,
+    focused,
     inputHandlers: {
       ...sharedHandlers,
       onFocus: handleInputFocus,
@@ -991,7 +985,14 @@ export function applyKeyboardInputCommand(
   }
 
   if (event.key === "PageUp" || event.key === "PageDown") {
-    return moveCaretByViewport(state, layout, event.key === "PageUp" ? -1 : 1, event.shiftKey);
+    // The cursor reveal stops its padding short of the viewport edge, so page
+    // within that band to keep the line the caret left in view.
+    const page = {
+      ...layout,
+      viewport: { ...layout.viewport, height: layout.viewport.height - CURSOR_REVEAL_PADDING },
+    };
+
+    return moveCaretByViewport(state, page, event.key === "PageUp" ? -1 : 1, event.shiftKey);
   }
 
   if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {

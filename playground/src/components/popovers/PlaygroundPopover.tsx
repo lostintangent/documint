@@ -49,15 +49,14 @@ export function PlaygroundPopover({
   const open = controlledOpen ?? uncontrolledOpen;
 
   const setOpen = useCallback(
-    (nextOpen: boolean | ((current: boolean) => boolean)) => {
-      const resolvedOpen = typeof nextOpen === "function" ? nextOpen(open) : nextOpen;
-      onOpenChange?.(resolvedOpen);
+    (nextOpen: boolean) => {
+      onOpenChange?.(nextOpen);
 
       if (controlledOpen == null) {
-        setUncontrolledOpen(resolvedOpen);
+        setUncontrolledOpen(nextOpen);
       }
     },
-    [controlledOpen, onOpenChange, open],
+    [controlledOpen, onOpenChange],
   );
 
   const close = useCallback(() => {
@@ -101,7 +100,7 @@ export function PlaygroundPopover({
         aria-haspopup="dialog"
         aria-label={ariaLabel}
         className="font-controls inline-flex cursor-pointer items-center gap-1 rounded-xl border-0 bg-transparent px-1 py-1.5 text-inherit transition-colors duration-150 hover:bg-border/5"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setOpen(!open)}
         type="button"
       >
         <span
@@ -122,7 +121,7 @@ export function PlaygroundPopover({
       </button>
       {open ? (
         <div
-          className={`font-controls absolute top-[calc(100%+0.5rem)] right-0 z-100 grid gap-3 rounded-2xl border border-border/15 bg-background/90 p-4 shadow-popover ${popoverWidthClassNameBySize[size]} ${flyoutClassName}`}
+          className={`font-controls absolute top-[calc(100%+0.5rem)] right-0 z-100 grid gap-3 rounded-2xl border border-border/15 bg-background/90 p-4 shadow-popover backdrop-blur-sm ${popoverWidthClassNameBySize[size]} ${flyoutClassName}`}
         >
           {typeof children === "function" ? children({ close }) : children}
         </div>

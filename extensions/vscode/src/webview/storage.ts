@@ -25,6 +25,9 @@ export const storage: DocumintStorage = {
       data,
     }));
 
+    if (path === null) {
+      throw new Error(`Unable to save ${file.name}`);
+    }
     return path;
   },
   openFile(path) {

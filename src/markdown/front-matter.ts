@@ -6,8 +6,7 @@ export const metadataFence = "---";
 const metadataFieldPattern = /^([A-Za-z_][A-Za-z0-9_-]*|"(?:\\.|[^"\\])*"):(?: (.*))?$/;
 const reservedPlainScalarPattern = /^(?:false|null|no|off|on|true|yes)$/i;
 const forbiddenPlainScalarStartPattern = /^[!&*[\]{},#|>@`"'%~?:+\-.0-9]/;
-const literalBlockIndicators = ["|", "|-", "|+", "|2", "|2-", "|2+"] as const;
-type LiteralBlockIndicator = (typeof literalBlockIndicators)[number];
+const literalBlockIndicatorPattern = /^\|2?[-+]?$/;
 
 export function parseMetadataPreambleLines(lines: readonly string[]): DocumentMetadata {
   return parseStructuredMetadata(lines) ?? { raw: lines.join(lineFeed) };
@@ -39,7 +38,7 @@ function parseStructuredMetadata(
       return null;
     }
 
-    if (isLiteralBlockIndicator(field.valueSource)) {
+    if (literalBlockIndicatorPattern.test(field.valueSource)) {
       const literal = parseLiteralBlock(lines, index, field.valueSource);
       metadata.set(field.key, literal.value);
       index = literal.nextIndex;
@@ -106,11 +105,7 @@ function isPlainString(source: string) {
   );
 }
 
-function parseLiteralBlock(
-  lines: readonly string[],
-  fieldIndex: number,
-  indicator: LiteralBlockIndicator,
-) {
+function parseLiteralBlock(lines: readonly string[], fieldIndex: number, indicator: string) {
   const contentLines: string[] = [];
   let indentation = indicator.startsWith("|2") ? 2 : null;
   let nextIndex = fieldIndex + 1;
@@ -152,10 +147,6 @@ function parseLiteralBlock(
   }
 
   return { nextIndex, value };
-}
-
-function isLiteralBlockIndicator(source: string): source is LiteralBlockIndicator {
-  return literalBlockIndicators.includes(source as LiteralBlockIndicator);
 }
 
 function serializeMetadataField([key, value]: [string, MetadataValue]) {

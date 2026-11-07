@@ -44,18 +44,14 @@ export function measureDocumentVisualCaret(
   return { caret: { ...caret, left: caret.left + line.contentInset }, line };
 }
 
-export function resolveCaretVisualLeft(layout: DocumentLayout, caret: CaretTarget) {
-  const resolvedLine = findDocumentLayoutLineForPathOffset(layout, caret.path, caret.offset);
-
-  return resolvedLine ? caret.left + resolvedLine.contentInset : caret.left;
-}
-
 // The caret's visual X, nudged one pixel right so hit-testing at this X
 // doesn't land exactly on a text/cell boundary and resolve to the wrong
 // side. Used by navigation when hit-testing the caret onto a target line
 // (vertical motion, page motion, table column tracking).
 export function resolveCaretHitTestX(layout: DocumentLayout, caret: CaretTarget) {
-  return resolveCaretVisualLeft(layout, caret) + 1;
+  const line = findDocumentLayoutLineForPathOffset(layout, caret.path, caret.offset);
+
+  return caret.left + (line?.contentInset ?? 0) + 1;
 }
 
 function measureLineCaretTarget(line: LayoutLine, offset: number): CaretTarget {

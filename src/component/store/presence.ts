@@ -76,13 +76,7 @@ export const resolvedPresenceSprig = createParameterizedSprig(
       return targets;
     }
 
-    const commentRanges = targets.some((presenceItem) => {
-      return presenceItem.commentThreadIndex != null;
-    })
-      ? ranges
-      : [];
-
-    return resolvePresenceViewport(layout, targets, commentRanges);
+    return resolvePresenceViewport(layout, targets, ranges);
   },
   equalPresence,
 );

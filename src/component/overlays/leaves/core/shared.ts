@@ -11,7 +11,6 @@
 //   3. `DocumentAnchor` renders the resolution; the kind discriminator picks
 //      the leaf-specific React component (LinkLeaf, AnnotationLeaf, …).
 
-import { isResolvedCommentThread } from "@/document";
 import {
   isCanvasDirectActivationTarget,
   type EditorCommentState,
@@ -28,6 +27,9 @@ export type DocumentAnchorTarget = {
   // Document point the leaf attaches to. The host derives the line-bottom
   // y (`top`), caret-x (`left`), and line height (`anchorHeight`) from it.
   anchor: EditorSelectionPoint;
+  // Override the anchor line's document-space y range, which the leaf sits
+  // below or flips above. Table leaves use the cell's border box.
+  extentOverride?: { bottom: number; top: number };
   // Override `left` when the leaf's x doesn't come from the anchor — e.g.
   // table leaves (cell text-left) or selection-annotation (range-start).
   leftOverride?: number;
@@ -45,6 +47,8 @@ export function areDocumentAnchorTargetsEqual(
   return (
     previous.anchor.path === next.anchor.path &&
     previous.anchor.offset === next.anchor.offset &&
+    previous.extentOverride?.bottom === next.extentOverride?.bottom &&
+    previous.extentOverride?.top === next.extentOverride?.top &&
     previous.leftOverride === next.leftOverride &&
     previous.paddingY === next.paddingY
   );
@@ -54,8 +58,8 @@ export function areDocumentAnchorTargetsEqual(
 // the target (declarative); Documint resolves it against the prepared
 // layout, then adds the cross-cutting presentation flags.
 export type DocumentAnchorResolution = {
-  // Line height at the anchor row. The above-flip uses this plus the
-  // shell's own height to clear the anchor line.
+  // Height of the anchor line, or of the target's extent override. The
+  // above-flip uses this plus the shell's own height to clear it.
   anchorHeight: number;
   // True for hover leaves (renders the bridge child as the pointer
   // hand-off surface). False for cursor and selection leaves — the
@@ -121,8 +125,6 @@ export type ThreadLeaf = DocumentAnchorTarget & {
   // Set when the commented span is also a link (hover/cursor path); null
   // for selection-promoted threads.
   link: { title: string | null; url: string } | null;
-  // Whether the thread is currently resolved.
-  resolved: boolean;
   thread: EditorCommentState["threads"][number];
   threadIndex: number;
 };
@@ -184,7 +186,6 @@ export function resolveContextualLeaf(
               url: target.url,
             }
           : null,
-      resolved: isResolvedCommentThread(thread),
       thread,
       threadIndex: target.commentThreadIndex,
     };

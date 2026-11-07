@@ -5,10 +5,6 @@ export function insertAt<T>(items: readonly T[], index: number, item: T): T[] {
   return [...items.slice(0, index), item, ...items.slice(index)];
 }
 
-export function replaceAt<T>(items: readonly T[], index: number, item: T): T[] {
-  return [...items.slice(0, index), item, ...items.slice(index + 1)];
-}
-
 export function removeAt<T>(items: readonly T[], index: number): T[] {
   return [...items.slice(0, index), ...items.slice(index + 1)];
 }

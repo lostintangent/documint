@@ -1,14 +1,18 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
+  dedent,
   deleteBackward,
   deleteForward,
   deleteSelection,
   insertLineBreak,
   insertText,
+  pasteFragment,
   readEditorEffects,
   setSelection,
+  type EditorState,
 } from "@/editor/state";
+import { parseFragment } from "@/markdown";
 import { getPath, getPathByType, placeAt, setup } from "../helpers";
 
 describe("Text inserted effects", () => {
@@ -122,6 +126,18 @@ describe("Text inserted effects", () => {
           startOffset: path.text.length,
           text: ".",
         }),
+      ]),
+    );
+  });
+
+  test("paste highlights an image as one editor unit", () => {
+    const state = setup("Hello world\n");
+    const path = getPath(state, "Hello world");
+    const result = pasteFragment(placeAt(state, path, 5), parseFragment("A ![cat](cat.png) B"));
+
+    expect(readEditorEffects(result!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ endOffset: 10, kind: "text-inserted", startOffset: 5 }),
       ]),
     );
   });
@@ -315,9 +331,28 @@ describe("List item inserted effects", () => {
     ]);
   });
 
-  test("does not emit list-item-inserted when typing inside an existing list item", () => {
-    const state = setup("- alpha\n");
-    const result = insertText(placeAt(state, getPath(state, "alpha"), "end"), "b");
+  test.each([
+    ["an item's start", "- alpha\n", "alpha", "root.0.children.0"],
+    ["an empty nested item", "- a\n  -\n", "", "root.0.children.1"],
+  ])("pulses the inserted item after enter at %s", (_, source, text, blockPath) => {
+    const state = setup(source);
+    const result = insertLineBreak(placeAt(state, getPath(state, text), 0));
+
+    expect(readEditorEffects(result!)).toContainEqual(
+      expect.objectContaining({ blockPath, kind: "list-item-inserted" }),
+    );
+  });
+
+  test.each([
+    [
+      "typing inside an existing list item",
+      "- alpha\n",
+      (state: EditorState) => insertText(state, "b"),
+    ],
+    ["dedenting a nested item", "- a\n  - alpha\n", dedent],
+  ])("does not emit list-item-inserted when %s", (_, source, command) => {
+    const state = setup(source);
+    const result = command(placeAt(state, getPath(state, "alpha"), "end"));
 
     expect(result).not.toBeNull();
     expect(readEditorEffects(result!).some((effect) => effect.kind === "list-item-inserted")).toBe(

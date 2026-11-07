@@ -9,11 +9,7 @@ import {
   createText,
 } from "@/document";
 import { createEditorState } from "@/editor";
-import {
-  remapDecorationIndexForTextEdit,
-  remapDecorationRangesForTextEdit,
-  reconcileDecorationRootResults,
-} from "@/component/decorations/client/reconciliation";
+import { reconcileDecorationRootResults } from "@/component/decorations/client/reconciliation";
 
 describe("decoration root result reconciliation", () => {
   test("maps matching root results to current editor paths and suppresses duplicates", () => {
@@ -116,101 +112,5 @@ describe("decoration root result reconciliation", () => {
         ],
       ]),
     );
-  });
-});
-
-describe("decoration text edit remapping", () => {
-  test("shifts ranges after an insertion and drops the edited range", () => {
-    const ranges = [
-      { color: "gray", endOffset: 2, path: "root.0", startOffset: 0 },
-      { color: "blue", endOffset: 7, path: "root.0", startOffset: 3 },
-      { color: "green", endOffset: 12, path: "root.0", startOffset: 9 },
-    ];
-
-    expect(
-      remapDecorationRangesForTextEdit(ranges, {
-        deletedLength: 0,
-        insertedLength: 2,
-        startOffset: 5,
-      }),
-    ).toEqual([ranges[0], { color: "green", endOffset: 14, path: "root.0", startOffset: 11 }]);
-  });
-
-  test("shifts ranges after a deletion and preserves surviving range fragments", () => {
-    const ranges = [
-      { color: "gray", endOffset: 2, path: "root.0", startOffset: 0 },
-      { color: "blue", endOffset: 8, path: "root.0", startOffset: 4 },
-      { color: "green", endOffset: 14, path: "root.0", startOffset: 10 },
-    ];
-
-    expect(
-      remapDecorationRangesForTextEdit(ranges, {
-        deletedLength: 3,
-        insertedLength: 0,
-        startOffset: 5,
-      }),
-    ).toEqual([
-      ranges[0],
-      { color: "blue", endOffset: 5, path: "root.0", startOffset: 4 },
-      { color: "green", endOffset: 11, path: "root.0", startOffset: 7 },
-    ]);
-  });
-
-  test("remaps decoration fragments that span both sides of a deletion", () => {
-    const ranges = [
-      { color: "string", endOffset: 12, path: "root.0", startOffset: 3 },
-      { color: "comment", endOffset: 10, path: "root.0", startOffset: 6 },
-      { color: "keyword", endOffset: 8, path: "root.0", startOffset: 5 },
-    ];
-
-    expect(
-      remapDecorationRangesForTextEdit(ranges, {
-        deletedLength: 3,
-        insertedLength: 0,
-        startOffset: 5,
-      }),
-    ).toEqual([
-      { color: "string", endOffset: 9, path: "root.0", startOffset: 3 },
-      { color: "comment", endOffset: 7, path: "root.0", startOffset: 5 },
-    ]);
-  });
-
-  test("patches only the edited path in the decoration index", () => {
-    const previous = new Map([
-      ["root.0", [{ color: "blue", endOffset: 6, path: "root.0", startOffset: 3 }]],
-      ["root.1", [{ color: "red", endOffset: 4, path: "root.1", startOffset: 0 }]],
-    ]);
-
-    const next = remapDecorationIndexForTextEdit(previous, {
-      deletedLength: 0,
-      insertedLength: 2,
-      path: "root.0",
-      startOffset: 0,
-    });
-
-    expect(next).toEqual(
-      new Map([
-        ["root.0", [{ color: "blue", endOffset: 8, path: "root.0", startOffset: 5 }]],
-        ["root.1", [{ color: "red", endOffset: 4, path: "root.1", startOffset: 0 }]],
-      ]),
-    );
-  });
-
-  test("does not color inserted source text before the worker resolves it", () => {
-    const ranges = [
-      { color: "keyword", endOffset: 5, path: "root.0", startOffset: 0 },
-      { color: "string", endOffset: 12, path: "root.0", startOffset: 8 },
-    ];
-
-    expect(
-      remapDecorationRangesForTextEdit(ranges, {
-        deletedLength: 0,
-        insertedLength: 3,
-        startOffset: 5,
-      }),
-    ).toEqual([
-      { color: "keyword", endOffset: 5, path: "root.0", startOffset: 0 },
-      { color: "string", endOffset: 15, path: "root.0", startOffset: 11 },
-    ]);
   });
 });

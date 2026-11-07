@@ -1,75 +1,71 @@
-// Owns cheap per-path height estimates for large-document virtualization.
-// Estimation tolerates text underestimation within overscan but not structural
-// overestimation: the exact pass must always be free to extend past the
-// estimated bottom.
+// Owns per-container height estimates for large-document virtualization and
+// the measured heights that replace them. Estimation tolerates text
+// underestimation within overscan but not structural overestimation: the exact
+// pass must always be free to extend past the estimated bottom.
+//
+// Measured heights are keyed by content, available width, and typography, never
+// by path, so they survive edits that shift paths and rebuild the virtual
+// layout. A hash collision can only skew an off-screen estimate, which the next
+// measurement corrects.
 
-import { isReferenceInlineNode, type Block } from "@/document";
+import { isReferenceInlineNode } from "@/document";
 import type { DocumentResources } from "@/editor/resources";
-import type { LayoutCache } from "../state/cache";
-import type { LayoutContentMetrics } from "../lib/content-metrics";
-import type { DocumentLayoutOptions } from "../lib/options";
-import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
+import {
+  cacheMeasuredContainerHeight,
+  getMeasuredContainerHeight,
+  type LayoutCache,
+} from "../state/cache";
 import { estimateTextHeight } from "./text-estimate";
 import {
   measureTextContainerLines,
-  resolveBlockTypography,
-  resolveTextMeasurementCacheIdentity,
+  resolveTextMeasurementKey,
   sumLineHeights,
+  type BlockTypography,
   type LayoutTextInput,
 } from "../measure/text";
 
 export function estimateContainerHeight(
   cache: LayoutCache,
   container: LayoutTextInput,
-  block: Block | null,
-  contentMetrics: LayoutContentMetrics,
-  options: DocumentLayoutOptions,
+  availableWidth: number,
+  typography: BlockTypography,
+  charWidth: number,
   resources: DocumentResources,
 ) {
-  const cacheKey = createContainerHeightCacheKey(container, contentMetrics, options, resources);
-  const cached = cache.measuredContainerHeights.get(cacheKey);
+  const cached = getMeasuredContainerHeight(
+    cache,
+    resolveTextMeasurementKey(container, availableWidth, typography, resources),
+  );
 
   if (cached !== undefined) {
     return cached;
   }
 
-  const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
-
+  // Images and resource chips are sized by their resources, not their text,
+  // so they're measured exactly rather than estimated.
   if (
     container.kind === "inlines" &&
     container.inlines.some((inline) => isReferenceInlineNode(inline.node))
   ) {
     return sumLineHeights(
-      measureTextContainerLines(
-        cache,
-        container,
-        contentMetrics.availableWidth,
-        typography,
-        resources,
-      ),
+      measureTextContainerLines(cache, container, availableWidth, typography, resources),
     );
   }
 
-  const estimatedHeight = estimateTextHeight(
-    container.text,
-    contentMetrics.availableWidth,
-    options.charWidth,
-    typography.lineHeight,
-  );
-
-  return block?.type === "code"
-    ? estimatedHeight + CODE_BLOCK_BACKGROUND_PADDING_Y * 2
-    : estimatedHeight;
+  return estimateTextHeight(container.text, availableWidth, charWidth, typography.lineHeight);
 }
 
-export function createContainerHeightCacheKey(
+export function cacheMeasuredHeight(
+  cache: LayoutCache,
   container: LayoutTextInput,
-  contentMetrics: Pick<LayoutContentMetrics, "codeContentInset" | "listInset">,
-  options: DocumentLayoutOptions,
+  availableWidth: number,
+  typography: BlockTypography,
   resources: DocumentResources,
+  height: number,
 ) {
-  // fontSize joins lineHeight in the key: if an embedder pins lineHeight
-  // explicitly while fontSize varies, heading/code-derived heights would
-  // otherwise be served stale from this cache.
-  return `${resolveTextMeasurementCacheIdentity(container, resources)}:${options.width}:${options.paddingX}:${options.indentWidth}:${options.fontSize}:${options.lineHeight}:${contentMetrics.listInset}:${contentMetrics.codeContentInset}`;
+  cacheMeasuredContainerHeight(
+    cache,
+    resolveTextMeasurementKey(container, availableWidth, typography, resources),
+    height,
+  );
 }

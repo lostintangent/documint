@@ -14,9 +14,4 @@ export { serializeMetadataPreamble } from "./front-matter";
 
 export { parseDocument, parseFragment } from "./parser";
 
-export {
-  serializeCommentAppendix,
-  serializeBlocks,
-  serializeDocument,
-  serializeFragment,
-} from "./serializer";
+export { serializeBlocks, serializeDocument, serializeFragment } from "./serializer";

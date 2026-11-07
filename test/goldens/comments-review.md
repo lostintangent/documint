@@ -34,7 +34,8 @@ The review surface keeps comment anchors durable across edits and markdown reloa
         "body": "Verify list-item comments survive structural edits.",
         "updatedAt": "2026-04-05T12:02:00.000Z"
       }
-    ]
+    ],
+    "resolvedAt": "2026-04-05T12:03:00.000Z"
   },
   {
     "quote": "Table cell anchors",

@@ -12,14 +12,13 @@
 import {
   blockPathCoordinates,
   blockPathFromCoordinates,
-  createDocument,
   findBlockChildIndicesByReference,
   spliceCommentThreads,
   spliceDocument,
   type Block,
   type Document,
 } from "@/document";
-import { getCommentState } from "../../anchors";
+import { carryComments } from "../../anchors";
 import { recordEditorEffects, takeEditorEffects, type EditorEffect } from "../effects";
 import {
   resolveActiveBlockKey,
@@ -62,32 +61,16 @@ export function createEditorState(document: Document): EditorState {
   };
 }
 
-export function createDocumentFromEditorState(state: EditorState) {
-  const commentState = getCommentState(state.documentIndex);
-
-  return createDocument(
-    state.documentIndex.document.blocks,
-    commentState.threads,
-    state.documentIndex.document.metadata,
-  );
-}
-
 /* Action dispatch */
 
-export function dispatch(state: EditorState, action: EditorStateAction): EditorState;
-export function dispatch(state: EditorState, action: EditorStateAction | null): EditorState | null;
-export function dispatch(state: EditorState, action: EditorStateAction | null) {
-  if (!action) {
-    return null;
-  }
-
+export function dispatch(state: EditorState, action: EditorStateAction): EditorState {
   // Block references in the action (selection targets, effects) are only
   // meaningful against the action payload. Translate them into positional form
   // first, against the pre-edit index, before the document is committed.
   const materialized = materializeBlockReferences(state.documentIndex, action);
 
   const nextState = reduceEditorStateAction(state, materialized);
-  if (!nextState || nextState === state || !materialized.effect) {
+  if (nextState === state || !materialized.effect) {
     return nextState;
   }
 
@@ -98,10 +81,7 @@ export function dispatch(state: EditorState, action: EditorStateAction | null) {
   return recordEditorEffects(nextState, [materialized.effect, ...postEditEffects]);
 }
 
-function reduceEditorStateAction(
-  state: EditorState,
-  action: EditorStateAction,
-): EditorState | null {
+function reduceEditorStateAction(state: EditorState, action: EditorStateAction): EditorState {
   switch (action.kind) {
     case "keep-state":
       return state;
@@ -110,13 +90,14 @@ function reduceEditorStateAction(
       return setSelection(state, action.selection);
 
     case "replace-block": {
-      const indexedBlock = resolveIndexedBlock(state.documentIndex, action.blockPath);
-      const nextDocumentIndex = indexedBlock
-        ? replaceEditorBlock(state.documentIndex, indexedBlock.path, () => action.block)
-        : null;
+      const nextDocumentIndex = replaceEditorBlock(
+        state.documentIndex,
+        action.blockPath,
+        () => action.block,
+      );
       return nextDocumentIndex
         ? applyDocumentMutation(state, nextDocumentIndex, action.selection ?? null)
-        : null;
+        : state;
     }
 
     case "splice-blocks": {
@@ -186,7 +167,9 @@ function reduceEditorStateAction(
       );
       return applyDocumentMutation(
         state,
-        replaceIndexedDocument(state.documentIndex, document),
+        carryComments(state.documentIndex, replaceIndexedDocument(state.documentIndex, document), {
+          splice: action,
+        }),
         null,
       );
     }
@@ -314,7 +297,7 @@ function applyDocumentMutation(
   documentIndex: DocumentIndex,
   selection: SelectionTarget | null,
 ): EditorState {
-  const nextState = pushHistory(state, documentIndex);
+  const nextState = pushHistory(state, carryComments(state.documentIndex, documentIndex));
 
   if (!selection && canPreserveSelection(documentIndex, state.selection)) {
     return {

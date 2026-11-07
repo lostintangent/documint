@@ -4,8 +4,9 @@ import { createEditorStateTransition, type EditorStateTransition } from "./trans
 type EditorTransitionListener = (transition: EditorStateTransition) => void;
 
 // The editor store is a pure event source. `subscribe` is the single
-// notification primitive — selectors, equality, and value-level dedup all
-// live in the sprig layer (`createSourceSprig` over `editorSource`).
+// notification primitive. Selection and value-level dedup live in the sprig
+// layer: sprigs select from `editorSource`, and React skips notifications
+// whose sprig snapshot kept its identity.
 // Command-driven mutations emit `source: "local"`; `replace` emits
 // `source: "external"` so the host can avoid echoing them back as
 // `onContentChanged`.

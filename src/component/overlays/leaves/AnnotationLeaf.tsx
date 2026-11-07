@@ -19,14 +19,7 @@ import {
   Trash2,
   Type,
 } from "lucide-react";
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type { CompletionSource } from "../../completions/completions";
 import type { DocumintAction } from "../../Documint";
 import { type DocumintStore, useDocumintStore, useEditorCommand } from "../../store";
@@ -37,6 +30,7 @@ import { LeafButton } from "./core/LeafButton";
 import { LeafDivider } from "./core/LeafDivider";
 import { LeafInput } from "./core/input/LeafInput";
 import { LeafMarkdown } from "./core/LeafMarkdown";
+import { clx } from "./core/lib/clx";
 import { formattingMarkDescriptors, type FormattingMarkDescriptor } from "./core/lib/formatting";
 import { LeafToolbar } from "./core/toolbar/LeafToolbar";
 
@@ -81,6 +75,11 @@ const defaultFormatting: SelectionFormatting = {
 };
 const noop = () => {};
 
+// A comment row: the thread header, a reply's meta line, and their action groups.
+const ROW_CLASS = "flex justify-between items-center gap-2";
+const MESSAGE_CLASS =
+  "grid gap-[0.55rem] not-last:pb-3 not-last:border-b not-last:border-b-leaf-divider";
+
 const leadingFormattingMarkButtons = formattingMarkDescriptors.filter(
   (descriptor) => descriptor.group === "leading",
 );
@@ -106,6 +105,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const rootComment = threadComments?.[0] ?? null;
   const isResolved = thread ? isResolvedCommentThread(thread) : false;
   const animateInitialComment = threadProps?.animateInitialComment ?? false;
+  const presence = threadProps?.presence ?? null;
   const [editingCommentIndex, setEditingCommentIndex] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState("");
   const [replyDraft, setReplyDraft] = useState("");
@@ -113,14 +113,13 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [wasCreateMode, setWasCreateMode] = useState(createMode);
   const [isTransitioningFromCreate, setIsTransitioningFromCreate] = useState(false);
-  const [isClipboardCopied, setIsClipboardCopied] = useState(false);
   const commentsListRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const clipboardCopiedTimeoutRef = useRef<number | null>(null);
   // The thread the comment list was last scrolled for: its first scroll
   // jumps, and later scrolls for the same thread animate.
   const scrolledThreadIdRef = useRef<string | null>(null);
   const completionSources = props.completionSources;
+  const mentionTargets = resolveMentionTargets(completionSources);
   const threadUpdatedAt = thread ? getCommentThreadUpdatedAt(thread) : null;
   const threadAge = threadUpdatedAt ? formatRelativeTime(threadUpdatedAt) : "";
   const canSaveEditedComment = canMutateComments && editDraft.trim().length > 0;
@@ -128,85 +127,16 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   const canCreate = canMutateComments && createDraft.trim().length > 0;
   const showCreateChrome = createMode || isTransitioningFromCreate;
   const showComposer = !createMode || isExpanded;
-  const showThreadChrome = !createMode && Boolean(thread);
   const showRootComment = Boolean(rootComment);
-  const isExpandedCreateMode = createMode ? isExpanded : true;
   const deleteComment = threadProps?.onDeleteComment ?? noop;
   const deleteThread = threadProps?.onDeleteThread ?? noop;
   const toggleResolved = threadProps?.onToggleResolved ?? noop;
-  const formatting = createProps?.formatting ?? defaultFormatting;
-  const activeFormattingMarks = formatting.marks;
-  const formattingSupported = formatting.supported;
-  const store = useDocumintStore();
-  const toggleMarkCommand = useEditorCommand(toggleMark);
-  const deleteSelectionCommand = useEditorCommand(deleteSelection);
-  const pastePlainTextCommand = useEditorCommand(pastePlainText);
-  const markdownOptions = createProps?.markdownOptions;
-  const actions = createProps?.actions ?? [];
-  const hasActiveOverflowFormattingMark = overflowFormattingMarkButtons.some((button) =>
-    activeFormattingMarks.includes(button.mark),
-  );
-  const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
-    <LeafToolbar.Button
-      active={activeFormattingMarks.includes(button.mark)}
-      disabled={readOnly || !formattingSupported}
-      icon={button.icon}
-      key={button.mark}
-      label={button.label}
-      onClick={() => toggleMarkCommand(button.mark)}
-    />
-  );
-  const selectOverflowFormattingMark = (value: string) => {
-    const descriptor = overflowFormattingMarkButtons.find((button) => button.mark === value);
-
-    if (!descriptor) {
-      return;
-    }
-
-    toggleMarkCommand(descriptor.mark);
-  };
-  const showClipboardCopiedFeedback = () => {
-    setIsClipboardCopied(true);
-
-    if (clipboardCopiedTimeoutRef.current !== null) {
-      window.clearTimeout(clipboardCopiedTimeoutRef.current);
-    }
-
-    clipboardCopiedTimeoutRef.current = window.setTimeout(() => {
-      setIsClipboardCopied(false);
-      clipboardCopiedTimeoutRef.current = null;
-    }, 2000);
-  };
-  const selectClipboardAction = (value: string) => {
-    switch (value) {
-      case "copy":
-        showClipboardCopiedFeedback();
-        void writeSelectionToClipboard(store);
-        break;
-      case "cut":
-        void writeSelectionToClipboard(store).then((written) => {
-          if (written) deleteSelectionCommand();
-        });
-        break;
-      case "paste":
-        void pasteClipboardText(pastePlainTextCommand, markdownOptions);
-        break;
-    }
-  };
   const composerPlaceholder = canMutateComments
     ? createMode
       ? "Add a comment"
       : "Reply to this comment"
     : "Comment editing is disabled";
   const composerValue = createMode ? createDraft : replyDraft;
-
-  useEffect(() => {
-    return () => {
-      if (clipboardCopiedTimeoutRef.current !== null) {
-        window.clearTimeout(clipboardCopiedTimeoutRef.current);
-      }
-    };
-  }, []);
 
   if (
     editingCommentIndex !== null &&
@@ -216,9 +146,12 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     setEditDraft("");
   }
 
+  // The leaf stays mounted across mode changes, so collapse the composer
+  // to keep the next selection on the toolbar.
   if (wasCreateMode !== createMode) {
     setWasCreateMode(createMode);
     setIsTransitioningFromCreate(wasCreateMode && animateInitialComment);
+    setIsExpanded(false);
   }
 
   useEffect(() => {
@@ -273,7 +206,7 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
   };
 
   const beginEditingComment = (commentIndex: number, body: string) => {
-    if (!showThreadChrome || !canMutateComments) {
+    if (createMode || !canMutateComments) {
       return;
     }
 
@@ -308,331 +241,322 @@ export function AnnotationLeaf(props: AnnotationLeafProps) {
     setCreateDraft("");
   };
 
-  // Comfortable padding for thread mode and the expanded composer; the
-  // collapsed create chrome renders only a `LeafToolbar`, so it lets the
+  const renderCommentBody = (commentIndex: number, body: string) =>
+    editingCommentIndex === commentIndex ? (
+      <LeafInput
+        actions={{
+          kind: "edit",
+          onCancel: cancelEditing,
+          onSave: () => submitEditedComment(commentIndex),
+          saveDisabled: !canSaveEditedComment,
+        }}
+        completionSources={completionSources}
+        onChange={setEditDraft}
+        readOnly={!canMutateComments}
+        value={editDraft}
+      />
+    ) : (
+      <LeafMarkdown
+        mentionTargets={mentionTargets}
+        onDoubleClick={() => beginEditingComment(commentIndex, body)}
+        value={body}
+      />
+    );
+
+  // Thread mode and the expanded composer get the comment width and padding;
+  // the collapsed create chrome renders only a `LeafToolbar`, so it lets the
   // toolbar own all the spacing (otherwise the two would stack).
-  const paddingClass = isExpandedCreateMode ? "p-3" : "";
-  const contentClassName = showCreateChrome
-    ? `comment-leaf comment-leaf-create${isExpandedCreateMode ? " is-expanded" : ""}${paddingClass ? ` ${paddingClass}` : ""}`
-    : `comment-leaf ${paddingClass}`;
-  const shouldRenderBody = showThreadChrome || showRootComment || showComposer;
+  const contentClassName = clx(
+    showCreateChrome && "comment-leaf-create",
+    showCreateChrome && showComposer && "is-expanded",
+    showComposer && "w-[min(18rem,calc(100vw-4rem))] p-3",
+  );
 
-  const content = shouldRenderBody ? (
-    <AnnotationLeafBody
-      canCreate={canCreate}
-      canMutateComments={canMutateComments}
-      canReply={canReply}
-      canSaveEditedComment={canSaveEditedComment}
-      comments={threadComments}
-      commentsListRef={commentsListRef}
-      composerRef={composerRef}
-      editDraft={editDraft}
-      editingCommentIndex={editingCommentIndex}
-      isComposerVisible={showComposer}
-      animateRootComment={animateInitialComment}
-      isResolved={isResolved}
-      link={link}
-      completionSources={completionSources}
-      mode={props.mode}
-      onBeginEditingComment={beginEditingComment}
-      onCancelEditing={cancelEditing}
-      onChangeCreateDraft={setCreateDraft}
-      onChangeEditDraft={setEditDraft}
-      onChangeReplyDraft={setReplyDraft}
-      onDeleteComment={deleteComment}
-      onDeleteThread={deleteThread}
-      onSubmitCreate={submitCreate}
-      onSubmitEditedComment={submitEditedComment}
-      onSubmitReply={submitReply}
-      onToggleResolved={toggleResolved}
-      presence={threadProps?.presence ?? null}
-      rootComment={rootComment}
-      showRootComment={showRootComment}
-      showThreadChrome={showThreadChrome}
-      threadAge={threadAge}
-      composerPlaceholder={composerPlaceholder}
-      composerValue={composerValue}
-    />
-  ) : null;
-
+  // Create and thread modes share one body tree, so the create → thread morph
+  // keeps the composer mounted while the new root comment animates in.
   return (
     <div className={contentClassName}>
       <div className={showCreateChrome ? "comment-leaf-create-shell" : undefined}>
         {showCreateChrome ? (
-          <div className="comment-leaf-create-toolbar">
-            <LeafToolbar>
-              {canMutateComments ? (
-                <LeafToolbar.Button
-                  icon={MessageSquarePlus}
-                  label="Add comment"
-                  onClick={() => setIsExpanded(true)}
-                />
-              ) : null}
-              <LeafToolbar.Menu
-                icon={isClipboardCopied ? Check : Clipboard}
-                label="Clipboard"
-                onSelect={selectClipboardAction}
-              >
-                <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
-                <LeafToolbar.MenuItem disabled={readOnly} icon={Scissors} text="Cut" value="cut" />
-                <LeafToolbar.MenuDivider />
-                <LeafToolbar.MenuItem
-                  disabled={readOnly}
-                  icon={ClipboardPaste}
-                  text="Paste"
-                  value="paste"
-                />
-              </LeafToolbar.Menu>
-              <LeafToolbar.Divider />
-              {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
-              <LeafToolbar.Menu
-                active={hasActiveOverflowFormattingMark}
-                disabled={readOnly || !formattingSupported}
-                icon={Type}
-                label="More formatting"
-                onSelect={selectOverflowFormattingMark}
-              >
-                {overflowFormattingMarkButtons.map((button) => (
-                  <LeafToolbar.MenuItem
-                    active={activeFormattingMarks.includes(button.mark)}
-                    disabled={readOnly || !formattingSupported}
-                    icon={button.icon}
-                    key={button.mark}
-                    text={button.label}
-                    value={button.mark}
-                  />
-                ))}
-              </LeafToolbar.Menu>
-              {actions.length > 0
-                ? [
-                    <LeafToolbar.Divider key="actions-divider" />,
-                    ...actions.map((action, index) => {
-                      return (
-                        <LeafToolbar.Button
-                          icon={action.icon}
-                          key={`${action.label}:${index}`}
-                          label={action.label}
-                          onClick={() => action.onClick()}
-                        />
-                      );
-                    }),
-                  ]
-                : null}
-            </LeafToolbar>
-          </div>
+          <AnnotationCreateToolbar
+            actions={createProps?.actions}
+            canMutateComments={canMutateComments}
+            formatting={createProps?.formatting ?? defaultFormatting}
+            markdownOptions={createProps?.markdownOptions}
+            onAddComment={() => setIsExpanded(true)}
+            readOnly={readOnly}
+          />
         ) : null}
         <div className={showCreateChrome ? "comment-leaf-create-content" : undefined}>
-          {content}
+          {showComposer ? (
+            <>
+              {!createMode ? (
+                <div className={clx(ROW_CLASS, "mb-[0.7rem]")}>
+                  <span className="text-leaf-secondary text-[0.76rem] italic">{threadAge}</span>
+                  <div className={ROW_CLASS}>
+                    <LeafButton
+                      disabled={!canMutateComments}
+                      icon={isResolved ? RotateCcw : Check}
+                      onClick={toggleResolved}
+                      title={isResolved ? "Reopen comment" : "Resolve comment"}
+                    />
+                    <LeafButton
+                      danger
+                      disabled={!canMutateComments}
+                      icon={Trash2}
+                      onClick={deleteThread}
+                      title="Delete comment thread"
+                    />
+                  </div>
+                </div>
+              ) : null}
+              {!createMode && link ? (
+                <>
+                  <div className="grid gap-[0.3rem]">
+                    {link.title ? (
+                      <div className="text-leaf-text text-xs font-semibold">{link.title}</div>
+                    ) : null}
+                    <div className="min-w-0 text-leaf-secondary text-xs wrap-anywhere">
+                      {link.url}
+                    </div>
+                  </div>
+                  <LeafDivider />
+                </>
+              ) : null}
+              <div
+                className={clx(
+                  "grid gap-3",
+                  showRootComment
+                    ? "max-h-64 mb-[0.8rem] overflow-auto"
+                    : "max-h-0 overflow-hidden",
+                )}
+                ref={commentsListRef}
+              >
+                <article
+                  className={clx(
+                    MESSAGE_CLASS,
+                    "origin-top-left",
+                    showRootComment
+                      ? animateInitialComment && "motion-safe:animate-comment-root-enter"
+                      : "max-h-0 overflow-hidden",
+                  )}
+                >
+                  {rootComment ? renderCommentBody(0, rootComment.body) : null}
+                </article>
+                {threadComments?.slice(1).map((comment, commentIndex) => {
+                  const actualIndex = commentIndex + 1;
+                  const isEditing = editingCommentIndex === actualIndex;
+
+                  return (
+                    <article className={MESSAGE_CLASS} key={`${comment.updatedAt}:${actualIndex}`}>
+                      {!isEditing ? (
+                        <div className={ROW_CLASS}>
+                          <span className="text-leaf-secondary text-[0.74rem] italic">
+                            {formatRelativeTime(comment.updatedAt)}
+                          </span>
+                          {canMutateComments ? (
+                            <div className={ROW_CLASS}>
+                              <LeafButton
+                                icon={Pencil}
+                                onClick={() => {
+                                  beginEditingComment(actualIndex, comment.body);
+                                }}
+                                title="Edit comment"
+                              />
+                              <LeafButton
+                                danger
+                                icon={Trash2}
+                                onClick={() => deleteComment(actualIndex)}
+                                title="Delete comment"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {renderCommentBody(actualIndex, comment.body)}
+                    </article>
+                  );
+                })}
+              </div>
+              {!createMode ? <LeafDivider /> : null}
+              <div className={clx("relative", !createMode && "pt-[0.85rem]")}>
+                <LeafInput
+                  actions={
+                    createMode
+                      ? {
+                          kind: "compose",
+                          onSubmit: submitCreate,
+                          submitDisabled: !canCreate,
+                          submitLabel: "Create comment",
+                        }
+                      : {
+                          kind: "compose",
+                          onSubmit: submitReply,
+                          submitDisabled: !canReply,
+                          submitLabel: "Reply",
+                        }
+                  }
+                  completionSources={completionSources}
+                  onChange={createMode ? setCreateDraft : setReplyDraft}
+                  placeholder={composerPlaceholder}
+                  readOnly={!canMutateComments}
+                  ref={composerRef}
+                  value={composerValue}
+                />
+                {!createMode && presence ? (
+                  <CommentPresenceStatus isResolved={isResolved} presence={presence} />
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function AnnotationLeafBody({
-  canCreate,
+// Create mode's selection toolbar: clipboard, formatting, host actions, and
+// the button that expands the comment composer.
+function AnnotationCreateToolbar({
+  actions = [],
   canMutateComments,
-  canReply,
-  canSaveEditedComment,
-  comments,
-  commentsListRef,
-  composerRef,
-  editDraft,
-  editingCommentIndex,
-  isComposerVisible,
-  animateRootComment,
-  isResolved,
-  link,
-  completionSources,
-  mode,
-  onBeginEditingComment,
-  onCancelEditing,
-  onChangeCreateDraft,
-  onChangeEditDraft,
-  onChangeReplyDraft,
-  onDeleteComment,
-  onDeleteThread,
-  onSubmitCreate,
-  onSubmitEditedComment,
-  onSubmitReply,
-  onToggleResolved,
-  presence,
-  rootComment,
-  showRootComment,
-  showThreadChrome,
-  threadAge,
-  composerPlaceholder,
-  composerValue,
+  formatting,
+  markdownOptions,
+  onAddComment,
+  readOnly,
 }: {
-  canCreate: boolean;
+  actions?: readonly DocumintAction<void>[];
   canMutateComments: boolean;
-  canReply: boolean;
-  canSaveEditedComment: boolean;
-  comments: CommentThread["comments"] | undefined;
-  commentsListRef: RefObject<HTMLDivElement | null>;
-  composerRef: RefObject<HTMLTextAreaElement | null>;
-  editDraft: string;
-  editingCommentIndex: number | null;
-  isComposerVisible: boolean;
-  animateRootComment: boolean;
-  isResolved: boolean;
-  link: AnnotationLink | null;
-  completionSources: CompletionSource[] | undefined;
-  mode: AnnotationLeafProps["mode"];
-  onBeginEditingComment: (commentIndex: number, body: string) => void;
-  onCancelEditing: () => void;
-  onChangeCreateDraft: (value: string) => void;
-  onChangeEditDraft: (value: string) => void;
-  onChangeReplyDraft: (value: string) => void;
-  onDeleteComment: (commentIndex: number) => void;
-  onDeleteThread: () => void;
-  onSubmitCreate: () => void;
-  onSubmitEditedComment: (commentIndex: number) => void;
-  onSubmitReply: () => void;
-  onToggleResolved: () => void;
-  presence: EditorPresence | null;
-  rootComment: CommentThread["comments"][0] | null;
-  showRootComment: boolean;
-  showThreadChrome: boolean;
-  threadAge: string;
-  composerPlaceholder: string;
-  composerValue: string;
+  formatting: SelectionFormatting;
+  markdownOptions?: MarkdownOptions;
+  onAddComment: () => void;
+  readOnly: boolean;
 }) {
-  const mentionTargets = resolveMentionTargets(completionSources);
+  const [isClipboardCopied, setIsClipboardCopied] = useState(false);
+  const clipboardCopiedTimeoutRef = useRef<number | null>(null);
+  const store = useDocumintStore();
+  const toggleMarkCommand = useEditorCommand(toggleMark);
+  const deleteSelectionCommand = useEditorCommand(deleteSelection);
+  const pastePlainTextCommand = useEditorCommand(pastePlainText);
+  const activeFormattingMarks = formatting.marks;
+  const formattingSupported = formatting.supported;
+  const hasActiveOverflowFormattingMark = overflowFormattingMarkButtons.some((button) =>
+    activeFormattingMarks.includes(button.mark),
+  );
+  const renderFormattingMarkButton = (button: FormattingMarkDescriptor) => (
+    <LeafToolbar.Button
+      active={activeFormattingMarks.includes(button.mark)}
+      disabled={readOnly || !formattingSupported}
+      icon={button.icon}
+      key={button.mark}
+      label={button.label}
+      onClick={() => toggleMarkCommand(button.mark)}
+    />
+  );
+  const selectOverflowFormattingMark = (value: string) => {
+    const descriptor = overflowFormattingMarkButtons.find((button) => button.mark === value);
+
+    if (!descriptor) {
+      return;
+    }
+
+    toggleMarkCommand(descriptor.mark);
+  };
+  const showClipboardCopiedFeedback = () => {
+    setIsClipboardCopied(true);
+
+    if (clipboardCopiedTimeoutRef.current !== null) {
+      window.clearTimeout(clipboardCopiedTimeoutRef.current);
+    }
+
+    clipboardCopiedTimeoutRef.current = window.setTimeout(() => {
+      setIsClipboardCopied(false);
+      clipboardCopiedTimeoutRef.current = null;
+    }, 2000);
+  };
+  const selectClipboardAction = (value: string) => {
+    switch (value) {
+      case "copy":
+        showClipboardCopiedFeedback();
+        void writeSelectionToClipboard(store);
+        break;
+      case "cut":
+        void writeSelectionToClipboard(store).then((written) => {
+          if (written) deleteSelectionCommand();
+        });
+        break;
+      case "paste":
+        void pasteClipboardText(pastePlainTextCommand, markdownOptions);
+        break;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (clipboardCopiedTimeoutRef.current !== null) {
+        window.clearTimeout(clipboardCopiedTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
-    <>
-      {showThreadChrome ? (
-        <div className="comment-leaf-header">
-          <span className="comment-leaf-age">{threadAge}</span>
-          <div className="comment-leaf-actions">
-            <LeafButton
-              disabled={!canMutateComments}
-              icon={isResolved ? RotateCcw : Check}
-              onClick={onToggleResolved}
-              title={isResolved ? "Reopen comment" : "Resolve comment"}
-            />
-            <LeafButton
-              danger
-              disabled={!canMutateComments}
-              icon={Trash2}
-              onClick={onDeleteThread}
-              title="Delete comment thread"
-            />
-          </div>
-        </div>
-      ) : null}
-      {showThreadChrome && link ? (
-        <>
-          <div className="comment-leaf-link">
-            {link.title ? (
-              <div className="text-leaf-text text-xs font-semibold">{link.title}</div>
-            ) : null}
-            <div className="min-w-0 text-leaf-secondary text-xs wrap-anywhere">{link.url}</div>
-          </div>
-          <LeafDivider />
-        </>
-      ) : null}
-      <div className={`comment-thread${showRootComment ? "" : " is-empty"}`} ref={commentsListRef}>
-        <article
-          className={
-            showRootComment
-              ? `comment-message comment-message-root${animateRootComment ? " is-entering" : ""}`
-              : "comment-message comment-message-root is-hidden"
-          }
-        >
-          {rootComment ? (
-            <LeafMarkdown
-              mentionTargets={mentionTargets}
-              onDoubleClick={() => onBeginEditingComment(0, rootComment.body)}
-              value={rootComment.body}
-            />
-          ) : null}
-        </article>
-        {comments?.slice(1).map((comment, commentIndex) => {
-          const actualIndex = commentIndex + 1;
-          const isEditing = editingCommentIndex === actualIndex;
-
-          return (
-            <article className="comment-message" key={`${comment.updatedAt}:${actualIndex}`}>
-              {!isEditing ? (
-                <div className="comment-message-meta">
-                  <span>{formatRelativeTime(comment.updatedAt)}</span>
-                  {canMutateComments ? (
-                    <div className="comment-leaf-actions">
-                      <LeafButton
-                        icon={Pencil}
-                        onClick={() => {
-                          onBeginEditingComment(actualIndex, comment.body);
-                        }}
-                        title="Edit comment"
-                      />
-                      <LeafButton
-                        danger
-                        icon={Trash2}
-                        onClick={() => onDeleteComment(actualIndex)}
-                        title="Delete comment"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {isEditing ? (
-                <LeafInput
-                  actions={{
-                    kind: "edit",
-                    onCancel: onCancelEditing,
-                    onSave: () => onSubmitEditedComment(actualIndex),
-                    saveDisabled: !canSaveEditedComment,
-                  }}
-                  completionSources={completionSources}
-                  onChange={onChangeEditDraft}
-                  readOnly={!canMutateComments}
-                  value={editDraft}
-                />
-              ) : (
-                <LeafMarkdown
-                  mentionTargets={mentionTargets}
-                  onDoubleClick={() => onBeginEditingComment(actualIndex, comment.body)}
-                  value={comment.body}
-                />
-              )}
-            </article>
-          );
-        })}
-      </div>
-      {showThreadChrome ? <LeafDivider /> : null}
-      <div
-        className={`comment-reply${showThreadChrome ? "" : " is-standalone"}${isComposerVisible ? " is-visible" : ""}`}
-      >
-        <LeafInput
-          actions={
-            mode === "create"
-              ? {
-                  kind: "compose",
-                  onSubmit: onSubmitCreate,
-                  submitDisabled: !canCreate,
-                  submitLabel: "Create comment",
-                }
-              : {
-                  kind: "compose",
-                  onSubmit: onSubmitReply,
-                  submitDisabled: !canReply,
-                  submitLabel: "Reply",
-                }
-          }
-          completionSources={completionSources}
-          onChange={mode === "create" ? onChangeCreateDraft : onChangeReplyDraft}
-          placeholder={composerPlaceholder}
-          readOnly={!canMutateComments}
-          ref={composerRef}
-          value={composerValue}
-        />
-        {mode === "thread" && presence ? (
-          <CommentPresenceStatus isResolved={isResolved} presence={presence} />
+    <div className="comment-leaf-create-toolbar">
+      <LeafToolbar>
+        {canMutateComments ? (
+          <LeafToolbar.Button icon={MessageSquarePlus} label="Add comment" onClick={onAddComment} />
         ) : null}
-      </div>
-    </>
+        <LeafToolbar.Menu
+          icon={isClipboardCopied ? Check : Clipboard}
+          label="Clipboard"
+          onSelect={selectClipboardAction}
+        >
+          <LeafToolbar.MenuItem icon={Copy} text="Copy" value="copy" />
+          <LeafToolbar.MenuItem disabled={readOnly} icon={Scissors} text="Cut" value="cut" />
+          <LeafToolbar.MenuDivider />
+          <LeafToolbar.MenuItem
+            disabled={readOnly}
+            icon={ClipboardPaste}
+            text="Paste"
+            value="paste"
+          />
+        </LeafToolbar.Menu>
+        <LeafToolbar.Divider />
+        {leadingFormattingMarkButtons.map(renderFormattingMarkButton)}
+        <LeafToolbar.Menu
+          active={hasActiveOverflowFormattingMark}
+          disabled={readOnly || !formattingSupported}
+          icon={Type}
+          label="More formatting"
+          onSelect={selectOverflowFormattingMark}
+        >
+          {overflowFormattingMarkButtons.map((button) => (
+            <LeafToolbar.MenuItem
+              active={activeFormattingMarks.includes(button.mark)}
+              disabled={readOnly || !formattingSupported}
+              icon={button.icon}
+              key={button.mark}
+              text={button.label}
+              value={button.mark}
+            />
+          ))}
+        </LeafToolbar.Menu>
+        {actions.length > 0
+          ? [
+              <LeafToolbar.Divider key="actions-divider" />,
+              ...actions.map((action, index) => {
+                return (
+                  <LeafToolbar.Button
+                    icon={action.icon}
+                    key={`${action.label}:${index}`}
+                    label={action.label}
+                    onClick={() => action.onClick()}
+                  />
+                );
+              }),
+            ]
+          : null}
+      </LeafToolbar>
+    </div>
   );
 }
 
@@ -685,20 +609,24 @@ function CommentPresenceStatus({
   const status = presence.status?.trim();
 
   return (
-    <div className="comment-presence">
+    <div className="flex items-center gap-[0.45rem] mt-[0.55rem] text-leaf-secondary text-[0.74rem] leading-[1.2]">
       <span
         aria-hidden="true"
-        className={`comment-presence-dot${isResolved ? "" : " is-pulsing"}`}
+        className={clx(
+          "comment-presence-dot",
+          "relative isolate inline-grid place-items-center flex-none size-[0.72rem] rounded-full bg-(--presence-color)",
+          !isResolved && "is-pulsing",
+        )}
         style={
           {
-            "--comment-presence-color": presence.color ?? "var(--documint-leaf-accent)",
+            "--presence-color": presence.color ?? "var(--documint-leaf-accent)",
           } as CSSProperties
         }
       >
         {presence.avatarUrl ? (
           <img
             alt=""
-            className="comment-presence-avatar"
+            className="relative z-1 w-full h-full rounded-[inherit] object-cover"
             draggable={false}
             src={presence.avatarUrl}
           />
@@ -706,7 +634,7 @@ function CommentPresenceStatus({
       </span>
       <span>
         {name} is working on this
-        {status ? <span className="comment-presence-status"> ({status})</span> : null}
+        {status ? <span className="italic"> ({status})</span> : null}
       </span>
     </div>
   );

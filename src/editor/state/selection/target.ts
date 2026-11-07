@@ -20,7 +20,7 @@ import type { EditorSelection } from "./index";
 type SelectionOffset = number | "end";
 
 export type PathSelectionTarget = {
-  focusOffset?: SelectionOffset;
+  focusOffset: SelectionOffset;
   kind: "path";
   offset: SelectionOffset;
   path: string;
@@ -126,63 +126,29 @@ export function resolveSelectionTarget(
     throw new Error("block targets must be materialized by dispatch.");
   }
 
-  if (selection.kind === "block-path") {
-    const path = resolveBlockTextPathBoundary(documentIndex, selection.blockPath, "start");
+  const path =
+    selection.kind === "block-path"
+      ? resolveBlockTextPathBoundary(documentIndex, selection.blockPath, "start")
+      : selection.kind === "table-cell"
+        ? resolveIndexedTableCellByTablePath(
+            documentIndex,
+            selection.tablePath,
+            selection.rowIndex,
+            selection.cellIndex,
+          )?.path
+        : selection.path;
+  const text = path ? resolveEditorTextAtPath(documentIndex, path) : null;
 
-    return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
-  }
-
-  if (selection.kind === "table-cell") {
-    const path = resolveIndexedTableCellByTablePath(
-      documentIndex,
-      selection.tablePath,
-      selection.rowIndex,
-      selection.cellIndex,
-    )?.path;
-
-    return path ? createCollapsedSelectionAtPath(documentIndex, path, selection.offset) : null;
-  }
-
-  return createSelectionAtPath(
-    documentIndex,
-    selection.path,
-    selection.offset,
-    selection.focusOffset ?? selection.offset,
-  );
-}
-
-function createSelectionAtPath(
-  documentIndex: DocumentIndex,
-  path: string,
-  anchor: SelectionOffset,
-  focus: SelectionOffset,
-): EditorSelection | null {
-  const text = resolveEditorTextAtPath(documentIndex, path);
-
-  if (text === null) {
+  if (!path || text === null) {
     return null;
   }
 
-  const anchorOffset = resolveEditorOffset(text, anchor);
-  const focusOffset = resolveEditorOffset(text, focus);
-  return {
-    anchor: {
-      path,
-      offset: anchorOffset,
-    },
-    focus: {
-      path,
-      offset: focusOffset,
-    },
-  };
-}
+  const focusOffset = selection.kind === "path" ? selection.focusOffset : selection.offset;
 
-function createCollapsedSelectionAtPath(
-  documentIndex: DocumentIndex,
-  path: string,
-  offset: SelectionOffset,
-): EditorSelection | null {
-  return createSelectionAtPath(documentIndex, path, offset, offset);
+  return {
+    anchor: { path, offset: resolveEditorOffset(text, selection.offset) },
+    focus: { path, offset: resolveEditorOffset(text, focusOffset) },
+  };
 }
 
 function resolveEditorOffset(text: string, offset: SelectionOffset) {

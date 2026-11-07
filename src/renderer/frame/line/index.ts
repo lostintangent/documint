@@ -1,5 +1,5 @@
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
-import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
+import { resolveListMarkerTarget, type EditorLayoutState } from "@/editor/layout";
 import {
   resolveIndexedBlock,
   resolveIndexedText,
@@ -10,49 +10,44 @@ import {
 import type { TextDecorationIndex } from "@/editor/text/decorations";
 import type { DocumentResources } from "@/editor/resources";
 import type { ResolvedEditorTheme } from "../../theme";
-import type {
-  BlockFlashFrame,
-  BlockPulseFrame,
-  TextFadeFrame,
-  TextInsertionFrame,
-} from "../../effects";
-import type {
-  ActiveBlockBackgroundFrame,
-  ContainerBackgroundFrame,
-  DocumentChangeBackgroundFrame,
+import type { BlockPulseFrame } from "../../effects";
+import type { EffectGroups } from "../../effects/kinds";
+import {
+  hasLineBlockTints,
+  noBlockTints,
+  resolveDocumentFrameLineBackgrounds,
+  type ActiveBlockBackgroundFrame,
+  type DocumentChangeBackgroundFrame,
 } from "./backgrounds";
-import { resolveDocumentFrameLineBackgrounds } from "./backgrounds";
-import { resolveDocumentFrameLineList } from "./list";
-import type { CommentHighlightFrame } from "./ranges";
-import { resolveDocumentFrameLineRanges } from "./ranges";
+import {
+  resolveCommentHighlightFrames,
+  resolveSelectionHighlightFrame,
+  type CommentHighlightFrame,
+  type SelectionHighlightFrame,
+  type SelectionPathRange,
+} from "./ranges";
 import type { DocumentFrameLineText } from "./text";
 import { resolveDocumentFrameLineText } from "./text";
-import type { ListMarkerFrame, ListMarkerPlan } from "../chrome/list-markers";
+import { resolveListMarkerFrame, type ListMarkerFrame } from "../chrome/list-markers";
 import type { DocumentChangeResolver } from "../document-changes";
-import type { SelectionPathRange } from "../selection-frame";
 
 export type DocumentFrameLine = DocumentFrameLineText & {
   readonly activeBlockBackground: ActiveBlockBackgroundFrame | null;
   readonly blockPulse: BlockPulseFrame | null;
-  readonly containerBackground: ContainerBackgroundFrame | null;
   readonly documentChangeBackground: DocumentChangeBackgroundFrame | null;
   readonly commentHighlights: readonly CommentHighlightFrame[];
   readonly layoutLine: EditorLayoutState["layout"]["lines"][number];
   readonly listMarker: ListMarkerFrame | null;
-  readonly selectionHighlight: LayoutRect | null;
+  readonly selectionHighlight: SelectionHighlightFrame | null;
 };
 
 type ResolveDocumentFrameLineOptions = {
-  blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockPath: string | null;
-  blockPulses: Map<string, BlockPulseFrame>;
-  textFades: Map<string, TextFadeFrame[]>;
-  textHighlights: Map<string, TextInsertionFrame[]>;
-  textPulses: Map<string, TextInsertionFrame[]>;
   activeThreadIndex: number | null;
   commentPresence: ReadonlyMap<number, EditorPresence> | null;
   commentRangesByPath: ReadonlyMap<string, EditorCommentRange[]>;
   editorState: EditorState;
+  effects: EffectGroups;
   layoutState: EditorLayoutState;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
@@ -61,21 +56,16 @@ type ResolveDocumentFrameLineOptions = {
   selectionPathRange: SelectionPathRange | null;
   textDecorations: TextDecorationIndex | null;
   theme: ResolvedEditorTheme;
-  listMarkerPlans: Map<string, ListMarkerPlan>;
   width: number;
 };
 
 export function resolveDocumentFrameLine({
-  blockFlashes,
   activeBlockPath,
-  blockPulses,
-  textFades,
-  textHighlights,
-  textPulses,
   activeThreadIndex,
   commentPresence,
   commentRangesByPath,
   editorState,
+  effects,
   layoutState,
   line,
   normalizedSelection,
@@ -84,7 +74,6 @@ export function resolveDocumentFrameLine({
   selectionPathRange,
   textDecorations,
   theme,
-  listMarkerPlans,
   width,
 }: ResolveDocumentFrameLineOptions): DocumentFrameLine {
   const indexedBlock =
@@ -92,15 +81,11 @@ export function resolveDocumentFrameLine({
   const block = indexedBlock?.block ?? null;
   const runtimeBlockPath = indexedBlock?.path ?? null;
   const indexedText = resolveIndexedText(editorState.documentIndex, line.path);
-  const indexedCell = indexedText && "rowIndex" in indexedText ? indexedText : null;
-  const documentChange =
-    block?.type === "table" ? null : resolveDocumentChange(editorState, indexedBlock, line.path);
-  const containerBounds = layoutState.layout.pathBounds.get(line.path) ?? null;
+  // The target resolves only on a list item's first visual line, which carries its marker and pulse.
+  const listMarkerTarget = resolveListMarkerTarget(editorState, line, layoutState.layout.options);
   const text = resolveDocumentFrameLineText({
-    textFades,
-    textHighlights,
-    textPulses,
     block,
+    effects,
     inlines: indexedText ? resolveIndexedTextInlines(indexedText) : null,
     layout: layoutState.layout,
     line,
@@ -112,38 +97,35 @@ export function resolveDocumentFrameLine({
 
   return {
     ...text,
-    ...resolveDocumentFrameLineBackgrounds({
-      blockFlashes,
-      activeBlockPath,
-      block,
-      containerBounds,
-      documentChange,
-      layout: layoutState.layout,
-      line,
-      runtimeBlockPath,
-      tableCellPosition: indexedCell
-        ? { cellIndex: indexedCell.cellIndex, rowIndex: indexedCell.rowIndex }
-        : null,
-      theme,
-      width,
-    }),
-    ...resolveDocumentFrameLineRanges({
-      documentIndex: editorState.documentIndex,
+    ...(hasLineBlockTints(block)
+      ? resolveDocumentFrameLineBackgrounds({
+          activeBlockPath,
+          blockFlashes: effects.blockFlashes,
+          documentChange: resolveDocumentChange(editorState, indexedBlock, line.path),
+          line,
+          runtimeBlockPath,
+          theme,
+          width,
+        })
+      : noBlockTints),
+    blockPulse: listMarkerTarget
+      ? (effects.blockPulses.get(listMarkerTarget.listItemPath) ?? null)
+      : null,
+    commentHighlights: resolveCommentHighlightFrames({
       activeThreadIndex,
       commentPresence,
       commentRanges: commentRangesByPath.get(line.path) ?? null,
       line,
-      normalizedSelection,
-      selectionPathRange,
       theme,
     }),
-    ...resolveDocumentFrameLineList({
-      blockPulses,
-      line,
-      textBaseline: text.textBaseline,
-      textLeft: text.textLeft,
-      listMarkerPlans,
-    }),
     layoutLine: line,
+    listMarker: resolveListMarkerFrame(listMarkerTarget, line, text.textBaseline),
+    selectionHighlight: resolveSelectionHighlightFrame({
+      block,
+      documentIndex: editorState.documentIndex,
+      line,
+      normalizedSelection,
+      selectionPathRange,
+    }),
   };
 }

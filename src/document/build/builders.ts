@@ -169,7 +169,9 @@ export function createListBlock(options: {
     items: options.items,
     ordered: options.ordered,
     plainText: extractListPlainText(options.items),
-    start: options.start ?? null,
+    // Only ordered lists carry a start, and a start of 1 normalizes to `null`,
+    // so typed and parsed lists compare equal.
+    start: options.ordered && options.start !== 1 ? (options.start ?? null) : null,
     type: "list",
   };
 }
@@ -297,6 +299,27 @@ export function rebuildRawBlock(block: RawBlock, source: string): RawBlock {
     originalType: block.originalType,
     source,
   });
+}
+
+// An equal block with fresh identity for itself and every nested block, row,
+// and cell. Inlines stay shared. Inserting a fragment clones it so a document
+// never holds the same node object twice.
+export function cloneBlockTree<T extends Block>(block: T): T;
+export function cloneBlockTree(block: Block): Block {
+  switch (block.type) {
+    case "blockquote":
+    case "listItem":
+      return { ...block, children: block.children.map(cloneBlockTree) };
+    case "list":
+      return { ...block, items: block.items.map(cloneBlockTree) };
+    case "table":
+      return {
+        ...block,
+        rows: block.rows.map((row) => ({ ...row, cells: row.cells.map((cell) => ({ ...cell })) })),
+      };
+    default:
+      return { ...block };
+  }
 }
 
 function createTextChildren(text: string): Text[] {

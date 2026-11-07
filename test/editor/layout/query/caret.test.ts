@@ -8,12 +8,7 @@ import {
   insertText,
   setSelection,
 } from "@/editor/state";
-import {
-  findLineForPathOffset,
-  measureCaretTarget,
-  measureVisualCaret,
-  resolveCaretVisualLeft,
-} from "@/editor/layout";
+import { findLineForPathOffset, measureCaretTarget, measureVisualCaret } from "@/editor/layout";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import { getPath, getPathByType, placeAt, setup } from "../../helpers";
@@ -70,7 +65,7 @@ Paragraph for caret metrics.
       expect(visualCaret.line.contentInset).toBeGreaterThan(0);
       expect(visualCaret.caret).toEqual({
         ...caret,
-        left: resolveCaretVisualLeft(layout, caret),
+        left: caret.left + visualCaret.line.contentInset,
       });
     }
 
@@ -113,17 +108,15 @@ describe("Trailing spaces", () => {
     const state = createEditorState(createDocument([createParagraphTextBlock(text)]));
     const layout = measureLayoutSlice(state.documentIndex, { width: 320 });
     const { path } = getPath(state, text);
-    const beforeSpace = measureCaretTarget(layout, { offset: before, path });
-    const afterSpace = measureCaretTarget(layout, { offset: after, path });
+    const beforeSpace = measureVisualCaret(layout, { offset: before, path })?.caret;
+    const afterSpace = measureVisualCaret(layout, { offset: after, path })?.caret;
 
     if (!beforeSpace || !afterSpace) {
       throw new Error("Expected paragraph carets");
     }
 
     expect(layout.lines.map((line) => line.text)).toEqual([...lines]);
-    expect(resolveCaretVisualLeft(layout, afterSpace)).toBeGreaterThan(
-      resolveCaretVisualLeft(layout, beforeSpace),
-    );
+    expect(afterSpace.left).toBeGreaterThan(beforeSpace.left);
   });
 
   test("measures the empty-looking paragraph produced by Enter before a trailing space", () => {

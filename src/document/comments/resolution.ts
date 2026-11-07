@@ -10,25 +10,23 @@
  *      suffix as the anchor and estimate the missing edge from the prior
  *      quote length.
  *
- * Comments owns the policy: scoring weights, similarity heuristics, and how
- * `matched` vs `repaired` is decided. The substrate (search, capture,
- * verification) lives in `src/document/query/anchors/text.ts`.
+ * Identical copies (the quote with its whole saved context, more than once)
+ * tie, and only the caller's tiebreak settles them: a prior match, or the
+ * saved `occurrence` that counts copies in document order.
+ *
+ * Comments owns the policy: scoring weights, similarity heuristics, and when
+ * a tie is too close to call. The substrate (search and capture) lives in
+ * `src/document/query/anchors/text.ts`.
  */
 
 import {
+  captureTextAnchor,
   collectTextAnchorCandidates,
-  createAnchorFromContainer,
   DEFAULT_ANCHOR_KIND,
-  extractQuoteFromContainer,
-  findOccurrences,
-  listAnchorContainers,
-  prefixMatchesAt,
-  suffixMatchesAt,
   type AnchorContainer,
   type AnchorMatch,
   type TextAnchor,
 } from "../query/anchors/text";
-import type { Document } from "../model/types";
 import type { CommentResolution, CommentThread } from "./types";
 
 // --- Scoring weights ---
@@ -59,44 +57,39 @@ type AnchorMatchCandidate = {
 
 // --- Public API ---
 
-// Resolve a thread against the current snapshot. Pass `previousMatch` when the
-// caller knows where the thread resolved last time — equal-score ties prefer
-// the prior location, which keeps threads stable across snapshots that
-// introduce duplicate matches (e.g. a heading repeated by a copy/paste).
+// Resolve a thread against the current snapshot's anchor containers. Returns
+// `null` when the thread is stale (no candidate) or ambiguous (a tied top
+// score the tiebreak doesn't settle). The tiebreak is either where the thread
+// resolved last time, which picks the equal candidate and keeps threads stable
+// across snapshots that introduce duplicate matches (e.g. a heading repeated by
+// a copy/paste), or a saved occurrence, which picks a copy by position. An
+// occurrence only counts copies, so it can't pick a candidate whose saved
+// context no longer matches.
 export function resolveCommentThread(
   thread: CommentThread,
-  snapshot: Document,
-  previousMatch: AnchorMatch | null = null,
-): CommentResolution {
-  return resolveCommentThreadInContainers(thread, listAnchorContainers(snapshot), previousMatch);
-}
-
-export function resolveCommentThreadInContainers(
-  thread: CommentThread,
   containers: AnchorContainer[],
-  previousMatch: AnchorMatch | null = null,
-): CommentResolution {
-  const anchorKind = thread.anchor.kind ?? DEFAULT_ANCHOR_KIND;
+  tiebreak: AnchorMatch | number | null = null,
+): CommentResolution | null {
+  const { anchor } = thread;
+  const anchorKind = anchor.kind ?? DEFAULT_ANCHOR_KIND;
   const candidateContainers = containers.filter(
     (container) => container.containerKind === anchorKind,
   );
   const exactCandidates = collectExactQuoteCandidates(thread, candidateContainers);
 
   if (exactCandidates.length > 0) {
-    return finalizeResolution(thread, exactCandidates, null, previousMatch);
+    const copyScore =
+      (anchor.prefix ? EXACT_CONTEXT_MATCH_SCORE : 0) +
+      (anchor.suffix ? EXACT_CONTEXT_MATCH_SCORE : 0);
+
+    return finalizeResolution(exactCandidates, tiebreak, copyScore);
   }
 
   const contextCandidates = collectContextResolutionCandidates(thread, candidateContainers);
 
-  if (contextCandidates.length > 0) {
-    return finalizeResolution(thread, contextCandidates, "repaired", previousMatch);
-  }
-
-  return {
-    match: null,
-    repair: null,
-    status: "stale",
-  };
+  return contextCandidates.length > 0
+    ? finalizeResolution(contextCandidates, tiebreak, null)
+    : null;
 }
 
 // --- Candidate collection ---
@@ -110,7 +103,13 @@ function collectExactQuoteCandidates(thread: CommentThread, containers: AnchorCo
   }
 
   for (const container of containers) {
-    for (const startOffset of findOccurrences(container.text, quote)) {
+    // Copies can overlap, as "eses" does twice in "Yeseses", so the search
+    // steps one character at a time.
+    for (
+      let startOffset = container.text.indexOf(quote);
+      startOffset !== -1;
+      startOffset = container.text.indexOf(quote, startOffset + 1)
+    ) {
       candidates.push({
         container,
         endOffset: startOffset + quote.length,
@@ -183,114 +182,69 @@ function collectContextResolutionCandidates(thread: CommentThread, containers: A
 
 // --- Resolution finalization ---
 
+// Candidates arrive sorted by score, and stably, so tied candidates stay in
+// document order. A tie at `copyScore` (every saved context edge matches) is a
+// tie among copies, and the winner reports its position among them.
 function finalizeResolution(
-  thread: CommentThread,
   candidates: AnchorMatchCandidate[],
-  forceStatus: "repaired" | null,
-  previousMatch: AnchorMatch | null,
-): CommentResolution {
-  const winner = pickWinningCandidate(candidates, previousMatch);
+  tiebreak: AnchorMatch | number | null,
+  copyScore: number | null,
+): CommentResolution | null {
+  const tied = collectTiedCandidates(candidates);
+  const copies = tied && tied[0]!.score === copyScore ? tied : null;
+  const winner = !tied
+    ? candidates[0]!
+    : typeof tiebreak === "number"
+      ? (copies?.[tiebreak - 1] ?? null)
+      : tiebreak && tied.find((candidate) => isCandidateAt(candidate, tiebreak));
 
-  // Callers only invoke `finalizeResolution` with a non-empty candidate list,
-  // so a null winner means the leader is genuinely ambiguous — multiple equal
-  // top scores, none of which match the prior location.
   if (!winner) {
-    return {
-      match: null,
-      repair: null,
-      status: "ambiguous",
-    };
+    return null;
   }
 
-  const repairedAnchor = createAnchorFromContainer(
-    winner.container,
-    winner.startOffset,
-    winner.endOffset,
-  );
-  const repairedQuote = extractQuoteFromContainer(
-    winner.container,
-    winner.startOffset,
-    winner.endOffset,
-  );
-  const status =
-    forceStatus ??
-    (repairedQuote === thread.quote &&
-    (repairedAnchor.prefix ?? "") === (thread.anchor.prefix ?? "") &&
-    (repairedAnchor.suffix ?? "") === (thread.anchor.suffix ?? "")
-      ? "matched"
-      : "repaired");
+  const { container, endOffset, startOffset } = winner;
 
   return {
-    match: toAnchorMatch(winner.container, winner.startOffset, winner.endOffset),
-    repair: {
-      anchor: repairedAnchor,
-      quote: repairedQuote,
+    ...captureTextAnchor(container, startOffset, endOffset),
+    match: {
+      containerKind: container.containerKind,
+      containerPath: container.path,
+      endOffset,
+      startOffset,
     },
-    status,
+    ...(copies && { occurrence: copies.indexOf(winner) + 1 }),
   };
 }
 
-// Pick the highest-scoring candidate, falling back to `previousMatch` as the
-// tiebreaker when the top score is shared. Returns `null` if the leader is
-// genuinely ambiguous (multiple equal scores, none matching the prior
-// location) or if there are no candidates at all.
-function pickWinningCandidate(
-  candidates: AnchorMatchCandidate[],
-  previousMatch: AnchorMatch | null,
-): AnchorMatchCandidate | null {
-  const first = candidates[0]!;
-  const second = candidates[1];
+// The candidates sharing the top score, or `null` when the leader is unique.
+function collectTiedCandidates(candidates: AnchorMatchCandidate[]) {
+  const top = candidates[0]!.score;
 
-  if (!second || first.score !== second.score) {
-    return first;
-  }
-
-  // Tie at the top: prefer the candidate that matches the previous match
-  // exactly. Stability across snapshots is worth more than the tied score
-  // since "the previous answer" carries information the score doesn't.
-  if (previousMatch) {
-    const tied = candidates.filter((candidate) => candidate.score === first.score);
-    const priorMatch = tied.find(
-      (candidate) =>
-        candidate.container.path === previousMatch.containerPath &&
-        candidate.startOffset === previousMatch.startOffset &&
-        candidate.endOffset === previousMatch.endOffset,
-    );
-
-    if (priorMatch) {
-      return priorMatch;
-    }
-  }
-
-  return null;
+  return candidates[1]?.score === top
+    ? candidates.filter((candidate) => candidate.score === top)
+    : null;
 }
 
-function toAnchorMatch(
-  container: AnchorContainer,
-  startOffset: number,
-  endOffset: number,
-): AnchorMatch {
-  return {
-    containerPath: container.path,
-    containerKind: container.containerKind,
-    containerOrdinal: container.containerOrdinal,
-    endOffset,
-    startOffset,
-  };
+function isCandidateAt(candidate: AnchorMatchCandidate, match: AnchorMatch) {
+  return (
+    candidate.container.path === match.containerPath &&
+    candidate.startOffset === match.startOffset &&
+    candidate.endOffset === match.endOffset
+  );
 }
 
 // --- Scoring ---
 
 function scoreContextMatch(
   text: string,
-  anchor: TextAnchor,
+  { prefix, suffix }: TextAnchor,
   startOffset: number,
   endOffset: number,
   weight: number,
 ) {
   return (
-    (prefixMatchesAt(text, anchor.prefix, startOffset) ? weight : 0) +
-    (suffixMatchesAt(text, anchor.suffix, endOffset) ? weight : 0)
+    (prefix && text.endsWith(prefix, startOffset) ? weight : 0) +
+    (suffix && text.startsWith(suffix, endOffset) ? weight : 0)
   );
 }
 

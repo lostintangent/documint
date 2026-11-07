@@ -1,7 +1,6 @@
 import { parseDocument, serializeDocument } from "@/markdown";
 import type { BenchmarkFixtures } from "../fixtures";
-import type { BenchmarkScenario } from "../harness";
-import { createBenchmarkScenario } from "../harness";
+import { createBenchmarkScenario, type BenchmarkScenario } from "../harness";
 
 export function createMarkdownScenarios(fixtures: BenchmarkFixtures): BenchmarkScenario[] {
   const parseScenarios = [
@@ -21,10 +20,10 @@ export function createMarkdownScenarios(fixtures: BenchmarkFixtures): BenchmarkS
 
   return [
     ...parseScenarios.map(({ id, iterations, markdown }) =>
-      createBenchmarkScenario("markdown", id, iterations, () => void parseDocument(markdown)),
+      createBenchmarkScenario(id, iterations, () => void parseDocument(markdown)),
     ),
     ...serializeScenarios.map(({ id, iterations, snapshot }) =>
-      createBenchmarkScenario("markdown", id, iterations, () => void serializeDocument(snapshot)),
+      createBenchmarkScenario(id, iterations, () => void serializeDocument(snapshot)),
     ),
   ];
 }

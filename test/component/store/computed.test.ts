@@ -1,23 +1,26 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
-import { createStore } from "@/component/store";
+import { createStore, type DocumintStore } from "@/component/store";
 import { createParameterizedSprig, createComputedSprig } from "@/component/store/core/computed";
 import {
   activeCommentIndexSprig,
   documentCompletionSprig,
-  normalizedSelectionSprig,
 } from "@/component/store/editor/computed-sprigs";
-import { documentIndexSprig, editorStateSprig } from "@/component/store/editor/sprigs";
+import {
+  documentIndexSprig,
+  editorStateSprig,
+  selectionSprig,
+} from "@/component/store/editor/sprigs";
+import { renderedLayoutSprig } from "@/component/store/layout/sprigs";
 import { commentPresenceSprig, resolvedPresenceSprig } from "@/component/store/presence";
-import { getDocument, type DocumentUserPresence } from "@/editor";
-import { addComment, insertText, resolveThread, setSelection } from "@/editor/state";
-import { equalStringSets } from "@test/component/helpers";
-import { getPath, placeAt, setup } from "@test/editor/helpers";
+import { createEditorLayoutState, createLayoutCache, type DocumentUserPresence } from "@/editor";
+import { addComment, resolveThread, setSelection } from "@/editor/state";
+import { getPath, setup } from "@test/editor/helpers";
 
 describe("computed sprigs", () => {
   test("caches one derived value per dependency snapshot", () => {
     const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     let computeCount = 0;
     const computed = createComputedSprig([editorStateSprig], (_store, state) => {
       computeCount += 1;
@@ -31,111 +34,39 @@ describe("computed sprigs", () => {
     expect(computeCount).toBe(1);
   });
 
-  test("notifies subscribers when the computed output changes", () => {
+  test("skips dep reads until a source changes", () => {
     const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     const path = getPath(store.editor.getState(), "alpha");
-    let notifications = 0;
-
-    normalizedSelectionSprig.subscribe(store, () => {
-      notifications += 1;
-    });
-
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
-
-    expect(notifications).toBe(1);
-    expect(normalizedSelectionSprig.read(store).start.offset).toBe(2);
-  });
-
-  test("does not notify when the derived output is equal", () => {
-    const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
-    const path = getPath(store.editor.getState(), "alpha");
-    store.editor.replace(placeAt(store.editor.getState(), path, "end"));
-    let notifications = 0;
-    const imageUrlSet = createComputedSprig(
-      [editorStateSprig],
-      (_store, state) => new Set(state.documentIndex.imageUrls),
-      equalStringSets,
-    );
-
-    imageUrlSet.subscribe(store, () => {
-      notifications += 1;
-    });
-    const previous = imageUrlSet.read(store);
-    store.editor.command(insertText, "!");
-
-    expect(imageUrlSet.read(store)).toBe(previous);
-    expect(notifications).toBe(0);
-  });
-
-  test("shares the cached derivation across subscribers", () => {
-    const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
-    const path = getPath(store.editor.getState(), "alpha");
+    let depReads = 0;
     let computeCount = 0;
-    const computed = createComputedSprig([editorStateSprig], (_store, state) => {
+    const countedDocumentIndexSprig = {
+      ...documentIndexSprig,
+      read: (documintStore: DocumintStore) => {
+        depReads += 1;
+        return documentIndexSprig.read(documintStore);
+      },
+    };
+    const computed = createComputedSprig([countedDocumentIndexSprig], (_store, documentIndex) => {
       computeCount += 1;
-      return state.selection.focus.offset;
+      return { pathCount: indexedTextEntries(documentIndex).length };
     });
 
-    computed.subscribe(store, () => {});
-    computed.subscribe(store, () => {});
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
+    const first = computed.read(store);
+    computed.read(store);
 
-    expect(computeCount).toBe(2);
-  });
-
-  test("unsubscribes computed subscribers", () => {
-    const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
-    const path = getPath(store.editor.getState(), "alpha");
-    let notifications = 0;
-    const unsubscribe = normalizedSelectionSprig.subscribe(store, () => {
-      notifications += 1;
-    });
-
-    unsubscribe();
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
-
-    expect(notifications).toBe(0);
-  });
-
-  test("recomputes dependency-driven values only when their dependencies change", () => {
-    const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
-    const path = getPath(store.editor.getState(), "alpha");
-    let computeCount = 0;
-    let notifications = 0;
-    const computed = createComputedSprig([documentIndexSprig], (documintStore, documentIndex) => {
-      computeCount += 1;
-      return {
-        focusOffset: documintStore.editor.getState().selection.focus.offset,
-        pathCount: indexedTextEntries(documentIndex).length,
-      };
-    });
-
-    computed.subscribe(store, () => {
-      notifications += 1;
-    });
-    const previous = computed.read(store);
+    expect(depReads).toBe(1);
 
     store.editor.command(setSelection, { path: path.path, offset: 2 });
 
-    expect(computed.read(store)).toBe(previous);
+    expect(computed.read(store)).toBe(first);
+    expect(depReads).toBe(2);
     expect(computeCount).toBe(1);
-    expect(notifications).toBe(0);
-
-    store.editor.command(insertText, "!");
-
-    expect(computed.read(store)).not.toBe(previous);
-    expect(computeCount).toBe(2);
-    expect(notifications).toBe(1);
   });
 
   test("treats parameterized sprig params as dependencies", () => {
     const state = setup("alpha\n");
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     let computeCount = 0;
     const computed = createParameterizedSprig(
       [documentIndexSprig],
@@ -155,11 +86,47 @@ describe("computed sprigs", () => {
     expect(computeCount).toBe(2);
   });
 
+  test("notifies consumers through sources reached only via nested deps", () => {
+    const store = createStore(setup("alpha\n").documentIndex.document);
+    const cache = createLayoutCache();
+    let viewport = { height: 120, top: 0, width: 420 };
+    let notifications = 0;
+    store.layout.setLayoutResolver(() =>
+      createEditorLayoutState(store.editor.getState(), viewport, cache),
+    );
+    store.layout.commit();
+    const scrollTopSprig = createComputedSprig(
+      [renderedLayoutSprig],
+      (_store, layout) => layout?.viewport.top ?? null,
+    );
+    const consumer = createComputedSprig(
+      [selectionSprig, scrollTopSprig, editorStateSprig],
+      (_store, selection, scrollTop) => ({ focus: selection.focus.offset, scrollTop }),
+    );
+
+    expect(consumer.sources).toEqual([...selectionSprig.sources, ...renderedLayoutSprig.sources]);
+
+    // Subscribe the way `useSprig` does: one listener per declared source.
+    for (const source of consumer.sources) {
+      source.subscribe(store, () => {
+        notifications += 1;
+      });
+    }
+    expect(consumer.read(store).scrollTop).toBe(0);
+
+    viewport = { ...viewport, top: 80 };
+    store.layout.invalidate();
+    store.layout.commit();
+
+    expect(notifications).toBe(1);
+    expect(consumer.read(store).scrollTop).toBe(80);
+  });
+
   test("resolves host presence against text and comment thread cursors", () => {
     const state = setupPresenceCommentState();
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     const path = getPath(state, "alpha beta gamma");
-    const [unresolvedThread, resolvedThread] = getDocument(state).comments;
+    const [unresolvedThread, resolvedThread] = state.documentIndex.document.comments;
 
     if (!unresolvedThread || !resolvedThread) {
       throw new Error("Expected comment threads");
@@ -216,7 +183,7 @@ describe("computed sprigs", () => {
 
   test("preserves parameterized presence output when resolved semantics are equal", () => {
     const state = setup("alpha beta\n");
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     const first = resolvedPresenceSprig.read(store, [
       {
         cursor: {
@@ -241,7 +208,7 @@ describe("computed sprigs", () => {
 
   test("recomputes presence output when presence status changes", () => {
     const state = setup("alpha beta\n");
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     const first = resolvedPresenceSprig.read(store, [
       {
         cursor: {
@@ -269,7 +236,7 @@ describe("computed sprigs", () => {
 
   test("derives document completion from the active editor selection", () => {
     const state = setup("Hello @Ja\n");
-    const store = createStore(getDocument(state));
+    const store = createStore(state.documentIndex.document);
     const path = getPath(store.editor.getState(), "Hello @Ja");
     store.editor.command(setSelection, { path: path.path, offset: path.text.length });
 
@@ -309,7 +276,7 @@ describe("computed sprigs", () => {
       },
       "note",
     );
-    const store = createStore(getDocument(commented ?? state));
+    const store = createStore((commented ?? state).documentIndex.document);
 
     expect(activeCommentIndexSprig.read(store, false)).toBe(0);
     expect(activeCommentIndexSprig.read(store, true)).toBeNull();

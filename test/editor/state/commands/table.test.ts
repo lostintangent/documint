@@ -18,39 +18,20 @@ import {
 import { getPath, placeAt, setup, toMarkdown } from "../../helpers";
 
 describe("Table navigation", () => {
-  test("moves to the next and previous table cell with tab and shift-tab", () => {
-    let state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n");
-    const alpha = getPath(state, "alpha");
+  test.each([
+    ["tab", "the next cell", indent, "alpha", 2, "beta", 2],
+    ["shift-tab", "the previous cell", dedent, "beta", 2, "alpha", 2],
+    ["tab", "the next row", indent, "beta", 1, "gamma", 1],
+    ["shift-tab", "the previous row", dedent, "gamma", 1, "beta", 1],
+    ["tab", "a shorter cell, clamping the offset", indent, "alpha", 5, "beta", 4],
+  ] as const)("%s moves to %s", (_, __, command, from, offset, to, expectedOffset) => {
+    const state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |\n");
+    const point = { path: getPath(state, to).path, offset: expectedOffset };
 
-    state = placeAt(state, alpha, 2);
-
-    const nextState = indent(state);
-    const previousState = nextState ? dedent(nextState) : null;
-
-    expect(nextState?.selection.focus.path).toBe(
-      indexedTextEntries(state).find((container) => container.text === "beta")!.path,
-    );
-    expect(nextState?.selection.focus.offset).toBe(2);
-    expect(previousState?.selection.focus.path).toBe(alpha.path);
-    expect(previousState?.selection.focus.offset).toBe(2);
-  });
-
-  test("moves across table rows with tab and shift-tab", () => {
-    let state = setup("| A | B |\n| --- | --- |\n| alpha | beta |\n| gamma | delta |\n");
-    const beta = indexedTextEntries(state).find((container) => container.text === "beta");
-    const gamma = indexedTextEntries(state).find((container) => container.text === "gamma");
-
-    if (!beta || !gamma) {
-      throw new Error("Expected table cells");
-    }
-
-    const nextState = indent(placeAt(state, beta, 1));
-    const previousState = dedent(placeAt(state, gamma, 1));
-
-    expect(nextState?.selection.focus.path).toBe(gamma.path);
-    expect(nextState?.selection.focus.offset).toBe(1);
-    expect(previousState?.selection.focus.path).toBe(beta.path);
-    expect(previousState?.selection.focus.offset).toBe(1);
+    expect(command(placeAt(state, getPath(state, from), offset))?.selection).toEqual({
+      anchor: point,
+      focus: point,
+    });
   });
 
   test("adds a new empty row when tabbing from the last table cell", () => {
@@ -213,6 +194,22 @@ describe("Table structure", () => {
 
     expect(next).not.toBeNull();
     expect(toMarkdown(next!).split("|").length).toBeLessThan(before);
+  });
+
+  test.each([
+    [
+      "the last column",
+      "| a | b |\n| - | - |\n| d | e |\n",
+      "e",
+      deleteTableColumn,
+      "| a |\n| --- |\n| Xd |\n",
+    ],
+    ["the last row", "| a |\n| - |\n| b |\n", "b", deleteTableRow, "| Xa |\n| --- |\n"],
+  ])("typing after deleting %s lands in a real cell", (_, source, text, command, expected) => {
+    const state = setup(source);
+    const deleted = command(placeAt(state, getPath(state, text), "end"))!;
+
+    expect(toMarkdown(insertText(deleted, "X")!)).toBe(expected);
   });
 
   test("deletes the current row", () => {

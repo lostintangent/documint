@@ -4,14 +4,30 @@
 import type { VirtualLayout } from "../state/cache";
 import type { DocumentLayout } from "../measure";
 
+// Only entries in `[entryStartIndex, entryEndIndex)` can have measured bounds.
+// Entries before that range keep their estimates, and entries after it shift by
+// the slice's drift, so a scroll over already-refined content stays O(slice).
 export function refineVirtualLayoutWithMeasuredSlice(
   virtualLayout: VirtualLayout,
   layout: DocumentLayout,
+  entryStartIndex: number,
+  entryEndIndex: number,
 ) {
   const { entries } = virtualLayout;
   let offset = 0;
+  let index = entryStartIndex;
 
-  for (let index = 0; index < entries.length;) {
+  // Start at the first entry of the range's first group so groups match a walk
+  // from entry 0.
+  while (
+    index > 0 &&
+    index < entryEndIndex &&
+    haveSameBounds(entries[index - 1]!, entries[index]!)
+  ) {
+    index -= 1;
+  }
+
+  while (index < entryEndIndex) {
     const entry = entries[index]!;
     const groupEndIndex = findEquivalentEntryGroupEnd(entries, index);
     const measuredBounds = resolveMeasuredEntryGroupBounds(entries, layout, index, groupEndIndex);
@@ -36,22 +52,28 @@ export function refineVirtualLayoutWithMeasuredSlice(
     index = groupEndIndex;
   }
 
+  if (offset !== 0) {
+    for (; index < entries.length; index += 1) {
+      entries[index]!.top += offset;
+      entries[index]!.bottom += offset;
+    }
+  }
+
   virtualLayout.totalHeight += offset;
 }
 
 function findEquivalentEntryGroupEnd(entries: VirtualLayout["entries"], startIndex: number) {
-  const { bottom, top } = entries[startIndex]!;
   let endIndex = startIndex + 1;
 
-  while (
-    endIndex < entries.length &&
-    entries[endIndex]!.top === top &&
-    entries[endIndex]!.bottom === bottom
-  ) {
+  while (endIndex < entries.length && haveSameBounds(entries[endIndex]!, entries[startIndex]!)) {
     endIndex += 1;
   }
 
   return endIndex;
+}
+
+function haveSameBounds(a: VirtualLayout["entries"][number], b: VirtualLayout["entries"][number]) {
+  return a.top === b.top && a.bottom === b.bottom;
 }
 
 function resolveMeasuredEntryGroupBounds(

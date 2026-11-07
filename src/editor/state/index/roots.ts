@@ -13,6 +13,7 @@ import {
   type Block,
   type CodeBlock,
   type HeadingBlock,
+  type Inline,
   type ParagraphBlock,
   type RawBlock,
 } from "@/document";
@@ -90,8 +91,9 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
         break;
       case "inlines":
         {
-          const inlines = flattenInlineNodes((block as ParagraphBlock | HeadingBlock).children);
-          const text = recordInlineProjection(inlines);
+          const { inlines, text } = recordInlineProjection(
+            (block as ParagraphBlock | HeadingBlock).children,
+          );
           blocks.push({ ...baseBlock, editorOrder: pathsWithTextCount, inlines, kind, text });
           pathsWithTextCount += 1;
         }
@@ -113,8 +115,7 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
             row.map((cell, cellIndex) => {
               const rowPath = tableRowPath(path, rowIndex);
               const cellPath = tableCellPath(rowPath, cellIndex);
-              const inlines = flattenInlineNodes(cell.children);
-              const text = recordInlineProjection(inlines);
+              const { inlines, text } = recordInlineProjection(cell.children);
               const indexedCell: IndexedTableCell = {
                 cell,
                 cellIndex,
@@ -135,16 +136,16 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
     }
   }
 
-  function recordInlineProjection(inlines: IndexedInline[]) {
-    const text = inlines.map(indexedInlineText).join("");
-    for (const inline of inlines) {
+  function recordInlineProjection(children: readonly Inline[]) {
+    const projection = projectInlines(children);
+    for (const inline of projection.inlines) {
       if (inline.node.type === "image") imageUrls.add(inline.node.url);
       if (inline.node.type === "resource") {
         resourceUrls ??= new Set();
         resourceUrls.add(inline.node.url);
       }
     }
-    return text;
+    return projection;
   }
 
   function appendIndexedListItem(block: Block, path: string, context: ListContext | null) {
@@ -204,36 +205,42 @@ export function createIndexedRoot(rootBlock: Block, rootIndex: number): IndexedR
   };
 }
 
+// Flattened inlines depend only on their document children, never on path or
+// position, so one children array maps to one projection. Inserting or removing
+// a root re-indexes every root after it under new paths. Reusing projections
+// keeps their `inlines` identity, which downstream caches key on, and skips
+// re-flattening unchanged content.
+const inlineProjectionByChildren = new WeakMap<
+  readonly Inline[],
+  { inlines: IndexedInline[]; text: string }
+>();
+
+function projectInlines(children: readonly Inline[]) {
+  let projection = inlineProjectionByChildren.get(children);
+
+  if (!projection) {
+    const inlines = flattenInlineNodes(children);
+    projection = { inlines, text: inlines.map(indexedInlineText).join("") };
+    inlineProjectionByChildren.set(children, projection);
+  }
+
+  return projection;
+}
+
 // Positions a list of roots in block-array and editor-text coordinate space.
 // Root identity is reused when those coordinates are unchanged. Shifted roots
 // receive new root records, while their nested block records are reused or
 // shifted according to the coordinate space they carry.
-export function positionIndexedRoots(
-  roots: IndexedRoot[],
-  previousRoots: IndexedRoot[] | null = null,
-) {
-  const positionedRoots: IndexedRoot[] = [];
+export function positionIndexedRoots(roots: IndexedRoot[]) {
   let blockIndex = 0;
   let editorOrder = 0;
 
-  for (const [rootIndex, root] of roots.entries()) {
-    const nextBlockStart = blockIndex;
-    const nextBlockEnd = nextBlockStart + root.blocks.length;
-    const nextEditorOrderStart = editorOrder;
-    const nextEditorOrderEnd = nextEditorOrderStart + root.pathsWithTextCount;
-    const previousRoot = previousRoots?.[rootIndex];
-
-    positionedRoots.push(
-      canReuseIndexedRoot(previousRoot, root, nextBlockStart, nextBlockEnd, nextEditorOrderStart)
-        ? previousRoot
-        : positionIndexedRoot(root, nextBlockStart, nextEditorOrderStart),
-    );
-
-    blockIndex = nextBlockEnd;
-    editorOrder = nextEditorOrderEnd;
-  }
-
-  return positionedRoots;
+  return roots.map((root) => {
+    const positionedRoot = positionIndexedRoot(root, blockIndex, editorOrder);
+    blockIndex += root.blocks.length;
+    editorOrder += root.pathsWithTextCount;
+    return positionedRoot;
+  });
 }
 
 function positionIndexedRoot(
@@ -241,53 +248,18 @@ function positionIndexedRoot(
   nextBlockStart: number,
   nextEditorOrderStart: number,
 ): IndexedRoot {
-  const rootBlock = root.blocks[0]!;
-  const blockIndexDelta = nextBlockStart - rootBlock.blockArrayIndex;
+  const blockIndexDelta = nextBlockStart - root.blocks[0]!.blockArrayIndex;
   const editorOrderDelta =
     root.pathsWithTextCount === 0 ? 0 : nextEditorOrderStart - resolveFirstEditorOrder(root);
-  const blocks = shiftEditorBlocks(root.blocks, blockIndexDelta, editorOrderDelta);
 
-  if (blocks === root.blocks) {
+  if (blockIndexDelta === 0 && editorOrderDelta === 0) {
     return root;
   }
 
   return {
     ...root,
-    blocks,
+    blocks: root.blocks.map((block) => shiftEditorBlock(block, blockIndexDelta, editorOrderDelta)),
   };
-}
-
-function canReuseIndexedRoot(
-  previousRoot: IndexedRoot | undefined,
-  root: IndexedRoot,
-  nextBlockStart: number,
-  nextBlockEnd: number,
-  nextEditorOrderStart: number,
-): previousRoot is IndexedRoot {
-  const previousRootBlock = previousRoot?.blocks[0];
-
-  return Boolean(
-    previousRoot &&
-    previousRootBlock &&
-    root === previousRoot &&
-    previousRootBlock.blockArrayIndex === nextBlockStart &&
-    previousRootBlock.blockRangeEnd === nextBlockEnd &&
-    (root.pathsWithTextCount === 0 || resolveFirstEditorOrder(root) === nextEditorOrderStart),
-  );
-}
-
-function shiftEditorBlocks(
-  blocks: IndexedBlock[],
-  blockIndexDelta: number,
-  editorOrderDelta: number,
-) {
-  if (blockIndexDelta === 0 && editorOrderDelta === 0) {
-    return blocks;
-  }
-
-  return blocks.map<IndexedBlock>((block) =>
-    shiftEditorBlock(block, blockIndexDelta, editorOrderDelta),
-  );
 }
 
 function shiftEditorBlock(
@@ -303,7 +275,7 @@ function shiftEditorBlock(
     case "source":
       return {
         ...shiftIndexedBlockCoordinates(block, blockIndexDelta),
-        editorOrder: shiftEditorOrder(block.editorOrder, editorOrderDelta),
+        editorOrder: block.editorOrder + editorOrderDelta,
       };
     case "cells":
       return {
@@ -343,10 +315,6 @@ function resolveFirstEditorOrder(root: IndexedRoot): number {
   return 0;
 }
 
-function shiftEditorOrder(editorOrder: number, editorOrderDelta: number) {
-  return editorOrder + editorOrderDelta;
-}
-
 function shiftIndexedTableCellRows(
   rows: readonly (readonly IndexedTableCell[])[],
   editorOrderDelta: number,
@@ -358,7 +326,7 @@ function shiftIndexedTableCellRows(
   return rows.map((row) =>
     row.map((cell) => ({
       ...cell,
-      editorOrder: shiftEditorOrder(cell.editorOrder, editorOrderDelta),
+      editorOrder: cell.editorOrder + editorOrderDelta,
     })),
   );
 }

@@ -30,14 +30,11 @@ import {
   resolveListItemContext,
   resolveRootBlockInsertionContext,
   resolveTableCellContext,
-  resolveTextRangeContext,
+  resolveTextRange,
   type InlineContext,
-  type TableCellContext,
-  type TextRangeContext,
 } from "./context";
 import type { EditorState, EditorStateAction } from "../types";
 import { resolveMetadataSelectionContext, type EditorSelectionRange } from "../selection";
-import type { WordMovement } from "../../text/words";
 import { createCommentThreadForSelection, getCommentState } from "../../anchors";
 import {
   insertInlines,
@@ -109,6 +106,11 @@ export const insertLineBreak = makeCommand((state) => {
       : null;
   }
 
+  // Raw blocks are source text with no structure to split, even inside a list.
+  if (resolveIndexedBlock(state.documentIndex, state.selection.anchor.path)?.block.type === "raw") {
+    return { kind: "splice-text", text: "\n" };
+  }
+
   const context = resolveBlockContext(state);
   return context ? resolveLineBreakAction(context) : null;
 });
@@ -129,21 +131,12 @@ export const replaceSelection = makeCommand((state, text: string): EditorStateAc
   resolveSelectionTextReplacement(state.documentIndex, state.selection, text),
 );
 
-type TextRangeCommandContext = {
-  documentIndex: EditorState["documentIndex"];
-  range: TextRangeContext;
-};
-
 export const replaceTextRange = makeCommand(
-  (
-    context: TextRangeCommandContext,
-    _startOffset: number,
-    _endOffset: number,
-    text: string,
-  ): EditorStateAction => resolveTextRangeReplacement(context.documentIndex, context.range, text),
-  (state, startOffset: number, endOffset: number): TextRangeCommandContext | null => {
-    const range = resolveTextRangeContext(state, startOffset, endOffset);
-    return range ? { documentIndex: state.documentIndex, range } : null;
+  (state, startOffset: number, endOffset: number, text: string) => {
+    const path = state.selection.focus.path;
+    const range = resolveTextRange(state, { endOffset, path, startOffset });
+
+    return range ? resolveTextRangeReplacement(state.documentIndex, range, text) : null;
   },
 );
 
@@ -153,9 +146,7 @@ export const deleteBackward = makeCommand((state) => resolveDeletion(state, "bac
 
 export const deleteForward = makeCommand((state) => resolveDeletion(state, "forward"));
 
-export const deleteWord = makeCommand((state, movement: WordMovement) =>
-  resolveWordDeletion(state, movement),
-);
+export const deleteWord = makeCommand(resolveWordDeletion);
 
 // --- Clipboard ---
 
@@ -378,26 +369,18 @@ export const toggleMetadataBoolean = makeCommand((state, path: string) => {
 
 // --- Block insertion & tables ---
 
-export const insertCodeBlock = makeCommand(resolveCodeBlockInsertion, (state) =>
-  resolveRootBlockInsertionContext(state.documentIndex, state.selection),
+export const insertCodeBlock = makeCommand(
+  resolveCodeBlockInsertion,
+  resolveRootBlockInsertionContext,
 );
 
-export const insertTable = makeCommand(resolveTableInsertion, (state) =>
-  resolveRootBlockInsertionContext(state.documentIndex, state.selection),
-);
+export const insertTable = makeCommand(resolveTableInsertion, resolveRootBlockInsertionContext);
 
-export const insertTableColumn = makeCommand(
-  (ctx: TableCellContext, direction: "left" | "right") =>
-    resolveTableColumnInsertion(ctx, direction),
-  resolveTableCellContext,
-);
+export const insertTableColumn = makeCommand(resolveTableColumnInsertion, resolveTableCellContext);
 
 export const deleteTableColumn = makeCommand(resolveTableColumnDeletion, resolveTableCellContext);
 
-export const insertTableRow = makeCommand(
-  (ctx: TableCellContext, direction: "above" | "below") => resolveTableRowInsertion(ctx, direction),
-  resolveTableCellContext,
-);
+export const insertTableRow = makeCommand(resolveTableRowInsertion, resolveTableCellContext);
 
 export const deleteTableRow = makeCommand(resolveTableRowDeletion, resolveTableCellContext);
 
@@ -407,9 +390,9 @@ export const deleteTable = makeCommand(resolveTableDeletion, resolveTableCellCon
 
 export const addComment = makeCommand(
   (state: EditorState, selection: EditorSelectionRange, body: string): EditorStateAction | null => {
-    const thread = createCommentThreadForSelection(state.documentIndex, selection, body);
+    const capture = createCommentThreadForSelection(state.documentIndex, selection, body);
 
-    if (!thread) {
+    if (!capture) {
       return null;
     }
 
@@ -417,7 +400,8 @@ export const addComment = makeCommand(
       kind: "splice-comments",
       count: 0,
       index: state.documentIndex.document.comments.length,
-      threads: [thread],
+      matches: [capture.match],
+      threads: [capture.thread],
     };
   },
 );
@@ -469,7 +453,7 @@ type ContextActionResolver<C, A extends unknown[], R extends EditorStateAction |
 function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: (context: C, ...args: A) => R,
   resolveContext: ContextResolver<C, A>,
-): (state: EditorState, ...args: A) => CommandResult<R>;
+): (state: EditorState, ...args: A) => EditorState | null;
 function makeCommand<A extends unknown[], R extends EditorStateAction | null>(
   resolveAction: StateActionResolver<A, R>,
   resolveContext?: never,
@@ -479,24 +463,13 @@ function makeCommand<C, A extends unknown[], R extends EditorStateAction | null>
   resolveContext?: ContextResolver<C, A>,
 ): (state: EditorState, ...args: A) => CommandResult<R> {
   return ((state: EditorState, ...args: A) => {
-    const action = resolveContext
-      ? resolveContextAction(resolveAction, resolveContext, state, args)
-      : (resolveAction as StateActionResolver<A, R>)(state, ...args);
+    // Commands without a context resolver act on the state itself.
+    const context = resolveContext ? resolveContext(state, ...args) : state;
+    const action =
+      context && (resolveAction as ContextActionResolver<C | EditorState, A, R>)(context, ...args);
 
-    if (!action) return null;
-
-    return dispatch(state, action);
+    return action ? dispatch(state, action) : null;
   }) as (state: EditorState, ...args: A) => CommandResult<R>;
-}
-
-function resolveContextAction<C, A extends unknown[], R extends EditorStateAction | null>(
-  resolveAction: StateActionResolver<A, R> | ContextActionResolver<C, A, R>,
-  resolveContext: ContextResolver<C, A>,
-  state: EditorState,
-  args: A,
-): R | null {
-  const context = resolveContext(state, ...args);
-  return context ? (resolveAction as ContextActionResolver<C, A, R>)(context, ...args) : null;
 }
 
 function insertSoftLineBreakInline(state: EditorState) {

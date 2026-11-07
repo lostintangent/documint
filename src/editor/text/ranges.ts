@@ -1,16 +1,16 @@
-// Owns generic offset-range algebra over `{ startOffset, endOffset }` values.
-// Both canvas paint effects/text decorations and other range-shaped
-// editor data (comment ranges, presence ranges) share one half-open overlap
-// test and three operations built on it: collect the boundary set inside a
-// window, find the first range covering a segment, filter the ranges
-// overlapping a segment. Keeping the algorithms in one place removes the
-// duplicated implementations and gives any future range-shaped data a single
-// primitive to reach for.
+// Owns offset-range algebra over `{ startOffset, endOffset }` values: the
+// half-open overlap test shared by decorations, comments, and paint effects,
+// window boundary collection for splitting painted segments, and mapping an
+// offset through a text edit so cached ranges can follow typing.
 
 export type TextRange = {
   endOffset: number;
   startOffset: number;
 };
+
+// A text edit in pre-edit offsets: `[startOffset, endOffset)` was replaced by
+// `insertedLength` characters. Pure insertions have `startOffset === endOffset`.
+export type TextEdit = TextRange & { insertedLength: number };
 
 // Collects every range boundary that falls inside [windowStart, windowEnd],
 // clamped to the window, plus the window bounds themselves. Returns sorted
@@ -46,21 +46,22 @@ export function rangeOverlapsSegment(range: TextRange, start: number, end: numbe
   return range.startOffset < end && range.endOffset > start;
 }
 
-// Returns the first range overlapping the half-open segment [start, end), or
-// null.
-export function findRangeAtSegment<T extends TextRange>(
-  ranges: readonly T[],
-  start: number,
-  end: number,
-): T | null {
-  return ranges.find((range) => rangeOverlapsSegment(range, start, end)) ?? null;
-}
+// Maps a pre-edit offset to its post-edit position. The replaced range's own
+// edges keep their side, so its start stays before the inserted text and its
+// end lands after it, and text that only borders a replacement never absorbs
+// it. `bias` places the ambiguous offsets, an insertion point or an offset
+// inside the replaced text: -1 before the inserted text, 1 after it.
+export function mapOffsetThroughTextEdit(offset: number, edit: TextEdit, bias: -1 | 1): number {
+  const { endOffset, insertedLength, startOffset } = edit;
+  const replaces = startOffset < endOffset;
 
-// Returns every range overlapping the half-open segment [start, end).
-export function filterRangesOverlappingSegment<T extends TextRange>(
-  ranges: readonly T[],
-  start: number,
-  end: number,
-): T[] {
-  return ranges.filter((range) => rangeOverlapsSegment(range, start, end));
+  if (offset < startOffset || (replaces && offset === startOffset)) {
+    return offset;
+  }
+
+  if (offset > endOffset || (replaces && offset === endOffset)) {
+    return offset + insertedLength - (endOffset - startOffset);
+  }
+
+  return bias < 0 ? startOffset : startOffset + insertedLength;
 }

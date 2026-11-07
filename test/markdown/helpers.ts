@@ -19,6 +19,17 @@ export function expectStableRoundTrip(source: string, options?: MarkdownOptions)
   expect(secondPass).toBe(firstPass);
 }
 
+// For sources authored in a supported but non-canonical form: one save must
+// produce `canonical`, which must itself round-trip stably.
+export function expectCanonicalRoundTrip(
+  source: string,
+  canonical: string,
+  options?: MarkdownOptions,
+): void {
+  expect(serializeDocument(parseDocument(source, options), options)).toBe(canonical);
+  expectStableRoundTrip(canonical, options);
+}
+
 // A paragraph followed by a one-thread comment appendix. `thread` adds or
 // overrides appendix fields, such as a persisted `id`.
 export function commentedParagraphMarkdown(thread: Record<string, unknown> = {}): string {

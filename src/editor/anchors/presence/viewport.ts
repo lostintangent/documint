@@ -33,10 +33,6 @@ export function resolvePresenceViewport(
   presence: EditorPresence[],
   commentRanges: readonly EditorCommentRange[],
 ): EditorPresence[] {
-  if (presence.length === 0) {
-    return [];
-  }
-
   return presence.map((presenceItem) => ({
     ...presenceItem,
     viewport: resolveEditorPresenceViewport(viewport, commentRanges, presenceItem),
@@ -80,10 +76,7 @@ function resolveCursorPosition(
   viewport: EditorLayoutState,
   point: EditorSelectionPoint,
 ): { bottom: number; top: number } | null {
-  const exactCaret = measureCaretTarget(viewport.layout, {
-    path: point.path,
-    offset: point.offset,
-  });
+  const exactCaret = measureCaretTarget(viewport.layout, point);
   if (exactCaret) {
     return { bottom: exactCaret.top + exactCaret.height, top: exactCaret.top };
   }

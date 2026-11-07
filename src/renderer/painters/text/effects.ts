@@ -7,9 +7,9 @@
 
 import { splitGraphemes } from "@/editor/text/graphemes";
 import { resolveFontMetrics } from "@/editor/text/measure";
-import { collectRangeBoundaries, findRangeAtSegment } from "@/editor/text/ranges";
+import { collectRangeBoundaries, rangeOverlapsSegment } from "@/editor/text/ranges";
 import type { DocumentFrameLine } from "@/renderer/frame";
-import { isTextRunSegment, type TextRunSegment } from "@/renderer/frame/line/text-segments";
+import { isTextRunSegment } from "@/renderer/frame/line/text-segments";
 import { resolveLineSegmentBounds } from "@/renderer/frame/line/text-geometry";
 import type { EffectEnvironment, PaintEffect, TextDeletedEffectContext } from "../../effects";
 import { fadeCanvasColor } from "../../effects/colors";
@@ -25,15 +25,15 @@ export function paintTextHighlights(
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { context, paintEffect, theme } = environment;
-  const { textHighlights } = lineFrame;
+  const { layoutLine, textHighlights } = lineFrame;
 
   if (textHighlights.length === 0) {
     return;
   }
 
-  forEachTextRunSegment(lineFrame, (textSegment) => {
-    if (textSegment.text.length === 0) {
-      return;
+  for (const textSegment of lineFrame.segments) {
+    if (!isTextRunSegment(textSegment) || textSegment.text.length === 0) {
+      continue;
     }
 
     const highlightBoundaries = collectRangeBoundaries(
@@ -42,16 +42,13 @@ export function paintTextHighlights(
       textHighlights,
     ).filter((offset) => isTextGraphemeBoundary(textSegment.text, textSegment.start, offset));
 
-    if (highlightBoundaries.length <= 2) {
-      const activeHighlight = findRangeAtSegment(
-        textHighlights,
-        textSegment.start,
-        textSegment.end,
-      );
-
-      if (!activeHighlight) {
-        return;
-      }
+    if (
+      highlightBoundaries.length <= 2 &&
+      !textHighlights.some((highlight) =>
+        rangeOverlapsSegment(highlight, textSegment.start, textSegment.end),
+      )
+    ) {
+      continue;
     }
 
     context.font = textSegment.font;
@@ -59,9 +56,11 @@ export function paintTextHighlights(
     for (let index = 0; index < highlightBoundaries.length - 1; index += 1) {
       const highlightStart = highlightBoundaries[index]!;
       const highlightEnd = highlightBoundaries[index + 1]!;
-      const activeHighlight = findRangeAtSegment(textHighlights, highlightStart, highlightEnd);
+      const activeHighlight = textHighlights.find((highlight) =>
+        rangeOverlapsSegment(highlight, highlightStart, highlightEnd),
+      );
 
-      if (!activeHighlight || highlightEnd <= highlightStart) {
+      if (!activeHighlight) {
         continue;
       }
 
@@ -74,7 +73,7 @@ export function paintTextHighlights(
       }
 
       const { left: highlightLeft, right: highlightRight } = resolveLineSegmentBounds(
-        lineFrame.layoutLine,
+        layoutLine,
         lineFrame.textLeft,
         highlightStart,
         highlightEnd,
@@ -96,18 +95,18 @@ export function paintTextHighlights(
           paintClippedTextOverlay(context, {
             alpha,
             color: theme.insertHighlightText,
-            height: lineFrame.layoutLine.height,
+            height: layoutLine.height,
             left: highlightLeft,
             text: textSegment.text,
             textBaseline: textSegment.baseline,
             textLeft: textSegment.left,
-            top: lineFrame.layoutLine.top,
+            top: layoutLine.top,
             width,
           });
         },
       );
     }
-  });
+  }
 }
 
 export function paintTextFades(
@@ -115,19 +114,16 @@ export function paintTextFades(
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { paintEffect } = environment;
-  const { textFades } = lineFrame;
+  const { layoutLine } = lineFrame;
 
-  if (textFades.length === 0) {
-    return;
-  }
-
-  for (const fade of textFades) {
-    if (!isOffsetInLine(lineFrame, fade.startOffset, "include-end")) {
+  for (const fade of lineFrame.textFades) {
+    // A deletion at the line end still ghosts after the last glyph.
+    if (fade.startOffset < layoutLine.start || fade.startOffset > layoutLine.end) {
       continue;
     }
 
     const { left: ghostLeft } = resolveLineSegmentBounds(
-      lineFrame.layoutLine,
+      layoutLine,
       lineFrame.textLeft,
       fade.startOffset,
       fade.startOffset,
@@ -140,7 +136,7 @@ export function paintTextFades(
       {
         color,
         contentKind: fade.contentKind,
-        font: lineFrame.layoutLine.font,
+        font: layoutLine.font,
         left: ghostLeft,
         progress: fade.progress,
         text: fade.text,
@@ -167,19 +163,15 @@ export function paintTextPulses(
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
   const { paintEffect, theme } = environment;
-  const { textPulses } = lineFrame;
+  const { layoutLine } = lineFrame;
 
-  if (textPulses.length === 0) {
-    return;
-  }
-
-  for (const pulse of textPulses) {
-    if (!isOffsetInLine(lineFrame, pulse.startOffset, "exclude-end")) {
+  for (const pulse of lineFrame.textPulses) {
+    if (pulse.startOffset < layoutLine.start || pulse.startOffset >= layoutLine.end) {
       continue;
     }
 
     const { left, right } = resolveLineSegmentBounds(
-      lineFrame.layoutLine,
+      layoutLine,
       lineFrame.textLeft,
       pulse.startOffset,
       pulse.startOffset + 1,
@@ -188,7 +180,7 @@ export function paintTextPulses(
       textPulseBaseRadius,
       (right - left) / 2 + textPulseBaseRadius + textPulseRadiusGrowth * pulse.progress,
     );
-    const { ascent, descent } = resolveFontMetrics(lineFrame.layoutLine.font);
+    const { ascent, descent } = resolveFontMetrics(layoutLine.font);
     const glyphCenterY =
       lineFrame.textBaseline - Math.max(1, ascent * 0.42) + Math.max(0.5, descent * 0.15);
     const color = fadeCanvasColor(theme.insertHighlightText, pulse.progress);
@@ -205,60 +197,14 @@ export function paintTextPulses(
         text: pulse.text,
       },
       ({ context }) => {
-        paintDefaultTextInsertedPulse(context, {
-          centerX: (left + right) / 2,
-          centerY: glyphCenterY,
-          color,
-          radius,
-        });
+        context.strokeStyle = color;
+        context.lineWidth = textPulseStrokeWidth;
+        context.beginPath();
+        context.arc((left + right) / 2, glyphCenterY, radius, 0, Math.PI * 2);
+        context.stroke();
       },
     );
   }
-}
-
-function paintDefaultTextInsertedPulse(
-  context: CanvasRenderingContext2D,
-  {
-    centerX,
-    centerY,
-    color,
-    radius,
-  }: {
-    centerX: number;
-    centerY: number;
-    color: string;
-    radius: number;
-  },
-) {
-  context.strokeStyle = color;
-  context.lineWidth = textPulseStrokeWidth;
-  context.beginPath();
-  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-  context.stroke();
-}
-
-function forEachTextRunSegment(
-  lineFrame: DocumentFrameLine,
-  visit: (textSegment: TextRunSegment) => void,
-) {
-  for (const textSegment of lineFrame.segments) {
-    if (isTextRunSegment(textSegment)) {
-      visit(textSegment);
-    }
-  }
-}
-
-function isOffsetInLine(
-  lineFrame: DocumentFrameLine,
-  offset: number,
-  endBoundary: "exclude-end" | "include-end",
-) {
-  return (
-    offset >= lineFrame.layoutLine.start &&
-    (endBoundary === "include-end"
-      ? offset <= lineFrame.layoutLine.end
-      : offset < lineFrame.layoutLine.end)
-  );
 }
 
 function isTextGraphemeBoundary(text: string, startOffset: number, offset: number) {

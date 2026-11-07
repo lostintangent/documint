@@ -13,7 +13,7 @@ import { resolveInsertionTrigger } from "./triggers";
 //     (the hot path while the user types).
 //   - paired delimiter (`pairs.ts`): when the typed text is an opening
 //     delimiter, insert the closing delimiter too and land the caret
-//     between them.
+//     between them. A typed closer steps over the same closer.
 //   - markdown trigger (`triggers.ts`): when the typed text completes
 //     a markdown shortcut (`# `, `1. `, `> `, …), upgrade the
 //     insertion into a structural transform instead — a heading, a

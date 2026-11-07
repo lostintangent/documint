@@ -63,27 +63,22 @@ function parseHexCanvasColor(color: string) {
     return null;
   }
 
-  const hex = normalized.slice(1);
+  let hex = normalized.slice(1);
 
   if (hex.length === 3) {
-    return [
-      Number.parseInt(`${hex[0]}${hex[0]}`, 16),
-      Number.parseInt(`${hex[1]}${hex[1]}`, 16),
-      Number.parseInt(`${hex[2]}${hex[2]}`, 16),
-      1,
-    ] satisfies CanvasColor;
+    hex = `${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}`;
   }
 
-  if (hex.length === 6) {
-    return [
-      Number.parseInt(hex.slice(0, 2), 16),
-      Number.parseInt(hex.slice(2, 4), 16),
-      Number.parseInt(hex.slice(4, 6), 16),
-      1,
-    ] satisfies CanvasColor;
+  if (hex.length !== 6) {
+    return null;
   }
 
-  return null;
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+    1,
+  ] satisfies CanvasColor;
 }
 
 function parseRgbCanvasColor(color: string) {

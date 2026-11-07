@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Documint,
@@ -12,24 +12,24 @@ import type { Dispatch, SetStateAction } from "react";
 import { useServerEvents } from "./hooks/useServerEvents";
 import { useStorage } from "./hooks/useStorage";
 import { useTheme } from "./hooks/useTheme";
-import type { CopilotJob, FetchJsonError, ServerEvent, ServerState } from "./types";
+import type { CopilotJob, FetchJsonError, ServerContent, ServerEvent, ServerState } from "./types";
 
 type AddedCommentChange = Extract<CommentChange, { kind: "added" }>;
 type CopilotTrigger = "direct-mention" | "thread-reply";
-type SetLoadError = Dispatch<SetStateAction<string | null>>;
+type SetError = Dispatch<SetStateAction<string | null>>;
 
 const instanceId = new URLSearchParams(window.location.search).get("instanceId");
 const clientId = createClientId();
 
 function App() {
   const documentState = useDocumentState(instanceId);
-  const { content, copilotUser, flushLocalEdits, handleContentChanged, jobs, loadError } =
+  const { content, copilotUser, flushLocalEdits, handleContentChanged, jobs, error } =
     documentState;
   const { handleCommentChanged, handleUserMentioned } = useCopilotTriggers({
     copilotUser,
     flushLocalEdits,
     instanceId,
-    setLoadError: documentState.setLoadError,
+    setError: documentState.setError,
     upsertRunningJob: documentState.upsertRunningJob,
   });
   const users = useMemo(() => [copilotUser], [copilotUser]);
@@ -45,22 +45,27 @@ function App() {
     <>
       <style>{styles}</style>
       <main className="shell">
-        {content === null && loadError ? (
-          <section className="state">{loadError}</section>
-        ) : content === null ? (
-          <section className="state">Loading Documint...</section>
+        {content === null ? (
+          <section className="state">{error || "Loading Documint..."}</section>
         ) : (
-          <Documint
-            className="documint-canvas-frame"
-            content={content}
-            onCommentChanged={handleCommentChanged}
-            onContentChanged={handleContentChanged}
-            onUserMentioned={handleUserMentioned}
-            presence={presence}
-            storage={storage}
-            theme={theme}
-            users={users}
-          />
+          <>
+            <Documint
+              className="documint-canvas-frame"
+              content={content}
+              onCommentChanged={handleCommentChanged}
+              onContentChanged={handleContentChanged}
+              onUserMentioned={handleUserMentioned}
+              presence={presence}
+              storage={storage}
+              theme={theme}
+              users={users}
+            />
+            {error ? (
+              <p className="status" role="status">
+                {error}
+              </p>
+            ) : null}
+          </>
         )}
       </main>
     </>
@@ -68,38 +73,40 @@ function App() {
 }
 
 function useDocumentState(instanceId: string | null) {
-  const [content, setContent] = useState<string | null>(null);
+  const [serverContent, setServerContent] = useState<ServerContent | null>(null);
   const [copilotUser, setCopilotUser] = useState<DocumentUser>({
     id: "copilot",
     username: "copilot",
     fullName: "Copilot",
   });
   const [jobs, setJobs] = useState<CopilotJob[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const saveFailureRef = useRef<FetchJsonError | null>(null);
+  const baseRevisionRef = useRef(0);
 
-  const syncContent = (nextContent: string) => {
-    setContent((currentContent) => (currentContent === nextContent ? currentContent : nextContent));
-  };
+  // Documint applies new content in its own layout effect, which runs before
+  // this parent one, so every edit from here on builds on this revision.
+  useLayoutEffect(() => {
+    baseRevisionRef.current = serverContent?.revision ?? 0;
+  }, [serverContent]);
 
   const saveEdit = async (content: string) => {
+    const baseRevision = baseRevisionRef.current;
     const runSave = async () => {
       try {
-        await fetchJson<ServerState>(`/api/content?instanceId=${encodeInstanceId(instanceId)}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            clientId,
-            content,
-          }),
-        });
+        await fetchJson<ServerState>(
+          `/api/content?instanceId=${encodeInstanceId(instanceId)}`,
+          "PUT",
+          { baseRevision, clientId, content },
+        );
         saveFailureRef.current = null;
-        setLoadError(null);
+        setError(null);
       } catch (error) {
         if (isFetchJsonError(error) && error.status === 409 && error.payload.state) {
-          syncContent(error.payload.state.content);
+          setServerContent(error.payload.state);
           saveFailureRef.current = error;
-          setLoadError("The file changed before this edit could be applied.");
+          setError("The file changed before this edit could be applied.");
         }
         if (!isFetchJsonError(error) || error.status !== 409) {
           throw error;
@@ -114,33 +121,33 @@ function useDocumentState(instanceId: string | null) {
 
   const handleServerEvent = (payload: ServerEvent) => {
     if (payload.type === "state") {
-      syncContent(payload.state.content);
+      setServerContent(payload.state);
       setCopilotUser(payload.state.copilotUser);
       setJobs(payload.state.jobs ?? []);
       saveFailureRef.current = null;
-      setLoadError(null);
+      setError(null);
     } else if (payload.type === "content") {
-      syncContent(payload.content);
+      setServerContent(payload);
       saveFailureRef.current = null;
-      setLoadError(null);
+      setError(null);
     } else if (payload.type === "job") {
       setJobs(payload.jobs ?? []);
     } else if (payload.type === "error") {
-      setLoadError(payload.message);
+      setError(payload.message);
     }
   };
 
   useServerEvents({
     clientId,
     instanceId,
-    onConnectionError: () => setLoadError("Reconnecting to the extension..."),
+    onConnectionError: () => setError("Reconnecting to the extension..."),
     onEvent: handleServerEvent,
-    onInvalidEvent: () => setLoadError("Received an invalid update from the extension."),
+    onInvalidEvent: () => setError("Received an invalid update from the extension."),
   });
 
   const handleContentChanged = (nextContent: string) => {
     void saveEdit(nextContent).catch((error) => {
-      setLoadError(getErrorMessage(error));
+      setError(getErrorMessage(error));
     });
   };
 
@@ -156,13 +163,13 @@ function useDocumentState(instanceId: string | null) {
   };
 
   return {
-    content,
+    content: serverContent?.content ?? null,
     copilotUser,
     flushLocalEdits,
     handleContentChanged,
     jobs,
-    loadError: instanceId ? loadError : "Missing canvas instance id.",
-    setLoadError,
+    error: instanceId ? error : "Missing canvas instance id.",
+    setError,
     upsertRunningJob,
   };
 }
@@ -171,26 +178,24 @@ function useCopilotTriggers({
   copilotUser,
   flushLocalEdits,
   instanceId,
-  setLoadError,
+  setError,
   upsertRunningJob,
 }: {
   copilotUser: DocumentUser;
   flushLocalEdits: () => Promise<void>;
   instanceId: string | null;
-  setLoadError: SetLoadError;
+  setError: SetError;
   upsertRunningJob: (job: CopilotJob) => void;
 }) {
   const startCopilotJob = async (path: string, body: unknown) => {
     await flushLocalEdits();
     const nextJob = await fetchJson<CopilotJob>(
       `${path}?instanceId=${encodeInstanceId(instanceId)}`,
-      {
-        method: "POST",
-        body: JSON.stringify(body),
-      },
+      "POST",
+      body,
     );
     upsertRunningJob(nextJob);
-    setLoadError(null);
+    setError(null);
   };
 
   const handleCommentChanged = (change: CommentChange) => {
@@ -210,7 +215,7 @@ function useCopilotTriggers({
       thread: change.thread,
       threadId: change.threadId,
       trigger,
-    }).catch((error) => setLoadError(getErrorMessage(error)));
+    }).catch((error) => setError(getErrorMessage(error)));
   };
 
   const handleUserMentioned = (event: UserMentionEvent) => {
@@ -223,7 +228,7 @@ function useCopilotTriggers({
       lineMarkdown: event.lineMarkdown,
       lineNumber: event.lineNumber,
       userId: event.userId,
-    }).catch((error) => setLoadError(getErrorMessage(error)));
+    }).catch((error) => setError(getErrorMessage(error)));
   };
 
   return { handleCommentChanged, handleUserMentioned };
@@ -313,14 +318,11 @@ function encodeInstanceId(instanceId: string | null): string {
   return encodeURIComponent(instanceId ?? "");
 }
 
-async function fetchJson<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
+async function fetchJson<T>(url: string, method: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
-    ...options,
-    headers,
+    method,
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
   });
   const payload = (await response.json()) as { error?: string; state?: ServerState };
   if (!response.ok) {
@@ -382,6 +384,12 @@ body {
   min-height: 0;
   padding: 1rem;
   text-align: center;
+}
+.status {
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  font-size: 0.8125rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem;
 }
 `;
 

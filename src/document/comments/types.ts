@@ -1,11 +1,19 @@
-import type { AnchorMatch, TextAnchor } from "../query/anchors/text";
+import type { AnchorMatch, TextAnchor, TextAnchorCapture } from "../query/anchors/text";
 
 export type CommentThread = {
   id: string;
   quote: string;
   comments: Comment[];
-  anchor: TextAnchor;
+  anchor: CommentAnchor;
   resolvedAt?: string;
+};
+
+// A thread's saved anchor. `occurrence` tells identical copies apart on a cold
+// read: it's the 1-based position of the thread's match among the copies its
+// prefix, quote, and suffix all match, in document order, and it's only saved
+// while there are two or more.
+export type CommentAnchor = TextAnchor & {
+  occurrence?: number;
 };
 
 export type Comment = {
@@ -35,24 +43,10 @@ export function isCommentThreadAnchor(anchor: Anchor): anchor is CommentThreadAn
 
 // --- Anchor resolution types ---
 
-// What needs to be refreshed on a `CommentThread` when its anchor drifts and
-// has been re-located. Callers writing this back into a thread keep its
-// quote/anchor representation in sync with the snapshot.
-type CommentRepair = {
-  anchor: TextAnchor;
-  quote: string;
-};
-
-// Lifecycle of a thread reattachment attempt.
-//   matched   - The anchor's exact context still appears in the snapshot.
-//   repaired  - The anchor drifted; resolution recovered a best-fit location.
-//   ambiguous - Multiple equally-strong locations exist; no safe pick.
-//   stale     - The anchor can no longer be located.
-// `repair` is non-null whenever `match` is non-null; together they describe
-// where the thread lives now and how its persisted anchor and quote should be
-// refreshed.
-export type CommentResolution = {
-  match: AnchorMatch | null;
-  repair: CommentRepair | null;
-  status: "ambiguous" | "matched" | "repaired" | "stale";
+// Where a thread resolved in the current snapshot, plus the anchor and quote
+// captured there. `repairCommentThread` writes the capture back to the thread.
+// `occurrence` is set when the match won a tie among full-context copies.
+export type CommentResolution = TextAnchorCapture & {
+  match: AnchorMatch;
+  occurrence?: number;
 };

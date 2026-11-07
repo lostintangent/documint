@@ -1,15 +1,14 @@
 /**
  * Owns document-level parsing orchestration: metadata preamble, then blocks, then
  * trailing comment-directive extraction, assembled into a normalized
- * `Document`. The fragment-altitude entry (`parseFragmentBlocks`) bypasses
- * the persistence-only concerns so clipboard payloads don't silently lose a
- * leading `---` to front-matter detection or a trailing
- * `:::documint-comments` to comment extraction. Block, inline, table, and
- * comment-directive parsing live in sibling modules.
+ * `Document`. `parseFragment` bypasses the persistence-only concerns so
+ * clipboard payloads don't silently lose a leading `---` to front-matter
+ * detection or a trailing `:::documint-comments` to comment extraction. Block,
+ * inline, table, and comment-directive parsing live in sibling modules.
  *
- * The `MarkdownLineCursor` primitive and the shared cursor/line helpers
- * (`currentLine`, `peekLine`, `isBlankLine`) live here because every parser
- * module consumes them.
+ * The `MarkdownLineCursor` primitive and the shared line helpers
+ * (`currentLine`, `isBlankLine`) live here because every parser module
+ * consumes them.
  */
 
 import type { Document, DocumentMetadata, Fragment } from "@/document";
@@ -22,10 +21,9 @@ import { createMarkdownParseContext } from "./context";
 
 export function parseDocument(source: string, options: MarkdownOptions = {}): Document {
   const cursor = createCursor(source);
-  const context = createMarkdownParseContext(options);
 
   const metadata = readMetadata(cursor);
-  const blocks = parseBlocks(cursor, context);
+  const blocks = parseRootBlocks(cursor, options);
   const { comments, blocks: contentBlocks } = extractCommentDirective(blocks);
 
   return createDocument(contentBlocks, comments, metadata);
@@ -46,10 +44,13 @@ export function parseFragment(source: string, options: MarkdownOptions = {}): Fr
     return { kind: "text", text: "" };
   }
 
-  const cursor = createCursor(source);
-  const context = createMarkdownParseContext(options);
+  const blocks = parseRootBlocks(createCursor(source), options);
 
-  const blocks = parseBlocks(cursor, context);
+  // Link reference definitions leave no blocks behind, so a paste of only
+  // definitions inserts them as text rather than nothing.
+  if (blocks.length === 0 && source.trim().length > 0) {
+    return { kind: "text", text: source.trim() };
+  }
 
   if (isPlainTextBlocks(blocks)) {
     return { kind: "text", text: blocks[0]?.plainText ?? "" };
@@ -62,25 +63,34 @@ export function parseFragment(source: string, options: MarkdownOptions = {}): Fr
   return { kind: "blocks", blocks };
 }
 
+// Link reference definitions often follow the references that use them, as
+// at the foot of most READMEs, so a source with any definitions parses a
+// second time with all of them known.
+function parseRootBlocks(cursor: MarkdownLineCursor, options: MarkdownOptions) {
+  const start = cursor.index;
+  const context = createMarkdownParseContext(options);
+  const blocks = parseBlocks(cursor, context);
+
+  if (context.linkReferences.size === 0) {
+    return blocks;
+  }
+
+  cursor.index = start;
+  return parseBlocks(cursor, context);
+}
+
 function readMetadata(cursor: MarkdownLineCursor): DocumentMetadata | null {
-  if (cursor.lines[0] !== metadataFence) {
+  const close = cursor.lines[0] === metadataFence ? cursor.lines.indexOf(metadataFence, 1) : -1;
+
+  if (close < 0) {
     return null;
   }
 
-  for (let close = 1; close < cursor.lines.length; close += 1) {
-    if (cursor.lines[close] === metadataFence) {
-      const metadata = parseMetadataPreambleLines(cursor.lines.slice(1, close));
-      cursor.index = close + 1;
-      return metadata;
-    }
-  }
-
-  return null;
+  cursor.index = close + 1;
+  return parseMetadataPreambleLines(cursor.lines.slice(1, close));
 }
 
 // --- Shared cursor and line helpers ---
-// Used by every parser module. Block-specific helpers (indent measurement,
-// list-continuation slicing, line-shape recognition) live in `./blocks`.
 
 export type MarkdownLineCursor = {
   index: number;
@@ -97,14 +107,7 @@ function createCursor(source: string): MarkdownLineCursor {
 }
 
 export function currentLine(cursor: MarkdownLineCursor) {
-  return peekLine(cursor, 0);
-}
-
-// Reads a line at a positive offset from the cursor without advancing it. Used
-// by readers (e.g. tables) that need a single line of lookahead to decide
-// whether to start consuming.
-export function peekLine(cursor: MarkdownLineCursor, offset: number) {
-  return cursor.lines[cursor.index + offset] ?? "";
+  return cursor.lines[cursor.index] ?? "";
 }
 
 export function isBlankLine(line: string) {

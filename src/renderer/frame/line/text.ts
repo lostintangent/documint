@@ -6,6 +6,7 @@ import { resolveCenteredTextBaseline } from "@/editor/text/measure";
 import type { DocumentResources } from "@/editor/resources";
 import type { ResolvedEditorTheme } from "../../theme";
 import type { TextFadeFrame, TextInsertionFrame } from "../../effects";
+import type { EffectGroups } from "../../effects/kinds";
 import { resolveLineTextSegments, type TextSegment } from "./text-segments";
 
 export type DocumentFrameLineText = {
@@ -20,10 +21,8 @@ export type DocumentFrameLineText = {
 };
 
 export function resolveDocumentFrameLineText({
-  textFades,
-  textHighlights,
-  textPulses,
   block,
+  effects,
   inlines,
   layout,
   line,
@@ -32,10 +31,8 @@ export function resolveDocumentFrameLineText({
   textDecorations,
   theme,
 }: {
-  textFades: Map<string, TextFadeFrame[]>;
-  textHighlights: Map<string, TextInsertionFrame[]>;
-  textPulses: Map<string, TextInsertionFrame[]>;
   block: Block | null;
+  effects: EffectGroups;
   inlines: readonly IndexedInline[] | null;
   layout: EditorLayoutState["layout"];
   line: EditorLayoutState["layout"]["lines"][number];
@@ -44,14 +41,13 @@ export function resolveDocumentFrameLineText({
   textDecorations: TextDecorationIndex | null;
   theme: ResolvedEditorTheme;
 }): DocumentFrameLineText {
-  const textFadesForLine = text !== null ? (textFades.get(line.path) ?? []) : [];
-  const textHighlightsForLine = text !== null ? (textHighlights.get(line.path) ?? []) : [];
-  const textPulsesForLine = text !== null ? (textPulses.get(line.path) ?? []) : [];
+  const textFadesForLine = text !== null ? (effects.textFades.get(line.path) ?? []) : [];
+  const textHighlightsForLine = text !== null ? (effects.textHighlights.get(line.path) ?? []) : [];
+  const textPulsesForLine = text !== null ? (effects.textPulses.get(line.path) ?? []) : [];
   const textDecorationsForLine = text !== null ? (textDecorations?.get(line.path) ?? null) : null;
   const textLeft = line.left + line.contentInset;
   const textBaseline = line.top + resolveCenteredTextBaseline(line.height, line.font);
-  const defaultTextColor =
-    block?.type === "code" ? theme.codeText : resolveTextColor(block, line, theme);
+  const defaultTextColor = resolveTextColor(block, line, theme);
   const segments = resolveLineTextSegments({
     baseFontSize: layout.options.fontSize,
     defaultTextColor,
@@ -86,10 +82,11 @@ function resolveTextColor(
   }
 
   switch (block?.type) {
-    case "heading":
-      return theme.headingText;
     case "blockquote":
       return theme.blockquoteText;
+    case "code":
+      return theme.codeText;
+    case "heading":
     case "table":
       return theme.headingText;
     default:

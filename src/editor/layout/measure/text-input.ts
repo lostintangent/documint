@@ -1,5 +1,4 @@
-import type { DocumentIndex, IndexedBlock, IndexedTableCell } from "../../state";
-import { resolveIndexedBlock, resolveIndexedTableCell } from "../../state";
+import type { IndexedBlock, IndexedTableCell } from "../../state";
 import type { LayoutTextInput } from "./text";
 
 export function resolveBlockLayoutTextInput(indexedBlock: IndexedBlock): LayoutTextInput | null {
@@ -13,29 +12,13 @@ export function resolveBlockLayoutTextInput(indexedBlock: IndexedBlock): LayoutT
       };
     case "source":
       return {
-        kind: indexedBlock.block.type === "code" ? "preformatted" : "plain",
+        kind: "preformatted",
         path: indexedBlock.path,
         text: indexedBlock.text,
       };
     default:
       return null;
   }
-}
-
-export function resolveLayoutTextInputAtPath(documentIndex: DocumentIndex, path: string) {
-  const indexedBlock = resolveIndexedBlock(documentIndex, path);
-
-  if (indexedBlock) {
-    const input = resolveBlockLayoutTextInput(indexedBlock);
-    return input ? { indexedBlock, input } : null;
-  }
-
-  const cell = resolveIndexedTableCell(documentIndex, path);
-  const tableBlock = cell ? resolveIndexedBlock(documentIndex, cell.tablePath) : null;
-
-  return cell && tableBlock
-    ? { indexedBlock: tableBlock, input: tableCellLayoutTextInput(cell) }
-    : null;
 }
 
 export function tableCellLayoutTextInput(cell: IndexedTableCell): LayoutTextInput {

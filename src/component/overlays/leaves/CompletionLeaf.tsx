@@ -35,7 +35,7 @@ export function CompletionLeaf({ activeIndex, matches, onHover, onSelect }: Comp
     <div
       // `max-h-33` (8.25rem) fits exactly 5 LeafButton-height (1.45rem)
       // rows with four `gap-1` (0.25rem) separators; overflow scrolls.
-      className="p-1.5 grid gap-1 min-w-48 max-h-33 overflow-y-auto font-leaf text-sm"
+      className="p-1.5 grid gap-1 min-w-48 max-h-33 overflow-y-auto text-sm"
       ref={containerRef}
       role="listbox"
     >

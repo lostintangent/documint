@@ -1,22 +1,23 @@
 import {
   createListBlock,
+  createListItemBlock,
+  createParagraphBlock,
   createParagraphTextBlock,
   rebuildListBlock,
   rebuildListItemBlock,
+  rebuildTextBlock,
   type Block,
+  type Inline,
   type ListBlock,
   type ListItemBlock,
 } from "@/document";
 import { effect } from "../../../effects";
 import { target } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
-import {
-  createInsertedListItem,
-  replaceListItemLeadingParagraphText,
-  type ListItemContext,
-} from "../../context";
+import type { ListItemContext } from "../../context";
+import { sliceInlineChildren } from "../inlines/shared";
 import { isCompatibleListBlock } from "../shared";
-import { insertAt, moveItem, removeAt, replaceAt } from "./shared";
+import { insertAt, moveItem, spliceAt } from "./shared";
 
 // List block actions for Enter, Tab / Shift-Tab, and explicit item moves.
 // Delete behavior stays with the universal boundary-collapse rules and the
@@ -31,9 +32,8 @@ type ListActionIntent = {
   // after performing the list action
   selectedItem: ListItemBlock;
 
-  // Whether the selected item was inserted
-  // as part of the list action
-  wasItemInserted?: boolean;
+  // The list item inserted by the list action, if any
+  insertedItem?: ListItemBlock;
 };
 
 export function resolveListItemLineBreak(
@@ -45,8 +45,7 @@ export function resolveListItemLineBreak(
   }
 
   if (context.parent) {
-    const insertedItem = createSiblingListItem(context.parent.item, "");
-    return liftItemToParentList(context, insertedItem, { wasItemInserted: true });
+    return liftItemToParentList(context, createSiblingListItem(context.parent.item, []));
   }
 
   return exitList(context);
@@ -82,51 +81,54 @@ export function resolveListItemMove(
 }
 
 function splitListItem(context: ListItemContext, offset: number): EditorStateAction | null {
-  if (offset === 0) {
-    return insertEmptyListItem(context, context.itemIndex);
-  }
-
-  if (offset === context.text.length) {
-    return insertEmptyListItem(context, context.itemIndex + 1);
+  if (offset === 0 && context.childIndex === 0) {
+    return insertEmptyListItem(context);
   }
 
   return splitListItemTextAtOffset(context, offset);
 }
 
-function insertEmptyListItem(context: ListItemContext, insertIndex: number): EditorStateAction {
-  const insertedItem = createSiblingListItem(context.item, "");
+function insertEmptyListItem(context: ListItemContext): EditorStateAction {
+  const insertedItem = createSiblingListItem(context.item, []);
 
   return replaceListItems(
     context.list,
     context.listPath,
-    insertAt(context.list.items, insertIndex, insertedItem),
-    {
-      wasItemInserted: true,
-      selectedItem: insertedItem,
-    },
+    insertAt(context.list.items, context.itemIndex, insertedItem),
+    // The caret stays with the text, which moves down below the new item.
+    { insertedItem, selectedItem: context.item },
   );
 }
 
+// The item keeps everything before the caret and the new sibling takes the
+// rest, so Enter at the start of a later paragraph moves it whole. Text nested
+// deeper than the item's own children (childIndex -1) can't split the item.
 function splitListItemTextAtOffset(
   context: ListItemContext,
   offset: number,
 ): EditorStateAction | null {
-  const text = context.text;
-  const updatedItem = replaceListItemLeadingParagraphText(context.item, text.slice(0, offset));
+  const { childIndex, item } = context;
+  const paragraph = item.children[childIndex];
 
-  if (!updatedItem) {
+  if (paragraph?.type !== "paragraph") {
     return null;
   }
 
-  const insertedItem = createSiblingListItem(context.item, text.slice(offset));
-  const items = insertAt(
-    replaceAt(context.list.items, context.itemIndex, updatedItem),
-    context.itemIndex + 1,
-    insertedItem,
+  const updatedItem = rebuildListItemBlock(item, [
+    ...item.children.slice(0, childIndex),
+    ...(offset > 0
+      ? [rebuildTextBlock(paragraph, sliceInlineChildren(paragraph.children, 0, offset))]
+      : []),
+  ]);
+  const insertedItem = createSiblingListItem(
+    item,
+    sliceInlineChildren(paragraph.children, offset),
+    item.children.slice(childIndex + 1),
   );
+  const items = spliceAt(context.list.items, context.itemIndex, 1, [updatedItem, insertedItem]);
 
   return replaceListItems(context.list, context.listPath, items, {
-    wasItemInserted: true,
+    insertedItem,
     selectedItem: insertedItem,
   });
 }
@@ -135,47 +137,50 @@ function indentItemUnderPreviousSibling(
   context: ListItemContext,
   previousItem: ListItemBlock,
 ): ListItemBlock[] {
-  const previousItemWithNestedItem = appendNestedListItem(previousItem, context.item, context.list);
-  const itemsWithNestedItem = replaceAt(
-    context.list.items,
-    context.itemIndex - 1,
-    previousItemWithNestedItem,
-  );
-
-  return removeAt(itemsWithNestedItem, context.itemIndex);
+  return spliceAt(context.list.items, context.itemIndex - 1, 2, [
+    appendNestedListItems(previousItem, [context.item], context.list),
+  ]);
 }
 
 function liftItemToParentList(
   context: ListItemContext,
   liftedItem: ListItemBlock,
-  intent: Omit<ListActionIntent, "selectedItem"> = {},
 ): EditorStateAction | null {
   if (!context.parent) {
     return null;
   }
 
-  const remainingNestedItems = removeAt(context.list.items, context.itemIndex);
-  const updatedParentItem = rebuildListItemBlock(
-    context.parent.item,
-    context.parent.item.children.flatMap((child) => {
-      if (child !== context.list) {
-        return [child];
-      }
-
-      return remainingNestedItems.length > 0
-        ? [rebuildListBlock(context.list, remainingNestedItems)]
-        : [];
-    }),
-  );
-  const parentItems = insertAt(
-    replaceAt(context.parent.list.items, context.parent.itemIndex, updatedParentItem),
-    context.parent.itemIndex + 1,
-    liftedItem,
-  );
+  // The parent keeps what comes before the lifted item, and the lifted item
+  // adopts what follows it, so lifting never reorders content.
+  const parentItem = context.parent.item;
+  const listIndex = parentItem.children.indexOf(context.list);
+  const itemsBefore = context.list.items.slice(0, context.itemIndex);
+  const itemsAfter = context.list.items.slice(context.itemIndex + 1);
+  const parentTail = parentItem.children.slice(listIndex + 1);
+  const updatedParentItem = rebuildListItemBlock(parentItem, [
+    ...parentItem.children.slice(0, listIndex),
+    ...(itemsBefore.length > 0 ? [rebuildListBlock(context.list, itemsBefore)] : []),
+  ]);
+  const adoptingItem =
+    itemsAfter.length > 0
+      ? appendNestedListItems(liftedItem, itemsAfter, context.list)
+      : liftedItem;
+  const updatedLiftedItem = createListItemBlock({
+    checked: adoptingItem.checked,
+    children: [...adoptingItem.children, ...parentTail],
+    // A paragraph after a nested list needs a blank line, or it reads as
+    // part of that list.
+    compact: adoptingItem.compact && parentTail.length === 0,
+  });
+  const parentItems = spliceAt(context.parent.list.items, context.parent.itemIndex, 1, [
+    updatedParentItem,
+    updatedLiftedItem,
+  ]);
 
   return replaceListItems(context.parent.list, context.parent.listPath, parentItems, {
-    wasItemInserted: intent.wasItemInserted,
-    selectedItem: liftedItem,
+    // Dedent lifts the item itself, while Enter lifts a fresh sibling in its place.
+    insertedItem: liftedItem === context.item ? undefined : updatedLiftedItem,
+    selectedItem: updatedLiftedItem,
   });
 }
 
@@ -184,7 +189,7 @@ function exitList(context: ListItemContext): EditorStateAction {
 
   return {
     kind: "splice-blocks",
-    blocks: replaceItemWithRootBlock(context.list, context.itemIndex, paragraph),
+    blocks: replaceItemWithRootBlocks(context.list, context.itemIndex, [paragraph]),
     rootIndex: context.rootIndex,
     selection: target.block(paragraph),
   };
@@ -201,23 +206,31 @@ function replaceListItems(
     blockPath: listPath,
     block: rebuildListBlock(list, items),
     selection: target.block(intent.selectedItem),
-    effect: intent.wasItemInserted ? effect.listItemInserted(intent.selectedItem) : undefined,
+    effect: intent.insertedItem && effect.listItemInserted(intent.insertedItem),
   };
 }
 
-function createSiblingListItem(item: ListItemBlock, text: string) {
-  return createInsertedListItem(text, isTaskItem(item) ? false : item.checked, item.compact);
+function createSiblingListItem(item: ListItemBlock, children: Inline[], rest: Block[] = []) {
+  return createListItemBlock({
+    checked: isTaskItem(item) ? false : item.checked,
+    children: [createParagraphBlock(children), ...rest],
+    compact: item.compact,
+  });
 }
 
 function atStartOfEmptyItem(context: ListItemContext, offset: number) {
-  return offset === 0 && context.text.length === 0;
+  return offset === 0 && context.text.length === 0 && context.item.children.length === 1;
 }
 
 function isTaskItem(item: ListItemBlock) {
   return typeof item.checked === "boolean";
 }
 
-function replaceItemWithRootBlock(list: ListBlock, itemIndex: number, block: Block): Block[] {
+export function replaceItemWithRootBlocks(
+  list: ListBlock,
+  itemIndex: number,
+  replacement: Block[],
+): Block[] {
   const beforeItems = list.items.slice(0, itemIndex);
   const afterItems = list.items.slice(itemIndex + 1);
   const blocks: Block[] = [];
@@ -226,42 +239,49 @@ function replaceItemWithRootBlock(list: ListBlock, itemIndex: number, block: Blo
     blocks.push(rebuildListBlock(list, beforeItems));
   }
 
-  blocks.push(block);
+  blocks.push(...replacement);
 
+  // The tail continues the list's count, as GitHub and Docs number it.
   if (afterItems.length > 0) {
-    blocks.push(rebuildListBlock(list, afterItems));
+    blocks.push(
+      createListBlock({
+        compact: list.compact,
+        items: afterItems,
+        ordered: list.ordered,
+        start: (list.start ?? 1) + itemIndex,
+      }),
+    );
   }
 
   return blocks;
 }
 
-function appendNestedListItem(
+// A new nested list starts at 1. Like the parser, a list is tight only when no
+// blank line separates or sits inside its items, and a tight item can't hold a
+// loose list.
+function appendNestedListItems(
   previousItem: ListItemBlock,
-  item: ListItemBlock,
+  items: ListItemBlock[],
   list: ListBlock,
 ): ListItemBlock {
-  const existingNestedList = previousItem.children.find((child): child is ListBlock =>
-    isCompatibleListBlock(child, list),
-  );
+  const lastChild = previousItem.children.at(-1);
+  // Merging into an earlier nested list would move the items above whatever follows it.
+  const nested = lastChild && isCompatibleListBlock(lastChild, list) ? lastChild : null;
+  const nestedList = createListBlock({
+    compact:
+      (nested?.compact ?? (items.length === 1 || list.compact)) &&
+      items.every((item) => item.compact),
+    items: [...(nested?.items ?? []), ...items],
+    ordered: list.ordered,
+    start: nested?.start,
+  });
 
-  if (existingNestedList) {
-    return rebuildListItemBlock(
-      previousItem,
-      previousItem.children.map((child) =>
-        child === existingNestedList
-          ? rebuildListBlock(existingNestedList, [...existingNestedList.items, item])
-          : child,
-      ),
-    );
-  }
-
-  return rebuildListItemBlock(previousItem, [
-    ...previousItem.children,
-    createListBlock({
-      compact: list.compact,
-      items: [item],
-      ordered: list.ordered,
-      start: list.start,
-    }),
-  ]);
+  return createListItemBlock({
+    checked: previousItem.checked,
+    children: [
+      ...(nested ? previousItem.children.slice(0, -1) : previousItem.children),
+      nestedList,
+    ],
+    compact: previousItem.compact && nestedList.compact,
+  });
 }

@@ -10,7 +10,6 @@ export type LayoutContentMetrics = {
   availableWidth: number;
   codeContentInset: number;
   contentLeft: number;
-  left: number;
   listInset: number;
 };
 
@@ -19,7 +18,7 @@ export function resolveBlockContentMetrics(
   indexedBlock: DocumentIndex["blocks"][number],
   options: DocumentLayoutOptions,
 ): LayoutContentMetrics {
-  const left = options.paddingX + indexedBlock.depth * options.indentWidth;
+  const left = resolveBlockLeft(options, indexedBlock.depth);
   const listInset = resolveListMarkerInset(documentIndex, indexedBlock.path, options.fontSize);
   const codeContentInset = indexedBlock.block.type === "code" ? CODE_BLOCK_CONTENT_PADDING_X : 0;
 
@@ -30,7 +29,24 @@ export function resolveBlockContentMetrics(
     ),
     codeContentInset,
     contentLeft: left + codeContentInset,
-    left,
     listInset,
   };
+}
+
+// A list item's marker gutter sits outside every block in the item, so block
+// surfaces like table grids, quote bars, and divider rules start where the
+// item's text does.
+export function resolveBlockSurfaceLeft(
+  documentIndex: DocumentIndex,
+  block: { depth: number; path: string },
+  options: DocumentLayoutOptions,
+) {
+  return (
+    resolveBlockLeft(options, block.depth) +
+    resolveListMarkerInset(documentIndex, block.path, options.fontSize)
+  );
+}
+
+export function resolveBlockLeft(options: DocumentLayoutOptions, depth: number) {
+  return options.paddingX + depth * options.indentWidth;
 }

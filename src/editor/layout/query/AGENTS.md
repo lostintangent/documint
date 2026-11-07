@@ -9,6 +9,7 @@ Layout query is the read-only geometry layer over a prepared `DocumentLayout`. F
 - **Derived visuals stay cheap unless they affect measurement.** Caret visual X, list-marker bounds, and inline image rectangles are reads over measured lines plus shared metric policy. If a value changes wrapping, list text inset, virtualization, broad hit testing, or cache keys, it belongs in `lib/`, `measure/`, or `state/` instead of `query/`.
 - **Layout answers lines, navigation answers hits.** `line-lookup.ts` returns the measured line a point lands on and the boundary offset at an x. Turning that into a selection hit, including content insets, inert-leaf redirects, link hits, task toggles, word selection, and drag clamping, belongs to `navigation/hit.ts`. A second point-to-offset resolver here would drift from the path users actually click through.
 - **Viewport queries choose targets, hosts perform scroll.** Visible-range and reveal helpers classify prepared geometry and resolve scroll-top candidates in document space. The component host still owns browser scroll effects and scheduling.
+- **Visible line ranges never drop table cells at the window edge.** Cells in one row end at different heights, so lines sort by top but not by bottom. The line range searches tops and scans back by the layout's tallest line height, while blocks, virtual entries, and table rows, whose bottoms stay sorted, keep the cheaper search. A range can still hold cell lines that miss the window, so callers that need visibility filter them.
 
 ## Subsystem Map
 
@@ -16,5 +17,5 @@ Layout query is the read-only geometry layer over a prepared `DocumentLayout`. F
 - `line-lookup.ts` owns line lookup, path-line disambiguation, and text-boundary offset/left projection.
 - `caret.ts` owns caret target measurement plus visual-left and hit-test-X adjustments.
 - `line-visuals.ts` owns just-in-time visual bounds and marker anchors shared by paint, navigation, and hit testing.
-- `viewport-ranges.ts` owns visible line/block range queries over prepared layout.
+- `viewport-ranges.ts` owns visible line, block, and table row range queries over prepared layout.
 - `viewport-position.ts` owns viewport-relative classification and scroll-reveal target calculation.

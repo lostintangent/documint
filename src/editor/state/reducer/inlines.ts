@@ -13,18 +13,13 @@
 // still document `Inline[]` trees.
 
 import {
-  createImage as createDocumentImageNode,
-  createLineBreak as createDocumentLineBreakNode,
   createLink as createDocumentLinkNode,
-  createMention as createDocumentMentionNode,
   createRaw as createDocumentUnsupportedInlineNode,
-  createResource as createDocumentResourceNode,
   createText as createDocumentTextNode,
   defragmentTextInlines,
   isReferenceInlineNode,
   type Inline,
   type Link,
-  type Text,
 } from "@/document";
 import { indexedInlineText } from "../index/inlines";
 import type { IndexedInline } from "../index/types";
@@ -301,7 +296,10 @@ function compactEditorInlines(inlines: DraftEditorInline[]): DraftEditorInline[]
     if (previous && canMergeEditorInlines(previous, inline)) {
       compacted[compacted.length - 1] = {
         ...previous,
-        node: mergeInlineNodes(previous.node, inline.node),
+        node: replaceInlineNodeText(
+          previous.node,
+          indexedInlineText(previous) + indexedInlineText(inline),
+        ),
       };
       continue;
     }
@@ -312,62 +310,24 @@ function compactEditorInlines(inlines: DraftEditorInline[]): DraftEditorInline[]
   return compacted;
 }
 
+// Only text with equal marks, or raw inlines of one original type, merge.
+// References and line breaks keep their per-instance identity.
 function canMergeEditorInlines(previous: DraftEditorInline, next: DraftEditorInline): boolean {
   const a = previous.node;
   const b = next.node;
 
-  if (a.type !== b.type) return false;
   if (!sameLink(previous.link, next.link)) return false;
-  if (isReferenceInlineNode(a)) {
-    // References never merge — combining them into a single inline would lose
-    // the per-instance external identity (url/userId/...).
-    return false;
-  }
+  if (a.type === "text" && b.type === "text") return a.marks.join(",") === b.marks.join(",");
 
-  switch (a.type) {
-    case "text":
-      // Both are Text nodes (a.type === b.type === "text").
-      return a.marks.join(",") === (b as Text).marks.join(",");
-    case "raw":
-      return a.originalType === (b as typeof a).originalType;
-    case "lineBreak":
-      return false;
-  }
+  return a.type === "raw" && b.type === "raw" && a.originalType === b.originalType;
 }
 
 /* Document conversion */
 
-function editorInlineToDocumentInline(inline: IndexedInline | DraftEditorInline): Inline | null {
-  const node = inline.node;
-  switch (node.type) {
-    case "lineBreak":
-      return createDocumentLineBreakNode();
-    case "image":
-      return createDocumentImageNode({
-        alt: node.alt,
-        title: node.title,
-        url: node.url,
-        width: node.width,
-      });
-    case "mention":
-      return createDocumentMentionNode({
-        name: node.name,
-        userId: node.userId,
-      });
-    case "resource":
-      return createDocumentResourceNode({
-        label: node.label,
-        protocol: node.protocol,
-        url: node.url,
-      });
-    case "text":
-      return node.text.length > 0 ? createDocumentTextNode(node.text, node.marks) : null;
-    case "raw":
-      return createDocumentUnsupportedInlineNode({
-        originalType: node.originalType,
-        source: node.source,
-      });
-  }
+// Indexed and generated nodes are already canonical document nodes, so only
+// text that an edit emptied needs dropping.
+function editorInlineToDocumentInline({ node }: IndexedInline | DraftEditorInline): Inline | null {
+  return node.type === "text" && node.text.length === 0 ? null : node;
 }
 
 function replaceInlineNodeText(node: IndexedInline["node"], text: string): IndexedInline["node"] {
@@ -379,31 +339,8 @@ function replaceInlineNodeText(node: IndexedInline["node"], text: string): Index
         originalType: node.originalType,
         source: text,
       });
-    case "lineBreak":
-    case "image":
-    case "mention":
-    case "resource":
+    default:
       return node;
-  }
-}
-
-function mergeInlineNodes(
-  left: IndexedInline["node"],
-  right: IndexedInline["node"],
-): IndexedInline["node"] {
-  switch (left.type) {
-    case "text":
-      return createDocumentTextNode(left.text + (right as Text).text, left.marks);
-    case "raw":
-      return createDocumentUnsupportedInlineNode({
-        originalType: left.originalType,
-        source: left.source + (right as typeof left).source,
-      });
-    case "lineBreak":
-    case "image":
-    case "mention":
-    case "resource":
-      return left;
   }
 }
 

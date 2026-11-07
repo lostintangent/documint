@@ -26,28 +26,21 @@ export function resolveWordNavigationTarget(
   let path = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, focus.path, direction);
 
   while (path) {
-    const adjacentText = resolveEditorTextAtPath(state.documentIndex, path);
-
-    if (adjacentText === null) {
-      return null;
-    }
+    const adjacentText = resolveEditorTextAtPath(state.documentIndex, path) ?? "";
 
     if (adjacentText.length > 0) {
+      // From a non-empty path's edge, word movement always finds a stop:
+      // previousWord falls back to 0 and wordEnd to the text length.
       const offset =
-        movement === "previousWord"
-          ? moveWordOffset(adjacentText, adjacentText.length, movement)
-          : movement === "nextWord"
-            ? 0
-            : moveWordOffset(adjacentText, 0, movement);
+        movement === "nextWord"
+          ? 0
+          : (moveWordOffset(
+              adjacentText,
+              movement === "previousWord" ? adjacentText.length : 0,
+              movement,
+            ) ?? 0);
 
-      if (offset === null) {
-        return null;
-      }
-
-      return {
-        path,
-        offset,
-      };
+      return { path, offset };
     }
 
     path = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, direction);

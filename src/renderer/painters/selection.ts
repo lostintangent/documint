@@ -1,5 +1,6 @@
 import type { ResolvedEditorTheme } from "../theme";
 import type { DocumentFrameLine } from "../frame";
+import { paintBlockBackground } from "./blocks/backgrounds";
 
 export function paintSelectionHighlight(
   lineFrame: DocumentFrameLine,
@@ -7,10 +8,12 @@ export function paintSelectionHighlight(
 ) {
   const highlight = lineFrame.selectionHighlight;
 
-  if (!highlight) {
-    return;
-  }
-
-  context.fillStyle = theme.selectionBackground;
-  context.fillRect(highlight.left, highlight.top, highlight.width, highlight.height);
+  paintBlockBackground(
+    context,
+    highlight && {
+      color: theme.selectionBackground,
+      opacity: highlight.opacity,
+      rect: highlight.rect,
+    },
+  );
 }

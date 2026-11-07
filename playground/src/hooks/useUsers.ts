@@ -7,6 +7,17 @@ type ManualEntry = {
   presence: DocumentPresence;
 };
 
+export type ManualFormField =
+  | "avatarUrl"
+  | "color"
+  | "name"
+  | "prefix"
+  | "status"
+  | "suffix"
+  | "threadId";
+
+type ManualForm = Record<ManualFormField, string>;
+
 export type UsersMode = "auto" | "empty" | "manual";
 
 const autoUser: DocumentUser = {
@@ -16,14 +27,21 @@ const autoUser: DocumentUser = {
 
 const autoPresenceTickMs = 2200;
 
+// Adding an entry clears every field except color, so the next user keeps the picked swatch.
+const clearedManualFields = {
+  avatarUrl: "",
+  name: "",
+  prefix: "",
+  status: "",
+  suffix: "",
+  threadId: "",
+};
+
 export function useUsers(content: string) {
-  const [manualName, setManualName] = useState("");
-  const [manualAvatarUrl, setManualAvatarUrl] = useState("");
-  const [manualAnchorPrefix, setManualAnchorPrefix] = useState("");
-  const [manualAnchorSuffix, setManualAnchorSuffix] = useState("");
-  const [manualThreadId, setManualThreadId] = useState("");
-  const [manualStatus, setManualStatus] = useState("");
-  const [manualColor, setManualColor] = useState("#0ea5e9");
+  const [manualForm, setManualForm] = useState<ManualForm>({
+    ...clearedManualFields,
+    color: "#0ea5e9",
+  });
   const [manualEntries, setManualEntries] = useState<ManualEntry[]>([]);
   const [autoMode, setAutoMode] = useState(false);
   const [autoPresence, setAutoPresence] = useState<DocumentPresence | null>(null);
@@ -79,52 +97,18 @@ export function useUsers(content: string) {
       setEnabled: setAutoMode,
     },
     manualForm: {
-      avatarUrl: manualAvatarUrl,
-      canAddEntry: manualName.trim().length > 0,
-      color: manualColor,
-      name: manualName,
-      prefix: manualAnchorPrefix,
-      setAvatarUrl: setManualAvatarUrl,
-      setColor: setManualColor,
-      setName: setManualName,
-      setPrefix: setManualAnchorPrefix,
-      setStatus: setManualStatus,
-      setSuffix: setManualAnchorSuffix,
-      setThreadId: setManualThreadId,
-      status: manualStatus,
-      suffix: manualAnchorSuffix,
-      threadId: manualThreadId,
+      ...manualForm,
+      canAddEntry: manualForm.name.trim().length > 0,
+      setField(field: ManualFormField, value: string) {
+        setManualForm((current) => ({ ...current, [field]: value }));
+      },
       addEntry() {
-        const name = manualName.trim();
-        const avatarUrl = manualAvatarUrl.trim();
-        const prefix = manualAnchorPrefix.trim();
-        const suffix = manualAnchorSuffix.trim();
-        const threadId = manualThreadId.trim();
-        const status = manualStatus.trim();
-
-        if (name.length === 0) {
+        if (manualForm.name.trim().length === 0) {
           return;
         }
 
-        setManualEntries((current) => [
-          ...current,
-          createManualEntry(
-            name,
-            avatarUrl,
-            prefix,
-            suffix,
-            threadId,
-            status,
-            manualColor,
-            current.length,
-          ),
-        ]);
-        setManualName("");
-        setManualAvatarUrl("");
-        setManualAnchorPrefix("");
-        setManualAnchorSuffix("");
-        setManualThreadId("");
-        setManualStatus("");
+        setManualEntries((current) => [...current, createManualEntry(manualForm, current.length)]);
+        setManualForm((current) => ({ ...current, ...clearedManualFields }));
       },
     },
     manualEntries: {
@@ -136,25 +120,18 @@ export function useUsers(content: string) {
   };
 }
 
-function createManualEntry(
-  name: string,
-  avatarUrl: string,
-  prefix: string,
-  suffix: string,
-  threadId: string,
-  status: string,
-  color: string,
-  index: number,
-): ManualEntry {
+function createManualEntry(form: ManualForm, index: number): ManualEntry {
   const id = `manual-${Date.now()}-${index}`;
-  const user: DocumentUser = { id, username: name };
+  const avatarUrl = form.avatarUrl.trim();
+  const status = form.status.trim();
+  const user: DocumentUser = { id, username: form.name.trim() };
 
   if (avatarUrl) {
     user.avatarUrl = avatarUrl;
   }
 
-  const presence: DocumentPresence = { userId: id, color };
-  const cursor = createPresenceCursor(prefix, suffix, threadId);
+  const presence: DocumentPresence = { userId: id, color: form.color };
+  const cursor = createPresenceCursor(form.prefix.trim(), form.suffix.trim(), form.threadId.trim());
 
   if (status) {
     presence.status = status;

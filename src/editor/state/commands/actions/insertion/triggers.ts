@@ -10,15 +10,11 @@ import {
   type HeadingBlock,
   type ParagraphBlock,
 } from "@/document";
-import type { DocumentIndex } from "../../../index/types";
+import type { DocumentIndex, IndexedBlock } from "../../../index/types";
 import { resolveEditorTextAtPath, resolveIndexedBlockContainingPath } from "../../../index/query";
 import type { EditorStateAction } from "../../../types";
 import { normalizeSelection, target, type EditorSelection } from "../../../selection";
-import {
-  resolveListItemContextFromSelection,
-  resolveRootTextBlockContextFromSelection,
-  type ListItemContext,
-} from "../../context";
+import { resolveListItemContextFromSelection, type ListItemContext } from "../../context";
 import { spliceInlineNodes } from "../inlines/shared";
 
 // Markdown-shortcut trigger system.
@@ -67,7 +63,7 @@ export function resolveInsertionTrigger(
 
   // Field-level precheck via the indexed block type: code blocks, table
   // cells, dividers, etc. resolve no context and produce no trigger.
-  const context = resolveTriggerContext(documentIndex, selection, indexedBlock.block);
+  const context = resolveTriggerContext(documentIndex, selection, indexedBlock);
   if (!context) {
     return null;
   }
@@ -117,45 +113,23 @@ type TriggerContext =
 function resolveTriggerContext(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
-  block: Block,
+  { block, parentBlockPath, rootIndex }: IndexedBlock,
 ): TriggerContext | null {
-  // Triggers can only fire inside paragraph and heading paths.
-  // Everything else (code, table cells, dividers, …) splices without
-  // further work.
+  // Triggers can only fire inside paragraph and heading paths. A nested
+  // heading has no sensible depth transform, and a nested paragraph only fires
+  // as a list item's lead paragraph. Everything else (code, table cells,
+  // dividers, …) splices without further work.
   switch (block.type) {
-    case "heading": {
-      // Confirm the heading is at root level — `resolveRootTextBlockContextFromSelection`
-      // returns null for non-root blocks (e.g. nested in containers), and
-      // a non-root heading has no sensible depth-change transform.
-      const rootBlock = resolveRootTextBlockContextFromSelection(documentIndex, selection);
-      return rootBlock?.block.type === "heading"
-        ? {
-            heading: rootBlock.block,
-            kind: "heading",
-            rootIndex: rootBlock.rootIndex,
-          }
-        : null;
-    }
+    case "heading":
+      return parentBlockPath === null ? { heading: block, kind: "heading", rootIndex } : null;
     case "paragraph": {
-      // Try list-item first: the cursor inside a list item's paragraph
-      // wouldn't surface via the root-text-block resolver anyway.
-      const listItem = resolveListItemContextFromSelection(documentIndex, selection);
-      if (listItem) {
-        return listItem.item.children[0] === block
-          ? {
-              itemContext: listItem,
-              kind: "list-item",
-              paragraph: block,
-            }
-          : null;
+      if (parentBlockPath === null) {
+        return { kind: "root-paragraph", paragraph: block, rootIndex };
       }
-      const rootBlock = resolveRootTextBlockContextFromSelection(documentIndex, selection);
-      return rootBlock?.block.type === "paragraph"
-        ? {
-            kind: "root-paragraph",
-            paragraph: rootBlock.block,
-            rootIndex: rootBlock.rootIndex,
-          }
+
+      const listItem = resolveListItemContextFromSelection(documentIndex, selection);
+      return listItem?.item.children[0] === block
+        ? { itemContext: listItem, kind: "list-item", paragraph: block }
         : null;
     }
     default:

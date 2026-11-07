@@ -16,6 +16,7 @@
 
 import {
   blockPathFromCoordinates,
+  cloneBlockTree,
   createParagraphTextBlock,
   createTableCell as createDocumentTableCell,
   rebuildCodeBlock,
@@ -24,24 +25,13 @@ import {
   rebuildTextBlock,
   spliceDocument,
   type Block,
-  type TableCell,
 } from "@/document";
-import { updateCommentThreadsForPathEdit } from "../../anchors";
+import { carryComments } from "../../anchors";
 import { trimBlockToPrefix, trimBlockToSuffix } from "../fragments/blocks";
 import { mergeTrimmedBlocks } from "./fragments";
-import {
-  resolveIndexedBlockContainingPath,
-  resolveIndexedText,
-  resolveIndexedTextInlines,
-  resolveIndexedTableCell,
-} from "../index/query";
+import { resolveIndexedText } from "../index/query";
 import { replaceEditorBlock, replaceIndexedDocument, spliceDocumentIndex } from "../index/splice";
-import type {
-  DocumentIndex,
-  IndexedBlock,
-  IndexedInline,
-  ResolvedMetadataText,
-} from "../index/types";
+import type { DocumentIndex, IndexedText, ResolvedMetadataText } from "../index/types";
 import {
   normalizeSelection,
   resolveMetadataSelectionContext,
@@ -50,7 +40,7 @@ import {
   type NormalizedEditorSelection,
   type SelectionTarget,
 } from "../selection";
-import { resolveFragmentEndpoint } from "../fragments/context";
+import { resolveFragmentRange } from "../fragments/context";
 import { editIndexedInlines } from "./inlines";
 
 type TextEditResult = {
@@ -147,60 +137,56 @@ function replaceMetadataText(
   };
 }
 
-// Replaces the selection with a structural fragment. The merge result
-// tells `finalizeCommentsAfterEdit` how many characters from the fragment
-// landed inside the start path (via front-seam absorb), so threads
-// anchored before the edit point stay correctly offset.
+// Replaces the selection with a structural fragment. The merge result tells
+// comment carry how many characters from the fragment landed inside the
+// start path (via front-seam absorb), so threads anchored before the edit
+// point stay correctly offset. The fragment is cloned first, because a copy
+// can hand back the document's own nodes and a Document never holds a node
+// twice.
 export function replaceWithBlocks(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
   fragment: Block[],
 ): TextEditResult {
-  const normalized = normalizeSelection(documentIndex, selection);
+  const range = resolveFragmentRange(documentIndex, selection);
 
-  const startEndpoint = resolveFragmentEndpoint(documentIndex, normalized.start.path);
-  const endEndpoint = resolveFragmentEndpoint(documentIndex, normalized.end.path);
-
-  if (!startEndpoint || !endEndpoint) {
+  if (!range) {
     throw new Error("Unknown selection endpoints.");
   }
 
-  const startRoot = documentIndex.document.blocks[startEndpoint.indexedBlock.rootIndex];
-  const endRoot = documentIndex.document.blocks[endEndpoint.indexedBlock.rootIndex];
-
-  if (!startRoot || !endRoot) {
-    throw new Error("Unknown root blocks for selection.");
-  }
-
-  const prefix = trimBlockToPrefix(startRoot, startEndpoint, normalized.start.offset);
-  const suffix = trimBlockToSuffix(endRoot, endEndpoint, normalized.end.offset);
-  const merged = mergeTrimmedBlocks(prefix, fragment, suffix);
+  const { end, start } = range;
+  const merged = mergeTrimmedBlocks(
+    trimBlockToPrefix(start.root, start),
+    fragment.map(cloneBlockTree),
+    trimBlockToSuffix(end.root, end),
+  );
   const replacementBlocks =
     merged.blocks.length > 0 ? merged.blocks : [createParagraphTextBlock("")];
 
-  const rootIndex = startEndpoint.indexedBlock.rootIndex;
-  const count = endEndpoint.indexedBlock.rootIndex - startEndpoint.indexedBlock.rootIndex + 1;
+  const rootIndex = start.indexedBlock.rootIndex;
+  const count = end.indexedBlock.rootIndex - rootIndex + 1;
   const nextDocument = spliceDocument(documentIndex.document, rootIndex, count, replacementBlocks);
   const nextDocumentIndex = spliceDocumentIndex(documentIndex, nextDocument, rootIndex, count);
   // For cross-path selections the rest of the start path is consumed by
   // the splice — comment-repair sees a deletion through end-of-path. For
   // single-path selections only the selected slice is gone.
-  // Only run the offset-based optimistic comment repair when the merge
-  // result keeps the start path's content at the new root[0]. When it
-  // doesn't, anchor offsets in the start path are no longer meaningful
-  // — the full content-addressable resolver in `getCommentState` will
-  // re-anchor the threads on the next read.
-  const startPathEditEnd =
-    startEndpoint.path === endEndpoint.path ? normalized.end.offset : startEndpoint.text.length;
-  const finalizedDocumentIndex = merged.startPathPreservedAtRoot0
-    ? finalizeCommentsAfterEdit(
-        documentIndex,
-        nextDocumentIndex,
-        startEndpoint.path,
-        normalized.start.offset,
-        startPathEditEnd,
-        merged.startPathInsertedText,
-      )
+  // Remapping start-path comments through the edit needs the start path's
+  // content at the new root[0] and, for a single path, the text after the
+  // edit still following it there. Otherwise anchor offsets in the start path
+  // are no longer meaningful, and the commit's carry re-resolves them.
+  const singlePath = start.path === end.path;
+  const startPathEditEnd = singlePath ? end.offset : start.text.length;
+  const canRepairStartPath =
+    merged.startPathPreservedAtRoot0 && !(singlePath && merged.suffixLeavesStartPath);
+  const finalizedDocumentIndex = canRepairStartPath
+    ? carryComments(documentIndex, nextDocumentIndex, {
+        edit: {
+          endOffset: startPathEditEnd,
+          insertedText: merged.startPathInsertedText,
+          path: start.path,
+          startOffset: start.offset,
+        },
+      })
     : nextDocumentIndex;
 
   const caretBlockPath = blockPathFromCoordinates(
@@ -225,24 +211,23 @@ function replaceInSinglePath(
   text: string,
 ): TextEditResult | null {
   const path = normalized.start.path;
-  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
   const indexedText = resolveIndexedText(documentIndex, path);
 
-  if (!indexedBlock || !indexedText) {
+  if (!indexedText) {
     return null;
   }
 
-  const nextDocumentIndex = replaceEditorBlock(documentIndex, indexedBlock.path, (block) =>
-    replaceBlockPathText(
-      documentIndex,
-      block,
-      indexedBlock,
-      path,
-      indexedText.text,
-      resolveIndexedTextInlines(indexedText),
-      normalized,
-      text,
-    ),
+  const nextDocumentIndex = replaceEditorBlock(
+    documentIndex,
+    "cell" in indexedText ? indexedText.tablePath : path,
+    (block) =>
+      replaceBlockPathText(
+        block,
+        indexedText,
+        normalized.start.offset,
+        normalized.end.offset,
+        text,
+      ),
   );
 
   if (!nextDocumentIndex) {
@@ -250,109 +235,61 @@ function replaceInSinglePath(
   }
 
   return {
-    documentIndex: finalizeCommentsAfterEdit(
-      documentIndex,
-      nextDocumentIndex,
-      path,
-      normalized.start.offset,
-      normalized.end.offset,
-      text,
-    ),
+    documentIndex: carryComments(documentIndex, nextDocumentIndex, {
+      edit: {
+        endOffset: normalized.end.offset,
+        insertedText: text,
+        path,
+        startOffset: normalized.start.offset,
+      },
+    }),
     selection: target.path(path, normalized.start.offset + text.length),
   };
 }
 
 function replaceBlockPathText(
-  documentIndex: DocumentIndex,
   block: Block,
-  indexedBlock: IndexedBlock,
-  path: string,
-  currentText: string,
-  currentInlines: readonly IndexedInline[] | null,
-  normalized: NormalizedEditorSelection,
-  replacementText: string,
-): Block {
-  const startOffset = normalized.start.offset;
-  const endOffset = normalized.end.offset;
-
-  switch (block.type) {
-    case "code":
-      return rebuildCodeBlock(
-        block,
-        replacePathText(currentText, startOffset, endOffset, replacementText),
-      );
-    case "raw":
-      return rebuildRawBlock(
-        block,
-        replacePathText(currentText, startOffset, endOffset, replacementText),
-      );
-    case "heading":
-    case "paragraph": {
-      if (!currentInlines) {
-        throw new Error(`Inline text replacement is not supported for block type: ${block.type}`);
-      }
-
-      return rebuildTextBlock(
-        block,
-        editIndexedInlines(currentInlines, startOffset, endOffset, replacementText),
-      );
-    }
-    case "table":
-      return replaceTableCellText(
-        documentIndex,
-        block,
-        indexedBlock,
-        path,
-        startOffset,
-        endOffset,
-        replacementText,
-      );
-    default:
-      throw new Error(`Path text replacement is not supported for block type: ${block.type}`);
-  }
-}
-
-function replaceTableCellText(
-  documentIndex: DocumentIndex,
-  block: Extract<Block, { type: "table" }>,
-  indexedBlock: IndexedBlock,
-  path: string,
+  indexedText: IndexedText,
   startOffset: number,
   endOffset: number,
   replacementText: string,
-): Extract<Block, { type: "table" }> {
-  const indexedCell = resolveIndexedTableCell(documentIndex, path);
-  const rowIndex = indexedCell?.rowIndex;
-  const cellIndex = indexedCell?.cellIndex;
-
-  if (
-    indexedBlock.kind !== "cells" ||
-    rowIndex === undefined ||
-    cellIndex === undefined ||
-    !indexedCell
-  ) {
-    throw new Error(`Unable to resolve table cell position for editor path: ${path}`);
-  }
-
-  const nextChildren = editIndexedInlines(
-    indexedCell.inlines,
-    startOffset,
-    endOffset,
-    replacementText,
-  );
-  const rows = block.rows.map((row, currentRowIndex) => {
-    if (currentRowIndex !== rowIndex) {
-      return row;
-    }
-
-    const cells = row.cells.map<TableCell>((cell, currentCellIndex) =>
-      currentCellIndex === cellIndex ? createDocumentTableCell(nextChildren) : cell,
+): Block {
+  if ("cell" in indexedText && block.type === "table") {
+    const { cellIndex, rowIndex } = indexedText;
+    const nextCell = createDocumentTableCell(
+      editIndexedInlines(indexedText.inlines, startOffset, endOffset, replacementText),
     );
 
-    return { ...row, cells };
-  });
+    return rebuildTableBlock(
+      block,
+      block.rows.map((row, index) =>
+        index === rowIndex
+          ? {
+              ...row,
+              cells: row.cells.map((cell, index) => (index === cellIndex ? nextCell : cell)),
+            }
+          : row,
+      ),
+    );
+  }
 
-  return rebuildTableBlock(block, rows);
+  if ("inlines" in indexedText && (block.type === "heading" || block.type === "paragraph")) {
+    return rebuildTextBlock(
+      block,
+      editIndexedInlines(indexedText.inlines, startOffset, endOffset, replacementText),
+    );
+  }
+
+  const nextText = replacePathText(indexedText.text, startOffset, endOffset, replacementText);
+
+  switch (block.type) {
+    case "code":
+      return rebuildCodeBlock(block, nextText);
+    case "raw":
+      return rebuildRawBlock(block, nextText);
+    default:
+      throw new Error(`Path text replacement is not supported for block type: ${block.type}`);
+  }
 }
 
 function replacePathText(
@@ -362,35 +299,4 @@ function replacePathText(
   replacementText: string,
 ) {
   return currentText.slice(0, startOffset) + replacementText + currentText.slice(endOffset);
-}
-
-/* Comment thread repair */
-
-function finalizeCommentsAfterEdit(
-  previousDocumentIndex: DocumentIndex,
-  nextDocumentIndex: DocumentIndex,
-  path: string,
-  startOffset: number,
-  endOffset: number,
-  insertedText: string,
-): DocumentIndex {
-  if (previousDocumentIndex.document.comments.length === 0) {
-    return nextDocumentIndex;
-  }
-
-  const nextComments = updateCommentThreadsForPathEdit(
-    previousDocumentIndex,
-    nextDocumentIndex,
-    path,
-    startOffset,
-    endOffset,
-    insertedText,
-  );
-
-  return nextComments === nextDocumentIndex.document.comments
-    ? nextDocumentIndex
-    : replaceIndexedDocument(nextDocumentIndex, {
-        ...nextDocumentIndex.document,
-        comments: nextComments,
-      });
 }

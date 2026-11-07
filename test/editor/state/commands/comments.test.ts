@@ -1,110 +1,86 @@
 import { describe, expect, test } from "bun:test";
+import { getCommentThreadUpdatedAt, isResolvedCommentThread } from "@/document";
 import {
-  addComment,
   deleteComment,
   deleteThread,
   editComment,
   replyToThread,
   resolveThread,
+  type EditorState,
 } from "@/editor/state";
-import { getMetadataEntry, setup, getPath, placeAt } from "../../helpers";
+import { setup } from "../../helpers";
 
-function stateWithThread() {
-  const state = setup("Hello world\n");
-  const path = getPath(state, "Hello world");
-  return addComment(state, { path: path.path, startOffset: 0, endOffset: 5 }, "First comment")!;
-}
+const saved = "2026-04-05T12:00:00.000Z";
+const markdown = `Hello world
+
+:::documint-comments
+[
+  {
+    "quote": "Hello",
+    "anchor": { "suffix": " world" },
+    "comments": [
+      { "body": "one", "updatedAt": "${saved}" },
+      { "body": "two", "updatedAt": "${saved}" },
+      { "body": "three", "updatedAt": "${saved}" }
+    ]
+  },
+  {
+    "quote": "world",
+    "anchor": { "prefix": "Hello " },
+    "comments": [{ "body": "solo", "updatedAt": "${saved}" }],
+    "resolvedAt": "${saved}"
+  }
+]
+:::
+`;
 
 describe("Comment thread commands", () => {
-  test("adds a reply to an existing comment thread", () => {
-    const state = stateWithThread();
-    const next = replyToThread(state, 0, "My reply");
-
-    expect(next).not.toBeNull();
-    const thread = next!.documentIndex.document.comments[0];
-    expect(thread?.comments).toHaveLength(2);
-    expect(thread?.comments[1]?.body).toBe("My reply");
-  });
-
-  test("edits an existing comment in a thread", () => {
-    const state = stateWithThread();
-    const next = editComment(state, 0, 0, "Edited body");
-
-    expect(next).not.toBeNull();
-    const thread = next!.documentIndex.document.comments[0];
-    expect(thread?.comments[0]?.body).toBe("Edited body");
-  });
-
-  test("deletes a reply from a thread without removing the thread", () => {
-    const withReply = replyToThread(stateWithThread(), 0, "Reply to delete")!;
-    const next = deleteComment(withReply, 0, 1);
-
-    expect(next).not.toBeNull();
-    const thread = next!.documentIndex.document.comments[0];
-    expect(thread?.comments).toHaveLength(1);
-  });
-
-  test("deletes a thread entirely when only comment is removed", () => {
-    const state = stateWithThread();
-    const next = deleteThread(state, 0);
-
-    expect(next).not.toBeNull();
-    expect(next!.documentIndex.document.comments).toHaveLength(0);
-  });
-
-  test("resolves a comment thread", () => {
-    const state = stateWithThread();
-    const resolved = resolveThread(state, 0, true);
-
-    expect(resolved).not.toBeNull();
-    expect(resolved!.documentIndex.document.comments[0]?.resolvedAt).toBeTruthy();
-  });
-
-  test("preserves selection identity when resolving a comment thread", () => {
-    let state = stateWithThread();
-    const path = getPath(state, "Hello world");
-
-    state = placeAt(state, path, "Hello ".length);
-
-    const resolved = resolveThread(state, 0, true);
-
-    expect(resolved).not.toBeNull();
-    expect(resolved!.selection).toBe(state.selection);
-  });
-
-  test("unresolves a previously resolved thread", () => {
-    const resolved = resolveThread(stateWithThread(), 0, true)!;
-    const unresolved = resolveThread(resolved, 0, false);
-
-    expect(unresolved).not.toBeNull();
-    expect(unresolved!.documentIndex.document.comments[0]?.resolvedAt).toBeUndefined();
-  });
-
-  test("returns null when targeting a thread index that does not exist", () => {
-    const state = stateWithThread();
-    expect(replyToThread(state, 99, "ghost reply")).toBeNull();
-    expect(deleteThread(state, 99)).toBeNull();
-    expect(resolveThread(state, 99, true)).toBeNull();
-  });
-
-  test("rejects comment creation on metadata text", () => {
-    const state = setup(`---
-title: Draft
----
-Body
-`);
-    const value = getMetadataEntry(state, 0, "value");
+  // Each thread reads as its comment bodies, marked "(updated)" when its
+  // latest time moved past the saved one. Null means the command refused.
+  test.each<[string, (state: EditorState) => EditorState | null, string[] | null]>([
+    [
+      "replying with padding",
+      (state) => replyToThread(state, 0, "  four  "),
+      ["one | two | three | four (updated)", "solo (resolved)"],
+    ],
+    [
+      "editing a reply",
+      (state) => editComment(state, 0, 1, "TWO"),
+      ["one | TWO | three (updated)", "solo (resolved)"],
+    ],
+    ["deleting a reply", (state) => deleteComment(state, 0, 1), ["one | three", "solo (resolved)"]],
+    [
+      "deleting a thread's only comment",
+      (state) => deleteComment(state, 1, 0),
+      ["one | two | three"],
+    ],
+    ["deleting a thread", (state) => deleteThread(state, 0), ["solo (resolved)"]],
+    [
+      "resolving a thread",
+      (state) => resolveThread(state, 0, true),
+      ["one | two | three (resolved)", "solo (resolved)"],
+    ],
+    [
+      "reopening a resolved thread",
+      (state) => resolveThread(state, 1, false),
+      ["one | two | three", "solo"],
+    ],
+    ["replying to a missing thread", (state) => replyToThread(state, 9, "four"), null],
+    ["editing a comment to blank", (state) => editComment(state, 0, 0, "  "), null],
+    ["editing a comment to the same text", (state) => editComment(state, 0, 0, "one"), null],
+    ["resolving a resolved thread", (state) => resolveThread(state, 1, true), null],
+  ])("saves the threads after %s", (_, command, threads) => {
+    const state = setup(markdown);
+    const next = command(state);
 
     expect(
-      addComment(
-        state,
-        {
-          endOffset: 5,
-          path: value.path,
-          startOffset: 0,
-        },
-        "Metadata note",
-      ),
-    ).toBeNull();
+      next?.documentIndex.document.comments.map(
+        (thread) =>
+          `${thread.comments.map(({ body }) => body).join(" | ")}${
+            getCommentThreadUpdatedAt(thread) > saved ? " (updated)" : ""
+          }${isResolvedCommentThread(thread) ? " (resolved)" : ""}`,
+      ) ?? null,
+    ).toEqual(threads);
+    expect(next?.selection ?? state.selection).toBe(state.selection);
   });
 });

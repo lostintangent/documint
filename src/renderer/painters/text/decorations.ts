@@ -7,16 +7,11 @@
 // (`paintTextDecorationBackgrounds`, `paintTextDecorationOverlays`) so the
 // phase isn't a runtime branch.
 
-import type { DocumentLayout } from "@/editor/layout";
 import type { DocumentFrameLine } from "@/renderer/frame";
-import { isTextRunSegment } from "@/renderer/frame/line/text-segments";
+import { isTextRunSegment, type TextRunSegment } from "@/renderer/frame/line/text-segments";
 import { resolveLineSegmentBounds } from "@/renderer/frame/line/text-geometry";
 import type { TextDecoration } from "@/editor/text/decorations";
-import {
-  collectRangeBoundaries,
-  filterRangesOverlappingSegment,
-  findRangeAtSegment,
-} from "@/editor/text/ranges";
+import { collectRangeBoundaries, rangeOverlapsSegment } from "@/editor/text/ranges";
 import {
   blendCanvasColors,
   formatCanvasColor,
@@ -32,57 +27,64 @@ const minimumDecorationTextContrast = 4.5;
 const decorationTextContrastStep = 0.05;
 
 type DecorationPaintEnvironment = {
-  clocks: { ambientTime: number };
+  ambientTime: number;
   context: CanvasRenderingContext2D;
 };
 
 export function paintTextDecorationBackgrounds(
   lineFrame: DocumentFrameLine,
-  { clocks, context }: DecorationPaintEnvironment,
+  { ambientTime, context }: DecorationPaintEnvironment,
 ) {
-  forEachDecoratedTextSegment(context, lineFrame, (segment, decoration) => {
+  forEachDecoratedTextSegment(context, lineFrame, (textSegment, decoration, left, right) => {
     if (!decoration.backgroundColor) {
       return;
     }
 
     paintDecorationBackground(context, {
       color: decoration.backgroundColor,
-      decorationTime: clocks.ambientTime,
-      left: segment.left,
+      decorationTime: ambientTime,
+      left,
       pulse: decoration.pulse === true,
-      right: segment.right,
-      textBaseline: segment.textBaseline,
+      right,
+      textBaseline: textSegment.baseline,
     });
   });
 }
 
 export function paintTextDecorationOverlays(
   lineFrame: DocumentFrameLine,
-  { clocks, context }: DecorationPaintEnvironment,
+  { ambientTime, context }: DecorationPaintEnvironment,
 ) {
-  forEachDecoratedTextSegment(context, lineFrame, (segment, decoration) => {
+  forEachDecoratedTextSegment(context, lineFrame, (textSegment, decoration, left, right) => {
     if (!decoration.color && !decoration.backgroundColor) {
       return;
     }
 
     paintClippedTextOverlay(context, {
-      color: resolveDecorationTextColor(decoration, clocks.ambientTime, segment.textColor),
+      color: resolveDecorationTextColor(decoration, ambientTime, textSegment.color),
       eraseExistingGlyphs: true,
       height: lineFrame.layoutLine.height,
-      left: segment.left,
-      text: segment.text,
-      textBaseline: segment.textBaseline,
-      textLeft: segment.textLeft,
+      left,
+      text: textSegment.text,
+      textBaseline: textSegment.baseline,
+      textLeft: textSegment.left,
       top: lineFrame.layoutLine.top,
-      width: Math.max(0, segment.right - segment.left),
+      width: Math.max(0, right - left),
     });
   });
 }
 
+// Splits each decorated text run at decoration boundaries and visits every
+// span with the first decoration covering it.
 function forEachDecoratedTextSegment(
   context: CanvasRenderingContext2D,
   lineFrame: DocumentFrameLine,
-  paintSegment: (segment: DecorationSegment, decoration: TextDecoration) => void,
+  paintSpan: (
+    textSegment: TextRunSegment,
+    decoration: TextDecoration,
+    left: number,
+    right: number,
+  ) => void,
 ) {
   const { textDecorations } = lineFrame;
 
@@ -90,10 +92,8 @@ function forEachDecoratedTextSegment(
     return;
   }
 
-  const lineDecorations = filterRangesOverlappingSegment(
-    textDecorations,
-    lineFrame.layoutLine.start,
-    lineFrame.layoutLine.end,
+  const lineDecorations = textDecorations.filter((decoration) =>
+    rangeOverlapsSegment(decoration, lineFrame.layoutLine.start, lineFrame.layoutLine.end),
   );
 
   if (lineDecorations.length === 0) {
@@ -105,10 +105,8 @@ function forEachDecoratedTextSegment(
       continue;
     }
 
-    const segmentDecorations = filterRangesOverlappingSegment(
-      lineDecorations,
-      textSegment.start,
-      textSegment.end,
+    const segmentDecorations = lineDecorations.filter((decoration) =>
+      rangeOverlapsSegment(decoration, textSegment.start, textSegment.end),
     );
 
     if (segmentDecorations.length === 0) {
@@ -116,82 +114,33 @@ function forEachDecoratedTextSegment(
     }
 
     context.font = textSegment.font;
-    paintDecorationSegments({
-      line: lineFrame.layoutLine,
-      lineDecorations: segmentDecorations,
-      paintSegment,
-      segmentLeft: textSegment.left,
-      segmentText: textSegment.text,
-      start: textSegment.start,
-      end: textSegment.end,
-      textColor: textSegment.color,
-      textLeft: lineFrame.textLeft,
-      textBaseline: textSegment.baseline,
-    });
-  }
-}
 
-type DecorationSegment = {
-  left: number;
-  right: number;
-  text: string;
-  textBaseline: number;
-  textColor: string;
-  textLeft: number;
-};
+    const boundaries = collectRangeBoundaries(
+      textSegment.start,
+      textSegment.end,
+      segmentDecorations,
+    );
 
-function paintDecorationSegments({
-  line,
-  lineDecorations,
-  paintSegment,
-  segmentLeft,
-  segmentText,
-  textColor,
-  start,
-  end,
-  textLeft,
-  textBaseline,
-}: {
-  line: DocumentLayout["lines"][number];
-  lineDecorations: readonly TextDecoration[];
-  paintSegment: (segment: DecorationSegment, decoration: TextDecoration) => void;
-  segmentLeft: number;
-  segmentText: string;
-  textColor: string;
-  start: number;
-  end: number;
-  textLeft: number;
-  textBaseline: number;
-}) {
-  const decorationBoundaries = collectRangeBoundaries(start, end, lineDecorations);
+    for (let index = 0; index < boundaries.length - 1; index += 1) {
+      const start = boundaries[index]!;
+      const end = boundaries[index + 1]!;
+      const decoration = segmentDecorations.find((candidate) =>
+        rangeOverlapsSegment(candidate, start, end),
+      );
 
-  for (let index = 0; index < decorationBoundaries.length - 1; index += 1) {
-    const decorationStart = decorationBoundaries[index]!;
-    const decorationEnd = decorationBoundaries[index + 1]!;
-    const textDecoration = findRangeAtSegment(lineDecorations, decorationStart, decorationEnd);
+      if (!decoration) {
+        continue;
+      }
 
-    if (!textDecoration || decorationEnd <= decorationStart) {
-      continue;
+      const { left, right } = resolveLineSegmentBounds(
+        lineFrame.layoutLine,
+        lineFrame.textLeft,
+        start,
+        end,
+      );
+
+      paintSpan(textSegment, decoration, left, right);
     }
-
-    const { left, right } = resolveLineSegmentBounds(
-      line,
-      textLeft,
-      decorationStart,
-      decorationEnd,
-    );
-
-    paintSegment(
-      {
-        left,
-        right,
-        text: segmentText,
-        textBaseline,
-        textColor,
-        textLeft: segmentLeft,
-      },
-      textDecoration,
-    );
   }
 }
 

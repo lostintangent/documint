@@ -1,15 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import {
-  defaultEffectPolicy,
-  type EffectPolicy,
-  resolveRendererEffects,
-  type RendererEffect,
-} from "@/renderer/effects";
+import { resolveRendererEffects, type RendererEffect } from "@/renderer/effects";
 
 const startedAt = 100;
 const now = 110;
 
-describe("Renderer effect policy", () => {
+describe("Renderer effects", () => {
   describe("text insertion", () => {
     test("maps ordinary inserted text to a highlight", () => {
       const resolvedEffects = resolveRendererEffects([insertedText("x")], now);
@@ -79,7 +74,7 @@ describe("Renderer effect policy", () => {
     });
   });
 
-  test("keeps only effects accepted by the default policy active", () => {
+  test("keeps only effects that animate by default active", () => {
     const running = insertedText("x");
     const skipped = insertedText("🔥");
 
@@ -97,48 +92,8 @@ describe("Renderer effect policy", () => {
     expect(resolveRendererEffects([effect], startedAt + 500).rendererEffects).toEqual([]);
   });
 
-  describe("custom duration policy", () => {
-    test("can disable default handling for an effect", () => {
-      const effect = insertedText("x");
-      const policy = withDurationOverride((currentEffect) =>
-        currentEffect.kind === "text-inserted" ? null : defaultEffectPolicy.duration(currentEffect),
-      );
-
-      const resolvedEffects = resolveRendererEffects([effect], now, policy);
-
-      expect(resolvedEffects.textHighlights.size).toBe(0);
-      expect(resolvedEffects.rendererEffects).toEqual([]);
-    });
-
-    test("can extend the running lifetime for an effect", () => {
-      const effect = insertedText("x");
-      const afterDefaultExpiration = startedAt + 1200;
-      const policy = withDurationOverride((currentEffect) =>
-        currentEffect.kind === "text-inserted" ? 1500 : defaultEffectPolicy.duration(currentEffect),
-      );
-
-      expect(resolveRendererEffects([effect], afterDefaultExpiration).rendererEffects).toEqual([]);
-      expect(
-        resolveRendererEffects([effect], afterDefaultExpiration, policy).rendererEffects,
-      ).toEqual([effect]);
-      expect(
-        resolveRendererEffects([effect], afterDefaultExpiration, policy).textHighlights.size,
-      ).toBe(1);
-    });
-
-    test("can opt into default visual mapping for effects the default policy skips", () => {
-      const effect = insertedText("🔥");
-      const policy = withDurationOverride((currentEffect) =>
-        currentEffect.kind === "text-inserted" ? 1000 : defaultEffectPolicy.duration(currentEffect),
-      );
-
-      expect(resolveRendererEffects([effect], now).textHighlights.size).toBe(0);
-      expect(resolveRendererEffects([effect], now, policy).textHighlights.size).toBe(1);
-    });
-  });
-
   describe("custom effect handlers", () => {
-    test("keep matching semantic effects active when the default policy skips them", () => {
+    test("keep matching semantic effects active when the defaults skip them", () => {
       const insertedEmoji = insertedText("🔥");
       const forwardDelete = deletedText({ direction: "forward", placement: "line-middle" });
 
@@ -146,7 +101,7 @@ describe("Renderer effect policy", () => {
         [],
       );
       expect(
-        resolveRendererEffects([insertedEmoji, forwardDelete], now, defaultEffectPolicy, {
+        resolveRendererEffects([insertedEmoji, forwardDelete], now, {
           textDeleted: () => {},
           textInserted: () => {},
         }).rendererEffects,
@@ -154,10 +109,6 @@ describe("Renderer effect policy", () => {
     });
   });
 });
-
-function withDurationOverride(duration: EffectPolicy["duration"]): EffectPolicy {
-  return { duration };
-}
 
 function insertedText(
   text: string,

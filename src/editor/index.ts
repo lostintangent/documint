@@ -11,6 +11,7 @@ export {
   resolveEditorSearchMatches,
   resolveHoverTarget,
   resolveSelectionPointAt,
+  resolveTargetAtOffset,
   resolveWordSelection,
   setSelectionAtPoint,
   updateSelectionFromDrag,
@@ -20,8 +21,8 @@ export {
 
 // Layout — viewport composition (aliased to public names)
 export {
-  measureLayoutCaretTarget as measureCaretTarget,
-  measureLayoutVisualCaretTarget as measureVisualCaretTarget,
+  measureCaretTarget,
+  measureVisualCaret,
   measureInlineImageBounds,
   createEditorLayoutState,
   CODE_BLOCK_BACKGROUND_PADDING_Y,
@@ -40,9 +41,9 @@ export type {
 } from "./text/decorations";
 export type { WordMovement } from "./text/words";
 export {
-  hasAnimatedDecorations,
   hasAnimatedDecorationsInViewport,
   reconcileTextDecorationIndex,
+  remapTextDecorationIndex,
 } from "./text/decorations";
 export { createLayoutCache } from "./layout/state/cache";
 export {
@@ -63,7 +64,6 @@ export {
 
 // State lifecycle, selection, and commands
 export {
-  createDocumentFromEditorState as getDocument,
   createEditorState,
   getCaretTextContext,
   getSelectionContext,
@@ -91,23 +91,6 @@ export {
   type SelectionContext,
   type SelectionFormatting,
 } from "./state";
-
-import { resolveTargetAtOffset } from "./navigation";
-import { getCommentState } from "./anchors";
-import type { EditorSelectionPoint, EditorState } from "./state";
-
-// Offset-based sibling of `resolveHoverTarget`. The callers we have here
-// (selection-driven UI surfacing) don't have a layout point, just a known
-// (path, offset), so this skips hit-test and goes straight to the
-// state/anchors lookup.
-export function resolveTargetAtSelection(state: EditorState, selectionPoint: EditorSelectionPoint) {
-  return resolveTargetAtOffset(
-    state,
-    selectionPoint.path,
-    selectionPoint.offset,
-    getCommentState(state.documentIndex).ranges,
-  );
-}
 
 export * from "./state/commands";
 

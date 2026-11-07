@@ -1,15 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createAnchorFromContainer,
+  captureTextAnchor,
   createCommentThread,
   createDocument,
   createHeadingTextBlock,
   createParagraphTextBlock,
-  extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
 import {
-  createDocumentFromEditorState,
   createEditorState,
   deleteSelection,
   deleteWord,
@@ -225,15 +223,14 @@ describe("Word deletion", () => {
     }
 
     const thread = createCommentThread({
-      anchor: createAnchorFromContainer(gammaContainer, "beta ".length, "beta gamma".length),
+      ...captureTextAnchor(gammaContainer, "beta ".length, "beta gamma".length),
       body: "keep this",
       createdAt: "2026-07-28T00:00:00.000Z",
-      quote: extractQuoteFromContainer(gammaContainer, "beta ".length, "beta gamma".length),
     });
     const state = createEditorState({ ...snapshot, comments: [thread] });
     const alpha = getPath(state, "alpha");
     const deleted = deleteWord(placeAt(state, alpha, "end"), "wordEnd");
-    const comments = createDocumentFromEditorState(deleted!).comments;
+    const comments = deleted!.documentIndex.document.comments;
 
     expect(indexedTextEntries(deleted!)[0]?.text).toBe("alpha gamma");
     expect(comments).toHaveLength(1);

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   collectRangeBoundaries,
-  filterRangesOverlappingSegment,
-  findRangeAtSegment,
+  mapOffsetThroughTextEdit,
+  rangeOverlapsSegment,
+  type TextEdit,
   type TextRange,
 } from "@/editor/text/ranges";
 
@@ -11,6 +12,17 @@ const ranges: TextRange[] = [
   { startOffset: 8, endOffset: 12 },
   { startOffset: 15, endOffset: 20 },
 ];
+
+describe("rangeOverlapsSegment", () => {
+  test("treats segments as half-open: touching either edge does not overlap", () => {
+    const range = { startOffset: 2, endOffset: 6 };
+
+    expect(rangeOverlapsSegment(range, 3, 4)).toBe(true);
+    expect(rangeOverlapsSegment(range, 0, 3)).toBe(true);
+    expect(rangeOverlapsSegment(range, 6, 8)).toBe(false);
+    expect(rangeOverlapsSegment(range, 0, 2)).toBe(false);
+  });
+});
 
 describe("collectRangeBoundaries", () => {
   test("returns just the window bounds when no ranges overlap", () => {
@@ -31,32 +43,26 @@ describe("collectRangeBoundaries", () => {
   });
 });
 
-describe("findRangeAtSegment", () => {
-  test("returns the first overlapping range", () => {
-    expect(findRangeAtSegment(ranges, 3, 4)).toEqual({ startOffset: 2, endOffset: 6 });
-    expect(findRangeAtSegment(ranges, 9, 11)).toEqual({ startOffset: 8, endOffset: 12 });
+describe("mapOffsetThroughTextEdit", () => {
+  // Replaces "cdef" in "abcdefgh" with "X".
+  const replacement: TextEdit = { endOffset: 6, insertedLength: 1, startOffset: 2 };
+
+  test("keeps offsets before the edit and shifts offsets after it", () => {
+    expect(mapOffsetThroughTextEdit(1, replacement, 1)).toBe(1);
+    expect(mapOffsetThroughTextEdit(8, replacement, -1)).toBe(5);
   });
 
-  test("treats segments as half-open: an exact end-touch does not match", () => {
-    expect(findRangeAtSegment(ranges, 6, 7)).toBeNull();
-    expect(findRangeAtSegment(ranges, 1, 2)).toBeNull();
+  test("places an insertion point or an offset inside a replacement by bias", () => {
+    const insertion: TextEdit = { endOffset: 3, insertedLength: 2, startOffset: 3 };
+
+    expect(mapOffsetThroughTextEdit(3, insertion, -1)).toBe(3);
+    expect(mapOffsetThroughTextEdit(3, insertion, 1)).toBe(5);
+    expect(mapOffsetThroughTextEdit(4, replacement, -1)).toBe(2);
+    expect(mapOffsetThroughTextEdit(4, replacement, 1)).toBe(3);
   });
 
-  test("returns null when nothing overlaps", () => {
-    expect(findRangeAtSegment(ranges, 25, 30)).toBeNull();
-  });
-});
-
-describe("filterRangesOverlappingSegment", () => {
-  test("returns every range overlapping the segment", () => {
-    expect(filterRangesOverlappingSegment(ranges, 5, 16)).toEqual([
-      { startOffset: 2, endOffset: 6 },
-      { startOffset: 8, endOffset: 12 },
-      { startOffset: 15, endOffset: 20 },
-    ]);
-  });
-
-  test("excludes ranges that only touch the segment boundary", () => {
-    expect(filterRangesOverlappingSegment(ranges, 6, 8)).toEqual([]);
+  test("keeps a replacement's own edges outside the inserted text whatever the bias", () => {
+    expect(mapOffsetThroughTextEdit(2, replacement, 1)).toBe(2);
+    expect(mapOffsetThroughTextEdit(6, replacement, -1)).toBe(3);
   });
 });

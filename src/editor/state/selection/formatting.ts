@@ -10,7 +10,7 @@
 
 import type { Mark } from "@/document";
 import { findInlinesInRange } from "../index/inlines";
-import { isMetadataPath, resolveEditorTextAtPath, resolveInlinesAtPath } from "../index/query";
+import { isMetadataPath, resolveIndexedText, resolveIndexedTextInlines } from "../index/query";
 import type { IndexedInline } from "../index/types";
 import type { EditorState } from "../types";
 import { getSelectionRange } from "./query";
@@ -31,13 +31,13 @@ export function getSelectionFormatting(state: EditorState): SelectionFormatting 
     return emptySelectionFormatting();
   }
 
-  const text = resolveEditorTextAtPath(state.documentIndex, selectionRange.path);
+  const indexedText = resolveIndexedText(state.documentIndex, selectionRange.path);
 
-  if (text === null) {
+  if (!indexedText) {
     return emptySelectionFormatting();
   }
 
-  const inlines = resolveInlinesAtPath(state.documentIndex, selectionRange.path);
+  const inlines = resolveIndexedTextInlines(indexedText);
 
   if (!inlines) {
     return unsupportedSelectionFormatting();

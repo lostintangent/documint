@@ -51,16 +51,16 @@ describe("LeafMarkdown", () => {
     expect(html).toMatch(
       /<li[^>]*><input [^>]*type="checkbox" checked=""\/><p>Two<\/p><\/li><\/ul>/,
     );
-    expect(html).toContain("<ol><li><p>Three</p></li><li><p>Four</p></li></ol>");
+    expect(html).toContain('<ol start="3"><li><p>Three</p></li><li><p>Four</p></li></ol>');
   });
 
-  test("omits unsupported blocks", () => {
-    const html = renderToStaticMarkup(
-      <LeafMarkdown value={"# Heading\n\nFirst\n\n<div>raw</div>\n\n---"} />,
-    );
-
-    expect(html).toContain("<p>First</p>");
-    expect(html).not.toContain("Heading");
-    expect(html).not.toContain("&lt;div&gt;raw&lt;/div&gt;");
+  test.each([
+    ["# Heading", ">Heading</p>"],
+    ["> Quote\n>\n> > Nested", "<p>Nested</p></blockquote></blockquote>"],
+    ["```ts\nconst a = 1;\n```", ">const a = 1;</pre>"],
+    ["| A | Bee |\n| - | - |\n| one | 2 |", ">| A   | Bee |\n| --- | --- |\n| one | 2   |</pre>"],
+    ["See ![alt](a.png)", "<p>See ![alt](a.png)</p>"],
+  ])("shows %j instead of dropping it", (value, html) => {
+    expect(renderToStaticMarkup(<LeafMarkdown value={value} />)).toContain(html);
   });
 });

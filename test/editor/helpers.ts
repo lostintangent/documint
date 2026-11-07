@@ -2,7 +2,6 @@
 // `test/editor/`. Crosses the markdown ↔ document ↔ editor seam.
 
 import {
-  createDocumentFromEditorState,
   createEditorState,
   metadataKeyPath,
   metadataValuePath,
@@ -26,7 +25,7 @@ export function setup(markdown: string, options?: MarkdownOptions): EditorState 
 
 /** Serialize an editor state back to a markdown string. */
 export function toMarkdown(state: EditorState): string {
-  return serializeDocument(createDocumentFromEditorState(state));
+  return serializeDocument(state.documentIndex.document);
 }
 
 export type IndexedTextEntry = {
@@ -34,7 +33,6 @@ export type IndexedTextEntry = {
   blockPath: string;
   inlines: readonly IndexedInline[] | null;
   path: string;
-  rootIndex: number;
   tableCell: IndexedTableCell | null;
   text: string;
 };
@@ -96,7 +94,6 @@ function pathHandle(
     blockPath: block.path,
     inlines,
     path,
-    rootIndex: block.rootIndex,
     tableCell,
     text,
   };
@@ -106,8 +103,8 @@ function pathHandle(
  * Find a text path by its plain-text content. Throws if not found.
  * Pass an empty string to find the first text container whose content is empty.
  */
-export function getPath(state: EditorState, text: string): IndexedTextEntry {
-  const path = indexedTextEntries(state).find((entry) => entry.text === text);
+export function getPath(stateOrIndex: EditorState | DocumentIndex, text: string): IndexedTextEntry {
+  const path = indexedTextEntries(stateOrIndex).find((entry) => entry.text === text);
 
   if (!path) {
     throw new Error(`Expected path with text "${text}"`);

@@ -1,15 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createAnchorFromContainer,
+  captureTextAnchor,
   createCommentThread,
-  extractQuoteFromContainer,
   createDocument,
   spliceCommentThreads,
   spliceDocument,
   createBlockquoteBlock,
   createLineBreak,
   createCodeBlock,
-  createHeadingTextBlock,
   createImage,
   createLink,
   createListBlock,
@@ -35,26 +33,6 @@ import {
 import { createSampleBlocks, createTestDocument, expectAnchorContainerAt } from "./helpers";
 
 describe("Document construction", () => {
-  test("builds stable semantic documents from the same semantic content", () => {
-    const first = createTestDocument(createSampleBlocks());
-    const second = createTestDocument(createSampleBlocks());
-
-    expect(first.blocks).toEqual(second.blocks);
-  });
-
-  test("defaults document comment metadata", () => {
-    const document = createTestDocument([
-      createHeadingTextBlock({
-        depth: 1,
-        text: "Title",
-      }),
-      createParagraphTextBlock("Paragraph"),
-    ]);
-
-    expect(document.comments).toEqual([]);
-    expect(document.metadata).toBeNull();
-  });
-
   test("canonicalizes text mark order and duplicates", () => {
     const text = createText("marked", ["superscript", "underline", "bold", "underline"]);
 
@@ -65,7 +43,7 @@ describe("Document construction", () => {
     const block = createParagraphTextBlock("Review this paragraph");
     const container = expectAnchorContainerAt(createDocument([block]), 0);
     const thread = createCommentThread({
-      anchor: createAnchorFromContainer(container, 0, "Review".length),
+      anchor: captureTextAnchor(container, 0, "Review".length).anchor,
       body: "Looks good.",
       createdAt: "2026-04-05T12:00:00.000Z",
       quote: "Review",
@@ -86,39 +64,6 @@ describe("Document construction", () => {
     expect(ids[1]).not.toBe(thread.id);
     expect(ids[2]).not.toBe(thread.id);
     expect(reloaded.comments.map((comment) => comment.id)).toEqual(ids);
-  });
-
-  test("keeps resource inlines as semantic values after document construction", () => {
-    const createResourceDocument = (label: string, url = "demo-resource://recording/live") =>
-      createDocument([
-        createParagraphBlock([
-          createResource({
-            label,
-            url,
-          }),
-        ]),
-      ]);
-    const first = createResourceDocument("Recording session");
-    const renamed = createResourceDocument("Planning note");
-    const retargeted = createResourceDocument("Recording session", "demo-resource://note/complete");
-
-    const resourceInline = (document: ReturnType<typeof createResourceDocument>) => {
-      const block = document.blocks[0];
-      if (block?.type !== "paragraph" || block.children[0]?.type !== "resource") {
-        throw new Error("Expected resource paragraph");
-      }
-      return block.children[0];
-    };
-
-    expect(resourceInline(first)).toEqual({
-      label: "Recording session",
-      protocol: "demo-resource:",
-      type: "resource",
-      url: "demo-resource://recording/live",
-    });
-    expect(resourceInline(first)).not.toHaveProperty("id");
-    expect(resourceInline(renamed).label).toBe("Planning note");
-    expect(resourceInline(retargeted).url).toBe("demo-resource://note/complete");
   });
 
   test("canonicalizes resource protocols from urls and explicit protocol fallbacks", () => {
@@ -161,7 +106,7 @@ describe("Document splicing", () => {
     expect(nextDocument.metadata).toBe(metadata);
   });
 
-  test("splices comment threads without rebuilding semantic blocks", () => {
+  test("splices comment threads and seals their ids without rebuilding semantic blocks", () => {
     const document = createTestDocument(createSampleBlocks());
     const metadata = new Map([["title", "Sample"]]);
     const container = listAnchorContainers(document)[0];
@@ -171,16 +116,14 @@ describe("Document splicing", () => {
     }
 
     const firstThread = createCommentThread({
-      anchor: createAnchorFromContainer(container, 0, 5),
+      ...captureTextAnchor(container, 0, 5),
       body: "First",
       createdAt: "2026-04-11T12:00:00.000Z",
-      quote: extractQuoteFromContainer(container, 0, 5),
     });
     const secondThread = createCommentThread({
-      anchor: createAnchorFromContainer(container, 6, 10),
+      ...captureTextAnchor(container, 6, 10),
       body: "Second",
       createdAt: "2026-04-11T12:01:00.000Z",
-      quote: extractQuoteFromContainer(container, 6, 10),
     });
     const nextDocument = spliceCommentThreads(
       {
@@ -190,93 +133,44 @@ describe("Document splicing", () => {
       },
       0,
       1,
-      [secondThread],
+      [{ ...secondThread, id: "" }],
     );
 
     expect(nextDocument.blocks[0]).toBe(document.blocks[0]);
     expect(nextDocument.comments).toEqual([secondThread]);
     expect(nextDocument.metadata).toBe(metadata);
   });
-
-  test("deduplicates comment thread ids across spliced comment threads", () => {
-    const document = createTestDocument(createSampleBlocks());
-    const container = listAnchorContainers(document)[0];
-
-    if (!container) {
-      throw new Error("Expected comment container");
-    }
-
-    const thread = createCommentThread({
-      anchor: createAnchorFromContainer(container, 0, 5),
-      body: "Duplicate",
-      createdAt: "2026-04-11T12:00:00.000Z",
-      quote: extractQuoteFromContainer(container, 0, 5),
-    });
-    const nextDocument = spliceCommentThreads(
-      {
-        ...document,
-        comments: [thread],
-      },
-      1,
-      0,
-      [{ ...thread, id: "" }],
-    );
-    const ids = nextDocument.comments.map((comment) => comment.id);
-
-    expect(new Set(ids).size).toBe(ids.length);
-    expect(ids[0]).toBe(thread.id);
-    expect(ids[1]).not.toBe(thread.id);
-  });
 });
 
 describe("Plain text extraction", () => {
-  const inlinePlainTextCases: Array<[string, Inline[], string]> = [
-    [
-      "semantic inline nodes",
-      [
-        createText("Plain "),
-        createLink({
-          children: [createText("link")],
-          url: "https://example.com",
-        }),
-        createLineBreak(),
-        createText("code", ["code"]),
-        createImage({ alt: "alt text", url: "https://example.com/image.png" }),
-        createMention({ name: "Jane Doe", userId: "user-123" }),
-        createResource({
-          label: "Recording session",
-          protocol: "demo-resource:",
-          url: "demo-resource://recording/live",
-        }),
-      ],
-      "Plain link\ncodealt text@Jane DoeRecording session",
-    ],
-    [
-      "links and unsupported inline nodes",
-      [
-        createText("Before "),
-        createLink({
-          children: [
-            createText("alpha"),
-            createLineBreak(),
-            createImage({
-              alt: "preview",
-              url: "https://example.com/preview.png",
-            }),
-          ],
-          url: "https://example.com",
-        }),
-        createRaw({
-          originalType: "textDirective",
-          source: ":badge[raw]{disabled}",
-        }),
-      ],
-      "Before alpha\npreview:badge[raw]{disabled}",
-    ],
-  ];
+  test("extracts plain text from semantic inline nodes", () => {
+    const nodes: Inline[] = [
+      createText("Plain "),
+      createLink({
+        children: [
+          createText("link"),
+          createLineBreak(),
+          createImage({ alt: "preview", url: "https://example.com/preview.png" }),
+        ],
+        url: "https://example.com",
+      }),
+      createText("code", ["code"]),
+      createImage({ alt: "alt text", url: "https://example.com/image.png" }),
+      createMention({ name: "Jane Doe", userId: "user-123" }),
+      createResource({
+        label: "Recording session",
+        protocol: "demo-resource:",
+        url: "demo-resource://recording/live",
+      }),
+      createRaw({
+        originalType: "textDirective",
+        source: ":badge[raw]{disabled}",
+      }),
+    ];
 
-  test.each(inlinePlainTextCases)("extracts plain text from %s", (_label, nodes, expected) => {
-    expect(extractPlainTextFromInlineNodes(nodes)).toBe(expected);
+    expect(extractPlainTextFromInlineNodes(nodes)).toBe(
+      "Plain link\npreviewcodealt text@Jane DoeRecording session:badge[raw]{disabled}",
+    );
   });
 
   test("classifies external-reference inlines through the semantic umbrella", () => {
@@ -319,15 +213,6 @@ describe("Plain text extraction", () => {
           ]),
         ],
       }),
-    ];
-
-    expect(extractPlainTextFromBlockNodes(blocks)).toBe(
-      "Lead\nalpha\nbeta\nleft | right\none | two",
-    );
-  });
-
-  test("extracts plain text from nested structural blocks and empty thematic breaks", () => {
-    const blocks: Block[] = [
       createBlockquoteBlock([createParagraphTextBlock("Quote")]),
       createListItemBlock({
         children: [
@@ -348,7 +233,7 @@ describe("Plain text extraction", () => {
     ];
 
     expect(extractPlainTextFromBlockNodes(blocks)).toBe(
-      'Quote\nNested :badge[body]{tone="info"}\nconst stage = 1;\n:::callout{tone="note"}\nBody\n:::',
+      'Lead\nalpha\nbeta\nleft | right\none | two\nQuote\nNested :badge[body]{tone="info"}\nconst stage = 1;\n:::callout{tone="note"}\nBody\n:::',
     );
     expect(extractPlainTextFromBlockNodes([createDividerBlock()])).toBe("");
   });

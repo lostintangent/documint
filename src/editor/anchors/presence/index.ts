@@ -12,12 +12,13 @@ import {
   collectTextAnchorCandidates,
   isCommentThreadAnchor,
   isResolvedCommentThread,
+  listAnchorContainers,
   type Anchor,
   type AnchorContainer,
   type TextAnchor,
 } from "@/document";
 import type { DocumentIndex, EditorSelectionPoint } from "../../state";
-import { createEditorTextAnchorResolver, type EditorTextAnchorResolver } from "../text";
+import { resolveEditorRangeForAnchorMatch } from "../text";
 
 // --- Types ---
 
@@ -87,11 +88,6 @@ export type EditorPresence = DocumentUserPresence & {
   viewport: EditorPresenceViewport | null;
 };
 
-type TextPresenceContext = {
-  anchorContainers: AnchorContainer[];
-  textAnchorResolver: EditorTextAnchorResolver;
-};
-
 // --- Public API ---
 
 // Resolve each host-provided presence into editor-side targets. Text anchors
@@ -101,26 +97,13 @@ export function resolvePresenceTargets(
   documentIndex: DocumentIndex,
   presence: DocumentUserPresence[],
 ): EditorPresence[] {
-  if (presence.length === 0) {
-    return [];
-  }
-
-  let textContext: TextPresenceContext | null = null;
-  const getTextContext = () => {
-    if (!textContext) {
-      const textAnchorResolver = createEditorTextAnchorResolver(documentIndex);
-      textContext = {
-        anchorContainers: textAnchorResolver.listContainers(),
-        textAnchorResolver,
-      };
-    }
-
-    return textContext;
-  };
+  let anchorContainers: AnchorContainer[] | null = null;
+  const getAnchorContainers = () =>
+    (anchorContainers ??= listAnchorContainers(documentIndex.document));
 
   return presence.map((presenceItem) => ({
     ...presenceItem,
-    ...resolvePresenceTarget(presenceItem, getTextContext, documentIndex),
+    ...resolvePresenceTarget(presenceItem, getAnchorContainers, documentIndex),
     viewport: null,
   }));
 }
@@ -129,7 +112,7 @@ export function resolvePresenceTargets(
 
 function resolvePresenceTarget(
   presence: DocumentUserPresence,
-  getTextContext: () => TextPresenceContext,
+  getAnchorContainers: () => AnchorContainer[],
   documentIndex: DocumentIndex,
 ) {
   if (!presence.cursor) {
@@ -144,11 +127,9 @@ function resolvePresenceTarget(
     return resolveCommentThreadPresenceTarget(presence.cursor, documentIndex);
   }
 
-  const { anchorContainers, textAnchorResolver } = getTextContext();
-
   return {
     commentThreadIndex: null,
-    cursorPoint: resolvePresenceCursorPoint(presence.cursor, anchorContainers, textAnchorResolver),
+    cursorPoint: resolvePresenceCursorPoint(documentIndex, presence.cursor, getAnchorContainers()),
     isOnUnresolvedCommentThread: false,
   };
 }
@@ -171,10 +152,10 @@ function resolveCommentThreadPresenceTarget(
 }
 
 function resolvePresenceCursorPoint(
+  documentIndex: DocumentIndex,
   anchor: TextAnchor,
   anchorContainers: AnchorContainer[],
-  textAnchorResolver: EditorTextAnchorResolver,
-) {
+): EditorSelectionPoint | null {
   const matches = collectTextAnchorCandidates(anchorContainers, anchor);
 
   if (matches.length !== 1) {
@@ -182,28 +163,15 @@ function resolvePresenceCursorPoint(
   }
 
   const match = matches[0]!;
-  const editorRange = textAnchorResolver.resolveEditorRange(
+  const editorRange = resolveEditorRangeForAnchorMatch(
+    documentIndex,
     {
-      containerOrdinal: match.container.containerOrdinal,
       containerPath: match.container.path,
       endOffset: match.startOffset,
       startOffset: match.startOffset,
     },
-    {
-      collapsedAffinity: resolvePresenceCursorAffinity(anchor),
-    },
+    anchor.prefix ? "after" : "before",
   );
 
-  if (!editorRange) {
-    return null;
-  }
-
-  return {
-    offset: editorRange.startOffset,
-    path: editorRange.path,
-  };
-}
-
-function resolvePresenceCursorAffinity(anchor: TextAnchor) {
-  return anchor.prefix ? "after" : "before";
+  return editorRange ? { offset: editorRange.startOffset, path: editorRange.path } : null;
 }

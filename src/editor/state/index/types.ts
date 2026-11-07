@@ -17,7 +17,6 @@ export type DocumentIndex = {
 
   roots: IndexedRoot[];
 
-  commentContainerIndex: Map<string, number[]>;
   document: Document;
 
   // Union of image URLs across every root. Reference-stable when the URL
@@ -112,7 +111,7 @@ export type IndexedRoot = {
   // URLs of image inlines reachable from this root. Collected during the
   // existing inline walk so the per-document image-resource hook can read
   // the set without re-walking the tree on every keystroke. Reused by
-  // reference identity when the root itself is reused (`canReuseIndexedRoot`).
+  // reference identity when the root itself is reused.
   imageUrls: ReadonlySet<string>;
   // URLs of resource inlines reachable from this root. Collected during the
   // existing inline walk so the component can notify the host about discovered

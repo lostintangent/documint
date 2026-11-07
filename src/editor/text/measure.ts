@@ -67,23 +67,13 @@ export function resolveCenteredTextBaseline(lineHeight: number, font: string) {
   return resolveCenteredTextTop(lineHeight, font) + ascent;
 }
 
-export function measureTextWidth(text: string, font: string) {
-  if (text.length === 0) {
-    return 0;
-  }
-
-  const context = getTextMeasurementContext();
-  context.font = font;
-
-  return context.measureText(text).width;
-}
-
 let textMeasurementContext:
   | OffscreenCanvasRenderingContext2D
   | CanvasRenderingContext2D
   | undefined;
 
-function getTextMeasurementContext() {
+// Shared by layout measurement, which sets `font` before every measure call.
+export function getTextMeasurementContext() {
   if (textMeasurementContext !== undefined) {
     return textMeasurementContext;
   }

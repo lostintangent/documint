@@ -40,13 +40,14 @@ type TestDocumentFrameOptions = Partial<
 > & {
   effects?: readonly ScheduledTestEffect[];
   metadataExpanded?: boolean;
+  top?: number;
 };
 
 /**
- * Lay out `state` and resolve its document frame. The active block and path
- * follow the selection focus, and `now` defaults to 0 so any state without
- * timed effects paints identically across runs. Effects without a start time
- * start at `now`.
+ * Lay out `state` scrolled to `top` (0 by default) and resolve its document
+ * frame. The active block and path follow the selection focus, and `now`
+ * defaults to 0 so any state without timed effects paints identically across
+ * runs. Effects without a start time start at `now`.
  */
 export function createTestDocumentFrame(
   state: EditorState,
@@ -57,13 +58,14 @@ export function createTestDocumentFrame(
     now = 0,
     resources,
     theme = resolvedLightTheme,
+    top = 0,
     width = 420,
     ...options
   }: TestDocumentFrameOptions = {},
 ) {
   const layoutState = createEditorLayoutState(
     state,
-    { fontSize: theme.fontSize, height, metadataExpanded, top: 0, width },
+    { fontSize: theme.fontSize, height, metadataExpanded, top, width },
     undefined,
     resources,
   );
@@ -363,13 +365,6 @@ export class RecordingCanvasContext {
 
 export function approximately(left: number, right: number, epsilon = 0.01) {
   return Math.abs(left - right) <= epsilon;
-}
-
-export function findOperationIndex(
-  operations: RecordingOperation[],
-  predicate: (operation: RecordingOperation) => boolean,
-) {
-  return operations.findIndex(predicate);
 }
 
 export function findLastOperationIndex(

@@ -4,7 +4,7 @@ Plain paragraph with a hard break<br>on the second visual line.
 
 Multiple breaks in one paragraph: alpha<br>beta<br>gamma.
 
-A break inside **bold**<br>**text** preserves the surrounding marks.
+A break inside **bold<br>text** preserves the surrounding marks.
 
 A break inside [a link<br>that wraps](https://example.com) keeps the link intact.
 

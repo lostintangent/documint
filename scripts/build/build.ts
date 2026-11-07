@@ -1,110 +1,47 @@
-import { rmSync } from "fs";
-import { BuildOutput } from "bun";
-import tailwindPlugin from "bun-plugin-tailwind";
+import { $ } from "bun";
+import tailwind from "bun-plugin-tailwind";
 
-// Build modes:
+// Bundles the library, the playground, or both:
 //
-//   - `dev` — fast verification build for CI. Bundles both the library
-//     (`src/index.ts`) and the playground (`playground/index.html`)
-//     without minification, with external sourcemaps. Skips type-
-//     declaration generation, which is slow and only relevant at publish
-//     time. Used by `.github/workflows/ci.yml` to confirm both entry
-//     points still bundle on every push / PR.
+//   - dev (default): CI's bundle check of both, unminified with external sourcemaps.
+//   - --prod: the minified library that npm publishes. tsdown writes dist/index.d.ts first.
+//   - --playground: the minified, single-file playground that GitHub Pages deploys.
 //
-//   - `prod` — publishable minified library bundle. `tsdown` generates
-//     `dist/index.d.ts` before this script runs. Used by
-//     `.github/workflows/publish.yml` (and the `build:prod` script
-//     locally for inspection of the prod-shaped bundle).
-//
-//   - `playground` — deployable demo. Minified, standalone playground
-//     HTML bundle. Used by `.github/workflows/playground.yml`.
-//
-// All three modes substitute `process.env.NODE_ENV` with `"production"`,
-// which folds every `if (process.env.NODE_ENV !== "production")` gate in
-// the source (see `src/component/lib/diagnostics.ts`) to `false`. The
-// minifier then dead-code-eliminates every gated branch. (`dev` mode
-// here is for CI / static-bundle inspection; the live dev server,
-// `bun run dev`, doesn't go through this script and so doesn't
-// substitute `process.env.NODE_ENV`, picking up Bun's HMR-bundler
-// default of `"development"` — diagnostics light up.)
-type BuildMode = "dev" | "prod" | "playground";
+// Every mode defines `process.env.NODE_ENV` as "production", so the minifier strips the
+// diagnostics gates (see src/component/lib/diagnostics.ts). `bun dev` doesn't run this
+// script, so the dev server keeps them.
+const mode = process.argv.includes("--prod")
+  ? "prod"
+  : process.argv.includes("--playground")
+    ? "playground"
+    : "dev";
 
-const mode = resolveMode(process.argv);
+const options = {
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  // The React Compiler only runs on .tsx/.jsx, so parse .ts as tsx to compile hooks too.
+  loader: { ".ts": "tsx" },
+  reactCompiler: true,
+  minify: mode !== "dev",
+  sourcemap: mode === "dev" ? "external" : "none",
+} satisfies Partial<Bun.BuildConfig>;
 
-// These scripted builds are production-shaped even in `dev` mode (which is
-// a CI bundle check, not the live dev server). Keep the process environment
-// aligned with the bundled define so plugins and build-time code observe the
-// same mode as bundled application code.
-process.env.NODE_ENV = "production";
-
-// Shared between library + playground builds. `process.env.NODE_ENV` is
-// the de-facto convention for browser bundlers (React, Vue, etc. read it
-// at module scope), so substituting it here produces correctly-shaped
-// production bundles for every consumer.
-const define = {
-  "process.env.NODE_ENV": JSON.stringify("production"),
-};
-
-// Step 1 (dev + prod): Build the library bundle.
-const libraryBuild =
-  mode !== "playground"
-    ? await Bun.build({
-        entrypoints: ["src/index.ts"],
-        outdir: "dist",
-        target: "browser",
-        format: "esm",
-        sourcemap: mode === "dev" ? "external" : "none",
-        splitting: false,
-        external: ["react", "react-dom", "react/jsx-runtime"],
-        // The React Compiler only runs on .tsx/.jsx, so parse .ts as tsx to compile hooks too.
-        loader: { ".ts": "tsx" },
-        reactCompiler: true,
-        ...(mode === "prod" && { minify: true }),
-        define,
-      })
-    : null;
-
-if (libraryBuild) {
-  assertBuildSuccess(libraryBuild, "Library");
-
-  for (const output of libraryBuild.outputs) {
-    console.log(`  ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
-  }
+if (mode !== "playground") {
+  const { outputs } = await Bun.build({
+    ...options,
+    entrypoints: ["src/index.ts"],
+    outdir: "dist",
+    external: ["react", "react-dom", "react/jsx-runtime"],
+  });
+  for (const { path, size } of outputs) console.log(`  ${path} (${(size / 1024).toFixed(1)} KB)`);
 }
 
-// Step 2 (dev + playground): Build the playground app.
 if (mode !== "prod") {
-  rmSync("dist/playground", { recursive: true, force: true });
-
-  const playgroundBuild = await Bun.build({
+  await $`rm -rf dist/playground`;
+  await Bun.build({
+    ...options,
     entrypoints: ["playground/index.html"],
     outdir: "dist/playground",
-    plugins: [tailwindPlugin],
-    sourcemap: mode === "dev" ? "external" : "none",
-    loader: { ".ts": "tsx" },
-    reactCompiler: true,
-    ...(mode === "playground" && { compile: true }),
-    ...(mode === "playground" && { minify: true }),
-    define,
+    plugins: [tailwind],
+    compile: mode === "playground",
   });
-
-  assertBuildSuccess(playgroundBuild, "Playground");
-
-  const libraryOutputCount = libraryBuild?.outputs.length ?? 0;
-  console.log(
-    `\nBuilt ${libraryOutputCount} library outputs and ${playgroundBuild.outputs.length} playground outputs.`,
-  );
-}
-
-function resolveMode(argv: string[]): BuildMode {
-  if (argv.includes("--prod")) return "prod";
-  if (argv.includes("--playground")) return "playground";
-  return "dev";
-}
-
-function assertBuildSuccess(build: BuildOutput, name: string) {
-  if (!build.success) {
-    build.logs.forEach(console.error);
-    throw new Error(`${name} build failed.`);
-  }
 }

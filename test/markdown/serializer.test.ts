@@ -3,34 +3,28 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  createCommentThread,
   createDocument,
+  createLink,
   createListBlock,
   createListItemBlock,
   createParagraphBlock,
   createResource,
   createText,
   type Inline,
-  type ListItemBlock,
   type MetadataValue,
 } from "@/document";
-import {
-  parseDocument,
-  serializeCommentAppendix,
-  serializeDocument,
-  serializeMetadataPreamble,
-} from "@/markdown";
-import { expectBlockAt } from "../document/helpers";
+import { parseDocument, serializeDocument, serializeMetadataPreamble } from "@/markdown";
+import { serializeCommentAppendix } from "@/markdown/serializer";
+import { expectBlockAt, expectInlineAt } from "../document/helpers";
 import { commentedParagraphMarkdown, expectRoundTrip, expectStableRoundTrip } from "./helpers";
 
 describe("Inline marks", () => {
-  test("canonicalizes underscore italic to asterisks", () => {
-    expect(serializeDocument(parseDocument("_foo_\n"))).toBe("*foo*\n");
-  });
-
-  test("canonicalizes u underline html to ins", () => {
-    expect(serializeDocument(parseDocument("Paragraph with <u>underline</u> text.\n"))).toBe(
-      "Paragraph with <ins>underline</ins> text.\n",
-    );
+  test.each([
+    ["underscore italic", "_foo_\n", "*foo*\n"],
+    ["u underline html", "A <u>b</u> c.\n", "A <ins>b</ins> c.\n"],
+  ])("canonicalizes %s", (_label, source, canonical) => {
+    expect(serializeDocument(parseDocument(source))).toBe(canonical);
   });
 
   test("emits nested marks in canonical semantic mark order", () => {
@@ -51,31 +45,96 @@ describe("Inline marks", () => {
     expect(serializeDocument(document)).toBe("*`code`* and <ins>`underlined`</ins>\n");
   });
 
-  test("defensively escapes intra-word underscores so the next parse stays plain text", () => {
-    // The serializer escapes literal underscores to `\_`; reparsing strips
-    // the backslashes; the second serialize emits the escaped form again.
-    // Locks down that the escape doesn't run away across round trips.
-    expect(serializeDocument(parseDocument("snake_case_identifier\n"))).toBe(
-      "snake\\_case\\_identifier\n",
-    );
-    expectStableRoundTrip("snake\\_case\\_identifier\n");
-  });
-
-  test("preserves unmatched ins html as authored markdown", () => {
-    expectRoundTrip("Paragraph with <ins>unfinished underline text.\n");
-  });
-});
-
-describe("Line breaks", () => {
-  // Every hard-break input form canonicalizes to a bare `<br>`. Omitting
-  // a trailing `\n` keeps table cells single-line and avoids inflating
-  // diffs in any renderer that doesn't reflow paragraph lines.
   test.each([
-    ["<br>\\n (parser absorbs trailing newline)", "a<br>\nb\n"],
-    ["two-or-more trailing spaces", "a  \nb\n"],
-    ["backslash-newline", "a\\\nb\n"],
-  ])("emits %s as canonical <br>", (_label, source) => {
-    expect(serializeDocument(parseDocument(source))).toBe("a<br>b\n");
+    [
+      "underscores only where they could open or close emphasis",
+      "snake_case 1_000 :white_check_mark: \\_\\_init\\_\\_ a\\_ *a*\\_b\n",
+    ],
+    ["a literal tilde run", "\\~\\~not struck\\~\\~, ~5ms, ~~~\n"],
+    ["a brace only where it would open directive attributes", ":a\\{b} ::tip\\{x} a{b} :1{b}\n"],
+    ["nothing in unmatched ins html", "Paragraph with <ins>unfinished underline text.\n"],
+  ])("escapes %s", (_label, source) => {
+    expectRoundTrip(source);
+  });
+
+  test.each([
+    [
+      "*see `code` here*",
+      [
+        createText("see ", ["italic"]),
+        createText("code", ["code", "italic"]),
+        createText(" here", ["italic"]),
+      ],
+    ],
+    [
+      "**see [docs](https://x.dev) here**",
+      [
+        createText("see ", ["bold"]),
+        createLink({ children: [createText("docs", ["bold"])], url: "https://x.dev" }),
+        createText(" here", ["bold"]),
+      ],
+    ],
+    [
+      "**x [a*b*](https://x.dev) y**",
+      [
+        createText("x ", ["bold"]),
+        createLink({
+          children: [createText("a", ["bold"]), createText("b", ["bold", "italic"])],
+          url: "https://x.dev",
+        }),
+        createText(" y", ["bold"]),
+      ],
+    ],
+    [
+      "[**do**cs](https://x.dev)",
+      [
+        createLink({
+          children: [createText("do", ["bold"]), createText("cs")],
+          url: "https://x.dev",
+        }),
+      ],
+    ],
+    // The longer-running mark opens outside.
+    ["***a*b**", [createText("a", ["bold", "italic"]), createText("b", ["bold"])]],
+    // The rule of 3 keeps the inner `*` from closing the `**`.
+    ["**a*b***", [createText("a", ["bold"]), createText("b", ["bold", "italic"])]],
+    // `*` can't open after a letter and before punctuation.
+    ['a<strong>"b"</strong>', [createText("a"), createText('"b"', ["bold"])]],
+    // `**` can't close after punctuation and before a letter.
+    ["<strong>「加粗」</strong>中文", [createText("「加粗」", ["bold"]), createText("中文")]],
+    // The `*` before `z` would close the italic that `***` opened.
+    [
+      "***x*y<em>z</em>**",
+      [
+        createText("x", ["bold", "italic"]),
+        createText("y", ["bold"]),
+        createText("z", ["bold", "italic"]),
+      ],
+    ],
+    // A `****` that closes and reopens trips the rule of 3.
+    [
+      "**a*b***<em>c</em>",
+      [createText("a", ["bold"]), createText("b", ["bold", "italic"]), createText("c", ["italic"])],
+    ],
+    // A colon before a word starts a directive only with a label or attributes.
+    ["*Note:Use* :heart:", [createText("Note:Use", ["italic"]), createText(" :heart:")]],
+  ] as const)("writes %s and reads back the same marks", (markdown, children) => {
+    const document = createParagraphDocument([...children]);
+
+    expect(serializeDocument(document)).toBe(`${markdown}\n`);
+    expect(expectBlockAt(parseDocument(`${markdown}\n`), 0, "paragraph").children).toEqual([
+      ...children,
+    ]);
+  });
+
+  test("moves whitespace at the edge of bold text outside the delimiters", () => {
+    const document = createParagraphDocument([
+      createText("a"),
+      createText(" b ", ["bold"]),
+      createText("c"),
+    ]);
+
+    expect(serializeDocument(document)).toBe("a **b** c\n");
   });
 });
 
@@ -105,81 +164,100 @@ describe("Inline references", () => {
     // the reparse would promote the escaped text to a real mention.
     expectStableRoundTrip("Literal \\@[Jane Doe](user-123).\n");
   });
+
+  test.each([
+    ["`!` before a link", "Wow!", "link", "Wow\\![docs](u)\n"],
+    ["`!` before a resource", "Wow!", "resource", "Wow\\![docs](demo-resource://x)\n"],
+    ["`@` before a resource", "ask @", "resource", "ask \\@[docs](demo-resource://x)\n"],
+  ] as const)(
+    "escapes %s so it doesn't reparse as an image or mention",
+    (_label, text, kind, markdown) => {
+      const options = { resourceProtocols: ["demo-resource:"] };
+      const reference =
+        kind === "link"
+          ? createLink({ children: [createText("docs")], url: "u" })
+          : createResource({ label: "docs", protocol: "demo-resource:", url: "demo-resource://x" });
+      const document = createParagraphDocument([createText(text), reference]);
+      const reparsed = expectBlockAt(parseDocument(markdown, options), 0, "paragraph");
+
+      expect(serializeDocument(document, options)).toBe(markdown);
+      expect(reparsed.children.map((child) => child.type)).toEqual(["text", kind]);
+    },
+  );
+
+  test.each([
+    ["an unbalanced `[`", "[a \\[b](u)\n"],
+    ["an unbalanced `]`", "[a \\]b](u)\n"],
+    ["a bracket inside a code span", "[`]` and `[`](u)\n"],
+  ])("keeps link text with %s a link through a save", (_label, markdown) => {
+    const paragraph = expectBlockAt(parseDocument(markdown), 0, "paragraph");
+
+    expect(paragraph.children.map((child) => child.type)).toEqual(["link"]);
+    expectStableRoundTrip(markdown);
+  });
+});
+
+describe("Link destinations", () => {
+  test.each<[string, string, string, (string | null)?]>([
+    ["an unbalanced closing parenthesis", "https://x.dev/a)b", "https://x.dev/a\\)b"],
+    ["an unbalanced opening parenthesis", "https://x.dev/a(b", "https://x.dev/a\\(b"],
+    ["a space", "my file.md", "<my file.md>"],
+    ["no url", "", ""],
+    ["no url before a title", "", '<> "t"', "t"],
+    ["angle brackets", "<u>", "\\<u\\>"],
+  ])("emits %s", (_, url, destination, title = null) => {
+    const markdown = serializeDocument(
+      createParagraphDocument([createLink({ children: [createText("x")], title, url })]),
+    );
+
+    expect(markdown).toBe(`[x](${destination})\n`);
+    expect(expectBlockAt(parseDocument(markdown), 0, "paragraph").children[0]).toMatchObject({
+      title,
+      url,
+    });
+  });
 });
 
 describe("Lists", () => {
-  test("normalizes authored ordered list starts to the canonical first marker by default", () => {
-    const document = parseDocument("3. alpha\n3. beta\n");
-    const list = expectBlockAt(document, 0, "list");
-
-    expect(list.start).toBeNull();
-    expect(serializeDocument(document)).toBe("1. alpha\n1. beta\n");
-  });
-
-  test("preserves authored ordered list starts when requested", () => {
-    const source = "3. alpha\n3. beta\n";
-    const document = parseDocument(source, { preserveOrderedListStart: true });
-    const list = expectBlockAt(document, 0, "list");
-
-    expect(list.start).toBe(3);
-    expectRoundTrip(source, { preserveOrderedListStart: true });
-  });
-
-  test("serializes non-compact lists with blank lines between items", () => {
-    const document = createListDocument({
-      compact: false,
-      items: [createParagraphListItem("alpha"), createParagraphListItem("beta")],
-      ordered: false,
-    });
-
-    expect(serializeDocument(document)).toBe("- alpha\n\n- beta\n");
-  });
-
-  test("serializes non-compact list items with blank lines between child blocks", () => {
-    const document = createListDocument({
-      items: [
-        createListItemBlock({
-          children: [createParagraph("alpha"), createParagraph("beta")],
-          compact: false,
-        }),
-      ],
-      ordered: false,
-    });
-
-    expect(serializeDocument(document)).toBe("- alpha\n\n  beta\n");
+  test("keeps an authored start and numbering through a save", () => {
+    expectRoundTrip("9. alpha\n10. beta\n    - gamma\n");
   });
 
   test("preserves empty task list markers", () => {
-    // A task list whose second item has no content is a shape the parser
-    // would never produce on its own (an empty `- [ ]` line is normalized
-    // through the list parser into an empty-paragraph child), but the
-    // editor's structural-split path can — pressing Enter at the end of a
-    // task item creates exactly this Document. The serializer must keep
-    // both checkbox markers intact.
-    const document = createListDocument({
-      items: [
-        createParagraphListItem("alpha", { checked: false }),
-        createParagraphListItem("", { checked: false }),
-      ],
-      ordered: false,
-    });
+    // Pressing Enter at the end of a task item builds this shape.
+    const document = createDocument([
+      createListBlock({
+        items: [
+          createListItemBlock({
+            checked: false,
+            children: [createParagraphBlock([createText("alpha")])],
+          }),
+          createListItemBlock({ checked: false, children: [createParagraphBlock([])] }),
+        ],
+        ordered: false,
+      }),
+    ]);
 
     expect(serializeDocument(document)).toBe("- [ ] alpha\n- [ ] \n");
+  });
+
+  test.each([
+    ["a later paragraph", "- one\n\n  two\n  three\n"],
+    ["a nested item", "- one\n  - two\n    three\n"],
+    ["an ordered item", "1. one\n   two\n"],
+    ["a task item", "- [x] one\n  two\n"],
+    ["a quoted item", "> - one\n>   two\n"],
+  ])("keeps the item indent on every wrapped line of %s", (_, source) => {
+    expectStableRoundTrip(source);
   });
 });
 
 describe("Images", () => {
   test("preserves authored image widths through markdown export", () => {
     const source = '![Preview](https://example.com/preview.png "Host fit"){width=320}\n';
-    const document = parseDocument(source);
-    const paragraph = expectBlockAt(document, 0, "paragraph");
-    const image = paragraph.children[0];
+    const paragraph = expectBlockAt(parseDocument(source), 0, "paragraph");
 
-    if (!image || image.type !== "image") {
-      throw new Error("Expected image node");
-    }
-
-    expect(image.width).toBe(320);
+    expect(expectInlineAt(paragraph.children, 0, "image").width).toBe(320);
     expectRoundTrip(source);
   });
 
@@ -236,6 +314,20 @@ describe("Comments", () => {
 ]
 :::`);
   });
+
+  test("saves a new thread the same way after a reload", () => {
+    const thread = createCommentThread({
+      anchor: { prefix: "A ", suffix: " line." },
+      body: "Reviewing this.",
+      createdAt: "2026-04-05T12:00:00.000Z",
+      quote: "commented",
+    });
+    const markdown = serializeDocument(
+      createDocument([createParagraphBlock([createText("A commented line.")])], [thread]),
+    );
+
+    expect(serializeDocument(parseDocument(markdown))).toBe(markdown);
+  });
 });
 
 describe("Document metadata", () => {
@@ -277,6 +369,7 @@ title: Second
     "false",
     "\n",
     "\n\n",
+    " indented\nlines",
   ])("keeps edited string value %p structured across serialization", (value) => {
     const metadata = new Map<string, MetadataValue>([["title", value]]);
     const markdown = serializeDocument(createDocument([], [], metadata));
@@ -294,59 +387,38 @@ describe("Paragraph block-start escapes", () => {
   test.each([
     ["blockquote marker", "\\> not a quote\n"],
     ["ATX heading", "\\# not a heading\n"],
+    ["bare ATX marker", "\\##\n"],
     ["bullet marker (-)", "\\- not a list\n"],
     ["bullet marker (*)", "\\* not a list\n"],
     ["bullet marker (+)", "\\+ not a list\n"],
     ["ordered list marker", "1\\. not a list\n"],
     ["container directive", "\\:::callout\n"],
     ["fenced code marker", "\\`\\`\\`not code\n"],
+    ["fenced code, for code spans at line start", "``` `` ```\n```` ``` ````\n"],
     ["thematic break", "\\*\\*\\*\n"],
     ["table row", "\\| not | a table |\n"],
+    ["setext underline (=)", "Title\n\\===\n"],
+    ["setext underline (-)", "Title\n\\--\n"],
+    ["HTML", "\\<div> and Array\\<string>\n"],
   ])("round-trips a paragraph that would otherwise reparse as %s", (_label, canonical) => {
     expectRoundTrip(canonical);
   });
 
-  test("leaves intra-line block-start characters alone", () => {
-    // The escapes are line-start only; embedded `>`, `#`, etc. stay plain.
-    expectRoundTrip("Text with > inside and 1. mid-line markers.\n");
-  });
-
-  test("does not escape bold delimiters as bullet markers", () => {
-    // `**bold**` shares its lead character with bullet `*` but has no
-    // following space, so the parser would never read it as a list.
-    expectRoundTrip("**bold** at line start.\n");
+  test.each([
+    ["intra-line block-start characters", "Text with > inside and 1. mid-line markers.\n"],
+    ["bold delimiters at line start", "**bold** at line start.\n"],
+  ])("leaves %s unescaped", (_label, canonical) => {
+    expectRoundTrip(canonical);
   });
 
   test.each([
     ["ordinary text", "&#x20;leading\n"],
-    ["blockquote marker", "&#x20;> not a quote\n"],
-    ["heading marker", "&#x20;# not a heading\n"],
-    ["list marker", "&#x20;- not a list\n"],
-    ["ordered list marker", "&#x20;1. not a list\n"],
-    ["directive marker", "&#x20;:::callout\n"],
-    ["table marker", "&#x20;| not | a table |\n"],
+    ["a block marker, which needs no backslash", "&#x20;1. not a list\n"],
   ])("round-trips a paragraph line with leading space before %s", (_label, canonical) => {
     expectRoundTrip(canonical);
   });
 });
 
-type ListItemOptions = Omit<Parameters<typeof createListItemBlock>[0], "children">;
-
 function createParagraphDocument(children: Inline[]) {
   return createDocument([createParagraphBlock(children)]);
-}
-
-function createParagraph(text: string) {
-  return createParagraphBlock(text.length > 0 ? [createText(text)] : []);
-}
-
-function createListDocument(options: Parameters<typeof createListBlock>[0]) {
-  return createDocument([createListBlock(options)]);
-}
-
-function createParagraphListItem(text: string, options: ListItemOptions = {}): ListItemBlock {
-  return createListItemBlock({
-    ...options,
-    children: [createParagraph(text)],
-  });
 }

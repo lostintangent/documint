@@ -7,7 +7,11 @@ import {
   measureCanvasLineOffsetLeft,
   resolveBoundaryOffset,
 } from "../layout/query/line-lookup";
-import { resolveListMarkerTarget, resolveTaskCheckboxBounds } from "../layout/query/line-visuals";
+import {
+  resolveInlineImageBounds,
+  resolveListMarkerTarget,
+  resolveTaskCheckboxBounds,
+} from "../layout/query/line-visuals";
 import { CHECKBOX_HIT_PADDING } from "../layout/lib/marker-metrics";
 import type { DocumentLayout, LayoutLine } from "../layout/measure";
 import {
@@ -23,14 +27,6 @@ import {
   type IndexedInline,
 } from "../state";
 import { resolveWordRangeAtOffset } from "../text/words";
-
-type EditorHit = {
-  height: number;
-  left: number;
-  offset: number;
-  path: string;
-  top: number;
-};
 
 export type EditorHoverTarget =
   | {
@@ -89,25 +85,43 @@ export function resolveEditorHitAtPoint(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
-): EditorHit | null {
-  const result = resolveLayoutLineAtPoint(layout, state, point);
+): EditorSelectionPoint | null {
+  const line = findDocumentLayoutLineAtPoint(layout, point)?.line;
 
-  if (!result) {
-    return null;
+  if (line) {
+    return resolveHitOnLine(state, line, point.x);
   }
 
-  // Inert-redirect hits snap to the start of the redirected-to line; the
-  // original click x is meaningless because the click landed on an inert
-  // block whose chrome the line doesn't belong to.
-  const offsetX = result.snapToLineStart ? result.line.left : point.x;
-  return resolveHitOnLine(state, result.line, offsetX);
+  // A point in a block's padding resolves to the block's last line. Inert
+  // leaf blocks have no lines, so they redirect to the start of the next
+  // text path in flow; the click x is meaningless there.
+  for (const block of layout.blocks) {
+    if (point.y < block.top || point.y > block.bottom) continue;
+
+    for (let i = layout.lines.length - 1; i >= 0; i--) {
+      if (layout.lines[i]!.blockPath === block.blockPath) {
+        return resolveHitOnLine(state, layout.lines[i]!, point.x);
+      }
+    }
+
+    const indexedBlock = resolveIndexedBlock(state.documentIndex, block.blockPath);
+    if (indexedBlock && isInertBlock(indexedBlock)) {
+      const nextLeaf = nextBlockInFlow(state.documentIndex, block.blockPath);
+      if (nextLeaf) {
+        const firstLine = layout.lines.find((line) => line.blockPath === nextLeaf.path);
+        if (firstLine) return resolveHitOnLine(state, firstLine, firstLine.left);
+      }
+    }
+  }
+
+  return null;
 }
 
 function resolveHitBelowLayout(
   layout: DocumentLayout,
   state: EditorState,
   point: { x: number; y: number },
-): EditorHit | null {
+): EditorSelectionPoint | null {
   const lastLine = layout.lines[layout.lines.length - 1];
 
   if (!lastLine || point.y <= lastLine.top + lastLine.height) {
@@ -122,11 +136,10 @@ export function resolveSelectionPointAt(
   viewport: { layout: DocumentLayout },
   point: { x: number; y: number },
 ): EditorSelectionPoint | null {
-  const hit =
+  return (
     resolveEditorHitAtPoint(viewport.layout, state, point) ??
-    resolveHitBelowLayout(viewport.layout, state, point);
-
-  return hit ? { path: hit.path, offset: hit.offset } : null;
+    resolveHitBelowLayout(viewport.layout, state, point)
+  );
 }
 
 // Resolves the focus point of a mouse drag. The focus follows the pointer's
@@ -147,17 +160,10 @@ export function resolveDragFocus(
   const hit = resolveEditorHitAtPoint(viewport.layout, state, point);
 
   if (hit) {
-    if (!canExtendSelectionBetweenPaths(anchor.path, hit.path)) {
-      return anchor;
-    }
-
-    return {
-      path: hit.path,
-      offset: hit.offset,
-    };
+    return canExtendSelectionBetweenPaths(anchor.path, hit.path) ? hit : anchor;
   }
 
-  const isAboveLayout = point.y < resolveViewportTop(viewport.layout);
+  const isAboveLayout = point.y < (viewport.layout.lines[0]?.top ?? 0);
 
   return {
     path: anchor.path,
@@ -177,12 +183,7 @@ export function resolveWordSelection(
   }
 
   const text = resolveEditorTextAtPath(state.documentIndex, hit.path);
-
-  if (text === null || text.length === 0) {
-    return null;
-  }
-
-  const range = resolveWordRangeAtOffset(text, hit.offset);
+  const range = text === null ? null : resolveWordRangeAtOffset(text, hit.offset);
 
   if (!range) {
     return null;
@@ -256,6 +257,24 @@ export function resolveHoverTarget(
     commentRanges,
   );
   const inlines = resolveInlinesAtPath(state.documentIndex, hit.path);
+  // An image's caret offset flips at its midpoint, so its box decides instead.
+  const image = line.inlineReferences?.find((reference) => {
+    if (reference.kind !== "image") {
+      return false;
+    }
+
+    const { left, width } = resolveInlineImageBounds(line, reference);
+    return point.x >= left && point.x < left + width;
+  });
+  const imageRun =
+    image && inlines?.find((entry) => entry.start === image.start && entry.node.type === "image");
+
+  if (imageRun) {
+    return imageRun.link
+      ? linkHoverTarget(imageRun, imageRun.link, hit.path, commentThreadIndex)
+      : { kind: "text", commentThreadIndex };
+  }
+
   const resourceRun = inlines?.find(
     (entry) =>
       entry.node.type === "resource" && hit.offset >= entry.start && hit.offset <= entry.end,
@@ -293,7 +312,11 @@ export function resolveTargetAtOffset(
   }
 
   const commentThreadIndex = resolveCommentThreadIndexAtOffset(path, offset, commentRanges);
-  const run = inlines.find((entry) => offset >= entry.start && offset <= entry.end) ?? null;
+  // A tap on a linked image's left half puts the caret before it, so either side surfaces its link.
+  const run =
+    inlines.find((entry) => entry.start === offset && entry.node.type === "image" && entry.link) ??
+    inlines.find((entry) => offset >= entry.start && offset <= entry.end) ??
+    null;
 
   if (run?.node.type === "resource") {
     return resourceHoverTarget(run.node, path, commentThreadIndex);
@@ -324,13 +347,13 @@ function resolveTaskToggleAtPoint(
     return null;
   }
 
-  const target = resolveListMarkerTarget(state, line);
+  const target = resolveListMarkerTarget(state, line, layout.options);
 
   if (target?.marker.kind !== "task") {
     return null;
   }
 
-  const bounds = resolveTaskCheckboxBounds(line);
+  const bounds = resolveTaskCheckboxBounds(line, target.left);
   return pointInRect(point, bounds, CHECKBOX_HIT_PADDING)
     ? {
         kind: "task-toggle",
@@ -374,7 +397,11 @@ function linkHoverTarget(
 // Resolves a horizontal position on an already-identified line to a selection
 // hit. This avoids re-resolving the line from coordinates, which can land on
 // the wrong line when Y falls exactly on a line boundary.
-function resolveHitOnLine(state: EditorState, line: LayoutLine, x: number): EditorHit | null {
+function resolveHitOnLine(
+  state: EditorState,
+  line: LayoutLine,
+  x: number,
+): EditorSelectionPoint | null {
   const text = resolveEditorTextAtPath(state.documentIndex, line.path);
 
   if (text === null) {
@@ -383,59 +410,7 @@ function resolveHitOnLine(state: EditorState, line: LayoutLine, x: number): Edit
 
   const localX = Math.max(0, x - line.contentInset - line.left);
   const offset = resolveBoundaryOffset(line.boundaries, localX);
-  const resolvedOffset = Math.min(text.length, line.start + offset);
-
-  return {
-    path: line.path,
-    offset: resolvedOffset,
-    left: measureCanvasLineOffsetLeft(line, offset),
-    top: line.top,
-    height: line.height,
-  };
-}
-
-type LayoutLineHit = {
-  line: LayoutLine;
-  // Inert-redirect hits should snap to the start of the resolved line
-  // rather than computing an offset from the original click x (the
-  // click landed on the inert block, not on this line's content).
-  snapToLineStart?: boolean;
-};
-
-function resolveLayoutLineAtPoint(
-  layout: DocumentLayout,
-  state: EditorState,
-  point: { x: number; y: number },
-): LayoutLineHit | null {
-  const lineHit = findDocumentLayoutLineAtPoint(layout, point)?.line ?? null;
-
-  if (lineHit) {
-    return { line: lineHit };
-  }
-
-  // If the point is in a block's padding, resolve to the block's last line.
-  // Inert leaf blocks have no lines of their own and redirect to the first
-  // line of the next text path in flow.
-  for (const block of layout.blocks) {
-    if (point.y < block.top || point.y > block.bottom) continue;
-
-    for (let i = layout.lines.length - 1; i >= 0; i--) {
-      if (layout.lines[i]!.blockPath === block.blockPath) {
-        return { line: layout.lines[i]! };
-      }
-    }
-
-    const indexedBlock = resolveIndexedBlock(state.documentIndex, block.blockPath);
-    if (indexedBlock && isInertBlock(indexedBlock)) {
-      const nextLeaf = nextBlockInFlow(state.documentIndex, block.blockPath);
-      if (nextLeaf) {
-        const firstLine = layout.lines.find((line) => line.blockPath === nextLeaf.path);
-        if (firstLine) return { line: firstLine, snapToLineStart: true };
-      }
-    }
-  }
-
-  return null;
+  return { path: line.path, offset: Math.min(text.length, line.start + offset) };
 }
 
 function resolveCommentThreadIndexAtOffset(
@@ -503,10 +478,6 @@ function resolveInteractiveLineAtPoint(
       )[0] ??
     null
   );
-}
-
-function resolveViewportTop(layout: DocumentLayout) {
-  return layout.lines[0]?.top ?? 0;
 }
 
 function pointInRect(

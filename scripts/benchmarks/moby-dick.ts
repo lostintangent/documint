@@ -1,59 +1,23 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import "../../test/setup-canvas";
-import { mkdirSync } from "fs";
 import { createEditorLayoutState, createEditorState, createLayoutCache } from "@/editor";
-import {
-  insertText,
-  normalizeSelection,
-  resolveIndexedBlockContainingPath,
-  setSelection,
-  type EditorState,
-} from "@/editor/state";
+import type { EditorLayoutState } from "@/editor/layout";
+import { insertText, setSelection } from "@/editor/state";
 import { parseDocument, serializeDocument } from "@/markdown";
-import { createDocumentFrame, paintDocumentFrame } from "@/renderer";
-import { lightTheme, resolveEditorTheme } from "@/component/lib/themes";
-import { summarizeSamples } from "./stats";
-import { BENCHMARK_VIEWPORT } from "./harness";
-
-type MobyDickSampleRecord = {
-  iterations: number;
-  kind: "sample";
-  name: string;
-  p50Ms: number;
-  p95Ms: number;
-  p99Ms: number;
-};
-
-type MobyDickOffsetDistributionRecord = {
-  kind: "offset-distribution";
-  maxDurationMs: number;
-  name: string;
-  p50DurationMs: number;
-  p95DurationMs: number;
-  p99DurationMs: number;
-  sampleCount: number;
-  worstOffsetTop: number;
-};
-
-type MobyDickProfileRecord = {
-  durationMs: number;
-  kind: "profile-once";
-  name: string;
-};
-
-type MobyDickRecord =
-  | MobyDickOffsetDistributionRecord
-  | MobyDickProfileRecord
-  | MobyDickSampleRecord;
+import { paintDocumentFrame } from "@/renderer";
+import {
+  BENCHMARK_VIEWPORT,
+  createBenchmarkDocumentFrame,
+  roundMs,
+  summarizeSamples,
+} from "./harness";
 
 const sourceUrl = "https://www.gutenberg.org/files/2701/2701-0.txt";
-const cacheDirectory = new URL("./.cache/", import.meta.url);
-const cachePath = new URL("moby-dick.txt", cacheDirectory);
+const cachePath = new URL("./.cache/moby-dick.txt", import.meta.url);
 const viewport = {
   height: BENCHMARK_VIEWPORT.height,
   width: 900,
 };
-const theme = resolveEditorTheme(lightTheme);
 
 const rawText = await readMobyDickText();
 const markdown = normalizeMobyDickMarkdown(stripProjectGutenbergEnvelope(rawText));
@@ -73,16 +37,10 @@ const indexProfile = profileOnce("create_documint_index", () => createEditorStat
 const state = indexProfile.value;
 const layoutCache = createLayoutCache();
 const initialLayoutProfile = profileOnce("initial_virtual_layout", () =>
-  createEditorLayoutState(
-    state,
-    {
-      ...viewport,
-      top: 0,
-    },
-    layoutCache,
-  ),
+  createEditorLayoutState(state, { ...viewport, top: 0 }, layoutCache),
 );
 const initialLayout = initialLayoutProfile.value;
+const openProfiles = [parseProfile, indexProfile, initialLayoutProfile];
 
 console.log("Documint shape");
 console.table([
@@ -90,115 +48,87 @@ console.table([
     blocks: document.blocks.length,
     paths: indexedTextEntries(state).length,
     linesInInitialPaintSlice: initialLayout.layout.lines.length,
-    totalHeight: Math.round(initialLayout.totalHeight),
+    totalHeight: Math.round(initialLayout.layout.height),
   },
 ]);
 
 console.log("Open path");
 console.table([
-  formatRecord(summarizeProfile(parseProfile)),
-  formatRecord(summarizeProfile(indexProfile)),
-  formatRecord(summarizeProfile(initialLayoutProfile)),
-  formatRecord({
+  ...openProfiles.map(({ durationMs, name }) => ({ name, durationMs: roundMs(durationMs) })),
+  {
     name: "open_total",
-    kind: "profile-once",
-    durationMs: parseProfile.durationMs + indexProfile.durationMs + initialLayoutProfile.durationMs,
-  }),
+    durationMs: roundMs(openProfiles.reduce((total, { durationMs }) => total + durationMs, 0)),
+  },
 ]);
 
-const scrollOffsets = createScrollOffsets(initialLayout.totalHeight, viewport.height, 240);
+const scrollOffsets = createScrollOffsets(initialLayout.layout.height, viewport.height, 240);
 const paintContext = createNoopCanvasContext();
-
-const layoutScroll = runFrameBenchmark("scroll_layout_only", scrollOffsets, (top) => {
-  void createEditorLayoutState(
-    state,
-    {
-      ...viewport,
-      top,
-    },
-    layoutCache,
-  );
-});
-
-const paintAtPreparedTop = runBenchmarkSamples("paint_prepared_viewport", 120, () => {
+const paint = (layoutState: EditorLayoutState) => {
   paintContext.reset();
-  paintDocumentFrame(
-    paintContext as unknown as CanvasRenderingContext2D,
-    createDocumentFrame(state, initialLayout, createPaintOptions(state)),
-  );
-});
-
-const scrollLayoutAndPaint = runFrameBenchmark("scroll_layout_and_paint", scrollOffsets, (top) => {
-  const layout = createEditorLayoutState(
-    state,
-    {
-      ...viewport,
-      top,
+  paintDocumentFrame(paintContext, createBenchmarkDocumentFrame(state, layoutState, viewport));
+};
+const scrollAndPaint = [
+  measureOffsets("scroll_layout_only", scrollOffsets, (top) => {
+    void createEditorLayoutState(state, { ...viewport, top }, layoutCache);
+  }),
+  measureSamples("paint_prepared_viewport", 120, () => paint(initialLayout)),
+  measureOffsets("scroll_layout_and_paint", scrollOffsets, (top) => {
+    paint(createEditorLayoutState(state, { ...viewport, top }, layoutCache));
+  }),
+  measureOffsets(
+    "cold_layout_at_deep_offsets",
+    createScrollOffsets(initialLayout.layout.height, viewport.height, 16),
+    (top) => {
+      void createEditorLayoutState(state, { ...viewport, top }, createLayoutCache());
     },
-    layoutCache,
-  );
-
-  paintContext.reset();
-  paintDocumentFrame(
-    paintContext as unknown as CanvasRenderingContext2D,
-    createDocumentFrame(state, layout, createPaintOptions(state)),
-  );
-});
-
-const coldLayoutAtDeepOffsets = runFrameBenchmark(
-  "cold_layout_at_deep_offsets",
-  createScrollOffsets(initialLayout.totalHeight, viewport.height, 16),
-  (top) => {
-    void createEditorLayoutState(
-      state,
-      {
-        ...viewport,
-        top,
-      },
-      createLayoutCache(),
-    );
-  },
-);
+  ),
+];
 
 console.log("Scroll and paint");
-console.table([
-  formatDurationRecord(layoutScroll),
-  formatDurationRecord(paintAtPreparedTop),
-  formatDurationRecord(scrollLayoutAndPaint),
-  formatDurationRecord(coldLayoutAtDeepOffsets),
-]);
+console.table(scrollAndPaint);
 
-const bottleneck = [layoutScroll, paintAtPreparedTop, scrollLayoutAndPaint, coldLayoutAtDeepOffsets]
-  .slice()
-  .sort((left, right) => getPrimaryDurationMs(right) - getPrimaryDurationMs(left))[0]!;
+const bottleneck = scrollAndPaint.reduce((worst, row) => (row.p99Ms > worst.p99Ms ? row : worst));
 const frameBudgetMs = 1000 / 60;
 
 console.log(
-  `Main bottleneck: ${bottleneck.name} (${getPrimaryDurationMs(bottleneck).toFixed(2)}ms, ${(
-    getPrimaryDurationMs(bottleneck) / frameBudgetMs
+  `Main bottleneck: ${bottleneck.name} (${bottleneck.p99Ms.toFixed(2)}ms, ${(
+    bottleneck.p99Ms / frameBudgetMs
   ).toFixed(1)}x a 60fps frame).`,
 );
 
-const editFixture = createTypingEditFixture(state);
-const typingFullEdit = runTypingBenchmarkSamples("typing_full_edit", 120, editFixture);
-const typingFullEditWithLayout = runTypingBenchmarkSamples(
-  "typing_full_edit_with_layout",
-  80,
-  editFixture,
-  (nextState) => {
-    void createEditorLayoutState(nextState, { ...viewport, top: 0 }, createLayoutCache());
-  },
-);
+const editTarget = indexedTextEntries(state).find((candidate) => candidate.text.length > 40);
 
-console.log("Edit path");
-console.table([typingFullEdit, typingFullEditWithLayout].map(formatRecord));
+if (!editTarget) {
+  throw new Error("Expected an editable text path in Moby-Dick fixture.");
+}
 
-async function readMobyDickText() {
-  if (await Bun.file(cachePath).exists()) {
-    return Bun.file(cachePath).text();
+const editPoint = { offset: Math.floor(editTarget.text.length / 2), path: editTarget.path };
+const typeAtEditPoint = () => {
+  const next = insertText(setSelection(state, editPoint), " updated");
+
+  if (!next) {
+    throw new Error("Expected typing edit to produce a state.");
   }
 
-  mkdirSync(cacheDirectory, { recursive: true });
+  void serializeDocument(next.documentIndex.document);
+
+  return next;
+};
+
+console.log("Edit path");
+console.table([
+  measureSamples("typing_full_edit", 120, typeAtEditPoint),
+  measureSamples("typing_full_edit_with_layout", 80, () => {
+    void createEditorLayoutState(typeAtEditPoint(), { ...viewport, top: 0 }, createLayoutCache());
+  }),
+]);
+
+async function readMobyDickText() {
+  const cache = Bun.file(cachePath);
+
+  if (await cache.exists()) {
+    return cache.text();
+  }
 
   const response = await fetch(sourceUrl);
 
@@ -208,7 +138,7 @@ async function readMobyDickText() {
 
   const text = await response.text();
 
-  await Bun.write(cachePath, text);
+  await Bun.write(cache, text);
 
   return text;
 }
@@ -299,36 +229,6 @@ function createScrollOffsets(totalHeight: number, viewportHeight: number, frameC
   );
 }
 
-function createPaintOptions(state: EditorState) {
-  return {
-    activeBlockPath:
-      resolveIndexedBlockContainingPath(state.documentIndex, state.selection.focus.path)?.path ??
-      null,
-    activePath: state.selection.focus.path,
-    activeThreadIndex: null,
-    commentRanges: [],
-    devicePixelRatio: 1,
-    height: viewport.height,
-    normalizedSelection: normalizeSelection(state),
-    now: 0,
-    theme,
-    width: viewport.width,
-  };
-}
-
-function createTypingEditFixture(baseState: EditorState) {
-  const path = indexedTextEntries(baseState).find((candidate) => candidate.text.length > 40);
-
-  if (!path) {
-    throw new Error("Expected an editable text path in Moby-Dick fixture.");
-  }
-
-  return {
-    offset: Math.floor(path.text.length / 2),
-    path: path.path,
-  };
-}
-
 function profileOnce<T>(name: string, task: () => T) {
   const startedAt = performance.now();
   const value = task();
@@ -340,158 +240,52 @@ function profileOnce<T>(name: string, task: () => T) {
   };
 }
 
-function summarizeProfile(profile: ReturnType<typeof profileOnce>) {
+// Times every sample after one discarded warmup run.
+function measureSamples(name: string, iterations: number, task: () => void) {
+  task();
+
+  return summarizeDurations(
+    name,
+    Array.from({ length: iterations }, () => time(task)),
+  );
+}
+
+// Times one cold sample per scroll offset and reports the slowest offset.
+function measureOffsets(name: string, offsets: readonly number[], task: (top: number) => void) {
+  const durations = offsets.map((top) => time(() => task(top)));
+
   return {
-    kind: "profile-once" as const,
-    name: profile.name,
-    durationMs: profile.durationMs,
+    ...summarizeDurations(name, durations),
+    worstOffsetTop: offsets[durations.lastIndexOf(Math.max(...durations))],
   };
 }
 
-function runBenchmarkSamples(
-  name: string,
-  iterations: number,
-  task: () => void,
-): MobyDickSampleRecord {
-  const samples: number[] = [];
+function summarizeDurations(name: string, durations: number[]) {
+  const { p50Ms, p95Ms, p99Ms } = summarizeSamples(durations);
+
+  return {
+    name,
+    samples: durations.length,
+    p50Ms: roundMs(p50Ms),
+    p95Ms: roundMs(p95Ms),
+    p99Ms: roundMs(p99Ms),
+    maxMs: roundMs(Math.max(...durations)),
+  };
+}
+
+function time(task: () => void) {
+  const startedAt = performance.now();
 
   task();
 
-  for (let index = 0; index < iterations; index += 1) {
-    const startedAt = performance.now();
-
-    task();
-    samples.push(performance.now() - startedAt);
-  }
-
-  const summary = summarizeSamples(samples);
-
-  return {
-    iterations,
-    kind: "sample",
-    name,
-    p50Ms: summary.p50Ms,
-    p95Ms: summary.p95Ms,
-    p99Ms: summary.p99Ms,
-  };
+  return performance.now() - startedAt;
 }
 
-function runTypingBenchmarkSamples(
-  name: string,
-  iterations: number,
-  fixture: ReturnType<typeof createTypingEditFixture>,
-  afterEdit?: (nextState: EditorState) => void,
-): MobyDickSampleRecord {
-  return runBenchmarkSamples(name, iterations, () => {
-    const previous = setSelection(state, {
-      offset: fixture.offset,
-      path: fixture.path,
-    });
-    const next = insertText(previous, " updated");
-
-    if (!next) {
-      throw new Error(`Expected typing edit to produce a state for ${name}.`);
-    }
-
-    void serializeDocument(next.documentIndex.document);
-    afterEdit?.(next);
-  });
-}
-
-function runFrameBenchmark(name: string, offsets: readonly number[], task: (top: number) => void) {
-  const samples: Array<{ durationMs: number; offsetTop: number }> = [];
-
-  for (const top of offsets) {
-    const startedAt = performance.now();
-
-    task(top);
-    samples.push({
-      durationMs: performance.now() - startedAt,
-      offsetTop: top,
-    });
-  }
-
-  samples.sort((left, right) => left.durationMs - right.durationMs);
-  const durations = samples.map((sample) => sample.durationMs);
-  const summary = summarizeSamples(durations);
-  const worstSample = samples[samples.length - 1]!;
-
-  return {
-    kind: "offset-distribution" as const,
-    maxDurationMs: durations[durations.length - 1]!,
-    name,
-    p50DurationMs: summary.p50Ms,
-    p95DurationMs: summary.p95Ms,
-    p99DurationMs: summary.p99Ms,
-    sampleCount: offsets.length,
-    worstOffsetTop: worstSample.offsetTop,
-  };
-}
-
-function formatRecord(record: MobyDickRecord) {
-  switch (record.kind) {
-    case "offset-distribution":
-      return {
-        kind: record.kind,
-        maxDurationMs: roundMs(record.maxDurationMs),
-        name: record.name,
-        p50DurationMs: roundMs(record.p50DurationMs),
-        p95DurationMs: roundMs(record.p95DurationMs),
-        p99DurationMs: roundMs(record.p99DurationMs),
-        sampleCount: record.sampleCount,
-        worstOffsetTop: record.worstOffsetTop,
-      };
-    case "profile-once":
-      return {
-        durationMs: roundMs(record.durationMs),
-        kind: record.kind,
-        name: record.name,
-      };
-    case "sample":
-      return {
-        iterations: record.iterations,
-        kind: record.kind,
-        name: record.name,
-        p50Ms: roundMs(record.p50Ms),
-        p95Ms: roundMs(record.p95Ms),
-        p99Ms: roundMs(record.p99Ms),
-      };
-  }
-}
-
-function formatDurationRecord(record: MobyDickOffsetDistributionRecord | MobyDickSampleRecord) {
-  return record.kind === "offset-distribution"
-    ? {
-        kind: record.kind,
-        maxDurationMs: roundMs(record.maxDurationMs),
-        name: record.name,
-        p50DurationMs: roundMs(record.p50DurationMs),
-        p95DurationMs: roundMs(record.p95DurationMs),
-        p99DurationMs: roundMs(record.p99DurationMs),
-        sampleCount: record.sampleCount,
-        worstOffsetTop: record.worstOffsetTop,
-      }
-    : {
-        kind: record.kind,
-        maxDurationMs: "",
-        name: record.name,
-        p50DurationMs: roundMs(record.p50Ms),
-        p95DurationMs: roundMs(record.p95Ms),
-        p99DurationMs: roundMs(record.p99Ms),
-        sampleCount: record.iterations,
-        worstOffsetTop: "",
-      };
-}
-
-function getPrimaryDurationMs(record: MobyDickOffsetDistributionRecord | MobyDickSampleRecord) {
-  return record.kind === "offset-distribution" ? record.p99DurationMs : record.p99Ms;
-}
-
-function roundMs(value: number) {
-  return Number(value.toFixed(3));
-}
-
+// Paint calls draw nothing, so samples time the renderer rather than
+// rasterization. Canvas state still saves and restores like a real context.
 function createNoopCanvasContext() {
+  const noop = () => {};
+  const stateStack: Array<Partial<typeof context>> = [];
   const context = {
     fillStyle: "" as string | CanvasGradient | CanvasPattern,
     font: "",
@@ -500,86 +294,66 @@ function createNoopCanvasContext() {
     lineCap: "butt" as CanvasLineCap,
     lineJoin: "miter" as CanvasLineJoin,
     lineWidth: 1,
-    stateStack: [] as Array<{
-      fillStyle: string | CanvasGradient | CanvasPattern;
-      font: string;
-      globalAlpha: number;
-      globalCompositeOperation: GlobalCompositeOperation;
-      lineCap: CanvasLineCap;
-      lineJoin: CanvasLineJoin;
-      lineWidth: number;
-      strokeStyle: string | CanvasGradient | CanvasPattern;
-      textAlign: CanvasTextAlign;
-      textBaseline: CanvasTextBaseline;
-    }>,
     strokeStyle: "" as string | CanvasGradient | CanvasPattern,
     textAlign: "start" as CanvasTextAlign,
     textBaseline: "alphabetic" as CanvasTextBaseline,
-    arc() {},
-    beginPath() {},
-    clearRect() {},
-    clip() {},
-    closePath() {},
-    createLinearGradient(): CanvasGradient {
-      return {
-        addColorStop() {},
-      } as CanvasGradient;
-    },
-    drawImage() {},
-    fill() {},
-    fillRect() {},
-    fillText() {},
-    lineTo() {},
-    measureText(text: string) {
-      return {
-        actualBoundingBoxAscent: 10,
-        actualBoundingBoxDescent: 3,
-        width: text.length * 8,
-      } as TextMetrics;
-    },
-    moveTo() {},
-    rect() {},
+    arc: noop,
+    beginPath: noop,
+    clearRect: noop,
+    clip: noop,
+    closePath: noop,
+    createLinearGradient: () => ({ addColorStop: noop }),
+    drawImage: noop,
+    fill: noop,
+    fillRect: noop,
+    fillText: noop,
+    lineTo: noop,
+    measureText: (text: string) => ({
+      actualBoundingBoxAscent: 10,
+      actualBoundingBoxDescent: 3,
+      width: text.length * 8,
+    }),
+    moveTo: noop,
+    rect: noop,
     reset() {
-      context.stateStack = [];
+      stateStack.length = 0;
     },
     restore() {
-      const state = context.stateStack.pop();
-
-      if (!state) {
-        return;
-      }
-
-      context.fillStyle = state.fillStyle;
-      context.font = state.font;
-      context.globalAlpha = state.globalAlpha;
-      context.globalCompositeOperation = state.globalCompositeOperation;
-      context.lineCap = state.lineCap;
-      context.lineJoin = state.lineJoin;
-      context.lineWidth = state.lineWidth;
-      context.strokeStyle = state.strokeStyle;
-      context.textAlign = state.textAlign;
-      context.textBaseline = state.textBaseline;
+      Object.assign(context, stateStack.pop());
     },
-    roundRect() {},
+    roundRect: noop,
     save() {
-      context.stateStack.push({
-        fillStyle: context.fillStyle,
-        font: context.font,
-        globalAlpha: context.globalAlpha,
-        globalCompositeOperation: context.globalCompositeOperation,
-        lineCap: context.lineCap,
-        lineJoin: context.lineJoin,
-        lineWidth: context.lineWidth,
-        strokeStyle: context.strokeStyle,
-        textAlign: context.textAlign,
-        textBaseline: context.textBaseline,
+      const {
+        fillStyle,
+        font,
+        globalAlpha,
+        globalCompositeOperation,
+        lineCap,
+        lineJoin,
+        lineWidth,
+        strokeStyle,
+        textAlign,
+        textBaseline,
+      } = context;
+
+      stateStack.push({
+        fillStyle,
+        font,
+        globalAlpha,
+        globalCompositeOperation,
+        lineCap,
+        lineJoin,
+        lineWidth,
+        strokeStyle,
+        textAlign,
+        textBaseline,
       });
     },
-    scale() {},
-    stroke() {},
-    strokeRect() {},
-    translate() {},
+    scale: noop,
+    stroke: noop,
+    strokeRect: noop,
+    translate: noop,
   };
 
-  return context;
+  return context as unknown as CanvasRenderingContext2D & { reset(): void };
 }

@@ -15,12 +15,7 @@ import {
   TABLE_MIN_WIDTH,
 } from "./table";
 import type { LayoutLine, LayoutRect, PathBounds } from "./index";
-import {
-  layoutTextContainerLines,
-  resolveBlockTypography,
-  sumLineHeights,
-  type BlockTypography,
-} from "./text";
+import { layoutTextContainerLines, resolveBlockTypography, sumLineHeights } from "./text";
 
 const METADATA_KEY_COLUMN_MIN_WIDTH = 116;
 const METADATA_KEY_COLUMN_RATIO = 0.3;
@@ -110,32 +105,29 @@ function measureStructuredMetadataRows({
   for (const [key, value] of metadata) {
     const keyPath = metadataKeyPath(fieldIndex);
     const valuePath = metadataValuePath(fieldIndex);
-    const keyLines = measureMetadataTextLines({
+    const cellOrigin = { blockPath: null, contentInset: 0, top: top + TABLE_CELL_PADDING_Y };
+    const keyLines = layoutTextContainerLines(
       cache,
-      cellLeft: headerRect.left,
-      cellTop: top,
-      path: keyPath,
-      resources,
-      text: key,
+      { kind: "preformatted", path: keyPath, text: key },
+      keyContentWidth,
       typography,
-      width: keyContentWidth,
-    });
+      resources,
+      { ...cellOrigin, left: headerRect.left + TABLE_CELL_PADDING_X },
+    );
     const valueLines =
       typeof value === "string"
-        ? measureMetadataTextLines({
+        ? layoutTextContainerLines(
             cache,
-            cellLeft: headerRect.left + keyColumnWidth,
-            cellTop: top,
-            path: valuePath,
-            resources,
-            text: value,
+            { kind: "preformatted", path: valuePath, text: value },
+            valueContentWidth,
             typography,
-            width: valueContentWidth,
-          })
+            resources,
+            { ...cellOrigin, left: headerRect.left + keyColumnWidth + TABLE_CELL_PADDING_X },
+          )
         : [];
     const rowHeight = resolveTableRowHeight(options.lineHeight, [
       sumLineHeights(keyLines),
-      valueLines.length > 0 ? sumLineHeights(valueLines) : options.lineHeight,
+      sumLineHeights(valueLines),
     ]);
     const keyCellRect = {
       height: rowHeight,
@@ -184,40 +176,6 @@ function measureStructuredMetadataRows({
     pathBounds,
     rows,
   };
-}
-
-function measureMetadataTextLines({
-  cache,
-  cellLeft,
-  cellTop,
-  path,
-  resources,
-  text,
-  typography,
-  width,
-}: {
-  cache: LayoutCache;
-  cellLeft: number;
-  cellTop: number;
-  path: string;
-  resources: DocumentResources;
-  text: string;
-  typography: BlockTypography;
-  width: number;
-}) {
-  return layoutTextContainerLines(
-    cache,
-    { kind: "preformatted", path, text },
-    width,
-    typography,
-    resources,
-    {
-      blockPath: null,
-      contentInset: 0,
-      left: cellLeft + TABLE_CELL_PADDING_X,
-      top: cellTop + TABLE_CELL_PADDING_Y,
-    },
-  );
 }
 
 function rectToPathBounds(rect: LayoutRect): PathBounds {

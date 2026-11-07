@@ -46,7 +46,6 @@ export function KeybindingsPopover() {
     <PlaygroundPopover
       ariaLabel="Editing keybindings"
       icon={<Keyboard size={16} strokeWidth={2.1} />}
-      size="md"
       showSwatch={false}
     >
       <strong className={popoverTitleClassName}>Editing keybindings</strong>

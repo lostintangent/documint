@@ -7,7 +7,7 @@
 // view models. This keeps the store from depending on overlay-owned leaf
 // types.
 
-import { isResolvedCommentThread } from "@/document";
+import { getTableColumnCount } from "@/document";
 import {
   isCanvasDirectActivationTarget,
   isMetadataPath,
@@ -16,7 +16,7 @@ import {
   resolveIndexedBlock,
   resolveIndexedBlockContainingPath,
   resolveIndexedTableCell,
-  resolveTargetAtSelection,
+  resolveTargetAtOffset,
   type EditorHoverTarget,
   type EditorLayoutState,
   type EditorSelectionRange,
@@ -52,13 +52,12 @@ type CommentRanges = ReturnType<typeof commentRangesSprig.read>;
 type CommentThreads = ReturnType<typeof commentThreadsSprig.read>;
 type ContextualLeaf = LinkLeaf | ThreadLeaf;
 
+// The thread just created from `selection`. It is looked up by id, so it
+// survives other threads being deleted, and takes its geometry from the
+// selection toolbar it replaces. Once it is deleted, the toolbar returns.
 export type PromotedSelectionThread = {
-  anchor: NormalizedEditorSelection["start"];
-  animateInitialComment: boolean;
-  leftOverride?: number;
-  paddingY?: number;
   selection: EditorSelectionRange;
-  threadIndex: number;
+  threadId: string;
 };
 
 export type SelectionLeaf = AnnotationLeaf | ThreadLeaf;
@@ -107,7 +106,6 @@ const equalThreadLeaf = (a: ThreadLeaf, b: ThreadLeaf): boolean =>
   a.animateInitialComment === b.animateInitialComment &&
   a.link?.title === b.link?.title &&
   a.link?.url === b.link?.url &&
-  a.resolved === b.resolved &&
   a.thread === b.thread &&
   a.threadIndex === b.threadIndex;
 
@@ -215,10 +213,12 @@ export const pointerViewSprig = createParameterizedSprig(
   ): PointerView => {
     const target =
       hoverTarget?.kind === "link"
-        ? resolveTargetAtSelection(state, {
-            path: hoverTarget.path,
-            offset: resolveLinkInteriorOffset(hoverTarget),
-          })
+        ? resolveTargetAtOffset(
+            state,
+            hoverTarget.path,
+            resolveLinkInteriorOffset(hoverTarget),
+            ranges,
+          )
         : hoverTarget;
     const leaf = resolveContextualLeaf(target, threads, ranges);
     const cursor =
@@ -277,20 +277,25 @@ function resolveSelectionLeaf({
     return null;
   }
 
-  if (promotedThread && equalShallowObject(promotedThread.selection, selectionRange)) {
-    const thread = threads[promotedThread.threadIndex];
-    if (!thread) return null;
+  const annotationLeaf = resolveAnnotationLeaf(selectionRange, handles, formatting);
 
-    return {
-      ...promotedThread,
-      kind: "thread",
-      link: null,
-      resolved: isResolvedCommentThread(thread),
-      thread,
-    };
+  if (!promotedThread || !equalShallowObject(promotedThread.selection, selectionRange)) {
+    return annotationLeaf;
   }
 
-  return resolveAnnotationLeaf(selectionRange, handles, formatting);
+  const threadIndex = threads.findIndex(({ id }) => id === promotedThread.threadId);
+  if (threadIndex === -1) return annotationLeaf;
+
+  return {
+    anchor: annotationLeaf.anchor,
+    animateInitialComment: true,
+    kind: "thread",
+    leftOverride: annotationLeaf.leftOverride,
+    link: null,
+    paddingY: annotationLeaf.paddingY,
+    thread: threads[threadIndex],
+    threadIndex,
+  };
 }
 
 function resolveCursorLeaf({
@@ -306,35 +311,21 @@ function resolveCursorLeaf({
   threads: CommentThreads;
   layout: EditorLayoutState;
 }): CursorLeaf | null {
-  const focus = state.selection.focus;
-
   if (!normalizedSelection.collapsed) {
     return null;
   }
 
-  const insertionLeaf = resolveInsertionLeaf(state);
+  const { focus } = state.selection;
 
-  if (insertionLeaf) {
-    return insertionLeaf;
-  }
-
-  const contextualLeaf = resolveContextualLeaf(
-    resolveTargetAtSelection(state, focus),
-    threads,
-    ranges,
+  return (
+    resolveInsertionLeaf(state) ??
+    resolveContextualLeaf(
+      resolveTargetAtOffset(state, focus.path, focus.offset, ranges),
+      threads,
+      ranges,
+    ) ??
+    resolveTableLeaf(state, layout)
   );
-
-  if (contextualLeaf) {
-    return contextualLeaf;
-  }
-
-  const tableLeaf = resolveTableLeaf(state, layout);
-
-  if (tableLeaf) {
-    return tableLeaf;
-  }
-
-  return null;
 }
 
 function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableLeaf | null {
@@ -351,26 +342,23 @@ function resolveTableLeaf(state: EditorState, layout: EditorLayoutState): TableL
     return null;
   }
 
-  const textLeft = resolvePathTextLeft(layout, focus.path);
-  const columnCount = Math.max(1, ...blockEntry.block.rows.map((row) => row.cells.length));
+  const firstLine = layout.layout.lines.find((line) => line.path === focus.path);
+  // Cell path bounds span the row band, the box the renderer paints as the
+  // cell's border, so the toolbar clears every line of the cell's text.
+  const cell = layout.layout.pathBounds.get(focus.path);
 
-  return textLeft !== null
+  return firstLine && cell
     ? {
         anchor: focus,
-        columnCount,
+        columnCount: getTableColumnCount(blockEntry.block),
+        extentOverride: cell,
         kind: "table",
         // The cell's text-area edge isn't a caret position, so override the
         // host's default left (caret-x at the anchor).
-        leftOverride: textLeft,
+        leftOverride: firstLine.left,
         rowCount: blockEntry.block.rows.length,
       }
     : null;
-}
-
-function resolvePathTextLeft(layout: EditorLayoutState, path: string) {
-  const firstLine = layout.layout.lines.find((line) => line.path === path);
-
-  return firstLine ? firstLine.left : null;
 }
 
 function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
@@ -378,19 +366,12 @@ function resolveInsertionLeaf(state: EditorState): InsertionLeaf | null {
   const text = resolveEditorTextAtPath(state.documentIndex, focus.path);
   const blockEntry = resolveIndexedBlockContainingPath(state.documentIndex, focus.path);
 
-  if (!blockEntry || blockEntry.block.type !== "paragraph" || text !== "") {
-    return null;
-  }
-
-  if (focus.offset !== 0) {
-    return null;
-  }
-
-  if (!blockEntry || !isRootIndexedBlock(blockEntry)) {
-    return null;
-  }
-
-  return { anchor: focus, kind: "insertion" };
+  return blockEntry?.block.type === "paragraph" &&
+    text === "" &&
+    focus.offset === 0 &&
+    isRootIndexedBlock(blockEntry)
+    ? { anchor: focus, kind: "insertion" }
+    : null;
 }
 
 function resolveLinkInteriorOffset(target: Extract<EditorHoverTarget, { kind: "link" }>) {

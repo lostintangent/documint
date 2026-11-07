@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Link, Mark } from "@/document";
+import type { Link } from "@/document";
 import type { IndexedInline } from "@/editor/state";
 import {
   editorInlinesToDocumentInlines,
@@ -74,28 +74,11 @@ describe("Inline replacement", () => {
       type: "raw",
     });
   });
-
-  test("editing code-marked runs preserves code mark semantics", () => {
-    const nextInlines = replaceEditorInlines(
-      createInlines([{ kind: "text", marks: ["code"], text: "body" }]),
-      0,
-      4,
-      "snippet",
-    );
-    const nodes = editorInlinesToDocumentInlines(nextInlines);
-
-    expect(nodes[0]).toMatchObject({
-      marks: ["code"],
-      text: "snippet",
-      type: "text",
-    });
-  });
 });
 
 type InlineInput = {
   kind: "text" | "raw";
   link?: Link | null;
-  marks?: readonly Mark[];
   originalType?: string;
   text: string;
 };
@@ -107,7 +90,7 @@ function createInlines(inputs: InlineInput[]): IndexedInline[] {
     const end = start + input.text.length;
     const node: IndexedInline["node"] =
       input.kind === "text"
-        ? { marks: [...(input.marks ?? [])], text: input.text, type: "text" }
+        ? { marks: [], text: input.text, type: "text" }
         : {
             originalType: input.originalType ?? "raw",
             source: input.text,

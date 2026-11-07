@@ -9,7 +9,7 @@ import {
   mixByteIntoHash,
   mixStringIntoHash,
 } from "../model/fnv";
-import type { TextAnchor } from "../query/anchors/text";
+import type { TextAnchor, TextAnchorCapture } from "../query/anchors/text";
 import type { Comment, CommentThread } from "./types";
 
 export function createCommentThread(options: {
@@ -24,11 +24,13 @@ export function createCommentThread(options: {
     updatedAt: createdAt,
   });
 
+  // Keys follow the parser's order, so a new thread saves the same bytes a
+  // reload of it does.
   return {
     id: createCommentThreadId(options.anchor, options.quote, options.body, createdAt),
-    comments: [comment],
     quote: options.quote,
     anchor: options.anchor,
+    comments: [comment],
   };
 }
 
@@ -116,6 +118,21 @@ export function markCommentThreadAsResolved(
     ...thread,
     resolvedAt: resolved ? resolvedAt : undefined,
   };
+}
+
+// Write a re-captured anchor and quote back to a thread, returning the same
+// thread when neither changed so unchanged comment arrays keep identity.
+export function repairCommentThread(
+  thread: CommentThread,
+  { anchor, quote }: TextAnchorCapture,
+): CommentThread {
+  const unchanged =
+    quote === thread.quote &&
+    (anchor.kind ?? null) === (thread.anchor.kind ?? null) &&
+    (anchor.prefix ?? null) === (thread.anchor.prefix ?? null) &&
+    (anchor.suffix ?? null) === (thread.anchor.suffix ?? null);
+
+  return unchanged ? thread : { ...thread, anchor, quote };
 }
 
 export function isResolvedCommentThread(thread: CommentThread): boolean {

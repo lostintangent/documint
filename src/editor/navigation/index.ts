@@ -22,7 +22,6 @@ import {
   type EditorState,
 } from "../state";
 import {
-  moveCaretByViewportInFlow,
   moveCaretHorizontallyInFlow,
   moveCaretToCurrentLineBoundary,
   moveCaretVerticallyInFlow,
@@ -57,6 +56,10 @@ export function moveCaretHorizontally(
 ) {
   const extendSelection = options.extendSelection ?? false;
 
+  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
+    return collapseSelection(state, delta);
+  }
+
   return options.mode === "block"
     ? moveCaretToAdjacentPathWithText(state, delta, extendSelection)
     : moveCaretHorizontallyInFlow(state, delta, extendSelection);
@@ -70,16 +73,12 @@ export function moveCaretByWord(
   const extendSelection = options.extendSelection ?? false;
   const direction = movement === "previousWord" ? -1 : 1;
 
-  if (options.mode === "block") {
-    return moveCaretHorizontally(state, direction, {
-      extendSelection,
-      mode: "block",
-    });
+  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
+    return collapseSelection(state, direction);
   }
 
-  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
-    const selection = normalizeSelection(state);
-    return setSelection(state, direction < 0 ? selection.start : selection.end);
+  if (options.mode === "block") {
+    return moveCaretToAdjacentPathWithText(state, direction, extendSelection);
   }
 
   const target = resolveWordNavigationTarget(state, movement);
@@ -92,8 +91,14 @@ export function moveCaretVertically(
   viewport: EditorLayoutState,
   direction: -1 | 1,
   options: EditorNavigationOptions = {},
-) {
+): EditorState {
   const extendSelection = options.extendSelection ?? false;
+
+  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
+    return moveFromSelectionEdge(state, direction, (from) =>
+      moveCaretVertically(from, viewport, direction, options),
+    );
+  }
 
   if (options.mode === "block") {
     return moveCaretVerticallyByBlockMode(state, direction, extendSelection);
@@ -116,20 +121,32 @@ export function moveCaretByViewport(
   viewport: EditorLayoutState,
   direction: -1 | 1,
   extendSelection = false,
-) {
+): EditorState {
+  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
+    return moveFromSelectionEdge(state, direction, (from) =>
+      moveCaretByViewport(from, viewport, direction),
+    );
+  }
+
   const caret = measureSelectionCaret(state, viewport);
 
   if (!caret) {
     return state;
   }
 
-  return moveCaretByViewportInFlow(
+  // Land on the farthest line that fits in the viewport together with the line
+  // the caret left, so revealing it keeps that line in view whatever either
+  // line's height. Pixels rather than lines keep block gaps from skipping
+  // unseen lines, and keep a page from a visible caret inside the virtualized
+  // slice, whose overscan is at least a viewport. Mirrors VS Code / browser
+  // contenteditable PageUp/PageDown behavior.
+  return moveCaretVerticallyInFlow(
     state,
     viewport.layout,
-    viewport.viewport.height,
     caret,
     direction,
     extendSelection,
+    viewport.viewport.height,
   );
 }
 
@@ -138,8 +155,14 @@ export function moveCaretToLineBoundary(
   viewport: EditorLayoutState,
   boundary: "Home" | "End",
   options: EditorNavigationOptions = {},
-) {
+): EditorState {
   const extendSelection = options.extendSelection ?? false;
+
+  if (!extendSelection && !isSelectionCollapsed(state.selection)) {
+    return moveFromSelectionEdge(state, boundary === "Home" ? -1 : 1, (from) =>
+      moveCaretToLineBoundary(from, viewport, boundary, options),
+    );
+  }
 
   if (options.mode === "block") {
     return moveCaretToCurrentPathBoundary(state, boundary, extendSelection);
@@ -222,11 +245,28 @@ export function updateSelectionFromDrag(
     : null;
 }
 
+// An unextended move from a selection starts at the selection's edge in the
+// direction of travel, as in macOS text fields: a horizontal move collapses
+// to that edge, and vertical and line-boundary moves go on from it. Chrome on
+// Windows and Linux moves those from the focus instead.
+function collapseSelection(state: EditorState, direction: -1 | 1) {
+  const { end, start } = normalizeSelection(state);
+
+  return setSelection(state, direction < 0 ? start : end);
+}
+
+// Applies the move's selection to the original state, so the active-block
+// flash compares against the block the focus left rather than the edge.
+function moveFromSelectionEdge(
+  state: EditorState,
+  direction: -1 | 1,
+  move: (from: EditorState) => EditorState,
+) {
+  return setSelection(state, move(collapseSelection(state, direction)).selection);
+}
+
 function measureSelectionCaret(state: EditorState, viewport: EditorLayoutState) {
-  return measureCaretTarget(viewport.layout, {
-    path: state.selection.focus.path,
-    offset: state.selection.focus.offset,
-  });
+  return measureCaretTarget(viewport.layout, state.selection.focus);
 }
 
 function moveCaretVerticallyByBlockMode(
@@ -252,13 +292,7 @@ function moveCaretVerticallyByTablePath(
   }
 
   return target.targetPath
-    ? setPathNavigationSelection(
-        state,
-        target.currentPath,
-        target.targetPath,
-        direction,
-        extendSelection,
-      )
+    ? setPathNavigationSelection(state, target.targetPath, direction, extendSelection)
     : state;
 }
 
@@ -267,21 +301,15 @@ function moveCaretToAdjacentPathWithText(
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
-  const currentPath = state.selection.focus.path;
-  const currentText = resolveEditorTextAtPath(state.documentIndex, currentPath);
-
-  if (currentText === null) {
-    return state;
-  }
-
+  // A focus without text has no flow neighbors, so it needs no separate guard.
   const targetPath = resolveAdjacentEditorPathWithTextInFlow(
     state.documentIndex,
-    currentPath,
+    state.selection.focus.path,
     direction,
   );
 
   return targetPath
-    ? setPathNavigationSelection(state, currentPath, targetPath, direction, extendSelection)
+    ? setPathNavigationSelection(state, targetPath, direction, extendSelection)
     : state;
 }
 
@@ -305,11 +333,11 @@ function moveCaretToCurrentPathBoundary(
 
 function setPathNavigationSelection(
   state: EditorState,
-  currentPath: string,
   targetPath: string,
   direction: -1 | 1,
   extendSelection: boolean,
 ) {
+  const currentPath = state.selection.focus.path;
   const currentText = resolveEditorTextAtPath(state.documentIndex, currentPath);
   const targetText = resolveEditorTextAtPath(state.documentIndex, targetPath);
 

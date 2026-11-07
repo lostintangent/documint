@@ -1,8 +1,7 @@
 /**
  * Owns block-level serialization for the Documint markdown dialect: the
- * dispatcher, every block-kind serializer, the shared `renderDirective`
- * envelope (also used by the comment appendix in `./index`), and the
- * block-level low-level helpers (`indentText`, `escapeLeadingWhitespace`).
+ * dispatcher, every block-kind serializer, and the `renderDirective` envelope
+ * shared with the comment appendix in `./index`.
  */
 
 import { createParagraphBlock, type Block, type ListBlock, type ListItemBlock } from "@/document";
@@ -10,23 +9,13 @@ import { shouldEscapeParagraphLineStart } from "../parser/blocks";
 import {
   blockquoteMarker,
   containerDirectiveClosingMarker,
-  fencedCodeMarker,
   lineFeed,
   type MarkdownOptions,
 } from "../shared";
 import { serializeInlines } from "./inlines";
 import { serializeTable } from "./tables";
 
-// --- Block-level constants ---
 export const blockSeparator = "\n\n";
-const unorderedListMarker = "-";
-const orderedListDelimiter = ".";
-const dividerMarker = "---";
-// Replaces leading spaces in inline output with an HTML entity so block parsers
-// don't strip them. Used by paragraph and heading serializers.
-const leadingSpaceEntity = "&#x20;";
-// A childless list item serializes like one holding an empty paragraph.
-const emptyListItemChild = createParagraphBlock([]);
 
 /**
  * Serializes a sequence of top-level blocks using the canonical block
@@ -38,7 +27,16 @@ export function serializeBlocks(blocks: Block[], options: MarkdownOptions = {}):
   const cache = options.padTableColumns ? paddedRootCache : unpaddedRootCache;
 
   return blocks
-    .map((block) => serializeCachedRootBlock(block, options, cache))
+    .map((block) => {
+      let markdown = cache.get(block);
+
+      if (markdown === undefined) {
+        markdown = serializeBlock(block, 0, options);
+        cache.set(block, markdown);
+      }
+
+      return markdown;
+    })
     .join(blockSeparator);
 }
 
@@ -48,21 +46,6 @@ export function serializeBlocks(blocks: Block[], options: MarkdownOptions = {}):
 const unpaddedRootCache = new WeakMap<Block, string>();
 const paddedRootCache = new WeakMap<Block, string>();
 
-function serializeCachedRootBlock(
-  block: Block,
-  options: MarkdownOptions,
-  cache: WeakMap<Block, string>,
-) {
-  let markdown = cache.get(block);
-
-  if (markdown === undefined) {
-    markdown = serializeBlock(block, 0, options);
-    cache.set(block, markdown);
-  }
-
-  return markdown;
-}
-
 function serializeBlock(block: Block, indent: number, options: MarkdownOptions): string {
   switch (block.type) {
     case "blockquote":
@@ -70,7 +53,7 @@ function serializeBlock(block: Block, indent: number, options: MarkdownOptions):
     case "code":
       return serializeCode(block, indent);
     case "directive":
-      return serializeDirective(block, indent);
+      return indentBlockText(renderDirective(block), indent);
     case "heading":
       return serializeHeading(block, indent);
     case "list":
@@ -82,16 +65,14 @@ function serializeBlock(block: Block, indent: number, options: MarkdownOptions):
     case "table":
       return serializeTable(block, indent, options);
     case "divider":
-      return `${indentText(indent)}${dividerMarker}`;
+      return `${indentText(indent)}---`;
     case "raw":
       return indentBlockText(block.source, indent);
   }
 }
 
-// --- Block serializers, in dispatcher order ---
-// Each takes the block, its indent, and (where needed) options, and returns
-// the rendered string with no trailing newline. Per-reader helpers live
-// immediately below their serializer.
+// --- Block serializers ---
+// Each returns its block at `indent`, with no trailing newline.
 
 function serializeBlockquote(
   block: Extract<Block, { type: "blockquote" }>,
@@ -118,20 +99,19 @@ function serializeBlockquote(
 function serializeCode(block: Extract<Block, { type: "code" }>, indent: number) {
   const info = [block.language ?? "", block.meta ?? ""].filter(Boolean).join(" ").trim();
   const indentPrefix = indentText(indent);
-  const header = `${indentPrefix}${fencedCodeMarker}${info}`;
   const body = indentBlockText(block.source, indent);
+  // A backtick-only line in the code would close any fence no longer than it.
+  const fence = [...block.source.matchAll(/^[^\S\n]*(`{3,})[^\S\n]*$/gm)].reduce(
+    (widest, [, run]) => (run!.length >= widest.length ? `${run}\`` : widest),
+    "```",
+  );
 
-  return `${header}${lineFeed}${body}${lineFeed}${indentPrefix}${fencedCodeMarker}`;
-}
-
-function serializeDirective(block: Extract<Block, { type: "directive" }>, indent: number): string {
-  const rendered = renderDirective(block);
-  return indentBlockText(rendered, indent);
+  return `${indentPrefix}${fence}${info}${lineFeed}${body}${lineFeed}${indentPrefix}${fence}`;
 }
 
 // Builds the `:::name{attrs}\nbody\n:::` envelope. Shared between user-defined
-// directives (`serializeDirective`) and the comment-directive appendix
-// (`serializeCommentDirective` in `./index`).
+// directive blocks and the comment-directive appendix
+// (`serializeCommentAppendix` in `./index`).
 export function renderDirective(directive: {
   attributes: string;
   body: string;
@@ -142,19 +122,22 @@ export function renderDirective(directive: {
 }
 
 function serializeHeading(block: Extract<Block, { type: "heading" }>, indent: number) {
-  const content = escapeLeadingWhitespace(serializeInlines(block.children));
+  // A `#` run ending the text would reload as a closing sequence.
+  const content = escapeLeadingWhitespace(serializeInlines(block.children)).replace(
+    /(?<!\S)#(?=#*\s*$)/,
+    "\\#",
+  );
   const marker = `${indentText(indent)}${"#".repeat(block.depth)}`;
 
   return content.length > 0 ? `${marker} ${content}` : marker;
 }
 
 function serializeList(block: ListBlock, indent: number, options: MarkdownOptions) {
-  const markerNumber = block.start ?? 1;
-  const itemSeparator = serializeListSeparator(block.compact);
+  const start = block.start ?? 1;
 
   return block.items
-    .map((item) => serializeListItem(item, indent, block.ordered, markerNumber, options))
-    .join(itemSeparator);
+    .map((item, index) => serializeListItem(item, indent, block.ordered, start + index, options))
+    .join(block.compact ? lineFeed : blockSeparator);
 }
 
 function serializeListItem(
@@ -164,48 +147,37 @@ function serializeListItem(
   markerNumber: number,
   options: MarkdownOptions,
 ) {
-  const marker = ordered ? `${markerNumber}${orderedListDelimiter}` : unorderedListMarker;
+  const marker = ordered ? `${markerNumber}.` : "-";
   const checkbox = block.checked === null ? "" : `[${block.checked ? "x" : " "}] `;
   const prefix = `${indentText(indent)}${marker} ${checkbox}`;
   const childIndent = indent + marker.length + 1;
-  const [firstChild = emptyListItemChild, ...rest] = block.children;
+  const [firstChild = createParagraphBlock([]), ...rest] = block.children;
   const firstContent = serializeListItemFirstChild(
     firstChild,
     prefix,
+    childIndent,
     checkbox.length > 0,
     options,
   );
-  const childSeparator = serializeListSeparator(block.compact);
+  const childSeparator = block.compact ? lineFeed : blockSeparator;
   const tail = rest
     .map((child) => serializeBlock(child, childIndent, options))
     .join(childSeparator);
 
-  if (!tail) {
-    return firstContent;
-  }
-
-  return `${firstContent}${childSeparator}${tail}`;
-}
-
-function serializeListSeparator(compact: boolean) {
-  return compact ? lineFeed : blockSeparator;
+  return tail ? `${firstContent}${childSeparator}${tail}` : firstContent;
 }
 
 function serializeListItemFirstChild(
   block: Block,
   prefix: string,
+  childIndent: number,
   hasCheckbox: boolean,
   options: MarkdownOptions,
 ) {
   switch (block.type) {
     case "paragraph": {
-      const content = serializeParagraph(block, 0);
-
-      if (content.length === 0) {
-        return hasCheckbox ? prefix : prefix.trimEnd();
-      }
-
-      return `${prefix}${content}`;
+      const content = serializeParagraph(block, childIndent, "");
+      return content || hasCheckbox ? `${prefix}${content}` : prefix.trimEnd();
     }
     case "heading":
       return `${prefix}${serializeHeading(block, 0)}`;
@@ -213,100 +185,64 @@ function serializeListItemFirstChild(
     case "raw": {
       const body = block.type === "directive" ? renderDirective(block) : block.source;
       const [firstLine, ...rest] = body.split(lineFeed);
-      return [
-        prefix + firstLine,
-        ...rest.map((line) => `${indentText(prefix.length)}${line}`),
-      ].join(lineFeed);
+      const indent = indentText(childIndent);
+      return [prefix + firstLine, ...rest.map((line) => indent + line)].join(lineFeed);
     }
-    default: {
-      const childIndent = prefix.length;
+    default:
       return `${prefix.trimEnd()}${lineFeed}${serializeBlock(block, childIndent, options)}`;
-    }
   }
 }
 
-// A paragraph block is its content — no marker, no envelope, just the
-// inlines. The per-line guard pass below catches the one round-trip hazard:
-// a paragraph line starting with a block-trigger sequence (`> `, `# `,
-// `- `, `:::`, etc.) or with leading whitespace the block parser would
-// strip. Headings don't need this because their `#` marker consumes the
-// first non-space character of the line.
-//
-// Carve-out: a paragraph whose plain text is exactly `<...>` would re-parse
-// as a raw HTML block — the parser never produces that shape so it's only
-// a hazard for synthetic Documents.
-function serializeParagraph(block: Extract<Block, { type: "paragraph" }>, indent: number): string {
+// Each paragraph line is escaped so it can't reload as a block start or lose
+// its leading spaces.
+function serializeParagraph(
+  block: Extract<Block, { type: "paragraph" }>,
+  indent: number,
+  firstLinePrefix = indentText(indent),
+): string {
   const value = serializeInlines(block.children);
-  const indentPrefix = indentText(indent);
 
-  // Single-line fast path. Most paragraphs have no soft breaks, so the
-  // split/map/join allocations are pure waste in the common case.
+  // Most paragraphs are one line, so skip the split.
   if (!value.includes(lineFeed)) {
-    return `${indentPrefix}${escapeParagraphLine(value)}`;
+    return `${firstLinePrefix}${escapeParagraphLine(value)}`;
   }
-  return `${indentPrefix}${value.split(lineFeed).map(escapeParagraphLine).join(lineFeed)}`;
+
+  // Every soft-wrapped line keeps the container indent, or the next parse
+  // would end the list item at the first under-indented line.
+  const lines = value.split(lineFeed).map(escapeParagraphLine);
+  return `${firstLinePrefix}${lines.join(`${lineFeed}${indentText(indent)}`)}`;
 }
 
 // --- Low-level block helpers ---
-// Per-line escape and indent helpers. Used across the block serializers;
-// not exported because no sibling module needs them.
 
-// Replaces leading spaces (per line) with an HTML space entity so the block
-// parser doesn't strip them on the next round-trip. Used by headings, whose
-// content cannot start a sibling block (the `#` marker consumes the line).
+// Leading spaces become entities, or the next parse would strip them.
 function escapeLeadingWhitespace(value: string) {
-  // Fast-reject: only fires if some line in `value` actually starts with a
-  // space. Most heading content (and the paragraph cases that reach this
-  // helper) does not, so we skip the regex scan + replace.
   if (!value.startsWith(" ") && !value.includes("\n ")) {
     return value;
   }
-  return value.replace(/^ +/gm, (spaces) => leadingSpaceEntity.repeat(spaces.length));
+  return value.replace(/^ +/gm, (spaces) => "&#x20;".repeat(spaces.length));
 }
 
 function escapeParagraphLine(line: string) {
   return line.startsWith(" ") ? escapeLeadingWhitespace(line) : escapeBlockStartPrefix(line);
 }
 
-// Paragraph-line escape: neutralize lines that, at line start, would cause
-// the next parse to re-interpret the paragraph line as a different block kind.
-// The predicate is derived from the parser's block-reader registry, with
-// raw-HTML intentionally excluded because markdown has no lossless backslash
-// escape for leading `<`.
-// Neutralization is a single leading backslash — the parser's
-// `markdownTextEscape` set covers every escaped leading marker used here. The
-// ordered-list case escapes the dot rather than the digit so the `1` stays
-// plain text.
+// The parser's block readers decide which lines would reload as a block start.
+// HTML blocks are excluded because text `<` is already escaped inline and a
+// raw tag at line start must stay raw. An ordered marker escapes its dot so
+// the digits stay text, a `*`, `_` or backtick run escapes every character,
+// and anything else takes one leading backslash.
 function escapeBlockStartPrefix(line: string): string {
   if (!shouldEscapeParagraphLineStart(line)) {
     return line;
   }
 
-  const orderedMatch = /^(\d+)\.(\s|$)/.exec(line);
-
-  if (orderedMatch) {
-    const digits = orderedMatch[1]!;
-    return `${digits}\\${line.slice(digits.length)}`;
+  if (/^\d+\.(\s|$)/.test(line)) {
+    return line.replace(".", "\\.");
   }
 
-  switch (line[0]) {
-    case "`":
-    case "*":
-    case "_":
-      return escapeLeadingRun(line, line[0]);
-    default:
-      return `\\${line}`;
-  }
-}
-
-function escapeLeadingRun(line: string, marker: string) {
-  let index = 0;
-
-  while (line[index] === marker) {
-    index += 1;
-  }
-
-  return `${`\\${marker}`.repeat(index)}${line.slice(index)}`;
+  const run = /^([`*_])\1*/.exec(line)?.[0];
+  return run ? `${run.replace(/./g, "\\$&")}${line.slice(run.length)}` : `\\${line}`;
 }
 
 function indentText(indent: number) {

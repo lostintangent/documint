@@ -1,16 +1,6 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
-import {
-  createAnchorFromContainer,
-  createCommentThread,
-  createDividerBlock,
-  createMention,
-  createParagraphBlock,
-  createParagraphTextBlock,
-  extractQuoteFromContainer,
-  listAnchorContainers,
-  spliceDocument,
-} from "@/document";
+import { createDividerBlock, createParagraphTextBlock, spliceDocument } from "@/document";
 import {
   createDocumentIndex,
   resolveEditorTextAtPath,
@@ -18,44 +8,10 @@ import {
   type DocumentIndex,
   type IndexedBlock,
 } from "@/editor/state";
-import { createIndexedRoot, positionIndexedRoots } from "@/editor/state/index/roots";
 import { replaceIndexedDocument, replaceEditorBlock } from "@/editor/state/index/splice";
 import { parseDocument, serializeDocument } from "@/markdown";
 
 describe("Document index build", () => {
-  test("builds positioned editor roots directly on the unified model", () => {
-    const snapshot = parseDocument(`# Heading
-
-  alpha
-
-beta
-`);
-    const roots = positionIndexedRoots(
-      snapshot.blocks.map((block, rootIndex) => createIndexedRoot(block, rootIndex)),
-    );
-    const runtime = createDocumentIndex(snapshot);
-
-    expect(roots).toHaveLength(3);
-    expect(roots.map((root) => root.blocks[0]?.blockArrayIndex)).toEqual([0, 1, 2]);
-    expect(runtime.blocks.map((block) => block.blockArrayIndex)).toEqual([0, 1, 2]);
-    expectDocumentIndexMaps(runtime);
-  });
-
-  test("rebuilds a root model against a canonical replacement root", () => {
-    const snapshot = parseDocument(`# Heading
-
-alpha
-`);
-    const original = createIndexedRoot(snapshot.blocks[1]!, 1);
-    const nextDocument = spliceDocument(snapshot, 1, 1, [createParagraphTextBlock("omega")]);
-    const rebuilt = createIndexedRoot(nextDocument.blocks[1]!, 1);
-
-    expect(original.blocks[0]?.rootIndex).toBe(1);
-    expect(rebuilt.blocks[0]?.rootIndex).toBe(1);
-    expect(rebuilt.blocks[0]?.path).toBe("root.1");
-    expect(rebuilt.blocks[0]).toMatchObject({ kind: "inlines", text: "omega" });
-  });
-
   test("splices one editor model root while preserving unchanged sibling content", () => {
     const snapshot = parseDocument(`# Heading
 
@@ -184,6 +140,37 @@ beta
       "beta",
     ]);
     expectDocumentIndexMaps(next);
+  });
+
+  test("keeps the indexed inlines of unchanged roots re-pathed by an inserted root", () => {
+    const snapshot = parseDocument(`alpha
+
+beta
+
+| A | B |
+| - | - |
+| one | two |
+`);
+    const index = createDocumentIndex(snapshot);
+    const nextDocument = spliceDocument(snapshot, 1, 0, [createParagraphTextBlock("")]);
+    const next = spliceDocumentIndex(index, nextDocument, 1, 0);
+    const previousParagraph = index.blockIndex.get("root.1");
+    const nextParagraph = next.blockIndex.get("root.2");
+    const previousCell = index.tableCellIndex.get("root.2.rows.1.cells.1");
+    const nextCell = next.tableCellIndex.get("root.3.rows.1.cells.1");
+
+    if (previousParagraph?.kind !== "inlines" || nextParagraph?.kind !== "inlines") {
+      throw new Error("Expected the shifted paragraph");
+    }
+
+    if (!previousCell || !nextCell) {
+      throw new Error("Expected the shifted table cell");
+    }
+
+    expect(nextParagraph.inlines).toBe(previousParagraph.inlines);
+    expect(nextParagraph.text).toBe("beta");
+    expect(nextCell.inlines).toBe(previousCell.inlines);
+    expect(nextCell.text).toBe("two");
   });
 
   test("keys block lookup by structural path and stamps parent block paths", () => {
@@ -488,126 +475,6 @@ beta
     expect(next.imageUrls).toBe(index.imageUrls);
     // listItems reuses when document.blocks identity holds.
     expect(next.listItems).toBe(index.listItems);
-    // commentContainerIndex reuses when document.comments identity holds.
-    expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
-  });
-
-  test("reuses comment container index when editing outside resolved comment roots", () => {
-    const snapshot = withCommentAt(
-      parseDocument(`commented target
-
-outside text
-`),
-    );
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(index.document, 1, 1, [
-      createParagraphTextBlock("outside text edited"),
-    ]);
-    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
-
-    expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
-    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
-  });
-
-  test("reuses comment container index and suffix roots after unrelated text-length edits", () => {
-    const snapshot = withCommentAt(
-      parseDocument(`commented target
-
-outside text
-
-suffix mentions target without its prefix
-`),
-    );
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(index.document, 1, 1, [
-      createParagraphTextBlock("outside text edited"),
-    ]);
-    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
-
-    expect(next.roots[2]).toBe(index.roots[2]);
-    expect(next.document.blocks[2]).toBe(index.document.blocks[2]);
-    expect(next.commentContainerIndex).toBe(index.commentContainerIndex);
-    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
-  });
-
-  test("rebuilds comment container index when an unrelated edit introduces an ambiguous match", () => {
-    const snapshot = withCommentAt(
-      parseDocument(`commented target
-
-outside text
-`),
-    );
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(index.document, 1, 1, [
-      createParagraphTextBlock("commented target"),
-    ]);
-    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
-
-    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
-    expect([...next.commentContainerIndex.keys()]).toEqual([]);
-  });
-
-  test("checks changed roots against semantic comment-anchor text", () => {
-    const snapshot = withCommentAt(
-      parseDocument(`commented target
-
-outside text
-`),
-    );
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(index.document, 1, 1, [
-      createParagraphBlock([createMention({ name: "target", userId: "user-target" })]),
-    ]);
-    const next = spliceDocumentIndex(index, nextDocument, 1, 1);
-
-    expect(indexedTextEntries(next)[1]?.text).not.toContain("target");
-    expect(next.document.blocks[1]?.plainText).toContain("target");
-    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
-    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
-  });
-
-  test("rebuilds comment container index when editing a resolved comment root", () => {
-    const snapshot = withCommentAt(
-      parseDocument(`commented target
-
-outside text
-`),
-    );
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(index.document, 0, 1, [
-      createParagraphTextBlock("commented target edited"),
-    ]);
-    const next = spliceDocumentIndex(index, nextDocument, 0, 1);
-
-    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
-    expect([...next.commentContainerIndex.keys()]).toEqual(["root.0"]);
-  });
-
-  test("rebuilds comment container index when root insertion shifts a comment path", () => {
-    const snapshot = withCommentAt(
-      parseDocument(`intro text
-
-commented target
-`),
-      1,
-    );
-    const index = createDocumentIndex(snapshot);
-    const nextDocument = spliceDocument(index.document, 0, 0, [
-      createParagraphTextBlock("inserted text"),
-    ]);
-    const next = spliceDocumentIndex(index, nextDocument, 0, 0);
-
-    expect(next.commentContainerIndex).not.toBe(index.commentContainerIndex);
-    expect([...next.commentContainerIndex.keys()]).toEqual(["root.2"]);
-  });
-
-  test("replaces a root range through the reducer", () => {
-    const documentIndex = createDocumentIndex(parseDocument("alpha\n\nbeta\n"));
-    const reduction = spliceDocument(documentIndex.document, 1, 1, [
-      createParagraphTextBlock("omega"),
-    ]);
-
-    expect(serializeDocument(reduction)).toBe("alpha\n\nomega\n");
   });
 
   function expectDocumentIndexMaps(index: DocumentIndex) {
@@ -689,27 +556,5 @@ commented target
   // Block paths nest by prefix, so this is the structural containment oracle.
   function blockPathContains(ancestorPath: string, descendantPath: string) {
     return descendantPath === ancestorPath || descendantPath.startsWith(`${ancestorPath}.`);
-  }
-
-  function withCommentAt(document: ReturnType<typeof parseDocument>, containerIndex = 0) {
-    const container = listAnchorContainers(document)[containerIndex];
-
-    if (!container) {
-      throw new Error(`Expected anchor container ${containerIndex}`);
-    }
-
-    const startOffset = container.text.indexOf("target");
-    const endOffset = startOffset + "target".length;
-    const thread = createCommentThread({
-      anchor: createAnchorFromContainer(container, startOffset, endOffset),
-      body: "Track this target",
-      createdAt: "2026-04-05T12:00:00.000Z",
-      quote: extractQuoteFromContainer(container, startOffset, endOffset),
-    });
-
-    return {
-      ...document,
-      comments: [thread],
-    };
   }
 });

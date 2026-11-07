@@ -23,6 +23,7 @@ import { isReferenceInlineNode, type Block } from "@/document";
 import type { DocumentResources } from "@/editor/resources";
 import { findInlinesInRange, inlineMarks, type IndexedInline } from "../../state";
 import { splitGraphemes } from "../../text/graphemes";
+import { getTextMeasurementContext } from "../../text/measure";
 import {
   resolveCodeFont,
   inlineTextHasCustomMetrics,
@@ -36,17 +37,13 @@ import {
   type LayoutInlineReference,
 } from "./inline-reference";
 import {
-  cacheLineBoundaries,
   cacheMeasuredLines,
   cachePreparedText,
   getOrCreateGraphemeWidthCache,
+  getOrCreateLineBoundaries,
   type LayoutCache,
 } from "../state/cache";
 import type { LayoutLine } from "./index";
-
-function inlineIsCode(run: IndexedInline): boolean {
-  return inlineMarks(run).includes("code");
-}
 
 export type LineBoundary = {
   left: number;
@@ -61,7 +58,7 @@ export type LayoutTextInput = {
       inlines: readonly IndexedInline[];
       kind: "inlines";
     }
-  | { kind: "plain" | "preformatted" }
+  | { kind: "preformatted" }
 );
 
 export type MeasuredTextLine = {
@@ -113,11 +110,6 @@ const CODE_BLOCK_LINE_HEIGHT_RATIO = 22 / 15;
 
 const exactPrefixBoundaryGraphemeLimit = 32;
 
-let textMeasurementContext:
-  | OffscreenCanvasRenderingContext2D
-  | CanvasRenderingContext2D
-  | undefined;
-
 // One bundle for the three font-related values measurement helpers need for a
 // given block: the block-resolved `font` (e.g. heading typography), the
 // block-resolved `lineHeight`, and the document `baseFontSize` (which inline
@@ -130,19 +122,50 @@ export type BlockTypography = {
   lineHeight: number;
 };
 
+// Typography depends only on a block's typography class (body, heading depth,
+// or code) and the two document sizes, so equal inputs share one object. That
+// lets measurement memos compare typography by reference instead of by font,
+// and skips a fresh object and font string per block on every rebuild. Without
+// it, long-document typing and Enter full frames ran 8–12% slower at p50.
+const blockTypographies = new Map<number, Map<number, BlockTypography[]>>();
+
 export function resolveBlockTypography(
   block: Block | null,
   baseFontSize: number,
   fallbackLineHeight: number,
 ): BlockTypography {
-  return {
+  let byLineHeight = blockTypographies.get(baseFontSize);
+
+  if (!byLineHeight) {
+    byLineHeight = new Map();
+    blockTypographies.set(baseFontSize, byLineHeight);
+  }
+
+  let byClass = byLineHeight.get(fallbackLineHeight);
+
+  if (!byClass) {
+    byClass = [];
+    byLineHeight.set(fallbackLineHeight, byClass);
+  }
+
+  const typographyClass = resolveBlockTypographyClass(block);
+
+  return (byClass[typographyClass] ??= {
     baseFontSize,
     font: resolveTextBlockFont(block, baseFontSize),
     lineHeight: resolveTextBlockLineHeight(block, fallbackLineHeight, baseFontSize),
-  };
+  });
 }
 
-export function resolveTextBlockFont(block: Block | null, baseFontSize: number) {
+function resolveBlockTypographyClass(block: Block | null) {
+  if (block?.type === "heading") {
+    return HEADING_TYPOGRAPHY[block.depth - 1] ? block.depth : HEADING_TYPOGRAPHY.length;
+  }
+
+  return block?.type === "code" ? HEADING_TYPOGRAPHY.length + 1 : 0;
+}
+
+function resolveTextBlockFont(block: Block | null, baseFontSize: number) {
   if (block?.type === "heading") {
     const { fontSize } = resolveHeadingTypography(block.depth, baseFontSize);
 
@@ -221,22 +244,19 @@ export function layoutTextContainerLines(
     typography,
     resources,
   );
+  // Boundaries depend on nothing the measured-lines key doesn't already cover,
+  // so that array keys them per container. Keying each line instead re-hashed
+  // the container text once per line, which made code blocks quadratic.
+  const boundaries = getOrCreateLineBoundaries(cache, measuredLines, (line) =>
+    measureTextLineBoundaries(cache, container, line, availableWidth, typography, resources),
+  );
   const lines: LayoutLine[] = [];
   let top = placement.top;
 
-  for (const line of measuredLines) {
+  for (const [index, line] of measuredLines.entries()) {
     lines.push({
       blockPath: placement.blockPath,
-      boundaries: measureTextLineBoundaries(
-        cache,
-        container,
-        line.start,
-        line.end,
-        line.text,
-        availableWidth,
-        typography,
-        resources,
-      ),
+      boundaries: boundaries[index]!,
       contentInset: placement.contentInset,
       end: line.end,
       font: typography.font,
@@ -266,7 +286,9 @@ export function measureTextContainerLines(
   typography: BlockTypography,
   resources: DocumentResources,
 ) {
-  const cacheKey = `${resolveTextMeasurementCacheIdentity(container, resources)}:${availableWidth}:${typography.lineHeight}:${typography.baseFontSize}:${typography.font}`;
+  // Measured lines carry their text, so the path joins the content key: two
+  // texts whose 32-bit hashes collide must never swap rendered lines.
+  const cacheKey = `${container.path}:${resolveTextMeasurementKey(container, availableWidth, typography, resources)}`;
   const cached = cache.measuredLines.get(cacheKey);
 
   if (cached) {
@@ -284,34 +306,19 @@ export function measureTextContainerLines(
   return cacheMeasuredLines(cache, cacheKey, measuredLines);
 }
 
+// Pretext returns line ranges and widths, but it does not currently expose
+// every editor offset's x-position. Keep this boundary projection local so
+// caret placement, hit testing, and decoration clipping share one cache.
 function measureTextLineBoundaries(
   cache: LayoutCache,
   container: LayoutTextInput,
-  start: number,
-  end: number,
-  text: string,
+  { end, start, text }: MeasuredTextLine,
   availableWidth: number,
   typography: BlockTypography,
   resources: DocumentResources,
 ): LineBoundary[] {
-  // Pretext returns line ranges and widths, but it does not currently expose
-  // every editor offset's x-position. Keep this boundary projection local so
-  // caret placement, hit testing, and decoration clipping share one cache.
-  const cacheKey = `${resolveTextMeasurementCacheIdentity(container, resources)}:${start}:${end}:${typography.baseFontSize}:${typography.font}:${availableWidth}`;
-  const cached = cache.lineBoundaries.get(cacheKey);
-
-  if (cached) {
-    return cached;
-  }
-
   const context = getTextMeasurementContext();
-
-  const boundaries: LineBoundary[] = [
-    {
-      left: 0,
-      offset: 0,
-    },
-  ];
+  const boundaries: LineBoundary[] = [{ left: 0, offset: 0 }];
   let width = 0;
 
   if (isPlainTextContainer(container)) {
@@ -321,16 +328,13 @@ function measureTextLineBoundaries(
     for (const advance of measureTextBoundaryAdvances(cache, context, text)) {
       width += advance.width;
       offset += advance.length;
-      boundaries.push({
-        left: width,
-        offset,
-      });
+      boundaries.push({ left: width, offset });
     }
 
-    return cacheLineBoundaries(cache, cacheKey, boundaries);
+    return boundaries;
   }
 
-  const visibleRuns = findInlinesInRange(containerInlines(container), start, end);
+  const visibleRuns = findInlinesInRange(container.inlines, start, end);
 
   for (const run of visibleRuns) {
     const segmentStart = Math.max(start, run.start);
@@ -340,17 +344,15 @@ function measureTextLineBoundaries(
 
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
+      container,
       typography,
       resources,
     });
 
     if (reference) {
-      width += reference.width;
+      width += reference.inlineReference.width;
       offset += segmentText.length;
-      boundaries.push({
-        left: width,
-        offset,
-      });
+      boundaries.push({ left: width, offset });
 
       continue;
     }
@@ -360,14 +362,11 @@ function measureTextLineBoundaries(
     for (const advance of measureTextBoundaryAdvances(cache, context, segmentText)) {
       width += advance.width;
       offset += advance.length;
-      boundaries.push({
-        left: width,
-        offset,
-      });
+      boundaries.push({ left: width, offset });
     }
   }
 
-  return cacheLineBoundaries(cache, cacheKey, boundaries);
+  return boundaries;
 }
 
 function prepareTextSegments(
@@ -608,20 +607,17 @@ function createRichInlineMeasurementItems(
   const measurementItems: RichInlineMeasurementItem[] = [];
   const context = getTextMeasurementContext();
 
-  for (const run of containerInlines(container)) {
+  for (const run of container.inlines) {
     const reference = resolveInlineReferenceMeasurement(run, context, {
       availableWidth,
+      container,
       typography,
       resources,
     });
 
     if (reference) {
-      items.push(reference.richItem);
-      measurementItems.push({
-        height: reference.height,
-        inlineReference: reference.inlineReference,
-        run,
-      });
+      items.push({ width: reference.inlineReference.width });
+      measurementItems.push({ ...reference, run });
       continue;
     }
 
@@ -730,94 +726,123 @@ function resolveLineInlineReferences(
 }
 
 function resolveInlineMeasurementProfile(container: LayoutTextInput): InlineMeasurementProfile {
-  let hasHardBreak = false;
-  let hasRichInline = false;
+  const profile = { hasHardBreak: false, hasRichInline: false };
 
   if (isPlainTextContainer(container)) {
-    return {
-      hasHardBreak,
-      hasRichInline,
-    };
+    return profile;
   }
 
-  for (const run of containerInlines(container)) {
-    if (run.node.type === "lineBreak") {
-      hasHardBreak = true;
-    }
-
-    if (isReferenceInlineNode(run.node) || runHasInlineCustomMetrics(run)) {
-      hasRichInline = true;
-    }
+  for (const run of container.inlines) {
+    profile.hasHardBreak ||= run.node.type === "lineBreak";
+    profile.hasRichInline ||=
+      isReferenceInlineNode(run.node) || inlineTextHasCustomMetrics(inlineMarks(run));
   }
 
-  return {
-    hasHardBreak,
-    hasRichInline,
-  };
+  return profile;
 }
 
-// Memoizes the per-path cache identity by the indexed `inlines` array
-// reference. The inlines array survives index position shifts, so unchanged
-// text paths hit this cache on every keystroke instead of re-hashing their
-// text and re-serializing every inline.
-//
-// Image/resource paths are skipped because their identity also depends on
-// mutable `resources` state (image load/intrinsic dimensions, resource protocol
-// labels/icons); cheap to recompute.
-const textIdentityByInlines = new WeakMap<
-  readonly IndexedInline[],
-  { identity: string; path: string; text: string }
->();
-
-export function resolveTextMeasurementCacheIdentity(
+// Keys a container's measurement by everything that shapes its lines except
+// its path, so equal content measured the same way shares one key wherever it
+// sits. Virtualization caches measured heights under this key directly.
+export function resolveTextMeasurementKey(
   container: LayoutTextInput,
+  availableWidth: number,
+  typography: BlockTypography,
   resources: DocumentResources,
 ) {
   if (isPlainTextContainer(container)) {
-    return [container.path, hashMeasurementText(container.text), ""].join(":");
+    return createTextMeasurementKey(
+      `${hashMeasurementText(container.text)}:`,
+      availableWidth,
+      typography,
+    );
   }
 
-  const inlines = containerInlines(container);
-  const cached = textIdentityByInlines.get(inlines);
+  const memo = textMeasurementByInlines.get(container.inlines);
 
-  // Path and text are validated as defense-in-depth. In current code, an
-  // `inlines` array reference is only reachable from a text path whose path
-  // and text are also unchanged. Any content edit allocates a fresh inlines
-  // array. The extra checks are essentially free and protect the cache
-  // against any future code path that decouples them.
-  if (cached && cached.path === container.path && cached.text === container.text) {
-    return cached.identity;
+  // Text is validated as defense-in-depth. In current code, any content edit
+  // allocates a fresh inlines array. The extra check is essentially free and
+  // protects the memo against any future code path that decouples them.
+  if (memo && memo.text === container.text) {
+    if (
+      memo.availableWidth !== availableWidth ||
+      !isSameBlockTypography(memo.typography, typography)
+    ) {
+      memo.availableWidth = availableWidth;
+      memo.typography = typography;
+      memo.key = createTextMeasurementKey(memo.identity, availableWidth, typography);
+    }
+
+    return memo.key;
   }
 
   const { hasResourceDependency, signature } = resolveContainerMeasurementSignature(
     container,
     resources,
   );
-  const identity = [container.path, hashMeasurementText(container.text), signature].join(":");
+  const identity = `${hashMeasurementText(container.text)}:${signature}`;
+  const key = createTextMeasurementKey(identity, availableWidth, typography);
 
   if (!hasResourceDependency) {
-    textIdentityByInlines.set(inlines, {
+    textMeasurementByInlines.set(container.inlines, {
+      availableWidth,
       identity,
-      path: container.path,
+      key,
       text: container.text,
+      typography,
     });
   }
 
-  return identity;
+  return key;
+}
+
+// Memoizes each container's measurement key by its indexed `inlines` array
+// reference. The index keeps that array for unchanged content even when an
+// inserted root re-paths it, so unchanged containers hit this memo on every
+// rebuild instead of re-hashing their text and re-serializing every inline.
+// Handing back the same key string also lets cache lookups reuse its already
+// computed hash, which keeps per-cell lookups in table-heavy documents cheap
+// on every keystroke.
+//
+// Image/resource containers are skipped because their identity also depends on
+// mutable `resources` state (image load/intrinsic dimensions, resource protocol
+// labels/icons); cheap to recompute.
+const textMeasurementByInlines = new WeakMap<
+  readonly IndexedInline[],
+  {
+    availableWidth: number;
+    identity: string;
+    key: string;
+    text: string;
+    typography: BlockTypography;
+  }
+>();
+
+function createTextMeasurementKey(
+  identity: string,
+  availableWidth: number,
+  typography: BlockTypography,
+) {
+  return `${identity}:${availableWidth}:${typography.lineHeight}:${typography.baseFontSize}:${typography.font}`;
+}
+
+function isSameBlockTypography(left: BlockTypography, right: BlockTypography) {
+  return (
+    left === right ||
+    (left.lineHeight === right.lineHeight &&
+      left.baseFontSize === right.baseFontSize &&
+      left.font === right.font)
+  );
 }
 
 function resolveContainerMeasurementSignature(
-  container: LayoutTextInput,
+  container: Extract<LayoutTextInput, { kind: "inlines" }>,
   resources: DocumentResources,
 ) {
   let hasResourceDependency = false;
   let signature = "";
 
-  if (isPlainTextContainer(container)) {
-    return { hasResourceDependency, signature };
-  }
-
-  for (const run of containerInlines(container)) {
+  for (const run of container.inlines) {
     if (signature) {
       signature += "|";
     }
@@ -835,16 +860,12 @@ function resolveContainerMeasurementSignature(
 
 function isPlainTextContainer(
   container: LayoutTextInput,
-): container is Extract<LayoutTextInput, { kind: "plain" | "preformatted" }> {
+): container is Extract<LayoutTextInput, { kind: "preformatted" }> {
   return container.kind !== "inlines";
 }
 
-function containerInlines(container: Extract<LayoutTextInput, { kind: "inlines" }>) {
-  return container.inlines;
-}
-
 function resolveRunMeasurementSignature(run: IndexedInline) {
-  return `${run.node.type}:${inlineIsCode(run) ? 1 : 0}:${inlineMarks(run).join(",")}:${run.link?.url ?? ""}`;
+  return `${run.node.type}:${inlineMarks(run).join(",")}:${run.link?.url ?? ""}`;
 }
 
 function hashMeasurementText(text: string) {
@@ -856,33 +877,6 @@ function hashMeasurementText(text: string) {
   }
 
   return (hash >>> 0).toString(36);
-}
-
-function runHasInlineCustomMetrics(run: IndexedInline) {
-  return inlineTextHasCustomMetrics(inlineMarks(run));
-}
-
-function getTextMeasurementContext() {
-  if (textMeasurementContext !== undefined) {
-    return textMeasurementContext;
-  }
-
-  const canvas =
-    typeof OffscreenCanvas !== "undefined"
-      ? new OffscreenCanvas(1, 1)
-      : typeof document !== "undefined"
-        ? document.createElement("canvas")
-        : null;
-
-  const context = canvas?.getContext("2d");
-
-  if (!context) {
-    throw new Error("Text measurement requires OffscreenCanvas or a DOM canvas context.");
-  }
-
-  textMeasurementContext = context;
-
-  return context;
 }
 
 function measureGraphemeWidth(
@@ -920,7 +914,7 @@ function measureTextBoundaryAdvances(
     for (const grapheme of graphemes) {
       prefixOffset += grapheme.length;
 
-      const nextWidth = measureTextPrefixWidth(context, text, prefixOffset);
+      const nextWidth = context.measureText(text.slice(0, prefixOffset)).width;
 
       advances.push({
         length: grapheme.length,
@@ -952,14 +946,6 @@ function measureTextBoundaryAdvances(
   }
 
   return advances;
-}
-
-function measureTextPrefixWidth(
-  context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-  text: string,
-  offset: number,
-) {
-  return context.measureText(text.slice(0, offset)).width;
 }
 
 function resolveWhitespace(

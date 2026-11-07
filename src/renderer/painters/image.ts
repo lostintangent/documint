@@ -1,19 +1,18 @@
 // Owns paint policy for document image segments. The main paint module
 // delegates image-specific draw behavior here so text and image rendering stay
 // separate.
-import type { DocumentLayout, LayoutRect } from "@/editor/layout";
-import type { DocumentImageResource, DocumentResources } from "@/editor/resources";
+import type { LayoutRect } from "@/editor/layout";
+import type { DocumentResources } from "@/editor/resources";
 import type { ResolvedEditorTheme } from "../theme";
-import type { DocumentFrameLine } from "../frame";
 import type { ImageSegment } from "../frame/line/text-segments";
 
-const imageFallbackAspectRatio = 9 / 16;
-const imageMinimumHeight = 48;
 const imagePlaceholderLabelFont =
   '500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 const imagePlaceholderIconInset = 12;
 const imagePlaceholderIconMaximumSize = 34;
 const imagePlaceholderIconMinimumSize = 18;
+const imagePlaceholderDetailMinimumSize =
+  imagePlaceholderIconMinimumSize + imagePlaceholderIconInset * 2;
 const imagePlaceholderIconScale = 0.18;
 const imagePlaceholderStrokeWidth = 1.5;
 const imagePlaceholderLabelOffset = 0.9;
@@ -29,19 +28,16 @@ type ImagePlaceholderBox = LayoutRect & {
 
 export function paintImageSegment(
   context: CanvasRenderingContext2D,
-  lineFrame: DocumentFrameLine,
   segment: ImageSegment,
   frameContext: {
-    clocks: { ambientTime: number };
+    ambientTime: number;
     resources: DocumentResources;
     theme: ResolvedEditorTheme;
   },
 ) {
-  const { clocks, resources, theme } = frameContext;
-  const width = Math.max(24, segment.right - segment.left);
+  const { ambientTime, resources, theme } = frameContext;
+  const box = segment.rect;
   const resource = resources.images.get(segment.image.url) ?? null;
-  const imageHeight = resolvePaintedImageHeight(resource, width);
-  const box = resolveImageSegmentPaintBox(lineFrame.layoutLine, segment.left, width, imageHeight);
 
   context.fillStyle = theme.imageSurfaceBackground;
   context.fillRect(box.left, box.top, box.width, box.height);
@@ -51,7 +47,7 @@ export function paintImageSegment(
   } else {
     paintImagePlaceholder(context, theme, {
       ...box,
-      ambientTime: clocks.ambientTime,
+      ambientTime,
       status: resource?.status === "error" ? "error" : "loading",
     });
   }
@@ -65,10 +61,6 @@ function paintImagePlaceholder(
   theme: ResolvedEditorTheme,
   box: ImagePlaceholderBox,
 ) {
-  const label = box.status === "loading" ? "Loading image" : "Image unavailable";
-  const icon = resolveImagePlaceholderIconBox(box);
-  const labelTop = box.top + box.height / 2 + icon.size * imagePlaceholderLabelOffset;
-
   context.save();
   context.beginPath();
   context.rect(box.left, box.top, box.width, box.height);
@@ -77,6 +69,24 @@ function paintImagePlaceholder(
   if (box.status === "loading") {
     paintImageLoadingShimmer(context, theme, box, box.ambientTime);
   }
+
+  // Compact placeholders, like a loading badge within a line of text, have no
+  // room for the icon and label.
+  if (Math.min(box.width, box.height) >= imagePlaceholderDetailMinimumSize) {
+    paintImagePlaceholderIconAndLabel(context, theme, box);
+  }
+
+  context.restore();
+}
+
+function paintImagePlaceholderIconAndLabel(
+  context: CanvasRenderingContext2D,
+  theme: ResolvedEditorTheme,
+  box: ImagePlaceholderBox,
+) {
+  const label = box.status === "loading" ? "Loading image" : "Image unavailable";
+  const icon = resolveImagePlaceholderIconBox(box);
+  const labelTop = box.top + box.height / 2 + icon.size * imagePlaceholderLabelOffset;
 
   context.strokeStyle = theme.imagePlaceholderIcon;
   context.lineWidth = imagePlaceholderStrokeWidth;
@@ -104,7 +114,6 @@ function paintImagePlaceholder(
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillText(label, box.left + box.width / 2, labelTop);
-  context.restore();
 }
 
 function paintImageLoadingShimmer(
@@ -135,31 +144,6 @@ function paintImageLoadingShimmer(
   context.fillRect(box.left, box.top, box.width, box.height);
 }
 
-function resolvePaintedImageHeight(resource: DocumentImageResource | null, width: number) {
-  if (!resource || resource.intrinsicWidth <= 0 || resource.intrinsicHeight <= 0) {
-    return resolveFallbackImageHeight(width);
-  }
-
-  return Math.max(
-    imageMinimumHeight,
-    Math.round(width * (resource.intrinsicHeight / resource.intrinsicWidth)),
-  );
-}
-
-function resolveImageSegmentPaintBox(
-  line: DocumentLayout["lines"][number],
-  left: number,
-  width: number,
-  height: number,
-): LayoutRect {
-  return {
-    height,
-    left,
-    top: line.top + Math.max(0, Math.floor((line.height - height) / 2)),
-    width,
-  };
-}
-
 function resolveImagePlaceholderIconBox(box: LayoutRect) {
   const size = Math.max(
     imagePlaceholderIconMinimumSize,
@@ -179,8 +163,4 @@ function resolveImagePlaceholderIconBox(box: LayoutRect) {
         Math.round(box.height / 2 - size * imagePlaceholderTopBias),
       ),
   };
-}
-
-function resolveFallbackImageHeight(width: number) {
-  return Math.max(imageMinimumHeight, Math.round(width * imageFallbackAspectRatio));
 }

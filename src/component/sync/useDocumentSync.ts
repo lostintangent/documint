@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createEditorState, type EditorSelectionRange } from "@/editor";
+import { createEditorState } from "@/editor";
 import { findDocumentChanges, type Document, type DocumentChange } from "@/document";
 import { serializeDocument, type MarkdownOptions } from "@/markdown";
 import type { DocumentChangeEffect } from "@/renderer";
@@ -64,25 +64,11 @@ export function useDocumentSync({
   });
 
   const emitUserMentioned = useEffectEvent(
-    ({
-      target,
-      transition,
-      userId,
-    }: {
-      target: EditorSelectionRange;
-      transition: EditorStateTransition;
-      userId: string;
-    }) => {
+    ({ transition, userId }: { transition: EditorStateTransition; userId: string }) => {
       // TODO: replace this hook-specific payload plumbing with a typed
       // semantic effect once mention commands join the editor effect channel.
-      const lineDiff = resolveMentionLineChange(transition, target);
-
-      if (!lineDiff) {
-        return;
-      }
-
       const event: UserMentionEvent = {
-        ...lineDiff,
+        ...resolveMentionLineChange(transition),
         userId,
       };
 

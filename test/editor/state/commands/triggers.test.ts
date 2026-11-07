@@ -1,30 +1,21 @@
 import { indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
+import { findDocumentChanges } from "@/document";
 import { getCommentState } from "@/editor";
 import { addComment, insertText, setSelection, type EditorState } from "@/editor/state";
+import { parseDocument } from "@/markdown";
 import { getPath, placeAt, setup, toMarkdown } from "../../helpers";
-
-describe("Text input", () => {
-  test("applies text input inside nested editable paths", () => {
-    let state = setup("- parent\n  - child\n");
-    const child = getPath(state, "child");
-
-    state = placeAt(state, child, 0);
-    state = insertText(state, "z") ?? state;
-
-    expect(toMarkdown(state)).toBe("- parent\n  - zchild\n");
-  });
-});
 
 describe("Markdown creation triggers", () => {
   test("creates root structures while preserving content to the right", () => {
     const cases = [
+      { marker: "-", markdown: "- alpha\n" },
       { marker: "*", markdown: "- alpha\n" },
       { marker: "  42.", markdown: "42. alpha\n" },
       { marker: "#", markdown: "# alpha\n" },
       { marker: ">", markdown: "> alpha\n" },
       { marker: "[x]", markdown: "- [x] alpha\n" },
-      { marker: "---", markdown: "---\n\nalpha\n" },
+      { marker: "---", markdown: "***\n\nalpha\n" },
     ];
 
     for (const { marker, markdown } of cases) {
@@ -39,7 +30,7 @@ describe("Markdown creation triggers", () => {
     const cases = [
       { marker: "####", markdown: "####\n" },
       { marker: ">", markdown: ">\n" },
-      { marker: "---", markdown: "---\n\n" },
+      { marker: "---", markdown: "***\n\n" },
     ];
 
     for (const { marker, markdown } of cases) {
@@ -102,10 +93,12 @@ describe("Markdown creation triggers", () => {
     expect(getPath(state, "al* pha").block.type).toBe("paragraph");
   });
 
-  test("keeps markers literal inside code blocks", () => {
-    const state = applyTriggerAtStart("```\nalpha\n```\n", "#");
-
-    expect(toMarkdown(state)).toBe("```\n# alpha\n```\n");
+  test.each([
+    ["code blocks", "```\nalpha\n```\n", "```\n# alpha\n```\n"],
+    ["quoted headings", "> # alpha\n", "> # # alpha\n"],
+    ["quoted paragraphs", "> alpha\n", "> \\# alpha\n"],
+  ])("keeps markers literal inside %s", (_, markdown, expected) => {
+    expect(toMarkdown(applyTriggerAtStart(markdown, "#"))).toBe(expected);
   });
 
   test("preserves comments anchored in suffix content", () => {
@@ -153,7 +146,7 @@ describe("Markdown transform triggers", () => {
     orderedState = insertText(orderedState, "1.") ?? orderedState;
     orderedState = insertText(orderedState, " ") ?? orderedState;
 
-    expect(toMarkdown(orderedState)).toBe("1. alpha\n1. beta\n");
+    expect(toMarkdown(orderedState)).toBe("1. alpha\n2. beta\n");
 
     let taskState = setup("- alpha\n- beta\n");
     const taskAlpha = getPath(taskState, "alpha");
@@ -165,11 +158,17 @@ describe("Markdown transform triggers", () => {
     expect(toMarkdown(taskState)).toBe("- [x] alpha\n- beta\n");
   });
 
-  test("clears an ordered start when a list item becomes a bullet", () => {
-    const ordered = applyTriggerAtStart("- alpha\n", "1.");
-    const bulleted = applyTriggerAtStartOfState(ordered, "-");
+  test("stores a typed 1. list the way its saved markdown parses", () => {
+    const state = applyTriggerAtStart("alpha\n", "1.");
+    const document = state.documentIndex.document;
 
-    expect(ordered.documentIndex.document.blocks[0]).toMatchObject({ ordered: true, start: 1 });
+    expect(document.blocks[0]).toMatchObject({ ordered: true, start: null });
+    expect(findDocumentChanges(document, parseDocument(toMarkdown(state)))).toEqual([]);
+  });
+
+  test("clears an ordered start when a list item becomes a bullet", () => {
+    const bulleted = applyTriggerAtStart("3. alpha\n", "-");
+
     expect(bulleted.documentIndex.document.blocks[0]).toMatchObject({
       ordered: false,
       start: null,

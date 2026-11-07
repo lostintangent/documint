@@ -5,9 +5,9 @@
 import { createCodeBlock, createParagraphTextBlock } from "@/document";
 import { target } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
-import type { CodeBlockContext, RootBlockInsertionContext } from "../../context";
+import type { CodeBlockContext, RootTextBlockContext } from "../../context";
 
-export function resolveCodeBlockInsertion(context: RootBlockInsertionContext): EditorStateAction {
+export function resolveCodeBlockInsertion(context: RootTextBlockContext): EditorStateAction {
   const codeBlock = createCodeBlock({ source: "" });
 
   return {

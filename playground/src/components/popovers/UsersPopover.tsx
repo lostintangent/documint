@@ -1,7 +1,12 @@
 import { useEffect, type CSSProperties } from "react";
 import { Trash2, Users } from "lucide-react";
 import type { DocumentPresence, DocumentUser } from "@lostintangent/documint";
-import { describeEntry, useUsers, type UsersMode } from "../../hooks/useUsers";
+import {
+  describeEntry,
+  useUsers,
+  type ManualFormField,
+  type UsersMode,
+} from "../../hooks/useUsers";
 import {
   PlaygroundPopover,
   popoverControlClassName,
@@ -33,8 +38,26 @@ const fieldLabelClassName = "font-controls grid gap-1.5";
 const fieldCaptionClassName = "text-xs text-muted";
 const fieldInputClassName = "w-full rounded-xl border border-border/15 bg-background/90 px-3 py-2";
 
+// Anchor fields are disabled once a thread ID places the caret on a comment instead.
+const manualTextFields: {
+  anchor?: true;
+  field: Exclude<ManualFormField, "color">;
+  label: string;
+  placeholder: string;
+  required?: true;
+  type?: "url";
+}[] = [
+  { field: "name", label: "Name", placeholder: "Name", required: true },
+  { field: "avatarUrl", label: "Avatar URL", placeholder: "Optional avatar image", type: "url" },
+  { field: "threadId", label: "Comment thread ID", placeholder: "Optional thread target" },
+  { field: "status", label: "Status", placeholder: "Reviewing comments" },
+  { anchor: true, field: "prefix", label: "Prefix", placeholder: "Caret appears after this text" },
+  { anchor: true, field: "suffix", label: "Suffix", placeholder: "Caret appears before this text" },
+];
+
 export function UsersPopover({ content, onUsersChange, onPresenceChange }: UsersPopoverProps) {
   const { auto, manualEntries, manualForm, mode, presence, users } = useUsers(content);
+  const threadTargeted = manualForm.threadId.trim().length > 0;
 
   useEffect(() => {
     onUsersChange(users);
@@ -62,78 +85,20 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
       </div>
 
       <div className="grid gap-3">
-        <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Name</span>
-          <input
-            className={fieldInputClassName}
-            disabled={auto.enabled}
-            onChange={(event) => manualForm.setName(event.target.value)}
-            placeholder="Name"
-            required
-            type="text"
-            value={manualForm.name}
-          />
-        </label>
-
-        <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Avatar URL</span>
-          <input
-            className={fieldInputClassName}
-            disabled={auto.enabled}
-            onChange={(event) => manualForm.setAvatarUrl(event.target.value)}
-            placeholder="Optional avatar image"
-            type="url"
-            value={manualForm.avatarUrl}
-          />
-        </label>
-
-        <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Comment thread ID</span>
-          <input
-            className={fieldInputClassName}
-            disabled={auto.enabled}
-            onChange={(event) => manualForm.setThreadId(event.target.value)}
-            placeholder="Optional thread target"
-            type="text"
-            value={manualForm.threadId}
-          />
-        </label>
-
-        <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Status</span>
-          <input
-            className={fieldInputClassName}
-            disabled={auto.enabled}
-            onChange={(event) => manualForm.setStatus(event.target.value)}
-            placeholder="Reviewing comments"
-            type="text"
-            value={manualForm.status}
-          />
-        </label>
-
-        <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Prefix</span>
-          <input
-            className={fieldInputClassName}
-            disabled={auto.enabled || manualForm.threadId.trim().length > 0}
-            onChange={(event) => manualForm.setPrefix(event.target.value)}
-            placeholder="Caret appears after this text"
-            type="text"
-            value={manualForm.prefix}
-          />
-        </label>
-
-        <label className={fieldLabelClassName}>
-          <span className={fieldCaptionClassName}>Suffix</span>
-          <input
-            className={fieldInputClassName}
-            disabled={auto.enabled || manualForm.threadId.trim().length > 0}
-            onChange={(event) => manualForm.setSuffix(event.target.value)}
-            placeholder="Caret appears before this text"
-            type="text"
-            value={manualForm.suffix}
-          />
-        </label>
+        {manualTextFields.map(({ anchor, field, label, placeholder, required, type = "text" }) => (
+          <label className={fieldLabelClassName} key={field}>
+            <span className={fieldCaptionClassName}>{label}</span>
+            <input
+              className={fieldInputClassName}
+              disabled={auto.enabled || (anchor === true && threadTargeted)}
+              onChange={(event) => manualForm.setField(field, event.target.value)}
+              placeholder={placeholder}
+              required={required}
+              type={type}
+              value={manualForm[field]}
+            />
+          </label>
+        ))}
 
         <div className="grid grid-cols-[auto_minmax(0,1fr)] items-end gap-3">
           <label className={`${fieldLabelClassName} min-w-20`}>
@@ -141,7 +106,7 @@ export function UsersPopover({ content, onUsersChange, onPresenceChange }: Users
             <input
               className={`${fieldInputClassName} min-h-10 p-1.5`}
               disabled={auto.enabled}
-              onChange={(event) => manualForm.setColor(event.target.value)}
+              onChange={(event) => manualForm.setField("color", event.target.value)}
               type="color"
               value={manualForm.color}
             />

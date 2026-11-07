@@ -7,14 +7,12 @@ import { type CaretTarget, type DocumentLayout } from "../layout";
 import {
   type EditorState,
   resolveAdjacentEditorPathWithTextOutsideBlock,
-  resolveIndexedBlock,
   resolveIndexedTableCell,
   resolveIndexedTableCellByTablePath,
 } from "../state";
 import { placeCaretAtLineY } from "./line";
 
 type VerticalTablePathTarget = {
-  currentPath: string;
   targetPath: string | null;
 };
 
@@ -22,29 +20,26 @@ export function resolveVerticalTablePathTarget(
   state: EditorState,
   direction: -1 | 1,
 ): VerticalTablePathTarget | null {
-  const currentPath = state.selection.focus.path;
-  const currentCell = resolveIndexedTableCell(state.documentIndex, currentPath);
+  const currentCell = resolveIndexedTableCell(state.documentIndex, state.selection.focus.path);
 
   if (!currentCell) {
-    return null;
-  }
-
-  const tableBlock = resolveIndexedBlock(state.documentIndex, currentCell.tablePath);
-
-  if (tableBlock?.block.type !== "table") {
     return null;
   }
 
   const targetPath =
     resolveIndexedTableCellByTablePath(
       state.documentIndex,
-      tableBlock.path,
+      currentCell.tablePath,
       currentCell.rowIndex + direction,
       currentCell.cellIndex,
     )?.path ??
-    resolveAdjacentEditorPathWithTextOutsideBlock(state.documentIndex, tableBlock.path, direction);
+    resolveAdjacentEditorPathWithTextOutsideBlock(
+      state.documentIndex,
+      currentCell.tablePath,
+      direction,
+    );
 
-  return { currentPath, targetPath };
+  return { targetPath };
 }
 
 export function moveCaretVerticallyInTable(
@@ -60,13 +55,13 @@ export function moveCaretVerticallyInTable(
     return null;
   }
 
-  const { currentPath, targetPath } = target;
+  const { targetPath } = target;
 
   if (!targetPath) {
     return state;
   }
 
-  const currentExtent = layout.pathBounds.get(currentPath);
+  const currentExtent = layout.pathBounds.get(state.selection.focus.path);
   const targetExtent = layout.pathBounds.get(targetPath);
 
   if (!currentExtent || !targetExtent) {

@@ -1,8 +1,9 @@
-import { indexedTextEntries } from "@test/editor/helpers";
+import { getPath, indexedTextEntries } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
 import {
   compareEditorPositions,
   createDocumentIndex,
+  findEditorPathWithText,
   hasSameEditorTextPathShape,
   indexedInlineText,
   metadataKeyPath,
@@ -18,7 +19,6 @@ import {
   resolveIndexedText,
   resolveIndexedTableCell,
   resolveEditorTextAtPath,
-  type DocumentIndex,
 } from "@/editor/state";
 import {
   indexedOffsetToPlainTextOffset,
@@ -240,16 +240,16 @@ const x = 1
       text: "two",
     });
     expect(resolveIndexedText(runtime, "root.2")).toBeNull();
-    expect(hasSameEditorTextPathShape(runtime, "root.1", runtime, "root.1")).toBe(true);
-    expect(
-      hasSameEditorTextPathShape(
-        runtime,
-        "root.2.rows.1.cells.1",
-        runtime,
-        "root.2.rows.1.cells.1",
-      ),
-    ).toBe(true);
-    expect(hasSameEditorTextPathShape(runtime, "root.2", runtime, "root.2")).toBe(false);
+    for (const [previousPath, nextPath, same] of [
+      ["root.1", "root.1", true],
+      ["root.2.rows.1.cells.1", "root.2.rows.1.cells.1", true],
+      ["root.2", "root.2", false],
+      ["root.0.children.0", "root.1", false],
+      ["root.2.rows.0.cells.1", "root.2.rows.1.cells.1", false],
+      ["root.2.rows.1.cells.0", "root.2.rows.1.cells.1", false],
+    ] as const) {
+      expect(hasSameEditorTextPathShape(runtime, previousPath, runtime, nextPath)).toBe(same);
+    }
     expect(resolveIndexedBlockContainingPath(runtime, "root.2.rows.1.cells.1")?.path).toBe(
       "root.2",
     );
@@ -325,28 +325,24 @@ Body
 omega
 `),
     );
-    const top = findEditorPathByText(runtime, "top");
-    const nested = findEditorPathByText(runtime, "nested");
-    const firstCell = findEditorPathByText(runtime, "A");
-    const secondCell = findEditorPathByText(runtime, "B");
-    const lastCell = findEditorPathByText(runtime, "D");
-    const omega = findEditorPathByText(runtime, "omega");
-    const table = runtime.blocks.find((entry) => entry.block.type === "table");
-
-    if (!top || !nested || !firstCell || !secondCell || !lastCell || !omega || !table) {
-      throw new Error("Expected indexed flow paths");
-    }
+    const top = getPath(runtime, "top").path;
+    const nested = getPath(runtime, "nested").path;
+    const { blockPath: table, path: firstCell } = getPath(runtime, "A");
+    const secondCell = getPath(runtime, "B").path;
+    const lastCell = getPath(runtime, "D").path;
+    const omega = getPath(runtime, "omega").path;
 
     expect(resolveDocumentTextPathBoundary(runtime, "start")).toBe(top);
     expect(resolveDocumentTextPathBoundary(runtime, "end")).toBe(omega);
     expect(resolveBlockTextPathBoundary(runtime, "root.0", "start")).toBe(top);
     expect(resolveBlockTextPathBoundary(runtime, "root.0", "end")).toBe(nested);
+    expect(findEditorPathWithText(runtime, (_path, text) => text.length === 1)).toBe(firstCell);
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, nested, 1)).toBe(firstCell);
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, firstCell, -1)).toBe(nested);
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, firstCell, 1)).toBe(secondCell);
     expect(resolveAdjacentEditorPathWithTextInFlow(runtime, lastCell, 1)).toBe(omega);
-    expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, -1)).toBe(nested);
-    expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table.path, 1)).toBe(omega);
+    expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table, -1)).toBe(nested);
+    expect(resolveAdjacentEditorPathWithTextOutsideBlock(runtime, table, 1)).toBe(omega);
   });
 
   test("round-trips the indexed document without changing markdown", () => {
@@ -579,26 +575,3 @@ beta
     expect(serializeDocument(replaced.documentIndex.document)).toBe("before media after\n");
   });
 });
-
-function findEditorPathByText(documentIndex: DocumentIndex, text: string) {
-  for (const indexedBlock of documentIndex.blocks) {
-    if (
-      (indexedBlock.kind === "inlines" || indexedBlock.kind === "source") &&
-      indexedBlock.text === text
-    ) {
-      return indexedBlock.path;
-    }
-
-    if (indexedBlock.kind === "cells") {
-      for (const row of indexedBlock.tableCellRows) {
-        for (const cell of row) {
-          if (cell.text === text) {
-            return cell.path;
-          }
-        }
-      }
-    }
-  }
-
-  return null;
-}

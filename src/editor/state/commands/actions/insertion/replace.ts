@@ -1,7 +1,6 @@
-import type { TextRangeContext } from "../../context";
 import { effect } from "../../../effects";
 import type { DocumentIndex } from "../../../index/types";
-import type { EditorSelection } from "../../../selection";
+import type { EditorSelection, EditorSelectionRange } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 
 // Plain text replacement actions. This is the default typing path, so the
@@ -23,13 +22,13 @@ export function resolveSelectionTextReplacement(
 
 export function resolveTextRangeReplacement(
   documentIndex: DocumentIndex,
-  context: TextRangeContext,
+  { endOffset, path, startOffset }: EditorSelectionRange,
   text: string,
 ): EditorStateAction {
   return {
-    effect: effect.textInsertedAtPath(documentIndex, context.path, context.startOffset, text),
+    effect: effect.textInsertedAtPath(documentIndex, path, startOffset, text),
     kind: "splice-text",
-    range: context.selection,
+    range: { anchor: { path, offset: startOffset }, focus: { path, offset: endOffset } },
     text,
   };
 }

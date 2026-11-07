@@ -13,7 +13,7 @@ Paragraph 1 should stay stable while list structure changes around it.
 > quote 1
 >
 > 1. ordered 1.a
-> 1. ordered 1.b
+> 2. ordered 1.b
 
 ## Section 2
 
@@ -28,7 +28,7 @@ Paragraph 2 should stay stable while list structure changes around it.
 > quote 2
 >
 > 1. ordered 2.a
-> 1. ordered 2.b
+> 2. ordered 2.b
 
 ## Section 3
 
@@ -43,7 +43,7 @@ Paragraph 3 should stay stable while list structure changes around it.
 > quote 3
 >
 > 1. ordered 3.a
-> 1. ordered 3.b
+> 2. ordered 3.b
 
 ## Section 4
 
@@ -58,4 +58,4 @@ Paragraph 4 should stay stable while list structure changes around it.
 > quote 4
 >
 > 1. ordered 4.a
-> 1. ordered 4.b
+> 2. ordered 4.b

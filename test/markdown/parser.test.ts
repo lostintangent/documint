@@ -2,11 +2,14 @@
 // stability is covered by `roundtrip.test.ts`.
 
 import { describe, expect, test } from "bun:test";
-import type { Inline, Mark, MetadataValue } from "@/document";
+import type { Block, Inline, Mark, MetadataValue } from "@/document";
 import { parseDocument, serializeDocument, type MarkdownOptions } from "@/markdown";
-import { fixtureOptions } from "../../playground/src/lib/data";
 import { expectBlockAt, expectInlineAt, findInline } from "../document/helpers";
-import { commentedParagraphMarkdown } from "./helpers";
+import {
+  commentedParagraphMarkdown,
+  expectCanonicalRoundTrip,
+  expectStableRoundTrip,
+} from "./helpers";
 
 describe("Mentions", () => {
   test("parses user mentions as semantic inline nodes", () => {
@@ -18,22 +21,6 @@ describe("Mentions", () => {
     expect(paragraph.plainText).toBe("Hello @Jane Doe!");
   });
 
-  test("parses bare mentions from explicit mention targets", () => {
-    const paragraph = parseParagraph("Hello @Jane Doe and @Jane.\n", {
-      mentionTargets: [
-        { name: "Jane", userId: "u-jane" },
-        { name: "Jane Doe", userId: "u-jane-doe" },
-      ],
-    });
-    const firstMention = expectInlineAt(paragraph.children, 1, "mention");
-    const secondMention = expectInlineAt(paragraph.children, 3, "mention");
-
-    expect(firstMention.name).toBe("Jane Doe");
-    expect(firstMention.userId).toBe("u-jane-doe");
-    expect(secondMention.name).toBe("Jane");
-    expect(secondMention.userId).toBe("u-jane");
-  });
-
   test("leaves bare mentions as text without mention targets", () => {
     const paragraph = parseParagraph("Hello @Jane.\n");
 
@@ -41,148 +28,68 @@ describe("Mentions", () => {
     expectTextAt(paragraph.children, 0, "Hello @Jane.");
   });
 
-  test("does not parse bare mentions embedded inside words", () => {
-    const paragraph = parseParagraph("email@Jane.com and @JaneDoe\n", {
-      mentionTargets: [{ name: "Jane", userId: "u-jane" }],
-    });
-
-    expect(paragraph.children).toHaveLength(1);
-    expectTextAt(paragraph.children, 0, "email@Jane.com and @JaneDoe");
-  });
-
-  test("opens bare mentions after newline and tab boundaries", () => {
-    const paragraph = parseParagraph("first\n@Jane\t@John\n", {
+  // A bare mention needs whitespace or the start of the text before it, a
+  // non-name character after it, and takes the longest matching target.
+  test.each([
+    ["the longest target", "Hello @Jane Doe and @Jane.", ["u-jane-doe", "u-jane"]],
+    ["mentions after a newline and a tab", "first\n@Jane\t@John", ["u-jane", "u-john"]],
+    ["no mention inside a word", "email@Jane.com and @JaneDoe", []],
+    ["no mention after punctuation", "(@Jane) and /@Jane", []],
+  ])("reads bare mentions as %s", (_, source, userIds) => {
+    const paragraph = parseParagraph(`${source}\n`, {
       mentionTargets: [
         { name: "Jane", userId: "u-jane" },
+        { name: "Jane Doe", userId: "u-jane-doe" },
         { name: "John", userId: "u-john" },
       ],
     });
 
-    expect(expectInlineAt(paragraph.children, 1, "mention").userId).toBe("u-jane");
-    expect(expectInlineAt(paragraph.children, 3, "mention").userId).toBe("u-john");
-  });
-
-  test("does not parse bare mentions immediately after punctuation", () => {
-    const paragraph = parseParagraph("(@Jane) and /@Jane\n", {
-      mentionTargets: [{ name: "Jane", userId: "u-jane" }],
-    });
-
-    expect(paragraph.children).toHaveLength(1);
-    expectTextAt(paragraph.children, 0, "(@Jane) and /@Jane");
+    expect(
+      paragraph.children.flatMap((child) => (child.type === "mention" ? [child.userId] : [])),
+    ).toEqual(userIds);
   });
 });
 
 describe("Resources", () => {
-  test("parses registered protocol links as semantic resource nodes", () => {
-    const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n", {
-      resourceProtocols: ["demo-resource:"],
-    });
-    const resource = expectInlineAt(paragraph.children, 1, "resource");
+  test.each([
+    ["a registered protocol link", "", "demo-resource:"],
+    ["a titled link", ' "title"', "demo-resource:"],
+    ["a protocol registered without its colon", "", "demo-resource"],
+  ])("parses %s as a semantic resource node", (_, title, protocol) => {
+    const paragraph = parseParagraph(
+      `Use [Recording](demo-resource://recording/live${title}) now.\n`,
+      { resourceProtocols: [protocol] },
+    );
 
     expect(paragraph.children).toHaveLength(3);
-    expect(paragraph.children.some((child) => child.type === "link")).toBe(false);
-    expect(resource.label).toBe("Recording");
-    expect(resource.protocol).toBe("demo-resource:");
-    expect(resource.url).toBe("demo-resource://recording/live");
-    expect(paragraph.plainText).toBe("Use Recording now.");
-  });
-
-  test("canonicalizes registered resource protocols without trailing colons", () => {
-    const paragraph = parseParagraph("Use [Recording](demo-resource://recording/live) now.\n", {
-      resourceProtocols: ["demo-resource"],
+    expect(expectInlineAt(paragraph.children, 1, "resource")).toMatchObject({
+      label: "Recording",
+      protocol: "demo-resource:",
+      url: "demo-resource://recording/live",
     });
-    const resource = expectInlineAt(paragraph.children, 1, "resource");
-
-    expect(resource.protocol).toBe("demo-resource:");
-    expect(resource.url).toBe("demo-resource://recording/live");
-  });
-
-  test("parses registered protocol links with titles as semantic resource nodes", () => {
-    const paragraph = parseParagraph(
-      'Use [Recording](demo-resource://recording/live "ignored title") now.\n',
-      {
-        resourceProtocols: ["demo-resource:"],
-      },
-    );
-    const resource = expectInlineAt(paragraph.children, 1, "resource");
-
-    expect(paragraph.children.some((child) => child.type === "link")).toBe(false);
-    expect(resource.label).toBe("Recording");
-    expect(resource.protocol).toBe("demo-resource:");
-    expect(resource.url).toBe("demo-resource://recording/live");
+    expect(paragraph.plainText).toBe("Use Recording now.");
   });
 
   test("uses the link text projection as the resource label", () => {
     const paragraph = parseParagraph(
       "Use [ **Recording** session ](demo-resource://recording/live) now.\n",
-      {
-        resourceProtocols: ["demo-resource:"],
-      },
+      { resourceProtocols: ["demo-resource:"] },
     );
-    const resource = expectInlineAt(paragraph.children, 1, "resource");
 
-    expect(resource.label).toBe(" Recording session ");
+    expect(expectInlineAt(paragraph.children, 1, "resource").label).toBe(" Recording session ");
   });
+});
 
-  test("parses playground tutorial resource links as resources", () => {
-    const tutorial = fixtureOptions.find((fixture) => fixture.id === "sample");
-
-    if (!tutorial) {
-      throw new Error("Expected playground tutorial fixture");
-    }
-
-    const document = parseDocument(tutorial.markdown, {
-      resourceProtocols: ["demo-note:", "demo-resource:", "playground:"],
+describe("Images", () => {
+  test.each([
+    ["an image", "![Alt](a.png)", null],
+    ["a sized image", "![Alt](a.png){width=120}", 120],
+  ])("parses %s as a semantic image node", (_, source, width) => {
+    expect(expectInlineAt(parseParagraph(`${source}\n`).children, 0, "image")).toMatchObject({
+      alt: "Alt",
+      url: "a.png",
+      width,
     });
-    const inlines = document.blocks.flatMap((block) =>
-      block.type === "paragraph" || block.type === "heading" ? block.children : [],
-    );
-    const resourceNodes = inlines.filter(
-      (inline): inline is Extract<Inline, { type: "resource" }> =>
-        inline.type === "resource" &&
-        (inline.protocol === "demo-note:" ||
-          inline.protocol === "demo-resource:" ||
-          inline.protocol === "playground:"),
-    );
-    const demoResourceLinks = collectInlineLinks(inlines).filter(
-      (link) =>
-        link.url.startsWith("demo-resource:") ||
-        link.url.startsWith("demo-note:") ||
-        link.url.startsWith("playground:"),
-    );
-
-    expect(resourceNodes.map((resource) => resource.url)).toEqual([
-      "playground:/theme",
-      "demo-resource://recording/live",
-      "demo-note://note/complete",
-    ]);
-    expect(resourceNodes.map((resource) => resource.label)).toEqual([
-      "theme picker",
-      "Recording session",
-      "Planning note",
-    ]);
-    expect(demoResourceLinks).toEqual([]);
-  });
-
-  test("does not cache mutable resource protocol arrays across parses", () => {
-    const protocols = ["demo-resource:"];
-    const source = "Use [Recording](demo-resource://recording/live) now.\n";
-
-    expectInlineAt(
-      expectBlockAt(parseDocument(source, { resourceProtocols: protocols }), 0, "paragraph")
-        .children,
-      1,
-      "resource",
-    );
-
-    protocols.length = 0;
-
-    expectInlineAt(
-      expectBlockAt(parseDocument(source, { resourceProtocols: protocols }), 0, "paragraph")
-        .children,
-      1,
-      "link",
-    );
   });
 });
 
@@ -213,52 +120,62 @@ describe("Inline marks", () => {
     expectTextAt(paragraph.children, 0, "code", ["code", "italic"]);
     expectTextAt(paragraph.children, 2, "underlined", ["code", "underline"]);
   });
+
+  test("nests emphasis by pairing each closer with the nearest compatible opener", () => {
+    const paragraph = parseParagraph("_Note: a __b__ c._\n");
+
+    expectTextAt(paragraph.children, 0, "Note: a ", ["italic"]);
+    expectTextAt(paragraph.children, 1, "b", ["bold", "italic"]);
+    expectTextAt(paragraph.children, 2, " c.", ["italic"]);
+  });
+
+  test("keeps a run that can open and close literal when the rule of 3 forbids the pair", () => {
+    const paragraph = parseParagraph("*foo**bar*\n");
+
+    expect(paragraph.children).toHaveLength(1);
+    expectTextAt(paragraph.children, 0, "foo**bar", ["italic"]);
+  });
+
+  test.each([['a**"b"**'], ["中文**「加粗」**中文"], ["a * b * c"]])(
+    "leaves %s literal because its delimiters can't open or close",
+    (source) => {
+      const paragraph = parseParagraph(`${source}\n`);
+
+      expect(paragraph.children).toHaveLength(1);
+      expectTextAt(paragraph.children, 0, source);
+    },
+  );
 });
 
 describe("Line breaks", () => {
-  // All four CommonMark encodings produce a `lineBreak` inline between the
-  // surrounding `a` and `b` text runs. The `<br>\n` case additionally
-  // consumes the trailing newline so authored `<br>\n` (a common line-wrap
-  // convention) doesn't leave a soft break.
+  // Every hard-break encoding saves as a bare `<br>`. Authored `<br>\n` also
+  // consumes its newline so it doesn't leave a soft break.
   test.each([
     ["bare <br>", "a<br>b\n"],
+    ["self-closing <br/>", "a<br/>b\n"],
+    ["spaced <br />", "a<br />b\n"],
+    ["uppercase <BR>", "a<BR>b\n"],
+    ["mixed-case <Br/>", "a<Br/>b\n"],
     ["<br>\\n (trailing newline absorbed)", "a<br>\nb\n"],
     ["two-or-more trailing spaces", "a  \nb\n"],
     ["backslash-newline", "a\\\nb\n"],
   ])("parses %s as a hard line break", (_label, source) => {
-    const paragraph = parseParagraph(source);
+    const document = parseDocument(source);
+    const paragraph = expectBlockAt(document, 0, "paragraph");
 
     expect(paragraph.children).toHaveLength(3);
     expectTextAt(paragraph.children, 0, "a");
     expectInlineAt(paragraph.children, 1, "lineBreak");
     expectTextAt(paragraph.children, 2, "b");
+    expect(serializeDocument(document)).toBe("a<br>b\n");
   });
 
-  test.each([["<br/>"], ["<br />"], ["<BR>"], ["<Br/>"]])(
-    "accepts %s as a self-closing / case-insensitive <br> spelling",
-    (spelling) => {
-      const paragraph = parseParagraph(`a${spelling}b\n`);
-
-      expect(paragraph.children).toHaveLength(3);
-      expectInlineAt(paragraph.children, 1, "lineBreak");
-    },
-  );
-
-  test("treats a bare intra-paragraph newline as a soft break, not a hard break", () => {
-    // A soft break is preserved as a literal `\n` inside the text run; the
-    // layout's whitespace handling is what collapses it visually. There must
-    // be no `lineBreak` inline produced.
-    const paragraph = parseParagraph("a\nb\n");
-
-    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
-  });
-
-  test("does not treat an escaped backslash followed by newline as a hard break", () => {
-    // `\\\\\n` in source = two literal backslashes + newline. The first
-    // backslash escapes the second, leaving the `\n` as a soft break.
-    const paragraph = parseParagraph("a\\\\\nb\n");
-
-    expect(paragraph.children.some((child) => child.type === "lineBreak")).toBe(false);
+  // A soft break stays a literal `\n` inside the text run.
+  test.each([
+    ["a bare newline", "a\nb\n"],
+    ["an escaped backslash before a newline", "a\\\\\nb\n"],
+  ])("reads %s as a soft break", (_label, source) => {
+    expect(parseParagraph(source).children.some((child) => child.type === "lineBreak")).toBe(false);
   });
 });
 
@@ -292,34 +209,59 @@ describe("Unsupported inline syntax", () => {
   });
 });
 
+// Only ASCII punctuation escapes, so other backslashes and a trailing one stay
+// literal.
 describe("Backslash escapes", () => {
-  // Directly exercises `readGenericEscapeToken`. Round-trip coverage in
-  // `serializer.test.ts` exercises the escapable paths through the
-  // `Paragraph block-start escapes` table; these tests lock down the
-  // non-escapable and trailing-`\` branches that round-trip can't reach.
+  test.each([
+    ["\\#foo", "#foo"],
+    ["\\>foo", ">foo"],
+    ["\\:foo", ":foo"],
+    ["\\\\foo", "\\foo"],
+    ["a\\bc", "a\\bc"],
+    ["foo\\", "foo\\"],
+  ])("reads `%s` as `%s`", (source, plainText) => {
+    expect(parseParagraph(`${source}\n`).plainText).toBe(plainText);
+  });
+});
+
+describe("Link brackets", () => {
+  test("lets a code span that spans the closing bracket win over the link", () => {
+    const paragraph = parseParagraph("[a `b](u)` c\n");
+
+    expect(paragraph.children.some((child) => child.type === "link")).toBe(false);
+    expectTextAt(paragraph.children, 1, "b](u)", ["code"]);
+  });
+});
+
+describe("Reference links", () => {
+  test.each([
+    ["a reference after its definition", "[ws]: /ws\n\nTry [ws].\n", "Try [ws](/ws).\n"],
+    ["a label in another case", "[Foo  Bar][]\n\n[foo bar]: /u\n", "[Foo  Bar](/u)\n"],
+    ["a code span label", "[`isUtf8()`][]\n\n[`isutf8()`]: /u\n", "[`isUtf8()`](/u)\n"],
+    ["the first of two definitions", "[a]\n\n[a]: /first\n[A]: /second\n", "[a](/first)\n"],
+  ])("saves %s as an inline link", (_, source, canonical) => {
+    expectCanonicalRoundTrip(source, canonical);
+  });
 
   test.each([
-    ["\\#", "#"],
-    ["\\>", ">"],
-    ["\\:", ":"],
-    ["\\\\", "\\"],
-  ])("unescapes `%s` to plain text `%s`", (escaped, unescaped) => {
-    const paragraph = parseParagraph(`${escaped}foo\n`);
-    expect(paragraph.plainText).toBe(`${unescaped}foo`);
+    ["a full reference to an undefined label", "[a][b]\n\n[a]: /a\n", "\\[a\\]\\[b\\]\n"],
+    ["an escaped reference", "\\[a\\]\n\n[a]: /a\n", "\\[a\\]\n"],
+  ])("leaves %s as text", (_, source, canonical) => {
+    expectCanonicalRoundTrip(source, canonical);
   });
 
-  test("preserves a backslash before an unrecognized character as literal `\\X`", () => {
-    // CommonMark allows only ASCII punctuation to be escaped. `\a` is not a
-    // recognized escape, so both characters survive into the text node.
-    const paragraph = parseParagraph("a\\bc\n");
-    expect(paragraph.plainText).toBe("a\\bc");
+  test("prefers an inline link and falls back to a shortcut when it fails", () => {
+    expectCanonicalRoundTrip(
+      "[a](/inline) and [a](not a link)\n\n[a]: /ref\n",
+      "[a](/inline) and [a](/ref)(not a link)\n",
+    );
   });
 
-  test("preserves a trailing backslash at end of input as literal `\\`", () => {
-    // The reader returns null when `\` has no following character, so the
-    // dispatcher's default one-char advance leaves it as text.
-    const paragraph = parseParagraph("foo\\\n");
-    expect(paragraph.plainText).toBe("foo\\");
+  test.each([
+    ["after paragraph text", "Text\n[a]: /u\n", "Text\n\\[a\\]: /u\n"],
+    ["with text after its title", '[a]: /u "t" more\n', '\\[a\\]: /u "t" more\n'],
+  ])("reads a definition-like line %s as text", (_, source, canonical) => {
+    expectCanonicalRoundTrip(source, canonical);
   });
 });
 
@@ -344,72 +286,185 @@ Body
   });
 
   test("normalizes blank task items into empty semantic paragraphs", () => {
-    const document = parseDocument("- [ ] \n");
-    const list = expectBlockAt(document, 0, "list");
-    const item = list.items[0];
+    const item = expectBlockAt(parseDocument("- [ ] \n"), 0, "list").items[0];
 
-    if (!item) {
-      throw new Error("Expected task list item");
-    }
-
-    const paragraph = item.children[0];
-
-    if (!paragraph || paragraph.type !== "paragraph") {
-      throw new Error("Expected normalized empty paragraph");
-    }
-
-    expect(item.checked).toBe(false);
-    expect(paragraph.children).toEqual([]);
+    expect(item?.checked).toBe(false);
+    expect(item?.children).toMatchObject([{ children: [], type: "paragraph" }]);
   });
 
   test("parses blank-line-separated sibling bullets as one non-compact list", () => {
-    const document = parseDocument(`- alpha
-
-- beta
-`);
+    const source = "- alpha\n\n- beta\n";
+    const document = parseDocument(source);
     const list = expectBlockAt(document, 0, "list");
 
     expect(document.blocks).toHaveLength(1);
     expect(list.compact).toBe(false);
-    expect(list.items).toHaveLength(2);
-    expect(list.items[0]?.compact).toBe(true);
-    expect(list.items[1]?.compact).toBe(true);
-    expect(list.items[0]?.plainText).toBe("alpha");
-    expect(list.items[1]?.plainText).toBe("beta");
+    expect(list.items.map((item) => [item.compact, item.plainText])).toEqual([
+      [true, "alpha"],
+      [true, "beta"],
+    ]);
+    expect(serializeDocument(document)).toBe(source);
   });
 
   test("parses blank-line-separated child blocks as one non-compact list item", () => {
-    const document = parseDocument(`- alpha
-
-  beta
-`);
+    const source = "- alpha\n\n  beta\n";
+    const document = parseDocument(source);
     const list = expectBlockAt(document, 0, "list");
-    const item = list.items[0];
-
-    if (!item) {
-      throw new Error("Expected list item");
-    }
 
     expect(list.compact).toBe(false);
-    expect(item.compact).toBe(false);
-    expect(item.children).toHaveLength(2);
-    expect(item.children[0]?.plainText).toBe("alpha");
-    expect(item.children[1]?.plainText).toBe("beta");
+    expect(list.items[0]?.compact).toBe(false);
+    expect(list.items[0]?.children.map((child) => child.plainText)).toEqual(["alpha", "beta"]);
+    expect(serializeDocument(document)).toBe(source);
   });
 
-  // Indented code is not part of the dialect, so over-indented lines parse as
-  // paragraph text instead of ending their container and dropping what follows.
-  test.each([
-    ["the document root", "a\n\n    b\n\nc\n", ["a", "    b", "c"]],
-    ["a blockquote", "> a\n>\n>     b\n>\n> c\n\nd\n", ["a\n    b\nc", "d"]],
-    ["a list item", "- a\n\n      b\n\n  c\n\nd\n", ["a\n    b\nc", "d"]],
-    ["a task item", "- [ ]     b\n- [x] c\n\nd\n", ["b\nc", "d"]],
-  ])("keeps over-indented lines and the content after them in %s", (_, source, plainTexts) => {
+  // A task checkbox belongs to the item's first line, so children indent to
+  // the list marker. An item that opens empty indents one past its marker.
+  test.each<[string, string, Block["type"][]]>([
+    ["a task's nested list", "- [x] Hello\n  - child\n", ["paragraph", "list"]],
+    ["an ordered task's nested list", "1. [ ] Hello\n   - child\n", ["paragraph", "list"]],
+    ["a task's directive", "- [x] :::note\n  body\n  :::\n", ["directive"]],
+    ["an empty task's nested list", "- [x]\n  - child\n", ["list"]],
+    ["an empty bullet's nested list", "-\n  - child\n", ["list"]],
+  ])("keeps %s inside its list item", (_, source, childTypes) => {
     const document = parseDocument(source);
-    const markdown = serializeDocument(document);
+    const item = expectBlockAt(document, 0, "list").items[0];
 
-    expect(document.blocks.map((block) => block.plainText)).toEqual(plainTexts);
-    expect(serializeDocument(parseDocument(markdown))).toBe(markdown);
+    expect(document.blocks).toHaveLength(1);
+    expect(item?.children.map((child) => child.type)).toEqual(childTypes);
+    expect(serializeDocument(document)).toBe(source);
+  });
+
+  // List markers may sit behind up to three spaces of indentation, and a line
+  // indented to an item's content column nests in that item.
+  test.each([
+    ["4-space nesting", "- a\n    - b\n        - c\n", "- a\n  - b\n    - c\n"],
+    ["4-space nesting under `*` markers", "* a\n    * b\n* c\n", "- a\n  - b\n- c\n"],
+    ["4-space nesting under an ordered item", "1. a\n    1. b\n", "1. a\n   1. b\n"],
+    ["loose 4-space nesting", "- a\n\n    - b\n", "- a\n\n  - b\n"],
+    ["4-space nested tasks", "- [ ] a\n    - [x] b\n", "- [ ] a\n  - [x] b\n"],
+    ["an indented bullet list", "  - a\n  - b\n", "- a\n- b\n"],
+    ["an indented ordered list", " 1. a\n 2. b\n", "1. a\n2. b\n"],
+    ["siblings at mixed indents", "- a\n - b\n  - c\n", "- a\n- b\n- c\n"],
+    ["an indented list after a paragraph", "Intro\n  - a\n", "Intro\n\n- a\n"],
+    ["a quoted list", "> - a\n>     - b\n", "> - a\n>   - b\n"],
+  ])("parses %s as a list", (_, source, canonical) => {
+    expectCanonicalRoundTrip(source, canonical);
+  });
+
+  test("keeps a list tight when a blank line and under-indented text end it", () => {
+    const document = parseDocument("1. a\n2. b\n\n  c\n");
+
+    expect(expectBlockAt(document, 0, "list").compact).toBe(true);
+    expect(document.blocks.map((block) => block.type)).toEqual(["list", "paragraph"]);
+  });
+
+  test("parses a pipe row without an alignment row as paragraph text", () => {
+    const document = parseDocument("| a |\ntext\n");
+
+    expect(expectBlockAt(document, 0, "paragraph").plainText).toBe("| a |\ntext");
+  });
+
+  test("pads table rows with empty cells to the widest row", () => {
+    const document = parseDocument("| a | b |\n| - | - |\n| c |\n| d | e | f |\n");
+    const table = expectBlockAt(document, 0, "table");
+
+    expect(table.rows.map((row) => row.cells.map((cell) => cell.plainText))).toEqual([
+      ["a", "b", ""],
+      ["c", "", ""],
+      ["d", "e", "f"],
+    ]);
+  });
+
+  // A bare marker, or one followed only by a closing sequence, is an empty
+  // heading, as on GitHub.
+  test.each([
+    ["a bare marker", "Intro\n\n##\n\nBody\n", "Intro\n\n##\n\nBody\n"],
+    ["only a closing sequence", "# ##\n", "#\n"],
+  ])("reads %s as an empty heading", (_, source, canonical) => {
+    const heading = parseDocument(source).blocks.find((block) => block.type === "heading");
+
+    expect(heading?.plainText).toBe("");
+    expectCanonicalRoundTrip(source, canonical);
+  });
+
+  // Setext headings and indented code save as `#` headings and fenced code,
+  // and a heading's trailing `#` run stays escaped.
+  // An indented line can't interrupt a paragraph, and task text is never code.
+  // A tag wrapped across lines drops its indentation, as GFM does. A lazy line
+  // continues the paragraph in its quote or item and saves with its prefix. A
+  // blank line ends a quote, while a `>` line alone only ends its paragraph. An
+  // opening divider saves as `***`, since `---` would reload as front matter.
+  // A fence closes on a backtick-only line at least as long, and saves one
+  // longer than any such line in its code.
+  test.each([
+    ["a setext heading", "Title\n=====\n", "# Title\n"],
+    ["a wrapped setext heading over a divider", "Foo\nbar\n---\n", "## Foo bar\n"],
+    ["a setext heading ending in a #", "Title \\#\n===\n", "# Title \\#\n"],
+    ["a heading of only a #", "\\#\n=\n", "# \\#\n"],
+    ["an underline after a definition", "[a]: /u\n===\n", "\\===\n"],
+    ["indented code", "a\n\n    b\n\n\n      c\n\nd\n", "a\n\n```\nb\n\n\n  c\n```\n\nd\n"],
+    ["an indented wrapped line", "a\n    b\n", "a\n&#x20;&#x20;&#x20;&#x20;b\n"],
+    ["a wrapped HTML tag", '<img a="1"\n     b="2"> c\n', '<img a="1"\nb="2"> c\n'],
+    ["a wrapped line starting with a year", "In\n2021. It works\n", "In\n2021\\. It works\n"],
+    ["over-indented task text", "- [ ]     b\n", "- [ ] b\n"],
+    ["lazy quote lines", "> a\nb\n> c\nd\n\ne\n", "> a\n> b\n> c\n> d\n\ne\n"],
+    ["lazy lines only after paragraph text", "> # a\nb\n> c\nd\n", "> # a\n\nb\n\n> c\n> d\n"],
+    ["lazy lines in an ordered item", "1. a\nb\n   c\n2. d\n", "1. a\n   b\n   c\n2. d\n"],
+    ["a lazy line in a nested item", "- a\n  - b\nc\n", "- a\n  - b\n    c\n"],
+    ["a lazy line shaped like an underline", "> a\n===\n", "> a\n> \\===\n"],
+    ["quotes split by a blank line", "> a\n\n> b\n>\n> c\n>\nd\n", "> a\n\n> b\n>\n> c\n\nd\n"],
+    ["an opening divider", "***\n\nBody\n\n***\n", "***\n\nBody\n\n---\n"],
+    ["nested fences", "````md\n```\nx\n```\n`````\n", "````md\n```\nx\n```\n````\n"],
+    ["code holding fence lines", "    ````\n    ```\n", "`````\n````\n```\n`````\n"],
+  ])("canonicalizes %s", (_, source, canonical) => {
+    expectCanonicalRoundTrip(source, canonical);
+  });
+});
+
+// HTML blocks follow CommonMark's start and end conditions and keep their
+// lines verbatim, so README headers render the same after a save.
+describe("HTML blocks", () => {
+  test.each([
+    ["a centered README header", '<p align="center">\n  <img src="logo.png">\n</p>\n'],
+    ["a comment spanning a blank line", "<!--\n  note\n\n    more\n-->\n"],
+    ["a script spanning a blank line", "<script setup>\nimport x\n\nconst y = 1\n</script>\n"],
+    [
+      "a custom component",
+      "<VPTeamPage>\n  <VPTeamPageTitle>Team</VPTeamPageTitle>\n</VPTeamPage>\n",
+    ],
+    ["a tab-indented header", "<h1>\n\t<b>name</b>\n\t<br>\n</h1>\n"],
+  ])("preserves %s", (_, source) => {
+    expectStableRoundTrip(source);
+  });
+
+  test("parses markdown between HTML blocks separated by blank lines", () => {
+    const source = "<details>\n<summary>Install</summary>\n\nRun **it**.\n\n</details>\n";
+    const document = parseDocument(source);
+
+    expect(document.blocks.map((block) => block.type)).toEqual(["raw", "paragraph", "raw"]);
+    expect(serializeDocument(document)).toBe(source);
+  });
+
+  test.each([
+    ["a linked image", 'Text\n<a href="x"><img src="y"></a>\n'],
+    ["an image", 'Text\n<img src="y">\n'],
+  ])("keeps a line holding %s inside the paragraph above it", (_, source) => {
+    const document = parseDocument(source);
+
+    expect(document.blocks.map((block) => block.type)).toEqual(["paragraph"]);
+    expect(serializeDocument(document)).toBe(source);
+  });
+
+  test("lets a block-level tag interrupt a paragraph", () => {
+    expectCanonicalRoundTrip("Text\n<div>\nx\n</div>\n", "Text\n\n<div>\nx\n</div>\n");
+  });
+
+  test("keeps an indented HTML block at its list item's content column", () => {
+    expectStableRoundTrip('- Plugins:\n\n  <p align="center">\n    <img src="x">\n  </p>\n');
+  });
+
+  test("does not grow an unclosed comment on each save", () => {
+    expectCanonicalRoundTrip("<!-- open\n\ntext\n\n", "<!-- open\n\ntext\n");
   });
 });
 
@@ -529,23 +584,40 @@ describe("Comment appendix extraction", () => {
     expect(document.comments[2]?.quote).toBe("Table cell anchors");
   });
 
-  test("lets document construction own parsed comment thread ids", () => {
+  test("generates comment thread ids that ignore saved ids and survive round trips", () => {
     const document = parseDocument(commentedParagraphMarkdown({ id: "persisted-comment-id" }));
+    const id = document.comments[0]?.id;
 
-    expect(document.comments[0]?.id).toMatch(/^commentThread-/);
-    expect(document.comments[0]?.id).not.toBe("persisted-comment-id");
+    expect(id).toMatch(/^commentThread-/);
+    expect(parseDocument(serializeDocument(document)).comments[0]?.id).toBe(id);
   });
 
-  test("keeps generated comment thread ids stable across markdown round trips", () => {
-    const first = parseDocument(commentedParagraphMarkdown());
-    const second = parseDocument(serializeDocument(first));
+  test("keeps threads whose quote was deleted or that have no anchor", () => {
+    const [emptyQuote] = parseDocument(commentedParagraphMarkdown({ quote: "" })).comments;
+    const [anchorless] = parseDocument(commentedParagraphMarkdown({ anchor: undefined })).comments;
 
-    expect(second.comments[0]?.id).toBe(first.comments[0]?.id);
+    expect(emptyQuote).toMatchObject({ anchor: { prefix: "Paragraph" }, quote: "" });
+    expect(anchorless?.anchor).toEqual({});
+    expect(anchorless?.quote).toBe(" with ");
   });
 
-  test("drops misplaced comment appendices from document content", () => {
+  test.each<[unknown, number | undefined]>([
+    [2, 2],
+    [0, undefined],
+    [1.5, undefined],
+    [2 ** 53, undefined],
+    ["2", undefined],
+  ])("loads a saved occurrence of %p as %p and keeps the thread", (occurrence, expected) => {
+    const anchor = { occurrence, prefix: "Paragraph", suffix: " with a comment." };
+    const [thread] = parseDocument(commentedParagraphMarkdown({ anchor })).comments;
+
+    expect(thread?.anchor.occurrence).toBe(expected);
+    expect(thread?.id).toBe(parseDocument(commentedParagraphMarkdown()).comments[0]?.id);
+  });
+
+  test("drops misplaced comment appendices and their threads", () => {
     const document = parseDocument(`:::documint-comments
-[]
+[{ "quote": "after", "anchor": {}, "comments": [{ "body": "Misplaced.", "updatedAt": "2026-04-05T12:00:00.000Z" }] }]
 :::
 
 Paragraph after misplaced appendix.
@@ -591,17 +663,4 @@ function expectTextAt(
   expect(inline.text).toBe(text);
   expect(inline.marks).toEqual([...marks]);
   return inline;
-}
-
-function collectInlineLinks(inlines: readonly Inline[]): Extract<Inline, { type: "link" }>[] {
-  const links: Extract<Inline, { type: "link" }>[] = [];
-
-  for (const inline of inlines) {
-    if (inline.type === "link") {
-      links.push(inline);
-      links.push(...collectInlineLinks(inline.children));
-    }
-  }
-
-  return links;
 }

@@ -1,4 +1,4 @@
-import { rebuildListBlock, rootBlockPath, type ListBlock } from "@/document";
+import { rootBlockPath, type ListBlock } from "@/document";
 import type { DocumentIndex } from "../../../index/types";
 import type { DeletionDirection } from "../../../effects";
 import type { EditorState, EditorStateAction } from "../../../types";
@@ -7,14 +7,15 @@ import {
   type DeletionContext,
   type RootTextBlockContext,
 } from "../../context";
-import {
-  resolveAdjacentEditorPathWithTextInFlow,
-  resolveSiblingRootBlock,
-} from "../../../index/query";
-import { normalizeSelection, target } from "../../../selection";
+import { resolveAdjacentEditorPathWithTextInFlow, resolveRootBlock } from "../../../index/query";
+import { isSelectionCollapsed, target } from "../../../selection";
 import { resolveSelectionTextReplacement } from "../insertion/replace";
 import { areCompatibleLists } from "../shared";
-import { shiftedBlockPathTarget, resolveInFlowBoundaryDelete } from "./boundary-collapse";
+import {
+  joinLists,
+  shiftedBlockPathTarget,
+  resolveInFlowBoundaryDelete,
+} from "./boundary-collapse";
 import { resolveBlockDemotion } from "./block-demote";
 import { resolveCharacterDelete } from "./character";
 
@@ -77,16 +78,9 @@ function resolveStructuralDelete(
 }
 
 function resolveExpandedSelectionDelete(state: EditorState): EditorStateAction | null {
-  const normalized = normalizeSelection(state.documentIndex, state.selection);
-
-  if (
-    normalized.start.path === normalized.end.path &&
-    normalized.start.offset === normalized.end.offset
-  ) {
-    return null;
-  }
-
-  return resolveSelectionTextReplacement(state.documentIndex, state.selection, "");
+  return isSelectionCollapsed(state.selection)
+    ? null
+    : resolveSelectionTextReplacement(state.documentIndex, state.selection, "");
 }
 
 function resolveBackwardOverride(
@@ -129,15 +123,15 @@ function mergeAdjacentListsAroundEmptyParagraph(
 }
 
 function isEmptyParagraph(ctx: RootTextBlockContext): boolean {
-  return ctx.block.type === "paragraph" && ctx.block.plainText.length === 0;
+  return ctx.block.type === "paragraph" && ctx.empty;
 }
 
 function resolveAdjacentCompatibleLists(
   documentIndex: DocumentIndex,
   rootIndex: number,
 ): AdjacentLists | null {
-  const previous = resolveSiblingRootBlock(documentIndex, rootIndex, -1);
-  const next = resolveSiblingRootBlock(documentIndex, rootIndex, 1);
+  const previous = resolveRootBlock(documentIndex, rootIndex - 1);
+  const next = resolveRootBlock(documentIndex, rootIndex + 1);
 
   if (!previous || previous.type !== "list" || !next || next.type !== "list") {
     return null;
@@ -167,7 +161,7 @@ function mergeAdjacentLists(
   return {
     kind: "splice-blocks",
     count: 3,
-    blocks: [rebuildListBlock(lists.previous, [...lists.previous.items, ...lists.next.items])],
+    blocks: [joinLists(lists.previous, lists.next)],
     rootIndex: ctx.rootIndex - 1,
     selection: cursorTarget,
   };

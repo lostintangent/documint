@@ -1,7 +1,8 @@
-import { indexedTextEntries } from "@test/editor/helpers";
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   extendSelectionToPoint,
+  moveCaretByViewport,
+  moveCaretByWord,
   moveCaretHorizontally,
   moveCaretToDocumentBoundary,
   moveCaretToLineBoundary,
@@ -11,10 +12,11 @@ import {
   createEditorLayoutState,
   createLayoutCache,
   resolveSelectionPointAt,
+  type EditorLayoutState,
   type EditorState,
 } from "@/editor";
-import { metadataValuePath, setSelection, type DocumentIndex } from "@/editor/state";
-import { getPath, placeAt, setup } from "../helpers";
+import { metadataValuePath, readEditorEffects, setSelection } from "@/editor/state";
+import { getPath, indexedTextEntries, placeAt, setup } from "../helpers";
 
 // Tall enough that the full layout is in view for every test fixture, so
 // motion semantics aren't gated by virtualization or viewport clipping.
@@ -28,8 +30,8 @@ function layoutAt(state: EditorState, width: number) {
   );
 }
 
-test("moves left to the previous container when the caret is at the start", () => {
-  const state = setup("# Heading\n\nParagraph");
+test("moves left to the previous container, skipping inert blocks, when the caret is at the start", () => {
+  const state = setup("# Heading\n\n---\n\nParagraph");
   const heading = getPath(state, "Heading");
   const paragraph = getPath(state, "Paragraph");
   const nextState = moveCaretHorizontally(placeAt(state, paragraph, "start"), -1);
@@ -38,8 +40,8 @@ test("moves left to the previous container when the caret is at the start", () =
   expect(nextState.selection.focus.offset).toBe(heading.text.length);
 });
 
-test("moves right to the next container when the caret is at the end", () => {
-  const state = setup("# Heading\n\nParagraph");
+test("moves right to the next container, skipping inert blocks, when the caret is at the end", () => {
+  const state = setup("# Heading\n\n---\n\nParagraph");
   const heading = getPath(state, "Heading");
   const paragraph = getPath(state, "Paragraph");
   const nextState = moveCaretHorizontally(placeAt(state, heading, "end"), 1);
@@ -169,11 +171,11 @@ test("moves vertically between table cells in the same column", () => {
 
 test("moves horizontally across table cells and out of the table", () => {
   const state = setup("before\n\n| A | B |\n| --- | --- |\n| C | D |\n\nafter");
-  const before = requirePathByText(state.documentIndex, "before");
-  const firstCell = requirePathByText(state.documentIndex, "A");
-  const secondCell = requirePathByText(state.documentIndex, "B");
-  const lastCell = requirePathByText(state.documentIndex, "D");
-  const after = requirePathByText(state.documentIndex, "after");
+  const before = getPath(state, "before").path;
+  const firstCell = getPath(state, "A").path;
+  const secondCell = getPath(state, "B").path;
+  const lastCell = getPath(state, "D").path;
+  const after = getPath(state, "after").path;
 
   const toPrevious = moveCaretHorizontally(setSelection(state, { offset: 0, path: firstCell }), -1);
   const toSecondCell = moveCaretHorizontally(
@@ -269,6 +271,60 @@ test("extends the selection vertically across a path boundary while keeping the 
   expect(nextState.selection.anchor.path).toBe(first.path);
   expect(nextState.selection.anchor.offset).toBe(2);
   expect(nextState.selection.focus.path).toBe(second.path);
+});
+
+test.each([
+  ["a fully measured", 20],
+  ["a virtualized", 120],
+])("pages by pixels rather than lines in %s layout", (_, paragraphs) => {
+  const state = setup(
+    Array.from({ length: paragraphs }, (_, index) => `p${index + 1}`).join("\n\n"),
+  );
+  const [p6, p11] = [getPath(state, "p6"), getPath(state, "p11")];
+  // Ten lines tall, but each paragraph's gap makes it taller than a line, so a
+  // page moves five paragraphs rather than nine lines.
+  const viewport = createEditorLayoutState(
+    state,
+    { height: 240, top: 0, width: 320 },
+    createLayoutCache(),
+  );
+  const down = moveCaretByViewport(placeAt(state, p6, 1), viewport, 1, true);
+  const up = moveCaretByViewport(placeAt(state, p11, 1), viewport, -1);
+
+  expect(down.selection.anchor).toEqual({ offset: 1, path: p6.path });
+  expect(down.selection.focus.path).toBe(p11.path);
+  expect(up.selection.focus.path).toBe(p6.path);
+});
+
+test.each([
+  ["down from a body line", "p0", 1, "p1"],
+  ["up from a heading", "H2", -1, "H1"],
+] as const)("pages %s to the farthest line that fits with it", (_, from, direction, to) => {
+  // A 220px page fits p0 through p1 (156px) but not through H2 (224px), and H2
+  // through H1 (168px) but not through p0 (224px), once both lines' heights count.
+  const state = setup("# H0\n\np0\n\n# H1\n\np1\n\n# H2");
+  const viewport = createEditorLayoutState(
+    state,
+    { height: 220, top: 0, width: 320 },
+    createLayoutCache(),
+  );
+  const next = moveCaretByViewport(placeAt(state, getPath(state, from), 0), viewport, direction);
+
+  expect(next.selection.focus.path).toBe(getPath(state, to).path);
+});
+
+test("pages to the first or last line, keeping the caret's x, when less than a page remains", () => {
+  const state = setup("one\n\ntwo\n\nthree\n\nfour");
+  const layout = layoutAt(state, 320);
+  const viewport = {
+    ...layout,
+    viewport: { ...layout.viewport, height: layout.layout.options.lineHeight * 3 },
+  };
+  const down = moveCaretByViewport(placeAt(state, getPath(state, "three"), 2), viewport, 1);
+  const up = moveCaretByViewport(placeAt(state, getPath(state, "two"), 1), viewport, -1);
+
+  expect(down.selection.focus).toEqual({ offset: 2, path: getPath(state, "four").path });
+  expect(up.selection.focus).toEqual({ offset: 1, path: getPath(state, "one").path });
 });
 
 test("extends the selection to a viewport point while keeping the anchor", () => {
@@ -376,25 +432,106 @@ test("moves vertically across an inline soft break inside one paragraph", () => 
   expect(upState.selection.focus.offset).toBeLessThanOrEqual(3);
 });
 
-function requirePathByText(documentIndex: DocumentIndex, text: string) {
-  for (const indexedBlock of documentIndex.blocks) {
-    if (
-      (indexedBlock.kind === "inlines" || indexedBlock.kind === "source") &&
-      indexedBlock.text === text
-    ) {
-      return indexedBlock.path;
-    }
+describe("unextended moves from a selection", () => {
+  type Move = (state: EditorState, layout: EditorLayoutState) => EditorState;
 
-    if (indexedBlock.kind === "cells") {
-      for (const row of indexedBlock.tableCellRows) {
-        for (const cell of row) {
-          if (cell.text === text) {
-            return cell.path;
-          }
-        }
-      }
+  test.each<[string, "start" | "end", Move]>([
+    ["ArrowLeft", "start", (state) => moveCaretHorizontally(state, -1)],
+    ["ArrowRight", "end", (state) => moveCaretHorizontally(state, 1)],
+    [
+      "ArrowLeft in block mode",
+      "start",
+      (state) => moveCaretHorizontally(state, -1, { mode: "block" }),
+    ],
+    [
+      "ArrowRight in block mode",
+      "end",
+      (state) => moveCaretHorizontally(state, 1, { mode: "block" }),
+    ],
+    [
+      "a word move in block mode",
+      "end",
+      (state) => moveCaretByWord(state, "wordEnd", { mode: "block" }),
+    ],
+  ])("%s collapses it to its %s", (_, edge, move) => {
+    const state = setup("alpha\n\nbeta\n\ngamma");
+    const start = { offset: 1, path: getPath(state, "alpha").path };
+    const end = { offset: 2, path: getPath(state, "beta").path };
+    const layout = layoutAt(state, 320);
+
+    for (const [anchor, focus] of [
+      [start, end],
+      [end, start],
+    ] as const) {
+      const next = move(setSelection(state, { anchor, focus }), layout);
+
+      expect(next.selection).toEqual({
+        anchor: edge === "start" ? start : end,
+        focus: edge === "start" ? start : end,
+      });
     }
+  });
+
+  test.each<[string, string, Move]>([
+    ["ArrowUp", "alpha", (state, layout) => moveCaretVertically(state, layout, -1)],
+    ["ArrowDown", "delta", (state, layout) => moveCaretVertically(state, layout, 1)],
+    ["PageUp", "alpha", (state, layout) => moveCaretByViewport(state, oneLinePage(layout), -1)],
+    ["PageDown", "delta", (state, layout) => moveCaretByViewport(state, oneLinePage(layout), 1)],
+    ["Home", "beta", (state, layout) => moveCaretToLineBoundary(state, layout, "Home")],
+    ["End", "gamma", (state, layout) => moveCaretToLineBoundary(state, layout, "End")],
+    [
+      "ArrowUp in block mode",
+      "alpha",
+      (state, layout) => moveCaretVertically(state, layout, -1, { mode: "block" }),
+    ],
+    [
+      "ArrowDown in block mode",
+      "delta",
+      (state, layout) => moveCaretVertically(state, layout, 1, { mode: "block" }),
+    ],
+    [
+      "Home in block mode",
+      "beta",
+      (state, layout) => moveCaretToLineBoundary(state, layout, "Home", { mode: "block" }),
+    ],
+    [
+      "End in block mode",
+      "gamma",
+      (state, layout) => moveCaretToLineBoundary(state, layout, "End", { mode: "block" }),
+    ],
+  ])("%s moves from its edge in that direction to %s", (_, target, move) => {
+    const state = setup("alpha\n\nbeta\n\ngamma\n\ndelta");
+    const start = { offset: 1, path: getPath(state, "beta").path };
+    const end = { offset: 2, path: getPath(state, "gamma").path };
+    const layout = layoutAt(state, 320);
+
+    for (const [anchor, focus] of [
+      [start, end],
+      [end, start],
+    ] as const) {
+      const next = move(setSelection(state, { anchor, focus }), layout);
+
+      expect(next.selection.focus.path).toBe(getPath(state, target).path);
+      expect(next.selection.anchor).toEqual(next.selection.focus);
+    }
+  });
+
+  test("flashes the block a vertical move lands in when it leaves the selection's focus block", () => {
+    const state = setup("foo<br>bar\n\nnext");
+    const paragraph = getPath(state, "foo\nbar");
+    const selected = setSelection(state, {
+      anchor: { offset: 5, path: paragraph.path },
+      focus: { offset: 2, path: getPath(state, "next").path },
+    });
+    const next = moveCaretVertically(selected, layoutAt(state, 320), -1);
+
+    expect(next.selection.focus).toEqual({ offset: 1, path: paragraph.path });
+    expect(readEditorEffects(next)).toEqual([
+      { blockPath: paragraph.path, kind: "active-block-changed" },
+    ]);
+  });
+
+  function oneLinePage(layout: EditorLayoutState) {
+    return { ...layout, viewport: { ...layout.viewport, height: 0 } };
   }
-
-  throw new Error(`Expected editor path with text "${text}"`);
-}
+});

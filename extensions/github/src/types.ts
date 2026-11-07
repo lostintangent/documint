@@ -8,15 +8,19 @@ export type CopilotJob = {
   message?: string;
 };
 
-export type ServerState = {
+export type ServerContent = {
   content: string;
+  revision: number;
+};
+
+export type ServerState = ServerContent & {
   copilotUser: DocumentUser;
   jobs?: CopilotJob[];
 };
 
 export type ServerEvent =
   | { type: "state"; state: ServerState }
-  | { type: "content"; content: string }
+  | ({ type: "content" } & ServerContent)
   | { type: "job"; jobs?: CopilotJob[] }
   | { type: "error"; message: string };
 

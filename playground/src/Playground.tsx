@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import {
   Documint,
   type CommentChange,
@@ -141,7 +141,13 @@ export function Playground() {
   const [hostEventVisible, setHostEventVisible] = useState(false);
   const [frameDebugEnabled, setFrameDebugEnabled] = useState(false);
 
-  const { theme: activeTheme } = getThemeOption(themeId);
+  const { mode, theme: activeTheme } = getThemeOption(themeId);
+  // The page chrome follows the editor theme, not the OS, so a light theme on
+  // a dark OS keeps light chrome.
+  useLayoutEffect(() => {
+    document.documentElement.style.colorScheme = mode;
+  }, [mode]);
+
   const activeFixture =
     fixtureOptions.find((candidate) => candidate.id === fixtureId) ?? fixtureOptions[0];
   const documintTheme = useMemo(() => {

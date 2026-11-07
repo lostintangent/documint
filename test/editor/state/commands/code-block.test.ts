@@ -19,11 +19,13 @@ describe("Code block insertion", () => {
     expect(state.selection.focus.offset).toBe(0);
   });
 
-  test("does not insert a code block from a non-empty paragraph", () => {
-    const state = setup("Hello");
-    const paragraph = getPath(state, "Hello");
+  test.each([
+    ["a non-empty paragraph", "Hello", "Hello"],
+    ["an empty heading", "## \n", ""],
+  ])("does not insert a code block from %s", (_, markdown, text) => {
+    const state = setup(markdown);
 
-    expect(insertCodeBlock(placeAt(state, paragraph, "start"))).toBeNull();
+    expect(insertCodeBlock(placeAt(state, getPath(state, text), "start"))).toBeNull();
   });
 });
 
@@ -100,29 +102,15 @@ describe("Code block deletion", () => {
     expect(state.selection.focus.offset).toBe(0);
   });
 
-  test("backspace at the start of a non-empty code block leaves source intact", () => {
-    let state = setup("Before\n\n```ts\nconst x = 1;\n```\n");
-    const code = indexedTextEntries(state).find((path) => path.block.type === "code");
+  test.each([
+    ["backspace at the start of", "a\n\n```\nb\n```\n", "b", "start", deleteBackward],
+    ["forward delete before", "a\n\n```\nb\n```\n", "a", "end", deleteForward],
+    ["backspace after", "```\nb\n```\n\nc\n", "c", "start", deleteBackward],
+    ["forward delete at the end of", "```\nb\n```\n\nc\n", "b", "end", deleteForward],
+  ] as const)("%s a non-empty code block leaves source intact", (_, source, text, at, command) => {
+    const state = setup(source);
+    const result = command(placeAt(state, getPath(state, text), at));
 
-    if (!code) {
-      throw new Error("Expected code path");
-    }
-
-    state = placeAt(state, code, 0);
-    state = deleteBackward(state) ?? state;
-
-    expect(toMarkdown(state)).toBe("Before\n\n```ts\nconst x = 1;\n```\n");
-    expect(indexedTextEntries(state).some((path) => path.block.type === "code")).toBe(true);
-  });
-
-  test("forward delete before a non-empty code block leaves source intact", () => {
-    let state = setup("Before\n\n```ts\nconst x = 1;\n```\n");
-    const paragraph = getPath(state, "Before");
-
-    state = placeAt(state, paragraph, "end");
-    state = deleteForward(state) ?? state;
-
-    expect(toMarkdown(state)).toBe("Before\n\n```ts\nconst x = 1;\n```\n");
-    expect(indexedTextEntries(state).some((path) => path.block.type === "code")).toBe(true);
+    expect(toMarkdown(result ?? state)).toBe(source);
   });
 });

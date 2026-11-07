@@ -15,12 +15,12 @@ const resourceCornerRadius = 6;
 export function paintResourceSegment(
   context: CanvasRenderingContext2D,
   segment: ResourceSegment,
-  clocks: { ambientTime: number },
+  ambientTime: number,
   theme: ResolvedEditorTheme,
 ) {
   const { resource } = segment;
   const { pill } = segment;
-  const colors = resolveResourceColors(resource.isActive, theme, clocks.ambientTime);
+  const colors = resolveResourceColors(resource.isActive, theme, ambientTime);
 
   context.save();
   context.beginPath();

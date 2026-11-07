@@ -1,57 +1,28 @@
 const esbuild = require("esbuild");
 
-const production = process.argv.includes("--production");
+// VS Code loads the extension as a CommonJS Node module and the webview as a browser ES module.
+const options = { bundle: true, minify: true, logLevel: "silent" };
 
-/**
- * @type {import('esbuild').Plugin}
- */
-const reactAliasPlugin = {
-  name: "react-alias",
-
-  setup(build) {
-    build.onResolve({ filter: /^react($|\/)|^react-dom($|\/)/ }, (args) => ({
-      path: require.resolve(args.path),
-    }));
-  },
-};
-
-const extensionConfig = {
-  entryPoints: ["src/extension.ts"],
-  bundle: true,
-  format: "cjs",
-  minify: production,
-  sourcemap: !production,
-  sourcesContent: false,
-  platform: "node",
-  outfile: "dist/extension.js",
-  external: ["vscode"],
-  logLevel: "silent",
-};
-
-const webviewConfig = {
-  entryPoints: ["src/webview/main.tsx"],
-  bundle: true,
-  format: "esm",
-  minify: production,
-  preserveSymlinks: true,
-  sourcemap: !production,
-  sourcesContent: false,
-  platform: "browser",
-  target: "es2022",
-  outfile: "dist/webview/main.js",
-  define: {
-    "process.env.NODE_ENV": JSON.stringify(production ? "production" : "development"),
-  },
-  logLevel: "silent",
-  jsx: "automatic",
-  plugins: [reactAliasPlugin],
-};
-
-async function main() {
-  await Promise.all([esbuild.build(extensionConfig), esbuild.build(webviewConfig)]);
-}
-
-main().catch((e) => {
-  console.error(e);
+Promise.all([
+  esbuild.build({
+    ...options,
+    entryPoints: ["src/extension.ts"],
+    outfile: "dist/extension.js",
+    format: "cjs",
+    platform: "node",
+    external: ["vscode"],
+  }),
+  esbuild.build({
+    ...options,
+    entryPoints: ["src/webview/main.tsx"],
+    outfile: "dist/webview/main.js",
+    format: "esm",
+    platform: "browser",
+    target: "es2022",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  }),
+]).catch((error) => {
+  console.error(error);
   process.exit(1);
 });

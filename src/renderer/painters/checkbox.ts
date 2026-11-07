@@ -27,10 +27,12 @@ export function paintCheckbox(
   theme: ResolvedEditorTheme,
   pulse: CheckboxPulse | null = null,
 ) {
-  paintCheckboxFrame(context, frame.rect, frame.checked, theme, pulse);
+  const tint = (color: string) => (pulse ? resolveBlockPulseColor(color, pulse, theme) : color);
+
+  paintCheckboxFrame(context, frame.rect, frame.checked, theme, tint);
 
   if (frame.checked) {
-    paintCheckmark(context, frame.rect, theme, pulse);
+    paintCheckmark(context, frame.rect, tint(theme.checkboxCheckmark));
   }
 }
 
@@ -39,15 +41,15 @@ function paintCheckboxFrame(
   checkboxBounds: LayoutRect,
   checked: boolean,
   theme: ResolvedEditorTheme,
-  pulse: CheckboxPulse | null,
+  tint: (color: string) => string,
 ) {
   const fillColor = checked ? theme.checkboxCheckedFill : theme.checkboxUncheckedFill;
   // Checked state has no separate stroke token, so its outline follows the
   // fill without changing the checkbox dimensions.
   const strokeColor = checked ? fillColor : theme.checkboxUncheckedStroke;
 
-  context.fillStyle = pulse ? resolveBlockPulseColor(fillColor, pulse, theme) : fillColor;
-  context.strokeStyle = pulse ? resolveBlockPulseColor(strokeColor, pulse, theme) : strokeColor;
+  context.fillStyle = tint(fillColor);
+  context.strokeStyle = tint(strokeColor);
   context.beginPath();
   context.lineWidth = scaleCheckboxValue(checkboxBounds, checkboxStrokeWidth);
   context.roundRect(
@@ -64,12 +66,9 @@ function paintCheckboxFrame(
 function paintCheckmark(
   context: CanvasRenderingContext2D,
   checkboxBounds: LayoutRect,
-  theme: ResolvedEditorTheme,
-  pulse: CheckboxPulse | null,
+  color: string,
 ) {
-  context.strokeStyle = pulse
-    ? resolveBlockPulseColor(theme.checkboxCheckmark, pulse, theme)
-    : theme.checkboxCheckmark;
+  context.strokeStyle = color;
   context.lineWidth = scaleCheckboxValue(checkboxBounds, checkmarkStrokeWidth);
   context.beginPath();
   context.moveTo(

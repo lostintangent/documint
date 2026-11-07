@@ -4,87 +4,51 @@ type LayoutListener = () => void;
 
 export type EditorLayoutHandle = {
   /**
-   * Return the latest layout, computing it via the registered resolver if
-   * the cache is empty. The result always reflects current inputs because
-   * `invalidate()` clears the cache the instant any input changes.
-   *
-   * For hot pointer paths and hit testing: `usePointer` and `useInput`.
-   * These callers need geometry that matches the live scroll/state, not
-   * the painted frame. Don't call `get()` during render: the React Compiler
-   * memoizes the call on the stable store, so React overlays read
-   * `renderedLayoutSprig` instead.
+   * Return the latest layout, resolving it if the cache is empty. For hit
+   * tests and pointer paths (`usePointer`, `useInput`) that need live
+   * geometry. Don't call it during render: the React Compiler memoizes the
+   * call on the stable store, so React overlays read `renderedLayoutSprig`.
    */
   get: () => EditorLayoutState;
   /**
-   * Return the latest layout without recomputing — `null` if the cache
-   * was invalidated and no consumer has refilled it since.
-   *
-   * Used as a freshness gate by the lighter paint paths (`renderContent`,
-   * `renderOverlay`): paint with the cached layout when one exists, skip
-   * otherwise. A skipped frame is safe because every invalidation site
-   * also queues `scheduleFullRender()`, so a full repaint is always en
-   * route to fill the cache and paint a complete frame.
+   * Return the latest layout without resolving it, or `null` after an
+   * invalidation. The lighter paint paths (`renderContent`, `renderOverlay`)
+   * skip the frame on `null`, which is safe because every invalidation also
+   * queues a full render.
    */
   peekLatest: () => EditorLayoutState | null;
 };
 
-// Owns the layout cache and acts as the synchronization point between the
-// canvas paint pipeline and React-reactive consumers. Two layout slots live
-// here, each with a distinct invariant:
-//
-//   - `latestLayout` — the freshest layout, fresh against every current
-//     input or `null` (just invalidated, not yet read). Filled by `get()`
-//     (lazy resolve during hit tests) or by `commit()` (at paint time).
-//     Cleared by `invalidate()` on scroll, doc transitions, and prop changes.
-//   - `renderedLayout` — what's currently painted on the canvas. Updated
-//     only by `commit()`, so reactive consumers stay locked to the painted
-//     frame and don't see pre-paint geometry from hit-test recomputes.
-//
-// `commit()` is the moment `latestLayout` becomes `renderedLayout` and
-// listeners fire. Hot pointer paths skip the commit and read `latest`
-// directly via `get()`; only the render path commits.
+// Owns two layout slots. `latestLayout` is fresh against current inputs or
+// `null`, and serves hit tests and paint. `renderedLayout` is what the canvas
+// shows. Only `commit()` updates it, so React overlays never see pre-paint
+// geometry from a hit-test resolve.
 export type LayoutStore = EditorLayoutHandle & {
   /**
-   * Mark the latest layout as stale. Called from every site that mutates
-   * an input the layout depends on (scroll, document transitions, width,
-   * theme, resources, viewport height). Each call site also queues a
-   * `scheduleFullRender()` — see the comments in `Documint.tsx` — so the
-   * cache never stays empty past the next animation frame.
+   * Mark the latest layout stale. Every site that changes a layout input
+   * (scroll, document transitions, width, theme, resources, viewport height)
+   * calls this and also queues `scheduleFullRender()`, so the cache never
+   * stays empty past the next frame.
    */
   invalidate: () => void;
   /**
-   * Resolve the latest layout if needed, promote it to the rendered slot,
-   * and notify subscribers. The single writer that bridges latest →
-   * rendered. Called by the render scheduler (via `useViewport`'s
-   * `commitLayout`) right before painting the canvas, so the painters'
-   * `peekLatest()` reads return the committed layout.
+   * Resolve the latest layout if needed, promote it to the rendered slot, and
+   * notify subscribers. The render scheduler calls this right before painting.
    */
   commit: () => EditorLayoutState;
   /**
-   * Return the layout that's currently on the canvas (or `null` before
-   * the first paint). The read side of `renderedLayoutSprig` — the source
-   * sprig powering every layout-dependent computed sprig (selection
-   * handles, caret target, leaf overlays, presence, image-at-cursor).
-   *
-   * Reactive consumers must read this rather than `peekLatest()` so React
-   * overlays stay positioned against the visible canvas during the
-   * pre-paint window (when a hit-test has filled `latest` with geometry
-   * the canvas hasn't drawn yet).
+   * Return the layout on the canvas, or `null` before the first paint. This
+   * backs `renderedLayoutSprig`, so React overlays stay aligned with the
+   * visible canvas.
    */
   peekRendered: () => EditorLayoutState | null;
   /**
-   * Install the closure that builds an `EditorLayoutState` from current
-   * hook inputs (state, viewport metrics, theme, resources). `useViewport`
-   * calls this from a layout effect keyed on the store, passing an Effect
-   * Event wrapper so the resolver always sees the last committed inputs.
-   * `get()` and `commit()` throw until that effect runs.
+   * Install the closure that builds a layout from the current hook inputs.
+   * `useViewport` installs it from a layout effect, and `get()` and
+   * `commit()` throw until then.
    */
   setLayoutResolver: (resolve: () => EditorLayoutState) => void;
-  /**
-   * Subscribe to `commit()` notifications. Used by `renderedLayoutSprig`
-   * to translate paint events into reactive updates for the sprig DAG and
-   * `useSyncExternalStore`.
-   */
+  /** Listen for `commit()` calls that change the rendered layout. */
   subscribe: (listener: LayoutListener) => () => void;
 };
 

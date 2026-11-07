@@ -1,5 +1,4 @@
 import type { TextDeletedEffect, TextInsertedEffect } from "@/editor/state";
-import { containsColorEmoji } from "@/editor/text/emoji";
 import type {
   BlockFlashFrame,
   BlockPulseFrame,
@@ -47,7 +46,6 @@ export const effectKinds: {
   "active-block-changed": {
     collect: (groups, effect, progress, defaultEnabled) => {
       groups.blockFlashes.set(effect.blockPath, {
-        blockPath: effect.blockPath,
         customEffectName: "activeBlockChanged",
         defaultEnabled,
         progress,
@@ -68,7 +66,6 @@ export const effectKinds: {
   "list-item-inserted": {
     collect: (groups, effect, progress, defaultEnabled) => {
       groups.blockPulses.set(effect.blockPath, {
-        blockPath: effect.blockPath,
         customEffectName: "listItemInserted",
         defaultEnabled,
         progress,
@@ -85,7 +82,6 @@ export const effectKinds: {
         customEffectName: "textDeleted",
         defaultEnabled,
         progress,
-        path: effect.path,
         startOffset: effect.startOffset,
         text: effect.text,
       });
@@ -104,7 +100,6 @@ export const effectKinds: {
         defaultEnabled,
         endOffset: effect.endOffset,
         progress,
-        path: effect.path,
         startOffset: effect.startOffset,
         text: effect.text,
       });
@@ -119,7 +114,7 @@ export function descriptorFor<TEffect extends RendererEffect>(effect: TEffect) {
   return effectKinds[effect.kind] as EffectKindDescriptor<TEffect["kind"]>;
 }
 
-function collectMany<TEffect>(result: Map<string, TEffect[]>, key: string, item: TEffect) {
+export function collectMany<TEffect>(result: Map<string, TEffect[]>, key: string, item: TEffect) {
   const existing = result.get(key);
 
   if (existing) {
@@ -142,6 +137,12 @@ function shouldAnimateTextDeletedEffect(effect: TextDeletedEffect) {
 function shouldAnimateTextInsertedEffect(effect: TextInsertedEffect) {
   return effect.contentKind !== "source" && !containsColorEmoji(effect.text);
 }
+
+function containsColorEmoji(text: string) {
+  return colorEmojiPattern.test(text);
+}
+
+const colorEmojiPattern = /[\uFE0F\u{1F1E6}-\u{1F1FF}\p{Extended_Pictographic}]/u;
 
 function isPunctuationInsertion(effect: TextInsertedEffect) {
   return effect.text === ".";

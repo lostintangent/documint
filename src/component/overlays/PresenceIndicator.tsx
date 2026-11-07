@@ -47,9 +47,9 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
           "presence-button",
           "inline-flex flex-row-reverse items-center min-w-5.8 h-5.8 p-0",
           "border border-leaf-border rounded-full bg-leaf-bg",
-          "[box-shadow:var(--documint-leaf-shadow,var(--leaf-shadow-fallback))]",
+          "[box-shadow:var(--documint-leaf-shadow)]",
           "text-leaf-text font-leaf text-[0.66rem] font-semibold leading-none",
-          "cursor-pointer pointer-events-auto disabled:cursor-default disabled:opacity-70",
+          "cursor-pointer disabled:cursor-default disabled:opacity-70",
         )}
         data-status={viewport?.status ?? "unresolved"}
         disabled={!canScrollToPresence}
@@ -59,7 +59,7 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
         <span
           className={clx(
             "presence-avatar",
-            "inline-grid place-items-center w-5.8 h-5.8 p-px rounded-full bg-[var(--presence-color)] text-white",
+            "relative isolate inline-grid place-items-center w-5.8 h-5.8 p-px rounded-full bg-(--presence-color) text-white",
             presence.isOnUnresolvedCommentThread && "is-pulsing",
           )}
         >
@@ -67,7 +67,7 @@ export function PresenceIndicator({ onSelect, presence }: PresenceIndicatorProps
             <img
               alt=""
               aria-hidden="true"
-              className="block w-full h-full rounded-[inherit] object-cover"
+              className="w-full h-full rounded-[inherit] object-cover"
               draggable={false}
               src={presence.avatarUrl}
             />

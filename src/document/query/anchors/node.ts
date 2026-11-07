@@ -64,21 +64,13 @@ type DocumentNodeAnchorCandidate = {
 
 export type DocumentNodeAnchorResolution =
   | {
-      readonly basis: "exact-content" | "exact-content-context" | "exact-content-location";
       readonly anchor: DocumentNodeAnchor;
       readonly node: Block | TableCell;
       readonly path: string;
       readonly status: "matched";
     }
   | {
-      readonly status: "absent";
-    }
-  | {
-      readonly reason: "weak-evidence";
-      readonly status: "ambiguous";
-    }
-  | {
-      readonly status: "exhausted";
+      readonly status: "absent" | "ambiguous";
     };
 
 type DocumentNodeAnchorResolveOptions = {
@@ -100,18 +92,9 @@ export function createDocumentNodeAnchor(
   return cellMatch ? createTableCellAnchor(path, cellMatch) : null;
 }
 
-export function resolveDocumentNodeAnchor(
-  document: Document,
-  anchor: DocumentNodeAnchor,
-  options: DocumentNodeAnchorResolveOptions = {},
-): DocumentNodeAnchorResolution {
-  return (
-    resolveDocumentNodeAnchors(document, [anchor], options).get(documentNodeAnchorKey(anchor)) ?? {
-      status: "absent",
-    }
-  );
-}
-
+// Resolve anchors under one shared visit budget, keyed by
+// `documentNodeAnchorKey`. An exhausted budget resolves nothing rather than a
+// partial match, so callers treat a missing key as unmatched.
 export function resolveDocumentNodeAnchors(
   document: Document,
   anchors: readonly DocumentNodeAnchor[],
@@ -135,9 +118,6 @@ export function resolveDocumentNodeAnchors(
   );
 
   if (collected.exhausted) {
-    for (const key of uniqueAnchors.keys()) {
-      matches.set(key, { status: "exhausted" });
-    }
     return matches;
   }
 
@@ -319,10 +299,7 @@ function resolveAnchorFromCandidates(
     onlyCandidate &&
     (onlyCandidate.path === anchor.path || !anchorRequiresContextualMatch(anchor))
   ) {
-    return createMatchedAnchorResolution(
-      onlyCandidate,
-      onlyCandidate.path === anchor.path ? "exact-content-location" : "exact-content",
-    );
+    return createMatchedAnchorResolution(onlyCandidate);
   }
 
   const contextualMatch =
@@ -330,12 +307,7 @@ function resolveAnchorFromCandidates(
       ? resolveBlockAnchorContext(anchor, candidates)
       : resolveTableCellAnchorContext(anchor, candidates);
 
-  return (
-    contextualMatch ?? {
-      reason: "weak-evidence",
-      status: "ambiguous",
-    }
-  );
+  return contextualMatch ?? { status: "ambiguous" };
 }
 
 function anchorRequiresContextualMatch(anchor: DocumentNodeAnchor) {
@@ -374,9 +346,7 @@ function resolveBlockAnchorContext(
     matched = candidate;
   }
 
-  return matched
-    ? createMatchedAnchorResolution(matched, resolveContextualMatchBasis(anchor, matched))
-    : null;
+  return matched ? createMatchedAnchorResolution(matched) : null;
 }
 
 function resolveTableCellAnchorContext(
@@ -396,9 +366,7 @@ function resolveTableCellAnchorContext(
   });
   const matched = selectTableCellContextCandidate(cellContextMatches, rowContextMatches);
 
-  return matched
-    ? createMatchedAnchorResolution(matched, resolveContextualMatchBasis(anchor, matched))
-    : null;
+  return matched ? createMatchedAnchorResolution(matched) : null;
 }
 
 function matchesBlockSiblingContext(
@@ -451,24 +419,12 @@ function selectOnlyCandidate<T>(candidates: readonly T[]): T | null {
   return candidates.length === 1 ? candidates[0]! : null;
 }
 
-function createMatchedAnchorResolution(
-  candidate: DocumentNodeAnchorCandidate,
-  basis: Extract<DocumentNodeAnchorResolution, { status: "matched" }>["basis"],
-): DocumentNodeAnchorResolution {
-  return {
-    anchor: candidate.anchor,
-    basis,
-    node: candidate.node,
-    path: candidate.path,
-    status: "matched",
-  };
-}
-
-function resolveContextualMatchBasis(
-  anchor: DocumentNodeAnchor,
-  candidate: DocumentNodeAnchorCandidate,
-) {
-  return candidate.path === anchor.path ? "exact-content-location" : "exact-content-context";
+function createMatchedAnchorResolution({
+  anchor,
+  node,
+  path,
+}: DocumentNodeAnchorCandidate): DocumentNodeAnchorResolution {
+  return { anchor, node, path, status: "matched" };
 }
 
 function documentNodeAnchorContentKey(anchor: DocumentNodeAnchor) {

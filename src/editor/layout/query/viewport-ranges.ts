@@ -1,95 +1,55 @@
-// Owns visible line and block range queries over a prepared `DocumentLayout`.
+// Owns visible line, block, and table row range queries over a prepared
+// `DocumentLayout`.
 
-import type { DocumentLayout, LayoutLine } from "../measure";
+import { findInterleavedVerticalRange, findVerticalRange } from "../lib/vertical-range";
+import type { DocumentLayout, LayoutBlock, LayoutLine } from "../measure";
 import type { EditorLayoutState } from "../state";
-import { resolvePositionInViewport } from "./viewport-position";
 
 export function findDocumentLayoutBlockRange(layout: DocumentLayout, top: number, height: number) {
-  if (layout.blocks.length === 0) {
-    return { endIndex: 0, startIndex: 0 };
-  }
-
-  const bottom = top + height;
-  let startIndex = findFirstBlockIndexAtOrAfter(layout, top);
-  let endIndex = findFirstBlockIndexAtOrAfter(layout, bottom);
-
-  if (startIndex > 0) {
-    const previous = layout.blocks[startIndex - 1]!;
-    if (previous.bottom > top) {
-      startIndex -= 1;
-    }
-  }
-
-  if (endIndex < layout.blocks.length) {
-    const next = layout.blocks[endIndex]!;
-    if (next.top < bottom) {
-      endIndex += 1;
-    }
-  }
-
-  return { endIndex, startIndex };
+  return findVerticalRange(layout.blocks, top, top + height, blockTop, blockBottom);
 }
 
 export function findDocumentLayoutLineRange(layout: DocumentLayout, top: number, height: number) {
-  if (layout.lines.length === 0) {
-    return {
-      endIndex: 0,
-      startIndex: 0,
-    };
-  }
+  return findInterleavedVerticalRange(
+    layout.lines,
+    top,
+    top + height,
+    layout.maxLineHeight,
+    lineTop,
+    lineBottom,
+  );
+}
 
-  const bottom = top + height;
-  let startIndex = findFirstDocumentLayoutLineIndexAtOrAfter(layout, top);
-  let endIndex = findFirstDocumentLayoutLineIndexAtOrAfter(layout, bottom);
-
-  if (startIndex > 0) {
-    const previous = layout.lines[startIndex - 1]!;
-
-    if (previous.top + previous.height > top) {
-      startIndex -= 1;
-    }
-  }
-
-  if (endIndex < layout.lines.length) {
-    const next = layout.lines[endIndex]!;
-
-    if (next.top < bottom) {
-      endIndex += 1;
-    }
-  }
-
-  return {
-    endIndex,
-    startIndex,
-  };
+// Every cell of a row shares the row's bounds, so a row's first cell places it.
+export function findDocumentLayoutTableRowRange(
+  layout: DocumentLayout,
+  rows: TableRows,
+  top: number,
+  height: number,
+) {
+  return findVerticalRange(
+    rows,
+    top,
+    top + height,
+    (_row, rowIndex) => tableRowEdge(layout, rows, rowIndex, "top"),
+    (_row, rowIndex) => tableRowEdge(layout, rows, rowIndex, "bottom"),
+  );
 }
 
 export function someVisibleDocumentLayoutLine(
   viewport: EditorLayoutState,
   predicate: (line: LayoutLine, lineIndex: number) => boolean,
 ): boolean {
-  const { endIndex, startIndex } = findDocumentLayoutLineRange(
-    viewport.layout,
-    viewport.viewport.top,
-    viewport.viewport.height,
-  );
+  const { layout } = viewport;
+  const { height, top } = viewport.viewport;
+  const { endIndex, startIndex } = findDocumentLayoutLineRange(layout, top, height);
 
   for (let lineIndex = startIndex; lineIndex < endIndex; lineIndex += 1) {
-    const line = viewport.layout.lines[lineIndex];
-    if (!line) {
-      continue;
-    }
+    const line = layout.lines[lineIndex]!;
 
-    if (
-      resolvePositionInViewport(viewport, {
-        bottom: line.top + line.height,
-        top: line.top,
-      }) !== "visible"
-    ) {
-      continue;
-    }
-
-    if (predicate(line, lineIndex)) {
+    // Every line in the range starts above the window bottom, but the cells of
+    // a table row can put lines that end above the window top inside it.
+    if (lineBottom(line) > top && predicate(line, lineIndex)) {
       return true;
     }
   }
@@ -97,38 +57,29 @@ export function someVisibleDocumentLayoutLine(
   return false;
 }
 
-function findFirstBlockIndexAtOrAfter(layout: DocumentLayout, y: number) {
-  let low = 0;
-  let high = layout.blocks.length;
+type TableRows = readonly (readonly { path: string }[])[];
 
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    const block = layout.blocks[middle]!;
+// A row without cells has no bounds, so it collapses onto the bottom of the
+// nearest row above it. That keeps row edges in order without giving it extent.
+function tableRowEdge(
+  layout: DocumentLayout,
+  rows: TableRows,
+  rowIndex: number,
+  edge: "bottom" | "top",
+) {
+  for (let index = rowIndex; index >= 0; index -= 1) {
+    const cell = rows[index]![0];
+    const bounds = cell ? layout.pathBounds.get(cell.path) : undefined;
 
-    if (block.bottom <= y) {
-      low = middle + 1;
-    } else {
-      high = middle;
+    if (bounds) {
+      return index === rowIndex ? bounds[edge] : bounds.bottom;
     }
   }
 
-  return low;
+  return -Infinity;
 }
 
-function findFirstDocumentLayoutLineIndexAtOrAfter(layout: DocumentLayout, y: number) {
-  let low = 0;
-  let high = layout.lines.length;
-
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    const line = layout.lines[middle]!;
-
-    if (line.top + line.height <= y) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  return low;
-}
+const blockTop = (block: LayoutBlock) => block.top;
+const blockBottom = (block: LayoutBlock) => block.bottom;
+const lineTop = (line: LayoutLine) => line.top;
+const lineBottom = (line: LayoutLine) => line.top + line.height;

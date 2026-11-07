@@ -498,26 +498,31 @@ export const themeOptions = [
   {
     id: "light",
     label: "Light theme",
+    mode: "light",
     theme: lightTheme,
   },
   {
     id: "dark",
     label: "Dark theme",
+    mode: "dark",
     theme: darkTheme,
   },
   {
     id: "sunrise",
     label: "Sunrise theme",
+    mode: "light",
     theme: sunriseTheme,
   },
   {
     id: "mint",
     label: "Mint theme",
+    mode: "light",
     theme: mintTheme,
   },
   {
     id: "midnight",
     label: "Midnight theme",
+    mode: "dark",
     theme: midnightTheme,
   },
 ] as const;

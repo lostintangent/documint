@@ -1,6 +1,6 @@
 {
   "name": "@lostintangent/documint",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "workspaces": [
     "extensions/*"
   ],
@@ -25,9 +25,9 @@
     "build:dev": "bun scripts/build/build.ts",
     "build:prod": "tsdown && bun scripts/build/build.ts --prod",
     "build:playground": "bun scripts/build/build.ts --playground",
-    "vscode:package": "bun check && cd extensions/vscode && bun package",
-    "vscode:install": "code-insiders --install-extension extensions/vscode/documint-*.vsix --force",
-    "github:install": "root=\"$PWD\" && cd \"$root/extensions/github\" && bun run build && target=\"$HOME/.copilot/extensions/documint\" && mkdir -p \"$(dirname \"$target\")\" && rm -rf \"$target\" && cp -R \"$root/extensions/github\" \"$target\"",
+    "vscode:package": "bun check && bun run --cwd extensions/vscode package",
+    "vscode:install": "bun run --cwd extensions/vscode install:insiders",
+    "github:install": "bun run --cwd extensions/github build && rm -rf ~/.copilot/extensions/documint && mkdir -p ~/.copilot/extensions && cp -R extensions/github ~/.copilot/extensions/documint",
     "prepublishOnly": "bun build:prod",
     "test": "bun test",
     "check": "bun fmt --check && bun lint --max-warnings=0 && bun check && bun check -p extensions/vscode",

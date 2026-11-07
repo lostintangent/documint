@@ -35,10 +35,9 @@ function deriveLineHeight(fontSize: number): number {
 }
 
 // `charWidth` and `lineHeight` depend on `fontSize` — see the comment in
-// `resolveDocumentLayoutOptions`. They are declared here as sentinels so
-// callers that read `defaultDocumentLayoutOptions` directly still see the
-// at-base-16 values; the resolver replaces them when fontSize differs from 16.
-export const defaultDocumentLayoutOptions: Omit<DocumentLayoutOptions, "width"> = {
+// `resolveDocumentLayoutOptions`. The resolver replaces these base-16 values
+// when fontSize differs from 16.
+const defaultDocumentLayoutOptions: Omit<DocumentLayoutOptions, "width"> = {
   blockGap: 16,
   charWidth: deriveCharWidth(DEFAULT_BASE_FONT_SIZE),
   fontSize: DEFAULT_BASE_FONT_SIZE,
@@ -69,4 +68,19 @@ export function resolveDocumentLayoutOptions(
     charWidth: options.charWidth ?? deriveCharWidth(merged.fontSize),
     lineHeight: options.lineHeight ?? deriveLineHeight(merged.fontSize),
   };
+}
+
+// The defaults list every option but width, so deriving the keys from them
+// means a newly added option can't be skipped.
+const defaultedLayoutOptionKeys = Object.keys(defaultDocumentLayoutOptions) as Array<
+  keyof typeof defaultDocumentLayoutOptions
+>;
+
+export function haveSameDocumentLayoutOptions(
+  left: DocumentLayoutOptions,
+  right: DocumentLayoutOptions,
+) {
+  return (
+    left.width === right.width && defaultedLayoutOptionKeys.every((key) => left[key] === right[key])
+  );
 }

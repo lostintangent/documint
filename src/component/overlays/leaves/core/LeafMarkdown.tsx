@@ -2,13 +2,12 @@ import {
   mapInlines,
   type Block,
   type Inline,
-  type Link,
   type ListBlock,
   type ListItemBlock,
   type MentionTarget,
   type Text,
 } from "@/document";
-import { parseFragment } from "@/markdown";
+import { parseFragment, serializeBlocks, serializeFragment } from "@/markdown";
 import { createElement, type ReactNode } from "react";
 
 type LeafMarkdownProps = {
@@ -51,11 +50,30 @@ function renderBlock(block: Block): ReactNode {
   switch (block.type) {
     case "paragraph":
       return createElement("p", null, ...renderInlines(block.children));
+    case "heading":
+      return createElement("p", { className: "font-semibold" }, ...renderInlines(block.children));
+    case "blockquote":
+      return createElement(
+        "blockquote",
+        { className: "grid gap-2.5 m-0 ps-3 border-s-2 border-leaf-border text-leaf-secondary" },
+        ...block.children.map(renderBlock),
+      );
+    case "code":
+      return renderPreformatted(block.source);
     case "list":
       return renderList(block);
     default:
-      return null;
+      // Blocks without a native rendering show their saved markdown, so no content is hidden.
+      return renderPreformatted(serializeBlocks([block], { padTableColumns: true }));
   }
+}
+
+function renderPreformatted(text: string): ReactNode {
+  return (
+    <pre className="m-0 px-2 py-1.5 rounded-md bg-inline-code-bg text-inline-code font-mono text-[0.92em] whitespace-pre-wrap">
+      {text}
+    </pre>
+  );
 }
 
 function renderList(block: ListBlock): ReactNode {
@@ -102,26 +120,18 @@ function renderInlines(nodes: readonly Inline[]): ReactNode[] {
           </span>
         );
       case "link":
-        return renderLink(node, children);
+        return createElement(
+          "a",
+          { href: node.url, rel: "noreferrer", target: "_blank" },
+          ...(children ?? []),
+        );
       default:
-        return null;
+        return serializeFragment({ kind: "inlines", inlines: [node] });
     }
   });
 }
 
-function renderLink(node: Link, children: ReactNode[] | null): ReactNode {
-  return createElement(
-    "a",
-    { href: node.url, rel: "noreferrer", target: "_blank" },
-    ...(children ?? []),
-  );
-}
-
 function renderText(node: Text): ReactNode {
-  if (node.marks.length === 0) {
-    return node.text;
-  }
-
   return node.marks.reduce<ReactNode>((current, mark) => {
     switch (mark) {
       case "bold":

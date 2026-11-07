@@ -4,7 +4,7 @@ The overlays subsystem renders Documint's floating editor UI so users get contex
 
 ## Design Notes
 
-- **Document anchors turn hook intent into scroll-aware placement.** Hooks and overlay sprigs (read-only component-store slices local to overlay UI) emit `DocumentAnchorTarget` shapes that say "render this leaf at this editor point." `Documint` arbitrates the winning target, and `DocumentLeafAnchor` measures it against the rendered layout. `DocumentAnchor` handles portaled placement, horizontal clamping, above/below flipping, and hover bridges without the hook owning positioning.
+- **Document anchors turn hook intent into scroll-aware placement.** Hooks and overlay sprigs (read-only component-store slices local to overlay UI) emit `DocumentAnchorTarget` shapes that say "render this leaf at this editor point." `Documint` arbitrates the winning target, and `DocumentLeafAnchor` measures it against the rendered layout. `DocumentAnchor` handles portaled placement, horizontal clamping, above/below flipping, and hover bridges without the hook owning positioning. A target can override its anchor line's extent. The table leaf passes the active cell's border box, so its toolbar sits below the cell or flips above it instead of covering wrapped text.
 - **Document placement reads layout reactively and re-measures after commit.** `DocumentLeafAnchor` subscribes to `renderedLayoutSprig`, so layout updates re-render the anchor without re-rendering `Documint`. A render-body `layout.get()` would be cached by the React Compiler against the stable store and go stale. `DocumentAnchor` re-measures after each of its commits, on shell resize, and on window resize, then maps the container-relative position to document space.
 - **Viewport anchors keep fixed chrome aligned to the editor.** Document leaves extend `DocumentAnchorTarget`. Fixed leaves such as search and presence use `ViewportAnchor` instead. It mirrors an in-place sticky sentinel into the portal, follows the editor viewport instead of a document point, and still shares the same leaf shell and theme path as document-anchored leaves.
 - **One document-leaf arbitration path prevents competing chrome.** Document leaves use completion, pointer, selection, then cursor priority. New document-contextual UI should add a leaf type/view model, emit it from the owning hook or overlay sprig, and join `Documint`'s single active-leaf switch instead of creating a parallel placement path. `leaves/sprigs.ts` keeps those overlay-specific view models next to the UI so the core store does not learn leaf vocabulary.
@@ -17,6 +17,8 @@ The overlays subsystem renders Documint's floating editor UI so users get contex
 
 Document leaves stay at their last measured position when the host moves the editor without a React commit of the anchor, a shell resize, or a window resize, such as a CSS-only layout shift. This is accepted for now. Revisit it if a host reports a stale leaf after a layout change that does not re-render, then observe the scroll container's position directly.
 
+The table toolbar anchors to the active cell's bottom border, so it hides while that border is scrolled out of the editor, even with the caret in view. A cell nearly as tall as the window leaves no room on either side once its bottom nears the window's bottom edge, so the toolbar flips above the cell's off-screen top. Both are accepted because the toolbar never covers the cell's text. Revisit with a clamped toolbar if users report editing tall cells in short editors or above an on-screen keyboard.
+
 ## Subsystem Map
 
 - `leaves/` owns leaf vocabulary, overlay-owned sprigs, shared design-system primitives, and concrete leaves for insertion, tables, links, annotations, search, and completions.
@@ -24,4 +26,4 @@ Document leaves stay at their last measured position when the host moves the edi
 - `anchors/` owns the document-anchor and viewport-anchor placement shells, the reactive `DocumentLeafAnchor` that measures the active document leaf against rendered layout, and the viewport fitting helpers they share.
 - `OverlayPortal.tsx` owns the shadow-root portal, overlay stylesheet injection, and theme-variable bridge for all portaled overlay UI.
 - `PresenceIndicator.tsx` owns the compact presence pills rendered by `ViewportAnchor`.
-- `styles.css` owns the Tailwind source compiled and injected by `OverlayPortal`.
+- `styles.css` owns the Tailwind source that the `@macros/overlay-styles` Bun macro compiles at bundle time for `OverlayPortal`. Hot reload keeps serving the old output, so restart the dev server after editing it.

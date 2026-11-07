@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import {
   caretInViewportSprig,
   caretTargetSprig,
@@ -21,13 +21,14 @@ import { equalShallowObject } from "../store/core/equality";
 
 type UseCursorOptions = {
   activeAt: number | null;
+  focused: boolean;
   readOnly: boolean;
   viewportWidth: number;
   viewportHeight: number;
 
   // Host callbacks the hook invokes.
   getScrollTop: () => number;
-  scrollTo: (top: number) => number;
+  scrollTo: (top: number) => void;
 };
 
 type CursorController = {
@@ -56,10 +57,11 @@ const CARET_BLINK_INTERVAL_MS = 530;
 
 // Padding above and below the caret when scrolling it into view, so it
 // doesn't sit flush against the viewport edge.
-const CURSOR_REVEAL_PADDING = 24;
+export const CURSOR_REVEAL_PADDING = 24;
 
 export function useCursor({
   activeAt,
+  focused,
   getScrollTop,
   viewportWidth,
   readOnly,
@@ -85,26 +87,12 @@ export function useCursor({
   /* Caret blink */
 
   const caretInViewport = useSprig(caretInViewportSprig);
-  const shouldBlinkCaret = !readOnly && normalizedSelection.collapsed;
-  const caretVisibleRef = useRef(true);
-  // The timer lives here, so the host subscribes to repaint the overlay
-  // instead of passing in its scheduler. The subscription is stable across renders.
-  const [visibility] = useState(() => {
-    const listeners = new Set<() => void>();
-
-    return {
-      notify: () => listeners.forEach((listener) => listener()),
-      subscribe: (listener: () => void) => {
-        listeners.add(listener);
-        return () => {
-          listeners.delete(listener);
-        };
-      },
-    };
-  });
-  const requestCaretPaint = useEffectEvent(() => {
-    visibility.notify();
-  });
+  const [blink] = useState(() =>
+    createCaretBlink((toggle) => {
+      const intervalId = window.setInterval(toggle, CARET_BLINK_INTERVAL_MS);
+      return () => window.clearInterval(intervalId);
+    }),
+  );
   const revealCursorTarget = useEffectEvent((target: CursorRevealTarget) => {
     const currentTop = getScrollTop();
     const visibleTop = currentTop + CURSOR_REVEAL_PADDING;
@@ -164,33 +152,18 @@ export function useCursor({
 
   /* Caret blink effect */
 
-  // During activity the caret stays solid; idle collapsed selections blink.
-  useEffect(() => {
-    caretVisibleRef.current = !readOnly;
-    requestCaretPaint();
-
-    if (!shouldBlinkCaret || !caretInViewport || activeAt !== null) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      caretVisibleRef.current = !caretVisibleRef.current;
-      requestCaretPaint();
-    }, CARET_BLINK_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [readOnly, shouldBlinkCaret, caretInViewport, activeAt]);
+  const caretShown = focused && !readOnly;
+  const caretBlinks = normalizedSelection.collapsed && caretInViewport && activeAt === null;
+  // A layout effect, so a blur or read-only flip hides the caret in the same
+  // commit, before the next overlay paint reads it.
+  useLayoutEffect(() => blink.sync(caretShown, caretBlinks), [blink, caretBlinks, caretShown]);
 
   /* Public API */
 
   return {
     leaf,
-    // `isVisible` is read during render, before effects can clear the ref
-    // after a read-only flip. Keep the read-only gate on the synchronous read.
-    isVisible: () => !readOnly && caretVisibleRef.current,
-    subscribeVisibility: visibility.subscribe,
+    isVisible: blink.isVisible,
+    subscribeVisibility: blink.subscribe,
   };
 }
 
@@ -224,4 +197,28 @@ function resolveCursorRevealTarget({
         viewportWidth: layout.viewport.width,
       }
     : null;
+}
+
+export function createCaretBlink(startTimer: (toggle: () => void) => () => void) {
+  const listeners = new Set<() => void>();
+  let visible = false;
+  const setVisible = (next: boolean) => {
+    if (next === visible) return;
+    visible = next;
+    listeners.forEach((listener) => listener());
+  };
+
+  return {
+    isVisible: () => visible,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    sync: (shown: boolean, blinks: boolean) => {
+      setVisible(shown);
+      return shown && blinks ? startTimer(() => setVisible(!visible)) : undefined;
+    },
+  };
 }

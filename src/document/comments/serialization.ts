@@ -4,15 +4,17 @@
  * this module only validates and shapes one thread at a time.
  */
 
-import { isAnchorKind, normalizeAnchorKind, type TextAnchor } from "../query/anchors/text";
-import type { Comment, CommentThread } from "./types";
+import { isAnchorKind, normalizeAnchorKind } from "../query/anchors/text";
+import type { Comment, CommentAnchor, CommentThread } from "./types";
 
 export function parseCommentThread(candidate: unknown): CommentThread | null {
   if (!isRecord(candidate)) {
     return null;
   }
 
-  const anchor = parseCommentAnchor(candidate.anchor);
+  // Every anchor field is optional, so a missing anchor is an empty one. An
+  // empty quote means the commented text was deleted, and the thread still loads.
+  const anchor = parseCommentAnchor(candidate.anchor ?? {});
   const quote = typeof candidate.quote === "string" ? candidate.quote : null;
   const comments = Array.isArray(candidate.comments)
     ? candidate.comments.flatMap((comment) => {
@@ -22,7 +24,7 @@ export function parseCommentThread(candidate: unknown): CommentThread | null {
       })
     : [];
 
-  if (!anchor || !quote || comments.length === 0) {
+  if (!anchor || quote === null || comments.length === 0) {
     return null;
   }
 
@@ -51,20 +53,25 @@ function parseComment(candidate: unknown): Comment | null {
 }
 
 // Payloads come from `JSON.parse`, which never produces an `undefined` field,
-// so `undefined` means the field was absent.
-function parseCommentAnchor(candidate: unknown): TextAnchor | null {
+// so `undefined` means the field was absent. A malformed `occurrence` is
+// dropped rather than failing the thread, since it's only a tiebreak.
+function parseCommentAnchor(candidate: unknown): CommentAnchor | null {
   if (!isRecord(candidate)) {
     return null;
   }
 
-  const { kind, prefix, suffix } = candidate;
+  const { kind, occurrence, prefix, suffix } = candidate;
 
   if (
     (kind === undefined || isAnchorKind(kind)) &&
     (prefix === undefined || typeof prefix === "string") &&
     (suffix === undefined || typeof suffix === "string")
   ) {
-    return { kind: normalizeAnchorKind(kind), prefix, suffix };
+    const anchor = { kind: normalizeAnchorKind(kind), prefix, suffix };
+
+    return typeof occurrence === "number" && Number.isSafeInteger(occurrence) && occurrence > 0
+      ? { ...anchor, occurrence }
+      : anchor;
   }
 
   return null;

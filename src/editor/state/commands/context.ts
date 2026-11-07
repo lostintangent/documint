@@ -1,7 +1,4 @@
 import {
-  createListItemBlock,
-  createParagraphTextBlock,
-  rebuildListItemBlock,
   type Block,
   type CodeBlock,
   type HeadingBlock,
@@ -45,11 +42,7 @@ type TextContextFacts = {
   text: string;
 };
 
-export type TextRangeContext = EditorSelectionRange & {
-  selection: EditorSelection;
-};
-
-export type InlineContext = TextRangeContext & {
+export type InlineContext = EditorSelectionRange & {
   inlineContainer: InlineContainer;
 };
 
@@ -72,21 +65,12 @@ export type InlineContainer =
 
 export type RootTextBlockContext = TextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
-  blockPath: string;
   path: string;
   rootIndex: number;
 };
 
-export type RootBlockInsertionContext = RootTextBlockContext & {
-  atStart: true;
-  block: Extract<Block, { type: "paragraph" }>;
-  empty: true;
-  offset: 0;
-};
-
 export type BlockquoteTextBlockContext = TextContextFacts & {
   block: Extract<Block, { type: "heading" | "paragraph" }>;
-  blockPath: string;
   childIndex: number;
   path: string;
   quote: Extract<Block, { type: "blockquote" }>;
@@ -95,19 +79,16 @@ export type BlockquoteTextBlockContext = TextContextFacts & {
 
 export type CodeBlockContext = TextContextFacts & {
   block: CodeBlock;
-  blockPath: string;
   path: string;
   rootIndex: number;
 };
-
-type TableCellTextContext = TextContextFacts & TableCellContext;
 
 // A classifiable structural context for the current selection. `null` from
 // the resolver means "the selection didn't classify into any known shape" —
 // callers short-circuit to no-op.
 export type BlockContext =
   | ({ kind: "code" } & CodeBlockContext)
-  | ({ kind: "tableCell" } & TableCellTextContext)
+  | ({ kind: "tableCell" } & TableCellContext)
   | ({ kind: "listItem" } & ListItemContext)
   | ({ kind: "blockquoteTextBlock" } & BlockquoteTextBlockContext)
   | ({ kind: "rootTextBlock" } & RootTextBlockContext);
@@ -119,39 +100,21 @@ export type DeletionContext = Exclude<BlockContext, { kind: "tableCell" }> & {
 
 // --- Command context resolvers ---
 
-export function resolveTextRangeContext(
-  state: EditorState,
-  startOffset: number,
-  endOffset: number,
-): TextRangeContext | null {
-  return resolveTargetRangeContext(state, {
-    endOffset,
-    path: state.selection.focus.path,
-    startOffset,
-  });
-}
-
-function resolveTargetRangeContext(
+// Clamps a same-path text range to the current text at `target.path`.
+export function resolveTextRange(
   state: EditorState,
   target: EditorSelectionRange,
-): TextRangeContext | null {
+): EditorSelectionRange | null {
   const text = resolveEditorTextAtPath(state.documentIndex, target.path);
 
   if (text === null || target.startOffset > target.endOffset) {
     return null;
   }
 
-  const start = clampOffset(target.startOffset, text.length);
-  const end = clampOffset(target.endOffset, text.length);
-
   return {
-    endOffset: end,
+    endOffset: clampOffset(target.endOffset, text.length),
     path: target.path,
-    selection: {
-      anchor: { path: target.path, offset: start },
-      focus: { path: target.path, offset: end },
-    },
-    startOffset: start,
+    startOffset: clampOffset(target.startOffset, text.length),
   };
 }
 
@@ -159,29 +122,22 @@ export function resolveInlineTargetContext(
   state: EditorState,
   target: EditorSelectionRange,
 ): InlineContext | null {
-  const range = resolveTargetRangeContext(state, target);
-  return range ? resolveInlineContextFromTextRange(state, range) : null;
+  const range = resolveTextRange(state, target);
+  const inlineContainer = range && resolveInlineContainer(state.documentIndex, range.path);
+
+  return range && inlineContainer ? { ...range, inlineContainer } : null;
 }
 
 export function resolveInlineContext(state: EditorState): InlineContext | null {
-  const selection = normalizeSelection(state);
+  const { end, start } = normalizeSelection(state);
 
-  if (selection.start.path !== selection.end.path) {
-    return null;
-  }
-
-  const range = resolveTextRangeContext(state, selection.start.offset, selection.end.offset);
-
-  return range ? resolveInlineContextFromTextRange(state, range) : null;
-}
-
-function resolveInlineContextFromTextRange(
-  state: EditorState,
-  range: TextRangeContext,
-): InlineContext | null {
-  const inlineContainer = resolveInlineContainer(state.documentIndex, range.path);
-
-  return inlineContainer ? { ...range, inlineContainer } : null;
+  return start.path === end.path
+    ? resolveInlineTargetContext(state, {
+        endOffset: end.offset,
+        path: start.path,
+        startOffset: start.offset,
+      })
+    : null;
 }
 
 function resolveInlineContainer(
@@ -251,18 +207,13 @@ function resolveBlockContextFromSelection(
   );
 
   if (tableCellContext) {
-    return {
-      kind: "tableCell",
-      ...tableCellContext,
-      ...resolveTextContextFacts(documentIndex, path, text, selection),
-    };
+    return { kind: "tableCell", ...tableCellContext };
   }
 
   if (indexedBlock?.block.type === "code") {
     return {
       kind: "code",
       block: indexedBlock.block,
-      blockPath: indexedBlock.path,
       path,
       rootIndex: indexedBlock.rootIndex,
       ...resolveTextContextFacts(documentIndex, path, text, selection),
@@ -370,35 +321,21 @@ function resolveRootTextBlockContextFromIndexedBlock(
   return {
     ...resolveTextContextFacts(documentIndex, path, text, selection),
     block,
-    blockPath: indexedBlock.path,
     path,
     rootIndex,
   };
 }
 
-export function resolveRootBlockInsertionContext(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): RootBlockInsertionContext | null {
-  const context = resolveRootTextBlockContextFromSelection(documentIndex, selection);
+// Root block insertions (code fence, table) replace an empty root paragraph.
+export function resolveRootBlockInsertionContext(state: EditorState): RootTextBlockContext | null {
+  const context = resolveRootTextBlockContextFromSelection(state.documentIndex, state.selection);
 
-  if (
-    !context ||
-    context.block.type !== "paragraph" ||
-    !context.empty ||
-    !context.atStart ||
-    !isSelectionCollapsed(selection)
-  ) {
-    return null;
-  }
-
-  return {
-    ...context,
-    atStart: true,
-    block: context.block,
-    empty: true,
-    offset: 0,
-  };
+  return context?.block.type === "paragraph" &&
+    context.empty &&
+    context.atStart &&
+    isSelectionCollapsed(state.selection)
+    ? context
+    : null;
 }
 
 function resolveBlockquoteTextBlockContextFromIndexedBlock(
@@ -441,7 +378,6 @@ function resolveBlockquoteTextBlockContextFromIndexedBlock(
   return {
     ...resolveTextContextFacts(documentIndex, path, text, selection),
     block,
-    blockPath: indexedBlock.path,
     childIndex,
     path,
     quote: rootBlock,
@@ -457,7 +393,9 @@ type ListParentContext = {
 };
 
 export type ListItemContext = TextContextFacts & {
-  blockPath: string;
+  // The text block's index among the item's children, or -1 when it sits
+  // deeper, as in a quote inside the item.
+  childIndex: number;
   item: ListItemBlock;
   itemIndex: number;
   list: ListBlock;
@@ -539,7 +477,7 @@ function resolveListItemContextFromIndexedBlock(
 
   return {
     ...resolveTextContextFacts(documentIndex, path, text, selection),
-    blockPath: indexedParagraph.path,
+    childIndex: item.children.indexOf(indexedParagraph.block),
     item,
     itemIndex,
     list,
@@ -634,31 +572,4 @@ function resolveTextContextFacts(
 
 function clampOffset(offset: number, textLength: number) {
   return Math.max(0, Math.min(offset, textLength));
-}
-
-// --- Shared action support ---
-
-export function createInsertedListItem(
-  text: string,
-  checked: boolean | null,
-  compact: boolean,
-): ListItemBlock {
-  return createListItemBlock({
-    checked,
-    children: [createParagraphTextBlock(text)],
-    compact,
-  });
-}
-
-export function replaceListItemLeadingParagraphText(
-  item: ListItemBlock,
-  text: string,
-): ListItemBlock | null {
-  const firstChild = item.children[0];
-
-  if (!firstChild || firstChild.type !== "paragraph") {
-    return null;
-  }
-
-  return rebuildListItemBlock(item, [createParagraphTextBlock(text), ...item.children.slice(1)]);
 }

@@ -1,10 +1,22 @@
-import { indexedTextEntries } from "@test/editor/helpers";
+import { indexedTextEntries, placeAt } from "@test/editor/helpers";
 import { describe, expect, test } from "bun:test";
-import { createEditorLayoutState, createLayoutCache, insertText, setSelection } from "@/editor";
+import {
+  createEditorLayoutState,
+  createLayoutCache,
+  insertLineBreak,
+  insertText,
+  setSelection,
+  type EditorState,
+} from "@/editor";
 import { createEditorState, metadataValuePath } from "@/editor/state";
 import { measureLayoutSlice } from "@/editor/layout/measure";
+import {
+  cacheMeasuredContainerHeight,
+  getMeasuredContainerHeight,
+} from "@/editor/layout/state/cache";
+import type { DocumentResources } from "@/editor/resources";
 import { parseDocument } from "@/markdown";
-import { setup } from "../helpers";
+import { createResources, setup } from "../helpers";
 
 const repeatedSampleMarkdown = `# Sample Document
 
@@ -14,6 +26,26 @@ This is the bootstrap fixture for the editable preview editor.
 - two
 - three
 `;
+
+const tallImageResources = createResources({
+  images: { "https://example.com/tall.png": { height: 600, width: 200 } },
+});
+
+const tallImageTableMarkdown = `| Image | Notes |
+| --- | --- |
+| ![tall](https://example.com/tall.png) | notes |
+`;
+
+const wrappedTextTableMarkdown = `| A | B |
+| --- | --- |
+| short | ${"word ".repeat(40).trim()} |
+| ${"long ".repeat(30).trim()} | x |
+`;
+
+const tableRebuildCases = [
+  { label: "wrapped-text", resources: undefined, table: wrappedTextTableMarkdown },
+  { label: "tall-image", resources: tallImageResources, table: tallImageTableMarkdown },
+];
 
 describe("Viewport slicing", () => {
   test("uses exact full-document layout for small documents", () => {
@@ -29,7 +61,7 @@ describe("Viewport slicing", () => {
     });
 
     expect(indexedTextEntries(state).length).toBeLessThanOrEqual(96);
-    expect(viewportLayout.totalHeight).toBe(fullLayout.height);
+    expect(viewportLayout.layout.height).toBe(fullLayout.height);
     expect(viewportLayout.layout.lines.length).toBe(fullLayout.lines.length);
   });
 
@@ -47,7 +79,7 @@ describe("Viewport slicing", () => {
 
     expect(indexedTextEntries(state).length).toBeGreaterThan(96);
     expect(viewportLayout.layout.lines.length).toBeLessThan(fullLayout.lines.length);
-    expect(viewportLayout.totalHeight).toBeGreaterThan(720);
+    expect(viewportLayout.layout.height).toBeGreaterThan(720);
   });
 
   test("keeps near pinned paths in the viewport slice", () => {
@@ -186,6 +218,83 @@ describe("Exact and estimated parity", () => {
     expect(targetViewportLine?.top).toBe(targetFullLine?.top);
   });
 
+  test("estimates an unmeasured image table row from the image's size, not its text", () => {
+    const state = setup(
+      `${createMeasurementSkewFixture(110)}\n${tallImageTableMarkdown}\n${createMeasurementSkewFixture(10)}`,
+    );
+    const options = { height: 400, width: 420 };
+    const imageCell = indexedTextEntries(state).find((entry) => entry.tableCell?.rowIndex === 1)!;
+    const fullBounds = measureLayoutSlice(
+      state.documentIndex,
+      options,
+      undefined,
+      tallImageResources,
+    ).pathBounds.get(imageCell.path)!;
+    const topViewport = createEditorLayoutState(
+      state,
+      { ...options, top: 0 },
+      createLayoutCache(),
+      tallImageResources,
+    );
+    const estimate = topViewport.estimatePathBounds(imageCell.path)!;
+
+    expect(topViewport.layout.pathBounds.has(imageCell.path)).toBeFalse();
+    expect(estimate.bottom - estimate.top).toBe(fullBounds.bottom - fullBounds.top);
+  });
+
+  test("keeps code blocks aligned with full layout while a virtualized document scrolls", () => {
+    const state = setup(createCodeBlockVirtualizationFixture(130));
+    const cache = createLayoutCache();
+    const options = { height: 400, width: 420 };
+    const fullLayout = measureLayoutSlice(state.documentIndex, options);
+    const fullLineTops = new Map(
+      fullLayout.lines.map((line) => [`${line.path}:${line.start}`, line.top]),
+    );
+    const lastCodeEntry = indexedTextEntries(state)
+      .filter((entry) => entry.text.startsWith("code "))
+      .at(-1);
+
+    if (!lastCodeEntry) {
+      throw new Error("Expected a code block path");
+    }
+
+    const initialViewport = createEditorLayoutState(state, { ...options, top: 0 }, cache);
+    const lastCodeBounds = fullLayout.pathBounds.get(lastCodeEntry.path)!;
+
+    expect(initialViewport.estimatePathBounds(lastCodeEntry.path)).toEqual({
+      bottom: lastCodeBounds.bottom,
+      top: lastCodeBounds.top,
+    });
+
+    const drifts: { heightDrift: number; lineDrift: number; missingLines: number; top: number }[] =
+      [];
+
+    for (let top = 0; top < fullLayout.height; top += 37) {
+      const viewport = createEditorLayoutState(state, { ...options, top }, cache);
+      const sliceLineKeys = new Set(
+        viewport.layout.lines.map((line) => `${line.path}:${line.start}`),
+      );
+      const heightDrift = viewport.layout.height - fullLayout.height;
+      const lineDrift = Math.max(
+        ...viewport.layout.lines.map((line) =>
+          Math.abs(line.top - fullLineTops.get(`${line.path}:${line.start}`)!),
+        ),
+      );
+      const missingLines = fullLayout.lines.filter(
+        (line) =>
+          line.top < top + options.height &&
+          line.top + line.height > top &&
+          !sliceLineKeys.has(`${line.path}:${line.start}`),
+      ).length;
+
+      if (heightDrift !== 0 || lineDrift !== 0 || missingLines !== 0) {
+        drifts.push({ heightDrift, lineDrift, missingLines, top });
+      }
+    }
+
+    expect(drifts).toEqual([]);
+  });
+
   test("keeps exact and virtualized body geometry aligned with an expanded metadata prefix", () => {
     const state = setup(createMetadataVirtualizationFixture(140));
     const options = {
@@ -211,7 +320,7 @@ describe("Exact and estimated parity", () => {
       throw new Error("Expected exact and estimated bounds");
     }
 
-    expect(virtualized.totalHeight).toBe(exact.height);
+    expect(virtualized.layout.height).toBe(exact.height);
     expect(estimatedTarget).toEqual({
       bottom: exactTarget.bottom,
       top: exactTarget.top,
@@ -256,7 +365,7 @@ describe("Layout cache reuse", () => {
     }
 
     const initialEstimateHeight = initialEstimate.bottom - initialEstimate.top;
-    const initialTotalHeight = initialLayout.totalHeight;
+    const initialTotalHeight = initialLayout.layout.height;
 
     const targetState = setSelection(initialState, {
       offset: Math.floor(targetPath.text.length / 2),
@@ -288,7 +397,135 @@ describe("Layout cache reuse", () => {
       bottom: measuredBounds.bottom,
       top: measuredBounds.top,
     });
-    expect(measuredLayout.totalHeight).not.toBe(initialTotalHeight);
+    expect(measuredLayout.layout.height).not.toBe(initialTotalHeight);
+  });
+
+  test("keeps measured code-block heights exact when an edit rebuilds the virtual layout", () => {
+    let state = setup(createCodeBlockVirtualizationFixture(130));
+    const cache = createLayoutCache();
+    const options = { height: 400, width: 420 };
+    const initialHeight = measureLayoutSlice(state.documentIndex, options).height;
+
+    // Measure every block so the height cache holds each code block.
+    for (let top = 0; top < initialHeight; top += 300) {
+      createEditorLayoutState(state, { ...options, top }, cache);
+    }
+
+    const [firstEntry] = indexedTextEntries(state);
+    const lastEntry = indexedTextEntries(state).at(-1);
+
+    if (!firstEntry || !lastEntry) {
+      throw new Error("Expected text paths");
+    }
+
+    state = insertText(setSelection(state, { offset: 0, path: firstEntry.path }), "x")!;
+
+    const fullLayout = measureLayoutSlice(state.documentIndex, options);
+    const editedViewport = createEditorLayoutState(state, { ...options, top: 0 }, cache);
+    const lastBounds = fullLayout.pathBounds.get(lastEntry.path)!;
+
+    expect(editedViewport.layout.height).toBe(fullLayout.height);
+    expect(editedViewport.estimatePathBounds(lastEntry.path)).toEqual({
+      bottom: lastBounds.bottom,
+      top: lastBounds.top,
+    });
+  });
+
+  test.each(tableRebuildCases)(
+    "keeps measured $label table rows exact when typing in a mid-document cell",
+    ({ resources, table }) => {
+      let state = setup(createTableRebuildFixture(table));
+      const cache = createLayoutCache();
+      const options = { height: 400, width: 420 };
+
+      sweepVirtualizedLayout(state, cache, options, resources);
+
+      const cells = indexedTextEntries(state).filter(
+        (entry) => entry.tableCell?.rowIndex === 1 && entry.tableCell.cellIndex === 1,
+      );
+      const editedCell = cells[Math.floor(cells.length / 2)]!;
+
+      state = insertText(placeAt(state, editedCell, "end"), " typed")!;
+
+      const fullLayout = measureLayoutSlice(state.documentIndex, options, undefined, resources);
+      const top = fullLayout.pathBounds.get(editedCell.path)!.top - 120;
+
+      expectVirtualizedLayoutToMatchFullLayout(
+        createEditorLayoutState(state, { ...options, top }, cache, resources),
+        fullLayout,
+      );
+    },
+  );
+
+  test.each(tableRebuildCases)(
+    "keeps measured heights exact below an Enter near the top of a document with $label tables",
+    ({ resources, table }) => {
+      let state = setup(createTableRebuildFixture(table));
+      const cache = createLayoutCache();
+      const options = { height: 400, width: 420 };
+
+      sweepVirtualizedLayout(state, cache, options, resources);
+
+      const [firstEntry] = indexedTextEntries(state);
+
+      state = insertLineBreak(placeAt(state, firstEntry!, 4))!;
+
+      const fullLayout = measureLayoutSlice(state.documentIndex, options, undefined, resources);
+
+      expectVirtualizedLayoutToMatchFullLayout(
+        createEditorLayoutState(state, { ...options, top: 0 }, cache, resources),
+        fullLayout,
+      );
+      expectVirtualizedLayoutToMatchFullLayout(
+        createEditorLayoutState(
+          state,
+          { ...options, top: fullLayout.height / 2 },
+          cache,
+          resources,
+        ),
+        fullLayout,
+      );
+    },
+  );
+
+  test("keeps same-text paragraphs, headings, list items, and table cells at their own measured heights", () => {
+    const shared = "Shared words wrap differently by width and by font. ".repeat(4).trim();
+    let state = setup(
+      `${shared}\n\n## ${shared}\n\n- ${shared}\n\n| A | B | C | D |\n| - | - | - | - |\n| ${shared} | x | y | z |\n\n${createMeasurementSkewFixture(110)}`,
+    );
+    const cache = createLayoutCache();
+    const options = { height: 400, width: 420 };
+
+    sweepVirtualizedLayout(state, cache, options);
+
+    const sharedPaths = indexedTextEntries(state)
+      .filter((entry) => entry.text === shared)
+      .map((entry) => entry.path);
+    const lastEntry = indexedTextEntries(state).at(-1)!;
+
+    state = insertText(placeAt(state, lastEntry, "end"), " typed")!;
+
+    const fullLayout = measureLayoutSlice(state.documentIndex, options);
+    const bottomViewport = createEditorLayoutState(
+      state,
+      { ...options, top: fullLayout.height - options.height },
+      cache,
+    );
+
+    expect(sharedPaths).toHaveLength(4);
+    expect(sharedPaths.map((path) => bottomViewport.layout.pathBounds.has(path))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(sharedPaths.map((path) => bottomViewport.estimatePathBounds(path))).toEqual(
+      sharedPaths.map((path) => {
+        const { bottom, top } = fullLayout.pathBounds.get(path)!;
+
+        return { bottom, top };
+      }),
+    );
   });
 
   test("keeps post-table content in the initial viewport after text edits warm table caches", () => {
@@ -346,7 +583,7 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inli
     const editedViewport = createEditorLayoutState(stateAfterInsert, viewportOptions, layoutCache);
 
     expect(editedViewport.layout.lines.some((line) => line.text === "Lists")).toBeTrue();
-    expect(editedViewport.totalHeight).toBeLessThan(1000);
+    expect(editedViewport.layout.height).toBeLessThan(1000);
   });
 
   test("reuses the body virtual layout when metadata height changes", () => {
@@ -397,6 +634,84 @@ Use *emphasis*, **strong text**, ~~strikethrough~~, <ins>underline</ins>, \`inli
     expect(afterTarget.top - beforeTarget.top).toBe(offsetDelta);
     expect(afterTarget.bottom - beforeTarget.bottom).toBe(offsetDelta);
   });
+
+  test.each([
+    ["keeps", "a scroll", { height: 480, top: 200 }, null, false],
+    ["replaces", "a width change", { width: 360 }, null, false],
+    ["replaces", "new resources", {}, createResources(), false],
+    ["replaces", "an edit", {}, null, true],
+  ] as const)(
+    "%s a small document's full layout after %s",
+    (outcome, _, viewport, resources, edit) => {
+      const state = setup(createVirtualizationFixture(10));
+      const cache = createLayoutCache();
+      const options = { height: 320, top: 0, width: 420 };
+      const initial = createEditorLayoutState(state, options, cache);
+      const next = createEditorLayoutState(
+        edit ? insertText(state, "x")! : state,
+        { ...options, ...viewport },
+        cache,
+        resources,
+      );
+
+      expect(next.layout === initial.layout).toBe(outcome === "keeps");
+      expect(next.viewport).toEqual({ ...options, ...viewport });
+    },
+  );
+
+  test("keeps unchanged containers' caret boundaries when a long document relays out", () => {
+    const state = setup(createLongParagraphFixture(80));
+    const cache = createLayoutCache();
+    const options = { height: 800, top: 0, width: 640 };
+    const first = createEditorLayoutState(state, options, cache);
+    const second = createEditorLayoutState(insertText(state, "x")!, options, cache);
+    const firstBoundaries = new Set(first.layout.lines.map((line) => line.boundaries));
+    const unchangedLines = second.layout.lines.filter(
+      (line) => line.path !== state.selection.focus.path,
+    );
+
+    expect(indexedTextEntries(state).length).toBeLessThanOrEqual(96);
+    expect(unchangedLines.length).toBeGreaterThan(1024);
+    expect(unchangedLines.every((line) => firstBoundaries.has(line.boundaries))).toBe(true);
+  });
+
+  test("trims caret boundaries back to the budget once a layout stops using them", () => {
+    const cache = createLayoutCache();
+    const options = { height: 800, top: 0, width: 640 };
+
+    createEditorLayoutState(setup(createLongParagraphFixture(80)), options, cache);
+    createEditorLayoutState(setup(createVirtualizationFixture(4)), options, cache);
+
+    const retainedLines = [...cache.lineBoundaries.values()].reduce(
+      (total, boundaries) => total + boundaries.length,
+      0,
+    );
+
+    expect(retainedLines).toBeLessThanOrEqual(1024);
+  });
+
+  test("never evicts a height re-measured unchanged within half the budget", () => {
+    const cache = createLayoutCache();
+    const evictedAtWrites: number[] = [];
+
+    cacheMeasuredContainerHeight(cache, "visible", 48);
+    cacheMeasuredContainerHeight(cache, "scrolled-past", 24);
+
+    for (let write = 1; write <= 4096; write += 1) {
+      cacheMeasuredContainerHeight(cache, `scrolled-${write}`, 24);
+
+      if (write % 256 === 0) {
+        if (getMeasuredContainerHeight(cache, "visible") === undefined) {
+          evictedAtWrites.push(write);
+        }
+
+        cacheMeasuredContainerHeight(cache, "visible", 48);
+      }
+    }
+
+    expect(evictedAtWrites).toEqual([]);
+    expect(getMeasuredContainerHeight(cache, "scrolled-past")).toBeUndefined();
+  });
 });
 
 function createMeasurementSkewFixture(paragraphCount: number) {
@@ -442,6 +757,16 @@ const value${index + 1} = ${index + 1};
   );
 }
 
+// Every tenth block is a two-line code block between one-line paragraphs, so
+// estimates match exact layout until code-block padding goes astray.
+function createCodeBlockVirtualizationFixture(blockCount: number) {
+  return (
+    Array.from({ length: blockCount }, (_, index) =>
+      index % 10 === 5 ? `\`\`\`\ncode ${index}\nmore\n\`\`\`` : `Para ${index}`,
+    ).join("\n\n") + "\n"
+  );
+}
+
 function createLargeTableFixture(rowCount: number) {
   return `| A | B |
 | - | - |
@@ -463,4 +788,54 @@ draft: true
 ---
 ${Array.from({ length: paragraphCount }, (_, index) => `Paragraph ${index + 1}`).join("\n\n")}
 `;
+}
+
+// Each paragraph wraps to 13 lines at 640px, so 80 of them stay on the
+// full-layout path with over a thousand lines.
+function createLongParagraphFixture(paragraphCount: number) {
+  const paragraph =
+    "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor ".repeat(13);
+
+  return Array.from({ length: paragraphCount }, (_, index) => `${paragraph}${index}`).join("\n\n");
+}
+
+// Every sixth block is a table between wide-glyph paragraphs. Text estimates
+// miss both measured heights, so only cached heights keep a rebuild exact.
+function createTableRebuildFixture(table: string) {
+  return (
+    Array.from({ length: 120 }, (_, index) =>
+      index % 6 === 3 ? table.trim() : `Paragraph ${index} ${"WWWWWWWWWW ".repeat(6)}`,
+    ).join("\n\n") + "\n"
+  );
+}
+
+// Scrolls top to bottom so every block and table row is measured once.
+function sweepVirtualizedLayout(
+  state: EditorState,
+  cache: ReturnType<typeof createLayoutCache>,
+  options: { height: number; width: number },
+  resources?: DocumentResources,
+) {
+  let height = Number.POSITIVE_INFINITY;
+
+  for (let top = 0; top < height; top += options.height / 2) {
+    height = createEditorLayoutState(state, { ...options, top }, cache, resources).layout.height;
+  }
+}
+
+function expectVirtualizedLayoutToMatchFullLayout(
+  layoutState: ReturnType<typeof createEditorLayoutState>,
+  fullLayout: ReturnType<typeof measureLayoutSlice>,
+) {
+  const fullTops = new Map(
+    fullLayout.lines.map((line) => [`${line.path}:${line.start}`, line.top]),
+  );
+  const { lines } = layoutState.layout;
+
+  expect(lines.length).toBeGreaterThan(0);
+  expect(layoutState.layout.height).toBe(fullLayout.height);
+  // A line missing from the full layout maps to undefined and fails the match.
+  expect(lines.map((line) => line.top)).toEqual(
+    lines.map((line) => fullTops.get(`${line.path}:${line.start}`)!),
+  );
 }

@@ -9,7 +9,7 @@
 // `types.ts`; this module is only about reaching and rebuilding children.
 
 import { createBlockquoteBlock, rebuildListBlock, rebuildListItemBlock } from "../build/builders";
-import type { Block, ListItemBlock, TableCell } from "./types";
+import type { Block, ListItemBlock, TableBlock, TableCell } from "./types";
 
 // Child block list for block containers; null for every other block, so
 // block-tree walks never descend into a table's cells.
@@ -30,6 +30,11 @@ export function getBlockChildren(block: Block): Block[] | null {
 // `getBlockChildren`.
 export function getTableCellRows(block: Block): readonly (readonly TableCell[])[] | null {
   return block.type === "table" ? block.rows.map((row) => row.cells) : null;
+}
+
+// A ragged table is as wide as its widest row, and always has a column.
+export function getTableColumnCount(table: TableBlock): number {
+  return Math.max(1, ...table.rows.map((row) => row.cells.length));
 }
 
 // Rebuild a block container around a replacement child list with a fresh

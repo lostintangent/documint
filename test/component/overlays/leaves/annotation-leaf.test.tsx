@@ -34,18 +34,24 @@ describe("AnnotationLeaf", () => {
   test("pulses comment presence for unresolved threads", () => {
     const html = renderCommentPresence(false);
 
-    expect(html).toContain('class="comment-presence-dot is-pulsing"');
+    expect(presenceDotClasses(html)).toContain("is-pulsing");
     expect(html).toContain("User is working on this");
   });
 
   test("keeps resolved thread presence visible without pulsing", () => {
     const html = renderCommentPresence(true);
 
-    expect(html).toContain('class="comment-presence-dot"');
-    expect(html).not.toContain("comment-presence-dot is-pulsing");
+    const classes = presenceDotClasses(html);
+
+    expect(classes).toContain("comment-presence-dot");
+    expect(classes).not.toContain("is-pulsing");
     expect(html).toContain("User is working on this");
   });
 });
+
+function presenceDotClasses(html: string) {
+  return html.match(/class="([^"]*\bcomment-presence-dot\b[^"]*)"/)?.[1].split(" ") ?? [];
+}
 
 function renderCommentPresence(resolved: boolean) {
   const thread = createThread(resolved);

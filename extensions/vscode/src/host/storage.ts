@@ -88,5 +88,11 @@ function sanitizeFileName(fileName: string): string {
 function isPathInside(candidatePath: string, rootPath: string): boolean {
   const relativePath = path.relative(path.resolve(rootPath), path.resolve(candidatePath));
 
-  return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+  // `relative` only climbs out of its base with whole ".." segments, so a name
+  // such as "..notes.png" is still inside.
+  return (
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  );
 }

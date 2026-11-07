@@ -48,7 +48,7 @@ export function spliceDocumentIndex(
           .slice(rootIndex + replacementCount)
           .map((block, index) => createIndexedRoot(block, rootIndex + replacementCount + index))),
   ];
-  const positionedRoots = positionIndexedRoots(unpositionedRoots, model.roots);
+  const positionedRoots = positionIndexedRoots(unpositionedRoots);
 
   return applyRootDelta(model, positionedRoots, nextDocument);
 }

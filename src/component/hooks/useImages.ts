@@ -13,7 +13,8 @@ import {
   type DocumentResourceRegistry,
   type DocumentResources,
 } from "@/editor";
-import type { DocumentStorage } from "../lib/storage";
+import { resolveDevicePixelRatio } from "../lib/canvas";
+import { REMOTE_URL, type DocumentStorage } from "../lib/storage";
 import { imageAtCursorSprig, imageUrlsSprig, useEditorCommand, useSprig } from "../store";
 import type { ResizeHandle } from "../Documint";
 
@@ -83,19 +84,19 @@ export function useImages(
       }
 
       inFlightUrls.add(url);
-      void loadImage(url, storage).then((bitmap) => {
+      void loadImage(url, storage).then((image) => {
         inFlightUrls.delete(url);
         setImageResources((previous) => {
           // Evicted (or unmounted) before decode finished — drop the
           // bitmap so its pixels are freed immediately.
           if (!previous.has(url)) {
-            bitmap?.close();
+            image?.bitmap.close();
             return previous;
           }
           return withImageResource(
             previous,
             url,
-            bitmap ? createImageResource("loaded", bitmap) : createImageResource("error"),
+            image ? createImageResource("loaded", image) : createImageResource("error"),
           );
         });
       });
@@ -126,12 +127,12 @@ export function useImages(
   const persistImage = useEffectEvent(async (file: File) => {
     try {
       const path = await storage.writeFile(file);
-      const bitmap = await createImageBitmap(file).catch(() => null);
+      const image = await decodeImageBlob(file);
       setImageResources((previous) =>
         withImageResource(
           previous,
           path,
-          bitmap ? createImageResource("loaded", bitmap) : createImageResource("error"),
+          image ? createImageResource("loaded", image) : createImageResource("error"),
         ),
       );
       return path;
@@ -218,19 +219,12 @@ export function useImages(
 
   /* Image handle props */
 
-  const startHandleProps: ImageHandleProps = {
+  const createHandleProps = (direction: 1 | -1): ImageHandleProps => ({
     onPointerCancel: endImageResize,
-    onPointerDown: (event) => startImageResize(event, -1),
+    onPointerDown: (event) => startImageResize(event, direction),
     onPointerMove: resizeImageFromDrag,
     onPointerUp: endImageResize,
-  };
-
-  const endHandleProps: ImageHandleProps = {
-    onPointerCancel: endImageResize,
-    onPointerDown: (event) => startImageResize(event, 1),
-    onPointerMove: resizeImageFromDrag,
-    onPointerUp: endImageResize,
-  };
+  });
 
   const imageHandle: ResizeHandle | null =
     readOnly || !imageAtCursor
@@ -239,11 +233,11 @@ export function useImages(
           start: {
             left: imageAtCursor.bounds.left,
             top: imageAtCursor.bounds.top,
-            props: startHandleProps,
+            props: createHandleProps(-1),
           },
           end: {
             left: imageAtCursor.bounds.left + imageAtCursor.bounds.width,
-            props: endHandleProps,
+            props: createHandleProps(1),
             top: imageAtCursor.bounds.top + imageAtCursor.bounds.height,
           },
         };
@@ -255,23 +249,53 @@ export function useImages(
 
 /* Loading pipeline */
 
-async function loadImage(url: string, storage: DocumentStorage): Promise<ImageBitmap | null> {
+// Vectors rasterize at device resolution, so layout uses the natural size.
+type DecodedImage = { bitmap: ImageBitmap; height: number; width: number };
+
+// Bytes from fetch or host storage decode first, and host paths never load by
+// URL. An `<img>` decodes the rest: Chromium can't decode SVG blobs, and badge
+// hosts like GitHub's send no CORS headers. Cross-origin images taint the
+// canvas, which is safe because nothing reads its pixels back.
+export async function loadImage(url: string, storage: DocumentStorage) {
+  const blob = await storage.readFile(url).catch(() => null);
+  if (blob) return decodeImageBlob(blob);
+  return REMOTE_URL.test(url) ? decodeImageElement(url) : null;
+}
+
+async function decodeImageBlob(blob: Blob): Promise<DecodedImage | null> {
+  const bitmap = await createImageBitmap(blob).catch(() => null);
+  if (bitmap) return { bitmap, height: bitmap.height, width: bitmap.width };
+
+  const url = URL.createObjectURL(blob);
   try {
-    const blob = await storage.readFile(url);
-    return blob ? await createImageBitmap(blob) : null;
+    return await decodeImageElement(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// Small images rasterize at device resolution so SVGs stay crisp. Large ones
+// are mostly raster screenshots that would only grow in memory. Drawing into a
+// canvas, rather than `createImageBitmap(image)`, is what lets Chromium
+// rasterize an SVG that only has a viewBox.
+async function decodeImageElement(src: string): Promise<DecodedImage | null> {
+  const image = new Image();
+  image.src = src;
+
+  try {
+    await image.decode();
+    const { naturalHeight: height, naturalWidth: width } = image;
+    const pixelRatio = resolveDevicePixelRatio();
+    const scale = width * height * pixelRatio ** 2 <= 1e6 ? pixelRatio : 1;
+    const canvas = new OffscreenCanvas(Math.round(width * scale), Math.round(height * scale));
+    canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return { bitmap: canvas.transferToImageBitmap(), height, width };
   } catch {
     return null;
   }
 }
 
 /* Helpers */
-
-function resolveInactiveImageUrls(
-  resources: Map<string, DocumentImageResource>,
-  urls: ReadonlySet<string>,
-) {
-  return [...resources.keys()].filter((url) => !urls.has(url));
-}
 
 function reconcileImageResourceMap(
   previous: Map<string, DocumentImageResource>,
@@ -281,8 +305,11 @@ function reconcileImageResourceMap(
     return previous;
   }
 
-  const inactiveUrls = resolveInactiveImageUrls(previous, urls);
-  const pendingUrls = resolvePendingImageUrls(previous, urls);
+  const inactiveUrls = [...previous.keys()].filter((url) => !urls.has(url));
+  const pendingUrls = [...urls].filter((url) => {
+    const status = previous.get(url)?.status;
+    return status !== "loaded" && status !== "loading";
+  });
   if (inactiveUrls.length === 0 && pendingUrls.length === 0) {
     return previous;
   }
@@ -291,16 +318,6 @@ function reconcileImageResourceMap(
   for (const url of inactiveUrls) next.delete(url);
   for (const url of pendingUrls) next.set(url, createImageResource("loading"));
   return next;
-}
-
-function resolvePendingImageUrls(
-  resources: Map<string, DocumentImageResource>,
-  urls: ReadonlySet<string>,
-) {
-  return [...urls].filter((url) => {
-    const status = resources.get(url)?.status;
-    return status !== "loaded" && status !== "loading";
-  });
 }
 
 function hasLoadingImageResource(resources: Map<string, DocumentImageResource>) {
@@ -322,19 +339,16 @@ function withImageResource(
   return next;
 }
 
-function createImageResource(
-  status: "error" | "loading",
-  bitmap?: undefined,
-): DocumentImageResource;
-function createImageResource(status: "loaded", bitmap: ImageBitmap): DocumentImageResource;
+function createImageResource(status: "error" | "loading", image?: undefined): DocumentImageResource;
+function createImageResource(status: "loaded", image: DecodedImage): DocumentImageResource;
 function createImageResource(
   status: DocumentImageResource["status"],
-  bitmap?: ImageBitmap,
+  image?: DecodedImage,
 ): DocumentImageResource {
   return {
-    intrinsicHeight: bitmap?.height ?? 0,
-    intrinsicWidth: bitmap?.width ?? 0,
-    source: bitmap ?? null,
+    intrinsicHeight: image?.height ?? 0,
+    intrinsicWidth: image?.width ?? 0,
+    source: image?.bitmap ?? null,
     status,
   };
 }

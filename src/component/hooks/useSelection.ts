@@ -9,6 +9,7 @@ import { type PointerEvent, useEffectEvent, useRef, useState } from "react";
 import {
   normalizedSelectionSprig,
   selectionHandlesSprig,
+  selectionRangeSprig,
   useDocumintStore,
   useEditorCommand,
   useSprig,
@@ -18,6 +19,7 @@ import {
   type PromotedSelectionThread,
   type SelectionLeaf,
 } from "../overlays/leaves/sprigs";
+import { equalShallowObject } from "../store/core/equality";
 import type { ResizeHandle } from "../Documint";
 import type { FocusInput } from "./useInput";
 
@@ -63,22 +65,25 @@ export function useSelection({
 
   /* Selection leaf */
 
+  const selectionRange = useSprig(selectionRangeSprig);
   const [promotedThread, setPromotedThread] = useState<PromotedSelectionThread | null>(null);
+
+  // A promotion ends when the selection moves, so selecting the same range
+  // again later shows the selection toolbar instead of replaying the thread.
+  if (promotedThread && !equalShallowObject(promotedThread.selection, selectionRange)) {
+    setPromotedThread(null);
+  }
+
   const selectionLeaf = useSprig(selectionLeafSprig, promotedThread);
 
   const promoteLeafToThread = useEffectEvent((threadIndex: number) => {
-    if (selectionLeaf?.kind !== "annotation") {
+    const thread = store.editor.getState().documentIndex.document.comments[threadIndex];
+
+    if (selectionLeaf?.kind !== "annotation" || !thread) {
       return;
     }
 
-    setPromotedThread({
-      anchor: selectionLeaf.anchor,
-      animateInitialComment: true,
-      leftOverride: selectionLeaf.leftOverride,
-      paddingY: selectionLeaf.paddingY,
-      selection: selectionLeaf.selection,
-      threadIndex,
-    });
+    setPromotedThread({ selection: selectionLeaf.selection, threadId: thread.id });
   });
 
   /* Handle drag */
@@ -86,9 +91,8 @@ export function useSelection({
   const stationarySelectionPointRef = useRef<EditorSelectionPoint | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
 
-  const clearDrag = useEffectEvent((event?: PointerEvent<HTMLDivElement>) => {
+  const clearDrag = useEffectEvent((event: PointerEvent<HTMLDivElement>) => {
     if (
-      event &&
       dragPointerIdRef.current === event.pointerId &&
       event.currentTarget.hasPointerCapture(event.pointerId)
     ) {
@@ -126,9 +130,7 @@ export function useSelection({
   });
 
   const createHandleProps = (kind: SelectionHandleKind): SelectionHandleProps => ({
-    onPointerCancel: (event) => {
-      clearDrag(event);
-    },
+    onPointerCancel: clearDrag,
     onPointerDown: (event) => {
       const stationarySelectionPoint = resolveStationarySelectionPoint(normalizedSelection, kind);
       const draggedSelectionPoint =

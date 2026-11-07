@@ -24,7 +24,6 @@ export function resolveCodeFont(baseFontSize: number) {
 type InlineTextStyle = {
   baselineShift: number;
   font: string;
-  hasCustomMetrics: boolean;
 };
 
 type InlineTextTypography = {
@@ -80,7 +79,12 @@ export function resolveInlineTextStyle(
     markTypography.fontScale === 1
       ? baseFont
       : scaleFontSize(baseFont, markTypography.fontScale, markTypography.minimumFontSize);
-  const parts = [markTypography.fontStyle, markTypography.fontWeight].filter(Boolean);
+  // Heading fonts already carry a `700` weight, and repeating it makes the
+  // font shorthand invalid, which canvas ignores and Pretext rejects.
+  const fontWeight = styledFont.startsWith(`${markTypography.fontWeight} `)
+    ? undefined
+    : markTypography.fontWeight;
+  const parts = [markTypography.fontStyle, fontWeight].filter(Boolean);
 
   const baselineShift =
     markTypography.baselineShiftRatio === 0
@@ -90,7 +94,6 @@ export function resolveInlineTextStyle(
   return {
     baselineShift,
     font: parts.length > 0 ? `${parts.join(" ")} ${styledFont}` : styledFont,
-    hasCustomMetrics: inlineTextHasCustomMetrics(marks),
   };
 }
 

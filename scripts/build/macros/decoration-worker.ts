@@ -1,26 +1,14 @@
 import { join } from "node:path";
-import { isMacroChild, projectRoot, runMacroChild } from "./child";
-
-const entrypoint = join(projectRoot, "src/component/decorations/worker/index.ts");
+import { projectRoot, runMacroChild } from "./child";
 
 export function bundleDecorationWorker(): string {
-  return runMacroChild(import.meta.path, "Decoration worker failed to bundle.");
+  return runMacroChild(import.meta.path);
 }
 
-async function emitDecorationWorker(): Promise<void> {
-  const build = await Bun.build({
-    entrypoints: [entrypoint],
-    target: "browser",
-    format: "esm",
-    minify: process.env.NODE_ENV === "production",
+if (import.meta.main) {
+  const { outputs } = await Bun.build({
+    entrypoints: [join(projectRoot, "src/component/decorations/worker/index.ts")],
+    minify: true,
   });
-  if (!build.success) {
-    build.logs.forEach(console.error);
-    process.exit(1);
-  }
-  const output = build.outputs.find((candidate) => candidate.kind === "entry-point");
-  if (!output) throw new Error("Decoration worker did not emit JavaScript.");
-  process.stdout.write(await output.text());
+  process.stdout.write(await outputs[0].text());
 }
-
-if (isMacroChild) await emitDecorationWorker();

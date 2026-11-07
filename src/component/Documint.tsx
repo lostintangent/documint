@@ -2,7 +2,7 @@
  * Public React host for the canvas editor. The component owns content-format
  * bridging, DOM lifecycle, viewport coordination, and hidden-input plumbing.
  */
-import { readEditorStyles } from "@macros/editor-styles" with { type: "macro" };
+import { compileEditorStyles } from "@macros/editor-styles" with { type: "macro" };
 import {
   useEffect,
   useEffectEvent,
@@ -11,9 +11,13 @@ import {
   useRef,
   useState,
   type HTMLAttributes,
-  type UIEvent,
 } from "react";
-import { extractPlainTextFromFragment, type Comment, type CommentThread } from "@/document";
+import {
+  extractPlainTextFromFragment,
+  isResolvedCommentThread,
+  type Comment,
+  type CommentThread,
+} from "@/document";
 import {
   addComment,
   copySelection,
@@ -47,7 +51,6 @@ import {
   paintDocumentFrame,
   paintOverlayFrame,
   type RendererEffect,
-  type RendererEffectInput,
   type DocumintEffects,
   type EditorTheme,
 } from "@/renderer";
@@ -110,7 +113,7 @@ import {
   useSprig,
 } from "./store";
 
-const editorCss = process.env.NODE_ENV === "test" ? "" : readEditorStyles();
+const editorCss = process.env.NODE_ENV === "test" ? "" : compileEditorStyles();
 export type { ActiveResourceSet, ResourceProtocolRecord } from "./hooks/useResources";
 export type { UserMentionEvent } from "./sync";
 
@@ -282,7 +285,6 @@ function DocumintHost({
     autoScrollDuringDrag,
     commitLayout,
     getScrollTop,
-    invalidateLayout,
     layout,
     resolvePoint,
     scrollContainerRef,
@@ -331,7 +333,6 @@ function DocumintHost({
   });
   const { commentPresence, resolvedPresence } = usePresence({ presence, users });
   const activeCommentIndex = useSprig(activeCommentIndexSprig, readOnly);
-  const readCurrentState = () => store.editor.getState();
   const resolvedGrammars = grammars === null ? null : { ...builtinGrammars, ...grammars };
   const { textDecorations } = useDecorations({
     decorations,
@@ -372,11 +373,11 @@ function DocumintHost({
     setMetadataExpanded((expanded) => !expanded);
   });
 
-  // Comment-changed emitters. Adds and edits read the freshly-applied state
-  // for their thread/comment payload; deletes are passed pre-state snapshots
-  // by their callers, since the comment is gone from post-state. The thread
-  // is never persisted across the call — each callsite either re-reads or
-  // captures it for the same reason. All three funnel through
+  // Comment-changed emitters. Adds and edits read the latest store state for
+  // their payload rather than the transition's, since a host's
+  // `onContentChanged` can replace content before the command returns.
+  // Deletes are passed the thread from the transition's previous state,
+  // since the comment is gone afterward. All three funnel through
   // `emitCommentChanged` so the diagnostic and host-callback dispatch live
   // in one place.
   const emitCommentChanged = (change: CommentChange) => {
@@ -387,7 +388,7 @@ function DocumintHost({
   };
 
   const emitCommentAdded = (threadIndex: number) => {
-    const thread = getCommentState(readCurrentState().documentIndex).threads[threadIndex];
+    const thread = getCommentState(store.editor.getState().documentIndex).threads[threadIndex];
     const comment = thread?.comments.at(-1);
     if (!thread || !comment) return;
     emitCommentChanged({
@@ -400,7 +401,7 @@ function DocumintHost({
   };
 
   const emitCommentEdited = (threadIndex: number, commentIndex: number, previousBody: string) => {
-    const thread = getCommentState(readCurrentState().documentIndex).threads[threadIndex];
+    const thread = getCommentState(store.editor.getState().documentIndex).threads[threadIndex];
     const comment = thread?.comments[commentIndex];
     if (!thread || !comment) return;
     emitCommentChanged({
@@ -420,16 +421,8 @@ function DocumintHost({
   const idle = useIdle();
   const scrollbar = useScrollbar();
 
-  const cursor = useCursor({
-    activeAt: idle.activeAt,
-    getScrollTop,
-    readOnly,
-    scrollTo,
-    viewportWidth,
-    viewportHeight,
-  });
-
   const input = useInput({
+    canvasRef: contentCanvasRef,
     enableTouchKeyDown: documentCompletions.leaf !== null || search.leaf !== null,
     inputRef,
     keybindings,
@@ -439,6 +432,16 @@ function DocumintHost({
     onKeyDown: (event) => search.handleKeyDown(event) || documentCompletions.handleKeyDown(event),
     onImagePaste: persistImage,
     readOnly,
+  });
+
+  const cursor = useCursor({
+    activeAt: idle.activeAt,
+    focused: input.focused,
+    getScrollTop,
+    readOnly,
+    scrollTo,
+    viewportWidth,
+    viewportHeight,
   });
 
   // Return focus to the editor's input bridge when search closes, so the
@@ -576,7 +579,7 @@ function DocumintHost({
 
         return (
           hasActiveResourcesInViewport(editorState, layoutState, resourceRegistry) ||
-          hasAnimatedDecorationsInViewport(editorState, layoutState, textDecorations) ||
+          hasAnimatedDecorationsInViewport(layoutState, textDecorations) ||
           hasActiveCommentHighlightsInViewport(layoutState, commentRanges, commentPresence)
         );
       },
@@ -591,10 +594,10 @@ function DocumintHost({
     // invalidate immediately so any imperative layout read after the
     // transition resolves against the new structure.
     if (transition.documentChanged) {
-      invalidateLayout();
+      layout.invalidate();
     }
 
-    if (transition.hasNewEffects) {
+    if (transition.effects.length > 0) {
       // All default editor effects are content-layer effects. None affect
       // layout or overlay, so a content paint is sufficient.
       scheduleContentPaint({ effects: transition.effects });
@@ -624,20 +627,6 @@ function DocumintHost({
     [subscribeVisibility, scheduleOverlayPaint],
   );
 
-  // The scheduler and viewport actions are Effect Events returned by custom
-  // hooks. Bridge them locally so exhaustive-deps can preserve that contract
-  // without treating their stable identities as reactive inputs.
-  const requestLayoutRender = useEffectEvent(() => {
-    invalidateLayout();
-    scheduleFullRender();
-  });
-  const requestFullPaint = useEffectEvent(() => scheduleFullPaint());
-  const requestContentPaint = useEffectEvent(() => scheduleContentPaint());
-  const requestContentPaintWithEffects = useEffectEvent((effects: readonly RendererEffectInput[]) =>
-    scheduleContentPaint({ effects }),
-  );
-  const requestOverlayPaint = useEffectEvent(() => scheduleOverlayPaint());
-
   // Sync `useViewport`'s scroll metrics and schedule a render after any
   // scroll position change — whether driven by the user (native scroll event)
   // or programmatically (e.g. offscreen presence navigation). Stable identity
@@ -646,10 +635,6 @@ function DocumintHost({
     scrollbar.sync(scrollContainer);
     syncScrollContainer(scrollContainer);
     scheduleFullRender();
-  });
-
-  const handleScrollEvent = useEffectEvent((event: UIEvent<HTMLDivElement>) => {
-    handleViewportScroll(event.currentTarget);
   });
 
   const scrollToPresence = useEffectEvent((target: EditorPresence) => {
@@ -723,13 +708,16 @@ function DocumintHost({
   // paint. Active resource changes are paint-only; protocol metadata affects
   // resource pill measurement, but active state only affects color/effects.
   useEffect(() => {
-    requestLayoutRender();
+    layout.invalidate();
+    scheduleFullRender();
   }, [
     editorState.documentIndex,
+    layout,
     renderResources.images,
     metadataExpanded,
     resolvedTheme,
     resourceProtocols.layoutKey,
+    scheduleFullRender,
     viewportWidth,
     viewportHeight,
   ]);
@@ -746,41 +734,41 @@ function DocumintHost({
   // requires reworking the painters to keep selection backgrounds visually
   // under text.
   useEffect(() => {
-    requestFullPaint();
+    scheduleFullPaint();
   }, [
     normalizedSel.end.offset,
     normalizedSel.end.path,
     normalizedSel.start.offset,
     normalizedSel.start.path,
+    scheduleFullPaint,
     selectionContext.block?.blockPath,
   ]);
 
-  // Decorations and comment-highlight changes — content layer only, no overlay impact.
-  // (See note on the selection effect above for the future overlay move.)
+  // Decoration, comment-highlight, and active-resource changes — content layer
+  // only, no overlay impact. (See note on the selection effect above for the
+  // future overlay move.)
   useEffect(() => {
-    requestContentPaint();
+    scheduleContentPaint();
   }, [
     activeCommentIndex,
+    activeResourceKey,
     commentRanges,
     hoveredCommentThreadIndex,
     commentPresence,
+    scheduleContentPaint,
     textDecorations,
   ]);
 
   useEffect(() => {
-    requestContentPaintWithEffects(syncEffects);
-  }, [documentChanges, syncEffects]);
+    scheduleContentPaint({ effects: syncEffects });
+  }, [documentChanges, scheduleContentPaint, syncEffects]);
 
   // Resolved presence affects the overlay canvas and DOM overlay. Comment-thread
   // presence is also handled by the content-layer effect above because it paints
   // comment rules.
   useEffect(() => {
-    requestOverlayPaint();
-  }, [resolvedPresence]);
-
-  useEffect(() => {
-    requestContentPaint();
-  }, [activeResourceKey]);
+    scheduleOverlayPaint();
+  }, [resolvedPresence, scheduleOverlayPaint]);
 
   /* Leaf presentation */
 
@@ -851,14 +839,13 @@ function DocumintHost({
             completionSources={completionSources}
             readOnly={readOnly}
             onCreateThread={(body) => {
-              const currentState = readCurrentState();
-              const threadIndex = currentState.documentIndex.document.comments.length;
               const transition = addCommentCommand(activeDocumentLeaf.selection, body.trim());
 
               if (!transition) {
                 return;
               }
 
+              const threadIndex = transition.previous.documentIndex.document.comments.length;
               selection.promoteLeafToThread(threadIndex);
               emitCommentAdded(threadIndex);
             }}
@@ -877,21 +864,21 @@ function DocumintHost({
             readOnly={readOnly}
             onDeleteComment={(commentIndex) => {
               const { threadIndex } = activeDocumentLeaf;
-              const previousState = readCurrentState();
-              const thread = getCommentState(previousState.documentIndex).threads[threadIndex];
-              const comment = thread?.comments[commentIndex];
               const transition = deleteCommentCommand(threadIndex, commentIndex);
               if (!transition) return;
+              const { threads } = getCommentState(transition.previous.documentIndex);
+              const thread = threads[threadIndex];
+              const comment = thread?.comments[commentIndex];
               if (thread && comment) {
                 emitCommentDeleted(thread, comment);
               }
             }}
             onDeleteThread={() => {
               const { threadIndex } = activeDocumentLeaf;
-              const previousState = readCurrentState();
-              const thread = getCommentState(previousState.documentIndex).threads[threadIndex];
               const transition = deleteThreadCommand(threadIndex);
               if (!transition) return;
+              const { threads } = getCommentState(transition.previous.documentIndex);
+              const thread = threads[threadIndex];
               if (thread) {
                 for (const comment of thread.comments) {
                   emitCommentDeleted(thread, comment);
@@ -900,11 +887,10 @@ function DocumintHost({
             }}
             onEditComment={(commentIndex, body) => {
               const { threadIndex } = activeDocumentLeaf;
-              const previousState = readCurrentState();
-              const previousBody = getCommentState(previousState.documentIndex).threads[threadIndex]
-                ?.comments[commentIndex]?.body;
               const transition = editCommentCommand(threadIndex, commentIndex, body);
               if (!transition) return;
+              const { threads } = getCommentState(transition.previous.documentIndex);
+              const previousBody = threads[threadIndex]?.comments[commentIndex]?.body;
               if (previousBody !== undefined) {
                 emitCommentEdited(threadIndex, commentIndex, previousBody);
               }
@@ -916,7 +902,10 @@ function DocumintHost({
               emitCommentAdded(threadIndex);
             }}
             onToggleResolved={() => {
-              resolveThreadCommand(activeDocumentLeaf.threadIndex, !activeDocumentLeaf.resolved);
+              resolveThreadCommand(
+                activeDocumentLeaf.threadIndex,
+                !isResolvedCommentThread(activeDocumentLeaf.thread),
+              );
             }}
             presence={commentPresence.get(activeDocumentLeaf.threadIndex) ?? null}
             thread={activeDocumentLeaf.thread}
@@ -927,29 +916,18 @@ function DocumintHost({
     }
   };
 
-  // Skip building the leaf's React tree when no leaf is active. The window
-  // check happens in `DocumentLeafAnchor`, which returns null off-screen.
-  const documentLeafContent = activeDocumentLeaf ? resolveDocumentLeafContent() : null;
-
   /* Render */
 
   const sectionClassName = className ? `documint ${className}` : "documint";
 
   return (
     <OverlayPortalProvider themeStyles={themeStyles}>
-      <section
-        className={sectionClassName}
-        style={{ ...themeStyles, height: "100%", minHeight: 0 }}
-      >
+      <section className={sectionClassName} style={{ ...themeStyles, height: "100%" }}>
         <style>{editorCss}</style>
         <div
           ref={scrollContainerRef}
-          onScroll={handleScrollEvent}
+          onScroll={(event) => handleViewportScroll(event.currentTarget)}
           className="documint-scroll-container"
-          style={{
-            height: "100%",
-            minHeight: 0,
-          }}
         >
           <textarea
             {...input.inputHandlers}
@@ -1029,14 +1007,13 @@ function DocumintHost({
             {/* Leaf overlay */}
             {activeDocumentLeaf ? (
               <DocumentLeafAnchor
-                editorState={editorState}
                 hover={hoverLeafHandlers}
                 scrollContainerRef={scrollContainerRef}
                 target={activeDocumentLeaf}
                 viewportHeight={viewportHeight}
                 viewportTop={viewportTop}
               >
-                {documentLeafContent}
+                {resolveDocumentLeafContent()}
               </DocumentLeafAnchor>
             ) : null}
           </div>

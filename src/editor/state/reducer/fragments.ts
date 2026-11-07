@@ -18,6 +18,7 @@ import {
   replaceBlockChildren,
   type Block,
 } from "@/document";
+import { editorInlineTextLength } from "../../text/inline-offsets";
 
 type TextLikeBlock = Extract<Block, { type: "heading" | "paragraph" }>;
 type CaretTarget = { childIndices: number[]; offset: number | "end" };
@@ -29,6 +30,7 @@ type MergeResult = {
   caretOffset: number | "end";
   startPathInsertedText: string;
   startPathPreservedAtRoot0: boolean;
+  suffixLeavesStartPath: boolean;
 };
 
 // Joins a trimmed prefix root and a trimmed suffix root with a fragment of
@@ -66,6 +68,10 @@ export function mergeTrimmedBlocks(
   // multi-block paste with no prefix), optimistic comment repair has no
   // reliable offset math; flip this off so the full resolver takes over.
   let startPathPreservedAtRoot0 = prefix !== null;
+  // Whether the suffix ends up in a later block or container child instead of
+  // right after the inserted text in the start path, where offset repair
+  // can't track it.
+  let suffixLeavesStartPath = false;
 
   if (prefix) {
     blocks.push(prefix);
@@ -80,7 +86,7 @@ export function mergeTrimmedBlocks(
     if (isTextLikeBlock(prefix) && head.type === "paragraph") {
       const merged = concatTextLikeChildren(prefix, prefix.children, head.children);
       blocks[blocks.length - 1] = merged;
-      caret = { childIndices: [], offset: merged.plainText.length };
+      caret = { childIndices: [], offset: editorTextLength(merged) };
       absorbedFromFront = 1;
       startPathInsertedText = head.plainText;
     } else if (canPeelContainers(prefix, head)) {
@@ -99,6 +105,7 @@ export function mergeTrimmedBlocks(
   }
 
   if (suffix) {
+    suffixLeavesStartPath = true;
     const tailIndex = blocks.length - 1;
     const tail = blocks[tailIndex] ?? null;
     const isBridge = absorbedFromFront >= fragment.length && prefix !== null;
@@ -110,9 +117,11 @@ export function mergeTrimmedBlocks(
         if (prefix === null && fragment.length === 1) {
           startPathPreservedAtRoot0 = true;
           startPathInsertedText = tail.plainText;
+          suffixLeavesStartPath = false;
         }
       } else if (isBridge && isTextLikeBlock(tail) && isTextLikeBlock(suffix)) {
         merged = concatTextLikeChildren(tail, tail.children, suffix.children);
+        suffixLeavesStartPath = false;
       } else if (canPeelContainers(tail, suffix)) {
         merged = peelContainers(tail, suffix);
         const leftChildren = getBlockChildren(tail)!;
@@ -120,6 +129,7 @@ export function mergeTrimmedBlocks(
       }
     } else if (prefix === null && fragment.length === 0) {
       startPathPreservedAtRoot0 = true;
+      suffixLeavesStartPath = false;
     }
 
     if (merged) {
@@ -136,13 +146,22 @@ export function mergeTrimmedBlocks(
     caretOffset: caret.offset,
     startPathInsertedText,
     startPathPreservedAtRoot0,
+    suffixLeavesStartPath,
   };
 }
 
 function caretAtBlockEnd(block: Block): CaretTarget {
   return getBlockChildren(block)
     ? caretAtLastChildEnd(block)
-    : { childIndices: [], offset: block.plainText.length };
+    : { childIndices: [], offset: editorTextLength(block) };
+}
+
+// Carets count editor text, where a reference is one unit, so they can't use
+// `plainText`, which spells out alt text and mention labels.
+function editorTextLength(block: Block): number {
+  return isTextLikeBlock(block)
+    ? block.children.reduce((length, child) => length + editorInlineTextLength(child), 0)
+    : block.plainText.length;
 }
 
 function caretAtLastChildEnd(block: Block): CaretTarget {

@@ -7,7 +7,7 @@ export type HostMessage =
       data: ArrayBuffer | null;
       mimeType?: string;
     }
-  | { type: "write-result"; id: string; path: string };
+  | { type: "write-result"; id: string; path: string | null };
 
 // Webview -> host communication
 export type WebviewMessage =

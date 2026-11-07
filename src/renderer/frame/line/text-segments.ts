@@ -1,5 +1,4 @@
-import type { Mark } from "@/document";
-import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
+import { resolveInlineImageBounds, type EditorLayoutState, type LayoutRect } from "@/editor/layout";
 import type { IndexedInline } from "@/editor/state";
 import { findInlinesInRange } from "@/editor/state";
 import { resolveInlineTextStyle } from "@/editor/text/fonts";
@@ -29,10 +28,6 @@ type TextPillFrame = {
   textBaseline: number;
 };
 
-type LayoutInlineReference = NonNullable<
-  EditorLayoutState["layout"]["lines"][number]["inlineReferences"]
->[number];
-
 type SegmentPaintBase = {
   atom: TextSegmentAtom;
   font: string;
@@ -51,7 +46,11 @@ export type TextRunSegment = SegmentPaintBase & {
   strikethrough: boolean;
 };
 
-export type ImageSegment = SegmentPaintBase & { atom: "image"; image: { url: string } };
+export type ImageSegment = SegmentPaintBase & {
+  atom: "image";
+  image: { url: string };
+  rect: LayoutRect;
+};
 export type MentionSegment = SegmentPaintBase & {
   atom: "mention";
   mentionName: string;
@@ -133,96 +132,80 @@ function createInlineTextSegment(
   end: number,
   text: string,
 ): TextSegment {
-  const { left, right } = resolveLineSegmentBounds(input.line, input.textLeft, start, end);
-  const marks = inline.node.type === "text" ? inline.node.marks : [];
-  const inlineStyle = resolveInlineTextStyle(
-    { baseFontSize: input.baseFontSize, font: input.line.font },
+  const { line, theme } = input;
+  const { left, right } = resolveLineSegmentBounds(line, input.textLeft, start, end);
+  const { node } = inline;
+  const marks = node.type === "text" ? node.marks : [];
+  const { baselineShift, font } = resolveInlineTextStyle(
+    { baseFontSize: input.baseFontSize, font: line.font },
     marks,
   );
-  const atom = resolveTextSegmentAtom(inline, marks);
-  const link = Boolean(inline.link);
-  const resource =
-    inline.node.type === "resource"
-      ? resolveResourceSegmentFrame(
-          resolveResource(inline.node, input.resources.resourceRegistry),
-          resolveInlineReferenceMetric(input.line, inline),
-          left,
-        )
-      : null;
-  const image = inline.node.type === "image" ? { url: inline.node.url } : null;
-  const mentionName = inline.node.type === "mention" ? inline.node.name : null;
-  const baseSegment: SegmentPaintBase = {
-    atom,
-    font: inlineStyle.font,
-    left,
-    right,
-  };
-  const baseline = input.textBaseline + inlineStyle.baselineShift;
 
-  switch (atom) {
-    case "image":
-      return image ? { ...baseSegment, atom, image } : createTextRunSegment();
+  // Atoms fall back to a text run when their content or resource is missing.
+  switch (node.type) {
+    case "image": {
+      const reference = resolveInlineReference(line, inline);
+
+      if (reference?.kind === "image") {
+        const rect = resolveInlineImageBounds(line, reference);
+        return { atom: "image", font, image: { url: node.url }, left, rect, right };
+      }
+      break;
+    }
     case "mention":
-      return mentionName
-        ? {
-            ...baseSegment,
-            atom,
-            mentionName,
-            pill: resolveTextPillFrame(input.line, inlineStyle.font, left, right),
-            textLeft: left + mentionHorizontalPadding,
-          }
-        : createTextRunSegment();
-    case "resource":
-      return resource
-        ? {
-            ...baseSegment,
-            atom,
-            pill: resolveTextPillFrame(input.line, inlineStyle.font, left, right),
-            resource,
-          }
-        : createTextRunSegment();
-    default:
-      return createTextRunSegment();
+      if (node.name) {
+        return {
+          atom: "mention",
+          font,
+          left,
+          mentionName: node.name,
+          pill: resolveTextPillFrame(line, font, left, right),
+          right,
+          textLeft: left + mentionHorizontalPadding,
+        };
+      }
+      break;
+    case "resource": {
+      const resource = resolveResource(node, input.resources.resourceRegistry);
+
+      if (resource) {
+        const reference = resolveInlineReference(line, inline);
+        const iconSegmentWidth = reference?.kind === "resource" ? reference.iconSegmentWidth : 0;
+
+        return {
+          atom: "resource",
+          font,
+          left,
+          pill: resolveTextPillFrame(line, font, left, right),
+          resource: {
+            iconSegmentWidth,
+            icon: resource.icon,
+            isActive: resource.isActive,
+            labelLeft: left + iconSegmentWidth + resourceHorizontalPadding,
+            label: resource.label,
+          },
+          right,
+        };
+      }
+      break;
+    }
   }
 
-  function createTextRunSegment(): TextRunSegment {
-    return {
-      ...baseSegment,
-      atom: atom === "inline-code" ? "inline-code" : "text",
-      baseline,
-      color:
-        atom === "inline-code"
-          ? input.theme.inlineCodeText
-          : link
-            ? input.theme.linkText
-            : input.defaultTextColor,
-      end,
-      start,
-      strikethrough: marks.includes("strikethrough"),
-      text,
-      underline: marks.includes("underline") || link,
-    };
-  }
-}
-
-function resolveResourceSegmentFrame(
-  resource: ReturnType<typeof resolveResource>,
-  inlineReference: LayoutInlineReference | null,
-  left: number,
-): ResourceSegmentFrame | null {
-  if (!resource) {
-    return null;
-  }
-
-  const iconSegmentWidth =
-    inlineReference?.kind === "resource" ? inlineReference.iconSegmentWidth : 0;
+  const code = marks.includes("code");
+  const link = Boolean(inline.link);
 
   return {
-    iconSegmentWidth,
-    icon: resource.icon,
-    isActive: resource.isActive,
-    labelLeft: left + iconSegmentWidth + resourceHorizontalPadding,
-    label: resource.label,
+    atom: code ? "inline-code" : "text",
+    baseline: input.textBaseline + baselineShift,
+    color: code ? theme.inlineCodeText : link ? theme.linkText : input.defaultTextColor,
+    end,
+    font,
+    left,
+    right,
+    start,
+    strikethrough: marks.includes("strikethrough"),
+    text,
+    underline: marks.includes("underline") || link,
   };
 }
 
@@ -248,28 +231,13 @@ function resolveTextPillFrame(
   };
 }
 
-function resolveInlineReferenceMetric(
+function resolveInlineReference(
   line: EditorLayoutState["layout"]["lines"][number],
   inline: IndexedInline,
 ) {
-  return (
-    line.inlineReferences?.find(
-      (reference) => reference.start === inline.start && reference.end === inline.end,
-    ) ?? null
+  return line.inlineReferences?.find(
+    (reference) => reference.start === inline.start && reference.end === inline.end,
   );
-}
-
-function resolveTextSegmentAtom(inline: IndexedInline, marks: readonly Mark[]): TextSegmentAtom {
-  switch (inline.node.type) {
-    case "image":
-      return "image";
-    case "mention":
-      return "mention";
-    case "resource":
-      return "resource";
-    default:
-      return marks.includes("code") ? "inline-code" : "text";
-  }
 }
 
 const textPill = {

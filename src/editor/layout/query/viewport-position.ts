@@ -39,7 +39,7 @@ export function resolvePositionInViewport(
  *
  * `margin` is clamped to at most a quarter of the viewport height so very
  * short viewports still resolve sensibly. The result is clamped to the
- * scrollable range `[0, totalHeight - viewportHeight]`.
+ * scrollable range `[0, layout.height - viewportHeight]`.
  */
 export function resolveScrollTopToReveal(
   viewport: EditorLayoutState,
@@ -47,7 +47,7 @@ export function resolveScrollTopToReveal(
   options: { align?: ScrollRevealAlignment; margin?: number } = {},
 ): number {
   const viewportHeight = viewport.viewport.height;
-  const maxScrollTop = Math.max(0, viewport.totalHeight - viewportHeight);
+  const maxScrollTop = Math.max(0, viewport.layout.height - viewportHeight);
   const margin = Math.min(options.margin ?? DEFAULT_SCROLL_REVEAL_MARGIN, viewportHeight / 4);
   const align = resolveScrollRevealAlignment(viewport, bounds, options.align ?? "auto", margin);
   const candidate =

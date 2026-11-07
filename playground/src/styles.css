@@ -1,17 +1,17 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #ffffff;
-  --color-foreground: #1f2937;
+  --color-background: light-dark(#ffffff, #0f172a);
+  --color-foreground: light-dark(#1f2937, #e2e8f0);
   --color-accent: #0ea5e9;
-  --color-muted: #475569;
-  --color-border: #0f172a;
+  --color-muted: light-dark(#475569, #94a3b8);
+  --color-border: light-dark(#0f172a, #e2e8f0);
 
   --font-prose: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
   --font-controls: "Avenir Next", "Segoe UI", sans-serif;
   --font-code: "SFMono-Regular", "Consolas", monospace;
 
-  --shadow-popover: 0 24px 60px color-mix(in oklab, var(--color-border) 12%, transparent);
+  --shadow-popover: 0 24px 60px color-mix(in oklab, #0f172a 12%, transparent);
   --shadow-swatch: inset 0 0 0 1px color-mix(in oklab, var(--color-border) 15%, transparent);
 }
 
@@ -23,17 +23,22 @@
 }
 
 @layer base {
+  /* Follows the OS until Playground.tsx pins it to the editor theme's mode. */
   :root {
+    color-scheme: light dark;
     color: var(--color-foreground);
     font-family: var(--font-prose);
-    background-color: var(--color-sky-100);
+    --page-glow: light-dark(var(--color-blue-200), var(--color-blue-950));
+    --page-top: light-dark(var(--color-slate-50), var(--color-slate-950));
+    --page-bottom: light-dark(var(--color-sky-100), var(--color-slate-900));
+    background-color: var(--page-bottom);
     background-image:
       radial-gradient(
         circle at top left,
-        color-mix(in oklab, var(--color-blue-200) 85%, transparent),
+        color-mix(in oklab, var(--page-glow) 85%, transparent),
         transparent 38%
       ),
-      linear-gradient(180deg, var(--color-slate-50) 0%, var(--color-sky-100) 100%);
+      linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
     background-attachment: fixed;
   }
 

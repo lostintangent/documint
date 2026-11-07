@@ -5,54 +5,48 @@
 import {
   createParagraphBlock,
   extractPlainTextFromFragment,
-  extractPlainTextFromInlineNodes,
   rootBlockPath,
   type Fragment,
 } from "@/document";
 import { resolveInlineContext, type InlineContext } from "../commands/context";
 import { effect } from "../effects";
-import { resolveFragmentEndpoint, type FragmentEndpoint } from "./context";
+import { resolveFragmentRange, type FragmentEndpoint } from "./context";
 import type { DocumentIndex } from "../index/types";
 import { resolveBlockTextPathBoundary, resolveIndexedText } from "../index/query";
-import {
-  normalizeSelection,
-  type EditorSelection,
-  type NormalizedEditorSelection,
-} from "../selection";
+import type { EditorSelection } from "../selection";
 import type { EditorState, EditorStateAction } from "../types";
 import { insertInlines } from "../commands/actions/inlines";
-
-type FragmentDestinationContext = {
-  prefersVerbatimFallback: boolean;
-  samePath: boolean;
-  structuralBlocked: boolean;
-};
+import { editorInlinesText } from "../../text/inline-offsets";
 
 type PasteFragmentContext = {
-  destination: FragmentDestinationContext;
   documentIndex: DocumentIndex;
   inlineContext: InlineContext | null;
+  prefersVerbatimFallback: boolean;
   selection: EditorSelection;
+  structuralBlocked: boolean;
 };
 
 // --- Paste context ----------------------------------------------------------
 
-export function resolvePasteFragmentContext(
-  state: EditorState,
-  _fragment: Fragment,
-  _verbatimFallback?: string,
-): PasteFragmentContext | null {
-  const destination = resolveFragmentDestinationContext(state.documentIndex, state.selection);
+export function resolvePasteFragmentContext(state: EditorState): PasteFragmentContext | null {
+  const { documentIndex, selection } = state;
+  const range = resolveFragmentRange(documentIndex, selection);
 
-  if (!destination) {
+  if (!range) {
     return null;
   }
 
+  const { collapsed, end, start } = range;
+
   return {
-    destination,
-    documentIndex: state.documentIndex,
-    inlineContext: destination.samePath ? resolveInlineContext(state) : null,
-    selection: state.selection,
+    documentIndex,
+    inlineContext: resolveInlineContext(state),
+    prefersVerbatimFallback:
+      start.indexedBlock.block.type === "code" || end.indexedBlock.block.type === "code",
+    selection,
+    structuralBlocked:
+      cutsThroughOpaqueRoot(documentIndex, start, "start", collapsed) ||
+      cutsThroughOpaqueRoot(documentIndex, end, "end", collapsed),
   };
 }
 
@@ -90,19 +84,16 @@ function resolveFragmentApplication(
 
       // Single-path inline paste: splice the inlines directly into the
       // destination leaf, so the surrounding container stays intact.
-      if (context.destination.samePath) {
-        const action = context.inlineContext
-          ? insertInlines(context.inlineContext, fragment.inlines)
-          : null;
-        if (action) {
-          return action;
-        }
+      const action =
+        context.inlineContext && insertInlines(context.inlineContext, fragment.inlines);
+      if (action) {
+        return action;
       }
 
       // Cross-path or unsupported destination: synthesize a paragraph and
       // use the structural path. Opaque roots reject the same way `blocks`
       // does.
-      if (context.destination.structuralBlocked) {
+      if (context.structuralBlocked) {
         return null;
       }
 
@@ -113,7 +104,7 @@ function resolveFragmentApplication(
     }
 
     case "blocks":
-      if (fragment.blocks.length === 0 || context.destination.structuralBlocked) {
+      if (fragment.blocks.length === 0 || context.structuralBlocked) {
         return null;
       }
 
@@ -137,7 +128,7 @@ function resolveOpaqueFragmentFallback(
   // original clipboard payload. Table cells, or code blocks without a
   // verbatim source, take the fragment's plain-text projection.
   const fallbackText =
-    context.destination.prefersVerbatimFallback && verbatimFallback && verbatimFallback.length > 0
+    context.prefersVerbatimFallback && verbatimFallback && verbatimFallback.length > 0
       ? verbatimFallback
       : extractPlainTextFromFragment(fragment);
 
@@ -146,10 +137,12 @@ function resolveOpaqueFragmentFallback(
 
 // --- Paste effects ----------------------------------------------------------
 
-// The text that paste landed inline in the destination path. For `text` and
-// `inlines`, that's the whole payload. For a single-paragraph block fragment,
-// it's the paragraph's text because the seam merge absorbs it into the
-// destination block's inline content. Multi-block fragments report empty text.
+// The editor text that paste landed inline in the destination path, with each
+// reference as one unit so the highlight spans exactly the pasted content. For
+// `text` and `inlines`, that's the whole payload. For a single-paragraph block
+// fragment, it's the paragraph's text because the seam merge absorbs it into
+// the destination block's inline content. Multi-block fragments report empty
+// text.
 function resolvePastedInlineText(action: EditorStateAction, fragment: Fragment): string {
   if (action.kind === "splice-text") {
     return action.text;
@@ -167,10 +160,10 @@ function inlineInsertionText(fragment: Fragment): string {
     case "text":
       return fragment.text;
     case "inlines":
-      return extractPlainTextFromInlineNodes(fragment.inlines);
+      return editorInlinesText(fragment.inlines);
     case "blocks":
       return fragment.blocks.length === 1 && fragment.blocks[0]!.type === "paragraph"
-        ? fragment.blocks[0]!.plainText
+        ? editorInlinesText(fragment.blocks[0]!.children)
         : "";
   }
 }
@@ -191,37 +184,6 @@ function withPastedInlineTextHighlight(
 
 // --- Destination classification --------------------------------------------
 
-function resolveFragmentDestinationContext(
-  documentIndex: DocumentIndex,
-  selection: EditorSelection,
-): FragmentDestinationContext | null {
-  const normalized = normalizeSelection(documentIndex, selection);
-  const startEndpoint = resolveFragmentEndpoint(documentIndex, normalized.start.path);
-  const endEndpoint = resolveFragmentEndpoint(documentIndex, normalized.end.path);
-
-  if (!startEndpoint || !endEndpoint) {
-    return null;
-  }
-
-  const structuralBlocked =
-    cutsThroughOpaqueRoot(
-      documentIndex,
-      startEndpoint,
-      normalized.start.offset,
-      "start",
-      normalized,
-    ) ||
-    cutsThroughOpaqueRoot(documentIndex, endEndpoint, normalized.end.offset, "end", normalized);
-
-  return {
-    prefersVerbatimFallback:
-      startEndpoint.indexedBlock.block.type === "code" ||
-      endEndpoint.indexedBlock.block.type === "code",
-    samePath: startEndpoint.path === endEndpoint.path,
-    structuralBlocked,
-  };
-}
-
 function isOpaqueEndpoint(endpoint: FragmentEndpoint): boolean {
   return (
     endpoint.indexedBlock.block.type === "table" || endpoint.indexedBlock.block.type === "code"
@@ -231,25 +193,23 @@ function isOpaqueEndpoint(endpoint: FragmentEndpoint): boolean {
 function cutsThroughOpaqueRoot(
   documentIndex: DocumentIndex,
   endpoint: FragmentEndpoint,
-  offset: number,
   boundary: "end" | "start",
-  selection: NormalizedEditorSelection,
+  collapsed: boolean,
 ): boolean {
   if (!isOpaqueEndpoint(endpoint)) {
     return false;
   }
 
-  if (selection.collapsed) {
+  if (collapsed) {
     return true;
   }
 
-  return !isRootBoundary(documentIndex, endpoint, offset, boundary);
+  return !isRootBoundary(documentIndex, endpoint, boundary);
 }
 
 function isRootBoundary(
   documentIndex: DocumentIndex,
   endpoint: FragmentEndpoint,
-  offset: number,
   boundary: "end" | "start",
 ): boolean {
   const rootBoundaryPath = resolveBlockTextPathBoundary(
@@ -262,5 +222,5 @@ function isRootBoundary(
     : null;
   const endpointOffset = boundary === "start" ? 0 : boundaryText?.text.length;
 
-  return rootBoundaryPath === endpoint.path && offset === endpointOffset;
+  return rootBoundaryPath === endpoint.path && endpoint.offset === endpointOffset;
 }

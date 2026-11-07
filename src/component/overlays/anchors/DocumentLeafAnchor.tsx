@@ -5,7 +5,7 @@
 // `layout.get()` on the stable store identity, so they would go stale.
 
 import type { ReactNode, RefObject } from "react";
-import { measureVisualCaretTarget, type EditorState } from "@/editor";
+import { measureVisualCaret } from "@/editor";
 import { useSprig } from "../../store/react";
 import { renderedLayoutSprig } from "../../store/layout/sprigs";
 import { DocumentAnchor } from "./DocumentAnchor";
@@ -13,7 +13,6 @@ import type { DocumentAnchorResolution, DocumentAnchorTarget } from "../leaves/c
 
 type DocumentLeafAnchorProps = {
   children: ReactNode;
-  editorState: EditorState;
   // Set only while the pointer is hovering this leaf, which enables the
   // hover bridge.
   hover: Pick<DocumentAnchorResolution, "onPointerEnter" | "onPointerLeave"> | null;
@@ -25,7 +24,6 @@ type DocumentLeafAnchorProps = {
 
 export function DocumentLeafAnchor({
   children,
-  editorState,
   hover,
   scrollContainerRef,
   target,
@@ -38,29 +36,31 @@ export function DocumentLeafAnchor({
     return null;
   }
 
-  const measured = measureVisualCaretTarget(editorState, renderedLayout, target.anchor);
+  const measured = measureVisualCaret(renderedLayout.layout, target.anchor)?.caret;
   if (!measured) {
     return null;
   }
 
-  // Hide anchors whose line falls outside the visible window, the same gate
+  // Hide anchors whose bottom falls outside the visible window, the same gate
   // the canvas painter applies to the caret.
-  const anchorBottom = measured.top + measured.height;
-  const viewportBottom = viewportTop + viewportHeight;
-  if (anchorBottom <= viewportTop || anchorBottom >= viewportBottom) {
+  const { bottom, top } = target.extentOverride ?? {
+    bottom: measured.top + measured.height,
+    top: measured.top,
+  };
+  if (bottom <= viewportTop || bottom >= viewportTop + viewportHeight) {
     return null;
   }
 
   // Scroll-container coords. `DocumentAnchor` maps them to document space
   // after commit, which keeps this render free of DOM reads.
   const anchor: DocumentAnchorResolution = {
-    anchorHeight: measured.height,
+    anchorHeight: bottom - top,
     bridge: hover !== null,
     left: target.leftOverride ?? measured.left,
     onPointerEnter: hover?.onPointerEnter,
     onPointerLeave: hover?.onPointerLeave,
     paddingY: target.paddingY ?? 0,
-    top: anchorBottom - viewportTop,
+    top: bottom - viewportTop,
   };
 
   return (

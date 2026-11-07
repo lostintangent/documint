@@ -27,6 +27,7 @@ export {
   normalizedSelectionSprig,
   selectionContextSprig,
   selectionHandlesSprig,
+  selectionRangeSprig,
   type DocumentCompletion,
   type ImageAtCursor,
 } from "./editor/computed-sprigs";

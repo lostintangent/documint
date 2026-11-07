@@ -218,23 +218,16 @@ export function usePointer({
     setHoverTarget(null);
   }
 
-  // Cancel any in-flight hide on unmount so we don't call setState on a
-  // torn-down hook.
-  useEffect(
-    () => () => {
-      if (hideTimeoutRef.current !== null) {
-        window.clearTimeout(hideTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
   const cancelHide = useEffectEvent(() => {
     if (hideTimeoutRef.current !== null) {
       window.clearTimeout(hideTimeoutRef.current);
       hideTimeoutRef.current = null;
     }
   });
+
+  // Cancel any in-flight hide on unmount so we don't call setState on a
+  // torn-down hook.
+  useEffect(() => () => cancelHide(), []);
 
   const scheduleHide = useEffectEvent(() => {
     cancelHide();
@@ -246,21 +239,17 @@ export function usePointer({
     }, HOVER_HIDE_DELAY_MS);
   });
 
-  const clearLeafIfPointerIsOutsideLeaf = useEffectEvent(() => {
-    if (!isLeafHoveredRef.current) {
-      cancelHide();
+  // Leaves sit above the canvas, so a canvas move means the pointer is off
+  // every leaf. That also clears a leaf that unmounted under the pointer
+  // (e.g. Remove link), which never fires pointerleave.
+  const applyHoverTarget = useEffectEvent((target: EditorHoverTarget | null) => {
+    isLeafHoveredRef.current = false;
+    cancelHide();
+    if (target && isHoverableTarget(target, readOnly)) {
+      setHoverTarget((previous) => (isSameHoverTarget(previous, target) ? previous : target));
+    } else {
       setHoverTarget(null);
     }
-  });
-
-  const applyHoverTarget = useEffectEvent((target: EditorHoverTarget | null) => {
-    if (!target || !isHoverableTarget(target, readOnly)) {
-      clearLeafIfPointerIsOutsideLeaf();
-      return;
-    }
-
-    cancelHide();
-    setHoverTarget((previous) => (isSameHoverTarget(previous, target) ? previous : target));
   });
 
   /* Hit testing */

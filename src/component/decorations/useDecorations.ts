@@ -1,9 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { visitBlockTree, type Block } from "@/document";
-import type { TextDecorationIndex } from "@/editor";
+import { remapTextDecorationIndex, type TextDecorationIndex } from "@/editor";
 import type { ResolvedEditorTheme } from "@/renderer";
 import {
-  remapDecorationIndexForTextEdit,
   reconcileDecorationRootResults,
   resolveDecorationRootSnapshots,
 } from "./client/reconciliation";
@@ -165,8 +164,7 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
 
   const flushPendingDecorations = useEffectEvent(() => {
     const pendingRootIndexes = pendingDecorationRootIndexesRef.current;
-    pendingDecorationRootIndexesRef.current = null;
-    pendingDecorationTimerRef.current = null;
+    clearPendingDecorationRequest();
 
     if (!pendingRootIndexes || pendingRootIndexes.size === 0) {
       return;
@@ -210,15 +208,7 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
       return;
     }
 
-    const inserted = effect.kind === "text-inserted";
-    const edit = {
-      deletedLength: inserted ? 0 : effect.text.length,
-      insertedLength: inserted ? effect.text.length : 0,
-      path: effect.path,
-      startOffset: effect.startOffset,
-    };
-
-    setTextDecorations((current) => remapDecorationIndexForTextEdit(current, edit) ?? current);
+    setTextDecorations((current) => remapTextDecorationIndex(current, effect) ?? current);
   });
 
   const handleEditorTransition = useEffectEvent((transition: EditorStateTransition) => {
@@ -241,12 +231,11 @@ export function useDecorations({ decorations, grammars, store, theme }: UseDecor
     }
 
     applyProvisionalTextEdit(transition);
+    scheduleRootDecorationUpdate(transition.changedRootIndexes);
 
+    // Source edits classify right away, along with any roots already batched.
     if (isSourceTextEditTransition(transition)) {
-      clearPendingDecorationRequest();
-      updateDecorations(transition.changedRootIndexes);
-    } else {
-      scheduleRootDecorationUpdate(transition.changedRootIndexes);
+      flushPendingDecorations();
     }
   });
 

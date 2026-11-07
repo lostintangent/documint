@@ -1,4 +1,4 @@
-import type { BandedGeometryFrame } from "../frame/banded-geometry";
+import type { BandedGeometryFrame } from "../frame/chrome/table";
 
 type HighlightFillStyle = string | CanvasGradient | CanvasPattern;
 

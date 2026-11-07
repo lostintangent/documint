@@ -1,7 +1,6 @@
 /**
- * Serializes semantic tables into canonical pipe-table markdown. Lives in
- * its own module because table layout — column-width computation, alignment
- * dividers, optional column padding — is a self-contained concern.
+ * Serializes semantic tables into canonical pipe-table markdown, with column
+ * widths, alignment dividers and optional column padding.
  */
 
 import type { TableBlock } from "@/document";
@@ -10,9 +9,6 @@ import { serializeInlines } from "./inlines";
 
 type TableAlignment = TableBlock["align"][number];
 
-// A divider cell is at minimum three dashes, plus the colons that mark its
-// alignment on either side.
-const minimumTableDividerWidth = 3;
 const alignmentColons = {
   center: [":", ":"],
   left: [":", ""],
@@ -47,40 +43,22 @@ export function serializeTable(block: TableBlock, indent: number, options: Markd
     .join(lineFeed);
 }
 
+// A divider cell is at least three dashes, plus its alignment colons.
 function alignmentCell(align: TableAlignment, width: number) {
   const [before, after] = align ? alignmentColons[align] : ["", ""];
-  const dashCount = Math.max(minimumTableDividerWidth, width - before.length - after.length);
+  const dashCount = Math.max(3, width - before.length - after.length);
 
   return `${before}${"-".repeat(dashCount)}${after}`;
 }
 
 function padTableCell(value: string, width: number, align: TableAlignment) {
-  if (align === "right") {
-    return value.padStart(width, " ");
-  }
-
-  return value.padEnd(width, " ");
+  return align === "right" ? value.padStart(width) : value.padEnd(width);
 }
 
 // Table cell pipes are structural unless escaped. Only add a slash when the
 // pipe is not already escaped by an odd-length backslash run.
 function escapeTableCellPipes(value: string) {
-  let escaped = "";
-  let trailingBackslashes = 0;
-
-  for (const character of value) {
-    if (character === "|" && trailingBackslashes % 2 === 0) {
-      escaped += "\\";
-    }
-
-    escaped += character;
-
-    if (character === "\\") {
-      trailingBackslashes += 1;
-    } else {
-      trailingBackslashes = 0;
-    }
-  }
-
-  return escaped;
+  return value.replace(/(\\*)\|/g, (pipe, slashes: string) =>
+    slashes.length % 2 === 0 ? `${slashes}\\|` : pipe,
+  );
 }

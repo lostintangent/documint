@@ -35,26 +35,17 @@ export function moveCaretHorizontallyInFlow(
     return setSelectionPoint(state, path, nextOffset, extendSelection);
   }
 
-  if (delta < 0) {
-    const previousPath = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, delta);
-    const previousText = previousPath
-      ? resolveEditorTextAtPath(state.documentIndex, previousPath)
-      : null;
+  const adjacentPath = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, delta);
 
-    if (!previousPath || previousText === null) {
-      return state;
-    }
-
-    return setSelectionPoint(state, previousPath, previousText.length, extendSelection);
-  }
-
-  const nextPath = resolveAdjacentEditorPathWithTextInFlow(state.documentIndex, path, delta);
-
-  if (!nextPath) {
+  if (!adjacentPath) {
     return state;
   }
 
-  return setSelectionPoint(state, nextPath, 0, extendSelection);
+  // Flow paths always carry text (text blocks or table cells).
+  const adjacentOffset =
+    delta < 0 ? (resolveEditorTextAtPath(state.documentIndex, adjacentPath)?.length ?? 0) : 0;
+
+  return setSelectionPoint(state, adjacentPath, adjacentOffset, extendSelection);
 }
 
 export function moveCaretVerticallyInFlow(
@@ -63,6 +54,7 @@ export function moveCaretVerticallyInFlow(
   caret: CaretTarget,
   direction: -1 | 1,
   extendSelection: boolean,
+  pageHeight = 0,
 ) {
   const currentLine = findLineEntryForPathOffset(layout, caret.path, caret.offset);
 
@@ -70,7 +62,7 @@ export function moveCaretVerticallyInFlow(
     return state;
   }
 
-  const targetLine = resolveVerticalTargetLine(layout, currentLine.index, direction, 1);
+  const targetLine = resolveVerticalTargetLine(layout, currentLine.index, direction, pageHeight);
 
   if (!targetLine) {
     return state;
@@ -91,7 +83,11 @@ export function moveCaretToCurrentLineBoundary(
   boundary: "Home" | "End",
   extendSelection: boolean,
 ) {
-  const currentLine = findCurrentLine(state, layout);
+  const currentLine = findLineForPathOffset(
+    layout,
+    state.selection.focus.path,
+    state.selection.focus.offset,
+  );
 
   if (!currentLine) {
     return state;
@@ -101,44 +97,6 @@ export function moveCaretToCurrentLineBoundary(
     state,
     currentLine.path,
     boundary === "Home" ? currentLine.start : currentLine.end,
-    extendSelection,
-  );
-}
-
-export function moveCaretByViewportInFlow(
-  state: EditorState,
-  layout: DocumentLayout,
-  viewportHeight: number,
-  caret: CaretTarget,
-  direction: -1 | 1,
-  extendSelection: boolean,
-) {
-  const currentLineEntry = findLineEntryForPathOffset(layout, caret.path, caret.offset);
-
-  if (!currentLineEntry) {
-    return state;
-  }
-
-  // Advance by a viewport's worth of lines, minus one for context overlap so
-  // the user can still see the line they were on before the jump. Mirrors
-  // VS Code / browser contenteditable PageUp/PageDown behavior.
-  const linesPerViewport = Math.max(1, Math.floor(viewportHeight / layout.options.lineHeight) - 1);
-  const targetLine = resolveVerticalTargetLine(
-    layout,
-    currentLineEntry.index,
-    direction,
-    linesPerViewport,
-  );
-
-  if (!targetLine) {
-    return state;
-  }
-
-  return placeCaretAtLineY(
-    state,
-    layout,
-    caret,
-    targetLine.top + targetLine.height / 2,
     extendSelection,
   );
 }
@@ -165,15 +123,11 @@ export function placeCaretAtLineY(
   return setSelectionPoint(state, hit.path, hit.offset, extendSelection);
 }
 
-function findCurrentLine(state: EditorState, layout: DocumentLayout) {
-  return findLineForPathOffset(layout, state.selection.focus.path, state.selection.focus.offset);
-}
-
 function resolveVerticalTargetLine(
   layout: DocumentLayout,
   currentLineIndex: number,
   direction: -1 | 1,
-  distance: number,
+  pageHeight: number,
 ) {
   const currentLine = layout.lines[currentLineIndex];
 
@@ -181,7 +135,10 @@ function resolveVerticalTargetLine(
     return null;
   }
 
-  let remaining = distance;
+  // Step to the next line in flow, then keep stepping while that line and the
+  // current one fit within `pageHeight` together, so a page move near either
+  // edge lands on the first or last line.
+  let target = null;
 
   for (
     let index = currentLineIndex + direction;
@@ -198,10 +155,17 @@ function resolveVerticalTargetLine(
       continue;
     }
 
-    if (--remaining === 0) {
-      return candidate;
+    const span =
+      direction > 0
+        ? candidate.top + candidate.height - currentLine.top
+        : currentLine.top + currentLine.height - candidate.top;
+
+    if (target && span > pageHeight) {
+      break;
     }
+
+    target = candidate;
   }
 
-  return null;
+  return target;
 }

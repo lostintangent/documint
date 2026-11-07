@@ -40,14 +40,16 @@ export function paintTextBackground(
   textBaseline: number,
   color: string,
 ) {
-  const backgroundBounds = resolveTextBackgroundBounds(context, left, right, textBaseline);
+  const { ascent, descent } = resolveFontMetrics(context.font);
+  const paddedLeft = left - textBackgroundHorizontalPadding;
+  const paddedRight = right + textBackgroundHorizontalPadding;
 
   context.fillStyle = color;
   context.fillRect(
-    backgroundBounds.left,
-    backgroundBounds.top,
-    backgroundBounds.width,
-    backgroundBounds.height,
+    paddedLeft,
+    textBaseline - ascent - textBackgroundTopPadding + textBackgroundVerticalNudge,
+    Math.max(0, paddedRight - paddedLeft),
+    ascent + descent + textBackgroundTopPadding + textBackgroundBottomPadding,
   );
 }
 
@@ -101,26 +103,4 @@ export function paintClippedTextOverlay(
   context.fillStyle = color;
   context.fillText(text, textLeft, textBaseline);
   context.restore();
-}
-
-function resolveTextBackgroundBounds(
-  context: CanvasRenderingContext2D,
-  left: number,
-  right: number,
-  textBaseline: number,
-) {
-  const fontMetrics = resolveFontMetrics(context.font);
-  const paddedLeft = left - textBackgroundHorizontalPadding;
-  const paddedRight = right + textBackgroundHorizontalPadding;
-
-  return {
-    height:
-      fontMetrics.ascent +
-      fontMetrics.descent +
-      textBackgroundTopPadding +
-      textBackgroundBottomPadding,
-    left: paddedLeft,
-    top: textBaseline - fontMetrics.ascent - textBackgroundTopPadding + textBackgroundVerticalNudge,
-    width: Math.max(0, paddedRight - paddedLeft),
-  };
 }

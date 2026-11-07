@@ -4,14 +4,15 @@
 import {
   paintActiveBlockChangedEffect,
   paintBlockBackground,
-  paintLineContainerBackground,
+  paintCodeBlockSurface,
 } from "./painters/blocks/backgrounds";
-import { paintBlockquoteRules, paintHeadingRules, paintInertBlock } from "./painters/blocks/rules";
+import { paintBlockquoteRules, paintRules } from "./painters/blocks/rules";
 import { paintCaretOverlay } from "./painters/caret";
 import { paintCommentHighlights } from "./painters/comments";
 import { paintListMarker } from "./painters/list";
 import { paintMetadataBackgrounds, paintMetadataForeground } from "./painters/metadata";
 import { paintSelectionHighlight } from "./painters/selection";
+import { paintGridCellChrome } from "./painters/table";
 import { paintHighlight } from "./painters/highlights";
 import {
   paintTextDecorationBackgrounds,
@@ -61,9 +62,10 @@ type DocumentPaintPass = (context: CanvasRenderingContext2D, frame: DocumentFram
 
 const documentPaintPasses: DocumentPaintPass[] = [
   paintMetadataBackgroundPass,
+  paintBlockTintPass,
   paintContainerBackgroundPass,
   paintInertBlockChromePass,
-  paintDocumentHighlightPass,
+  paintTableCellHighlightPass,
   paintLineForegroundPass,
   paintRulePass,
 ];
@@ -72,29 +74,51 @@ function paintMetadataBackgroundPass(context: CanvasRenderingContext2D, frame: D
   paintMetadataBackgrounds(context, frame.metadata, frame.theme);
 }
 
-function paintContainerBackgroundPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+// Active and change tints paint under container surfaces so code keeps its
+// own contrast. Over a code block they show in the margins beside the surface.
+function paintBlockTintPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+  const { codeBlockSurfaces } = frame.chrome;
+
   for (const lineFrame of frame.lines) {
-    paintLineContainerBackground(context, lineFrame, frame.theme);
+    paintBlockBackground(context, lineFrame.activeBlockBackground);
   }
-}
 
-function paintInertBlockChromePass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
-  paintInertBlock(context, frame.chrome.dividerRules, frame.theme);
-}
+  for (const surface of codeBlockSurfaces) {
+    paintBlockBackground(context, surface.activeBlockBackground);
+  }
 
-function paintDocumentHighlightPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
   if (frame.hasDocumentChangeHighlights) {
     for (const lineFrame of frame.lines) {
       paintBlockBackground(context, lineFrame.documentChangeBackground);
     }
 
-    for (const tableCellChange of frame.tableCellDocumentChanges) {
-      paintHighlight(context, tableCellChange, {
-        borderColor: frame.theme.tableBorder,
-        fill: tableCellChange.color,
-        opacity: tableCellChange.opacity,
-      });
+    for (const surface of codeBlockSurfaces) {
+      paintBlockBackground(context, surface.documentChangeBackground);
     }
+  }
+}
+
+function paintContainerBackgroundPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+  for (const surface of frame.chrome.codeBlockSurfaces) {
+    paintCodeBlockSurface(context, surface.rect, frame.theme);
+  }
+
+  for (const cell of frame.chrome.tableCells) {
+    paintGridCellChrome(context, cell.rect, cell.isHeaderRow, frame.theme);
+  }
+}
+
+function paintInertBlockChromePass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+  paintRules(context, frame.theme.dividerRule, frame.chrome.dividerRules);
+}
+
+function paintTableCellHighlightPass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
+  for (const tableCellChange of frame.tableCellDocumentChanges) {
+    paintHighlight(context, tableCellChange, {
+      borderColor: frame.theme.tableBorder,
+      fill: tableCellChange.color,
+      opacity: tableCellChange.opacity,
+    });
   }
 
   if (frame.chrome.activeTableCellGeometry) {
@@ -113,14 +137,10 @@ function paintLineForegroundPass(context: CanvasRenderingContext2D, frame: Docum
   };
   const environment: DocumentFrameEnvironment = {
     ...baseEnvironment,
-    clocks: frame.clocks,
+    ambientTime: frame.ambientTime,
     paintEffect: createPaintEffect(baseEnvironment, frame.customEffects),
     resources: frame.resources,
   };
-
-  for (const lineFrame of frame.lines) {
-    paintBlockBackground(context, lineFrame.activeBlockBackground);
-  }
 
   paintActiveBlockChangedEffect(frame.activeBlockChangedEffect, environment);
   paintMetadataForeground(context, frame.metadata, frame.theme);
@@ -131,7 +151,7 @@ function paintLineForegroundPass(context: CanvasRenderingContext2D, frame: Docum
 }
 
 function paintRulePass(context: CanvasRenderingContext2D, frame: DocumentFrame) {
-  paintHeadingRules(context, frame.chrome.headingRules, frame.theme);
+  paintRules(context, frame.theme.headingRule, frame.chrome.headingRules.values());
   paintBlockquoteRules(context, frame.chrome.blockquoteRules, frame.theme);
 }
 
@@ -177,7 +197,7 @@ function paintContentLine(
 }
 
 type DocumentFrameEnvironment = EffectEnvironment & {
-  clocks: DocumentFrame["clocks"];
+  ambientTime: number;
   paintEffect: PaintEffect;
   resources: DocumentFrame["resources"];
 };

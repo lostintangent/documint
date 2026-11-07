@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { inlineTextHasCustomMetrics, resolveInlineTextStyle } from "@/editor/text/fonts";
+import {
+  inlineTextHasCustomMetrics,
+  resolveInlineTextStyle,
+  resolveStrongTextFont,
+} from "@/editor/text/fonts";
 
 test("resolves superscript as a scaled font with a raised baseline", () => {
   const style = resolveInlineTextStyle(
@@ -9,7 +13,7 @@ test("resolves superscript as a scaled font with a raised baseline", () => {
 
   expect(style.font).toContain("11.5px");
   expect(style.baselineShift).toBeLessThan(0);
-  expect(style.hasCustomMetrics).toBe(true);
+  expect(inlineTextHasCustomMetrics(["superscript"])).toBe(true);
 });
 
 test("does not apply superscript typography to code-marked text", () => {
@@ -35,6 +39,14 @@ test("scales inline code font with the document base font size", () => {
 
   expect(styleAtBase14.font).toContain("13px ui-monospace");
   expect(styleAtBase18.font).toContain("17px ui-monospace");
+});
+
+test("keeps a single weight for bold text in an already-bold heading font", () => {
+  const headingFont = resolveStrongTextFont(32);
+  const typography = { baseFontSize: 16, font: headingFont };
+
+  expect(resolveInlineTextStyle(typography, ["bold"]).font).toBe(headingFont);
+  expect(resolveInlineTextStyle(typography, ["bold", "italic"]).font).toBe(`italic ${headingFont}`);
 });
 
 test("treats decorative-only marks as normal text metrics", () => {

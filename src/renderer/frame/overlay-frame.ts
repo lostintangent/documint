@@ -1,6 +1,10 @@
 import type { EditorPresence } from "@/editor/anchors";
 import { measureVisualCaret, type EditorLayoutState } from "@/editor/layout";
-import type { EditorState, NormalizedEditorSelection } from "@/editor/state";
+import {
+  resolveBlockByPath,
+  type EditorState,
+  type NormalizedEditorSelection,
+} from "@/editor/state";
 import { resolveCenteredTextTop, resolveFontMetrics } from "@/editor/text/measure";
 import type { ResolvedEditorTheme } from "../theme";
 import type { PaintLayerFrame } from "./document-frame";
@@ -17,10 +21,15 @@ export function createOverlayFrame(
   const shouldPaintUserCaret = options.showCaret && options.normalizedSelection.collapsed;
 
   if (shouldPaintUserCaret) {
+    const { focus } = editorState.selection;
     const caret = resolveOverlayCaretFrame(layoutState, {
-      color: options.theme.caret,
-      offset: editorState.selection.focus.offset,
-      path: editorState.selection.focus.path,
+      // Code surfaces own their contrast, so the caret takes the code text color there.
+      color:
+        resolveBlockByPath(editorState.documentIndex, focus.path)?.type === "code"
+          ? options.theme.codeText
+          : options.theme.caret,
+      offset: focus.offset,
+      path: focus.path,
     });
 
     if (caret) {

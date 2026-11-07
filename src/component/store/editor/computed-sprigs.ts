@@ -5,7 +5,7 @@ import {
   getSelectionRange,
   measureCaretTarget,
   measureInlineImageBounds,
-  measureVisualCaretTarget,
+  measureVisualCaret,
   normalizeSelection,
   resolveActiveCommentIndex,
   resolveCursorViewportStatus,
@@ -144,13 +144,13 @@ export const selectionFormattingSprig = createComputedSprig(
 );
 
 export const selectionHandlesSprig = createComputedSprig(
-  [editorStateSprig, normalizedSelectionSprig, renderedLayoutSprig],
-  (_store, state, normalizedSelection, layout): SelectionHandles | null => {
+  [normalizedSelectionSprig, renderedLayoutSprig],
+  (_store, normalizedSelection, layout): SelectionHandles | null => {
     if (!layout) {
       return null;
     }
 
-    return resolveSelectionHandles(state, layout, normalizedSelection);
+    return resolveSelectionHandles(layout, normalizedSelection);
   },
   equalSelectionHandles,
 );
@@ -171,13 +171,13 @@ export const caretInViewportSprig = createComputedSprig(
 );
 
 export const caretTargetSprig = createComputedSprig(
-  [editorStateSprig, normalizedSelectionSprig, renderedLayoutSprig],
-  (_store, state, normalizedSelection, layout): CaretTarget | null => {
+  [normalizedSelectionSprig, renderedLayoutSprig],
+  (_store, normalizedSelection, layout): CaretTarget | null => {
     if (!layout) {
       return null;
     }
 
-    return measureCaretTarget(state, layout, normalizedSelection.end);
+    return measureCaretTarget(layout.layout, normalizedSelection.end);
   },
   equalCaretTargets,
 );
@@ -238,7 +238,7 @@ function resolveImageAtCursor(
     return null;
   }
 
-  const bounds = measureInlineImageBounds(state, layout, resources, imageInline);
+  const bounds = measureInlineImageBounds(state, layout, imageInline);
   const maxWidth =
     imageInline.node.type === "image"
       ? (resources.images.get(imageInline.node.url)?.intrinsicWidth ?? null)
@@ -248,7 +248,6 @@ function resolveImageAtCursor(
 }
 
 function resolveSelectionHandles(
-  state: EditorState,
   layout: EditorLayoutState,
   selection: NormalizedEditorSelection,
 ): SelectionHandles | null {
@@ -256,8 +255,8 @@ function resolveSelectionHandles(
     return null;
   }
 
-  const startCaret = measureVisualCaretTarget(state, layout, selection.start);
-  const endCaret = measureVisualCaretTarget(state, layout, selection.end);
+  const startCaret = measureVisualCaret(layout.layout, selection.start)?.caret;
+  const endCaret = measureVisualCaret(layout.layout, selection.end)?.caret;
 
   if (!startCaret || !endCaret) {
     return null;

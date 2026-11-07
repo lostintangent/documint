@@ -13,12 +13,13 @@ The benchmark scripts are Documint's local performance spec for markdown transla
 
 ## Subsystem Map
 
-- `index.ts` owns budgeted script orchestration, full-suite warmup, repeated-run pass/fail rules, and scenario-id/budget validation.
+- `index.ts` owns budgeted script orchestration, scenario groups and suite order, scenario-id/budget validation, full-suite warmup, repeated-run pass/fail rules, and table output.
 - `fixtures.ts` owns benchmark fixture loading, parsed document snapshots, and synthetic long/xlarge/huge documents.
-- `harness.ts` owns the benchmark scenario and scenario-run types, viewport constants, warmup loop, and timed sample runner.
-- `stats.ts` owns sample sorting and nearest-rank percentile calculation.
-- `gate.ts` owns budget validation and repeated-run failure collection.
-- `output.ts` owns table/JSON projection.
-- `manifest.json` owns fixture paths and budget thresholds for the budgeted scripts.
+- `harness.ts` owns the benchmark scenario and scenario-run types, the shared viewport, warmup loop, timed sample runner, nearest-rank percentiles, and the document frame both scripts paint.
+- `manifest.json` owns budget thresholds, grouped by scenario module.
 - `scenarios/markdown.ts`, `scenarios/layout.ts`, `scenarios/editor.ts`, and `scenarios/component.ts` own subsystem-specific budgeted workloads.
 - `moby-dick.ts` owns the large-document profiler, including source text fetch/cache, markdown normalization, open-path profiles, scroll/layout/paint samples, and edit-path samples.
+
+## Known Limitations
+
+- **Budgets assume a quiet machine.** The repeated-run rule absorbs isolated spikes, but sustained load from builds, browsers, or other agents can push even an untouched scenario over budget on every run. That is acceptable while benchmarks run locally on demand, so rerun once on a quieter machine before treating such a failure as a regression. If false failures become routine, the gate needs a dedicated runner or a same-machine baseline instead of absolute budgets.

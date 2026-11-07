@@ -45,15 +45,16 @@ export function useSprig<T, Params extends readonly unknown[]>(
 ) {
   const store = useDocumintStore();
   const subscribe = useCallback(
-    (listener: () => void) => sprig.subscribe(store, listener, ...params),
-    // Track parameter identities individually; the rest tuple itself is new
-    // on every render and would force needless external-store resubscriptions.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [store, sprig, ...params],
+    (listener: () => void) => {
+      const unsubscribers = sprig.sources.map((source) => source.subscribe(store, listener));
+      return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+    },
+    [store, sprig],
   );
   const getSnapshot = useCallback(
     () => sprig.read(store, ...params),
-    // Keep snapshot identity aligned with the subscription's parameter tuple.
+    // Track parameter identities individually; the rest tuple is new on
+    // every render.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
     [store, sprig, ...params],
   );

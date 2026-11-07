@@ -1,3 +1,4 @@
+import type { Block } from "@/document";
 import type { EditorCommentRange, EditorPresence } from "@/editor/anchors";
 import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import {
@@ -5,10 +6,10 @@ import {
   resolveEditorPosition,
   type DocumentIndex,
   type NormalizedEditorSelection,
+  type ResolvedEditorPosition,
 } from "@/editor/state";
 import type { ResolvedEditorTheme } from "../../theme";
 import { resolveLineRangeRectFrame } from "./text-geometry";
-import type { SelectionPathRange } from "../selection-frame";
 
 const commentHighlightBottomInset = 5;
 const commentHighlightMinimumWidth = 2;
@@ -16,6 +17,14 @@ const commentHighlightThickness = 3;
 const selectionMinimumWidth = 2;
 const selectionVerticalInset = 1;
 const selectionVerticalTrim = 2;
+// Code surfaces are dark in both built-in themes, so a full-strength
+// selection lifts them enough to drop syntax colors below 3:1.
+const codeSelectionOpacity = 0.5;
+
+export type SelectionHighlightFrame = {
+  opacity: number;
+  rect: LayoutRect;
+};
 
 export type CommentHighlightFrame = {
   color: string;
@@ -23,56 +32,41 @@ export type CommentHighlightFrame = {
   rect: LayoutRect;
 };
 
-export function resolveDocumentFrameLineRanges({
-  activeThreadIndex,
-  commentPresence,
-  commentRanges,
-  documentIndex,
-  line,
-  normalizedSelection,
-  selectionPathRange,
-  theme,
-}: {
-  activeThreadIndex: number | null;
-  commentPresence: ReadonlyMap<number, EditorPresence> | null;
-  commentRanges: EditorCommentRange[] | null;
-  documentIndex: DocumentIndex;
-  line: EditorLayoutState["layout"]["lines"][number];
-  normalizedSelection: NormalizedEditorSelection;
-  selectionPathRange: SelectionPathRange | null;
-  theme: ResolvedEditorTheme;
-}): {
-  commentHighlights: CommentHighlightFrame[];
-  selectionHighlight: LayoutRect | null;
-} {
+export type SelectionPathRange = {
+  end: ResolvedEditorPosition;
+  start: ResolvedEditorPosition;
+};
+
+export function resolveSelectionPathRange(
+  documentIndex: DocumentIndex,
+  normalizedSelection: NormalizedEditorSelection,
+): SelectionPathRange | null {
+  if (
+    normalizedSelection.start.path === normalizedSelection.end.path &&
+    normalizedSelection.start.offset === normalizedSelection.end.offset
+  ) {
+    return null;
+  }
+
   return {
-    commentHighlights: resolveCommentHighlightFrames({
-      activeThreadIndex,
-      commentPresence,
-      commentRanges,
-      line,
-      theme,
-    }),
-    selectionHighlight: resolveSelectionHighlightFrame({
-      documentIndex,
-      line,
-      normalizedSelection,
-      selectionPathRange,
-    }),
+    end: resolveEditorPosition(documentIndex, normalizedSelection.end, { unknown: "before" }),
+    start: resolveEditorPosition(documentIndex, normalizedSelection.start, { unknown: "before" }),
   };
 }
 
-function resolveSelectionHighlightFrame({
+export function resolveSelectionHighlightFrame({
+  block,
   documentIndex,
   line,
   normalizedSelection,
   selectionPathRange,
 }: {
+  block: Block | null;
   documentIndex: DocumentIndex;
   line: EditorLayoutState["layout"]["lines"][number];
   normalizedSelection: NormalizedEditorSelection;
   selectionPathRange: SelectionPathRange | null;
-}): LayoutRect | null {
+}): SelectionHighlightFrame | null {
   if (!selectionPathRange) {
     return null;
   }
@@ -104,14 +98,17 @@ function resolveSelectionHighlightFrame({
     return null;
   }
 
-  return resolveLineRangeRectFrame(line, overlapStart, overlapEnd, {
-    height: line.height - selectionVerticalTrim,
-    minimumWidth: selectionMinimumWidth,
-    top: line.top + selectionVerticalInset,
-  });
+  return {
+    opacity: block?.type === "code" ? codeSelectionOpacity : 1,
+    rect: resolveLineRangeRectFrame(line, overlapStart, overlapEnd, {
+      height: line.height - selectionVerticalTrim,
+      minimumWidth: selectionMinimumWidth,
+      top: line.top + selectionVerticalInset,
+    }),
+  };
 }
 
-function resolveCommentHighlightFrames({
+export function resolveCommentHighlightFrames({
   activeThreadIndex,
   commentPresence,
   commentRanges,

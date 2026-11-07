@@ -5,8 +5,12 @@ import { emptyDocumentResources, type DocumentResources } from "@/editor/resourc
 import { isContainerBlock, type DocumentIndex, type IndexedBlock } from "../../state";
 import { createLayoutCache, type LayoutCache } from "../state/cache";
 import { walkLayoutBlocks } from "../lib/block-walk";
-import { CODE_BLOCK_BACKGROUND_PADDING_Y } from "../lib/code-block";
-import { resolveBlockContentMetrics, type LayoutContentMetrics } from "../lib/content-metrics";
+import { resolveBlockPaddingY } from "../lib/code-block";
+import {
+  resolveBlockContentMetrics,
+  resolveBlockSurfaceLeft,
+  type LayoutContentMetrics,
+} from "../lib/content-metrics";
 import {
   resolveDocumentLayoutOptions,
   type DocumentLayoutOptions,
@@ -74,6 +78,9 @@ export type DocumentLayout = {
   pathLineIndices: Map<string, number[]>;
   height: number;
   lines: LayoutLine[];
+  // Tallest line, which bounds how far above a window a line can start and
+  // still reach into it.
+  maxLineHeight: number;
   metadata: MetadataLayout | null;
   options: DocumentLayoutOptions;
   width: number;
@@ -84,28 +91,13 @@ export function measureLayoutSlice(
   options: PartialDocumentLayoutOptions,
   cache = createLayoutCache(),
   resources: DocumentResources | null = null,
-  // Seed for the body-relative running Y cursor. Defaults to
-  // `options.paddingY`; metadata composition applies its document prefix
-  // offset after body measurement.
-  startY?: number,
-  blockStartIndex = 0,
-  blockEndIndex = documentIndex.blocks.length,
 ): DocumentLayout {
-  const resolvedResources: DocumentResources = resources ?? emptyDocumentResources;
-  const bodyLayout = measureBodyLayoutSlice(
-    documentIndex,
-    options,
-    cache,
-    resolvedResources,
-    startY,
-    blockStartIndex,
-    blockEndIndex,
-  );
+  const bodyLayout = measureBodyLayoutSlice(documentIndex, options, cache, resources);
   const metadata = measureMetadataPrefix(
     documentIndex.document.metadata,
     bodyLayout.options,
     cache,
-    resolvedResources,
+    resources ?? emptyDocumentResources,
   );
 
   return composeMetadataPrefix(bodyLayout, metadata);
@@ -116,6 +108,9 @@ export function measureBodyLayoutSlice(
   options: PartialDocumentLayoutOptions,
   cache = createLayoutCache(),
   resources: DocumentResources | null = null,
+  // Seed for the body-relative running Y cursor. Defaults to
+  // `options.paddingY`; metadata composition applies its document prefix
+  // offset after body measurement.
   startY?: number,
   blockStartIndex = 0,
   blockEndIndex = documentIndex.blocks.length,
@@ -136,10 +131,9 @@ export function measureBodyLayoutSlice(
   // Layout walks blocks so inert leaves get a positioned geometry slot in
   // document order. Text/source blocks lay out their indexed text projection;
   // tables lay out their indexed cells in one pass; inert leaves reserve a
-  // fixed-height extent
-  // without emitting any line. Container blocks (blockquote, list,
-  // listItem) contribute no layout themselves — their leaf descendants
-  // do — so we skip them here.
+  // fixed-height extent without emitting any line. Container blocks
+  // (blockquote, list, listItem) contribute no layout themselves — their leaf
+  // descendants do — so we skip them here.
   const seedY = startY ?? resolvedOptions.paddingY;
   let y = seedY;
   for (const {
@@ -171,8 +165,6 @@ export function measureBodyLayoutSlice(
       }
     }
 
-    const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, resolvedOptions);
-
     if (isInert) {
       // Inert leaves (dividers, etc.) reserve a fixed-height slot without
       // emitting lines; chrome is painted off `layout.blocks`.
@@ -186,8 +178,7 @@ export function measureBodyLayoutSlice(
         pathBounds,
         indexedBlock,
         cache,
-        block,
-        contentMetrics.left,
+        resolveBlockSurfaceLeft(documentIndex, indexedBlock, resolvedOptions),
         y,
         resolvedOptions,
         resolvedResources,
@@ -202,7 +193,7 @@ export function measureBodyLayoutSlice(
           input,
           cache,
           indexedBlock,
-          contentMetrics,
+          resolveBlockContentMetrics(documentIndex, indexedBlock, resolvedOptions),
           y,
           resolvedOptions,
           resolvedResources,
@@ -236,6 +227,7 @@ export function measureBodyLayoutSlice(
     pathLineIndices: createPathLineIndices(lines),
     height: Math.max(y, seedY),
     lines,
+    maxLineHeight: resolveMaxLineHeight(lines),
     metadata: null,
     options: resolvedOptions,
     width: resolvedOptions.width,
@@ -250,14 +242,24 @@ export function composeMetadataPrefix(
     return bodyLayout;
   }
 
+  // Body lines are already sorted and indexed, and they all sit below the
+  // metadata block, so only the metadata lines need sorting and the body
+  // indices shift past them.
   const bodyOffset = metadata.bodyOffset;
-  const lines: LayoutLine[] = [
-    ...metadata.lines,
-    ...bodyLayout.lines.map((line) => ({
-      ...line,
-      top: line.top + bodyOffset,
-    })),
-  ];
+  const lines: LayoutLine[] = [...metadata.lines];
+  const pathLineIndices = createPathLineIndices(lines);
+
+  for (const [path, indices] of bodyLayout.pathLineIndices) {
+    pathLineIndices.set(
+      path,
+      indices.map((index) => index + metadata.lines.length),
+    );
+  }
+
+  for (const line of bodyLayout.lines) {
+    lines.push({ ...line, top: line.top + bodyOffset });
+  }
+
   const pathBounds = new Map(metadata.pathBounds);
 
   for (const [path, bounds] of bodyLayout.pathBounds) {
@@ -278,9 +280,10 @@ export function composeMetadataPrefix(
     })),
     height: bodyLayout.height + bodyOffset,
     lines,
+    maxLineHeight: Math.max(bodyLayout.maxLineHeight, resolveMaxLineHeight(metadata.lines)),
     metadata,
     pathBounds,
-    pathLineIndices: createPathLineIndices(lines),
+    pathLineIndices,
   };
 }
 
@@ -289,23 +292,13 @@ function resolveLayoutBlockScope(
   blockStartIndex: number,
   blockEndIndex: number,
 ) {
-  if (blockStartIndex === 0 && blockEndIndex === documentIndex.blocks.length) {
-    return documentIndex.blocks;
-  }
-
-  if (blockStartIndex >= blockEndIndex) {
-    return [];
-  }
-
-  return documentIndex.blocks.slice(blockStartIndex, blockEndIndex);
+  return blockStartIndex === 0 && blockEndIndex === documentIndex.blocks.length
+    ? documentIndex.blocks
+    : documentIndex.blocks.slice(blockStartIndex, blockEndIndex);
 }
 
 function clampBlockIndex(documentIndex: DocumentIndex, index: number) {
-  if (!Number.isFinite(index)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(documentIndex.blocks.length, Math.trunc(index)));
+  return Math.max(0, Math.min(documentIndex.blocks.length, index));
 }
 
 function layoutSingleContainer(
@@ -322,7 +315,7 @@ function layoutSingleContainer(
 ) {
   const { block, path: blockPath } = indexedBlock;
   const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
-  const blockPaddingY = block.type === "code" ? CODE_BLOCK_BACKGROUND_PADDING_Y : 0;
+  const blockPaddingY = resolveBlockPaddingY(block);
   let y = top + blockPaddingY;
   const containerLines = layoutTextContainerLines(
     cache,
@@ -345,7 +338,7 @@ function layoutSingleContainer(
     y += line.height;
   }
 
-  if (block.type === "code") {
+  if (blockPaddingY > 0) {
     const current = blockExtents.get(blockPath);
     if (current) {
       blockExtents.set(blockPath, {
@@ -359,10 +352,12 @@ function layoutSingleContainer(
 }
 
 function createPathLineIndices(lines: LayoutLine[]) {
-  // Sort in place — table cell layout can interleave Y across the cells of
-  // a row, so we need a single top-then-left order to feed binary search
-  // in the paint/hit-test passes. (Cloning + `lines.push(...sortedLines)`
-  // also blows the call stack on long docs via spread-as-args.)
+  // Sort in place — table cell layout interleaves Y across the cells of a
+  // row, so lines need one top order for the paint and hit-test searches.
+  // Their bottoms stay unsorted within a row. Left only breaks ties for a
+  // reading order, and metadata composition can tie tops without re-sorting,
+  // so no search may rely on it. (Cloning + `lines.push(...sortedLines)` also
+  // blows the call stack on long docs via spread-as-args.)
   lines.sort((left, right) => left.top - right.top || left.left - right.left);
 
   const entries = new Map<string, number[]>();
@@ -379,28 +374,26 @@ function createPathLineIndices(lines: LayoutLine[]) {
   return entries;
 }
 
+function resolveMaxLineHeight(lines: readonly LayoutLine[]) {
+  let maxLineHeight = 0;
+
+  for (const line of lines) {
+    maxLineHeight = Math.max(maxLineHeight, line.height);
+  }
+
+  return maxLineHeight;
+}
+
 // Folds a single line's geometry into its path's running bounds. Called once
 // per line as it is appended, replacing the prior pattern of a per-path
 // `lines.filter(...)` (O(N) inside an N-path loop) plus a final full re-walk.
 function updatePathBoundsFromLine(pathBounds: DocumentLayout["pathBounds"], line: LayoutLine) {
   const current = pathBounds.get(line.path);
-  const right = line.left + line.width;
-  const bottom = line.top + line.height;
 
-  pathBounds.set(
-    line.path,
-    current
-      ? {
-          bottom: Math.max(current.bottom, bottom),
-          left: Math.min(current.left, line.left),
-          right: Math.max(current.right, right),
-          top: Math.min(current.top, line.top),
-        }
-      : {
-          bottom,
-          left: line.left,
-          right,
-          top: line.top,
-        },
-  );
+  pathBounds.set(line.path, {
+    bottom: Math.max(current?.bottom ?? -Infinity, line.top + line.height),
+    left: Math.min(current?.left ?? Infinity, line.left),
+    right: Math.max(current?.right ?? -Infinity, line.left + line.width),
+    top: Math.min(current?.top ?? Infinity, line.top),
+  });
 }

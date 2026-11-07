@@ -122,6 +122,17 @@ test("extends line-boundary selection with Shift+Home", () => {
   expect(nextState?.selection.focus).toEqual({ path: path.path, offset: 0 });
 });
 
+test("pages down within the cursor reveal's padding so the line it left stays in view", () => {
+  const state = setup("p0\n\np1\n\np2\n\np3\n\np4\n\np5");
+  const placed = placeAt(state, getPath(state, "p0"), 0);
+  const event = createKeyboardEvent("PageDown");
+  const next = applyKeyboardInputCommand(placed, layoutAt(placed, 240), event, null, "nextWord");
+
+  // p0 through p5 spans 224px, which fits the viewport but not what's left once
+  // the reveal pads the landing line away from the edge.
+  expect(next?.selection.focus.path).toBe(getPath(state, "p4").path);
+});
+
 test.each([
   ["non-Mac Alt+Left", "ArrowLeft", { altKey: true }, "windows"],
   ["non-Mac Control+Up", "ArrowUp", { ctrlKey: true }, "other"],
@@ -149,6 +160,6 @@ test.each([
   },
 );
 
-function layoutAt(state: ReturnType<typeof setup>) {
-  return createEditorLayoutState(state, { height: 2_000, top: 0, width: 800 }, createLayoutCache());
+function layoutAt(state: ReturnType<typeof setup>, height = 2_000) {
+  return createEditorLayoutState(state, { height, top: 0, width: 800 }, createLayoutCache());
 }

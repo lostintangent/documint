@@ -1,119 +1,114 @@
 import "../../test/setup-canvas";
-import { createBenchmarkFixtures, type BenchmarkManifest } from "./fixtures";
+import { createBenchmarkFixtures } from "./fixtures";
 import {
-  collectDuplicateBenchmarkIds,
-  collectMissingBenchmarkBudgets,
-  collectRepeatedBudgetFailures,
-  collectUnusedBenchmarkBudgets,
-  type RepeatedBudgetFailure,
-} from "./gate";
-import { formatBenchmarkJson, formatBenchmarkTableScenarioRuns } from "./output";
+  roundMs,
+  runBenchmarkScenario,
+  type BenchmarkScenario,
+  type BenchmarkScenarioRun,
+} from "./harness";
+import manifest from "./manifest.json";
 import { createComponentScenarios } from "./scenarios/component";
 import { createEditorScenarios } from "./scenarios/editor";
 import { createLayoutScenarios } from "./scenarios/layout";
 import { createMarkdownScenarios } from "./scenarios/markdown";
-import { runBenchmarkScenario, type BenchmarkScenarioRun, type BenchmarkScenario } from "./harness";
 
-type OutputMode = "json" | "table";
+type BudgetedScenario = BenchmarkScenario & { budgetMs: number | undefined };
 
-const manifestPath = new URL("./manifest.json", import.meta.url);
-const manifest = (await Bun.file(manifestPath).json()) as BenchmarkManifest;
-const benchmarkSuiteRunCount = 3;
+// Each scenario module owns one budget group, and suites run in this order.
+const scenarioGroups = {
+  markdown: createMarkdownScenarios,
+  layout: createLayoutScenarios,
+  component: createComponentScenarios,
+  editor: createEditorScenarios,
+};
+const budgets: Record<string, Record<string, number>> = manifest.benchmarks;
+const suiteRunCount = 3;
 const allowedBudgetFailureCount = 1;
-const outputMode = resolveOutputMode(process.argv);
-const fixtures = await createBenchmarkFixtures(manifest);
+const fixtures = await createBenchmarkFixtures();
 
-const benchmarkScenarios = createBenchmarkScenarios();
-const duplicateBenchmarkIds = collectDuplicateBenchmarkIds(benchmarkScenarios);
-const unusedBudgetNames = collectUnusedBenchmarkBudgets(manifest.benchmarks, benchmarkScenarios);
-const missingBudgetNames = collectMissingBenchmarkBudgets(manifest.benchmarks, benchmarkScenarios);
+// The discarded warmup suite reuses the scenario set that passed validation.
+const warmupScenarios = createBenchmarkScenarios();
+validateBudgets(warmupScenarios);
+console.log("Benchmark suite warmup");
+runScenarios(warmupScenarios);
 
-if (duplicateBenchmarkIds.length > 0) {
-  throw new Error(`Duplicate benchmark scenario ids: ${duplicateBenchmarkIds.join(", ")}`);
+const suiteRuns = Array.from({ length: suiteRunCount }, (_, index) => {
+  const scenarioRuns = runScenarios(createBenchmarkScenarios());
+
+  console.log(`Benchmark suite run ${index + 1}/${suiteRunCount}`);
+  console.table(
+    scenarioRuns.map(({ budgetMs, id, p50Ms, p95Ms, p99Ms }) => ({
+      benchmark: id,
+      p50Ms: roundMs(p50Ms),
+      p95Ms: roundMs(p95Ms),
+      p99Ms: roundMs(p99Ms),
+      budgetMs: roundMs(budgetMs),
+    })),
+  );
+
+  return scenarioRuns;
+});
+const failures = collectRepeatedBudgetFailures(suiteRuns);
+
+if (failures.length > 0) {
+  console.error(failures.join("\n"));
+  process.exitCode = 1;
 }
 
-if (missingBudgetNames.length > 0) {
-  throw new Error(`Missing benchmark budgets for scenario ids: ${missingBudgetNames.join(", ")}`);
-}
-
-if (unusedBudgetNames.length > 0) {
-  throw new Error(`Unused benchmark budget ids: ${unusedBudgetNames.join(", ")}`);
-}
-
-runBenchmarkWarmupSuite();
-const suiteRuns = runBenchmarkSuite();
-const failures = collectRepeatedBudgetFailures(suiteRuns, allowedBudgetFailureCount);
-
-if (outputMode === "json") {
-  console.log(
-    formatBenchmarkJson({
-      failures,
-      suiteRuns,
-    }),
+function createBenchmarkScenarios(): BudgetedScenario[] {
+  return Object.entries(scenarioGroups).flatMap(([group, createScenarios]) =>
+    createScenarios(fixtures).map((scenario) => ({
+      ...scenario,
+      budgetMs: budgets[group]?.[scenario.id],
+    })),
   );
 }
 
-if (failures.length > 0) {
-  const message = formatBudgetFailureMessage(failures);
+// Every scenario needs exactly one budget in its group, and every budget needs
+// a scenario, so renaming either side is a budget migration.
+function validateBudgets(scenarios: readonly BudgetedScenario[]) {
+  const ids = scenarios.map(({ id }) => id);
+  const problems = [
+    ["Duplicate benchmark scenario ids", ids.filter((id, index) => ids.indexOf(id) !== index)],
+    [
+      "Missing benchmark budgets for scenario ids",
+      scenarios.filter(({ budgetMs }) => budgetMs === undefined).map(({ id }) => id),
+    ],
+    [
+      "Unused benchmark budget ids",
+      Object.values(budgets)
+        .flatMap((group) => Object.keys(group))
+        .filter((id) => !ids.includes(id)),
+    ],
+  ] as const;
+  const message = problems
+    .filter(([, problemIds]) => problemIds.length > 0)
+    .map(([label, problemIds]) => `${label}: ${[...new Set(problemIds)].sort().join(", ")}`)
+    .join("\n");
 
-  if (outputMode === "json") {
-    console.error(message);
-    process.exitCode = 1;
-  } else {
+  if (message) {
     throw new Error(message);
   }
 }
 
-// The discarded warmup suite reuses the scenario set that passed validation.
-function runBenchmarkWarmupSuite() {
-  if (outputMode === "table") {
-    console.log("Benchmark suite warmup");
-  }
-
-  void runScenarios(benchmarkScenarios);
-}
-
-function runBenchmarkSuite() {
-  return Array.from({ length: benchmarkSuiteRunCount }, (_, index) => {
-    const scenarioRuns = runScenarios(createBenchmarkScenarios());
-
-    if (outputMode === "table") {
-      console.log(`Benchmark suite run ${index + 1}/${benchmarkSuiteRunCount}`);
-      console.table(formatBenchmarkTableScenarioRuns(scenarioRuns));
-    }
-
-    return scenarioRuns;
-  });
-}
-
-function createBenchmarkScenarios(): BenchmarkScenario[] {
-  return [
-    ...createMarkdownScenarios(fixtures),
-    ...createLayoutScenarios(fixtures),
-    ...createComponentScenarios(fixtures),
-    ...createEditorScenarios(fixtures),
-  ];
-}
-
 // Startup validation guarantees every scenario id has a budget.
-function runScenarios(scenarios: readonly BenchmarkScenario[]): BenchmarkScenarioRun[] {
-  return scenarios.map((scenario) =>
-    runBenchmarkScenario(scenario, manifest.benchmarks[scenario.groupId][scenario.id]!),
-  );
+function runScenarios(scenarios: readonly BudgetedScenario[]) {
+  return scenarios.map((scenario) => runBenchmarkScenario(scenario, scenario.budgetMs!));
 }
 
-function formatBudgetFailureMessage(failures: RepeatedBudgetFailure[]) {
-  return failures
-    .map((failure) => {
-      const p99Values = failure.scenarioRuns
-        .map((scenarioRun) => scenarioRun.p99Ms.toFixed(3))
-        .join(", ");
+// One slow suite run is noise. A scenario fails only when its p99 exceeds the
+// budget in more than the allowed number of runs. Every suite builds the same
+// scenarios in the same order, so runs line up by index.
+function collectRepeatedBudgetFailures(suiteRuns: readonly BenchmarkScenarioRun[][]) {
+  return suiteRuns[0]!.flatMap(({ budgetMs, id }, index) => {
+    const scenarioRuns = suiteRuns.map((suiteRun) => suiteRun[index]!);
+    const failureCount = scenarioRuns.filter(({ p99Ms }) => p99Ms > budgetMs).length;
+    const p99Values = scenarioRuns.map(({ p99Ms }) => p99Ms.toFixed(3)).join(", ");
 
-      return `${failure.id} exceeded budget in ${failure.failureCount}/${benchmarkSuiteRunCount} suite runs: p99=[${p99Values}] budget=${failure.budgetMs.toFixed(3)}ms`;
-    })
-    .join("\n");
-}
-
-function resolveOutputMode(argv: string[]): OutputMode {
-  return argv.includes("--json") ? "json" : "table";
+    return failureCount > allowedBudgetFailureCount
+      ? [
+          `${id} exceeded budget in ${failureCount}/${suiteRunCount} suite runs: p99=[${p99Values}] budget=${budgetMs.toFixed(3)}ms`,
+        ]
+      : [];
+  });
 }

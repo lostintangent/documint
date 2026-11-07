@@ -1,5 +1,10 @@
 // Link mutations within an InlineContainer: wrap, update URL, remove.
-import { createLink as createDocumentLinkNode, type Inline, type Link } from "@/document";
+import {
+  createLink as createDocumentLinkNode,
+  isReferenceInlineNode,
+  type Inline,
+  type Link,
+} from "@/document";
 import { inlineNodesWithEditorRanges } from "@/editor/text/inline-offsets";
 import {
   sliceInlineChildren,
@@ -16,7 +21,9 @@ export function wrapInlineLink(
 ): InlineContainerReplacement | null {
   const linkChildren = sliceInlineChildren(inlineContainer.children, startOffset, endOffset);
 
-  if (linkChildren.length === 0) {
+  // Link text can't carry images, mentions, or resources in our markdown
+  // dialect, so a range containing one isn't linkable.
+  if (linkChildren.length === 0 || linkChildren.some(isReferenceInlineNode)) {
     return null;
   }
 

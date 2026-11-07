@@ -17,6 +17,17 @@ const FPS_KIND = "documint:fps";
 const FPS_STALE_CLEAR_MS = 1_250;
 const FPS_HEALTHY_RATIO = 0.9;
 
+const diagnosticKindClassNames = new Map([
+  ["beforeinput", "border-l-sky-500"],
+  ["input", "border-l-indigo-500"],
+  ["compositionstart", "border-l-amber-500"],
+  ["compositionupdate", "border-l-amber-500"],
+  ["compositionend", "border-l-amber-500"],
+  ["syncInputContext", "border-l-emerald-500"],
+  ["editorStateEffect", "border-l-teal-500"],
+  ["selectionchange", "border-l-purple-500"],
+]);
+
 type Entry = Diagnostic & { id: number };
 type FpsReading = { cap: number; capPending: boolean; value: number };
 
@@ -88,11 +99,7 @@ export function DiagnosticsPopover({
 }
 
 function DiagnosticsIcon({ fps }: { fps: FpsReading | null }) {
-  return fps === null ? <Activity size={16} strokeWidth={2.1} /> : <FpsIcon fps={fps} />;
-}
-
-function FpsIcon({ fps }: { fps: FpsReading }) {
-  if (fps.capPending) {
+  if (fps === null || fps.capPending) {
     return <Activity size={16} strokeWidth={2.1} />;
   }
 
@@ -115,10 +122,10 @@ function DiagnosticDetails({ diagnostic }: { diagnostic: Entry }) {
 
   return (
     <div
-      className={`rounded-lg border border-border/10 bg-background/90 px-2 py-2 ${getDiagnosticKindClassName(displayKind)}`}
+      className={`rounded-lg border border-border/10 bg-background/90 px-2 py-2 border-l-4 ${diagnosticKindClassNames.get(displayKind) ?? "border-l-slate-300"}`}
     >
       <div className="font-controls mb-1 flex items-center justify-between gap-2 text-xs">
-        <span className="font-semibold text-slate-900">{displayKind}</span>
+        <span className="font-semibold">{displayKind}</span>
         <span className="text-muted">{formatTime(diagnostic.ts)}</span>
       </div>
       <pre className="m-0 whitespace-pre-wrap break-words text-xs">
@@ -218,27 +225,6 @@ function formatDetail(detail: Record<string, unknown>) {
 
 function formatDiagnosticKind(kind: string) {
   return kind.replace(/^documint:/, "");
-}
-
-function getDiagnosticKindClassName(kind: string) {
-  switch (kind) {
-    case "beforeinput":
-      return "border-l-4 border-l-sky-500";
-    case "input":
-      return "border-l-4 border-l-indigo-500";
-    case "compositionstart":
-    case "compositionupdate":
-    case "compositionend":
-      return "border-l-4 border-l-amber-500";
-    case "syncInputContext":
-      return "border-l-4 border-l-emerald-500";
-    case "editorStateEffect":
-      return "border-l-4 border-l-teal-500";
-    case "selectionchange":
-      return "border-l-4 border-l-purple-500";
-    default:
-      return "border-l-4 border-l-slate-300";
-  }
 }
 
 function formatValue(value: unknown) {

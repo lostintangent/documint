@@ -3,14 +3,14 @@
 // estimates from measured geometry.
 
 import type { DocumentResources } from "@/editor/resources";
-import { type DocumentIndex, type EditorState } from "../../state";
-import { type LayoutCache } from "../state/cache";
+import type { EditorState } from "../../state";
+import { type LayoutCache, type VirtualLayout } from "../state/cache";
 import type { DocumentLayoutOptions } from "../lib/options";
+import { findVerticalRange } from "../lib/vertical-range";
 import { measureBodyLayoutSlice, type DocumentLayout } from "../measure";
 import { refineVirtualLayoutWithMeasuredSlice } from "./refinement";
 import {
   expandViewportSliceToBlockBoundaries,
-  findVirtualLayoutEntryIndexAtOrAfter,
   updateMeasuredContainerHeights,
 } from "./viewport-slice";
 import { getOrCreateVirtualLayout } from "./virtual-layout";
@@ -24,45 +24,32 @@ type VirtualizedViewport = {
 export type VirtualizedLayoutSlice = {
   estimatePathBounds: (path: string) => { bottom: number; top: number } | null;
   layout: DocumentLayout;
-  totalHeight: number;
 };
 
 export function createVirtualizedLayoutSlice({
   cache,
-  documentIndex,
   options,
   resources,
   state,
   viewport,
 }: {
   cache: LayoutCache;
-  documentIndex: DocumentIndex;
   options: DocumentLayoutOptions;
   resources: DocumentResources;
   state: EditorState;
   viewport: VirtualizedViewport;
 }): VirtualizedLayoutSlice {
+  const { documentIndex } = state;
   const expandedTop = Math.max(0, viewport.top - viewport.overscan);
   const expandedBottom = viewport.top + viewport.height + viewport.overscan;
   const virtualLayout = getOrCreateVirtualLayout(cache, documentIndex, options, resources);
-  let sliceStartIndex = findVirtualLayoutEntryIndexAtOrAfter(virtualLayout, expandedTop);
-  let sliceEndIndex = findVirtualLayoutEntryIndexAtOrAfter(virtualLayout, expandedBottom);
-
-  if (sliceStartIndex > 0) {
-    const previous = virtualLayout.entries[sliceStartIndex - 1];
-
-    if (previous && previous.bottom > expandedTop) {
-      sliceStartIndex -= 1;
-    }
-  }
-
-  if (sliceEndIndex < virtualLayout.entries.length) {
-    const next = virtualLayout.entries[sliceEndIndex];
-
-    if (next && next.top < expandedBottom) {
-      sliceEndIndex += 1;
-    }
-  }
+  let { endIndex: sliceEndIndex, startIndex: sliceStartIndex } = findVerticalRange(
+    virtualLayout.entries,
+    expandedTop,
+    expandedBottom,
+    entryTop,
+    entryBottom,
+  );
 
   const pinTop = Math.max(0, expandedTop - viewport.overscan);
   const pinBottom = expandedBottom + viewport.overscan;
@@ -70,13 +57,9 @@ export function createVirtualizedLayoutSlice({
 
   for (const path of pinned) {
     const index = virtualLayout.pathIndices.get(path);
-    const bounds = virtualLayout.estimatePathBounds(path);
+    const entry = index === undefined ? undefined : virtualLayout.entries[index];
 
-    if (index === undefined || !bounds) {
-      continue;
-    }
-
-    if (bounds.bottom < pinTop || bounds.top > pinBottom) {
+    if (index === undefined || !entry || entry.bottom < pinTop || entry.top > pinBottom) {
       continue;
     }
 
@@ -103,7 +86,12 @@ export function createVirtualizedLayoutSlice({
   );
 
   updateMeasuredContainerHeights(cache, documentIndex, sliceLayout, options, resources);
-  refineVirtualLayoutWithMeasuredSlice(virtualLayout, sliceLayout);
+  refineVirtualLayoutWithMeasuredSlice(
+    virtualLayout,
+    sliceLayout,
+    expandedSlice.entryStartIndex,
+    expandedSlice.entryEndIndex,
+  );
 
   // Override `height` with the refined full-document estimate so consumers
   // that read `layout.height` (scrollbars, paint extents) see the doc height,
@@ -111,6 +99,8 @@ export function createVirtualizedLayoutSlice({
   return {
     estimatePathBounds: virtualLayout.estimatePathBounds,
     layout: { ...sliceLayout, height: virtualLayout.totalHeight },
-    totalHeight: virtualLayout.totalHeight,
   };
 }
+
+const entryTop = (entry: VirtualLayout["entries"][number]) => entry.top;
+const entryBottom = (entry: VirtualLayout["entries"][number]) => entry.bottom;

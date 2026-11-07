@@ -74,24 +74,16 @@ export function useResources({
       return;
     }
 
-    if (protocols.size === 0) {
-      lastRequestedResourceKeyRef.current = "";
-      return;
-    }
-
-    const discovered = resolveDiscoveredResourceReferences(resourceUrls, protocols);
+    const discovered =
+      protocols.size > 0 ? resolveDiscoveredResourceReferences(resourceUrls, protocols) : [];
     const discoveredResourceKey = discovered
       .map((resource) => resource.url)
       .sort()
       .join("\u0000");
+    const previousResourceKey = lastRequestedResourceKeyRef.current;
+    lastRequestedResourceKeyRef.current = discoveredResourceKey;
 
-    if (!discoveredResourceKey) {
-      lastRequestedResourceKeyRef.current = "";
-      return;
-    }
-
-    if (discoveredResourceKey !== lastRequestedResourceKeyRef.current) {
-      lastRequestedResourceKeyRef.current = discoveredResourceKey;
+    if (discoveredResourceKey && discoveredResourceKey !== previousResourceKey) {
       requestResources(discovered);
     }
   }, [resourceUrls, hasResourceRequestHandler, protocols]);

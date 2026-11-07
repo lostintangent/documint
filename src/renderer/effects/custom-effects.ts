@@ -27,45 +27,22 @@ export function createPaintEffect(
     const effectContext = { ...environment, ...args } as EffectContextFor<
       typeof frame.customEffectName
     >;
+    // A bare function handler replaces the default visual.
+    const { compose = "replace", paint } =
+      typeof handler === "function" ? { paint: handler } : (handler ?? {});
 
-    const paintDefaultVisual = () => {
-      if (frame.defaultEnabled) {
-        paintWithSavedState(environment.context, () => paintDefault(effectContext));
-      }
-    };
-
-    if (!handler) {
-      paintDefaultVisual();
-      return;
-    }
-
-    const { compose, paint } = resolveEffectHandler(handler);
-
-    if (compose === "before") {
+    if (paint && compose === "before") {
       paintWithSavedState(environment.context, () => paint(effectContext));
-      paintDefaultVisual();
-      return;
     }
 
-    if (compose === "after") {
-      paintDefaultVisual();
+    if (frame.defaultEnabled && (!paint || compose !== "replace")) {
+      paintWithSavedState(environment.context, () => paintDefault(effectContext));
+    }
+
+    if (paint && compose !== "before") {
       paintWithSavedState(environment.context, () => paint(effectContext));
-      return;
     }
-
-    paintWithSavedState(environment.context, () => paint(effectContext));
   };
-}
-
-function resolveEffectHandler<TContext>(handler: DocumintEffectHandler<TContext>): {
-  compose: "after" | "before" | "replace";
-  paint: (context: TContext) => void;
-} {
-  if (typeof handler === "function") {
-    return { compose: "replace", paint: handler };
-  }
-
-  return { compose: handler.compose ?? "replace", paint: handler.paint };
 }
 
 function paintWithSavedState(context: CanvasRenderingContext2D, paint: () => void) {

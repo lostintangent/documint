@@ -1,7 +1,14 @@
 // Inline command coverage: mark toggles, soft line breaks, and images.
 
 import { describe, expect, test } from "bun:test";
-import { createLineBreak, createMention, createRaw, createText } from "@/document";
+import {
+  createImage,
+  createLineBreak,
+  createLink,
+  createMention,
+  createRaw,
+  createText,
+} from "@/document";
 import {
   deleteBackward,
   deleteForward,
@@ -34,6 +41,21 @@ describe("Inline splicing", () => {
       createText("omega"),
     ]);
   });
+
+  test("keeps line breaks inside a link it slices around an insertion", () => {
+    const url = "https://example.com";
+    const link = createLink({
+      children: [createText("a"), createLineBreak(), createText("bc")],
+      url,
+    });
+    const image = createImage({ url: "chart.png" });
+
+    expect(spliceInlineNodes([link], 3, 3, [image])).toEqual([
+      createLink({ children: [createText("a"), createLineBreak(), createText("b")], url }),
+      image,
+      createLink({ children: [createText("c")], url }),
+    ]);
+  });
 });
 
 describe("Inline mark toggles", () => {
@@ -54,59 +76,17 @@ describe("Inline mark toggles", () => {
     expect(toMarkdown(state)).toBe("Plain *text* here.\n");
   });
 
-  test("routes mod-b and mod-i through inline mark toggles", () => {
-    const base = setup("Paragraph body.\n");
-    const path = getPath(base, "Paragraph body.");
-    let state = selectSubstring(base, path, "Paragraph");
-    state = toggleMark(state, "bold") ?? state;
+  test.each([
+    ["strikethrough", "Hello world\n", "world", "Hello ~~world~~\n"],
+    ["underline", "Paragraph body.\n", "body", "Paragraph <ins>body</ins>.\n"],
+    ["superscript", "Area of x2.\n", "2", "Area of x<sup>2</sup>.\n"],
+    ["code", "Paragraph body.\n", "body", "Paragraph `body`.\n"],
+  ] as const)("toggles %s on and off", (mark, markdown, text, marked) => {
+    const base = setup(markdown);
+    const on = toggleMark(selectSubstring(base, getPath(base, markdown.trimEnd()), text), mark)!;
 
-    expect(toMarkdown(state)).toBe("**Paragraph** body.\n");
-
-    state = toggleMark(state, "italic") ?? state;
-
-    expect(toMarkdown(state)).toBe("***Paragraph*** body.\n");
-  });
-
-  test("toggles strikethrough on and off", () => {
-    const base = setup("Hello world\n");
-    const path = getPath(base, "Hello world");
-    const selected = selectSubstring(base, path, "world");
-    const on = toggleMark(selected, "strikethrough") ?? selected;
-
-    expect(toMarkdown(on)).toBe("Hello ~~world~~\n");
-
-    const off = toggleMark(on, "strikethrough") ?? on;
-
-    expect(toMarkdown(off)).toBe("Hello world\n");
-  });
-
-  test("routes mod-u through inline underline toggles", () => {
-    const base = setup("Paragraph body.\n");
-    const path = getPath(base, "Paragraph body.");
-    const state = toggleMark(selectSubstring(base, path, "body"), "underline");
-
-    expect(toMarkdown(state ?? base)).toBe("Paragraph <ins>body</ins>.\n");
-  });
-
-  test("toggles superscript through the generic mark command", () => {
-    const base = setup("Area of x2.\n");
-    const path = getPath(base, "Area of x2.");
-    const state = toggleMark(selectSubstring(base, path, "2"), "superscript");
-
-    expect(toMarkdown(state ?? base)).toBe("Area of x<sup>2</sup>.\n");
-  });
-
-  test("toggles inline code on and off for a single-container selection", () => {
-    const base = setup("Paragraph body.\n");
-    const path = getPath(base, "Paragraph body.");
-    let state = selectSubstring(base, path, "body");
-    state = toggleMark(state, "code") ?? state;
-
-    expect(toMarkdown(state)).toBe("Paragraph `body`.\n");
-
-    state = toggleMark(state, "code") ?? state;
-
-    expect(toMarkdown(state)).toBe("Paragraph body.\n");
+    expect(toMarkdown(on)).toBe(marked);
+    expect(toMarkdown(toggleMark(on, mark)!)).toBe(markdown);
   });
 
   test("composes code with other inline marks", () => {
@@ -114,10 +94,11 @@ describe("Inline mark toggles", () => {
     const path = getPath(base, "Call fn here.");
     let state = selectSubstring(base, path, "fn");
     state = toggleMark(state, "code") ?? state;
+    state = toggleMark(state, "bold") ?? state;
     state = toggleMark(state, "italic") ?? state;
     state = toggleMark(state, "underline") ?? state;
 
-    expect(toMarkdown(state)).toBe("Call <ins>*`fn`*</ins> here.\n");
+    expect(toMarkdown(state)).toBe("Call <ins>***`fn`***</ins> here.\n");
   });
 });
 
@@ -133,70 +114,22 @@ describe("Soft line breaks", () => {
   // blockquote test the descendant-paragraph resolution path; table-cell
   // exercises the table rebuild path; code block is the fallback.
 
-  test("inserts a soft line break inside a paragraph", () => {
-    const base = setup("foobar\n");
-    const path = getPath(base, "foobar");
-    const placed = placeAt(base, path, 3);
-    const next = insertSoftLineBreak(placed);
+  test.each([
+    ["paragraph", "foobar\n", "foo<br>bar\n"],
+    ["heading", "# foobar\n", "# foo<br>bar\n"],
+    ["list item paragraph", "- foobar\n", "- foo<br>bar\n"],
+    ["blockquote paragraph", "> foobar\n", "> foo<br>bar\n"],
+    [
+      "table cell",
+      "| h1 | h2 |\n| -- | -- |\n| foobar | other |\n",
+      "| h1 | h2 |\n| --- | --- |\n| foo<br>bar | other |\n",
+    ],
+    ["code block as a literal newline", "```\nfoobar\n```\n", "```\nfoo\nbar\n```\n"],
+  ])("inserts a soft line break inside a %s", (_, markdown, expected) => {
+    const base = setup(markdown);
+    const next = insertSoftLineBreak(placeAt(base, getPath(base, "foobar"), 3));
 
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toBe("foo<br>bar\n");
-  });
-
-  test("inserts a soft line break inside a heading", () => {
-    const base = setup("# foobar\n");
-    const path = getPath(base, "foobar");
-    const placed = placeAt(base, path, 3);
-    const next = insertSoftLineBreak(placed);
-
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toBe("# foo<br>bar\n");
-  });
-
-  test("inserts a soft line break inside a list item paragraph", () => {
-    const base = setup("- foobar\n");
-    // The cursor in a list item lives inside the item's descendant
-    // paragraph, so `insertInlines` resolves to that paragraph's inline
-    // tree.
-    const path = getPath(base, "foobar");
-    const placed = placeAt(base, path, 3);
-    const next = insertSoftLineBreak(placed);
-
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toBe("- foo<br>bar\n");
-  });
-
-  test("inserts a soft line break inside a blockquote paragraph", () => {
-    const base = setup("> foobar\n");
-    const path = getPath(base, "foobar");
-    const placed = placeAt(base, path, 3);
-    const next = insertSoftLineBreak(placed);
-
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toBe("> foo<br>bar\n");
-  });
-
-  test("inserts a soft line break inside a table cell", () => {
-    const base = setup("| h1 | h2 |\n| -- | -- |\n| foobar | other |\n");
-    const path = getPath(base, "foobar");
-    const placed = placeAt(base, path, 3);
-    const next = insertSoftLineBreak(placed);
-
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toContain("foo<br>bar");
-  });
-
-  test("inserts a soft line break inside a code block as a literal newline", () => {
-    // Code block content is source text, not an inline tree, so the
-    // command falls back to a `splice-text` action with a `\n`. The
-    // serialized output keeps the newline inside the fenced block.
-    const base = setup("```\nfoobar\n```\n");
-    const path = getPath(base, "foobar");
-    const placed = placeAt(base, path, 3);
-    const next = insertSoftLineBreak(placed);
-
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toBe("```\nfoo\nbar\n```\n");
+    expect(toMarkdown(next!)).toBe(expected);
   });
 
   test("backspace immediately after a soft break removes the line break", () => {
@@ -252,8 +185,8 @@ describe("Images", () => {
       320,
     );
 
-    expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toContain("![alt](https://example.com/img.png)");
+    expect(toMarkdown(next!)).toBe("before ![alt](https://example.com/img.png){width=320} after\n");
+    expect(next!.selection).toBe(placed.selection);
   });
 });
 

@@ -1,4 +1,4 @@
-import type { DocumentLayout, LayoutRect } from "@/editor/layout";
+import { resolveBlockSurfaceLeft, type DocumentLayout, type LayoutRect } from "@/editor/layout";
 import {
   findAncestorIndexedBlockByPath,
   resolveBlockByPath,
@@ -97,7 +97,10 @@ export function resolveBlockquoteRuleFrames(
       rect: {
         height: Math.max(blockquoteRuleMinimumHeight, bottom - top),
         left:
-          layout.options.paddingX + (blockquoteEntry.depth + 1) * layout.options.indentWidth - 10,
+          current?.rect.left ??
+          resolveBlockSurfaceLeft(editorState.documentIndex, blockquoteEntry, layout.options) +
+            layout.options.indentWidth -
+            10,
         top,
         width: blockquoteRuleWidth,
       },

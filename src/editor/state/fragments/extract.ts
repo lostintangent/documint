@@ -35,7 +35,6 @@ import {
   replaceBlockChildren,
   type Block,
   type Fragment,
-  type Inline,
 } from "@/document";
 import { editorInlinesToDocumentInlines, replaceEditorInlines } from "../reducer/inlines";
 import {
@@ -46,83 +45,46 @@ import {
 } from "./blocks";
 import type { DocumentIndex } from "../index/types";
 import { type EditorSelection } from "../selection";
-import { resolveFragmentSourceContext, type FragmentEndpoint } from "./context";
+import { resolveFragmentRange, type FragmentEndpoint } from "./context";
 
 export function extractFragment(
   documentIndex: DocumentIndex,
   selection: EditorSelection,
 ): Fragment | null {
-  const context = resolveFragmentSourceContext(documentIndex, selection);
+  const range = resolveFragmentRange(documentIndex, selection);
 
-  if (!context) {
+  if (!range || range.collapsed) {
     return null;
   }
 
-  switch (context.kind) {
-    case "single-path":
-      if (!context.wholePath && context.endpoint.inlines === null) {
-        return classifySourceText(
-          context.endpoint.text.slice(
-            context.normalized.start.offset,
-            context.normalized.end.offset,
-          ),
+  const { end, start } = range;
+
+  if (start.path === end.path) {
+    // Single-path selections slice the leaf when they cover part of it, or
+    // when it's a table cell, which isn't markdown-shaped on its own even
+    // when selected end-to-end.
+    return start.offset > 0 ||
+      end.offset < start.text.length ||
+      start.indexedBlock.block.type === "table"
+      ? sliceLeaf(start, end)
+      : classifyBlocks([narrowToPath(start.root, start)]);
+  }
+
+  const blocks =
+    start.indexedBlock.rootIndex === end.indexedBlock.rootIndex
+      ? extractWithinRoot(start, end)
+      : trimChildrenToRange(
+          documentIndex.document.blocks,
+          start.indexedBlock.rootIndex,
+          start,
+          end.indexedBlock.rootIndex,
+          end,
         );
-      }
 
-      // Single-path inline selections either cover a partial range, or a
-      // table cell that is not markdown-shaped on its own even when selected
-      // end-to-end.
-      if (!context.wholePath || context.endpoint.indexedBlock.block.type === "table") {
-        const inlines = slicePathInlines(
-          context.endpoint,
-          context.normalized.start.offset,
-          context.normalized.end.offset,
-        );
-        return classifyInlines(inlines);
-      }
-
-      const narrowed = narrowToPath(context.root, context.endpoint);
-      return narrowed ? classifyBlocks([narrowed]) : null;
-
-    case "multi-path": {
-      const blocks = context.sameRoot
-        ? extractWithinRoot(
-            context.startRoot,
-            context.startEndpoint,
-            context.normalized.start.offset,
-            context.endEndpoint,
-            context.normalized.end.offset,
-          )
-        : extractAcrossRoots(
-            documentIndex,
-            context.startEndpoint,
-            context.normalized.start.offset,
-            context.endEndpoint,
-            context.normalized.end.offset,
-          );
-
-      return blocks.length > 0 ? classifyBlocks(blocks) : null;
-    }
-  }
+  return blocks.length > 0 ? classifyBlocks(blocks) : null;
 }
 
-/* Classification — narrow inline / block lists to their lowest Fragment kind */
-
-function classifyInlines(inlines: Inline[]): Fragment | null {
-  if (inlines.length === 0) {
-    return null;
-  }
-
-  if (isPlainTextInlines(inlines)) {
-    return { kind: "text", text: extractPlainTextFromInlineNodes(inlines) };
-  }
-
-  return { kind: "inlines", inlines };
-}
-
-function classifySourceText(text: string): Fragment | null {
-  return text.length > 0 ? { kind: "text", text } : null;
-}
+/* Classification — narrow block lists to their lowest Fragment kind */
 
 function classifyBlocks(blocks: Block[]): Fragment {
   if (isPlainTextBlocks(blocks)) {
@@ -136,128 +98,80 @@ function classifyBlocks(blocks: Block[]): Fragment {
 // target path's leaf. Siblings at every level are dropped so a whole
 // list-item selection produces a single-item list, a whole quoted-paragraph
 // selection produces a one-child blockquote, and so on.
-function narrowToPath(block: Block, target: LeafTrimTarget): Block | null {
+function narrowToPath(block: Block, target: LeafTrimTarget): Block {
   if (block === target.indexedBlock.block) {
     return block;
   }
 
-  const children = getBlockChildren(block);
+  // The target sits under this block, so exactly one child contains it.
+  const child = getBlockChildren(block)!.find((entry) => blockContainsTrimTarget(entry, target))!;
 
-  if (!children) {
-    return null;
-  }
-
-  const child = children.find((entry) => blockContainsTrimTarget(entry, target));
-  const narrowed = child ? narrowToPath(child, target) : null;
-
-  return narrowed ? replaceBlockChildren(block, [narrowed]) : null;
+  return replaceBlockChildren(block, [narrowToPath(child, target)])!;
 }
 
-function slicePathInlines(
-  endpoint: FragmentEndpoint,
-  startOffset: number,
-  endOffset: number,
-): Inline[] {
-  if (endpoint.inlines === null) {
-    return [];
+// Source-text leaves (code, raw) slice their text verbatim. Inline leaves
+// drop the trailing portion first so the leading-drop offsets stay anchored
+// to the original path, and the inline-edit primitive keeps marks, links and
+// images intact at the boundaries. The range is never empty, since the
+// selection isn't collapsed.
+function sliceLeaf(start: FragmentEndpoint, end: FragmentEndpoint): Fragment {
+  if (!start.inlines) {
+    return { kind: "text", text: start.text.slice(start.offset, end.offset) };
   }
 
-  // Drop the trailing portion first so the leading-drop offsets remain
-  // anchored to the original path. Two passes through the existing
-  // inline-edit primitive keep marks/links/images intact at the boundaries.
-  const beforeEnd = replaceEditorInlines(endpoint.inlines, endOffset, endpoint.text.length, "");
-  const sliced = replaceEditorInlines(beforeEnd, 0, startOffset, "");
+  const beforeEnd = replaceEditorInlines(start.inlines, end.offset, start.text.length, "");
+  const inlines = editorInlinesToDocumentInlines(
+    replaceEditorInlines(beforeEnd, 0, start.offset, ""),
+  );
 
-  return editorInlinesToDocumentInlines(sliced);
+  return isPlainTextInlines(inlines)
+    ? { kind: "text", text: extractPlainTextFromInlineNodes(inlines) }
+    : { kind: "inlines", inlines };
 }
 
 /* Cross-path within one root: narrow that root to the range */
 
-function extractWithinRoot(
-  root: Block,
-  startEndpoint: FragmentEndpoint,
-  startOffset: number,
-  endEndpoint: FragmentEndpoint,
-  endOffset: number,
-): Block[] {
+function extractWithinRoot(start: FragmentEndpoint, end: FragmentEndpoint): Block[] {
+  const { root } = start;
+
   // A multi-cell selection inside a table can either cover the whole table
   // (emit it verbatim), cover the header plus one or more full body rows
   // (emit that row slice as a smaller table), or some other sub-rectangle
   // (no markdown shape — drop). Within-cell selections are routed to the
   // inline path upstream.
   if (root.type === "table") {
-    return extractTableRowSlice(root, startEndpoint, startOffset, endEndpoint, endOffset);
+    return extractTableRowSlice(root, start, end);
   }
 
-  const narrowed = narrowToRange(root, startEndpoint, startOffset, endEndpoint, endOffset);
+  const narrowed = narrowToRange(root, start, end);
 
   return narrowed ? [narrowed] : [];
 }
 
-function coversWholeTable(
-  table: Extract<Block, { type: "table" }>,
-  startEndpoint: FragmentEndpoint,
-  startOffset: number,
-  endEndpoint: FragmentEndpoint,
-  endOffset: number,
-): boolean {
-  const startCell = startEndpoint.tableCell;
-  const endCell = endEndpoint.tableCell;
-  const lastRowIndex = table.rows.length - 1;
-  const lastCellIndex = table.rows.at(-1)?.cells.length ?? 0;
-
-  return (
-    startCell?.rowIndex === 0 &&
-    startCell.cellIndex === 0 &&
-    endCell?.rowIndex === lastRowIndex &&
-    endCell.cellIndex === lastCellIndex - 1 &&
-    startOffset === 0 &&
-    endOffset === endEndpoint.text.length
-  );
-}
-
+// Cells are a table's only text paths, so both endpoints sit in one. The
+// selection has a markdown shape only when it runs from the start of the
+// header's first cell to the end of some row's last cell.
 function extractTableRowSlice(
   table: Extract<Block, { type: "table" }>,
-  startEndpoint: FragmentEndpoint,
-  startOffset: number,
-  endEndpoint: FragmentEndpoint,
-  endOffset: number,
+  start: FragmentEndpoint,
+  end: FragmentEndpoint,
 ): Block[] {
-  if (coversWholeTable(table, startEndpoint, startOffset, endEndpoint, endOffset)) {
-    return [table];
-  }
-
-  const startRowIndex = startEndpoint.tableCell?.rowIndex;
-  const startCellIndex = startEndpoint.tableCell?.cellIndex;
-  const endRowIndex = endEndpoint.tableCell?.rowIndex;
-  const endCellIndex = endEndpoint.tableCell?.cellIndex;
+  const startCell = start.tableCell!;
+  const endCell = end.tableCell!;
 
   if (
-    startRowIndex === undefined ||
-    startCellIndex === undefined ||
-    endRowIndex === undefined ||
-    endCellIndex === undefined
+    startCell.rowIndex !== 0 ||
+    startCell.cellIndex !== 0 ||
+    start.offset !== 0 ||
+    endCell.cellIndex !== table.rows[endCell.rowIndex]!.cells.length - 1 ||
+    end.offset !== end.text.length
   ) {
     return [];
   }
 
-  if (startRowIndex !== 0 || startCellIndex !== 0 || startOffset !== 0) {
-    return [];
-  }
+  const rows = table.rows.slice(0, endCell.rowIndex + 1);
 
-  const endRow = table.rows[endRowIndex];
-
-  if (!endRow) {
-    return [];
-  }
-
-  const lastCellIndex = endRow.cells.length - 1;
-
-  if (endCellIndex !== lastCellIndex || endOffset !== endEndpoint.text.length) {
-    return [];
-  }
-
-  return [rebuildTableBlock(table, table.rows.slice(0, endRowIndex + 1))];
+  return [rows.length === table.rows.length ? table : rebuildTableBlock(table, rows)];
 }
 
 // Container-only narrowing: descends until it finds the smallest container
@@ -265,21 +179,15 @@ function extractTableRowSlice(
 // base case (both endpoints in one path) never reaches here —
 // `extractFragment` routes single-path selections through the inline
 // classifier instead.
-function narrowToRange(
-  block: Block,
-  startEndpoint: FragmentEndpoint,
-  startOffset: number,
-  endEndpoint: FragmentEndpoint,
-  endOffset: number,
-): Block | null {
+function narrowToRange(block: Block, start: FragmentEndpoint, end: FragmentEndpoint): Block | null {
   const children = getBlockChildren(block);
 
   if (!children) {
     return null;
   }
 
-  const startIndex = children.findIndex((child) => blockContainsTrimTarget(child, startEndpoint));
-  const endIndex = children.findIndex((child) => blockContainsTrimTarget(child, endEndpoint));
+  const startIndex = children.findIndex((child) => blockContainsTrimTarget(child, start));
+  const endIndex = children.findIndex((child) => blockContainsTrimTarget(child, end));
 
   if (startIndex === -1 || endIndex === -1) {
     return null;
@@ -287,48 +195,14 @@ function narrowToRange(
 
   if (startIndex === endIndex) {
     // Both endpoints share a child — descend, preserving this layer.
-    const narrowed = narrowToRange(
-      children[startIndex]!,
-      startEndpoint,
-      startOffset,
-      endEndpoint,
-      endOffset,
-    );
+    const narrowed = narrowToRange(children[startIndex]!, start, end);
 
     return narrowed ? replaceBlockChildren(block, [narrowed]) : null;
   }
 
   return replaceBlockChildren(
     block,
-    trimChildrenToRange(
-      children,
-      startIndex,
-      startEndpoint,
-      startOffset,
-      endIndex,
-      endEndpoint,
-      endOffset,
-    ),
-  );
-}
-
-/* Cross-root: trim each end, keep full middle roots */
-
-function extractAcrossRoots(
-  documentIndex: DocumentIndex,
-  startEndpoint: FragmentEndpoint,
-  startOffset: number,
-  endEndpoint: FragmentEndpoint,
-  endOffset: number,
-): Block[] {
-  return trimChildrenToRange(
-    documentIndex.document.blocks,
-    startEndpoint.indexedBlock.rootIndex,
-    startEndpoint,
-    startOffset,
-    endEndpoint.indexedBlock.rootIndex,
-    endEndpoint,
-    endOffset,
+    trimChildrenToRange(children, startIndex, start, endIndex, end),
   );
 }
 
@@ -340,15 +214,13 @@ function extractAcrossRoots(
 function trimChildrenToRange(
   children: Block[],
   startIndex: number,
-  startEndpoint: FragmentEndpoint,
-  startOffset: number,
+  start: FragmentEndpoint,
   endIndex: number,
-  endEndpoint: FragmentEndpoint,
-  endOffset: number,
+  end: FragmentEndpoint,
 ): Block[] {
-  const head = trimBlockToSuffix(children[startIndex]!, startEndpoint, startOffset);
+  const head = trimBlockToSuffix(children[startIndex]!, start);
   const middle = children.slice(startIndex + 1, endIndex);
-  const tail = trimBlockToPrefix(children[endIndex]!, endEndpoint, endOffset);
+  const tail = trimBlockToPrefix(children[endIndex]!, end);
 
   return [head, ...middle, tail].filter((block): block is Block => block !== null);
 }

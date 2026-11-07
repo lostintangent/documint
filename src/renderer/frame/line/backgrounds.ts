@@ -1,14 +1,11 @@
+// Owns active-block and document-change tints. Text blocks tint each line
+// band, while code blocks and table cells tint from their extents in frame
+// chrome so a tint never depends on which of their lines are in the window.
+
 import type { Block } from "@/document";
-import {
-  CODE_BLOCK_BACKGROUND_PADDING_Y,
-  CODE_BLOCK_CONTENT_PADDING_X,
-  type EditorLayoutState,
-  type LayoutRect,
-  type PathBounds,
-} from "@/editor/layout";
+import type { EditorLayoutState, LayoutRect } from "@/editor/layout";
 import type { BlockFlashFrame } from "../../effects";
 import type { ResolvedEditorTheme } from "../../theme";
-import { resolveTableCellPaintRect, type TableCellChromeFrame } from "../chrome/table";
 import {
   resolveDocumentChangeBackgroundColor,
   resolveDocumentChangeOpacity,
@@ -29,159 +26,83 @@ export type DocumentChangeBackgroundFrame = {
   rect: LayoutRect;
 };
 
-export type ContainerBackgroundFrame =
-  | { kind: "code"; rect: LayoutRect }
-  | ({ kind: "table-cell" } & TableCellChromeFrame);
+export type BlockTintFrames = {
+  activeBlockBackground: ActiveBlockBackgroundFrame | null;
+  documentChangeBackground: DocumentChangeBackgroundFrame | null;
+};
+
+export const noBlockTints: BlockTintFrames = {
+  activeBlockBackground: null,
+  documentChangeBackground: null,
+};
+
+// Code blocks and table cells tint from their extents in frame chrome instead.
+export function hasLineBlockTints(block: Block | null) {
+  return block?.type !== "code" && block?.type !== "table";
+}
 
 export function resolveDocumentFrameLineBackgrounds({
-  blockFlashes,
   activeBlockPath,
-  block,
-  containerBounds,
+  blockFlashes,
   documentChange,
-  layout,
   line,
   runtimeBlockPath,
-  tableCellPosition,
   theme,
   width,
 }: {
-  blockFlashes: Map<string, BlockFlashFrame>;
   activeBlockPath: string | null;
-  block: Block | null;
-  containerBounds: PathBounds | null;
+  blockFlashes: ReadonlyMap<string, BlockFlashFrame>;
   documentChange: DocumentChangeFrameEntry | null;
-  layout: EditorLayoutState["layout"];
   line: EditorLayoutState["layout"]["lines"][number];
   runtimeBlockPath: string | null;
-  tableCellPosition: { cellIndex: number; rowIndex: number } | null;
   theme: ResolvedEditorTheme;
   width: number;
-}): {
-  activeBlockBackground: ActiveBlockBackgroundFrame | null;
-  containerBackground: ContainerBackgroundFrame | null;
-  documentChangeBackground: DocumentChangeBackgroundFrame | null;
-} {
-  const codeBlockBackgroundRect =
-    block?.type === "code" && line.start === 0 && containerBounds
-      ? resolveCodeBlockBackgroundFrame(layout, line, containerBounds)
-      : null;
+}): BlockTintFrames {
   const isActiveBlock = line.blockPath !== null && line.blockPath === activeBlockPath;
-  const blockRect =
-    isActiveBlock || documentChange
-      ? resolveBlockBackgroundRect(block, line, containerBounds, codeBlockBackgroundRect, width)
-      : null;
 
-  return {
-    activeBlockBackground:
-      isActiveBlock && blockRect
-        ? {
-            activeFlash: runtimeBlockPath ? (blockFlashes.get(runtimeBlockPath) ?? null) : null,
-            color: theme.activeBlockBackground,
-            rect: blockRect,
-          }
-        : null,
-    containerBackground: resolveContainerBackgroundFrame({
-      block,
-      codeBlockBackgroundRect,
-      containerBounds,
-      line,
-      tableCellPosition,
-    }),
-    documentChangeBackground:
-      documentChange && blockRect
-        ? {
-            color: resolveDocumentChangeBackgroundColor(documentChange, theme),
-            opacity: resolveDocumentChangeOpacity(documentChange),
-            rect: blockRect,
-          }
-        : null,
-  };
+  if (!isActiveBlock && !documentChange) {
+    return noBlockTints;
+  }
+
+  return resolveBlockTints({
+    activeFlash: isActiveBlock ? resolveActiveFlash(blockFlashes, runtimeBlockPath) : null,
+    documentChange,
+    isActiveBlock,
+    rect: { height: line.height, left: 0, top: line.top - activeLineVerticalBleed, width },
+    theme,
+  });
 }
 
-function resolveCodeBlockBackgroundFrame(
-  layout: EditorLayoutState["layout"],
-  line: EditorLayoutState["layout"]["lines"][number],
-  containerBounds: PathBounds,
-): LayoutRect {
-  const left = Math.max(0, line.left - CODE_BLOCK_CONTENT_PADDING_X);
-  const right = Math.max(left, layout.width - layout.options.paddingX);
-
-  return {
-    height: containerBounds.bottom - containerBounds.top + CODE_BLOCK_BACKGROUND_PADDING_Y * 2,
-    left,
-    top: containerBounds.top - CODE_BLOCK_BACKGROUND_PADDING_Y,
-    width: right - left,
-  };
-}
-
-function resolveContainerBackgroundFrame({
-  block,
-  codeBlockBackgroundRect,
-  containerBounds,
-  line,
-  tableCellPosition,
+export function resolveBlockTints({
+  activeFlash,
+  documentChange,
+  isActiveBlock,
+  rect,
+  theme,
 }: {
-  block: Block | null;
-  codeBlockBackgroundRect: LayoutRect | null;
-  containerBounds: PathBounds | null;
-  line: EditorLayoutState["layout"]["lines"][number];
-  tableCellPosition: { cellIndex: number; rowIndex: number } | null;
-}): ContainerBackgroundFrame | null {
-  if (!containerBounds || line.start !== 0) {
-    return null;
-  }
-
-  if (block?.type === "code") {
-    if (!codeBlockBackgroundRect) {
-      return null;
-    }
-
-    return {
-      kind: "code",
-      rect: codeBlockBackgroundRect,
-    };
-  }
-
-  if (block?.type !== "table") {
-    return null;
-  }
-
+  activeFlash: BlockFlashFrame | null;
+  documentChange: DocumentChangeFrameEntry | null;
+  isActiveBlock: boolean;
+  rect: LayoutRect;
+  theme: ResolvedEditorTheme;
+}): BlockTintFrames {
   return {
-    kind: "table-cell",
-    isHeaderRow: tableCellPosition?.rowIndex === 0,
-    rect: resolveTableCellPaintRect(containerBounds, line.height),
+    activeBlockBackground: isActiveBlock
+      ? { activeFlash, color: theme.activeBlockBackground, rect }
+      : null,
+    documentChangeBackground: documentChange
+      ? {
+          color: resolveDocumentChangeBackgroundColor(documentChange, theme),
+          opacity: resolveDocumentChangeOpacity(documentChange),
+          rect,
+        }
+      : null,
   };
 }
 
-function resolveBlockBackgroundRect(
-  block: Block | null,
-  line: EditorLayoutState["layout"]["lines"][number],
-  containerBounds: PathBounds | null,
-  codeBlockBackgroundRect: LayoutRect | null,
-  width: number,
-): LayoutRect | null {
-  if (block?.type === "table") {
-    return null;
-  }
-
-  if (block?.type === "code") {
-    if (!codeBlockBackgroundRect || !containerBounds) {
-      return null;
-    }
-
-    return {
-      height: containerBounds.bottom - containerBounds.top,
-      left: codeBlockBackgroundRect.left,
-      top: containerBounds.top,
-      width: codeBlockBackgroundRect.width,
-    };
-  }
-
-  return {
-    height: line.height,
-    left: 0,
-    top: line.top - activeLineVerticalBleed,
-    width,
-  };
+export function resolveActiveFlash(
+  blockFlashes: ReadonlyMap<string, BlockFlashFrame>,
+  runtimeBlockPath: string | null,
+) {
+  return runtimeBlockPath ? (blockFlashes.get(runtimeBlockPath) ?? null) : null;
 }

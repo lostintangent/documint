@@ -32,15 +32,18 @@ import { parseFragment, serializeFragment } from "@/markdown";
 import { getPath, placeAt, selectIn, selectSubstring, setup, toMarkdown } from "../../helpers";
 
 describe("Paragraphs", () => {
-  test("copy: collapsed selection returns null", () => {
-    const state = setup("alpha\n");
-    const placed = placeAt(state, getPath(state, "alpha"), 0);
+  test("copy: collapsed selection returns null, even in an empty paragraph", () => {
+    const state = setup("\n");
+    const placed = placeAt(state, getPath(state, ""), 0);
 
     expect(copySelection(placed)).toBeNull();
   });
 
   test("copy: substring emits bare text", () => {
-    expect(copySubstring("Hello world\n", "Hello world", "Hello")).toBe("Hello");
+    const state = setup("Hello world\n");
+    const selected = selectIn(state, getPath(state, "Hello world"), 0, 5);
+
+    expect(copySelection(selected)).toEqual({ kind: "text", text: "Hello" });
   });
 
   test("copy: bold mark survives a whole-path selection", () => {
@@ -91,6 +94,17 @@ describe("Paragraphs", () => {
     expect(pasteInto("Hello world\n", { text: "Hello world", offset: 6 }, "X\n\n# H\n\nY")).toBe(
       "Hello X\n\n# H\n\nYworld\n",
     );
+  });
+
+  test.each([
+    ["an image", "First\n\nA ![cat picture](cat.png) B"],
+    ["a mention", "First\n\nA @[Jane Doe](user-123) B"],
+  ])("paste: two paragraphs ending in %s land the caret after the pasted content", (_, source) => {
+    // References are one editor unit, so the caret can't be measured from
+    // `plainText`, which spells out alt text and mention labels.
+    const next = pasteIntoState("Hello world\n", { text: "Hello world", offset: 5 }, source);
+
+    expect(caret(next)).toEqual({ focusedText: "A \uFFFC B world", offset: 5 });
   });
 });
 
@@ -146,16 +160,13 @@ describe("Lists", () => {
   });
 
   test("copy: ordered list preserves its marker", () => {
-    // The serializer uses the canonical "lazy 1." style for ordered lists
-    // whose `start` was inferred — every item gets "1.", and renderers
-    // number them sequentially.
     expect(
       copyAcross(
         "1. one\n2. two\n",
         { text: "one", offset: "start" },
         { text: "two", offset: "end" },
       ),
-    ).toBe("1. one\n1. two");
+    ).toBe("1. one\n2. two");
   });
 
   test("copy: task list preserves checkbox state", () => {
@@ -319,26 +330,17 @@ describe("Tables", () => {
     ).toBe("| A | B |\n| --- | --- |\n| one | two |\n| three | four |");
   });
 
-  test("copy: body rows without the header still degrades to nothing", () => {
-    expect(
-      copyAcross(
-        "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n",
-        { text: "one", offset: "start" },
-        { text: "four", offset: "end" },
-      ),
-    ).toBeNull();
-  });
-
-  test("copy: cross-cell partial row selection still degrades to nothing", () => {
-    // Row-slice table copy only supports header-first full rows. Partial rows
-    // still degrade rather than emitting an ambiguous fragment.
-    expect(
-      copyAcross(
-        "| A | B |\n| --- | --- |\n| one | two |\n",
-        { text: "A", offset: 1 },
-        { text: "B", offset: "end" },
-      ),
-    ).toBeNull();
+  // Row-slice table copy only supports header-first full rows. Any other
+  // cross-cell shape degrades rather than emitting an ambiguous fragment.
+  test.each<[string, RangeAnchor, RangeAnchor]>([
+    ["body rows only", { text: "one", offset: "start" }, { text: "four", offset: "end" }],
+    ["mid-cell start", { text: "A", offset: 1 }, { text: "two", offset: "end" }],
+    ["later-cell start", { text: "B", offset: "start" }, { text: "two", offset: "end" }],
+    ["early-cell end", { text: "A", offset: "start" }, { text: "one", offset: "end" }],
+    ["mid-cell end", { text: "A", offset: "start" }, { text: "two", offset: 1 }],
+  ])("copy: cross-cell selection degrades to nothing (%s)", (_, from, to) => {
+    const table = "| A | B |\n| --- | --- |\n| one | two |\n| three | four |\n";
+    expect(copyAcross(table, from, to)).toBeNull();
   });
 
   test("paste: into an empty paragraph replaces it", () => {
@@ -477,13 +479,17 @@ describe("Code blocks", () => {
     );
   });
 
-  test("paste: markdown structure into a code block stays literal source", () => {
-    // Inside a code block, markdown markers are just characters — the source
-    // stays opaque to structural paste.
-    expect(pasteInto("```\nfoo\n```\n", { text: "foo", offset: "end" }, "\n- item")).toBe(
-      "```\nfoo\n- item\n```\n",
-    );
-  });
+  test.each([
+    ["```\nfoo\n```\n", "foo", "\n- item", "```\nfoo\n- item\n```\n"],
+    ["```\n```\n", "", "- item", "```\n- item\n```\n"],
+  ])(
+    "paste: markdown structure into a code block stays literal source",
+    (md, text, source, expected) => {
+      // Inside a code block, markdown markers are just characters — the source
+      // stays opaque to structural paste, even when the block is empty.
+      expect(pasteInto(md, { text, offset: "end" }, source)).toBe(expected);
+    },
+  );
 
   test("paste: italic markdown into a code block keeps the asterisks literal", () => {
     expect(pasteInto("```\nx\n```\n", { text: "x", offset: "end" }, "*y*")).toBe(
@@ -491,9 +497,12 @@ describe("Code blocks", () => {
     );
   });
 
-  test("paste: cross-path selection touching a code block stays literal in reverse", () => {
+  test.each([
+    ["alpha", "al# H\n\npara\n\n\n```\nde\n```\n\nomega\n"],
+    ["omega", "alpha\n\n```\nco\n```\n\n\\# H\n\npara\nega\n"],
+  ])("paste: cross-path selection from a code block to %p stays literal", (focusText, expected) => {
     const state = setup("alpha\n\n```\ncode\n```\n\nomega\n");
-    const paragraph = getPath(state, "alpha");
+    const paragraph = getPath(state, focusText);
     const code = getPath(state, "code");
     const fragment = parseFragment("# H\n\npara\n");
     const selected = setSelection(state, {
@@ -503,7 +512,7 @@ describe("Code blocks", () => {
     const next = pasteFragment(selected, fragment, "# H\n\npara\n");
 
     expect(next).not.toBeNull();
-    expect(toMarkdown(next!)).toBe("al# H\n\npara\n\n\n```\nde\n```\n\nomega\n");
+    expect(toMarkdown(next!)).toBe(expected);
   });
 });
 
@@ -550,6 +559,17 @@ describe("Cross-block / multi-root", () => {
         { text: "beta", offset: "end" },
       ),
     ).toBe("Before\n\n- alpha\n- beta");
+  });
+
+  test("paste: an image over a cross-paragraph selection lands the caret after it", () => {
+    const state = setup("Hello world\n\nNext para\n");
+    const selected = setSelection(state, {
+      anchor: { path: getPath(state, "Hello world").path, offset: 5 },
+      focus: { path: getPath(state, "Next para").path, offset: 4 },
+    });
+    const next = pasteFragment(selected, parseFragment("A ![cat picture](cat.png) B"))!;
+
+    expect(caret(next)).toEqual({ focusedText: "HelloA \uFFFC B para", offset: 10 });
   });
 });
 
@@ -645,28 +665,42 @@ describe("Undo / redo", () => {
 });
 
 describe("Comments — clipboard repair", () => {
-  test("copy never disturbs threads on the source state", () => {
-    const state = withCommentOn(setup("Hello world\n"), "Hello world", "world");
-    const before = resolvedCommentTexts(state);
-
-    copySelection(selectIn(state, getPath(state, "Hello world"), 0, 5));
-
-    expect(resolvedCommentTexts(state)).toEqual(before);
-  });
-
-  test("structural paste in a different root preserves the thread", () => {
-    const seeded = withCommentOn(setup("alpha\n\nbeta\n"), "beta", "beta");
-    const next = pasteFragment(placeCaret(seeded, "alpha", "start"), parseFragment("- new\n"))!;
-
-    expect(resolvedCommentTexts(next)).toEqual(["beta"]);
-  });
-
-  test("structural paste before a commented offset shifts the anchor correctly", () => {
-    const seeded = withCommentOn(setup("Hello world\n"), "Hello world", "world");
-    // Paste italic at offset 0 — content ahead of the comment shifts.
-    const next = pasteFragment(placeCaret(seeded, "Hello world", "start"), parseFragment("*X*"))!;
+  test.each([
+    ["paragraphs ending in an image", "Hello world\n", 5, "First\n\nA ![cat](cat.png) B"],
+    ["list items into a list item", "- Hello world\n", 6, "- a\n- b"],
+  ])("pasting %s before a commented word keeps its quote", (_, markdown, offset, source) => {
+    const seeded = withCommentOn(setup(markdown), "Hello world", "world");
+    const next = pasteFragment(placeCaret(seeded, "Hello world", offset), parseFragment(source))!;
 
     expect(resolvedCommentTexts(next)).toEqual(["world"]);
+  });
+
+  test("pasting over a context word and then into the quote keeps the comment", () => {
+    const text = "Say hello world to the lazy dog.";
+    const seeded = withCommentOn(setup(`${text}\n`), text, "world");
+    const retyped = pasteFragment(
+      selectSubstring(seeded, getPath(seeded, text), "hello"),
+      parseFragment("hey"),
+    )!;
+    const next = pasteFragment(
+      selectSubstring(retyped, getPath(retyped, "Say hey world to the lazy dog."), "rl"),
+      parseFragment("r"),
+    )!;
+
+    expect(resolvedCommentTexts(next)).toEqual(["word"]);
+  });
+
+  test("a splitting paste leaves a comment before the paste point untouched", () => {
+    const seeded = withCommentOn(setup("Hello world\n"), "Hello world", "Hello");
+    const next = pasteFragment(
+      placeCaret(seeded, "Hello world", 6),
+      parseFragment("First\n\nA cat B"),
+    )!;
+
+    expect(next.documentIndex.document.comments).toEqual(seeded.documentIndex.document.comments);
+    expect(getCommentState(next.documentIndex).ranges).toMatchObject([
+      { endOffset: 5, path: getPath(next, "Hello First").path, startOffset: 0 },
+    ]);
   });
 
   test("cross-path delete preserves a thread anchored before the cut range", () => {

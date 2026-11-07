@@ -192,16 +192,8 @@ Second
       childIndices: [],
       rootOffset: 0,
     });
-  });
-
-  test("matches by object identity, not content equality", () => {
-    const original = createParagraphTextBlock("twin");
-    const twin = createParagraphTextBlock("twin");
-
-    expect(findBlockChildIndicesByReference([original], twin)).toBeNull();
-    expect(findBlockChildIndicesByReference([original], original)).toEqual({
-      childIndices: [],
-      rootOffset: 0,
-    });
+    expect(
+      findBlockChildIndicesByReference([intro, list], createParagraphTextBlock("intro")),
+    ).toBeNull();
   });
 });

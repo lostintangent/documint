@@ -6,7 +6,6 @@ import type { IndexedInline } from "../../state";
 const IMAGE_FALLBACK_WIDTH = 240;
 const IMAGE_FALLBACK_ASPECT_RATIO = 9 / 16;
 const IMAGE_FALLBACK_MIN_HEIGHT = 120;
-const IMAGE_MIN_DIMENSION = 48;
 
 export type InlineImageDimensions = {
   height: number;
@@ -16,21 +15,35 @@ export type InlineImageDimensions = {
 export function resolveInlineImageDimensions(
   inline: IndexedInline,
   resources: DocumentResources,
-  availableWidth: number,
+  {
+    availableWidth,
+    emSize,
+    standalone,
+  }: {
+    availableWidth: number;
+    emSize: number;
+    standalone: boolean;
+  },
 ): InlineImageDimensions {
   const image = inline.node.type === "image" ? inline.node : null;
   const resource = image ? (resources.images.get(image.url) ?? null) : null;
   const authoredWidth = image?.width ?? null;
-  const fallbackWidth = Math.min(availableWidth, authoredWidth ?? IMAGE_FALLBACK_WIDTH);
-  const fallbackHeight = Math.max(
-    IMAGE_FALLBACK_MIN_HEIGHT,
-    Math.round(fallbackWidth * IMAGE_FALLBACK_ASPECT_RATIO),
-  );
 
+  // Until its size is known, an image alone in its container reserves a
+  // figure frame. One that flows with text or other images, like a row of
+  // README badges, reserves an em square so its line keeps its height and
+  // wrapping while it loads.
   if (!resource || resource.intrinsicWidth <= 0 || resource.intrinsicHeight <= 0) {
+    const width = Math.min(
+      availableWidth,
+      authoredWidth ?? (standalone ? IMAGE_FALLBACK_WIDTH : emSize),
+    );
+
     return {
-      height: fallbackHeight,
-      width: fallbackWidth,
+      height: standalone
+        ? Math.max(IMAGE_FALLBACK_MIN_HEIGHT, Math.round(width * IMAGE_FALLBACK_ASPECT_RATIO))
+        : emSize,
+      width,
     };
   }
 
@@ -38,8 +51,8 @@ export function resolveInlineImageDimensions(
   const scale = Math.min(1, targetWidth / resource.intrinsicWidth);
 
   return {
-    height: Math.max(IMAGE_MIN_DIMENSION, Math.round(resource.intrinsicHeight * scale)),
-    width: Math.max(IMAGE_MIN_DIMENSION, Math.round(resource.intrinsicWidth * scale)),
+    height: Math.round(resource.intrinsicHeight * scale),
+    width: Math.round(resource.intrinsicWidth * scale),
   };
 }
 

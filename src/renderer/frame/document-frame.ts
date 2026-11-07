@@ -7,21 +7,33 @@ import { emptyDocumentResources, type DocumentResources } from "@/editor/resourc
 import type { ResolvedEditorTheme } from "../theme";
 import {
   resolveRendererEffects,
-  type EffectPolicy,
   type BlockFlashFrame,
   type RendererEffect,
   type DocumintEffects,
 } from "../effects";
-import { resolveDocumentFrameChrome, type DocumentFrameChrome } from "./chrome";
+import { collectMany } from "../effects/kinds";
+import { resolveCodeBlockSurfaces, type CodeBlockSurfaceFrame } from "./chrome/code-blocks";
+import { resolveDividerRules } from "./chrome/divider-rules";
+import {
+  resolveBlockquoteRuleFrames,
+  resolveHeadingRules,
+  type BlockquoteRuleFrame,
+} from "./chrome/rules";
+import {
+  resolveActiveTableCellGeometry,
+  resolveTableCellChrome,
+  type ActiveTableCellGeometryFrame,
+  type BandedGeometryFrame,
+  type TableCellChromeFrame,
+} from "./chrome/table";
 import {
   createDocumentChangeResolver,
   type DocumentChangeFrameInput,
   resolveTableCellDocumentChanges,
   type TableCellDocumentChangeFrame,
 } from "./document-changes";
-import type { BandedGeometryFrame } from "./banded-geometry";
 import { resolveDocumentFrameLine, type DocumentFrameLine } from "./line";
-import { resolveSelectionPathRange } from "./selection-frame";
+import { resolveSelectionPathRange } from "./line/ranges";
 
 export function createDocumentFrame(
   editorState: EditorState,
@@ -32,74 +44,101 @@ export function createDocumentFrame(
   const ambientTime = options.ambientTime ?? options.now;
   const visibleLines = findVisibleLineRange(layout, paintTop, options.height);
   const visibleBlocks = findVisibleBlockRange(layout, paintTop, options.height);
-  const resolvedEffects = resolveRendererEffects(
-    options.effects ?? [],
-    options.now,
-    options.effectPolicy,
-    options.customEffects,
-  );
+  const effects = resolveRendererEffects(options.effects ?? [], options.now, options.customEffects);
   const resources = options.resources ?? emptyDocumentResources;
-  const clocks: DocumentFrameClocks = {
-    ambientTime,
-  };
-  const commentRangesByPath = groupCommentRangesByPath(options.commentRanges);
+  const commentRangesByPath = new Map<string, EditorCommentRange[]>();
+
+  for (const range of options.commentRanges) {
+    collectMany(commentRangesByPath, range.path, range);
+  }
+
   const textDecorations = options.textDecorations ?? null;
   const documentChanges = options.documentChanges ?? [];
   const resolveDocumentChange = createDocumentChangeResolver(
     documentChanges,
-    resolvedEffects.documentChangeFades,
+    effects.documentChangeFades,
   );
   const selectionPathRange = resolveSelectionPathRange(
     editorState.documentIndex,
     options.normalizedSelection,
   );
-  const { chrome, listMarkerPlans } = resolveDocumentFrameChrome({
-    blockFlashes: resolvedEffects.blockFlashes,
-    activeBlockPath: options.activeBlockPath,
-    activePath: options.activePath,
-    endBlockIndex: visibleBlocks.endIndex,
+  const tableCells = resolveTableCellChrome({
     editorState,
-    endLineIndex: visibleLines.endIndex,
-    layoutState,
-    startBlockIndex: visibleBlocks.startIndex,
-    startLineIndex: visibleLines.startIndex,
-    width: options.width,
+    height: options.height,
+    layout,
+    top: paintTop,
+    visibleBlocks,
   });
+  const chrome: DocumentFrameChrome = {
+    activeTableCellGeometry: resolveActiveTableCellGeometry({
+      activeBlockPath: options.activeBlockPath,
+      activePath: options.activePath,
+      blockFlashes: effects.blockFlashes,
+      cells: tableCells,
+    }),
+    codeBlockSurfaces: resolveCodeBlockSurfaces({
+      activeBlockPath: options.activeBlockPath,
+      blockFlashes: effects.blockFlashes,
+      editorState,
+      layout,
+      resolveDocumentChange,
+      theme: options.theme,
+      visibleBlocks,
+      width: options.width,
+    }),
+    blockquoteRules: resolveBlockquoteRuleFrames(
+      layout,
+      editorState,
+      options.activeBlockPath,
+      visibleLines.startIndex,
+      visibleLines.endIndex,
+    ),
+    dividerRules: resolveDividerRules(
+      layout,
+      editorState,
+      visibleBlocks.startIndex,
+      visibleBlocks.endIndex,
+      options.width,
+    ),
+    headingRules: resolveHeadingRules(
+      layout,
+      editorState,
+      visibleLines.startIndex,
+      visibleLines.endIndex,
+      options.width,
+    ),
+    tableCells,
+  };
   const lines: DocumentFrameLine[] = [];
   const tableCellDocumentChanges =
     documentChanges.length === 0
       ? []
       : resolveTableCellDocumentChanges({
+          cells: tableCells,
           editorState,
-          endLineIndex: visibleLines.endIndex,
-          layoutState,
           resolveDocumentChange,
-          startLineIndex: visibleLines.startIndex,
           theme: options.theme,
         });
-  let hasDocumentChangeHighlights = tableCellDocumentChanges.length > 0;
+  let hasDocumentChangeHighlights =
+    tableCellDocumentChanges.length > 0 ||
+    chrome.codeBlockSurfaces.some((surface) => surface.documentChangeBackground !== null);
 
   for (let index = visibleLines.startIndex; index < visibleLines.endIndex; index += 1) {
     const line = resolveDocumentFrameLine({
-      blockFlashes: resolvedEffects.blockFlashes,
       activeBlockPath: options.activeBlockPath,
-      blockPulses: resolvedEffects.blockPulses,
-      textFades: resolvedEffects.textFades,
-      textHighlights: resolvedEffects.textHighlights,
-      textPulses: resolvedEffects.textPulses,
       activeThreadIndex: options.activeThreadIndex,
       commentPresence: options.commentPresence ?? null,
       commentRangesByPath,
       editorState,
+      effects,
       layoutState,
       line: layout.lines[index]!,
       normalizedSelection: options.normalizedSelection,
       resolveDocumentChange,
+      resources,
       selectionPathRange,
       textDecorations,
-      resources,
       theme: options.theme,
-      listMarkerPlans,
       width: options.width,
     });
 
@@ -108,14 +147,11 @@ export function createDocumentFrame(
   }
 
   return {
-    activeBlockChangedEffect: resolveActiveBlockChangedEffectFrame(
-      lines,
-      chrome.activeTableCellGeometry,
-    ),
-    effects: resolvedEffects.rendererEffects,
+    activeBlockChangedEffect: resolveActiveBlockChangedEffectFrame(lines, chrome),
+    ambientTime,
+    effects: effects.rendererEffects,
     hasDocumentChangeHighlights,
     chrome,
-    clocks,
     customEffects: options.customEffects,
     tableCellDocumentChanges,
     layer: {
@@ -146,7 +182,6 @@ type CreateDocumentFrameOptions = {
   commentRanges: EditorCommentRange[];
   customEffects?: DocumintEffects;
   devicePixelRatio: number;
-  effectPolicy?: EffectPolicy;
   effects?: readonly RendererEffect[];
   documentChanges?: readonly DocumentChangeFrameInput[];
   height: number;
@@ -158,28 +193,12 @@ type CreateDocumentFrameOptions = {
   width: number;
 };
 
-function groupCommentRangesByPath(commentRanges: EditorCommentRange[]) {
-  const rangesByPath = new Map<string, EditorCommentRange[]>();
-
-  for (const range of commentRanges) {
-    const ranges = rangesByPath.get(range.path);
-
-    if (ranges) {
-      ranges.push(range);
-    } else {
-      rangesByPath.set(range.path, [range]);
-    }
-  }
-
-  return rangesByPath;
-}
-
 export type DocumentFrame = {
   readonly activeBlockChangedEffect: ActiveBlockChangedEffectFrame | null;
   readonly effects: readonly RendererEffect[];
   readonly hasDocumentChangeHighlights: boolean;
+  readonly ambientTime: number;
   readonly chrome: DocumentFrameChrome;
-  readonly clocks: DocumentFrameClocks;
   readonly customEffects?: DocumintEffects;
   readonly tableCellDocumentChanges: readonly TableCellDocumentChangeFrame[];
   readonly layer: PaintLayerFrame;
@@ -190,8 +209,13 @@ export type DocumentFrame = {
   readonly viewport: LayoutRect;
 };
 
-type DocumentFrameClocks = {
-  readonly ambientTime: number;
+export type DocumentFrameChrome = {
+  readonly activeTableCellGeometry: ActiveTableCellGeometryFrame | null;
+  readonly blockquoteRules: ReadonlyMap<string, BlockquoteRuleFrame>;
+  readonly codeBlockSurfaces: readonly CodeBlockSurfaceFrame[];
+  readonly dividerRules: readonly LayoutRect[];
+  readonly headingRules: ReadonlyMap<string, LayoutRect>;
+  readonly tableCells: readonly TableCellChromeFrame[];
 };
 
 export type PaintLayerFrame = {
@@ -208,13 +232,22 @@ export type ActiveBlockChangedEffectFrame = {
 
 function resolveActiveBlockChangedEffectFrame(
   lines: readonly DocumentFrameLine[],
-  activeTableCellGeometry: DocumentFrameChrome["activeTableCellGeometry"],
+  { activeTableCellGeometry, codeBlockSurfaces }: DocumentFrameChrome,
 ): ActiveBlockChangedEffectFrame | null {
   if (activeTableCellGeometry?.activeFlash) {
     return {
       activeFlash: activeTableCellGeometry.activeFlash,
       geometry: activeTableCellGeometry,
     };
+  }
+
+  for (const { activeBlockBackground } of codeBlockSurfaces) {
+    if (activeBlockBackground?.activeFlash) {
+      return {
+        activeFlash: activeBlockBackground.activeFlash,
+        geometry: { bands: [activeBlockBackground.rect], rect: activeBlockBackground.rect },
+      };
+    }
   }
 
   const bands: LayoutRect[] = [];
@@ -231,7 +264,7 @@ function resolveActiveBlockChangedEffectFrame(
     bands.push(background.rect);
   }
 
-  if (!activeFlash || bands.length === 0) {
+  if (!activeFlash) {
     return null;
   }
 

@@ -81,7 +81,7 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
 
               const applied = await vscode.workspace.applyEdit(edit);
 
-              // Something prevent the edit from being applied so
+              // Something prevented the edit from being applied, so
               // reject the edit by resyncing the last seen content.
               if (!applied) {
                 syncContent();
@@ -119,11 +119,23 @@ export class DocumintEditorProvider implements vscode.CustomTextEditorProvider {
             break;
 
           case "write-path":
-            await postMessage({
-              type: "write-result",
-              id: message.id,
-              path: await writeDocumentAsset(document.uri, message.name, message.data),
-            });
+            try {
+              await postMessage({
+                type: "write-result",
+                id: message.id,
+                path: await writeDocumentAsset(document.uri, message.name, message.data),
+              });
+            } catch (error) {
+              void vscode.window.showErrorMessage(
+                `Unable to save ${message.name}. ${error instanceof Error ? error.message : String(error)}`,
+              );
+
+              await postMessage({
+                type: "write-result",
+                id: message.id,
+                path: null,
+              });
+            }
             break;
 
           case "open-path":

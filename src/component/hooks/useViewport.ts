@@ -96,12 +96,6 @@ export function useViewport({ metadataExpanded, renderResources, theme }: UseVie
 
   /* Scroll position */
 
-  const setViewportTop = useEffectEvent((top: number) => {
-    viewportMetricsRef.current = { ...viewportMetricsRef.current, top };
-    setViewportTopState((previous) => (previous === top ? previous : top));
-    layout.invalidate();
-  });
-
   const syncScrollContainer = useEffectEvent((scrollContainer: HTMLDivElement) => {
     const next = readViewportMetrics(scrollContainer);
     const topChanged = next.top !== viewportMetricsRef.current.top;
@@ -109,8 +103,7 @@ export function useViewport({ metadataExpanded, renderResources, theme }: UseVie
     setViewportTopState((previous) => (previous === next.top ? previous : next.top));
     // Invalidate the lazy layout cache when scroll position changes —
     // otherwise renders triggered by native scroll events would read stale
-    // layout state. (Programmatic `scrollTo` already invalidates via
-    // `setViewportTop`; this keeps the two paths consistent.)
+    // layout state. (Programmatic `scrollTo` invalidates the same way.)
     if (topChanged) {
       layout.invalidate();
     }
@@ -119,30 +112,22 @@ export function useViewport({ metadataExpanded, renderResources, theme }: UseVie
   const scrollTo = useEffectEvent((top: number) => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) {
-      setViewportTop(top);
-      return top;
+      return;
     }
 
     scrollContainer.scrollTop = top;
     const appliedTop = scrollContainer.scrollTop;
-    if (appliedTop !== viewportMetricsRef.current.top) {
-      setViewportTop(appliedTop);
+    if (appliedTop === viewportMetricsRef.current.top) {
+      return;
     }
-    return appliedTop;
+
+    viewportMetricsRef.current = { ...viewportMetricsRef.current, top: appliedTop };
+    setViewportTopState((previous) => (previous === appliedTop ? previous : appliedTop));
+    layout.invalidate();
   });
 
   const getScrollTop = useEffectEvent(() => {
     return scrollContainerRef.current?.scrollTop ?? viewportMetricsRef.current.top;
-  });
-
-  /* Layout invalidation */
-
-  // Mark the cached layout as stale. Callers invoke this when an input the
-  // layout depends on has changed (document transitions, width, theme,
-  // resources, viewport height). Scroll position is invalidated internally.
-  // The next read of `layout.get()` will recompute against current inputs.
-  const invalidateLayout = useEffectEvent(() => {
-    layout.invalidate();
   });
 
   /* Coordinate translation + drag autoscroll */
@@ -228,7 +213,6 @@ export function useViewport({ metadataExpanded, renderResources, theme }: UseVie
     autoScrollDuringDrag,
     commitLayout,
     getScrollTop,
-    invalidateLayout,
     layout,
     resolvePoint,
     scrollContainerRef,
@@ -261,5 +245,5 @@ function readViewportMetrics(scrollContainer: HTMLDivElement): ViewportMetrics {
 }
 
 function resolveScrollContentHeight(layoutState: EditorLayoutState, viewportHeight: number) {
-  return Math.max(viewportHeight, Math.ceil(layoutState.totalHeight + 24));
+  return Math.max(viewportHeight, Math.ceil(layoutState.layout.height + 24));
 }

@@ -12,13 +12,13 @@ import {
   type VirtualLayout,
 } from "../state/cache";
 import { walkLayoutBlocks } from "../lib/block-walk";
-import { resolveBlockContentMetrics } from "../lib/content-metrics";
+import { resolveBlockPaddingY } from "../lib/code-block";
+import { resolveBlockContentMetrics, resolveBlockSurfaceLeft } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import { resolveTableColumnMetrics, resolveTableRowHeight } from "../measure/table";
-import { resolveTextBlockLineHeight } from "../measure/text";
+import { resolveBlockTypography } from "../measure/text";
 import { resolveBlockLayoutTextInput, tableCellLayoutTextInput } from "../measure/text-input";
 import { estimateContainerHeight } from "./height-estimate";
-import { estimateTextHeight } from "./text-estimate";
 
 export function getOrCreateVirtualLayout(
   cache: LayoutCache,
@@ -54,26 +54,29 @@ export function getOrCreateVirtualLayout(
     } else if (block.type === "table") {
       totalHeight = appendTableEstimateEntries({
         block,
+        cache,
         entries,
         indexedBlock,
+        left: resolveBlockSurfaceLeft(documentIndex, indexedBlock, options),
         options,
         pathIndices,
+        resources,
         top: totalHeight,
       });
     } else {
-      const contentMetrics = resolveBlockContentMetrics(documentIndex, indexedBlock, options);
       const input = resolveBlockLayoutTextInput(indexedBlock);
 
       if (input) {
         const estimatedHeight = estimateContainerHeight(
           cache,
           input,
-          block,
-          contentMetrics,
-          options,
+          resolveBlockContentMetrics(documentIndex, indexedBlock, options).availableWidth,
+          resolveBlockTypography(block, options.fontSize, options.lineHeight),
+          options.charWidth,
           resources,
         );
-        const top = totalHeight;
+        const paddingY = resolveBlockPaddingY(block);
+        const top = totalHeight + paddingY;
         const bottom = top + estimatedHeight;
         appendEstimateEntry(entries, pathIndices, {
           blockArrayIndex: indexedBlock.blockArrayIndex,
@@ -81,7 +84,7 @@ export function getOrCreateVirtualLayout(
           path: input.path,
           top,
         });
-        totalHeight = bottom;
+        totalHeight = bottom + paddingY;
       }
     }
   }
@@ -100,38 +103,44 @@ export function getOrCreateVirtualLayout(
 }
 
 // Appends one entry per table cell, sharing its row's bounds, and returns the
-// table's bottom.
+// table's bottom. Rows follow `layoutTable`'s policy over each cell's measured
+// or estimated content height.
 function appendTableEstimateEntries({
   block,
+  cache,
   entries,
   indexedBlock,
+  left,
   options,
   pathIndices,
+  resources,
   top,
 }: {
   block: Extract<Block, { type: "table" }>;
+  cache: LayoutCache;
   entries: VirtualLayout["entries"];
   indexedBlock: IndexedBlock;
+  left: number;
   options: DocumentLayoutOptions;
   pathIndices: Map<string, number>;
+  resources: DocumentResources;
   top: number;
 }) {
   if (indexedBlock.kind !== "cells") {
     return top;
   }
 
-  const left = options.paddingX + indexedBlock.depth * options.indentWidth;
   const { cellWidth } = resolveTableColumnMetrics(block, left, options);
-  const lineHeight = resolveTextBlockLineHeight(block, options.lineHeight, options.fontSize);
+  const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
   let nextTop = top;
 
   for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex += 1) {
     const cells = indexedBlock.tableCellRows[rowIndex] ?? [];
     const inputs = cells.map(tableCellLayoutTextInput);
     const rowHeight = resolveTableRowHeight(
-      lineHeight,
+      typography.lineHeight,
       inputs.map((input) =>
-        estimateTextHeight(input.text, cellWidth, options.charWidth, lineHeight),
+        estimateContainerHeight(cache, input, cellWidth, typography, options.charWidth, resources),
       ),
     );
     const bottom = nextTop + rowHeight;

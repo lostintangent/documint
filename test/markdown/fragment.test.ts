@@ -36,6 +36,22 @@ describe("parseFragment classification", () => {
       expect(fragment.inlines[0]?.type).toBe("resource");
     }
   });
+
+  test("resolves reference links against definitions within the fragment", () => {
+    const fragment = parseFragment("See [docs][d].\n\n[d]: /docs\n");
+
+    expect(fragment.kind).toBe("inlines");
+    if (fragment.kind === "inlines") {
+      expect(fragment.inlines[1]).toMatchObject({ type: "link", url: "/docs" });
+    }
+  });
+
+  test("falls back to the pasted text when definitions use up the source", () => {
+    expect(parseFragment("[1]: https://x.dev\n")).toEqual({
+      kind: "text",
+      text: "[1]: https://x.dev",
+    });
+  });
 });
 
 describe("parseFragment persistence-boundary isolation", () => {
@@ -48,7 +64,7 @@ describe("parseFragment persistence-boundary isolation", () => {
     expect(fragment.kind).toBe("blocks");
     if (fragment.kind === "blocks") {
       expect(fragment.blocks[0]?.type).toBe("divider");
-      expect(serializeFragment(fragment)).toBe("---\n\nfoo: 1\n\n---\n\nBody.");
+      expect(serializeFragment(fragment)).toBe("---\n\n## foo: 1\n\nBody.");
     }
   });
 

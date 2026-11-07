@@ -21,19 +21,19 @@ import {
 export function paintLineText(
   lineFrame: DocumentFrameLine,
   environment: {
-    clocks: { ambientTime: number };
+    ambientTime: number;
     context: CanvasRenderingContext2D;
     resources: DocumentResources;
     theme: ResolvedEditorTheme;
   },
 ) {
-  const { clocks, context, theme } = environment;
+  const { ambientTime, context, theme } = environment;
 
   for (const segment of lineFrame.segments) {
     context.font = segment.font;
 
     if (segment.atom === "image") {
-      paintImageSegment(context, lineFrame, segment, environment);
+      paintImageSegment(context, segment, environment);
       continue;
     }
 
@@ -43,7 +43,7 @@ export function paintLineText(
     }
 
     if (segment.atom === "resource") {
-      paintResourceSegment(context, segment, clocks, theme);
+      paintResourceSegment(context, segment, ambientTime, theme);
       continue;
     }
 
@@ -70,24 +70,18 @@ function paintTextRunSegment(
     return;
   }
 
+  const ruleWidth = Math.max(textDecorationMinimumWidth, segment.right - segment.left);
+
   context.fillStyle = segment.color;
   context.fillText(segment.text, segment.left, segment.baseline);
 
   if (segment.strikethrough) {
-    context.fillRect(
-      segment.left,
-      resolveStrikethroughTop(segment.baseline, line.height, context.font),
-      Math.max(textDecorationMinimumWidth, segment.right - segment.left),
-      textDecorationThickness,
-    );
+    const top = resolveStrikethroughTop(segment.baseline, line.height, context.font);
+    context.fillRect(segment.left, top, ruleWidth, textDecorationThickness);
   }
 
   if (segment.underline) {
-    context.fillRect(
-      segment.left,
-      resolveUnderlineTop(segment.baseline, line.height, context.font),
-      Math.max(textDecorationMinimumWidth, segment.right - segment.left),
-      textDecorationThickness,
-    );
+    const top = resolveUnderlineTop(segment.baseline, line.height, context.font);
+    context.fillRect(segment.left, top, ruleWidth, textDecorationThickness);
   }
 }

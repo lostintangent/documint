@@ -14,12 +14,13 @@ import { measureCaretTarget } from "@/editor/layout";
 import {
   resolveEditorHitAtPoint,
   resolveSelectionPointAt,
+  resolveTargetAtOffset,
   resolveWordSelection,
 } from "@/editor/navigation";
 import { resolveDragFocus } from "@/editor/navigation/hit";
 import { measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
-import { getPath, getPathByType, setup } from "../helpers";
+import { createResources, getPath, getPathByType, setup } from "../helpers";
 
 test("hit-tests canvas layout coordinates back to semantic offsets", () => {
   const state = setup(`Paragraph with semantic offsets.\n`);
@@ -109,8 +110,10 @@ test("keeps clicks left of a soft-wrapped line start on that visual line", () =>
   }
 });
 
-test("resolves link hits from document-space coordinates over linked text", () => {
-  const state = setup("[alpha](https://example.com) tail\n");
+test("resolves link hits from document-space coordinates over commented linked text", () => {
+  let state = setup("[alpha](https://example.com) tail\n");
+  const path = getPath(state, "alpha tail").path;
+  state = addComment(state, { endOffset: 5, path, startOffset: 0 }, "note")!;
   const layout = measureLayoutSlice(state.documentIndex, {
     width: 320,
   });
@@ -121,8 +124,13 @@ test("resolves link hits from document-space coordinates over linked text", () =
   }
 
   expect(
-    resolveHoverTarget(state, { layout }, { x: line.left + 4, y: line.top + 4 }, []),
-  ).toMatchObject({ kind: "link", url: "https://example.com" });
+    resolveHoverTarget(
+      state,
+      { layout },
+      { x: line.left + 4, y: line.top + 4 },
+      getCommentState(state.documentIndex).ranges,
+    ),
+  ).toMatchObject({ commentThreadIndex: 0, kind: "link", url: "https://example.com" });
 });
 
 test("limits link hover targets to the visual line bounds", () => {
@@ -482,6 +490,31 @@ test("hit-tests image runs as single reference caret stops", () => {
   expect(rightHit?.offset).toBe(imageRun.end);
 });
 
+test("resolves a linked image's link from either half and from a caret on either side", () => {
+  const url = "https://example.com/ci.svg";
+  const state = setup(
+    `see [docs](https://example.com/docs) [![CI](${url})](https://example.com/ci)\n`,
+  );
+  const resources = createResources({ images: { [url]: { height: 20, width: 98 } } });
+  const layout = measureLayoutSlice(state.documentIndex, { width: 520 }, undefined, resources);
+  const line = layout.lines[0]!;
+  const { inlines, path } = indexedTextEntries(state)[0]!;
+  const docs = inlines!.find((run) => run.link?.url === "https://example.com/docs")!;
+  const image = inlines!.find((run) => run.node.type === "image")!;
+  const imageLeft = measureCaretTarget(layout, { offset: image.start, path })!.left;
+  const ciLink = { kind: "link", url: "https://example.com/ci" };
+
+  for (const x of [imageLeft + 5, imageLeft + 93]) {
+    expect(
+      resolveHoverTarget(state, { layout }, { x, y: line.top + line.height / 2 }, []),
+    ).toMatchObject(ciLink);
+  }
+
+  expect(resolveTargetAtOffset(state, path, image.start, [])).toMatchObject(ciLink);
+  expect(resolveTargetAtOffset(state, path, image.end, [])).toMatchObject(ciLink);
+  expect(resolveTargetAtOffset(state, path, docs.start, [])).toBeNull();
+});
+
 test("resolves resource hover targets from registered resource inlines", () => {
   const state = createEditorState(
     parseDocument("[Recording](demo-resource://recording/live)\n", {
@@ -604,6 +637,31 @@ test("resolves task-toggle hover targets ahead of text hits", () => {
   );
 
   expect(hover).toEqual({ kind: "task-toggle", listItemPath: listItem.path });
+});
+
+test("resolves task-toggle hover targets in the gutter of code-first task items", () => {
+  const state = setup("- [ ] Plain task\n- [ ] ```ts\n  code\n  ```\n");
+  const viewport = createEditorLayoutState(
+    state,
+    { height: 320, top: 0, width: 520 },
+    createLayoutCache(),
+  );
+  const [plainLine, codeLine] = viewport.layout.lines;
+  const codeItem = state.documentIndex.blocks.filter((entry) => entry.block.type === "listItem")[1];
+
+  if (!plainLine || !codeLine || !codeItem) throw new Error("Expected two task list items");
+
+  const hover = resolveHoverTarget(
+    state,
+    viewport,
+    {
+      x: plainLine.left + 6,
+      y: codeLine.top + codeLine.height / 2,
+    },
+    [],
+  );
+
+  expect(hover).toEqual({ kind: "task-toggle", listItemPath: codeItem.path });
 });
 
 const metadataHitFixture = `---

@@ -4,6 +4,7 @@ import {
   createTableBlock,
   createTableCell,
   createTableRow,
+  getTableColumnCount,
   rebuildTableBlock,
   rootBlockPath,
   type Block,
@@ -11,11 +12,9 @@ import {
   type TableCell,
   type TableRow,
 } from "@/document";
-import { resolveIndexedTableCellByTablePath } from "../../../index/query";
-import type { DocumentIndex } from "../../../index/types";
-import { target, type EditorSelection, type SelectionTarget } from "../../../selection";
+import { target, type SelectionTarget } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
-import type { RootBlockInsertionContext, TableCellContext } from "../../context";
+import type { RootTextBlockContext, TableCellContext } from "../../context";
 import { createInlineReplacementAction, spliceInlineContainer } from "../inlines/shared";
 import { insertAt, removeAt, spliceAt } from "./shared";
 
@@ -28,43 +27,34 @@ type TableActionIntent = {
   selection: SelectionTarget;
 };
 
-type TableCellPosition = {
-  cellIndex: number;
-  rowIndex: number;
-};
-
 export function resolveTableInsertion(
-  context: RootBlockInsertionContext,
+  context: RootTextBlockContext,
   columnCount: number,
 ): EditorStateAction {
-  const table = createEmptyTable(Math.max(2, columnCount));
-
-  return insertTableAtRoot(context, table);
+  return {
+    kind: "splice-blocks",
+    blocks: [createEmptyTable(Math.max(2, columnCount))],
+    rootIndex: context.rootIndex,
+    selection: target.tableCell(rootBlockPath(context.rootIndex), 0, 0),
+  };
 }
 
 export function resolveTableSelectionMove(
   context: TableCellContext,
   direction: -1 | 1,
-): EditorStateAction | null {
-  const nextPosition = resolveTableCellMove(
-    context.indexedTable.block,
-    context.indexedCell.rowIndex,
-    context.indexedCell.cellIndex,
-    direction,
-  );
+): EditorStateAction {
+  const cells = context.indexedTable.tableCellRows.flat();
+  const nextCell =
+    cells[cells.findIndex((cell) => cell.path === context.indexedCell.path) + direction];
 
-  if (!nextPosition) {
-    return direction > 0 &&
-      isLastTableCell(
-        context.indexedTable.block,
-        context.indexedCell.rowIndex,
-        context.indexedCell.cellIndex,
-      )
-      ? appendEmptyTableRow(context)
-      : { kind: "keep-state" };
+  if (!nextCell) {
+    return direction > 0 ? appendEmptyTableRow(context) : { kind: "keep-state" };
   }
 
-  return moveSelectionToTableCell(context, nextPosition);
+  // The caret keeps its offset, which the reducer clamps to the next cell's text.
+  const point = { path: nextCell.path, offset: context.selection.focus.offset };
+
+  return { kind: "set-selection", selection: { anchor: point, focus: point } };
 }
 
 export function resolveTableCellLineBreak(context: TableCellContext): EditorStateAction {
@@ -89,23 +79,15 @@ export function resolveTableColumnInsertion(
 }
 
 export function resolveTableColumnDeletion(context: TableCellContext): EditorStateAction | null {
-  const columnCount = tableColumnCount(context.indexedTable.block);
-
-  if (columnCount <= 1) {
+  if (getTableColumnCount(context.indexedTable.block) <= 1) {
     return null;
   }
 
-  return replaceTable(
-    context,
-    deleteTableColumn(context.indexedTable.block, context.indexedCell.cellIndex),
-    {
-      selection: selectTableCell(
-        context,
-        context.indexedCell.rowIndex,
-        clampCellIndex(context.indexedCell.cellIndex, columnCount - 1),
-      ),
-    },
-  );
+  const table = deleteTableColumn(context.indexedTable.block, context.indexedCell.cellIndex);
+
+  return replaceTable(context, table, {
+    selection: selectNearestTableCell(context, table),
+  });
 }
 
 export function resolveTableRowInsertion(
@@ -114,14 +96,9 @@ export function resolveTableRowInsertion(
 ): EditorStateAction | null {
   const rowIndex =
     direction === "above" ? context.indexedCell.rowIndex : context.indexedCell.rowIndex + 1;
-  const columnCount = tableColumnCount(context.indexedTable.block);
 
   return replaceTable(context, insertTableRow(context.indexedTable.block, rowIndex), {
-    selection: selectTableCell(
-      context,
-      rowIndex,
-      clampCellIndex(context.indexedCell.cellIndex, columnCount),
-    ),
+    selection: selectTableCell(context, rowIndex, context.indexedCell.cellIndex),
   });
 }
 
@@ -131,15 +108,9 @@ export function resolveTableRowDeletion(context: TableCellContext): EditorStateA
   }
 
   const table = deleteTableRow(context.indexedTable.block, context.indexedCell.rowIndex);
-  const rowIndex = clampRowIndex(context.indexedCell.rowIndex, table.rows.length);
-  const columnCount = table.rows[rowIndex]?.cells.length ?? 1;
 
   return replaceTable(context, table, {
-    selection: selectTableCell(
-      context,
-      rowIndex,
-      clampCellIndex(context.indexedCell.cellIndex, columnCount),
-    ),
+    selection: selectNearestTableCell(context, table),
   });
 }
 
@@ -159,29 +130,6 @@ function appendEmptyTableRow(context: TableCellContext): EditorStateAction {
   });
 }
 
-function moveSelectionToTableCell(
-  context: TableCellContext,
-  position: TableCellPosition,
-): EditorStateAction {
-  const nextCell = context.indexedTable.block.rows[position.rowIndex]?.cells[position.cellIndex];
-
-  if (!nextCell) {
-    return { kind: "keep-state" };
-  }
-
-  return {
-    kind: "set-selection",
-    selection: createTableCellSelection(
-      context.documentIndex,
-      context.selection,
-      context.indexedTable.path,
-      position.rowIndex,
-      position.cellIndex,
-      Math.min(context.selection.focus.offset, nextCell.plainText.length),
-    ),
-  };
-}
-
 function insertTableColumn(table: TableBlock, cellIndex: number): TableBlock {
   return createTableBlock({
     align: spliceAt(table.align, cellIndex, 0, [null]),
@@ -199,25 +147,13 @@ function deleteTableColumn(table: TableBlock, cellIndex: number): TableBlock {
 }
 
 function insertTableRow(table: TableBlock, rowIndex: number): TableBlock {
-  const row = createEmptyTableRow(tableColumnCount(table));
+  const row = createEmptyTableRow(getTableColumnCount(table));
 
   return rebuildTableBlock(table, insertAt(table.rows, rowIndex, row));
 }
 
 function deleteTableRow(table: TableBlock, rowIndex: number): TableBlock {
   return rebuildTableBlock(table, removeAt(table.rows, rowIndex));
-}
-
-function insertTableAtRoot(
-  context: RootBlockInsertionContext,
-  table: TableBlock,
-): EditorStateAction {
-  return {
-    kind: "splice-blocks",
-    blocks: [table],
-    rootIndex: context.rootIndex,
-    selection: target.tableCell(rootBlockPath(context.rootIndex), 0, 0),
-  };
 }
 
 function replaceTable(
@@ -231,6 +167,14 @@ function replaceTable(
     blockPath: context.indexedTable.path,
     selection: intent.selection,
   };
+}
+
+// Clamps the caret onto a cell that survives the deletion.
+function selectNearestTableCell(context: TableCellContext, table: TableBlock): SelectionTarget {
+  const rowIndex = Math.min(context.indexedCell.rowIndex, table.rows.length - 1);
+  const cellCount = table.rows[rowIndex]!.cells.length;
+
+  return selectTableCell(context, rowIndex, Math.min(context.indexedCell.cellIndex, cellCount - 1));
 }
 
 function selectTableCell(
@@ -253,110 +197,4 @@ function createEmptyTableRow(columnCount: number): TableRow {
 
 function createEmptyTableCell(): TableCell {
   return createTableCell([]);
-}
-
-function tableColumnCount(table: TableBlock): number {
-  return Math.max(1, ...table.rows.map((row) => row.cells.length));
-}
-
-function clampRowIndex(rowIndex: number, rowCount: number): number {
-  return Math.min(rowIndex, rowCount - 1);
-}
-
-function clampCellIndex(cellIndex: number, columnCount: number): number {
-  return Math.min(cellIndex, columnCount - 1);
-}
-
-function createTableCellSelection(
-  documentIndex: DocumentIndex,
-  fallbackSelection: EditorSelection,
-  tablePath: string,
-  rowIndex: number,
-  cellIndex: number,
-  offset: number,
-): EditorSelection {
-  const path = resolveIndexedTableCellByTablePath(
-    documentIndex,
-    tablePath,
-    rowIndex,
-    cellIndex,
-  )?.path;
-
-  if (!path) {
-    return fallbackSelection;
-  }
-
-  return {
-    anchor: { path, offset },
-    focus: { path, offset },
-  };
-}
-
-function resolveTableCellMove(
-  table: TableBlock,
-  rowIndex: number,
-  cellIndex: number,
-  direction: -1 | 1,
-): TableCellPosition | null {
-  return direction < 0
-    ? resolvePreviousTableCell(table, rowIndex, cellIndex)
-    : resolveNextTableCell(table, rowIndex, cellIndex);
-}
-
-function resolvePreviousTableCell(
-  table: TableBlock,
-  rowIndex: number,
-  cellIndex: number,
-): TableCellPosition | null {
-  if (cellIndex > 0) {
-    return { cellIndex: cellIndex - 1, rowIndex };
-  }
-
-  if (rowIndex > 0) {
-    const previousRow = table.rows[rowIndex - 1];
-
-    if (!previousRow || previousRow.cells.length === 0) {
-      return null;
-    }
-
-    return {
-      cellIndex: previousRow.cells.length - 1,
-      rowIndex: rowIndex - 1,
-    };
-  }
-
-  return null;
-}
-
-function resolveNextTableCell(
-  table: TableBlock,
-  rowIndex: number,
-  cellIndex: number,
-): TableCellPosition | null {
-  const row = table.rows[rowIndex];
-
-  if (!row) {
-    return null;
-  }
-
-  if (cellIndex + 1 < row.cells.length) {
-    return { cellIndex: cellIndex + 1, rowIndex };
-  }
-
-  const nextRow = table.rows[rowIndex + 1];
-
-  if (!nextRow || nextRow.cells.length === 0) {
-    return null;
-  }
-
-  return {
-    cellIndex: 0,
-    rowIndex: rowIndex + 1,
-  };
-}
-
-function isLastTableCell(table: TableBlock, rowIndex: number, cellIndex: number) {
-  const row = table.rows[rowIndex];
-
-  return Boolean(row && rowIndex === table.rows.length - 1 && cellIndex === row.cells.length - 1);
 }

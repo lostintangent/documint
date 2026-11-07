@@ -9,7 +9,7 @@ import {
   resolveIndexedBlockContainingPath,
 } from "@/editor";
 import {
-  createAnchorFromContainer,
+  captureTextAnchor,
   createCommentThread,
   createCodeBlock,
   createDocument,
@@ -22,7 +22,6 @@ import {
   createTableCell,
   createTableRow,
   createText,
-  extractQuoteFromContainer,
   listAnchorContainers,
 } from "@/document";
 import {
@@ -313,7 +312,7 @@ test("resolves comment thread anchors as active threads without resolving a curs
   }
 
   const thread = createCommentThread({
-    anchor: createAnchorFromContainer(container, 6, "alpha comment".length),
+    anchor: captureTextAnchor(container, 6, "alpha comment".length).anchor,
     body: "Working here",
     createdAt: "2026-04-05T12:00:00.000Z",
     quote: "comment",
@@ -402,7 +401,7 @@ test("resolves presence viewport state", () => {
     state,
     {
       height: 120,
-      top: Math.max(120, topViewport.totalHeight - 180),
+      top: Math.max(120, topViewport.layout.height - 180),
       width: 420,
     },
     layoutCache,
@@ -432,32 +431,22 @@ test("resolves comment thread presence viewport state", () => {
   }
 
   const firstThread = createCommentThread({
-    anchor: createAnchorFromContainer(
+    ...captureTextAnchor(
       firstContainer,
       firstContainer.text.indexOf("paragraph"),
       firstContainer.text.length - 1,
     ),
     body: "Working here",
     createdAt: "2026-04-05T12:00:00.000Z",
-    quote: extractQuoteFromContainer(
-      firstContainer,
-      firstContainer.text.indexOf("paragraph"),
-      firstContainer.text.length - 1,
-    ),
   });
   const lastThread = createCommentThread({
-    anchor: createAnchorFromContainer(
+    ...captureTextAnchor(
       lastContainer,
       lastContainer.text.indexOf("paragraph"),
       lastContainer.text.length - 1,
     ),
     body: "Working there",
     createdAt: "2026-04-05T12:00:00.000Z",
-    quote: extractQuoteFromContainer(
-      lastContainer,
-      lastContainer.text.indexOf("paragraph"),
-      lastContainer.text.length - 1,
-    ),
   });
   const state = createEditorState(createDocument(blocks, [firstThread, lastThread]));
   const commentRanges = getCommentState(state.documentIndex).ranges;
@@ -495,7 +484,7 @@ test("resolves comment thread presence viewport state", () => {
     state,
     {
       height: 120,
-      top: Math.max(120, topViewport.totalHeight - 180),
+      top: Math.max(120, topViewport.layout.height - 180),
       width: 420,
     },
     layoutCache,

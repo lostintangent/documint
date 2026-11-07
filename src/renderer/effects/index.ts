@@ -1,5 +1,5 @@
-// Owns paint-time effect policy. Editor and host code emit semantic effects;
-// this module decides which effects are active, how long they run, and which
+// Resolves semantic effects for paint. Editor and host code emit semantic
+// effects; this module decides which are active, how long they run, and which
 // paint-ready effect groups they contribute to for the current frame.
 
 import type { ResolvedEditorTheme } from "../theme";
@@ -28,22 +28,6 @@ export type {
   TextInsertionFrame,
 } from "./types";
 
-export type EffectPolicy = {
-  // Return `null` to opt an effect out of default renderer handling.
-  // The same policy must be used for frame resolution, pruning, and
-  // continuation checks so effect lifetime and painted output stay aligned.
-  duration: (effect: RendererEffect) => number | null;
-};
-
-// Default renderer policy. Hosts can wrap this value to override specific
-// effect durations while preserving the built-in behavior for the rest.
-export const defaultEffectPolicy: EffectPolicy = {
-  duration: (effect) => {
-    const descriptor = descriptorFor(effect);
-    return (descriptor.animatesByDefault?.(effect) ?? true) ? descriptor.duration(effect) : null;
-  },
-};
-
 export type ResolvedEffects = EffectGroups & {
   rendererEffects: readonly RendererEffect[];
 };
@@ -58,30 +42,43 @@ const LIST_MARKER_POP_COLOR_SPEED = 2;
 export function resolveRendererEffects(
   effects: readonly RendererEffect[],
   now: number,
-  policy = defaultEffectPolicy,
   customEffects?: DocumintEffects,
 ): ResolvedEffects {
-  const result = createEmptyResolvedEffects();
+  const groups: EffectGroups = {
+    blockFlashes: new Map(),
+    blockPulses: new Map(),
+    documentChangeFades: new Map(),
+    textFades: new Map(),
+    textHighlights: new Map(),
+    textPulses: new Map(),
+  };
   const rendererEffects: RendererEffect[] = [];
 
   for (const effect of effects) {
-    const defaultDurationMs = policy.duration(effect);
-    const durationMs = defaultDurationMs ?? getCustomEffectDuration(effect, customEffects);
+    const descriptor = descriptorFor(effect);
+    const defaultEnabled = descriptor.animatesByDefault?.(effect) ?? true;
+    // Effects the defaults skip stay active only for a matching host handler.
+    const durationMs =
+      defaultEnabled ||
+      (descriptor.customHandlerKey && customEffects?.[descriptor.customHandlerKey])
+        ? descriptor.duration(effect)
+        : null;
+    const elapsed = now - effect.startedAt;
 
-    if (durationMs === null) {
-      continue;
-    }
-
-    const progress = resolveEffectProgress(effect, now, durationMs);
-    if (progress === null) {
+    if (durationMs === null || elapsed >= durationMs) {
       continue;
     }
 
     rendererEffects.push(effect);
-    descriptorFor(effect).collect(result, effect, progress, defaultDurationMs !== null);
+    descriptor.collect(
+      groups,
+      effect,
+      Math.max(0, Math.min(1, elapsed / durationMs)),
+      defaultEnabled,
+    );
   }
 
-  return { ...result, rendererEffects };
+  return { ...groups, rendererEffects };
 }
 
 export function resolveBlockPulseScale(pop: { progress: number }) {
@@ -96,41 +93,6 @@ export function resolveBlockPulseColor(
 ) {
   const colorProgress = Math.max(0, pop.progress * LIST_MARKER_POP_COLOR_SPEED - 1);
   return blendCanvasColors(theme.insertHighlightText, baseColor, colorProgress);
-}
-
-function createEmptyResolvedEffects(): EffectGroups {
-  return {
-    blockFlashes: new Map(),
-    blockPulses: new Map(),
-    documentChangeFades: new Map(),
-    textFades: new Map(),
-    textHighlights: new Map(),
-    textPulses: new Map(),
-  };
-}
-
-function resolveEffectProgress(
-  effect: RendererEffect,
-  now: number,
-  durationMs: number,
-): number | null {
-  const elapsed = now - effect.startedAt;
-
-  if (elapsed >= durationMs) {
-    return null;
-  }
-
-  return Math.max(0, Math.min(1, elapsed / durationMs));
-}
-
-function getCustomEffectDuration(
-  effect: RendererEffect,
-  customEffects: DocumintEffects | undefined,
-) {
-  const descriptor = descriptorFor(effect);
-  return descriptor.customHandlerKey && customEffects?.[descriptor.customHandlerKey]
-    ? descriptor.duration(effect)
-    : null;
 }
 
 function easeOutCubic(t: number) {

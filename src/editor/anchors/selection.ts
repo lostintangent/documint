@@ -1,9 +1,4 @@
-import {
-  captureContextWindows,
-  clamp,
-  enumerateTextAnchorRanges,
-  type TextAnchor,
-} from "@/document";
+import { captureTextAnchor, clamp, enumerateTextAnchorRanges, type TextAnchor } from "@/document";
 
 export type SelectionAnchorAffinity = "after-prefix" | "before-suffix" | "neutral";
 
@@ -27,16 +22,10 @@ export function createSelectionAnchor(
   offset: number,
   affinity: SelectionAnchorAffinity,
 ): SelectionAnchor {
-  const capturedOffset = clamp(offset, 0, text.length);
-  const { prefix, suffix } = captureContextWindows(text, capturedOffset, capturedOffset);
-
   return {
     affinity,
     offset,
-    textAnchor: {
-      prefix: prefix || undefined,
-      suffix: suffix || undefined,
-    },
+    textAnchor: captureTextAnchor({ containerKind: "text", text }, offset, offset).anchor,
   };
 }
 

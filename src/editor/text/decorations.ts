@@ -9,8 +9,10 @@ import {
   resolveIndexedBlockContainingPath,
   type DocumentIndex,
   type EditorState,
+  type TextDeletedEffect,
+  type TextInsertedEffect,
 } from "../state";
-import { rangeOverlapsSegment } from "./ranges";
+import { mapOffsetThroughTextEdit, rangeOverlapsSegment, type TextEdit } from "./ranges";
 
 export type TextDecoration = {
   backgroundColor?: string;
@@ -123,18 +125,59 @@ function sameDecorations(a: readonly TextDecoration[], b: readonly TextDecoratio
   });
 }
 
-export function hasAnimatedDecorations(index: TextDecorationIndex): boolean {
-  for (const decorations of index.values()) {
-    if (decorations.some((decoration) => decoration.backgroundColor && decoration.pulse)) {
-      return true;
+// Carries the edited path's decorations through one typed insertion or
+// deletion, so colors stay on their text until the worker reclassifies the
+// root. Text inserted at a range's edge stays outside it, and a range the
+// insertion lands inside is dropped rather than stretched over text the worker
+// hasn't classified. Returns null when the path's ranges don't change.
+export function remapTextDecorationIndex(
+  previous: TextDecorationIndex,
+  effect: TextInsertedEffect | TextDeletedEffect,
+): TextDecorationIndex | null {
+  const ranges = previous.get(effect.path);
+  if (!ranges) return null;
+
+  // An inserted effect's `endOffset` is the inserted text's post-edit end, not
+  // a replaced range, so insertions replace nothing.
+  const inserted = effect.kind === "text-inserted";
+  const edit: TextEdit = {
+    endOffset: inserted ? effect.startOffset : effect.startOffset + effect.text.length,
+    insertedLength: inserted ? effect.text.length : 0,
+    startOffset: effect.startOffset,
+  };
+  const nextRanges: TextDecoration[] = [];
+  let changed = false;
+
+  for (const range of ranges) {
+    const startOffset = mapOffsetThroughTextEdit(range.startOffset, edit, 1);
+    const endOffset = mapOffsetThroughTextEdit(range.endOffset, edit, -1);
+
+    if (startOffset === range.startOffset && endOffset === range.endOffset) {
+      nextRanges.push(range);
+      continue;
+    }
+
+    changed = true;
+    const insertedInside =
+      inserted && range.startOffset < edit.startOffset && edit.startOffset < range.endOffset;
+
+    if (!insertedInside && startOffset < endOffset) {
+      nextRanges.push({ ...range, endOffset, startOffset });
     }
   }
 
-  return false;
+  if (!changed) return null;
+
+  const next = new Map(previous);
+  if (nextRanges.length === 0) {
+    next.delete(effect.path);
+  } else {
+    next.set(effect.path, nextRanges);
+  }
+  return next;
 }
 
 export function hasAnimatedDecorationsInViewport(
-  state: EditorState,
   viewport: EditorLayoutState,
   index: TextDecorationIndex,
 ): boolean {

@@ -25,7 +25,7 @@ export type DocumintStorage = {
 // Matches URLs the component handles directly without routing through host
 // storage: http(s):, data:, and blob: are all "remote" in the sense that the
 // browser can resolve them natively.
-const REMOTE_URL = /^(https?:|data:|blob:)/i;
+export const REMOTE_URL = /^(https?:|data:|blob:)/i;
 
 // Wraps the host-provided DocumintStorage and a window reference into a
 // single object that routes readFile and openFile calls based on whether the

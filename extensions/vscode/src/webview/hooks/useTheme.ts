@@ -10,8 +10,9 @@ export function useTheme(): EditorTheme {
       frameId = null;
       setTheme((previousTheme) => {
         const nextTheme = createVsCodeDocumintTheme();
-
-        return areThemesEqual(previousTheme, nextTheme) ? previousTheme : nextTheme;
+        return JSON.stringify(nextTheme) === JSON.stringify(previousTheme)
+          ? previousTheme
+          : nextTheme;
       });
     };
     const scheduleThemeUpdate = () => {
@@ -148,15 +149,5 @@ function readVsCodeColor(
     rootStyle.getPropertyValue(variableName).trim() ||
     bodyStyle.getPropertyValue(variableName).trim() ||
     undefined
-  );
-}
-
-function areThemesEqual(left: EditorTheme, right: EditorTheme): boolean {
-  const leftEntries = Object.entries(left);
-  const rightEntries = Object.entries(right);
-
-  return (
-    leftEntries.length === rightEntries.length &&
-    leftEntries.every(([key, value]) => right[key as keyof EditorTheme] === value)
   );
 }

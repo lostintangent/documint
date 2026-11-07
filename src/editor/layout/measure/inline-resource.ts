@@ -1,19 +1,19 @@
-import type { ResolvedResource, DocumentResourceIcon } from "@/editor/resources";
+import type { DocumentResourceIcon } from "@/editor/resources";
 
 export const resourceHorizontalPadding = 7;
-export const resourceIconSegmentHorizontalPadding = 5;
-export const resourceMinimumIconSegmentWidth = 22;
-export const resourceMinimumWidth = 30;
+const resourceIconSegmentHorizontalPadding = 5;
+const resourceMinimumIconSegmentWidth = 22;
+const resourceMinimumWidth = 30;
 export const resourceVectorIconSize = 13;
 
 export function measureInlineResourceWidth(
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
-  resource: ResolvedResource,
+  label: string,
+  iconSegmentWidth: number,
 ) {
-  const iconSegmentWidth = measureInlineResourceIconSegmentWidth(context, resource.icon);
   return Math.max(
     resourceMinimumWidth,
-    context.measureText(resource.label).width + iconSegmentWidth + resourceHorizontalPadding * 2,
+    context.measureText(label).width + iconSegmentWidth + resourceHorizontalPadding * 2,
   );
 }
 

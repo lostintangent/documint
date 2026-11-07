@@ -34,6 +34,22 @@ describe("Pair completion", () => {
     });
   });
 
+  test.each([
+    ["f(x).", "", "f(x)."],
+    ["{[b]}.", "", "{[b]}."],
+    ["(x].", "", "(x].)"],
+    ["a", "a", "aa"],
+  ])("typing %j before %j gives %j", (typed, start, text) => {
+    let state = setup(`${start}\n`);
+    state = placeAt(state, getPath(state, start), 0);
+
+    for (const char of typed) {
+      state = insertText(state, char) ?? state;
+    }
+
+    expect(indexedTextEntries(state).map((entry) => entry.text)).toEqual([text]);
+  });
+
   test("completes delimiters inside nested editable paths", () => {
     let state = setup("- parent\n  - child\n");
     const child = getPath(state, "child");

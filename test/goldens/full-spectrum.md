@@ -7,7 +7,7 @@ The semantic runtime model captures *structure*, **marks**, and [links](https://
   - Child item
 
 1. Ordered item
-1. Ordered continuation
+2. Ordered continuation
 
 - [x] Task complete
 - [ ] Task pending

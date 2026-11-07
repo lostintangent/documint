@@ -153,10 +153,12 @@ function sliceInlineNode(node: Inline, startOffset: number, endOffset: number): 
     }
   }
 
-  return [];
+  // References and line breaks are one-offset atoms, so any non-empty slice
+  // covers them whole.
+  return [node];
 }
 
-export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOffset: number) {
+export function sliceInlineChildren(nodes: Inline[], startOffset: number, endOffset = Infinity) {
   const sliced: Inline[] = [];
 
   for (const { node, start, end } of inlineNodesWithEditorRanges(nodes)) {

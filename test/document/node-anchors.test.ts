@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   createDocumentNodeAnchor,
-  resolveDocumentNodeAnchor,
+  documentNodeAnchorKey,
   resolveDocumentNodeAnchors,
+  type DocumentNodeAnchor,
 } from "@/document";
 import { parseDocument } from "@/markdown";
 
@@ -13,8 +14,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Intro\n\nTarget\n");
       const anchor = createAnchor(previous, "root.0");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         node: { plainText: "Target", type: "paragraph" },
         path: "root.1",
         status: "matched",
@@ -26,8 +26,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Intro\n\nAlpha\n\nTarget\n");
       const anchor = createAnchor(previous, "root.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         node: { plainText: "Target", type: "paragraph" },
         path: "root.2",
         status: "matched",
@@ -39,19 +38,17 @@ describe("document node anchors", () => {
       const next = parseDocument("Other\n");
       const anchor = createAnchor(previous, "root.0");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "absent",
       });
     });
 
-    test("reports budget exhaustion without returning a partial match", () => {
+    test("resolves nothing when the visit budget is exhausted", () => {
       const previous = parseDocument("Target\n");
       const next = parseDocument("Target\n");
       const anchor = createAnchor(previous, "root.0");
 
-      expect(resolveDocumentNodeAnchor(next, anchor, { maxVisitedNodes: 0 })).toEqual({
-        status: "exhausted",
-      });
+      expect(resolveAnchor(next, anchor, { maxVisitedNodes: 0 })).toBeUndefined();
     });
   });
 
@@ -61,8 +58,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Target\n\nBefore\n\nTarget\n\nAfter\n");
       const anchor = createAnchor(previous, "root.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         path: "root.2",
         status: "matched",
       });
@@ -73,8 +69,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Other\n\nTarget\n");
       const anchor = createAnchor(previous, "root.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-location",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         path: "root.1",
         status: "matched",
       });
@@ -85,8 +80,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Intro\n\nOther\n\nTarget\n\nOutro\n");
       const anchor = createAnchor(previous, "root.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -96,8 +90,7 @@ describe("document node anchors", () => {
       const next = parseDocument("> Target\n>\n> Before\n>\n> Target\n>\n> After\n");
       const anchor = createAnchor(previous, "root.0.children.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         path: "root.0.children.2",
         status: "matched",
       });
@@ -108,8 +101,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Target\n\nTarget\n");
       const anchor = createAnchor(previous, "root.0");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -119,8 +111,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Intro\n\nTarget\n\nIntro\n\nTarget\n");
       const anchor = createAnchor(previous, "root.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -130,8 +121,7 @@ describe("document node anchors", () => {
       const next = parseDocument("> Target\n>\n> Target\n");
       const anchor = createAnchor(previous, "root.0.children.0");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -141,8 +131,7 @@ describe("document node anchors", () => {
       const next = parseDocument("Same\n");
       const anchor = createAnchor(previous, "root.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -154,8 +143,7 @@ describe("document node anchors", () => {
       const next = parseDocument("| A | B |\n| - | - |\n| new | row |\n| one | two |\n");
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         node: { plainText: "two" },
         path: "root.0.rows.2.cells.1",
         status: "matched",
@@ -172,8 +160,7 @@ describe("document node anchors", () => {
         kind: "table-cell",
         rows: { nextHash: undefined, previousHash: undefined },
       });
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         node: { plainText: "one" },
         path: "root.1.rows.0.cells.0",
         status: "matched",
@@ -187,8 +174,7 @@ describe("document node anchors", () => {
       );
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-location",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         path: "root.0.rows.1.cells.1",
         status: "matched",
       });
@@ -210,8 +196,7 @@ describe("document node anchors", () => {
 `);
       const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-context",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         path: "root.0.rows.3.cells.1",
         status: "matched",
       });
@@ -222,8 +207,7 @@ describe("document node anchors", () => {
       const next = parseDocument("| A | B |\n| - | - |\n| one | two |\n| one | two |\n");
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toMatchObject({
-        basis: "exact-content-location",
+      expect(resolveAnchor(next, anchor)).toMatchObject({
         path: "root.0.rows.1.cells.1",
         status: "matched",
       });
@@ -243,8 +227,7 @@ describe("document node anchors", () => {
 `);
       const anchor = createAnchor(previous, "root.0.rows.1.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -267,8 +250,7 @@ describe("document node anchors", () => {
 `);
       const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -289,8 +271,7 @@ describe("document node anchors", () => {
 `);
       const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -300,8 +281,7 @@ describe("document node anchors", () => {
       const next = parseDocument("| A | B |\n| - | - |\n| left | same |\n");
       const anchor = createAnchor(previous, "root.0.rows.2.cells.1");
 
-      expect(resolveDocumentNodeAnchor(next, anchor)).toEqual({
-        reason: "weak-evidence",
+      expect(resolveAnchor(next, anchor)).toEqual({
         status: "ambiguous",
       });
     });
@@ -329,4 +309,12 @@ function createAnchor(document: ReturnType<typeof parseDocument>, path: string) 
     throw new Error(`Expected anchor for ${path}`);
   }
   return anchor;
+}
+
+function resolveAnchor(
+  document: ReturnType<typeof parseDocument>,
+  anchor: DocumentNodeAnchor,
+  options?: { maxVisitedNodes?: number },
+) {
+  return resolveDocumentNodeAnchors(document, [anchor], options).get(documentNodeAnchorKey(anchor));
 }

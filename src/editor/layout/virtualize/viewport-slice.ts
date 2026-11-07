@@ -2,82 +2,75 @@
 // window in estimate space, expand it so tables stay whole, and feed measured
 // heights back into the cache so subsequent estimates use real numbers for
 // visible paths. The slice is measured directly in document space (via
-// `measureLayoutSlice`'s `startY`), so no coordinate shift is needed here.
+// `measureBodyLayoutSlice`'s `startY`), so no coordinate shift is needed here.
 
 import type { DocumentResources } from "@/editor/resources";
-import type { DocumentIndex } from "../../state";
-import { cacheMeasuredContainerHeight, type LayoutCache, type VirtualLayout } from "../state/cache";
-import { resolveBlockContentMetrics } from "../lib/content-metrics";
+import { resolveIndexedBlock, type DocumentIndex } from "../../state";
+import type { LayoutCache, VirtualLayout } from "../state/cache";
+import { resolveBlockPaddingY } from "../lib/code-block";
+import { resolveBlockContentMetrics, resolveBlockSurfaceLeft } from "../lib/content-metrics";
 import type { DocumentLayoutOptions } from "../lib/options";
 import type { DocumentLayout } from "../measure";
-import { resolveLayoutTextInputAtPath } from "../measure/text-input";
-import { createContainerHeightCacheKey } from "./height-estimate";
+import { resolveTableColumnMetrics } from "../measure/table";
+import {
+  resolveBlockTypography,
+  type BlockTypography,
+  type LayoutTextInput,
+} from "../measure/text";
+import { resolveBlockLayoutTextInput, tableCellLayoutTextInput } from "../measure/text-input";
+import { cacheMeasuredHeight } from "./height-estimate";
 
-export function findVirtualLayoutEntryIndexAtOrAfter(virtualLayout: VirtualLayout, y: number) {
-  let low = 0;
-  let high = virtualLayout.entries.length;
-
-  while (low < high) {
-    const middle = (low + high) >> 1;
-    const entry = virtualLayout.entries[middle]!;
-
-    if (entry.bottom <= y) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-
-  return low;
-}
-
+// Widens an entry range to whole blocks so a table is never measured in part.
+// Entries are in block order, and only tables own more than one.
 export function expandViewportSliceToBlockBoundaries(
   documentIndex: DocumentIndex,
-  virtualLayout: VirtualLayout,
+  { entries }: VirtualLayout,
   startIndex: number,
   endIndex: number,
 ) {
-  let blockStartIndex = Number.POSITIVE_INFINITY;
-  let blockEndIndex = Number.NEGATIVE_INFINITY;
-  let top: number | null = null;
-
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const entry = virtualLayout.entries[index];
-    const block = entry ? documentIndex.blocks[entry.blockArrayIndex] : null;
-
-    if (!entry || !block) {
-      continue;
-    }
-
-    top = top === null ? entry.top : Math.min(top, entry.top);
-    blockStartIndex = Math.min(blockStartIndex, block.blockArrayIndex);
-    blockEndIndex = Math.max(blockEndIndex, block.blockRangeEnd);
+  if (startIndex >= endIndex) {
+    return {
+      blockEndIndex: 0,
+      blockStartIndex: 0,
+      entryEndIndex: 0,
+      entryStartIndex: 0,
+      top: null,
+    };
   }
 
+  const blockStartIndex = entries[startIndex]!.blockArrayIndex;
+  const lastBlockIndex = entries[endIndex - 1]!.blockArrayIndex;
+  let entryStartIndex = startIndex;
+  let entryEndIndex = endIndex;
+
+  while (entryStartIndex > 0 && entries[entryStartIndex - 1]!.blockArrayIndex === blockStartIndex) {
+    entryStartIndex -= 1;
+  }
+
+  while (
+    entryEndIndex < entries.length &&
+    entries[entryEndIndex]!.blockArrayIndex === lastBlockIndex
+  ) {
+    entryEndIndex += 1;
+  }
+
+  // Entries hold path bounds, so step back over the block's padding to seed
+  // measurement where the block itself starts.
   return {
-    blockEndIndex: Number.isFinite(blockEndIndex) ? blockEndIndex : 0,
-    blockStartIndex: Number.isFinite(blockStartIndex) ? blockStartIndex : 0,
+    blockEndIndex: documentIndex.blocks[lastBlockIndex]!.blockRangeEnd,
+    blockStartIndex,
+    entryEndIndex,
+    entryStartIndex,
     top:
-      Number.isFinite(blockStartIndex) && Number.isFinite(blockEndIndex)
-        ? (resolveExpandedSliceTop(virtualLayout, blockStartIndex, blockEndIndex) ?? top)
-        : top,
+      entries[entryStartIndex]!.top -
+      resolveBlockPaddingY(documentIndex.blocks[blockStartIndex]!.block),
   };
 }
 
-function resolveExpandedSliceTop(
-  virtualLayout: VirtualLayout,
-  blockStartIndex: number,
-  blockEndIndex: number,
-) {
-  for (const entry of virtualLayout.entries) {
-    if (entry.blockArrayIndex >= blockStartIndex && entry.blockArrayIndex < blockEndIndex) {
-      return entry.top;
-    }
-  }
-
-  return null;
-}
-
+// Caches every measured container's content height under the same key its
+// estimate reads, so later estimates, including rebuilds after an edit, reuse
+// real numbers. Table cells are cached one by one, and a row re-resolves as the
+// tallest of them, exactly as `layoutTable` does.
 export function updateMeasuredContainerHeights(
   cache: LayoutCache,
   documentIndex: DocumentIndex,
@@ -85,23 +78,68 @@ export function updateMeasuredContainerHeights(
   options: DocumentLayoutOptions,
   resources: DocumentResources,
 ) {
-  for (const [path, extent] of layout.pathBounds) {
-    const height = extent.bottom - extent.top;
-    const resolved = resolveLayoutTextInputAtPath(documentIndex, path);
-    if (!resolved) continue;
-    // Mirror the metrics applied when estimating this path —
-    // otherwise the cache key for the measured height won't match the
-    // cache key the next estimate pass looks up, defeating the cache.
-    const contentMetrics = resolveBlockContentMetrics(
-      documentIndex,
-      resolved.indexedBlock,
-      options,
-    );
+  for (const { blockPath } of layout.blocks) {
+    const indexedBlock = resolveIndexedBlock(documentIndex, blockPath);
 
-    cacheMeasuredContainerHeight(
-      cache,
-      createContainerHeightCacheKey(resolved.input, contentMetrics, options, resources),
-      height,
-    );
+    if (!indexedBlock) continue;
+
+    const { block } = indexedBlock;
+    const typography = resolveBlockTypography(block, options.fontSize, options.lineHeight);
+
+    if (block.type === "table") {
+      if (indexedBlock.kind !== "cells") continue;
+
+      const left = resolveBlockSurfaceLeft(documentIndex, indexedBlock, options);
+      const { cellWidth } = resolveTableColumnMetrics(block, left, options);
+
+      for (const cells of indexedBlock.tableCellRows) {
+        for (const cell of cells) {
+          cacheMeasuredContainer(
+            cache,
+            layout,
+            tableCellLayoutTextInput(cell),
+            cellWidth,
+            typography,
+            resources,
+          );
+        }
+      }
+    } else {
+      const input = resolveBlockLayoutTextInput(indexedBlock);
+
+      if (input) {
+        cacheMeasuredContainer(
+          cache,
+          layout,
+          input,
+          resolveBlockContentMetrics(documentIndex, indexedBlock, options).availableWidth,
+          typography,
+          resources,
+        );
+      }
+    }
   }
+}
+
+// A container's content height is the sum of its line heights. Table cells
+// can't use their path bounds, which span the whole row.
+function cacheMeasuredContainer(
+  cache: LayoutCache,
+  layout: DocumentLayout,
+  input: LayoutTextInput,
+  availableWidth: number,
+  typography: BlockTypography,
+  resources: DocumentResources,
+) {
+  const lineIndices = layout.pathLineIndices.get(input.path);
+
+  if (!lineIndices) return;
+
+  let height = 0;
+
+  for (const index of lineIndices) {
+    height += layout.lines[index]!.height;
+  }
+
+  cacheMeasuredHeight(cache, input, availableWidth, typography, resources, height);
 }

@@ -1,7 +1,9 @@
 import {
   createBlockquoteBlock,
-  createHeadingTextBlock,
+  createHeadingBlock,
+  createParagraphBlock,
   createParagraphTextBlock,
+  rebuildTextBlock,
   type Block,
   type BlockquoteBlock,
   type HeadingBlock,
@@ -10,6 +12,7 @@ import {
 import { target } from "../../../selection";
 import type { EditorStateAction } from "../../../types";
 import type { BlockquoteTextBlockContext, RootTextBlockContext } from "../../context";
+import { sliceInlineChildren } from "../inlines/shared";
 import { spliceAt } from "./shared";
 
 // Block-level action resolvers that aren't specific to lists, tables, or code
@@ -34,19 +37,19 @@ export function resolveRootTextBlockSplit(
   ctx: RootTextBlockContext,
   offset: number,
 ): EditorStateAction {
-  const split = splitRootTextBlock(ctx.block, ctx.text, offset);
+  const blocks = buildTextBlockSplitBlocks(ctx.block, ctx.text, offset);
 
-  return spliceRootBlocks(ctx.rootIndex, split.blocks, { caret: split.caret });
+  return spliceRootBlocks(ctx.rootIndex, blocks, { caret: blocks[1]! });
 }
 
 export function resolveBlockquoteTextBlockSplit(
   ctx: BlockquoteTextBlockContext,
   offset: number,
 ): EditorStateAction {
-  const split = splitQuotedTextBlock(ctx.block, ctx.text, offset);
-  const quote = replaceBlockquoteChild(ctx.quote, ctx.childIndex, split.blocks);
+  const blocks = buildTextBlockSplitBlocks(ctx.block, ctx.text, offset);
+  const quote = replaceBlockquoteChild(ctx.quote, ctx.childIndex, blocks);
 
-  return spliceRootBlocks(ctx.rootIndex, [quote], { caret: split.caret });
+  return spliceRootBlocks(ctx.rootIndex, [quote], { caret: blocks[1]! });
 }
 
 export function resolveStructuralBlockquoteSplit(
@@ -92,34 +95,6 @@ export function resolveParagraphBlockquoteIndent(
   });
 }
 
-function splitRootTextBlock(
-  block: ParagraphBlock | HeadingBlock,
-  text: string,
-  offset: number,
-): BlockSplit {
-  const blocks = buildTextBlockSplitBlocks(block, text, offset);
-
-  // A non-empty root block split at its start places the caret in the inserted
-  // paragraph above. Empty-block Enter keeps the caret in the original block.
-  return {
-    blocks,
-    caret: offset === 0 && text.length > 0 ? blocks[0]! : blocks[1]!,
-  };
-}
-
-function splitQuotedTextBlock(
-  block: ParagraphBlock | HeadingBlock,
-  text: string,
-  offset: number,
-): BlockSplit {
-  const blocks = buildTextBlockSplitBlocks(block, text, offset);
-
-  return {
-    blocks,
-    caret: offset === 0 ? blocks[0]! : blocks[1]!,
-  };
-}
-
 function splitBlockquoteAtEmptyParagraph(quote: BlockquoteBlock, childIndex: number): BlockSplit {
   const beforeBlocks = quote.children.slice(0, childIndex);
   const afterBlocks = quote.children.slice(childIndex + 1);
@@ -147,7 +122,7 @@ function shiftHeadingDepth(block: HeadingBlock, direction: -1 | 1): HeadingBlock
 
   return nextDepth === block.depth
     ? null
-    : createHeadingTextBlock({ depth: nextDepth, text: block.plainText });
+    : createHeadingBlock({ children: block.children, depth: nextDepth });
 }
 
 function replaceBlockquoteChild(
@@ -176,6 +151,9 @@ function spliceRootBlocks(
 // an empty paragraph on the open side. A mid-text split preserves the
 // "before" block's type (paragraph stays paragraph; heading stays
 // heading and carries depth) and emits a fresh paragraph for "after".
+// Both halves slice the inline tree, so marks, links, and atoms survive.
+// The second block always holds the text after the caret, so the caret goes
+// there and stays with the text, as Docs and Notion keep it.
 function buildTextBlockSplitBlocks(
   block: ParagraphBlock | HeadingBlock,
   text: string,
@@ -189,12 +167,8 @@ function buildTextBlockSplitBlocks(
     return [block, createParagraphTextBlock("")];
   }
 
-  const beforeText = text.slice(0, offset);
-  const afterText = text.slice(offset);
-  const beforeBlock =
-    block.type === "heading"
-      ? createHeadingTextBlock({ depth: block.depth, text: beforeText })
-      : createParagraphTextBlock(beforeText);
-
-  return [beforeBlock, createParagraphTextBlock(afterText)];
+  return [
+    rebuildTextBlock(block, sliceInlineChildren(block.children, 0, offset)),
+    createParagraphBlock(sliceInlineChildren(block.children, offset)),
+  ];
 }

@@ -9,8 +9,8 @@
 
 .documint-scroll-container {
   position: relative;
-  display: block;
   width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -69,8 +69,7 @@
      keeping those signals correct. JS sizes/positions it at the caret
      at focus time. */
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0 auto auto 0;
   width: 2px;
   height: 2px;
   padding: 0;
@@ -89,12 +88,16 @@
   overflow: hidden;
 }
 
-.documint-content-canvas {
+.documint-content-canvas,
+.documint-overlay-canvas {
   position: absolute;
   inset: 0 auto auto 0;
   z-index: 1;
   display: block;
   width: 100%;
+}
+
+.documint-content-canvas {
   outline: none;
   /* Let the browser keep vertical scrolling and pinch-zoom while exposing
      horizontal swipes to the editor's touch gesture handling. */
@@ -102,11 +105,7 @@
 }
 
 .documint-overlay-canvas {
-  position: absolute;
-  inset: 0 auto auto 0;
   z-index: 2;
-  display: block;
-  width: 100%;
   pointer-events: none;
 }
 

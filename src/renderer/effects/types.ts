@@ -96,7 +96,6 @@ export type EffectFrame<TKind extends keyof DocumintEffects> = {
 };
 
 type BlockEffectFrame<TKind extends keyof DocumintEffects> = EffectFrame<TKind> & {
-  blockPath: string;
   progress: number;
 };
 
@@ -111,7 +110,6 @@ export type DocumentChangeFadeFrame = {
 type TextEffectFrame<TKind extends keyof DocumintEffects> = EffectFrame<TKind> & {
   contentKind: "code" | "text";
   progress: number;
-  path: string;
   startOffset: number;
   text: string;
 };

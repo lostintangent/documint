@@ -238,8 +238,6 @@ function stopTraversal(result: VisitControl, state: TraversalState): boolean {
 // position should be. This gives callers both bottom-up and top-down idioms:
 //
 //   - Bottom-up: call `recurse()` first, then transform the rebuilt block.
-//     The boundary-collapse rebuild uses this shape to drop list items that
-//     no longer lead with a paragraph or heading.
 //   - Top-down with early termination: return a replacement without calling
 //     `recurse()`. The boundary-collapse rebuild uses this for victim/absorber
 //     substitution — the replaced subtree is never re-walked.
@@ -254,11 +252,6 @@ function stopTraversal(result: VisitControl, state: TraversalState): boolean {
 // dedicated walkers haven't earned their keep here.
 
 type BlockMapContext = {
-  // The structural parent of the current block, or `null` at the root. Useful
-  // for transforms whose decision depends on what kind of container holds the
-  // block (e.g. "remove this paragraph unless its parent is a listItem, in
-  // which case the listItem owns the removal").
-  parent: Block | null;
   // Recurse into the block's structural children (via the container registry)
   // and return the block with mapped children. For non-container blocks
   // (paragraph, heading, code, table, divider, raw, directive) returns the
@@ -275,15 +268,14 @@ type BlockMapVisitor = (block: Block, context: BlockMapContext) => Block | Block
 // the visitor's return value (`Block`, `Block[]`, or `null` to drop). Returns
 // the input array unchanged (===) when no block was transformed at any depth.
 //
-// The trailing two parameters (`pathPrefix`, `parent`) are recursion
-// bookkeeping — external callers always omit them. They're exposed as
-// defaulted parameters rather than hidden behind a wrapper so this primitive
-// stays a single function with no indirection.
+// The trailing `pathPrefix` parameter is recursion bookkeeping — external
+// callers always omit it. It's exposed as a defaulted parameter rather than
+// hidden behind a wrapper so this primitive stays a single function with no
+// indirection.
 export function mapBlockTree(
   blocks: Block[],
   visit: BlockMapVisitor,
   /** @internal recursion bookkeeping */ pathPrefix = "root",
-  /** @internal recursion bookkeeping */ parent: Block | null = null,
 ): Block[] {
   let didChange = false;
   const result: Block[] = [];
@@ -291,7 +283,6 @@ export function mapBlockTree(
   for (const [index, block] of blocks.entries()) {
     const path = indexedPath(pathPrefix, index);
     const visited = visit(block, {
-      parent,
       path,
       recurse: () => recurseBlockChildren(block, visit, childContainerPath(path)),
     });
@@ -326,7 +317,7 @@ function recurseBlockChildren(block: Block, visit: BlockMapVisitor, childrenPath
     return block;
   }
 
-  const next = mapBlockTree(children, visit, childrenPath, block);
+  const next = mapBlockTree(children, visit, childrenPath);
 
   if (next === children) {
     return block;

@@ -1,20 +1,15 @@
 export {
+  carryComments,
   createCommentThreadForSelection,
   getCommentState,
   hasActiveCommentHighlightsInViewport,
   resolveActiveCommentIndex,
-  updateCommentThreadsForPathEdit,
+  type CommentChange,
   type EditorCommentRange,
   type EditorCommentState,
 } from "./comments";
 
-export {
-  createNodeAnchorForPath,
-  resolveNodeAnchor,
-  resolveNodeAnchors,
-  resolveNodeAnchorForPath,
-  type EditorNodeAnchor,
-} from "./nodes";
+export { resolveNodeAnchors, resolveNodeAnchorForPath, type EditorNodeAnchor } from "./nodes";
 
 export {
   createSelectionAnchor,

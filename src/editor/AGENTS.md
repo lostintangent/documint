@@ -7,7 +7,7 @@ This is the capability layer. It owns editing semantics and geometry algorithms.
 ## Design Principles
 
 - **Editor is not the host.** React lifecycle, DOM event wiring, canvas mounting, image loading, and scheduling belong in `src/component`; expose named editor APIs when host code needs engine behavior.
-- **State changes are immutable.** Commands and navigation return new `EditorState` values or the original state for no-op transitions. Selection-only changes preserve `documentIndex`.
+- **State changes are immutable.** Commands return new `EditorState` values or `null` for no-op transitions, and navigation returns the original state. Selection-only changes preserve `documentIndex`.
 - **Layout is explicit and cache-aware.** Layout receives state, options, resources, viewport, and a host-owned cache. The returned `EditorLayoutState` is the immutable geometry snapshot renderer and queries consume.
 - **Layout owns shared geometry.** Geometry needed by paint plus navigation, hit testing, anchors, or virtualization belongs in layout. Paint-only visible-slice drawables belong in renderer frames; per-line, document-stable values that multiple consumers need should be promoted into `LayoutLine`.
 - **Public APIs should raise altitude.** Prefer adding one semantic editor capability over making component code pass hidden dependency bundles through raw subsystem internals.

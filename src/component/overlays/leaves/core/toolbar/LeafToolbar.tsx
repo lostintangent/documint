@@ -340,7 +340,7 @@ function renderToolbarMenuChild(child: ReactNode, onSelect: (value: string) => v
 // (matches `top-2.5`) via `calc(100%+...)` so the menu floats just
 // below the trigger across button heights.
 const MENU_SURFACE_CLASS =
-  "absolute top-[calc(100%+0.625rem)] left-0 grid gap-1 w-max min-w-max p-1.5 border border-leaf-border rounded-xl bg-leaf-bg [box-shadow:var(--documint-leaf-shadow,var(--leaf-shadow-fallback))] text-leaf-text font-leaf text-sm";
+  "absolute top-[calc(100%+0.625rem)] left-0 grid gap-1 w-max p-1.5 border border-leaf-border rounded-xl bg-leaf-bg [box-shadow:var(--documint-leaf-shadow)] text-sm";
 
 // Suppresses the browser's default click handling so the toolbar's own
 // pointerdown logic owns the interaction (avoids stealing focus from

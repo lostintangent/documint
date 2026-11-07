@@ -91,7 +91,6 @@ export function ThemePopover({
                   onThemeIdChange(option.id);
                   close();
                 }}
-                style={getThemeOptionLabelStyle(option)}
                 type="button"
               >
                 <span
@@ -151,17 +150,6 @@ export function ThemePopover({
       )}
     </PlaygroundPopover>
   );
-}
-
-function getThemeOptionLabelStyle(option: (typeof themeOptions)[number]): CSSProperties {
-  return {
-    color:
-      option.id === "dark"
-        ? "#111827"
-        : option.id === "midnight"
-          ? "#6d28d9"
-          : (option.theme.paragraphText ?? option.theme.leafText ?? option.theme.text),
-  };
 }
 
 function getThemeSwatchStyle(option: (typeof themeOptions)[number]): CSSProperties {

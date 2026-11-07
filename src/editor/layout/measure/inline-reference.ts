@@ -3,7 +3,6 @@
 // one normalized measurement shape instead of branching on every reference
 // kind in every measurement phase.
 
-import type { RichInlineBox } from "@chenglou/pretext/rich-inline";
 import {
   createResourceIconSignature,
   resolveInlineResource,
@@ -17,18 +16,17 @@ import {
   measureInlineResourceIconSegmentWidth,
   measureInlineResourceWidth,
 } from "./inline-resource";
-import type { BlockTypography } from "./text";
+import type { BlockTypography, LayoutTextInput } from "./text";
 
 export type InlineReferenceMeasurement = {
   height: number;
   inlineReference: LayoutInlineReference;
-  richItem: RichInlineBox;
-  width: number;
 };
 
 export type LayoutInlineReference =
   | {
       end: number;
+      height: number;
       kind: "image";
       start: number;
       width: number;
@@ -57,35 +55,37 @@ export function resolveInlineReferenceMeasurement(
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,
   {
     availableWidth,
+    container,
     typography,
     resources,
   }: {
     availableWidth: number;
+    container: LayoutTextInput;
     typography: BlockTypography;
     resources: DocumentResources;
   },
 ): InlineReferenceMeasurement | null {
   if (run.node.type === "image") {
-    const dimensions = resolveInlineImageDimensions(run, resources, availableWidth);
+    const dimensions = resolveInlineImageDimensions(run, resources, {
+      availableWidth,
+      emSize: typography.baseFontSize,
+      standalone: run.start === 0 && run.end === container.text.length,
+    });
 
     return {
       height: dimensions.height,
       inlineReference: {
         end: run.end,
+        height: dimensions.height,
         kind: "image",
         start: run.start,
         width: dimensions.width,
       },
-      richItem: { width: dimensions.width },
-      width: dimensions.width,
     };
   }
 
-  const styledFont = resolveInlineTextStyle(typography, inlineMarks(run)).font;
-
   if (run.node.type === "mention") {
-    context.font = styledFont;
-    const width = measureInlineMentionWidth(context, run.node);
+    context.font = resolveInlineTextStyle(typography, inlineMarks(run)).font;
 
     return {
       height: typography.lineHeight,
@@ -93,10 +93,8 @@ export function resolveInlineReferenceMeasurement(
         end: run.end,
         kind: "mention",
         start: run.start,
-        width,
+        width: measureInlineMentionWidth(context, run.node),
       },
-      richItem: { width },
-      width,
     };
   }
 
@@ -110,9 +108,8 @@ export function resolveInlineReferenceMeasurement(
     return null;
   }
 
-  context.font = styledFont;
+  context.font = resolveInlineTextStyle(typography, inlineMarks(run)).font;
   const iconSegmentWidth = measureInlineResourceIconSegmentWidth(context, resource.icon);
-  const width = measureInlineResourceWidth(context, resource);
 
   return {
     height: typography.lineHeight,
@@ -121,10 +118,8 @@ export function resolveInlineReferenceMeasurement(
       iconSegmentWidth,
       kind: "resource",
       start: run.start,
-      width,
+      width: measureInlineResourceWidth(context, resource.label, iconSegmentWidth),
     },
-    richItem: { width },
-    width,
   };
 }
 

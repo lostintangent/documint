@@ -7,6 +7,7 @@ export type {
   IndexedInline,
   IndexedListItem,
   IndexedTableCell,
+  IndexedText,
 } from "./index/types";
 
 // Inline selectors
@@ -35,9 +36,6 @@ export {
   resolveIndexedBlockContainingPath,
   resolveEditorTextAtPath,
 
-  // Comment projection
-  resolveCommentThreadIndicesForPath,
-
   // Block extents
   findAncestorIndexedBlockByPath,
   resolveParentIndexedBlock,
@@ -46,7 +44,6 @@ export {
   // Document flow
   compareEditorPositions,
   compareResolvedEditorPositions,
-  countEditorPathsWithText,
   findEditorPathWithText,
   findUniqueEditorPathWithText,
   forEachEditorPathWithText,
@@ -96,7 +93,6 @@ export type { EditorEffect, TextDeletedEffect, TextInsertedEffect } from "./effe
 
 // State
 export {
-  createDocumentFromEditorState,
   createEditorState,
   redoEditorState,
   setSelection,

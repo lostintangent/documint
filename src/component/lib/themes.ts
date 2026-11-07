@@ -126,6 +126,7 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
   const linkText = theme.linkText ?? accent;
   const headingRule = theme.headingRule ?? `color-mix(in srgb, ${text} 20%, transparent)`;
   const leafBorder = theme.leafBorder ?? `color-mix(in srgb, ${muted} 55%, transparent)`;
+  const leafText = theme.leafText ?? text;
   const checkboxUncheckedStroke = theme.checkboxUncheckedStroke ?? muted;
   const isLight = isLightThemeBackground(background);
   const mode = isLight ? "light" : "dark";
@@ -236,8 +237,8 @@ export function resolveEditorTheme(theme: EditorTheme): ResolvedEditorTheme {
     leafInputBackground:
       theme.leafInputBackground ?? `color-mix(in srgb, ${text} 12%, ${background})`,
     leafSecondaryText: theme.leafSecondaryText ?? `color-mix(in srgb, ${text} 60%, ${muted})`,
-    leafShadow: theme.leafShadow ?? "",
-    leafText: theme.leafText ?? text,
+    leafShadow: theme.leafShadow ?? `0 14px 40px color-mix(in srgb, ${leafText} 16%, transparent)`,
+    leafText,
     linkText,
     listMarkerText: theme.listMarkerText ?? muted,
     mentionBackground: theme.mentionBackground ?? inlineCodeBackground,

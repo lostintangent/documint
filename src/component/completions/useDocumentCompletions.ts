@@ -1,4 +1,4 @@
-import { insertMention, replaceTextRange, type EditorSelectionRange } from "@/editor";
+import { insertMention, replaceTextRange } from "@/editor";
 import { useCompletions, type CompletionController } from "./useCompletions";
 import { type ActiveCompletion, type CompletionItem, type CompletionSource } from "./completions";
 import {
@@ -26,11 +26,7 @@ export function useDocumentCompletions({
 }: {
   completionSources: CompletionSource[] | undefined;
   enabled: boolean;
-  onMentionAccepted?: (mention: {
-    target: EditorSelectionRange;
-    transition: EditorStateTransition;
-    userId: string;
-  }) => void;
+  onMentionAccepted?: (mention: { transition: EditorStateTransition; userId: string }) => void;
 }): DocumentCompletionsController {
   const activeCompletion = useSprig(
     documentCompletionSprig,
@@ -50,11 +46,7 @@ export function useDocumentCompletions({
         documentCompletion.trailingText,
       );
       if (transition) {
-        onMentionAccepted?.({
-          target: documentCompletion.target,
-          transition,
-          userId: documentCompletion.userId,
-        });
+        onMentionAccepted?.({ transition, userId: documentCompletion.userId });
       }
       return;
     }

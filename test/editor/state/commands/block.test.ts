@@ -8,6 +8,7 @@ import {
   indent,
   insertLineBreak,
   insertText,
+  undoEditorState,
 } from "@/editor/state";
 import { getPath, getPathByType, placeAt, selectIn, setup, toMarkdown } from "../../helpers";
 
@@ -34,51 +35,25 @@ describe("Block commands", () => {
     expect(toMarkdown(quoteState)).toBe("quoted line\n");
   });
 
-  test("backspace at start of a non-empty top-level first list item demotes the whole list to paragraphs", () => {
-    // Top-level first-item backspace removes the list container itself.
-    // Every item in the list becomes a root paragraph in document order,
-    // matching the block-demotion semantics used by headings and quotes.
-    let state = setup("- alpha\n  - nested\n- bravo\n");
-    const alpha = getPath(state, "alpha");
+  test.each([
+    [
+      "only its first item",
+      "- alpha\n  - nested\n- bravo\n",
+      "alpha",
+      "alpha\n\n- nested\n- bravo\n",
+    ],
+    ["an item's later paragraph", "- a\n\n  second para\n- b\n", "a", "a\n\nsecond para\n\n- b\n"],
+    ["an item's leading quote", "- > quoted\n- b\n", "quoted", "> quoted\n\n- b\n"],
+    ["an empty item after a previous root", "Lead\n\n-\n- alpha\n", "", "Lead\n\n\n\n- alpha\n"],
+    ["an ordered item, and the rest keep the list's start", "3. a\n4. b\n", "a", "a\n\n3. b\n"],
+  ])("backspace at the start of a top-level list lifts %s", (_, source, text, expected) => {
+    let state = setup(source);
 
-    state = placeAt(state, alpha, 0);
+    state = placeAt(state, getPath(state, text), 0);
     state = deleteBackward(state) ?? state;
 
-    expect(toMarkdown(state)).toBe("alpha\n\nnested\n\nbravo\n");
-    expect(state.selection.focus.offset).toBe(0);
-  });
-
-  test("backspace at start of a top-level list still demotes it when a previous root exists", () => {
-    let state = setup("Lead\n\n- alpha\n- bravo\n");
-    const alpha = getPath(state, "alpha");
-
-    state = placeAt(state, alpha, 0);
-    state = deleteBackward(state) ?? state;
-
-    expect(toMarkdown(state)).toBe("Lead\n\nalpha\n\nbravo\n");
-  });
-
-  test("backspace at start of an empty top-level first list item still demotes the list", () => {
-    // Symmetric with empty heading + empty single-line blockquote: the
-    // demote override fires regardless of whether the first item is
-    // empty. Without this, an empty first item would fall through to the
-    // universal in-flow rule, which would silently delete the item and
-    // jump the cursor up — a different gesture than what users get from
-    // the heading/blockquote/list demote family.
-    let state = setup("Lead\n\n-\n- alpha\n");
-    const empty = indexedTextEntries(state).find(
-      (c) => c.block.type === "paragraph" && c.text === "",
-    );
-
-    if (!empty) throw new Error("Expected empty first list item");
-
-    state = placeAt(state, empty, 0);
-    state = deleteBackward(state) ?? state;
-
-    // The list is gone; first item became an empty paragraph, second
-    // item became a paragraph "alpha". Cursor lands at start of the new
-    // empty paragraph.
-    expect(toMarkdown(state)).toBe("Lead\n\n\n\nalpha\n");
+    expect(toMarkdown(state)).toBe(expected);
+    expect(state.selection.focus).toEqual({ offset: 0, path: getPath(state, text).path });
   });
 
   test("backspace at start of a single-item top-level list demotes it to a paragraph instead of merging upward", () => {
@@ -109,15 +84,7 @@ describe("Block commands", () => {
     expect(toMarkdown(state)).toBe("alpha\n");
   });
 
-  test("merges or removes blocks when backspacing at the start", () => {
-    let paragraphState = setup("First\n\nSecond\n");
-    const second = getPath(paragraphState, "Second");
-
-    paragraphState = placeAt(paragraphState, second, 0);
-    paragraphState = deleteBackward(paragraphState) ?? paragraphState;
-
-    expect(toMarkdown(paragraphState)).toBe("FirstSecond\n");
-
+  test("removes a blank paragraph when backspacing at its start", () => {
     let blankParagraphState = setup("First\n");
     const first = getPath(blankParagraphState, "First");
 
@@ -132,19 +99,7 @@ describe("Block commands", () => {
     expect(toMarkdown(blankParagraphState)).toBe("First\n");
   });
 
-  test("splits paragraphs and extends headings through enter", () => {
-    let paragraphState = setup("Paragraph body.\n");
-    const paragraph = indexedTextEntries(paragraphState)[0];
-
-    if (!paragraph) {
-      throw new Error("Expected paragraph container");
-    }
-
-    paragraphState = placeAt(paragraphState, paragraph, "Paragraph".length);
-    paragraphState = insertLineBreak(paragraphState) ?? paragraphState;
-
-    expect(toMarkdown(paragraphState)).toBe("Paragraph\n\n&#x20;body.\n");
-
+  test("opens a paragraph after a heading through enter", () => {
     let headingState = setup("# Heading\n");
     const heading = indexedTextEntries(headingState)[0];
 
@@ -156,6 +111,20 @@ describe("Block commands", () => {
     headingState = insertLineBreak(headingState) ?? headingState;
 
     expect(toMarkdown(headingState)).toBe("# Heading\n\n");
+  });
+
+  test.each([
+    ["paragraph", "Lead\n\nalpha\n", "Lead\n\n\n\nalpha\n"],
+    ["quote paragraph", "> alpha\n", ">\n>\n> alpha\n"],
+    ["list item", "- alpha\n- b\n", "-\n- alpha\n- b\n"],
+    ["checked task", "- [x] alpha\n", "- [ ] \n- [x] alpha\n"],
+  ])("enter at the start of a %s keeps the caret with its text", (_, source, expected) => {
+    let state = setup(source);
+
+    state = insertLineBreak(placeAt(state, getPath(state, "alpha"), 0)) ?? state;
+
+    expect(toMarkdown(state)).toBe(expected);
+    expect(state.selection.focus).toEqual({ offset: 0, path: getPath(state, "alpha").path });
   });
 
   test.each([
@@ -206,6 +175,61 @@ describe("Block commands", () => {
     expect(indexedTextEntries(reopened).some((path) => path.text.includes("&#x20;"))).toBe(false);
   });
 
+  test.each([
+    [
+      "inside a bold run",
+      "Hello **bold** world\n",
+      "Hello bold world",
+      8,
+      "Hello **bo**\n\n**ld** world\n",
+    ],
+    [
+      "inside a link",
+      "See [the docs](https://example.com) now\n",
+      "See the docs now",
+      7,
+      "See [the](https://example.com)\n\n[ docs](https://example.com) now\n",
+    ],
+    [
+      "inside a heading",
+      "## Hello **bold** world\n",
+      "Hello bold world",
+      8,
+      "## Hello **bo**\n\n**ld** world\n",
+    ],
+    [
+      "inside a blockquote paragraph",
+      "> Hello **bold** world\n",
+      "Hello bold world",
+      8,
+      "> Hello **bo**\n>\n> **ld** world\n",
+    ],
+    [
+      "between an image and a mention",
+      "See ![chart](chart.png) by @[Jane Doe](user-123)\n",
+      "See \uFFFC by \uFFFC",
+      7,
+      "See ![chart](chart.png) b\n\ny @[Jane Doe](user-123)\n",
+    ],
+  ])(
+    "enter %s keeps inline formatting on both halves",
+    (_label, source, text, offset, expected) => {
+      let state = setup(source);
+
+      state = placeAt(state, getPath(state, text), offset);
+      state = insertLineBreak(state) ?? state;
+
+      const caret = indexedTextEntries(state).find(
+        (path) => path.path === state.selection.focus.path,
+      );
+
+      expect(toMarkdown(state)).toBe(expected);
+      expect(caret?.text).toBe(text.slice(offset));
+      expect(state.selection.focus.offset).toBe(0);
+      expect(toMarkdown(undoEditorState(state))).toBe(source);
+    },
+  );
+
   test("forward delete at end of a non-empty paragraph merges the next paragraph into it", () => {
     // Symmetric to backspace at the start of a non-empty block: the
     // universal in-flow rule folds the next path into the current
@@ -220,6 +244,7 @@ describe("Block commands", () => {
     const merged = getPath(state, "FirstSecond");
 
     expect(toMarkdown(state)).toBe("FirstSecond\n");
+    expect(merged.block).toMatchObject({ children: [{ text: "FirstSecond" }] });
     expect(state.selection.focus.path).toBe(merged.path);
     expect(state.selection.focus.offset).toBe("First".length);
   });
@@ -411,22 +436,29 @@ describe("Block commands", () => {
     expect(paragraphState.selection.focus.offset).toBe(0);
   });
 
-  test("preserves blockquote and code-fence context on enter", () => {
-    let quoteState = setup("> quoted text\n");
-    const quoted = getPath(quoteState, "quoted text");
+  test.each([
+    ["blockquote", "> quoted text\n", "quoted text", "quoted", "> quoted\n>\n> &#x20;text\n"],
+    [
+      "code fence",
+      "```ts\nconst x = 1;\n```\n",
+      "const x = 1;",
+      "const x = 1;",
+      "```ts\nconst x = 1;\n\n```\n",
+    ],
+    [
+      "HTML block in a list item",
+      "- item\n\n  <div>\n  <b>hi</b></div>\n",
+      "<div>\n<b>hi</b></div>",
+      "<div>\n<b>hi</b>",
+      "- item\n\n  <div>\n  <b>hi</b>\n  </div>\n",
+    ],
+  ])("preserves %s context on enter", (_label, source, text, before, markdown) => {
+    let state = setup(source);
 
-    quoteState = placeAt(quoteState, quoted, "quoted".length);
-    quoteState = insertLineBreak(quoteState) ?? quoteState;
+    state = placeAt(state, getPath(state, text), before.length);
+    state = insertLineBreak(state) ?? state;
 
-    expect(toMarkdown(quoteState)).toBe("> quoted\n>\n> &#x20;text\n");
-
-    let codeState = setup("```ts\nconst x = 1;\n```\n");
-    const code = getPathByType(codeState, "code");
-
-    codeState = placeAt(codeState, code, code.text.length);
-    codeState = insertLineBreak(codeState) ?? codeState;
-
-    expect(toMarkdown(codeState)).toBe("```ts\nconst x = 1;\n\n```\n");
+    expect(toMarkdown(state)).toBe(markdown);
   });
 
   test("pressing enter on an empty blockquote line exits to a paragraph", () => {
@@ -553,6 +585,22 @@ describe("Block commands", () => {
     expect(toMarkdown(h6State)).toBe("###### Heading\n");
   });
 
+  test("keeps inline formatting when tab and shift-tab change heading depth", () => {
+    const source = "## Hello **bold** [link](https://example.com)\n";
+    let state = setup(source);
+
+    state = placeAt(state, getPathByType(state, "heading"), 3);
+    state = indent(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("### Hello **bold** [link](https://example.com)\n");
+
+    state = dedent(state) ?? state;
+    state = dedent(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("# Hello **bold** [link](https://example.com)\n");
+    expect(state.selection.focus.offset).toBe(3);
+  });
+
   test("indents a paragraph into a blockquote", () => {
     let state = setup("Alpha\n");
     const alpha = getPath(state, "Alpha");
@@ -625,20 +673,28 @@ describe("Block commands", () => {
     expect(state.selection.focus.offset).toBe("bravo".length);
   });
 
-  test("places cursor at the merge junction when backspacing at the start of a block", () => {
-    let state = setup("First\n\nSecond\n");
-    const second = getPath(state, "Second");
+  test.each([
+    ["a block", "First\n\nSecond\n", "Second", "FirstSecond", "FirstSecond\n"],
+    [
+      "a block after an empty quote",
+      "alpha\n\n>\n\nbeta\n",
+      "beta",
+      "alphabeta",
+      "alphabeta\n\n>\n",
+    ],
+  ])(
+    "places cursor at the merge junction when backspacing at the start of %s",
+    (_, markdown, victimText, mergedText, expected) => {
+      let state = setup(markdown);
 
-    state = placeAt(state, second, 0);
-    state = deleteBackward(state) ?? state;
+      state = placeAt(state, getPath(state, victimText), 0);
+      state = deleteBackward(state) ?? state;
 
-    expect(toMarkdown(state)).toBe("FirstSecond\n");
-
-    const merged = getPath(state, "FirstSecond");
-
-    expect(state.selection.focus.path).toBe(merged.path);
-    expect(state.selection.focus.offset).toBe("First".length);
-  });
+      expect(toMarkdown(state)).toBe(expected);
+      expect(state.selection.focus.path).toBe(getPath(state, mergedText).path);
+      expect(state.selection.focus.offset).toBe(mergedText.length - victimText.length);
+    },
+  );
 
   // Inert leaf blocks (divider today; image-as-block / embed /
   // display-math in the future) contribute no path. The universal

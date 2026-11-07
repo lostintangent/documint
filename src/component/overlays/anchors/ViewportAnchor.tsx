@@ -197,17 +197,12 @@ export function ViewportAnchor({
             // the editor's content area (paddingX inset from the right
             // edge). `position: absolute` doc-coords float the wrapper over
             // the editor without participating in its layout.
+            className="absolute flex flex-col items-end box-border pointer-events-none"
             style={{
-              position: "absolute",
               top: `${geometry.top}px`,
               left: `${geometry.left}px`,
               width: `${geometry.width}px`,
               paddingRight: `${paddingX}px`,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-end",
-              boxSizing: "border-box",
-              pointerEvents: "none",
               zIndex,
             }}
           >

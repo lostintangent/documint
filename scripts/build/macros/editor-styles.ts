@@ -1,6 +1,14 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { projectRoot, runMacroChild } from "./child";
 
-export function readEditorStyles(): string {
-  return readFileSync(join(import.meta.dir, "../../../src/component/styles.css"), "utf8");
+export function compileEditorStyles(): string {
+  return runMacroChild(import.meta.path);
+}
+
+if (import.meta.main) {
+  const { outputs } = await Bun.build({
+    entrypoints: [join(projectRoot, "src/component/styles.css")],
+    minify: true,
+  });
+  process.stdout.write(await outputs[0].text());
 }

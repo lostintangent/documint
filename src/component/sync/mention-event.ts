@@ -1,113 +1,21 @@
 // Mention event payload helper. Maps an accepted mention replacement to the
 // canonical markdown line the host reports to the embedder.
-import type { Block, Document } from "@/document";
-import type { EditorSelectionRange } from "@/editor";
-import { resolveIndexedBlockContainingPath } from "@/editor/state";
-import { serializeBlocks, serializeMetadataPreamble } from "@/markdown";
+import { serializeDocument } from "@/markdown";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
 
-export type MentionLineChange = {
-  lineMarkdown: string;
-  lineNumber: number;
-};
-
-export function resolveMentionLineChange(
-  transition: EditorStateTransition,
-  target: EditorSelectionRange,
-): MentionLineChange | null {
-  const previousBlock = resolveIndexedBlockContainingPath(
-    transition.previous.documentIndex,
-    target.path,
-  );
-
-  if (!previousBlock) {
-    return null;
-  }
-
-  const nextBlock = resolveIndexedBlockContainingPath(transition.next.documentIndex, target.path);
-
-  if (!nextBlock) {
-    return null;
-  }
-
-  const previousDocument = transition.previous.documentIndex.document;
-  const nextDocument = transition.next.documentIndex.document;
-  const previousRoot = previousDocument.blocks[previousBlock.rootIndex];
-  const nextRoot = nextDocument.blocks[nextBlock.rootIndex];
-
-  if (!previousRoot || !nextRoot) {
-    return null;
-  }
-
-  const changedLine = resolveFirstChangedMarkdownLine(
-    serializeBlocks([previousRoot]),
-    serializeBlocks([nextRoot]),
-  );
-
-  if (!changedLine) {
-    return null;
-  }
-
-  return {
-    lineMarkdown: changedLine.lineMarkdown,
-    lineNumber: resolveRootStartLine(nextDocument, nextBlock.rootIndex) + changedLine.lineIndex + 1,
-  };
-}
-
-function resolveFirstChangedMarkdownLine(previousMarkdown: string, nextMarkdown: string) {
-  if (previousMarkdown === nextMarkdown) {
-    return null;
-  }
-
+// The mention is the transition's only edit, so the first line that differs
+// between the two saved documents is the mention's line.
+export function resolveMentionLineChange(transition: EditorStateTransition) {
+  // No `padTableColumns`: a widened padded column would make its header row the first change.
+  const previousMarkdown = serializeDocument(transition.previous.documentIndex.document);
+  const nextMarkdown = serializeDocument(transition.next.documentIndex.document);
   const prefixLength = findCommonPrefixLength(previousMarkdown, nextMarkdown);
-  const nextLineStart = findLineStart(nextMarkdown, prefixLength);
-  const nextLineEnd = findLineEnd(nextMarkdown, nextLineStart);
-  const lineMarkdown = nextMarkdown.slice(nextLineStart, nextLineEnd);
-
-  if (lineMarkdown.length === 0) {
-    return null;
-  }
+  const lineStart = nextMarkdown.lastIndexOf("\n", prefixLength - 1) + 1;
 
   return {
-    lineIndex: countLineFeeds(nextMarkdown, nextLineStart),
-    lineMarkdown,
+    lineMarkdown: nextMarkdown.slice(lineStart, nextMarkdown.indexOf("\n", lineStart)),
+    lineNumber: nextMarkdown.slice(0, lineStart).split("\n").length,
   };
-}
-
-function resolveRootStartLine(document: Document, rootIndex: number) {
-  let lineNumber = 0;
-  const metadataPreamble = serializeMetadataPreamble(document.metadata);
-
-  if (metadataPreamble.length > 0) {
-    lineNumber += countMarkdownLines(metadataPreamble) + 1;
-  }
-
-  for (let index = 0; index < rootIndex; index += 1) {
-    const block = document.blocks[index];
-
-    if (block) {
-      lineNumber += countRootMarkdownLines(block) + 1;
-    }
-  }
-
-  return lineNumber;
-}
-
-function countRootMarkdownLines(root: Block) {
-  switch (root.type) {
-    case "code":
-      return countLineFeeds(root.source, root.source.length) + 3;
-    case "divider":
-    case "heading":
-    case "paragraph":
-      return 1;
-    case "raw":
-      return countMarkdownLines(root.source);
-    case "table":
-      return root.rows.length + 1;
-    default:
-      return countMarkdownLines(serializeBlocks([root]));
-  }
 }
 
 function findCommonPrefixLength(left: string, right: string) {
@@ -120,29 +28,4 @@ function findCommonPrefixLength(left: string, right: string) {
   }
 
   return end;
-}
-
-function findLineStart(markdown: string, index: number) {
-  return markdown.lastIndexOf("\n", Math.max(0, index - 1)) + 1;
-}
-
-function findLineEnd(markdown: string, index: number) {
-  const lineEnd = markdown.indexOf("\n", index);
-  return lineEnd === -1 ? markdown.length : lineEnd;
-}
-
-function countMarkdownLines(markdown: string) {
-  return markdown.length === 0 ? 0 : countLineFeeds(markdown, markdown.length) + 1;
-}
-
-function countLineFeeds(value: string, end: number) {
-  let count = 0;
-
-  for (let index = 0; index < end; index += 1) {
-    if (value[index] === "\n") {
-      count += 1;
-    }
-  }
-
-  return count;
 }

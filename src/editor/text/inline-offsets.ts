@@ -31,6 +31,14 @@ export function editorInlineTextLength(node: Inline): number {
     : editorInlineText(node).length;
 }
 
+export function editorInlinesText(nodes: readonly Inline[]): string {
+  return nodes
+    .map((node) =>
+      node.type === "link" ? editorInlinesText(node.children) : editorInlineText(node),
+    )
+    .join("");
+}
+
 // Annotates the direct source inline nodes in `nodes` with editor-coordinate
 // ranges. Link wrappers keep their node identity while contributing the
 // recursive editor length of their children; this is not the flattened

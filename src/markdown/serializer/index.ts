@@ -36,7 +36,12 @@ export function serializeDocument(document: Document, options: MarkdownOptions =
   }
 
   if (document.blocks.length > 0) {
-    const body = serializeBlocks(document.blocks, options);
+    const blocks = serializeBlocks(document.blocks, options);
+    // A leading `---` would reload as front matter, so an opening divider saves as `***`.
+    const body =
+      document.metadata === null && document.blocks[0].type === "divider"
+        ? blocks.replace("---", "***")
+        : blocks;
 
     // Metadata-only documents do not need an empty serialized body.
     if (body.length > 0 || document.metadata === null) {

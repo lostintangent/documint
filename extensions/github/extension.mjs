@@ -29,7 +29,6 @@ const imageMimeTypes = new Map([
 
 let session;
 let childClient;
-let server;
 let serverOrigin;
 
 const canvasInstances = new Map();
@@ -179,7 +178,17 @@ async function handleOpenCanvas({ instanceId, input }) {
 }
 
 function handleCloseCanvas({ instanceId }) {
+  const key = canvasInstances.get(instanceId);
   canvasInstances.delete(instanceId);
+
+  // The last canvas on a file stops watching it. The document itself stays, so
+  // a running job keeps its revision gate and a reopen keeps counting up.
+  if (key && ![...canvasInstances.values()].includes(key)) {
+    documentWatchers.get(key)?.close();
+    documentWatchers.delete(key);
+    clearTimeout(documentRefreshTimers.get(key));
+    documentRefreshTimers.delete(key);
+  }
 }
 
 function readInputObject(value) {
@@ -194,36 +203,7 @@ function readInputObject(value) {
 
 async function openDocument(input) {
   const filePath = resolveMarkdownPath(input.path);
-  const title = readDocumentTitle(input);
-  const key = filePath;
   await mkdir(dirname(filePath), { recursive: true });
-  const { content, updatedAt } = await readOrCreateDocumentFile(filePath, input);
-  const existing = documents.get(key);
-
-  if (existing) {
-    existing.title = title;
-    if (content !== existing.content) {
-      existing.content = content;
-      existing.revision += 1;
-    }
-    existing.updatedAt = updatedAt;
-    return existing;
-  }
-
-  const document = {
-    key,
-    filePath,
-    title,
-    content,
-    revision: 1,
-    updatedAt,
-    lastJob: null,
-  };
-  documents.set(key, document);
-  return document;
-}
-
-async function readOrCreateDocumentFile(filePath, input) {
   let content;
   try {
     content = await readFile(filePath, "utf8");
@@ -234,17 +214,20 @@ async function readOrCreateDocumentFile(filePath, input) {
     content = typeof input.content === "string" ? input.content : defaultMarkdown;
     await writeFile(filePath, content, "utf8");
   }
-
   const stats = await stat(filePath);
-  return {
-    content,
-    updatedAt: stats.mtime.toISOString(),
-  };
-}
 
-function readDocumentTitle(input) {
-  const title = typeof input.title === "string" ? input.title.trim() : "";
-  return title || canvasTitle;
+  let document = documents.get(filePath);
+  if (!document) {
+    // A new document has no content yet, so the content check below bumps it to revision 1.
+    document = { key: filePath, filePath, revision: 0, lastJob: null };
+    documents.set(filePath, document);
+  }
+  document.title = (typeof input.title === "string" && input.title.trim()) || canvasTitle;
+  if (content !== document.content) {
+    setDocumentContent(document, content);
+  }
+  document.updatedAt = stats.mtime.toISOString();
+  return document;
 }
 
 function resolveMarkdownPath(inputPath) {
@@ -281,41 +264,39 @@ function getDocumentForInstance(instanceId) {
       `No markdown document is open for instance ${instanceId}.`,
     );
   }
-  const document = documents.get(key);
-  if (!document) {
-    throw new CanvasError(
-      "unknown_document",
-      `No markdown document is loaded for instance ${instanceId}.`,
-    );
-  }
-  return document;
+  return documents.get(key);
 }
 
 async function refreshDocumentFromDisk(document) {
   const content = await readFile(document.filePath, "utf8");
   const stats = await stat(document.filePath);
-  const updatedAt = stats.mtime.toISOString();
-  if (content === document.content) {
-    document.updatedAt = updatedAt;
-    return document;
+  document.updatedAt = stats.mtime.toISOString();
+  if (content !== document.content) {
+    setDocumentContent(document, content);
   }
-
-  document.content = content;
-  document.revision += 1;
-  document.updatedAt = updatedAt;
-  broadcast(document.key, contentEvent(document));
-  return document;
 }
 
-async function writeDocumentContent(document, content, skipClientId) {
+async function writeDocumentContent(document, content, clientId) {
   await mkdir(dirname(document.filePath), { recursive: true });
   await writeFile(document.filePath, content, "utf8");
   const stats = await stat(document.filePath);
+  document.updatedAt = stats.mtime.toISOString();
+  setDocumentContent(document, content, clientId);
+  return toClientState(document);
+}
+
+// Every change bumps the revision and reaches every canvas but the one that
+// saved it, which keeps naming the last revision it heard as its base. So
+// `savedBy` records the canvas behind the latest revisions and `savedFrom`
+// the revision just before them.
+function setDocumentContent(document, content, clientId) {
+  if (clientId !== document.savedBy) {
+    document.savedBy = clientId;
+    document.savedFrom = document.revision;
+  }
   document.content = content;
   document.revision += 1;
-  document.updatedAt = stats.mtime.toISOString();
-  broadcast(document.key, contentEvent(document), { skipClientId });
-  return toClientState(document);
+  broadcast(document.key, contentEvent(document), { skipClientId: clientId });
 }
 
 function ensureWatcher(document) {
@@ -351,7 +332,7 @@ async function ensureServer() {
     return serverOrigin;
   }
 
-  server = createServer((request, response) => {
+  const server = createServer((request, response) => {
     void handleRequest(request, response).catch((error) => {
       sendJson(response, error instanceof CanvasError ? 400 : 500, {
         error: error instanceof Error ? error.message : String(error),
@@ -367,14 +348,7 @@ async function ensureServer() {
     });
   });
 
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new CanvasError(
-      "server_unavailable",
-      "Unable to resolve the loopback canvas server port.",
-    );
-  }
-  serverOrigin = `http://127.0.0.1:${address.port}`;
+  serverOrigin = `http://127.0.0.1:${server.address().port}`;
   return serverOrigin;
 }
 
@@ -390,7 +364,19 @@ async function handleRequest(request, response) {
 }
 
 function handleAppShellRequest({ response }) {
-  sendHtml(response);
+  response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Documint Markdown Agent</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>`);
 }
 
 async function handleAppBundleRequest({ response }) {
@@ -401,22 +387,27 @@ async function handlePutContentRequest({ request, response, url }) {
   const document = getRequestDocument(url);
   const body = await readJson(request);
 
-  if (typeof body.content !== "string") {
-    sendJson(response, 400, { error: "Expected a string content field." });
+  if (
+    typeof body.content !== "string" ||
+    typeof body.clientId !== "string" ||
+    typeof body.baseRevision !== "number"
+  ) {
+    sendJson(response, 400, { error: "Expected content, clientId and baseRevision fields." });
     return;
   }
 
-  if ((await readFile(document.filePath, "utf8")) !== document.content) {
-    await refreshDocumentFromDisk(document);
+  // A save is current when every revision after its base came from its own canvas.
+  await refreshDocumentFromDisk(document);
+  const currentBase = body.clientId === document.savedBy ? document.savedFrom : document.revision;
+  if (body.baseRevision < currentBase) {
     sendJson(response, 409, {
-      error: "The file changed on disk before this save could be applied.",
+      error: "The document changed before this save could be applied.",
       state: toClientState(document),
     });
     return;
   }
 
-  const clientId = typeof body.clientId === "string" ? body.clientId : undefined;
-  const state = await writeDocumentContent(document, body.content, clientId);
+  const state = await writeDocumentContent(document, body.content, body.clientId);
   sendJson(response, 200, state);
 }
 
@@ -428,27 +419,33 @@ async function handleGetStorageRequest({ response, url }) {
     return;
   }
 
-  await sendStorageFile(response, document, assetPath);
+  // Invalid paths throw a CanvasError, which `ensureServer` maps to a 400.
+  const filePath = resolveStoragePath(document, assetPath);
+  try {
+    await sendFile(response, filePath, inferMimeType(filePath));
+  } catch (error) {
+    if (error?.code !== "ENOENT" && error?.code !== "EISDIR") {
+      throw error;
+    }
+    sendJson(response, 404, { error: "Storage file not found." });
+  }
 }
 
 async function handlePostStorageRequest({ request, response, url }) {
   const document = getRequestDocument(url);
-  const result = await writeStorageFile(document, request);
-  sendJson(response, 200, result);
-}
+  const bytes = await readBody(request);
+  const directory = join(dirname(document.filePath), "assets");
+  const fileName = uniqueStorageFileName(
+    readFileNameHeader(request),
+    readContentTypeHeader(request),
+  );
+  const filePath = join(directory, fileName);
 
-async function handlePostCopilotCommentRequest({ request, response, url }) {
-  const document = getRequestDocument(url);
-  const body = await readJson(request);
-  const job = handleCopilotMention(document, body);
-  sendJson(response, 202, jobSummary(job));
-}
-
-async function handlePostCopilotUserMentionRequest({ request, response, url }) {
-  const document = getRequestDocument(url);
-  const body = await readJson(request);
-  const job = handleCopilotUserMention(document, body);
-  sendJson(response, 202, jobSummary(job));
+  await mkdir(directory, { recursive: true });
+  await writeFile(filePath, bytes);
+  sendJson(response, 200, {
+    path: relative(dirname(document.filePath), filePath).replaceAll("\\", "/"),
+  });
 }
 
 async function handleEventsRequest({ response, url }) {
@@ -478,7 +475,9 @@ function getRequestDocument(url) {
   return getDocumentForInstance(instanceId);
 }
 
-function handleCopilotMention(document, body) {
+async function handlePostCopilotCommentRequest({ request, response, url }) {
+  const document = getRequestDocument(url);
+  const body = await readJson(request);
   const mentionedUserIds = Array.isArray(body.mentionedUserIds) ? body.mentionedUserIds : [];
   const commentBody = typeof body.body === "string" ? body.body : "";
   const mentionsCopilot =
@@ -490,27 +489,30 @@ function handleCopilotMention(document, body) {
     throw new CanvasError("copilot_not_mentioned", "The comment thread does not mention Copilot.");
   }
 
-  return startCopilotJob(document, {
+  const job = startCopilotJob(document, {
     body: commentBody,
     source: body.source === "reply" ? "reply" : "comment",
     thread: body.thread && typeof body.thread === "object" ? body.thread : null,
     threadId: typeof body.threadId === "string" ? body.threadId : null,
-    trigger: readCommentTrigger(body.trigger),
+    trigger: body.trigger === "thread-reply" ? "thread-reply" : "direct-mention",
   });
+  sendJson(response, 202, jobSummary(job));
 }
 
 function threadMentionsCopilot(thread) {
-  if (!thread || typeof thread !== "object" || !Array.isArray(thread.comments)) {
-    return false;
-  }
-  return thread.comments.some((comment) => mentionsCopilotUser(comment?.body));
+  return (
+    Array.isArray(thread?.comments) &&
+    thread.comments.some((comment) => mentionsCopilotUser(comment?.body))
+  );
 }
 
 function mentionsCopilotUser(body) {
   return /(^|[^\w-])@copilot\b/i.test(body ?? "");
 }
 
-function handleCopilotUserMention(document, body) {
+async function handlePostCopilotUserMentionRequest({ request, response, url }) {
+  const document = getRequestDocument(url);
+  const body = await readJson(request);
   const lineMarkdown = typeof body.lineMarkdown === "string" ? body.lineMarkdown : "";
   const lineNumber = Number.isInteger(body.lineNumber) ? body.lineNumber : null;
   const userId = typeof body.userId === "string" ? body.userId : null;
@@ -519,7 +521,7 @@ function handleCopilotUserMention(document, body) {
     throw new CanvasError("copilot_not_mentioned", "The document mention does not target Copilot.");
   }
 
-  return startCopilotJob(document, {
+  const job = startCopilotJob(document, {
     body: lineMarkdown,
     cursor: readTextAnchor(body.cursor),
     lineMarkdown,
@@ -528,6 +530,7 @@ function handleCopilotUserMention(document, body) {
     threadId: null,
     trigger: "document-mention",
   });
+  sendJson(response, 202, jobSummary(job));
 }
 
 function readTextAnchor(value) {
@@ -621,13 +624,10 @@ async function runCopilotJob(document, job, request) {
 // model's extended thinking (with a length cap), falling back to a generic
 // heartbeat when no content is available.
 function deriveJobStatus(event) {
-  if (!event || !event.type) {
-    return null;
-  }
-  if (event.type === "assistant.intent") {
+  if (event?.type === "assistant.intent") {
     return event.data?.intent?.trim() || null;
   }
-  if (event.type === "assistant.reasoning") {
+  if (event?.type === "assistant.reasoning") {
     const content = event.data?.content?.trim();
     if (!content) {
       return "Thinking…";
@@ -650,7 +650,7 @@ async function createWorkerSession(document, job) {
     },
     infiniteSessions: { enabled: false },
     onPermissionRequest: approveAll,
-    workingDirectory: parentWorkingDirectory(),
+    workingDirectory: process.cwd(),
   });
 
   job.childSessionId = workerSession.sessionId;
@@ -705,7 +705,7 @@ function classifyDocumentToolAccess(input, filePath) {
   const args = input.toolArgs;
 
   if (toolName === "bash" || toolName === "shell") {
-    const command = readCommandArgument(args);
+    const command = typeof args?.command === "string" ? args.command : null;
     if (!command || !commandReferencesFile(command, filePath)) {
       return null;
     }
@@ -760,13 +760,6 @@ function collectToolPaths(value) {
   return paths;
 }
 
-function readCommandArgument(args) {
-  if (!args || typeof args !== "object") {
-    return null;
-  }
-  return typeof args.command === "string" ? args.command : null;
-}
-
 function commandReferencesFile(command, filePath) {
   return command.includes(filePath) || command.includes(shellRelativePath(filePath));
 }
@@ -775,7 +768,7 @@ function commandWritesFile(command, filePath) {
   const escapedPath = escapeRegExp(filePath);
   const escapedRelativePath = escapeRegExp(shellRelativePath(filePath));
   return new RegExp(
-    `(>|>>|tee\\s+(?:-a\\s+)?|mv\\s+\\S+\\s+|cp\\s+\\S+\\s+)["']?(?:${escapedPath}|${escapedRelativePath})["']?(\\s|$)`,
+    `(>>?\\s*|tee\\s+(?:-a\\s+)?|mv\\s+\\S+\\s+|cp\\s+\\S+\\s+)["']?(?:${escapedPath}|${escapedRelativePath})["']?(\\s|$)`,
   ).test(command);
 }
 
@@ -784,14 +777,12 @@ function commandReadsFile(command) {
 }
 
 function pathsEqual(left, right) {
-  return resolve(parentWorkingDirectory(), left) === resolve(parentWorkingDirectory(), right);
+  return resolve(process.cwd(), left) === resolve(process.cwd(), right);
 }
 
 function shellRelativePath(filePath) {
-  const relativePath = relative(parentWorkingDirectory(), filePath);
-  return relativePath && !relativePath.startsWith("..") && !relativePath.startsWith(`..${sep}`)
-    ? relativePath
-    : filePath;
+  const relativePath = relative(process.cwd(), filePath);
+  return relativePath && !isOutside(relativePath) ? relativePath : filePath;
 }
 
 function escapeRegExp(value) {
@@ -822,7 +813,7 @@ Default to preserving the document body. Only change the body when the latest co
 
 function buildCopilotPrompt(document, request) {
   const filePath = document.filePath;
-  const isComment = isCommentRequest(request);
+  const isComment = request.trigger === "direct-mention" || request.trigger === "thread-reply";
   const isDocumentMention = request.trigger === "document-mention";
   let opener;
   let context;
@@ -907,7 +898,7 @@ Parent Copilot session ID:
 ${session?.sessionId ?? "(unknown)"}
 
 Parent session working directory:
-${parentWorkingDirectory()}
+${process.cwd()}
 
 Parent session workspace:
 ${session?.workspacePath ?? "(not available)"}
@@ -918,23 +909,7 @@ ${filePath}
 ${context}
 
 Instructions:
-${formatInstructionBullets(instructions)}`;
-}
-
-function isCommentRequest(request) {
-  return request.trigger === "direct-mention" || request.trigger === "thread-reply";
-}
-
-function readCommentTrigger(value) {
-  return value === "thread-reply" ? "thread-reply" : "direct-mention";
-}
-
-function formatInstructionBullets(instructions) {
-  return instructions.map((instruction) => `- ${instruction}`).join("\n");
-}
-
-function parentWorkingDirectory() {
-  return process.cwd();
+${instructions.map((instruction) => `- ${instruction}`).join("\n")}`;
 }
 
 function subscribe(document, response, clientId) {
@@ -948,10 +923,7 @@ function subscribe(document, response, clientId) {
     set = new Set();
     subscribers.set(document.key, set);
   }
-  const subscriber = {
-    clientId: typeof clientId === "string" && clientId ? clientId : null,
-    response,
-  };
+  const subscriber = { clientId: clientId || null, response };
   set.add(subscriber);
 
   const dropSubscriber = () => {
@@ -1025,41 +997,11 @@ function activeJobsForDocument(documentKey) {
 }
 
 function contentEvent(document) {
-  return { type: "content", content: document.content };
-}
-
-// Invalid paths throw a CanvasError, which `ensureServer` maps to a 400.
-async function sendStorageFile(response, document, storagePath) {
-  const filePath = resolveStoragePath(document, storagePath);
-  try {
-    await sendFile(response, filePath, inferMimeType(filePath));
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-    sendJson(response, 404, { error: "Storage file not found." });
-  }
-}
-
-async function writeStorageFile(document, request) {
-  const bytes = await readBody(request);
-  const directory = join(dirname(document.filePath), "assets");
-  const fileName = uniqueStorageFileName(
-    readFileNameHeader(request),
-    readContentTypeHeader(request),
-  );
-  const filePath = join(directory, fileName);
-
-  await mkdir(directory, { recursive: true });
-  await writeFile(filePath, bytes);
-
-  return {
-    path: toPosixPath(relative(dirname(document.filePath), filePath)),
-  };
+  return { type: "content", content: document.content, revision: document.revision };
 }
 
 function readFileNameHeader(request) {
-  const value = readHeader(request, "x-file-name");
+  const value = request.headers["x-file-name"];
   if (!value) {
     return "";
   }
@@ -1073,17 +1015,9 @@ function readFileNameHeader(request) {
 
 function readContentTypeHeader(request) {
   return (
-    readHeader(request, "content-type").split(";")[0].trim().toLowerCase() ||
+    (request.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase() ||
     "application/octet-stream"
   );
-}
-
-function readHeader(request, name) {
-  const value = request.headers[name];
-  if (Array.isArray(value)) {
-    return value[0] ?? "";
-  }
-  return value ?? "";
 }
 
 function resolveStoragePath(document, storagePath) {
@@ -1099,7 +1033,7 @@ function resolveStoragePath(document, storagePath) {
       : resolve(documentDirectory, storagePath);
   const relativePath = relative(documentDirectory, filePath);
 
-  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+  if (isOutside(relativePath)) {
     throw new CanvasError(
       "storage_path_outside_document",
       "Storage files must live beside the markdown document.",
@@ -1123,16 +1057,7 @@ function inferMimeType(filePath) {
 }
 
 function extensionForMimeType(mimeType) {
-  for (const [extension, type] of imageMimeTypes) {
-    if (type === mimeType) {
-      return extension;
-    }
-  }
-  return ".bin";
-}
-
-function toPosixPath(path) {
-  return path.split("\\").join("/");
+  return [...imageMimeTypes].find(([, type]) => type === mimeType)?.[0] ?? ".bin";
 }
 
 function jobSummary(job) {
@@ -1173,23 +1098,6 @@ async function readBody(request) {
   return Buffer.concat(chunks);
 }
 
-function sendHtml(response) {
-  const html = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Documint Markdown Agent</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/assets/app.js"></script>
-  </body>
-</html>`;
-  response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  response.end(html);
-}
-
 async function sendFile(response, filePath, contentType) {
   const body = await readFile(filePath);
   response.writeHead(200, {
@@ -1211,8 +1119,14 @@ function sendJson(response, status, payload) {
 
 function shortPath(filePath) {
   const cwdRelative = relative(process.cwd(), filePath);
-  if (!cwdRelative.startsWith("..") && !isAbsolute(cwdRelative)) {
+  if (!isOutside(cwdRelative)) {
     return cwdRelative || basename(filePath);
   }
   return filePath;
+}
+
+// `relative` only climbs out of its base with whole ".." segments, so a name
+// such as "..notes.md" is still inside.
+function isOutside(relativePath) {
+  return relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath);
 }

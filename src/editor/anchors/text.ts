@@ -1,123 +1,49 @@
-import {
-  anchorKindForBlockType,
-  listAnchorContainers,
-  type AnchorContainer,
-  type AnchorMatch,
-} from "@/document";
+import { anchorKindForBlockType, type AnchorContainer, type AnchorMatch } from "@/document";
 import {
   indexedOffsetToPlainTextOffset,
   plainTextOffsetToIndexedOffset,
   resolveIndexedText,
-  resolveIndexedBlockContainingPath,
-  resolveIndexedTableCell,
   resolveIndexedTextInlines,
   type DocumentIndex,
-  type IndexedInline,
+  type EditorSelectionRange,
+  type IndexedText,
   type InlineOffsetAffinity,
 } from "../state";
 
-type EditorAnchorPath = {
-  anchorContainer: AnchorContainer;
-  inlines: readonly IndexedInline[] | null;
-  path: string;
-  text: string;
-};
-
 type EditorDocumentRange = {
-  anchorContainer: Pick<AnchorContainer, "containerKind" | "text">;
-  endOffset: number;
-  path: string;
-  startOffset: number;
-};
-
-type EditorAnchorRange = {
   anchorContainer: AnchorContainer;
   endOffset: number;
-  path: string;
   startOffset: number;
 };
 
-export type EditorTextAnchorResolver = {
-  listContainers(containerKind?: AnchorContainer["containerKind"]): AnchorContainer[];
-  resolveEditorRange(
-    match: Pick<AnchorMatch, "containerOrdinal" | "containerPath" | "endOffset" | "startOffset">,
-    options?: { collapsedAffinity?: InlineOffsetAffinity },
-  ): EditorAnchorRange | null;
-};
-
-export function createEditorTextAnchorResolver(
+// Maps a semantic anchor match, resolved against this index's document, onto
+// editor offsets at the same container path.
+export function resolveEditorRangeForAnchorMatch(
   documentIndex: DocumentIndex,
-): EditorTextAnchorResolver {
-  const anchorContainers = listAnchorContainers(documentIndex.document);
-  const anchorContainersByPath = new Map(
-    anchorContainers.map((container) => [container.path, container]),
+  match: Pick<AnchorMatch, "containerPath" | "endOffset" | "startOffset">,
+  collapsedAffinity: InlineOffsetAffinity = "after",
+): EditorSelectionRange | null {
+  const indexedText = resolveIndexedText(documentIndex, match.containerPath);
+
+  if (!indexedText) {
+    return null;
+  }
+
+  const inlines = resolveIndexedTextInlines(indexedText);
+  const isCollapsed = match.startOffset === match.endOffset;
+  const startOffset = plainTextOffsetToIndexedOffset(
+    indexedText.text,
+    inlines,
+    match.startOffset,
+    isCollapsed ? collapsedAffinity : "before",
   );
-  const resolvePath = (
-    match: Pick<AnchorMatch, "containerOrdinal" | "containerPath">,
-  ): EditorAnchorPath | null => {
-    const anchorContainer = anchorContainersByPath.get(match.containerPath) ?? null;
-
-    if (!anchorContainer) {
-      return null;
-    }
-
-    // The ordinal comes from the same current-snapshot container list as the
-    // path. Keep it as a consistency check, not as a fallback location.
-    if (anchorContainer.containerOrdinal !== match.containerOrdinal) {
-      return null;
-    }
-
-    const indexedText = resolveIndexedText(documentIndex, anchorContainer.path);
-
-    if (!indexedText) {
-      return null;
-    }
-
-    const inlines = resolveIndexedTextInlines(indexedText);
-
-    return {
-      anchorContainer,
-      inlines,
-      path: anchorContainer.path,
-      text: indexedText.text,
-    };
-  };
 
   return {
-    listContainers(containerKind) {
-      return containerKind
-        ? anchorContainers.filter((container) => container.containerKind === containerKind)
-        : anchorContainers;
-    },
-    resolveEditorRange(match, options) {
-      const resolved = resolvePath(match);
-
-      if (!resolved) {
-        return null;
-      }
-
-      const isCollapsed = match.startOffset === match.endOffset;
-      const startOffset = plainTextOffsetToIndexedOffset(
-        resolved.text,
-        resolved.inlines,
-        match.startOffset,
-        isCollapsed ? (options?.collapsedAffinity ?? "after") : "before",
-      );
-
-      return {
-        anchorContainer: resolved.anchorContainer,
-        endOffset: isCollapsed
-          ? startOffset
-          : plainTextOffsetToIndexedOffset(
-              resolved.text,
-              resolved.inlines,
-              match.endOffset,
-              "after",
-            ),
-        path: resolved.path,
-        startOffset,
-      };
-    },
+    endOffset: isCollapsed
+      ? startOffset
+      : plainTextOffsetToIndexedOffset(indexedText.text, inlines, match.endOffset, "after"),
+    path: match.containerPath,
+    startOffset,
   };
 }
 
@@ -130,7 +56,7 @@ export function resolveDocumentRangeForPath(
   },
 ): EditorDocumentRange | null {
   const indexedText = resolveIndexedText(documentIndex, path);
-  const anchorContainer = indexedText ? resolveAnchorContainerForPath(documentIndex, path) : null;
+  const anchorContainer = indexedText ? anchorContainerForText(indexedText) : null;
 
   if (!indexedText || !anchorContainer) {
     return null;
@@ -141,27 +67,24 @@ export function resolveDocumentRangeForPath(
   return {
     anchorContainer,
     endOffset: indexedOffsetToPlainTextOffset(indexedText.text, inlines, range.endOffset),
-    path,
     startOffset: indexedOffsetToPlainTextOffset(indexedText.text, inlines, range.startOffset),
   };
 }
 
-// Resolves the anchor container for a path that has indexed text.
-function resolveAnchorContainerForPath(
-  documentIndex: DocumentIndex,
-  path: string,
-): Pick<AnchorContainer, "containerKind" | "text"> | null {
-  const indexedCell = resolveIndexedTableCell(documentIndex, path);
-  if (indexedCell) {
-    const cell = indexedCell.cell;
-
-    return cell ? { containerKind: "tableCell", text: cell.plainText } : null;
+// The anchor container an indexed text projects to, or `null` when its block
+// can't host anchored content.
+export function anchorContainerForText(indexedText: IndexedText): AnchorContainer | null {
+  if ("cell" in indexedText) {
+    return { containerKind: "tableCell", path: indexedText.path, text: indexedText.cell.plainText };
   }
 
-  const indexedBlock = resolveIndexedBlockContainingPath(documentIndex, path);
-  const containerKind = indexedBlock ? anchorKindForBlockType(indexedBlock.block.type) : null;
+  if (!("block" in indexedText)) {
+    return null;
+  }
 
-  return containerKind && indexedBlock
-    ? { containerKind, text: indexedBlock.block.plainText }
+  const containerKind = anchorKindForBlockType(indexedText.block.type);
+
+  return containerKind
+    ? { containerKind, path: indexedText.path, text: indexedText.block.plainText }
     : null;
 }

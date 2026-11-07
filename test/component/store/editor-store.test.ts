@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { createSourceSprig } from "@/component/store/core/sprigs";
-import { editorSource } from "@/component/store/editor/sprigs";
 import { createEditorStore } from "@/component/store/editor/store";
 import type { EditorStateTransition } from "@/component/store/editor/transitions";
-import { createLayoutStore } from "@/component/store/layout/store";
 import { insertText, readEditorEffects, setSelection } from "@/editor/state";
-import { equalStringSets } from "@test/component/helpers";
 import { getPath, placeAt, setup } from "@test/editor/helpers";
 
 describe("EditorStore", () => {
@@ -28,10 +24,10 @@ describe("EditorStore", () => {
       expect.objectContaining({
         documentChanged: true,
         changedRootIndexes: [0],
-        hasNewEffects: true,
         source: "local",
       }),
     );
+    expect(transition.effects.length).toBeGreaterThan(0);
   });
 
   test("classifies selection-only changes without document changes", () => {
@@ -44,7 +40,7 @@ describe("EditorStore", () => {
       expect.objectContaining({
         documentChanged: false,
         changedRootIndexes: [],
-        hasNewEffects: false,
+        effects: [],
         source: "local",
       }),
     );
@@ -96,103 +92,9 @@ describe("EditorStore", () => {
     expect(transition).toEqual(
       expect.objectContaining({
         effects: [],
-        hasNewEffects: false,
         source: "external",
       }),
     );
     expect(readEditorEffects(next)).toEqual([]);
   });
-
-  test("source sprigs notify only when the selected slice changes", () => {
-    const state = setup("alpha\n");
-    const path = getPath(state, "alpha");
-    const store = createDocumintStore(state);
-    const documentSprig = createSourceSprig(
-      editorSource,
-      (editorState) => editorState.documentIndex,
-    );
-    const focusSprig = createSourceSprig(
-      editorSource,
-      (editorState) => editorState.selection.focus,
-    );
-    let documentNotifications = 0;
-    let focusNotifications = 0;
-
-    documentSprig.subscribe(store, () => {
-      documentNotifications += 1;
-    });
-    focusSprig.subscribe(store, () => {
-      focusNotifications += 1;
-    });
-
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
-
-    expect(documentNotifications).toBe(0);
-    expect(focusNotifications).toBe(1);
-  });
-
-  test("source sprig subscribers can unsubscribe", () => {
-    const state = setup("alpha\n");
-    const path = getPath(state, "alpha");
-    const store = createDocumintStore(state);
-    const focusSprig = createSourceSprig(
-      editorSource,
-      (editorState) => editorState.selection.focus,
-    );
-    let notifications = 0;
-    const unsubscribe = focusSprig.subscribe(store, () => {
-      notifications += 1;
-    });
-
-    unsubscribe();
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
-
-    expect(notifications).toBe(0);
-  });
-
-  test("source sprigs use custom equality to suppress equivalent updates", () => {
-    const state = setup("alpha\n");
-    const path = getPath(state, "alpha");
-    const store = createDocumintStore(state);
-    const imageUrlsSprig = createSourceSprig(
-      editorSource,
-      (editorState) => new Set(editorState.documentIndex.imageUrls),
-      equalStringSets,
-    );
-    let notifications = 0;
-
-    imageUrlsSprig.subscribe(store, () => {
-      notifications += 1;
-    });
-
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
-
-    expect(notifications).toBe(0);
-  });
-
-  test("source sprig reads project the current editor state", () => {
-    const state = setup("alpha\n");
-    const path = getPath(state, "alpha");
-    const store = createDocumintStore(state);
-    const focusSprig = createSourceSprig(
-      editorSource,
-      (editorState) => editorState.selection.focus,
-    );
-    let notifications = 0;
-
-    focusSprig.subscribe(store, () => {
-      notifications += 1;
-    });
-
-    expect(focusSprig.read(store)).toEqual({ path: path.path, offset: 0 });
-
-    store.editor.command(setSelection, { path: path.path, offset: 2 });
-
-    expect(focusSprig.read(store)).toEqual({ path: path.path, offset: 2 });
-    expect(notifications).toBe(1);
-  });
 });
-
-function createDocumintStore(state: ReturnType<typeof setup>) {
-  return { editor: createEditorStore(state), layout: createLayoutStore() };
-}

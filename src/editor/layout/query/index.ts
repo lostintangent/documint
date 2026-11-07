@@ -6,12 +6,12 @@ export {
   measureDocumentCaretTarget,
   measureDocumentVisualCaret,
   resolveCaretHitTestX,
-  resolveCaretVisualLeft,
   type CaretTarget,
 } from "./caret";
 
 export {
   measureInlineImageBounds,
+  resolveInlineImageBounds,
   resolveListMarkerTarget,
   resolveOrderedListMarkerAnchor,
   resolveTaskCheckboxBounds,
@@ -21,22 +21,16 @@ export {
 } from "./line-visuals";
 
 export {
-  findDocumentLayoutLineAtPoint,
   findDocumentLayoutLineEntryForPathOffset,
   findDocumentLayoutLineForPathOffset,
-  findNearestDocumentLayoutLineForPath,
   measureCanvasLineOffsetLeft,
 } from "./line-lookup";
 
 export {
   findDocumentLayoutBlockRange,
   findDocumentLayoutLineRange,
+  findDocumentLayoutTableRowRange,
   someVisibleDocumentLayoutLine,
 } from "./viewport-ranges";
 
-export {
-  resolvePositionInViewport,
-  resolveScrollTopToReveal,
-  type ScrollRevealAlignment,
-  type ViewportPositionStatus,
-} from "./viewport-position";
+export { resolvePositionInViewport, resolveScrollTopToReveal } from "./viewport-position";

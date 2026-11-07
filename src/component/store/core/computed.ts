@@ -9,10 +9,11 @@ type SprigResults<Deps extends readonly DocumintSprig<unknown>[]> = {
 /**
  * Build a sprig that derives its value from one or more upstream sprigs.
  *
- * The result is cached per `DocumintStore`: re-reads with unchanged dep
- * identities return the cached value without recomputing. `equal` decides
- * whether a freshly-computed value should preserve the prior reference;
- * defaults to `Object.is`.
+ * The result is cached per `DocumintStore`. While the snapshots of the
+ * sprig's `sources` are unchanged, reads return the cached value without
+ * touching deps. Otherwise deps are re-read, and the body only reruns when a
+ * dep value changed identity. `equal` decides whether a freshly-computed
+ * value should preserve the prior reference; defaults to `Object.is`.
  *
  * Reach for this when a value derives from store state and nothing else.
  * If it also depends on host props, use `createParameterizedSprig`.
@@ -48,57 +49,43 @@ export function createParameterizedSprig<
   read: (store: DocumintStore, params: Params, ...values: SprigResults<Deps>) => Value,
   equal: Equality<Value> = defaultEquality,
 ): DocumintSprig<Value, Params> {
+  const sources = [...new Set(deps.flatMap((dep) => dep.sources))];
   const cache = new WeakMap<
     DocumintStore,
     {
       depValues: SprigResults<Deps>;
       params: Params;
+      snapshots: readonly unknown[];
       value: Value;
     }
   >();
 
   const readComputed = (store: DocumintStore, ...params: Params) => {
-    const depValues = deps.map((dep) => dep.read(store)) as SprigResults<Deps>;
+    const snapshots = sources.map((source) => source.read(store));
     const cached = cache.get(store);
+    const sameParams = cached !== undefined && areSprigResultsIdentical(cached.params, params);
 
-    if (
-      cached &&
-      areSprigResultsIdentical(cached.depValues, depValues) &&
-      areSprigResultsIdentical(cached.params, params)
-    ) {
+    // Sound because dep values and params fully determine every body (see
+    // the store AGENTS.md), so unchanged snapshots imply unchanged deps.
+    if (sameParams && areSprigResultsIdentical(cached.snapshots, snapshots)) {
       return cached.value;
     }
 
-    const nextValue = read(store, params, ...depValues);
-    const value = cached && equal(cached.value, nextValue) ? cached.value : nextValue;
-    cache.set(store, { depValues, params, value });
+    const depValues = deps.map((dep) => dep.read(store)) as SprigResults<Deps>;
+    let value: Value;
+
+    if (sameParams && areSprigResultsIdentical(cached.depValues, depValues)) {
+      value = cached.value;
+    } else {
+      const nextValue = read(store, params, ...depValues);
+      value = cached && equal(cached.value, nextValue) ? cached.value : nextValue;
+    }
+
+    cache.set(store, { depValues, params, snapshots, value });
     return value;
   };
 
-  return {
-    read: readComputed,
-    subscribe(store, listener, ...params) {
-      let selected = readComputed(store, ...params);
-
-      const notifyIfChanged = () => {
-        const nextSelected = readComputed(store, ...params);
-        if (equal(selected, nextSelected)) {
-          return;
-        }
-
-        selected = nextSelected;
-        listener();
-      };
-
-      const unsubscribers = deps.map((dep) => dep.subscribe(store, notifyIfChanged));
-
-      return () => {
-        for (const unsubscribe of unsubscribers) {
-          unsubscribe();
-        }
-      };
-    },
-  };
+  return { read: readComputed, sources };
 }
 
 function areSprigResultsIdentical(previous: readonly unknown[], next: readonly unknown[]) {

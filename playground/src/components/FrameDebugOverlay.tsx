@@ -59,6 +59,7 @@ const textSegmentStrokeByAtom = {
 const debugPhases: readonly DebugPhase[] = [
   mapFrameLines(lineBounds),
   mapFrameLines(lineBackgrounds),
+  containerBackgrounds,
   mapFrameLines(lineRanges),
   mapFrameLines(textSegments),
   mapFrameLines(listMarkers),
@@ -153,14 +154,24 @@ function* lineBackgrounds(line: DocumentFrameLine): Iterable<DebugRectRow> {
   if (line.activeBlockBackground) {
     yield debugFill(debugColors.activeBlock, line.activeBlockBackground.rect);
   }
-  if (line.containerBackground) {
-    yield debugFill(debugColors.container, line.containerBackground.rect);
+}
+
+function* containerBackgrounds(frame: DocumentFrame): Iterable<DebugRectRow> {
+  for (const surface of frame.chrome.codeBlockSurfaces) {
+    if (surface.activeBlockBackground) {
+      yield debugFill(debugColors.activeBlock, surface.activeBlockBackground.rect);
+    }
+    yield debugFill(debugColors.container, surface.rect);
+  }
+
+  for (const cell of frame.chrome.tableCells) {
+    yield debugFill(debugColors.container, cell.rect);
   }
 }
 
 function* lineRanges(line: DocumentFrameLine): Iterable<DebugRectRow> {
   if (line.selectionHighlight) {
-    yield debugFill(debugColors.selection, line.selectionHighlight);
+    yield debugFill(debugColors.selection, line.selectionHighlight.rect);
   }
   for (const comment of line.commentHighlights) {
     yield debugFill(debugColors.comment, comment.rect);

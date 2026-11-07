@@ -5,7 +5,7 @@
 import type { Mention } from "@/document";
 
 export const mentionHorizontalPadding = 4;
-export const mentionMinimumWidth = 18;
+const mentionMinimumWidth = 18;
 
 export function measureInlineMentionWidth(
   context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D,

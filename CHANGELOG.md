@@ -1,3 +1,27 @@
+## 🗓️ v0.2.0 (11-06-26)
+
+- Fixed headings with bold text stopping the editor from updating
+- Markdown round-trips much more faithfully: ordered list numbers, nested and indented lists, task-item children, wrapped and lazy continuation lines, nested emphasis, bracketed link text, long code fences, multi-line HTML blocks, and a heading's trailing `#` now survive a save
+- Saved markdown no longer changes meaning on reload: text that looks like HTML, strikethrough, a directive or front matter is escaped, and underscores in words like `snake_case` are left alone
+- Parsing follows CommonMark more closely, so quotes split by a blank line stay separate, ragged table rows gain empty cells, and prose like `2021. It works` or `Note:Use` stays prose
+- Reference links, indented code and setext headings are now saved as inline links, fenced code and `#` headings
+- Enter, Backspace, Tab and Shift+Tab in lists now split, lift, merge and number items without dropping or reordering content
+- Enter and heading changes keep inline formatting, and Enter at the start of a block keeps the caret with its text
+- Typing a closing bracket over a matching one now types over it instead of doubling it
+- PageUp and PageDown move by the viewport height, keep the line you left visible, and reach the first and last line
+- SVG badges and images that block CORS now load, badges paint at their real size without shifting the page as they load, and a linked image opens its link from anywhere on it
+- Code blocks stay readable while the caret is inside them, and syntax colors hold up on selected and changed lines
+- Long documents with code blocks keep a steady scroll height instead of creeping as you scroll or jumping on the first keystroke
+- Tall table rows and code blocks paint completely while they fill the screen or are scrolled partway out of view, keeping their text, background, borders, highlights and animations
+- Typing in a table or pressing Enter in a long document no longer makes the view jump
+- Multi-line HTML blocks paint line by line as written, and Enter adds a line inside them
+- Tables paint cell tints and borders at each column's real width, and the table toolbar no longer covers the next row
+- List bullets sit beside items that start with code or a quote, instead of inside them
+- Comment bodies now render headings, quotes, code blocks and tables
+- `onUserMentioned` now reports the correct line after paragraphs with soft line breaks
+- The caret stops blinking and repainting while the editor is unfocused
+- Typing in long paragraphs and code blocks, and scrolling documents of any length, now do less layout work
+
 ## 🗓️ v0.1.1 (11-01-26)
 
 - Upgraded numerous dependencies to improve perf/reliability

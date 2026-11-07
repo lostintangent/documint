@@ -10,7 +10,7 @@ import {
   type DocumentLayout,
 } from "@/editor/layout";
 import { resolveDocumentLayoutOptions } from "@/editor/layout/lib/options";
-import { measureLayoutSlice } from "@/editor/layout/measure";
+import { measureBodyLayoutSlice, measureLayoutSlice } from "@/editor/layout/measure";
 import { parseDocument } from "@/markdown";
 import { createResources, getPath, placeAt, selectIn, setup } from "../helpers";
 
@@ -80,7 +80,7 @@ describe("Typography", () => {
         throw new Error("Expected task list line");
       }
 
-      const bounds = resolveTaskCheckboxBounds(line);
+      const bounds = resolveTaskCheckboxBounds(line, line.left);
 
       expect(line.height).toBe(expectation.lineHeight);
       expect(line.contentInset).toBe(expectation.size + 8);
@@ -137,6 +137,12 @@ Paragraph text that wraps across multiple visual lines in the canvas layout.
       lines: ["const value = 1;", ""],
       markdown: "```ts\nconst value = 1;\n\n```\n",
       text: "const value = 1;\n",
+    },
+    {
+      label: "a multi-line HTML block",
+      lines: ["<div>", "  <b>hi</b>", "</div>"],
+      markdown: "<div>\n  <b>hi</b>\n</div>\n",
+      text: "<div>\n  <b>hi</b>\n</div>",
     },
   ])(
     "splits $label into hard-break lines with a caret on the last one",
@@ -324,33 +330,11 @@ describe("Block gaps", () => {
 describe("Block slices and tables", () => {
   test("measures explicit block slices against the full document index", () => {
     const runtime = createDocumentIndex(parseDocument("alpha\n\n---\n\nbeta\n\ngamma\n"));
-    const throughDivider = measureLayoutSlice(
-      runtime,
-      { width: 4000 },
-      undefined,
-      null,
-      undefined,
-      0,
-      3,
-    );
-    const beforeDivider = measureLayoutSlice(
-      runtime,
-      { width: 4000 },
-      undefined,
-      null,
-      undefined,
-      0,
-      1,
-    );
-    const afterDivider = measureLayoutSlice(
-      runtime,
-      { width: 4000 },
-      undefined,
-      null,
-      undefined,
-      2,
-      3,
-    );
+    const measureBlocks = (start: number, end: number) =>
+      measureBodyLayoutSlice(runtime, { width: 4000 }, undefined, null, undefined, start, end);
+    const throughDivider = measureBlocks(0, 3);
+    const beforeDivider = measureBlocks(0, 1);
+    const afterDivider = measureBlocks(2, 3);
 
     expect(throughDivider.blocks.map((block) => block.type)).toEqual([
       "paragraph",
@@ -481,32 +465,51 @@ describe("Inline atoms", () => {
     expect(paragraphLines[0]?.inlineReferences?.[0]).toMatchObject({ kind: "resource", width: 30 });
   });
 
-  test("uses authored image width when laying out image runs", () => {
-    const runtime = createDocumentIndex(
-      parseDocument("![Preview](https://example.com/preview.png){width=120}\n"),
-    );
-    const resources = createResources({
-      images: { "https://example.com/preview.png": { height: 540, width: 960 } },
-    });
-    const layout = measureLayoutSlice(
-      runtime,
-      {
-        width: 420,
-      },
-      createLayoutCache(),
-      resources,
-    );
+  test.each([
+    {
+      attributes: "{width=120}",
+      height: 68,
+      intrinsic: { height: 540, width: 960 },
+      lineHeight: 68,
+      width: 120,
+    },
+    // Badges keep their intrinsic size, so the line keeps its text height.
+    { attributes: "", height: 20, intrinsic: { height: 20, width: 98 }, lineHeight: 24, width: 98 },
+  ])(
+    "lays out a loaded $intrinsic.width by $intrinsic.height image at $width by $height",
+    ({ attributes, height, intrinsic, lineHeight, width }) => {
+      const url = "https://example.com/preview.png";
+      const runtime = createDocumentIndex(parseDocument(`![Preview](${url})${attributes}\n`));
+      const resources = createResources({ images: { [url]: intrinsic } });
+      const layout = measureLayoutSlice(runtime, { width: 420 }, createLayoutCache(), resources);
 
-    expect(layout.lines[0]?.width).toBe(120);
-    expect(layout.lines[0]?.height).toBe(68);
-    expect(layout.lines[0]?.inlineReferences).toEqual([
-      {
-        end: 1,
-        kind: "image",
-        start: 0,
-        width: 120,
-      },
-    ]);
+      expect(layout.lines[0]?.height).toBe(lineHeight);
+      expect(layout.lines[0]?.inlineReferences).toEqual([
+        { end: 1, height, kind: "image", start: 0, width },
+      ]);
+    },
+  );
+
+  test("keeps text below a badge row in place while the badges load", () => {
+    const urls = ["ci", "npm", "license"].map((name) => `https://example.com/${name}.svg`);
+    const state = setup(
+      `${urls.map((url) => `[![badge](${url})](https://ci)`).join(" ")}\n\nBelow\n`,
+    );
+    const below = getPath(state, "Below");
+    const loaded = createResources({
+      images: Object.fromEntries(urls.map((url) => [url, { height: 20, width: 98 }])),
+    });
+    const measureTopOfBelow = (resources: ReturnType<typeof createResources>) =>
+      measureLayoutSlice(
+        state.documentIndex,
+        { width: 420 },
+        createLayoutCache(),
+        resources,
+      ).lines.find((line) => line.path === below.path)?.top;
+    const loadingTop = measureTopOfBelow(createResources());
+
+    expect(loadingTop).toBeGreaterThan(0);
+    expect(loadingTop).toBe(measureTopOfBelow(loaded));
   });
 });
 
@@ -573,7 +576,8 @@ describe("Layout cache", () => {
     );
     const plainBoundaries = plainLayout.lines[0]?.boundaries;
 
-    state = selectIn(state, container, 0, 5);
+    // Bold the whole run so only its marks, not its range, change.
+    state = selectIn(state, container, 0, container.text.length);
     state = toggleMark(state, "bold") ?? state;
 
     const markedLayout = measureLayoutSlice(
@@ -584,9 +588,12 @@ describe("Layout cache", () => {
       cache,
     );
     const markedBoundaries = markedLayout.lines[0]?.boundaries;
+    const freshBoundaries = measureLayoutSlice(state.documentIndex, { width: 180 }).lines[0]
+      ?.boundaries;
 
     expect(markedBoundaries).toBeDefined();
-    expect(markedBoundaries).not.toBe(plainBoundaries);
+    expect(markedBoundaries).toEqual(freshBoundaries);
+    expect(markedBoundaries).not.toEqual(plainBoundaries);
   });
 
   test("does not reuse cached lines across different astral symbols", () => {
@@ -598,6 +605,20 @@ describe("Layout cache", () => {
     const secondLayout = measureLayoutSlice(second, { width: 420 }, cache);
 
     expect(secondLayout.lines[0]?.text).toBe("😁");
+  });
+
+  test.each([
+    { change: "width", options: { width: 180 } },
+    { change: "font size", options: { fontSize: 24, width: 420 } },
+  ])("re-wraps cached text when the $change changes", ({ options }) => {
+    const cache = createLayoutCache();
+    const runtime = createDocumentIndex(parseDocument(`${"WWWWW ".repeat(12)}\n`));
+    const initial = measureLayoutSlice(runtime, { width: 420 }, cache);
+    const cached = measureLayoutSlice(runtime, options, cache);
+    const fresh = measureLayoutSlice(runtime, options);
+
+    expect(fresh.lines).not.toEqual(initial.lines);
+    expect(cached.lines).toEqual(fresh.lines);
   });
 
   test("recomputes cached resource measurements when protocol icons change", () => {

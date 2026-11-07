@@ -1,32 +1,20 @@
-// Owns per-line block backgrounds (code fence fill and table cell chrome),
-// active-block and document-change tints, and active-block change effects.
+// Owns block backgrounds: the code block surface, active-block and
+// document-change tints, and active-block change effects.
 
 import type { LayoutRect } from "@/editor/layout";
 import type { ResolvedEditorTheme } from "../../theme";
 import type { EffectEnvironment, PaintEffect } from "../../effects";
 import { fadeCanvasColor } from "../../effects/colors";
-import type { ActiveBlockChangedEffectFrame, DocumentFrameLine } from "../../frame";
+import type { ActiveBlockChangedEffectFrame } from "../../frame";
 import { paintHighlight } from "../highlights";
-import { paintGridCellChrome } from "../table";
 
-export function paintLineContainerBackground(
+export function paintCodeBlockSurface(
   context: CanvasRenderingContext2D,
-  lineFrame: DocumentFrameLine,
+  rect: LayoutRect,
   theme: ResolvedEditorTheme,
 ) {
-  const background = lineFrame.containerBackground;
-
-  if (!background) {
-    return;
-  }
-
-  if (background.kind === "code") {
-    context.fillStyle = theme.codeBackground;
-    paintRect(context, background.rect);
-    return;
-  }
-
-  paintGridCellChrome(context, background.rect, background.isHeaderRow, theme);
+  context.fillStyle = theme.codeBackground;
+  context.fillRect(rect.left, rect.top, rect.width, rect.height);
 }
 
 // Active-block and document-change backgrounds share one shape: a solid rect
@@ -53,7 +41,7 @@ export function paintActiveBlockChangedEffect(
   effect: ActiveBlockChangedEffectFrame | null,
   environment: EffectEnvironment & { paintEffect: PaintEffect },
 ) {
-  if (!effect?.activeFlash) {
+  if (!effect) {
     return;
   }
 
@@ -66,13 +54,9 @@ export function paintActiveBlockChangedEffect(
     },
     ({ progress, theme }) => {
       paintHighlight(context, effect.geometry, {
-        borderColor: effect.geometry.borderRect ? theme.tableBorder : undefined,
+        borderColor: theme.tableBorder,
         fill: fadeCanvasColor(theme.activeBlockFlash, progress),
       });
     },
   );
-}
-
-function paintRect(context: CanvasRenderingContext2D, rect: LayoutRect) {
-  context.fillRect(rect.left, rect.top, rect.width, rect.height);
 }

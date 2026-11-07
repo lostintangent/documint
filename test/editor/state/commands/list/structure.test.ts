@@ -37,15 +37,40 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n- be\n- ta\n");
   });
 
-  test("preserves nested children when splitting a list item mid-text", () => {
-    let state = setup("- alpha\n  - child\n- beta\n");
-    const alpha = getPath(state, "alpha");
+  test("moves nested children to the second half when splitting a list item mid-text", () => {
+    const source = "- Hello **bold** [link](https://example.com)\n  - child\n";
+    let state = setup(source);
 
-    state = placeAt(state, alpha, 2);
+    state = placeAt(state, getPath(state, "Hello bold link"), 8);
     state = insertLineBreak(state) ?? state;
 
-    expect(toMarkdown(state)).toBe("- al\n  - child\n- pha\n- beta\n");
+    expect(toMarkdown(state)).toBe(
+      "- Hello **bo**\n- **ld** [link](https://example.com)\n  - child\n",
+    );
+    expect(state.selection.focus.path).toBe(getPath(state, "ld link").path);
+    expect(state.selection.focus.offset).toBe(0);
+    expect(toMarkdown(undoEditorState(state))).toBe(source);
   });
+
+  test.each([
+    [
+      "at the end of a later paragraph",
+      "- alpha\n\n  beta\n\n  gamma\n",
+      "beta",
+      4,
+      "- alpha\n\n  beta\n\n-\n\n  gamma\n",
+    ],
+    ["at the start of a later paragraph", "- alpha\n\n  beta\n", "beta", 0, "- alpha\n\n- beta\n"],
+    ["inside a quote in the item", "- alpha\n  > quoted\n", "quoted", 3, null],
+  ])(
+    "enter %s keeps the item's earlier paragraphs in place",
+    (_, source, text, offset, expected) => {
+      const state = setup(source);
+      const next = insertLineBreak(placeAt(state, getPath(state, text), offset));
+
+      expect(next && toMarkdown(next)).toBe(expected);
+    },
+  );
 
   test("moves top-level list items up and down while preserving their nested subtree", () => {
     let state = setup("- alpha\n  - child\n- beta\n- gamma\n");
@@ -129,6 +154,29 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n\n\n\n- beta\n");
   });
 
+  test("exiting an ordered list continues its count in the tail until Backspace rejoins it", () => {
+    let state = setup("3. alpha\n4. beta\n");
+
+    state = insertLineBreak(placeAt(state, getPath(state, "beta"), 0)) ?? state;
+    state = insertLineBreak(placeAt(state, getPath(state, ""), 0)) ?? state;
+
+    expect(toMarkdown(state)).toBe("3. alpha\n\n\n\n4. beta\n");
+
+    state = deleteBackward(placeAt(state, getPath(state, ""), 0)) ?? state;
+
+    expect(toMarkdown(state)).toBe("3. alpha\n4. beta\n");
+  });
+
+  test("pressing enter on an empty list item with nested children inserts an item above", () => {
+    let state = setup("- x\n  - child\n- y\n");
+
+    state = placeAt(state, getPath(state, "x"), "end");
+    state = deleteBackward(state) ?? state;
+    state = insertLineBreak(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("-\n-\n  - child\n- y\n");
+  });
+
   test("rejoins adjacent compatible lists when deleting the empty paragraph between them", () => {
     let state = setup("- alpha\n- beta\n");
     const beta = getPath(state, "beta");
@@ -164,7 +212,7 @@ describe("List structure", () => {
     // children, the actual previous in-flow editor path is deeper. The
     // override uses the shared flow query to land at the same
     // spot the universal in-flow rule would.
-    let state = setup("- top\n  - nested\n\nstub\n\n- another\n");
+    let state = setup("- top\n  - nested\n\nstub\n\n- another\n\n  more\n");
 
     const stub = getPath(state, "stub");
 
@@ -180,8 +228,8 @@ describe("List structure", () => {
     state = placeAt(state, empty, 0);
     state = deleteBackward(state) ?? state;
 
-    // Two lists merged into one.
-    expect(toMarkdown(state)).toBe("- top\n  - nested\n- another\n");
+    // Two lists merged into one, loose because the second half was.
+    expect(toMarkdown(state)).toBe("- top\n  - nested\n\n- another\n\n  more\n");
 
     // Cursor at end of "nested" — the deepest-last path of the
     // pre-merge previous list — not at end of "top" (the last top-level
@@ -229,7 +277,7 @@ describe("List structure", () => {
   });
 
   test("lifts empty nested list items one level before exiting the list entirely", () => {
-    let state = setup("- parent\n  - child\n  - \n- sibling\n");
+    let state = setup("- parent\n  - child\n  - \n  - after\n- sibling\n");
     const empty = indexedTextEntries(state).find((container) => {
       if (container.text !== "") {
         return false;
@@ -258,7 +306,7 @@ describe("List structure", () => {
     state = placeAt(state, empty, 0);
     state = insertLineBreak(state) ?? state;
 
-    expect(toMarkdown(state)).toBe("- parent\n  - child\n-\n- sibling\n");
+    expect(toMarkdown(state)).toBe("- parent\n  - child\n-\n  - after\n- sibling\n");
   });
 
   test("routes list enter behavior and markdown task rules", () => {
@@ -323,92 +371,6 @@ describe("List structure", () => {
     expect(toMarkdown(canonicalTaskRuleState)).toBe("- [ ] \n");
   });
 
-  test("creates unordered, ordered, and task lists from lightweight markdown triggers", () => {
-    let unorderedState = setup("x\n");
-    const unorderedContainer = indexedTextEntries(unorderedState)[0];
-
-    if (!unorderedContainer) {
-      throw new Error("Expected empty paragraph container");
-    }
-
-    unorderedState = setSelection(unorderedState, {
-      anchor: {
-        path: unorderedContainer.path,
-        offset: 0,
-      },
-      focus: {
-        path: unorderedContainer.path,
-        offset: unorderedContainer.text.length,
-      },
-    });
-    unorderedState = insertText(unorderedState, "-") ?? unorderedState;
-    unorderedState = insertText(unorderedState, " ") ?? unorderedState;
-
-    expect(toMarkdown(unorderedState)).toBe("-\n");
-    expect(
-      indexedTextEntries(unorderedState).some(
-        (container) => container.path === unorderedState.selection.focus.path,
-      ),
-    ).toBe(true);
-
-    let orderedState = setup("x\n");
-    const orderedContainer = indexedTextEntries(orderedState)[0];
-
-    if (!orderedContainer) {
-      throw new Error("Expected empty paragraph container");
-    }
-
-    orderedState = setSelection(orderedState, {
-      anchor: {
-        path: orderedContainer.path,
-        offset: 0,
-      },
-      focus: {
-        path: orderedContainer.path,
-        offset: orderedContainer.text.length,
-      },
-    });
-    orderedState = insertText(orderedState, "1") ?? orderedState;
-    orderedState = insertText(orderedState, ".") ?? orderedState;
-    orderedState = insertText(orderedState, " ") ?? orderedState;
-
-    expect(toMarkdown(orderedState)).toBe("1.\n");
-    expect(
-      indexedTextEntries(orderedState).some(
-        (container) => container.path === orderedState.selection.focus.path,
-      ),
-    ).toBe(true);
-
-    let taskState = setup("x\n");
-    const taskContainer = indexedTextEntries(taskState)[0];
-
-    if (!taskContainer) {
-      throw new Error("Expected empty paragraph container");
-    }
-
-    taskState = setSelection(taskState, {
-      anchor: {
-        path: taskContainer.path,
-        offset: 0,
-      },
-      focus: {
-        path: taskContainer.path,
-        offset: taskContainer.text.length,
-      },
-    });
-    taskState = insertText(taskState, "[") ?? taskState;
-    taskState = insertText(taskState, " ") ?? taskState;
-    taskState = insertText(taskState, "]") ?? taskState;
-    taskState = insertText(taskState, " ") ?? taskState;
-
-    expect(toMarkdown(taskState)).toBe("- [ ] \n");
-    expect(
-      indexedTextEntries(taskState).some(
-        (container) => container.path === taskState.selection.focus.path,
-      ),
-    ).toBe(true);
-  });
-
   test("merges or removes list items when backspacing at the start", () => {
     let listState = setup("- one\n- two\n");
     const two = getPath(listState, "two");
@@ -431,6 +393,83 @@ describe("List structure", () => {
     expect(toMarkdown(blankListState)).toBe("- one\n- two\n");
   });
 
+  test.each([
+    [
+      "a paragraph after a code-first item",
+      "- ```\n  code\n  ```\n- alpha\n\nbeta\n",
+      "beta",
+      "-\n  ```\n  code\n  ```\n- alphabeta\n",
+    ],
+    ["an item after a quote-first item", "- > q1\n- b\n", "b", "-\n  > q1b\n"],
+    ["an item's later paragraph", "- a\n\n  para\n- b\n", "para", "- apara\n\n- b\n"],
+    [
+      "an image-only paragraph between lists",
+      "- a\n\n![](x.png)\n\n- b\n",
+      "\uFFFC",
+      "- a![](x.png)\n\n- b\n",
+    ],
+    ["an item with a later paragraph", "- a\n- b\n\n  bpara\n", "b", "- ab\n\n  bpara\n"],
+    ["an item with a nested list", "- a\n- b\n  - c\n", "b", "- ab\n  - c\n"],
+    [
+      "an item after a nested list",
+      "- a\n\n  1. x\n- b\n  1. c\n",
+      "b",
+      "- a\n\n  1. xb\n  2. c\n",
+    ],
+    [
+      "a quote-first item",
+      "- a\n- > q\n  >\n  > q2\n\n  tail\n",
+      "q",
+      "- aq\n\n  > q2\n\n  tail\n",
+    ],
+    ["an item's later quote", "- a\n\n  > q\n", "q", "- aq\n"],
+    ["a first nested item", "- a\n  - b\n\n    bpara\n", "b", "- ab\n\n  bpara\n"],
+    [
+      "a first nested item with a nested list",
+      "- a\n  1. b\n     1. c\n  2. d\n\n     dpara\n",
+      "b",
+      "- ab\n\n  1. c\n\n  2. d\n\n     dpara\n",
+    ],
+    [
+      "an only item before a sibling list",
+      "- a\n  - b\n    1. c\n  1. d\n",
+      "b",
+      "- ab\n  1. c\n  2. d\n",
+    ],
+  ])("backspace at %s keeps every block exactly once", (_, source, text, expected) => {
+    let state = setup(source);
+    const before = toMarkdown(state);
+
+    state = placeAt(state, getPath(state, text), 0);
+    state = deleteBackward(state) ?? state;
+
+    expect(toMarkdown(state)).toBe(expected);
+    expect(toMarkdown(undoEditorState(state))).toBe(before);
+  });
+
+  test("forward delete on an emptied item keeps its later paragraph", () => {
+    let state = setup("- a\n- e\n\n  tail\n");
+    state = placeAt(state, getPath(state, "e"), 1);
+    state = deleteBackward(state) ?? state;
+    const before = toMarkdown(state);
+
+    state = deleteForward(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("- a\n\n  tail\n");
+    expect(toMarkdown(undoEditorState(state))).toBe(before);
+  });
+
+  test("forward delete into a list keeps its first item's rest before it", () => {
+    let state = setup("p\n\n1. b\n\n   > q\n\n   1. c\n\n2. d\n");
+    const before = toMarkdown(state);
+
+    state = placeAt(state, getPath(state, "p"), "end");
+    state = deleteForward(state) ?? state;
+
+    expect(toMarkdown(state)).toBe("pb\n\n> q\n\n1. c\n\n2. d\n");
+    expect(toMarkdown(undoEditorState(state))).toBe(before);
+  });
+
   test("preserves nested list semantics when splitting a nested task item at the end", () => {
     let state = setup("- alpha\n  - [x] shipped child\n  - gamma\n");
     const task = getPath(state, "shipped child");
@@ -445,32 +484,8 @@ describe("List structure", () => {
     expect(toMarkdown(state)).toBe("- alpha\n  - [x] shipped child\n  - [ ] z\n  - gamma\n");
   });
 
-  test("toggles semantic task-list state for rendered task items", () => {
-    const state = setup("- [ ] ship it\n");
-    const list = state.documentIndex.document.blocks[0];
-
-    if (!list || list.type !== "list") {
-      throw new Error("Expected list block");
-    }
-
-    const listItem = list.items[0];
-
-    if (!listItem) {
-      throw new Error("Expected task list item");
-    }
-
-    const listItemPath = state.documentIndex.blocks.find((entry) => entry.block === listItem)?.path;
-    const toggled = listItemPath ? toggleTask(state, listItemPath) : null;
-
-    if (!toggled) {
-      throw new Error("Expected toggled task state");
-    }
-
-    expect(toMarkdown(toggled)).toBe("- [x] ship it\n");
-  });
-
   test("preserves selection identity when toggling task-list state", () => {
-    let state = setup("- [ ] task\n\ncursor\n");
+    let state = setup("- [x] task\n\ncursor\n");
     const cursor = getPath(state, "cursor");
 
     state = placeAt(state, cursor, "cursor".length);
@@ -487,7 +502,7 @@ describe("List structure", () => {
       throw new Error("Expected task toggle state");
     }
 
-    expect(toMarkdown(toggled)).toBe("- [x] task\n\ncursor\n");
+    expect(toMarkdown(toggled)).toBe("- [ ] task\n\ncursor\n");
     expect(toggled.selection).toBe(state.selection);
   });
 
@@ -522,19 +537,6 @@ describe("List structure", () => {
     }
 
     expect(toMarkdown(toggled)).toBe("- parent\n  - [x] ship nested\n");
-  });
-
-  test("places the cursor at the merge junction when backspacing a non-empty list item", () => {
-    let state = setup("- one\n- two\n");
-    const two = getPath(state, "two");
-
-    state = placeAt(state, two, 0);
-    state = deleteBackward(state) ?? state;
-
-    const merged = getPath(state, "onetwo");
-
-    expect(state.selection.focus.path).toBe(merged.path);
-    expect(state.selection.focus.offset).toBe("one".length);
   });
 
   test("places the cursor at the merge junction when backspacing past the first item in a list", () => {

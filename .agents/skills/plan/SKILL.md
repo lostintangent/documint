@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Use when planning a non-trivial codebase change by researching current behavior, drafting a precise implementation proposal, and iterating on that proposal with the review team in .agents/team.md before implementation.
+description: Use when planning a non-trivial codebase change by researching current behavior, drafting a precise implementation proposal, and iterating on that proposal with focused reviewers before implementation.
 ---
 
 # Planning Workflow
@@ -34,4 +34,4 @@ description: Use when planning a non-trivial codebase change by researching curr
 
 1. If canvases are available in the current environment, open the plan file in the Documint canvas so the user can read and respond to it. If canvases are unavailable, provide the plan file path and a concise summary.
 
-1. Read `../../team.md`, choose the applicable reviewers, and spin up subagents for honest critique of the plan file. Run as many critique/revision rounds as needed until the plan has converged. The plan has converged when a round surfaces only cosmetic deltas or trivia, with no blockers and no new sequencing or source-of-truth questions. When that happens, stop: more planning is then worth less than executing the minimum valuable milestone, and continued plan-polishing is a procrastination smell. Ask reviewers for blockers, follow-up debt, what landed well, concrete suggestions, and whether the plan is too broad for the current codebase. Do not use subagents as a substitute for your own codebase reading. You're responsible for having judgement and taste for what suggestions are worth taking, and you're simply relying on the sub-agents as thought partners with specific focus areas.
+1. Spin up reviewer subagents for honest critique of the plan file, each focused on a part of the root `AGENTS.md` standard the plan puts at risk, such as layer ownership, simplicity, reuse, hot-path cost, or correctness. Run as many critique/revision rounds as needed until the plan has converged. The plan has converged when a round surfaces only cosmetic deltas or trivia, with no blockers and no new sequencing or source-of-truth questions. When that happens, stop: more planning is then worth less than executing the minimum valuable milestone, and continued plan-polishing is a procrastination smell. Ask reviewers for blockers, follow-up debt, what landed well, concrete suggestions, and whether the plan is too broad for the current codebase. Do not use subagents as a substitute for your own codebase reading. You're responsible for having judgement and taste for what suggestions are worth taking, and you're simply relying on the sub-agents as thought partners with specific focus areas.

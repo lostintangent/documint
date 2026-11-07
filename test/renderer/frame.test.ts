@@ -4,10 +4,10 @@
 import { describe, expect, test } from "bun:test";
 import { compareDocuments } from "@/document";
 import type { EditorCommentRange } from "@/editor/anchors";
+import type { DocumentLayout, LayoutRect } from "@/editor/layout";
 import { createEditorState, setSelection } from "@/editor/state";
 import { parseDocument } from "@/markdown";
 import type { DocumentFrame, RendererEffect } from "@/renderer";
-import type { EffectPolicy } from "@/renderer/effects";
 import type { DocumentFrameLine } from "@/renderer/frame";
 import {
   createPresence,
@@ -72,6 +72,7 @@ describe("DocumentFrame line text rows", () => {
     expect(resourceSegment.resource.labelLeft).toBeGreaterThan(resourceSegment.left);
     expect(line.segments.find((segment) => segment.atom === "image")).toMatchObject({
       image: { url: "https://example.com/image.png" },
+      rect: { height: 90, width: 160 },
     });
     expect(line.segments.every((segment) => "node" in segment === false)).toBe(true);
   });
@@ -114,10 +115,11 @@ describe("DocumentFrame line range rows", () => {
     const thirdLine = lineFrameForPath(frame, third.path);
 
     expect(frame.lines.filter((line) => line.selectionHighlight).length).toBe(3);
-    expect(firstLine.selectionHighlight?.left).toBeGreaterThan(secondLine.selectionHighlight!.left);
-    expect(thirdLine.selectionHighlight!.left + thirdLine.selectionHighlight!.width).toBeLessThan(
-      secondLine.selectionHighlight!.left + secondLine.selectionHighlight!.width,
+    const [firstRect, secondRect, thirdRect] = [firstLine, secondLine, thirdLine].map(
+      (line) => line.selectionHighlight!.rect,
     );
+    expect(firstRect!.left).toBeGreaterThan(secondRect!.left);
+    expect(thirdRect!.left + thirdRect!.width).toBeLessThan(secondRect!.left + secondRect!.width);
     expect(secondLine.commentHighlights).toHaveLength(1);
     expect(secondLine.commentHighlights[0]).toMatchObject({
       color: "#f97316",
@@ -127,15 +129,8 @@ describe("DocumentFrame line range rows", () => {
   });
 });
 
-describe("DocumentFrame effect policy", () => {
-  const textInsertedPolicy: EffectPolicy = {
-    duration: (effect) => (effect.kind === "text-inserted" ? 1000 : null),
-  };
-
-  test.each([
-    { label: "a custom effect policy", options: { effectPolicy: textInsertedPolicy } },
-    { label: "a matching custom handler", options: { customEffects: { textInserted() {} } } },
-  ])("keeps default-skipped effects active in frame lines with $label", ({ options }) => {
+describe("DocumentFrame effects", () => {
+  test("keeps default-skipped effects active in frame lines with a matching custom handler", () => {
     const state = setup("alpha 🔥\n");
     const path = getPath(state, "alpha 🔥");
     const effect: RendererEffect = {
@@ -153,7 +148,7 @@ describe("DocumentFrame effect policy", () => {
       now: 110,
     });
     const { frame: customFrame } = createTestDocumentFrame(state, {
-      ...options,
+      customEffects: { textInserted() {} },
       effects: [effect],
       now: 110,
     });
@@ -222,34 +217,6 @@ describe("DocumentFrame chrome and block rows", () => {
     expect(frame.effects).toEqual([]);
   });
 
-  test("document-change backgrounds can target table cells", () => {
-    const state = setup(`| A | B |
-| - | - |
-| one | two |
-`);
-    const cell = getPath(state, "two");
-    const change = liveDocumentChangeAt(state, "| A | B |\n| - | - |\n", cell.path, "change-cell");
-    const { frame } = createTestDocumentFrame(state, {
-      documentChanges: [change],
-      effects: [
-        {
-          changeKey: "change-cell",
-          kind: "document-change",
-          startedAt: 100,
-        },
-      ],
-      now: 110,
-      width: 360,
-    });
-    const tableCellChange = frame.tableCellDocumentChanges[0];
-
-    expect(tableCellChange).toMatchObject({
-      color: resolvedLightTheme.externalChangeAdditionBackground,
-      opacity: 10 / 420,
-    });
-    expect(tableCellChange?.borderRect.width).toBeGreaterThanOrEqual(80);
-  });
-
   test("renders deleted blocks through the existing document-change background", () => {
     const comparison = compareDocuments(
       parseDocument("before\n\nremoved\n\nafter\n"),
@@ -290,26 +257,51 @@ describe("DocumentFrame chrome and block rows", () => {
     expect(continuationLine.listMarker).toBeNull();
   });
 
-  test("resolves table active highlight as chrome and suppresses per-line table active backgrounds", () => {
-    let state = setup(`| Left | Active | Right |
-| --- | --- | --- |
-| one | two | three |
+  test("resolves active and changed table cells as single bands at their column's exact bounds", () => {
+    let state = setup(`| A | B | C | D | E |
+| - | - | - | - | - |
+| one | two | three | four | five |
 `);
-    const activePath = getPath(state, "Active");
+    const cell = getPath(state, "two");
 
-    state = placeAt(state, activePath, 1);
+    state = placeAt(state, cell, 1);
 
-    const { frame } = createTestDocumentFrame(state, { width: 480 });
-
-    expect(frame.chrome.activeTableCellGeometry).not.toBeNull();
-    expect(frame.chrome.activeTableCellGeometry?.bands.length).toBeGreaterThan(0);
-
-    const tableLines = frame.lines.filter(
-      (line) => line.layoutLine.blockPath === activePath.blockPath,
+    const change = liveDocumentChangeAt(
+      state,
+      "| A | B | C | D | E |\n| - | - | - | - | - |\n",
+      cell.path,
+      "change-cell",
     );
-    expect(tableLines.length).toBeGreaterThan(0);
+    const { frame, layout } = createTestDocumentFrame(state, {
+      documentChanges: [change],
+      effects: [{ changeKey: "change-cell", kind: "document-change", startedAt: 100 }],
+      now: 110,
+      width: 390,
+    });
+    const cellRect = pathBoundsRect(layout, cell.path);
+    const tableLines = frame.lines.filter((line) => line.layoutLine.blockPath === cell.blockPath);
+
+    expect(cellRect.width).toBeLessThan(80);
+    expect(frame.chrome.activeTableCellGeometry).toMatchObject({
+      bands: [cellRect],
+      borderRect: cellRect,
+    });
+    expect(frame.tableCellDocumentChanges).toEqual([
+      expect.objectContaining({
+        bands: [cellRect],
+        borderRect: cellRect,
+        color: resolvedLightTheme.externalChangeAdditionBackground,
+        opacity: 10 / 420,
+      }),
+    ]);
+    expect(frame.chrome.tableCells.find((chrome) => chrome.path === cell.path)).toEqual({
+      blockPath: cell.blockPath,
+      isHeaderRow: false,
+      path: cell.path,
+      rect: cellRect,
+    });
+    // The table cell chrome band replaces per-line active block backgrounds.
     expect(tableLines.every((line) => line.activeBlockBackground === null)).toBe(true);
-    expect(tableLines.some((line) => line.containerBackground?.kind === "table-cell")).toBe(true);
   });
 
   test("resolves code chrome once while keeping code text rows paint-ready", () => {
@@ -322,16 +314,13 @@ describe("DocumentFrame chrome and block rows", () => {
     const codeLines = frame.lines.filter((line) => line.layoutLine.path === path.path);
 
     expect(codeLines).toHaveLength(2);
-    expect(codeLines.filter((line) => line.containerBackground?.kind === "code")).toHaveLength(1);
-    const activeRect = codeLines[0]!.activeBlockBackground!.rect;
-    const backgroundRect = codeLines[0]!.containerBackground!.rect;
+    expect(frame.chrome.codeBlockSurfaces).toHaveLength(1);
+    const [surface] = frame.chrome.codeBlockSurfaces;
 
-    expect(activeRect).toMatchObject({ left: backgroundRect.left, width: backgroundRect.width });
-    // The active tint sits centered inside the code background padding.
-    expect(activeRect.top - backgroundRect.top).toBe(
-      backgroundRect.top + backgroundRect.height - (activeRect.top + activeRect.height),
-    );
-    expect(codeLines[1]?.activeBlockBackground).toBeNull();
+    expect(surface?.path).toBe(path.path);
+    // Like other blocks, the active tint spans the full width, framing the code surface.
+    expect(surface?.activeBlockBackground?.rect).toEqual({ ...surface!.rect, left: 0, width: 320 });
+    expect(codeLines.every((line) => line.activeBlockBackground === null)).toBe(true);
     expect(codeLines.every((line) => line.segments.length === 1)).toBe(true);
     expect(codeLines.every((line) => line.defaultTextColor === resolvedLightTheme.codeText)).toBe(
       true,
@@ -359,6 +348,15 @@ describe("OverlayFrame caret rows", () => {
     });
     expect(frame.carets[0]!.height).toBeGreaterThan(0);
   });
+
+  test("paints the user caret in the code text color inside code blocks", () => {
+    const state = setup("alpha\n\n```ts\nconst value = 1;\n```\n");
+    const caretColorAt = (path: Parameters<typeof placeAt>[1]) =>
+      createTestOverlayFrame(placeAt(state, path, 1)).carets[0]?.color;
+
+    expect(caretColorAt(getPath(state, "alpha"))).toBe(resolvedLightTheme.caret);
+    expect(caretColorAt(getPathByType(state, "code"))).toBe(resolvedLightTheme.codeText);
+  });
 });
 
 function lineFrameContaining(frame: DocumentFrame, text: string): DocumentFrameLine {
@@ -369,6 +367,21 @@ function lineFrameContaining(frame: DocumentFrame, text: string): DocumentFrameL
   }
 
   return line;
+}
+
+function pathBoundsRect(layout: DocumentLayout, path: string): LayoutRect {
+  const bounds = layout.pathBounds.get(path);
+
+  if (!bounds) {
+    throw new Error(`Expected layout bounds for path "${path}"`);
+  }
+
+  return {
+    height: bounds.bottom - bounds.top,
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.right - bounds.left,
+  };
 }
 
 function lineFrameForPath(frame: DocumentFrame, path: string): DocumentFrameLine {

@@ -156,23 +156,6 @@ export function countRootBlocks(documentIndex: DocumentIndex) {
   return documentIndex.roots.length;
 }
 
-export function resolveSiblingRootBlock(
-  documentIndex: DocumentIndex,
-  rootIndex: number,
-  direction: -1 | 1,
-) {
-  return resolveRootBlock(documentIndex, rootIndex + direction);
-}
-
-// Comment projection --------------------------------------------------------
-
-export function resolveCommentThreadIndicesForPath(
-  documentIndex: DocumentIndex,
-  path: string,
-): readonly number[] {
-  return documentIndex.commentContainerIndex.get(path) ?? [];
-}
-
 // Block extents -------------------------------------------------------------
 
 export function blockContainsBlock(parent: IndexedBlock, child: IndexedBlock) {
@@ -295,7 +278,7 @@ export function findEditorPathWithText(
   documentIndex: DocumentIndex,
   predicate: (path: string, text: string, containingBlock: IndexedBlock) => boolean,
   options: { direction?: -1 | 1; rootIndex?: number } = {},
-) {
+): string | null {
   let match: string | null = null;
 
   forEachEditorPathWithText(
@@ -342,10 +325,6 @@ export function findUniqueEditorPathWithText(
   return { ambiguous, path: ambiguous ? null : match };
 }
 
-export function countEditorPathsWithText(documentIndex: DocumentIndex) {
-  return documentIndex.pathsWithTextCount;
-}
-
 export function previousBlockInFlow(documentIndex: DocumentIndex, blockPath: string) {
   return findAdjacentBlockInFlow(documentIndex, blockPath, -1);
 }
@@ -362,7 +341,7 @@ export function resolveAdjacentEditorPathWithTextInFlow(
   const cell = resolveIndexedTableCell(documentIndex, path);
   if (cell) {
     const table = resolveIndexedBlock(documentIndex, cell.tablePath);
-    if (!table) {
+    if (table?.kind !== "cells") {
       return null;
     }
 
@@ -439,32 +418,23 @@ export function hasSameEditorTextPathShape(
   nextIndex: DocumentIndex,
   nextPath: string,
 ) {
-  const previousBlock = resolveIndexedBlockContainingPath(previousIndex, previousPath);
-  const nextBlock = resolveIndexedBlockContainingPath(nextIndex, nextPath);
-  const previousText = resolveIndexedText(previousIndex, previousPath);
-  const nextText = resolveIndexedText(nextIndex, nextPath);
+  const previous = resolveIndexedText(previousIndex, previousPath);
+  const next = resolveIndexedText(nextIndex, nextPath);
 
-  if (!previousBlock || !nextBlock || !previousText || !nextText) {
+  if (!previous || !next || "fieldIndex" in previous || "fieldIndex" in next) {
     return false;
   }
 
-  if (
-    previousBlock.block.type !== nextBlock.block.type ||
-    resolveIndexedTextKind(previousText) !== resolveIndexedTextKind(nextText)
-  ) {
-    return false;
+  if ("cell" in previous || "cell" in next) {
+    return (
+      "cell" in previous &&
+      "cell" in next &&
+      previous.rowIndex === next.rowIndex &&
+      previous.cellIndex === next.cellIndex
+    );
   }
 
-  const previousCell = resolveIndexedTableCell(previousIndex, previousPath);
-  const nextCell = resolveIndexedTableCell(nextIndex, nextPath);
-
-  if (!previousCell || !nextCell) {
-    return previousCell === nextCell;
-  }
-
-  return (
-    previousCell.rowIndex === nextCell.rowIndex && previousCell.cellIndex === nextCell.cellIndex
-  );
+  return previous.block.type === next.block.type;
 }
 
 // Active handles ------------------------------------------------------------
@@ -535,14 +505,11 @@ function isTextBlock(
 }
 
 function editorPathWithTextForBlock(indexedBlock: IndexedBlock, direction: -1 | 1): string | null {
-  let path: string | null = null;
+  if (isTextBlock(indexedBlock)) {
+    return indexedBlock.path;
+  }
 
-  visitEditorPathsWithTextInBlock(indexedBlock, direction, (candidatePath) => {
-    path = candidatePath;
-    return false;
-  });
-
-  return path;
+  return indexedBlock.kind === "cells" ? findTableCellPathInFlow(indexedBlock, direction) : null;
 }
 
 // Finds the nearest text path before or after `block`'s subtree in flow.
@@ -598,62 +565,53 @@ function visitEditorPathsWithTextInBlock(
     return;
   }
 
-  return visitTableCellPaths(indexedBlock, direction, visit);
-}
-
-function findTableCellPathInFlow(
-  indexedBlock: IndexedBlock | null,
-  direction: -1 | 1,
-  after?: { rowIndex: number; cellIndex: number },
-): string | null {
-  let path: string | null = null;
-
-  visitTableCellPaths(
-    indexedBlock,
-    direction,
-    (cellPath) => {
-      path = cellPath;
-      return false;
-    },
-    after,
-  );
-
-  return path;
-}
-
-function visitTableCellPaths(
-  indexedBlock: IndexedBlock | null,
-  direction: -1 | 1,
-  visit: (path: string, text: string, containingBlock: IndexedBlock) => false | void,
-  after?: { rowIndex: number; cellIndex: number },
-) {
-  if (!indexedBlock) {
-    return;
-  }
-
-  if (indexedBlock.kind !== "cells") {
-    return;
-  }
-
   const rows = indexedBlock.tableCellRows;
-  let rowIndex = after?.rowIndex ?? (direction < 0 ? rows.length - 1 : 0);
-
-  for (; rowIndex >= 0 && rowIndex < rows.length; rowIndex += direction) {
+  for (
+    let rowIndex = direction < 0 ? rows.length - 1 : 0;
+    rowIndex >= 0 && rowIndex < rows.length;
+    rowIndex += direction
+  ) {
     const row = rows[rowIndex]!;
-    let cellIndex =
-      after && rowIndex === after.rowIndex
-        ? after.cellIndex + direction
-        : direction < 0
-          ? row.length - 1
-          : 0;
-
-    for (; cellIndex >= 0 && cellIndex < row.length; cellIndex += direction) {
+    for (
+      let cellIndex = direction < 0 ? row.length - 1 : 0;
+      cellIndex >= 0 && cellIndex < row.length;
+      cellIndex += direction
+    ) {
       const cell = row[cellIndex]!;
       if (visit(cell.path, cell.text, indexedBlock) === false) {
         return false;
       }
     }
   }
+}
+
+// First table-cell path in `direction`, strictly after `from` when given.
+function findTableCellPathInFlow(
+  table: Extract<IndexedBlock, { kind: "cells" }>,
+  direction: -1 | 1,
+  from?: IndexedTableCell,
+): string | null {
+  const rows = table.tableCellRows;
+  for (
+    let rowIndex = from?.rowIndex ?? (direction < 0 ? rows.length - 1 : 0);
+    rowIndex >= 0 && rowIndex < rows.length;
+    rowIndex += direction
+  ) {
+    const row = rows[rowIndex]!;
+    const cell =
+      row[
+        from && rowIndex === from.rowIndex
+          ? from.cellIndex + direction
+          : direction < 0
+            ? row.length - 1
+            : 0
+      ];
+    if (cell) {
+      return cell.path;
+    }
+  }
+
+  return null;
 }
 
 function findAdjacentBlockInFlow(
